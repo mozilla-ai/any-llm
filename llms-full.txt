@@ -47,6 +47,8 @@ This documentation is available in two AI-friendly formats:
 `any-llm` supports the following providers:
 
 - [OpenAI](https://platform.openai.com/docs/api-reference)
+- [Anthropic](https://docs.anthropic.com/en/home)
+- [Google](https://cloud.google.com/vertex-ai/docs)
 - [Mistral](https://docs.mistral.ai/)
 - [Ollama](https://github.com/ollama/ollama)
 - [DeepSeek](https://platform.deepseek.com/)
