@@ -3,4 +3,5 @@
 ## Docs
 
 - [Introduction](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/index.md): any-llm is a Python library providing a single interface to different llm providers.
+- [Providers](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/providers.md): any-llm supports the following providers:
 - [Api - Completion](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/completion.md)
