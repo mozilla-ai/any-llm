@@ -1,5 +1,0 @@
-<!-- Source: api/completion.md -->
-
-## Agent
-
-::: any_llm.completion
