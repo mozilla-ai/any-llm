@@ -1,6 +1,6 @@
 # any-llm Documentation
 
-> Complete documentation for any-llm - A Python library providing a single interface to different agent frameworks.
+> Complete documentation for any-llm - A Python library providing a single interface to different llm providers.
 
 This file contains all documentation pages concatenated for easy consumption by AI systems.
 
@@ -48,7 +48,7 @@ This documentation is available in two AI-friendly formats:
 
 <!-- Source: api/completion.md -->
 
-## Agent
+## Completion
 
 ::: any_llm.completion
 
