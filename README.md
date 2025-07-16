@@ -34,7 +34,7 @@ While the OpenAI API has become the de facto standard for LLM provider interface
 - **[LiteLLM](https://github.com/BerriAI/litellm)**: While popular, it reimplements provider interfaces rather than leveraging official SDKs, which can lead to compatibility issues and unexpected behavior modifications
 - **[AISuite](https://github.com/andrewyng/aisuite/issues)**: Offers a clean, modular approach but lacks active maintenance, comprehensive testing, and modern Python typing standards.
 - **[Framework-specific solutions](https://github.com/agno-agi/agno/tree/main/libs/agno/agno/models)**: Some agent frameworks either depend on LiteLLM or implement their own provider integrations, creating fragmentation
-- **[Proxy Only Solutions](https://openrouter.ai/): solutions like OpenRouter require a hosted proxy to serve as the interface between your code and the LLM provider. `any-llm` allows you to communicate directly with the LLM provider without the need for a hosted proxy.
+- **[Proxy Only Solutions](https://openrouter.ai/)**: solutions like OpenRouter require a hosted proxy to serve as the interface between your code and the LLM provider. `any-llm` allows you to communicate directly with the LLM provider without the need for a hosted proxy.
 
 **Our Approach:**
 

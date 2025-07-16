@@ -18,7 +18,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.XAI: "grok-3-latest",
         ProviderName.INCEPTION: "inception-3-70b-instruct",
         ProviderName.NEBIUS: "meta-llama/Meta-Llama-3.1-8B-Instruct",
-        ProviderName.OLLAMA: "llama3.2:3b",
+        ProviderName.OLLAMA: "llama3.2:1b",
         ProviderName.AZURE: "gpt-4o",
         ProviderName.COHERE: "command-a-03-2025",
         ProviderName.CEREBRAS: "llama-3.3-70b",
