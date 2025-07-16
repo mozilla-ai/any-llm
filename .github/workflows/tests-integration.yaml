@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --group tests --extra all
-        
+
       # cache the ~/.ollama/models directory
       - uses: actions/cache@v4
         with:
