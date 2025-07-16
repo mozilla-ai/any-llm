@@ -30,6 +30,8 @@ async def test_parallel_async_completion(provider: ProviderName, provider_model_
             acompletion(f"{provider.value}/{model_id}", messages=[{"role": "user", "content": prompt_1}]),
             acompletion(f"{provider.value}/{model_id}", messages=[{"role": "user", "content": prompt_2}]),
         )
+        assert results[0].choices[0].message.content is not None
+        assert results[1].choices[0].message.content is not None
         assert "paris" in results[0].choices[0].message.content.lower()
         assert "berlin" in results[1].choices[0].message.content.lower()
     except MissingApiKeyError:

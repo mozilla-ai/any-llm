@@ -83,7 +83,7 @@ class BaseProviderFramework(Provider, ABC):
         messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> ChatCompletion:
-       return await asyncio.to_thread(self.completion, model, messages, **kwargs)
+        return await asyncio.to_thread(self.completion, model, messages, **kwargs)
 
     @abstractmethod
     def _convert_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
