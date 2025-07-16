@@ -51,5 +51,5 @@ For more details on exceptions, see the [exceptions API documentation](./api/exc
 
 This documentation is available in two AI-friendly formats:
 
-- **[llms.txt](./llms.txt)** - A structured overview with curated links to key documentation sections
-- **[llms-full.txt](./llms-full.txt)** - Complete documentation content concatenated into a single file
+- **[llms.txt](https://mozilla-ai.github.io/any-llm/llms.txt)** - A structured overview with curated links to key documentation sections
+- **[llms-full.txt](https://mozilla-ai.github.io/any-llm/llms-full.txt)** - Complete documentation content concatenated into a single file
