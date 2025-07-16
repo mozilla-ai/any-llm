@@ -328,6 +328,48 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#quickstart" class="md-nav__link">
+    <span class="md-ellipsis">
+      Quickstart
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quickstart">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#basic-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Basic Usage
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      Parameters
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      Error Handling
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#for-ai-systems" class="md-nav__link">
     <span class="md-ellipsis">
       For AI Systems
@@ -429,6 +471,29 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="api/exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Exceptions
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -481,6 +546,48 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#quickstart" class="md-nav__link">
+    <span class="md-ellipsis">
+      Quickstart
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quickstart">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#basic-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Basic Usage
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      Parameters
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      Error Handling
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#for-ai-systems" class="md-nav__link">
     <span class="md-ellipsis">
       For AI Systems
@@ -524,11 +631,32 @@
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span>any-llm-sdk<span class="o">[</span>mistral,ollama<span class="o">]</span>
 </span></code></pre></div>
 <p>Refer to <a href="https://github.com/mozilla-ai/any-llm/blob/main/pyproject.toml">pyproject.toml</a> for a list of the options available.</p>
+<h2 id="quickstart">Quickstart</h2>
+<h3 id="basic-usage">Basic Usage</h3>
+<p>The primary function is <a class="autorefs autorefs-internal" title="any_llm.completion(model, messages, *, tools=None, tool_choice=None, max_turns=None, temperature=None, top_p=None, max_tokens=None, response_format=None, stream=None, n=None, stop=None, presence_penalty=None, frequency_penalty=None, seed=None, api_key=None, api_base=None, timeout=None, user=None, **kwargs)" href="api/completion/#any_llm.completion"><code>completion</code></a>, which uses a unified interface across all providers:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">any_llm</span><span class="w"> </span><span class="kn">import</span> <span class="n">completion</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Make sure you have the appropriate environment variable set</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="k">assert</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;MISTRAL_API_KEY&#39;</span><span class="p">)</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="c1"># Basic completion</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">response</span> <span class="o">=</span> <span class="n">completion</span><span class="p">(</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;mistral/mistral-small-latest&quot;</span><span class="p">,</span> <span class="c1"># &lt;provider&gt;/&lt;model-id&gt;</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">messages</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="s2">&quot;Hello!&quot;</span><span class="p">}]</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="p">)</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="nb">print</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">choices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">message</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+</span></code></pre></div>
+<h3 id="parameters">Parameters</h3>
+<p>For a complete list of available parameters, see the <a href="api/completion/">completion API documentation</a>.</p>
+<h3 id="error-handling">Error Handling</h3>
+<p><code>any-llm</code> provides custom exceptions to indicate common errors like missing API keys
+and parameters that are unsupported by a specific provider.</p>
+<p>For more details on exceptions, see the <a href="api/exceptions/">exceptions API documentation</a>.</p>
 <h2 id="for-ai-systems">For AI Systems</h2>
 <p>This documentation is available in two AI-friendly formats:</p>
 <ul>
-<li><strong><a href="/llms.txt">llms.txt</a></strong> - A structured overview with curated links to key documentation sections</li>
-<li><strong><a href="/llms-full.txt">llms-full.txt</a></strong> - Complete documentation content concatenated into a single file</li>
+<li><strong><a href="./llms.txt">llms.txt</a></strong> - A structured overview with curated links to key documentation sections</li>
+<li><strong><a href="./llms-full.txt">llms-full.txt</a></strong> - Complete documentation content concatenated into a single file</li>
 </ul>
 
 
