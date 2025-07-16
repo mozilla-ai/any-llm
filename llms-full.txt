@@ -112,6 +112,7 @@ You can browse the implementations via the providers folder:
 ## Completion
 
 ::: any_llm.completion
+::: any_llm.acompletion
 
 
 ---
