@@ -122,6 +122,7 @@ You can browse the implementations via the providers folder:
 
 ## Exceptions
 
-::: any_llm.exceptions 
+::: any_llm.exceptions
+
 
 ---
