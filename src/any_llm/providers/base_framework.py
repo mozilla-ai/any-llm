@@ -1,4 +1,5 @@
 import os
+import asyncio
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 import json
@@ -76,6 +77,14 @@ class BaseProviderFramework(Provider, ABC):
         # Step 4: Convert response to OpenAI format
         return self._convert_response(raw_response)
 
+    async def acompletion(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> ChatCompletion:
+       return await asyncio.to_thread(self.completion, model, messages, **kwargs)
+
     @abstractmethod
     def _convert_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         """Convert standard kwargs to provider-specific format."""
@@ -95,16 +104,6 @@ class BaseProviderFramework(Provider, ABC):
     def _convert_response(self, raw_response: Any) -> ChatCompletion:
         """Convert provider response to OpenAI ChatCompletion format."""
         pass
-
-
-class BaseCustomProvider(BaseProviderFramework, ABC):
-    """
-    Base class for providers that use custom/native clients (non-OpenAI compatible).
-
-    Examples: Anthropic, Google, Cohere, Mistral, Ollama
-    """
-
-    pass
 
 
 # Common utility functions that can be shared across providers

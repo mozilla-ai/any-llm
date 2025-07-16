@@ -140,6 +140,7 @@ lint = [
 
 tests = [
   "pytest>=8,<9",
+  "pytest-asyncio>=0.26.0",
   "mktestdocs>=0.2.4",
   "pytest-xdist>=3.6.1",
   "debugpy",

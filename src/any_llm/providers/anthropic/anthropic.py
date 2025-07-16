@@ -15,16 +15,16 @@ from openai.types.chat.chat_completion import ChatCompletion
 
 from any_llm.provider import ApiConfig, convert_instructor_response
 from any_llm.providers.base_framework import (
-    BaseCustomProvider,
+    BaseProviderFramework,
     create_completion_from_response,
 )
 
 DEFAULT_MAX_TOKENS = 4096
 
 
-class AnthropicProvider(BaseCustomProvider):
+class AnthropicProvider(BaseProviderFramework):
     """
-    Anthropic Provider using enhanced BaseCustomProvider framework.
+    Anthropic Provider using enhanced BaseProviderFramework framework.
 
     Handles conversion between OpenAI format and Anthropic's native format.
     """

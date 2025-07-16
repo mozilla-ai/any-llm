@@ -1,4 +1,5 @@
 # Inspired by https://github.com/andrewyng/aisuite/tree/main/aisuite
+import asyncio
 import importlib
 import json
 from abc import ABC, abstractmethod
@@ -95,6 +96,10 @@ class Provider(ABC):
     def completion(self, model: str, messages: list[dict[str, Any]], **kwargs: dict[str, Any]) -> ChatCompletion:
         """Must be implemented by each provider."""
         raise NotImplementedError
+    
+    async def acompletion(self, model: str, messages: list[dict[str, Any]], **kwargs: dict[str, Any]) -> ChatCompletion:
+        """Async completion method. Calls the sync completion method in a thread pool."""
+        return await asyncio.to_thread(self.completion, model, messages, **kwargs)
 
 
 class ProviderFactory:
