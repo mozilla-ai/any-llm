@@ -10,7 +10,6 @@ class MissingApiKeyError(Exception):
         Args:
             provider_name: Name of the provider (e.g., "OpenAI", "Google", "Mistral")
             env_var_name: Name of the environment variable that should contain the API key
-            message: Optional custom message. If not provided, a default message will be used.
         """
         self.provider_name = provider_name
         self.env_var_name = env_var_name
