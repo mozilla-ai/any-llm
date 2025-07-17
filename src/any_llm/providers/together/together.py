@@ -12,9 +12,9 @@ except ImportError:
     raise ImportError(msg)
 
 
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types.chat.chat_completion import ChatCompletion
+from any_llm.types import Stream
+from any_llm.types import ChatCompletionChunk
+from any_llm.types import ChatCompletion
 from any_llm.provider import Provider, ApiConfig, convert_instructor_response
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.providers.helpers import create_completion_from_response

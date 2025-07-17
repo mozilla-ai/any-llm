@@ -8,11 +8,9 @@ except ImportError:
     msg = "boto3 or instructor is not installed. Please install it with `pip install any-llm-sdk[aws]`"
     raise ImportError(msg)
 
-from openai.types.chat.chat_completion import ChatCompletion
-from any_llm.provider import Provider, ApiConfig, convert_instructor_response
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+from any_llm.provider import Provider, ApiConfig, convert_instructor_response
+from any_llm.types import ChatCompletion, ChatCompletionChunk, Stream
 from any_llm.providers.aws.utils import _convert_response, _convert_kwargs, _convert_messages
 
 
@@ -94,7 +92,8 @@ class AwsProvider(Provider):
             )
 
             # Convert instructor response to ChatCompletion format
-            return convert_instructor_response(instructor_response, model, "aws")
+            instructor_result: ChatCompletion = convert_instructor_response(instructor_response, model, "aws")
+            return instructor_result
 
         # Regular completion flow
         system_message, formatted_messages = _convert_messages(messages)
@@ -109,4 +108,5 @@ class AwsProvider(Provider):
         )
 
         # Convert to OpenAI format
-        return _convert_response(response)
+        result: ChatCompletion = _convert_response(response)
+        return result

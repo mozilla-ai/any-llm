@@ -8,11 +8,7 @@ import os
 from pathlib import Path
 from typing import Any, Type, Union
 
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types.chat.chat_completion import ChatCompletion, Choice
-from openai.types.chat.chat_completion_message import ChatCompletionMessage
-
+from any_llm.types import ChatCompletion, ChatCompletionChunk, Stream, Choice, ChatCompletionMessage
 from pydantic import BaseModel
 
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError

@@ -7,12 +7,15 @@ except ImportError:
     raise ImportError(msg)
 
 from openai import OpenAI
-from openai.types.chat.chat_completion import ChatCompletion
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+from any_llm.types import ChatCompletion
+from any_llm.types import Stream
+from any_llm.types import ChatCompletionChunk
+from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
+from openai._streaming import Stream as OpenAIStream
 
 from any_llm.provider import ApiConfig, convert_instructor_response
 from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.exceptions import UnsupportedParameterError
 
 
 class SambanovaProvider(BaseOpenAIProvider):
@@ -59,6 +62,10 @@ class SambanovaProvider(BaseOpenAIProvider):
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any
     ) -> ChatCompletion | Stream[ChatCompletionChunk]:
         """Make the API call to SambaNova service with instructor for structured output."""
+
+        if kwargs.get("stream", False):
+            raise UnsupportedParameterError("stream", "sambanova")
+        
         if "response_format" in kwargs:
             # Use instructor for structured output
             response_format = kwargs.pop("response_format")
@@ -69,11 +76,15 @@ class SambanovaProvider(BaseOpenAIProvider):
                 **kwargs,
             )
             # Convert instructor response to ChatCompletion format
-            return convert_instructor_response(response, model, "sambanova")
+            response = convert_instructor_response(response, model, "sambanova")
         else:
             # Use standard OpenAI client for regular completions
-            return self.client.chat.completions.create(
+            response = self.client.chat.completions.create(  # type: ignore[return-value]
                 model=model,
                 messages=messages,  # type: ignore[arg-type]
                 **kwargs,
             )
+        if isinstance(response, OpenAIChatCompletion):
+            return ChatCompletion.model_validate(response.model_dump())
+        else:
+            raise ValueError(f"Unexpected response type: {type(response)}")

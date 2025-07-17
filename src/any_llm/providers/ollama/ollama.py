@@ -5,9 +5,9 @@ import json
 
 import httpx
 from pydantic import BaseModel
-from openai.types.chat.chat_completion import ChatCompletion
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+from any_llm.types import ChatCompletion
+from any_llm.types import Stream
+from any_llm.types import ChatCompletionChunk
 from any_llm.logging import logger
 from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.helpers import create_completion_from_response

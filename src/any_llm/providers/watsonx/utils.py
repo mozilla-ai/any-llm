@@ -1,8 +1,6 @@
 from typing import Any
 
-from openai.types.chat.chat_completion import ChatCompletion, Choice
-from openai.types.completion_usage import CompletionUsage
-from openai.types.chat.chat_completion_message import ChatCompletionMessage
+from any_llm.types import ChatCompletion, Choice, CompletionUsage, ChatCompletionMessage
 
 
 def _convert_response(response: dict[str, Any]) -> ChatCompletion:

@@ -1,10 +1,14 @@
 from typing import Any, Optional
 import json
 
-from openai.types.chat.chat_completion import ChatCompletion, Choice
-from openai.types.completion_usage import CompletionUsage
-from openai.types.chat.chat_completion_message import ChatCompletionMessage
-from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall, Function
+from any_llm.types import (
+    ChatCompletion,
+    Choice,
+    CompletionUsage,
+    ChatCompletionMessage,
+    ChatCompletionMessageToolCall,
+    Function,
+)
 
 
 # Common utility functions that can be shared across providers
@@ -24,7 +28,7 @@ def create_openai_message(
     return ChatCompletionMessage(
         role=role,  # type: ignore[arg-type]
         content=content,
-        tool_calls=tool_calls,
+        tool_calls=tool_calls,  # type: ignore[arg-type]
     )
 
 

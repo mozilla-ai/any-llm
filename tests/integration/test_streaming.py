@@ -2,7 +2,7 @@ import httpx
 import pytest
 from any_llm import completion, ProviderName
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+from any_llm.types import ChatCompletionChunk
 
 
 def test_streaming_completion(provider: ProviderName, provider_model_map: dict[ProviderName, str]) -> None:

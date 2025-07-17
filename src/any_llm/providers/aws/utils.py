@@ -1,10 +1,14 @@
 import json
 from typing import Any, Optional, Literal
 
-from openai.types.chat.chat_completion import ChatCompletion, Choice
-from openai.types.completion_usage import CompletionUsage
-from openai.types.chat.chat_completion_message import ChatCompletionMessage
-from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall, Function
+from any_llm.types import (
+    ChatCompletion,
+    Choice,
+    CompletionUsage,
+    ChatCompletionMessage,
+    ChatCompletionMessageToolCall,
+    Function,
+)
 
 
 INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
@@ -162,7 +166,7 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
             message = ChatCompletionMessage(
                 content=None,
                 role="assistant",
-                tool_calls=tool_calls,
+                tool_calls=tool_calls,  # type: ignore[arg-type]
             )
 
             choice = Choice(

@@ -1,11 +1,9 @@
 from typing import Any, Optional, List, Union, Callable
 
-from openai.types.chat.chat_completion import ChatCompletion
+from any_llm.types import ChatCompletion, ChatCompletionChunk, Stream
 from pydantic import BaseModel
 from any_llm.provider import ProviderFactory, ApiConfig, Provider
 from any_llm.tools import prepare_tools
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 
 
 def _prepare_completion_request(

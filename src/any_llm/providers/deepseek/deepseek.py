@@ -4,9 +4,9 @@ from pydantic import BaseModel
 
 from any_llm.provider import ApiConfig
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types.chat.chat_completion import ChatCompletion
+from any_llm.types import Stream
+from any_llm.types import ChatCompletionChunk
+from any_llm.types import ChatCompletion
 from any_llm.providers.deepseek.utils import _convert_pydantic_to_deepseek_json
 
 

@@ -9,9 +9,9 @@ except ImportError:
     msg = "cerebras or instructor is not installed. Please install it with `pip install any-llm-sdk[cerebras]`"
     raise ImportError(msg)
 
-from openai.types.chat.chat_completion import ChatCompletion
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+from any_llm.types import ChatCompletion
+from any_llm.types import Stream
+from any_llm.types import ChatCompletionChunk
 
 from any_llm.provider import Provider, ApiConfig, convert_instructor_response
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError

@@ -4,7 +4,7 @@ except ImportError:
     msg = "mistralai is not installed. Please install it with `pip install any-llm-sdk[mistral]`"
     raise ImportError(msg)
 
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+from any_llm.types import ChatCompletionChunk
 
 
 def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompletionChunk:
@@ -18,7 +18,7 @@ def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompl
         ChoiceDeltaToolCall,
         ChoiceDeltaToolCallFunction,
     )
-    from openai.types.completion_usage import CompletionUsage
+    from any_llm.types import CompletionUsage
 
     chunk = event.data
 

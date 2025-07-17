@@ -8,11 +8,8 @@ except ImportError:
     msg = "anthropic or instructor is not installed. Please install it with `pip install any-llm-sdk[anthropic]`"
     raise ImportError(msg)
 
-from openai.types.chat.chat_completion import ChatCompletion
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.types import ChatCompletion, ChatCompletionChunk, Stream
 from any_llm.provider import ApiConfig, Provider, convert_instructor_response
 from any_llm.providers.anthropic.utils import (
     _create_openai_chunk_from_anthropic_chunk,

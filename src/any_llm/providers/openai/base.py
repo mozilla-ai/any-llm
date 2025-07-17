@@ -1,12 +1,14 @@
-from typing import Any
+from typing import Any, Iterator
 from abc import ABC
 
 from openai import OpenAI
-from openai.types.chat.chat_completion import ChatCompletion
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+from any_llm.types import ChatCompletion
+from any_llm.types import Stream
+from any_llm.types import ChatCompletionChunk
 
 from any_llm.provider import ApiConfig, Provider
+from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
+from openai._streaming import Stream as OpenAIStream
 
 
 class BaseOpenAIProvider(Provider, ABC):
@@ -45,15 +47,23 @@ class BaseOpenAIProvider(Provider, ABC):
         self._initialize_client(self.config)
 
         if "response_format" in kwargs:
-            response = self.client.chat.completions.parse(  # type: ignore[attr-defined]
+            response =  self.client.chat.completions.parse(  # type: ignore[no-any-return,attr-defined]
                 model=model,
                 messages=messages,
                 **kwargs,
             )
         else:
-            response = self.client.chat.completions.create(
+            response = self.client.chat.completions.create(  # type: ignore[return-value]
                 model=model,
                 messages=messages,  # type: ignore[arg-type]
                 **kwargs,
             )
-        return response  # type: ignore[no-any-return]
+        
+        if isinstance(response, OpenAIChatCompletion):
+            return ChatCompletion.model_validate(response.model_dump())
+        elif isinstance(response, OpenAIStream):
+            # Return our custom stream wrapper that converts chunks
+            return Stream(response)
+        else:
+            msg = f"Unexpected response type: {type(response)}"
+            raise ValueError(msg)
