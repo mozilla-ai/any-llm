@@ -43,29 +43,29 @@ _T = TypeVar("_T")
 
 class Stream(OpenAIStream[_T]):
     """Custom stream wrapper that converts OpenAI stream chunks to AnyLLM ChatCompletionChunk types."""
-    
+
     def __init__(self, openai_stream: OpenAIStream[Any]):
         self._openai_stream = openai_stream
-    
+
     def __iter__(self) -> Iterator[_T]:
         for chunk in self._openai_stream:
             # Convert OpenAI chunk to AnyLLM ChatCompletionChunk
             assert isinstance(chunk, OpenAIChatCompletionChunk), f"Expected ChatCompletionChunk, got {type(chunk)}"
             yield ChatCompletionChunk.model_validate(chunk.model_dump())
-    
+
     def __next__(self) -> _T:
         chunk = next(self._openai_stream)
         assert isinstance(chunk, OpenAIChatCompletionChunk), f"Expected ChatCompletionChunk, got {type(chunk)}"
         return ChatCompletionChunk.model_validate(chunk.model_dump())
-    
+
     def close(self) -> None:
         """Close the underlying stream."""
-        if hasattr(self._openai_stream, 'close'):
+        if hasattr(self._openai_stream, "close"):
             self._openai_stream.close()
-    
-    def __enter__(self) -> 'Stream':
+
+    def __enter__(self) -> "Stream":
         return self
-    
+
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self.close()
 

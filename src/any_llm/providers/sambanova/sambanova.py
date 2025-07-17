@@ -11,7 +11,6 @@ from any_llm.types import ChatCompletion
 from any_llm.types import Stream
 from any_llm.types import ChatCompletionChunk
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
-from openai._streaming import Stream as OpenAIStream
 
 from any_llm.provider import ApiConfig, convert_instructor_response
 from any_llm.providers.openai.base import BaseOpenAIProvider
@@ -65,7 +64,7 @@ class SambanovaProvider(BaseOpenAIProvider):
 
         if kwargs.get("stream", False):
             raise UnsupportedParameterError("stream", "sambanova")
-        
+
         if "response_format" in kwargs:
             # Use instructor for structured output
             response_format = kwargs.pop("response_format")

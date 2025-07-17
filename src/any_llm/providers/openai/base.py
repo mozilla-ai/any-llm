@@ -1,4 +1,4 @@
-from typing import Any, Iterator
+from typing import Any
 from abc import ABC
 
 from openai import OpenAI
@@ -47,7 +47,7 @@ class BaseOpenAIProvider(Provider, ABC):
         self._initialize_client(self.config)
 
         if "response_format" in kwargs:
-            response =  self.client.chat.completions.parse(  # type: ignore[no-any-return,attr-defined]
+            response = self.client.chat.completions.parse(  # type: ignore[no-any-return,attr-defined]
                 model=model,
                 messages=messages,
                 **kwargs,
@@ -58,7 +58,7 @@ class BaseOpenAIProvider(Provider, ABC):
                 messages=messages,  # type: ignore[arg-type]
                 **kwargs,
             )
-        
+
         if isinstance(response, OpenAIChatCompletion):
             return ChatCompletion.model_validate(response.model_dump())
         elif isinstance(response, OpenAIStream):
