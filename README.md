@@ -27,6 +27,16 @@ A single interface to use and evaluate different llm providers.
 
 ## [Supported Providers](https://mozilla-ai.github.io/any-llm/providers)
 
+## Key Features
+
+`any-llm` offers:
+- **Simple, unified interface** - one function for all providers, switch models with just a string change
+- **Developer friendly** - full type hints for better IDE support and clear, actionable error messages
+- **Leverages official provider SDKs** when available, reducing maintenance burden and ensuring compatibility
+- **Stays framework-agnostic** so it can be used across different projects and use cases
+- **Actively maintained** - we use this in our own product ([any-agent](https://github.com/mozilla-ai/any-agent)) ensuring continued support
+- **No Proxy or Gateway server required** so you don't need to deal with setting up any other service to talk to whichever LLM provider you need.
+
 ## Motivation
 
 The landscape of LLM provider interfaces presents a fragmented ecosystem with several challenges that `any-llm` aims to address:
@@ -41,15 +51,6 @@ While the OpenAI API has become the de facto standard for LLM provider interface
 - **[AISuite](https://github.com/andrewyng/aisuite/issues)**: Offers a clean, modular approach but lacks active maintenance, comprehensive testing, and modern Python typing standards.
 - **[Framework-specific solutions](https://github.com/agno-agi/agno/tree/main/libs/agno/agno/models)**: Some agent frameworks either depend on LiteLLM or implement their own provider integrations, creating fragmentation
 - **[Proxy Only Solutions](https://openrouter.ai/)**: solutions like [OpenRouter](https://openrouter.ai/) and [Portkey](https://github.com/Portkey-AI/portkey-python-sdk) require a hosted proxy to serve as the interface between your code and the LLM provider.
-
-**Our Approach:**
-
-`any-llm` fills the gap by providing a simple, well-maintained interface that:
-- **Leverages official provider SDKs** when available, reducing maintenance burden and ensuring compatibility
-- **Stays framework-agnostic** so it can be used across different projects and use cases
-- **Provides active maintenance** we support this in our product ([any-agent](https://github.com/mozilla-ai/any-agent)) so we're motivated to maintain it.
-- **No Proxy or Gateway server required** so you don't need to deal with setting up any other service to talk to whichever LLM provider you need.
-
 
 ## Quickstart
 
