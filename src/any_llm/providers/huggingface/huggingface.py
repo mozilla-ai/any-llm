@@ -24,6 +24,7 @@ class HuggingfaceProvider(Provider):
 
     PROVIDER_NAME = "HuggingFace"
     ENV_API_KEY_NAME = "HF_TOKEN"
+    PROVIDER_DOCUMENTATION_URL = "https://huggingface.co/inference-endpoints"
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the HuggingFace provider."""

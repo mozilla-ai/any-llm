@@ -30,6 +30,7 @@ class AnthropicProvider(Provider):
 
     PROVIDER_NAME = "Anthropic"
     ENV_API_KEY_NAME = "ANTHROPIC_API_KEY"
+    PROVIDER_DOCUMENTATION_URL = "https://docs.anthropic.com/en/home"
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         if kwargs.get("stream", False) and kwargs.get("response_format", None):

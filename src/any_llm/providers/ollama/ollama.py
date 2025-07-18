@@ -26,6 +26,7 @@ class OllamaProvider(Provider):
     _CHAT_COMPLETION_ENDPOINT = "/api/chat"
     _DEFAULT_URL = "http://localhost:11434"
     PROVIDER_NAME = "Ollama"
+    PROVIDER_DOCUMENTATION_URL = "https://github.com/ollama/ollama"
 
     def __init__(self, config: ApiConfig) -> None:
         """We don't use the Provider init because by default we don't require an API key."""

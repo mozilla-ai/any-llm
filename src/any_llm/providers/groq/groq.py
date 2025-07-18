@@ -21,6 +21,7 @@ class GroqProvider(Provider):
 
     PROVIDER_NAME = "Groq"
     ENV_API_KEY_NAME = "GROQ_API_KEY"
+    PROVIDER_DOCUMENTATION_URL = "https://groq.com/api"
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Groq provider."""

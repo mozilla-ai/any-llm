@@ -1,4 +1,8 @@
-# any-llm
+<p align="center">
+  <picture>
+    <img src="./images/any-llm-logo.png" width="20%" alt="Project logo"/>
+  </picture>
+</p>
 
 `any-llm` is a Python library providing a single interface to different llm providers.
 

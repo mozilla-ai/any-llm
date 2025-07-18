@@ -95,6 +95,7 @@ class Provider(ABC):
     # Provider-specific configuration (to be overridden by subclasses)
     PROVIDER_NAME: str
     ENV_API_KEY_NAME: str
+    PROVIDER_DOCUMENTATION_URL: str
 
     def __init__(self, config: ApiConfig) -> None:
         self.config = config
@@ -104,6 +105,21 @@ class Provider(ABC):
 
         if not config.api_key:
             raise MissingApiKeyError(self.PROVIDER_NAME, self.ENV_API_KEY_NAME)
+
+    @classmethod
+    def get_provider_metadata(cls) -> dict[str, str]:
+        """Get provider metadata without requiring instantiation.
+
+        Returns:
+            Dictionary containing provider metadata including name, environment variable,
+            documentation URL, and class name.
+        """
+        return {
+            "name": getattr(cls, "PROVIDER_NAME"),
+            "env_key": getattr(cls, "ENV_API_KEY_NAME", "-"),
+            "doc_url": getattr(cls, "PROVIDER_DOCUMENTATION_URL"),
+            "class_name": cls.__name__,
+        }
 
     @abstractmethod
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
@@ -183,10 +199,63 @@ class ProviderFactory:
         return provider_class(config=config)
 
     @classmethod
+    def get_provider_class(cls, provider_key: Union[str, ProviderName]) -> Type[Provider]:
+        """Get the provider class without instantiating it.
+
+        Args:
+            provider_key: The provider key (e.g., 'anthropic', 'openai')
+
+        Returns:
+            The provider class
+        """
+        # Convert to string if it's a ProviderName enum
+        if isinstance(provider_key, ProviderName):
+            provider_key = provider_key.value
+
+        provider_class_name = f"{provider_key.capitalize()}Provider"
+        provider_module_name = f"{provider_key}"
+
+        module_path = f"any_llm.providers.{provider_module_name}"
+
+        try:
+            module = importlib.import_module(module_path)
+        except ImportError as e:
+            msg = f"Could not import module {module_path}: {e!s}. Please ensure the provider is supported by doing ProviderFactory.get_supported_providers()"
+            raise ImportError(msg) from e
+
+        # Get the provider class
+        provider_class: Type[Provider] = getattr(module, provider_class_name)
+        return provider_class
+
+    @classmethod
     def get_supported_providers(cls) -> list[str]:
         """Get a list of supported provider keys."""
         # Return the enum values as strings
         return [provider.value for provider in ProviderName]
+
+    @classmethod
+    def get_all_provider_metadata(cls) -> list[dict[str, str]]:
+        """Get metadata for all supported providers.
+
+        Returns:
+            List of dictionaries containing provider metadata
+        """
+        providers = []
+        for provider_key in cls.get_supported_providers():
+            try:
+                provider_class = cls.get_provider_class(provider_key)
+                metadata = provider_class.get_provider_metadata()
+                # Add the provider key (directory name) to the metadata
+                metadata["provider_key"] = provider_key
+                providers.append(metadata)
+            except Exception as e:
+                # Skip providers that can't be loaded
+                print(f"Warning: Could not load metadata for provider {provider_key}: {e}")
+                continue
+
+        # Sort providers by name
+        providers.sort(key=lambda x: x["name"])
+        return providers
 
     @classmethod
     def get_provider_enum(cls, provider_key: str) -> ProviderName:

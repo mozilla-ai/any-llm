@@ -17,6 +17,7 @@ class AzureProvider(Provider):
 
     PROVIDER_NAME = "Azure"
     ENV_API_KEY_NAME = "AZURE_API_KEY"
+    PROVIDER_DOCUMENTATION_URL = "https://azure.microsoft.com/en-us/products/ai-services/openai-service"
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Azure provider."""

@@ -26,6 +26,7 @@ class GoogleProvider(Provider):
     """Google Provider using the new response conversion utilities."""
 
     PROVIDER_NAME = "Google"
+    PROVIDER_DOCUMENTATION_URL = "https://cloud.google.com/vertex-ai/docs"
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Google GenAI provider."""

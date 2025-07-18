@@ -22,13 +22,15 @@ class CohereProvider(Provider):
     """Cohere Provider using the new response conversion utilities."""
 
     PROVIDER_NAME = "Cohere"
+    ENV_API_KEY_NAME = "CO_API_KEY"
+    PROVIDER_DOCUMENTATION_URL = "https://cohere.com/api"
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Cohere provider."""
         if not config.api_key:
-            config.api_key = os.getenv("CO_API_KEY")
+            config.api_key = os.getenv(self.ENV_API_KEY_NAME)
         if not config.api_key:
-            raise MissingApiKeyError("Cohere", "CO_API_KEY")
+            raise MissingApiKeyError(self.PROVIDER_NAME, self.ENV_API_KEY_NAME)
 
         self.client = cohere.ClientV2(api_key=config.api_key)
 

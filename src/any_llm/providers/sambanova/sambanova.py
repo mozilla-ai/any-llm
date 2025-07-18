@@ -20,6 +20,7 @@ class SambanovaProvider(BaseOpenAIProvider):
     DEFAULT_API_BASE = "https://api.sambanova.ai/v1/"
     ENV_API_KEY_NAME = "SAMBANOVA_API_KEY"
     PROVIDER_NAME = "SambaNova"
+    PROVIDER_DOCUMENTATION_URL = "https://sambanova.ai/"
 
     def completion(
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any

@@ -25,15 +25,17 @@ class CerebrasProvider(Provider):
     """Cerebras Provider using the official Cerebras SDK with instructor support for structured outputs."""
 
     PROVIDER_NAME = "Cerebras"
+    ENV_API_KEY_NAME = "CEREBRAS_API_KEY"
+    PROVIDER_DOCUMENTATION_URL = "https://docs.cerebras.ai/"
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Cerebras provider."""
         if not config.api_key:
-            config.api_key = os.getenv("CEREBRAS_API_KEY")
+            config.api_key = os.getenv(self.ENV_API_KEY_NAME)
         if not config.api_key:
             raise MissingApiKeyError(
-                "Cerebras",
-                "CEREBRAS_API_KEY",
+                self.PROVIDER_NAME,
+                self.ENV_API_KEY_NAME,
             )
 
         # Initialize the Cerebras client
@@ -89,7 +91,7 @@ class CerebrasProvider(Provider):
             )
 
             # Convert instructor response to ChatCompletion format
-            return convert_instructor_response(instructor_response, model, "cerebras")
+            return convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
 
         if kwargs.get("stream", False):
             # Remove stream parameter before passing to streaming method

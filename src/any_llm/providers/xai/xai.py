@@ -5,3 +5,4 @@ class XaiProvider(BaseOpenAIProvider):
     DEFAULT_API_BASE = "https://api.x.ai/v1"
     ENV_API_KEY_NAME = "XAI_API_KEY"
     PROVIDER_NAME = "xAI"
+    PROVIDER_DOCUMENTATION_URL = "https://x.ai/"

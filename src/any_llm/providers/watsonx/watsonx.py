@@ -21,6 +21,7 @@ class WatsonxProvider(Provider):
 
     PROVIDER_NAME = "Watsonx"
     ENV_API_KEY_NAME = "WATSONX_API_KEY"
+    PROVIDER_DOCUMENTATION_URL = "https://www.ibm.com/watsonx"
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Watsonx provider."""

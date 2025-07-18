@@ -13,6 +13,7 @@ class DeepseekProvider(BaseOpenAIProvider):
     DEFAULT_API_BASE = "https://api.deepseek.com"
     ENV_API_KEY_NAME = "DEEPSEEK_API_KEY"
     PROVIDER_NAME = "DeepSeek"
+    PROVIDER_DOCUMENTATION_URL = "https://platform.deepseek.com/"
 
     def _make_api_call(
         self,

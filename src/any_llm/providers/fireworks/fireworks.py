@@ -18,6 +18,7 @@ from any_llm.providers.helpers import create_completion_from_response
 class FireworksProvider(Provider):
     PROVIDER_NAME = "Fireworks"
     ENV_API_KEY_NAME = "FIREWORKS_API_KEY"
+    PROVIDER_DOCUMENTATION_URL = "https://fireworks.ai/api"
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Fireworks provider."""

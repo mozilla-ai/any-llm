@@ -22,6 +22,7 @@ from any_llm.providers.helpers import create_completion_from_response
 class TogetherProvider(Provider):
     PROVIDER_NAME = "Together"
     ENV_API_KEY_NAME = "TOGETHER_API_KEY"
+    PROVIDER_DOCUMENTATION_URL = "https://together.ai/"
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Together provider."""

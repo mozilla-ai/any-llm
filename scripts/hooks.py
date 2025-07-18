@@ -4,9 +4,12 @@ It also serves markdown files as text files for LLM consumption.
 It was initially written in collaboration with Claude 4 Sonnet.
 """
 
+import asyncio
 import os
 import re
+import sys
 from pathlib import Path
+import httpx
 
 # Constants
 MARKDOWN_EXTENSION = ".md"
@@ -16,6 +19,81 @@ EXCLUDED_DIRS = {".", "__pycache__"}
 TOC_PATTERN = r"^\s*\[\[TOC\]\]\s*$"
 MARKDOWN_LINK_PATTERN = r"\[([^\]]+)\]\(([^)]+\.md)\)"
 MARKDOWN_LINK_REPLACEMENT = r"[\1](#\2)"
+
+
+async def validate_url(urls, timeout=10):
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        responses = await asyncio.gather(*[client.head(url, follow_redirects=True) for url in urls])
+        for response in responses:
+            if response.status_code != 200:
+                raise Exception(f"URL {response.url} returned status code {response.status_code}")
+
+
+def get_provider_metadata(provider_dir):
+    """Extract metadata from all provider implementations using ProviderFactory."""
+    # Add the src directory to Python path so we can import the provider module
+    src_path = provider_dir.parent.parent
+    if str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
+
+    from any_llm.provider import ProviderFactory
+
+    return ProviderFactory.get_all_provider_metadata()
+
+
+def generate_provider_table(providers):
+    """Generate a markdown table from provider metadata."""
+    if not providers:
+        return "No providers found."
+
+    # Create table header
+    table_lines = [
+        "| Provider | Documentation URL | Environment Variable | Source Code |",
+        "|----------| ------------------| ---------------------|-------------|",
+    ]
+
+    # Add rows for each provider
+    source_urls = []
+    for provider in providers:
+        doc_url = f"[{provider['doc_url']}]({provider['doc_url']})"
+        env_key = provider["env_key"]
+
+        # Use the provider key (directory name) instead of display name
+        provider_key = provider["provider_key"]
+        source_url = f"https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/{provider_key}/"
+        source_urls.append(source_url)
+
+        source_link = f"[Source]({source_url})"
+        row = f"| {provider['name']} | {doc_url} | {env_key} | {source_link} |"
+        table_lines.append(row)
+
+    asyncio.run(validate_url(source_urls))
+    return "\n".join(table_lines)
+
+
+def inject_provider_table_in_markdown(markdown_content, provider_dir):
+    """Inject the provider table into markdown content during build."""
+    # Check if this page needs the provider table
+    start_marker = "<!-- AUTO-GENERATED TABLE START -->"
+    end_marker = "<!-- AUTO-GENERATED TABLE END -->"
+
+    if start_marker not in markdown_content or end_marker not in markdown_content:
+        return markdown_content
+
+    # Generate the table
+    provider_metadata = get_provider_metadata(provider_dir)
+    provider_table = generate_provider_table(provider_metadata)
+
+    # Find the markers and replace content between them
+    start_idx = markdown_content.find(start_marker)
+    end_idx = markdown_content.find(end_marker)
+
+    # Replace only the content between the markers
+    new_content = (
+        markdown_content[: start_idx + len(start_marker)] + "\n" + provider_table + "\n" + markdown_content[end_idx:]
+    )
+
+    return new_content
 
 
 def get_nav_files(nav_config):
@@ -267,3 +345,18 @@ def on_post_build(config, **kwargs):
 
     # Generate complete llms-full.txt
     generate_llms_full_txt(docs_dir, site_dir, nav_config)
+
+
+def on_page_markdown(markdown, page, config, files):
+    """Inject provider table into markdown content during build."""
+    docs_dir = Path(config["docs_dir"])
+    project_root = docs_dir.parent
+    provider_dir = project_root / "src" / "any_llm" / "providers"
+
+    # Process the markdown content
+    return inject_provider_table_in_markdown(markdown, provider_dir)
+
+
+def on_pre_build(config, **kwargs):
+    """Pre-build hook - currently unused but kept for potential future use."""
+    pass
