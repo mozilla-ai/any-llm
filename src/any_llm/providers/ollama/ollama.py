@@ -3,12 +3,18 @@ from datetime import datetime
 from typing import Any
 import json
 
-import httpx
+try:
+    from ollama import ChatResponse as OllamaChatResponse
+    from ollama import Message as OllamaMessage
+    from ollama import Client
+except ImportError:
+    msg = "ollama is not installed. Please install it with `pip install any-llm-sdk[ollama]`"
+    raise ImportError(msg)
+
 from pydantic import BaseModel
 from openai.types.chat.chat_completion import ChatCompletion
 from openai._streaming import Stream
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from any_llm.logging import logger
 from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.helpers import create_completion_from_response
 from any_llm.exceptions import UnsupportedParameterError
@@ -18,20 +24,17 @@ class OllamaProvider(Provider):
     """
     Ollama Provider using the new response conversion utilities.
 
-    It uses the /api/chat endpoint and makes HTTP calls to the Ollama API.
-    Read more here - https://github.com/ollama/ollama/blob/main/docs/api.md#generate-a-chat-completion
-    If OLLAMA_API_URL is not set and not passed in config, then it will default to "http://localhost:11434"
+    It uses the ollama sdk.
+    Read more here - https://github.com/ollama/ollama-python
     """
 
-    _CHAT_COMPLETION_ENDPOINT = "/api/chat"
-    _DEFAULT_URL = "http://localhost:11434"
     PROVIDER_NAME = "Ollama"
     PROVIDER_DOCUMENTATION_URL = "https://github.com/ollama/ollama"
 
     def __init__(self, config: ApiConfig) -> None:
         """We don't use the Provider init because by default we don't require an API key."""
 
-        self.url = str(config.api_base or os.getenv("OLLAMA_API_URL", self._DEFAULT_URL))
+        self.url = config.api_base or os.getenv("OLLAMA_API_URL")
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Ollama provider."""
@@ -46,16 +49,16 @@ class OllamaProvider(Provider):
     ) -> ChatCompletion | Stream[ChatCompletionChunk]:
         """Create a chat completion using Ollama."""
 
-        kwargs["stream"] = kwargs.get("stream", False)  # Ollama requires you to specifically set this to False.
-
         if "response_format" in kwargs:
             response_format = kwargs.pop("response_format")
             if isinstance(response_format, type) and issubclass(response_format, BaseModel):
                 # response_format is a Pydantic model class
-                kwargs["format"] = response_format.model_json_schema()
+                format = response_format.model_json_schema()
             else:
                 # response_format is already a dict/schema
-                kwargs["format"] = response_format
+                format = response_format
+        else:
+            format = None
 
         # Convert tool messages to user messages and remove tool_calls from assistant messages
         # (https://www.reddit.com/r/ollama/comments/1ked8x2/feeding_tool_output_back_to_llm/)
@@ -77,53 +80,46 @@ class OllamaProvider(Provider):
 
             cleaned_messages.append(cleaned_message)
 
-        data = {
-            "model": model,
-            "messages": cleaned_messages,
-            "options": {"num_ctx": 32000},  # Default is 4096 which is too small for most use cases.
-            **kwargs,  # Pass any additional arguments to the API
-        }
+        kwargs["num_ctx"] = kwargs.get("num_ctx", 32000)
 
-        timeout = kwargs.pop("timeout", None)
-
-        try:
-            response = httpx.post(
-                self.url.rstrip("/") + self._CHAT_COMPLETION_ENDPOINT,
-                json=data,
-                timeout=timeout,
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Error calling Ollama: {e.response.text}")
-            raise e
-
-        response_data = response.json()
+        client = Client(host=self.url, timeout=kwargs.pop("timeout", None))
+        response: OllamaChatResponse = client.chat(
+            model=model,
+            tools=kwargs.pop("tools", None),
+            think=kwargs.pop("think", None),
+            messages=cleaned_messages,
+            format=format,
+            options=kwargs,
+        )
 
         # Convert Ollama's timestamp format to int
-        created_str = response_data.get("created_at", 0)
-        try:
-            created = int(datetime.strptime(created_str, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp())
-        except (ValueError, TypeError):
-            created = 0
+        created_str = response.created_at
+        if created_str is None:
+            raise ValueError("Expected Ollama to provide a created_at timestamp")
+        created = int(datetime.strptime(created_str, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp())
 
         # Normalize response structure for the utility
-        response_dict = {
-            "id": "chatcmpl-" + str(hash(str(response_data))),
-            "model": response_data["model"],
+        prompt_tokens = response.prompt_eval_count or 0
+        completion_tokens = response.eval_count or 0
+        response_dict: dict[str, Any] = {
+            "id": "chatcmpl-" + str(hash(created)),
+            "model": response.model,
             "created": created,
             "usage": {
-                "prompt_tokens": response_data.get("prompt_eval_count", 0),
-                "completion_tokens": response_data.get("eval_count", 0),
-                "total_tokens": response_data.get("prompt_eval_count", 0) + response_data.get("eval_count", 0),
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
             },
         }
 
         # Handle tool calls vs regular responses
-        message_data = response_data["message"]
-        if "tool_calls" in message_data:
+        response_message: OllamaMessage = response.get("message")
+        if not response_message or not isinstance(response_message, OllamaMessage):
+            raise ValueError("Unexpected output from ollama")
+        if response_message.tool_calls:
             # Convert tool calls to standard format
             tool_calls = []
-            for tool_call in message_data["tool_calls"]:
+            for tool_call in response_message.tool_calls:
                 tool_calls.append(
                     {
                         "id": str(hash(str(tool_call))),  # Generate ID from hash
@@ -138,8 +134,8 @@ class OllamaProvider(Provider):
             response_dict["choices"] = [
                 {
                     "message": {
-                        "role": message_data["role"],
-                        "content": message_data["content"],
+                        "role": response_message.role,
+                        "content": response_message.content,
                         "tool_calls": tool_calls,
                     },
                     "finish_reason": "tool_calls",
@@ -151,11 +147,11 @@ class OllamaProvider(Provider):
             response_dict["choices"] = [
                 {
                     "message": {
-                        "role": message_data["role"],
-                        "content": message_data["content"],
+                        "role": response_message.role,
+                        "content": response_message.content,
                         "tool_calls": None,
                     },
-                    "finish_reason": response_data.get("done_reason", "stop"),
+                    "finish_reason": response.done_reason,
                     "index": 0,
                 }
             ]

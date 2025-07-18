@@ -79,8 +79,11 @@ sambanova = [
   "instructor",
 ]
 
+ollama = [
+  "ollama>=0.5.1"
+]
+
 # These providers don't require any additional dependencies, but are included for completeness.
-ollama = []
 moonshot = []
 nebius = []
 xai = []
