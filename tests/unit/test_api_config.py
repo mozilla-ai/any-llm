@@ -12,6 +12,7 @@ def test_completion_extracts_all_config_from_kwargs() -> None:
     with patch("any_llm.api.ProviderFactory") as mock_factory:
         mock_factory.get_supported_providers.return_value = ["mistral"]
         mock_factory.get_provider_enum.return_value = ProviderName.MISTRAL
+        mock_factory.split_model_provider.return_value = (ProviderName.MISTRAL, "mistral-small")
         mock_factory.create_provider.return_value = mock_provider
 
         # Test with all config parameters
@@ -42,6 +43,7 @@ def test_completion_extracts_partial_config_from_kwargs() -> None:
     with patch("any_llm.api.ProviderFactory") as mock_factory:
         mock_factory.get_supported_providers.return_value = ["mistral"]
         mock_factory.get_provider_enum.return_value = ProviderName.MISTRAL
+        mock_factory.split_model_provider.return_value = (ProviderName.MISTRAL, "mistral-small")
         mock_factory.create_provider.return_value = mock_provider
 
         # Test with only api_key
@@ -69,6 +71,7 @@ def test_completion_no_config_extraction() -> None:
     with patch("any_llm.api.ProviderFactory") as mock_factory:
         mock_factory.get_supported_providers.return_value = ["mistral"]
         mock_factory.get_provider_enum.return_value = ProviderName.MISTRAL
+        mock_factory.split_model_provider.return_value = (ProviderName.MISTRAL, "mistral-small")
         mock_factory.create_provider.return_value = mock_provider
 
         # Test with no config parameters
@@ -91,6 +94,7 @@ def test_completion_extracts_api_base_only() -> None:
     with patch("any_llm.api.ProviderFactory") as mock_factory:
         mock_factory.get_supported_providers.return_value = ["ollama"]
         mock_factory.get_provider_enum.return_value = ProviderName.OLLAMA
+        mock_factory.split_model_provider.return_value = (ProviderName.OLLAMA, "llama2")
         mock_factory.create_provider.return_value = mock_provider
 
         # Test with only api_base

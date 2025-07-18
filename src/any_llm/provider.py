@@ -106,7 +106,7 @@ class Provider(ABC):
             raise MissingApiKeyError(self.PROVIDER_NAME, self.ENV_API_KEY_NAME)
 
     @abstractmethod
-    def _verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """This method is designed to check whether a provider supports specific arguments.
         It is not used to verify the API key.
 
@@ -143,7 +143,7 @@ class Provider(ABC):
         messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> ChatCompletion | Stream[ChatCompletionChunk]:
-        self._verify_kwargs(kwargs)
+        self.verify_kwargs(kwargs)
         return self._make_api_call(model, messages, **kwargs)
 
     async def acompletion(
@@ -196,3 +196,16 @@ class ProviderFactory:
         except ValueError:
             supported = [provider.value for provider in ProviderName]
             raise UnsupportedProviderError(provider_key, supported)
+
+    @classmethod
+    def split_model_provider(cls, model: str) -> tuple[ProviderName, str]:
+        """Extract the provider key from the model identifier, e.g., "mistral/mistral-small"""
+        if "/" not in model:
+            msg = f"Invalid model format. Expected 'provider/model', got '{model}'"
+            raise ValueError(msg)
+        provider, model = model.split("/", 1)
+
+        if not provider or not model:
+            msg = f"Invalid model format. Expected 'provider/model', got '{model}'"
+            raise ValueError(msg)
+        return cls.get_provider_enum(provider), model

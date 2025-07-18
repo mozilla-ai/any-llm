@@ -19,7 +19,7 @@ class FireworksProvider(Provider):
     PROVIDER_NAME = "Fireworks"
     ENV_API_KEY_NAME = "FIREWORKS_API_KEY"
 
-    def _verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Fireworks provider."""
         if kwargs.get("stream", False) is True:
             raise UnsupportedParameterError("stream", self.PROVIDER_NAME)

@@ -23,7 +23,7 @@ class TogetherProvider(Provider):
     PROVIDER_NAME = "Together"
     ENV_API_KEY_NAME = "TOGETHER_API_KEY"
 
-    def _verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Together provider."""
         if kwargs.get("stream", False) is True:
             raise UnsupportedParameterError("stream", self.PROVIDER_NAME)

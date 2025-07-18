@@ -25,7 +25,7 @@ class HuggingfaceProvider(Provider):
     PROVIDER_NAME = "HuggingFace"
     ENV_API_KEY_NAME = "HF_TOKEN"
 
-    def _verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the HuggingFace provider."""
         if kwargs.get("stream", False):
             raise UnsupportedParameterError("stream", self.PROVIDER_NAME)

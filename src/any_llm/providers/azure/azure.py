@@ -27,7 +27,7 @@ class AzureProvider(Provider):
         if not self.api_key:
             raise MissingApiKeyError(self.PROVIDER_NAME, self.ENV_API_KEY_NAME)
 
-    def _verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Azure provider."""
         if kwargs.get("stream", False):
             raise UnsupportedParameterError("stream", self.PROVIDER_NAME)

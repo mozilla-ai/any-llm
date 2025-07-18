@@ -32,7 +32,7 @@ class OllamaProvider(Provider):
 
         self.url = str(config.api_base or os.getenv("OLLAMA_API_URL", self._DEFAULT_URL))
 
-    def _verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Ollama provider."""
         if kwargs.get("stream", False) is True:
             raise UnsupportedParameterError("stream", self.PROVIDER_NAME)

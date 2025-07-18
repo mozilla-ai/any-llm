@@ -54,7 +54,7 @@ class AwsProvider(Provider):
         if self.instructor_client is None:
             self.instructor_client = instructor.from_bedrock(self.client)
 
-    def _verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the AWS Bedrock provider."""
         if kwargs.get("stream", False):
             raise UnsupportedParameterError("stream", self.PROVIDER_NAME)

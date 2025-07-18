@@ -42,7 +42,7 @@ class MistralProvider(Provider):
 
             yield _create_openai_chunk_from_mistral_chunk(event)
 
-    def _verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Mistral provider."""
         if kwargs.get("stream", False) is True:
             raise UnsupportedParameterError("stream", self.PROVIDER_NAME)

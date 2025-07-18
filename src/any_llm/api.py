@@ -36,23 +36,9 @@ def _prepare_completion_request(
     Returns:
         tuple: (provider_instance, model_name, completion_kwargs)
     """
-    # Check that correct format is used
-    if "/" not in model:
-        msg = f"Invalid model format. Expected 'provider/model', got '{model}'"
-        raise ValueError(msg)
 
-    # Extract the provider key from the model identifier, e.g., "mistral/mistral-small"
-    provider_key_str, model_name = model.split("/", 1)
+    provider_key, model_name = ProviderFactory.split_model_provider(model)
 
-    # Validate that neither provider nor model name is empty
-    if not provider_key_str or not model_name:
-        msg = f"Invalid model format. Expected 'provider/model', got '{model}'"
-        raise ValueError(msg)
-
-    # Convert string to ProviderName enum and validate
-    provider_key = ProviderFactory.get_provider_enum(provider_key_str)
-
-    # Create provider instance
     config: dict[str, str] = {}
     if api_key:
         config["api_key"] = str(api_key)
@@ -62,7 +48,6 @@ def _prepare_completion_request(
 
     provider = ProviderFactory.create_provider(provider_key, api_config)
 
-    # Build kwargs with explicit parameters
     completion_kwargs = kwargs.copy()
     if tools is not None:
         completion_kwargs["tools"] = prepare_tools(tools)
@@ -102,7 +87,6 @@ def completion(
     model: str,
     messages: list[dict[str, Any]],
     *,
-    # Common parameters with explicit types
     tools: Optional[List[Union[dict[str, Any], Callable[..., Any]]]] = None,
     tool_choice: Optional[Union[str, dict[str, Any]]] = None,
     max_turns: Optional[int] = None,
@@ -110,19 +94,16 @@ def completion(
     top_p: Optional[float] = None,
     max_tokens: Optional[int] = None,
     response_format: dict[str, Any] | type[BaseModel] | None = None,
-    # Generation control
     stream: Optional[bool] = None,
     n: Optional[int] = None,
     stop: Optional[Union[str, List[str]]] = None,
     presence_penalty: Optional[float] = None,
     frequency_penalty: Optional[float] = None,
     seed: Optional[int] = None,
-    # Provider configuration
     api_key: Optional[str] = None,
     api_base: Optional[str] = None,
     timeout: Optional[Union[float, int]] = None,
     user: Optional[str] = None,
-    # Additional provider-specific parameters
     **kwargs: Any,
 ) -> ChatCompletion | Stream[ChatCompletionChunk]:
     """Create a chat completion.
@@ -183,7 +164,6 @@ async def acompletion(
     model: str,
     messages: list[dict[str, Any]],
     *,
-    # Common parameters with explicit types
     tools: Optional[List[Union[dict[str, Any], Callable[..., Any]]]] = None,
     tool_choice: Optional[Union[str, dict[str, Any]]] = None,
     max_turns: Optional[int] = None,
@@ -191,19 +171,16 @@ async def acompletion(
     top_p: Optional[float] = None,
     max_tokens: Optional[int] = None,
     response_format: dict[str, Any] | type[BaseModel] | None = None,
-    # Generation control
     stream: Optional[bool] = None,
     n: Optional[int] = None,
     stop: Optional[Union[str, List[str]]] = None,
     presence_penalty: Optional[float] = None,
     frequency_penalty: Optional[float] = None,
     seed: Optional[int] = None,
-    # Provider configuration
     api_key: Optional[str] = None,
     api_base: Optional[str] = None,
     timeout: Optional[Union[float, int]] = None,
     user: Optional[str] = None,
-    # Additional provider-specific parameters
     **kwargs: Any,
 ) -> ChatCompletion | Stream[ChatCompletionChunk]:
     """Create a chat completion asynchronously.
@@ -258,3 +235,23 @@ async def acompletion(
     )
 
     return await provider.acompletion(model_name, messages, **completion_kwargs)
+
+
+def verify_kwargs(provider_name: str, **kwargs: Any) -> None:
+    """Check if the provider supports the kwargs.
+
+    For example, if the provider does not yet support streaming, it will raise an error.
+
+    Args:
+        provider_name: The name of the provider to check
+        **kwargs: The kwargs to check
+
+    Returns:
+        None
+
+    Raises:
+        UnsupportedParameterError: If the provider does not support the kwargs.
+    """
+    provider_key = ProviderFactory.get_provider_enum(provider_name)
+    provider = ProviderFactory.create_provider(provider_key, ApiConfig())
+    provider.verify_kwargs(kwargs)

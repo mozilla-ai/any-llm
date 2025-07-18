@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import Mock, patch
 
 from any_llm import completion
-from any_llm.provider import ProviderFactory, ApiConfig, Provider
+from any_llm.provider import ProviderFactory, ApiConfig, Provider, ProviderName
 
 
 def test_completion_invalid_model_format_no_slash() -> None:
@@ -30,6 +30,8 @@ def test_completion_invalid_model_format_multiple_slashes() -> None:
 
     with patch("any_llm.api.ProviderFactory") as mock_factory:
         mock_factory.get_supported_providers.return_value = ["provider"]
+        mock_factory.get_provider_enum.return_value = ProviderName.OPENAI  # Using a valid provider
+        mock_factory.split_model_provider.return_value = (ProviderName.OPENAI, "model/extra")
         mock_factory.create_provider.return_value = mock_provider
 
         # This should work - splits on first slash only

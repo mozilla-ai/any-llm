@@ -49,7 +49,7 @@ class CohereProvider(Provider):
         for chunk in cohere_stream:
             yield _create_openai_chunk_from_cohere_chunk(chunk)
 
-    def _verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Cohere provider."""
         if kwargs.get("response_format", None) is not None:
             raise UnsupportedParameterError("response_format", self.PROVIDER_NAME)

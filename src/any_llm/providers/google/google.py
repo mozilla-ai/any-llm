@@ -53,7 +53,7 @@ class GoogleProvider(Provider):
             # Initialize client for Gemini Developer API
             self.client = genai.Client(api_key=api_key)
 
-    def _verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Google provider."""
         if kwargs.get("stream", False) is True:
             raise UnsupportedParameterError("stream", self.PROVIDER_NAME)

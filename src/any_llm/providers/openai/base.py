@@ -22,7 +22,7 @@ class BaseOpenAIProvider(Provider, ABC):
     # Extended api_base which isn't required by the Provider class
     DEFAULT_API_BASE: str | None = None
 
-    def _verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Default is that all kwargs are supported."""
         pass
 

@@ -22,7 +22,7 @@ class GroqProvider(Provider):
     PROVIDER_NAME = "Groq"
     ENV_API_KEY_NAME = "GROQ_API_KEY"
 
-    def _verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Groq provider."""
         if kwargs.get("stream", False):
             raise UnsupportedParameterError("stream", self.PROVIDER_NAME)
