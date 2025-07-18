@@ -1,5 +1,5 @@
 import os
-from typing import Any, Optional
+from typing import Any
 
 try:
     import boto3
@@ -25,34 +25,16 @@ class AwsProvider(Provider):
         """Initialize AWS Bedrock provider."""
         self.region_name = os.getenv("AWS_REGION", "us-east-1")
         self.config = config
-        self.client: Optional[Any] = None
-        self.instructor_client: Optional[Any] = None
 
     def _check_aws_credentials(self) -> None:
         """Check if AWS credentials are available."""
-        try:
-            # Create a session to check if credentials are available
-            session = boto3.Session()  # type: ignore[no-untyped-call, attr-defined]
-            credentials = session.get_credentials()  # type: ignore[no-untyped-call]
+        session = boto3.Session()  # type: ignore[no-untyped-call, attr-defined]
+        credentials = session.get_credentials()  # type: ignore[no-untyped-call]
 
-            bedrock_api_key = os.getenv("AWS_BEARER_TOKEN_BEDROCK")
+        bedrock_api_key = os.getenv("AWS_BEARER_TOKEN_BEDROCK", None)
 
-            if credentials is None and bedrock_api_key is None:
-                raise MissingApiKeyError(provider_name=self.PROVIDER_NAME, env_var_name=self.ENV_API_KEY_NAME)
-
-        except Exception as e:
-            if isinstance(e, MissingApiKeyError):
-                raise
-            # If any other error o  ccurs while checking credentials, treat as missing
-            raise MissingApiKeyError(provider_name=self.PROVIDER_NAME, env_var_name=self.ENV_API_KEY_NAME) from e
-
-    def _initialize_clients(self) -> None:
-        """Initialize both regular and instructor clients."""
-        if self.client is None:
-            self.client = boto3.client("bedrock-runtime", region_name=self.region_name)  # type: ignore[no-untyped-call]
-
-        if self.instructor_client is None:
-            self.instructor_client = instructor.from_bedrock(self.client)
+        if credentials is None and bedrock_api_key is None:
+            raise MissingApiKeyError(provider_name=self.PROVIDER_NAME, env_var_name=self.ENV_API_KEY_NAME)
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the AWS Bedrock provider."""
@@ -66,21 +48,17 @@ class AwsProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | Stream[ChatCompletionChunk]:
         """Create a chat completion using AWS Bedrock with instructor support."""
-        # Initialize clients
-        self._initialize_clients()
-
-        # Check credentials before creating client
         self._check_aws_credentials()
+        client = boto3.client("bedrock-runtime", region_name=self.region_name)  # type: ignore[no-untyped-call]
 
-        # Handle response_format for structured output
         if "response_format" in kwargs:
+            instructor_client = instructor.from_bedrock(client)
             response_format = kwargs.pop("response_format")
 
             # Use instructor for structured output
-            assert self.instructor_client is not None  # For mypy
-            instructor_response = self.instructor_client.chat.completions.create(
+            instructor_response = instructor_client.chat.completions.create(
                 model=model,
-                messages=messages,
+                messages=messages,  # type: ignore[arg-type]
                 response_model=response_format,
                 **kwargs,
             )
@@ -92,8 +70,7 @@ class AwsProvider(Provider):
         system_message, formatted_messages = _convert_messages(messages)
         request_config = _convert_kwargs(kwargs)
 
-        assert self.client is not None  # For mypy
-        response = self.client.converse(
+        response = client.converse(
             modelId=model,
             messages=formatted_messages,
             system=system_message,
