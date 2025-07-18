@@ -38,9 +38,9 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
 
-      - name: Install requirements
+      - name: Install dependencies
         run: |
-          uv sync --group docs
+          uv sync --group docs --extra all
 
       - name: Build docs
         if: github.event_name == 'pull_request'

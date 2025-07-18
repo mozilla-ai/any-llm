@@ -242,16 +242,11 @@ class ProviderFactory:
         """
         providers = []
         for provider_key in cls.get_supported_providers():
-            try:
-                provider_class = cls.get_provider_class(provider_key)
-                metadata = provider_class.get_provider_metadata()
-                # Add the provider key (directory name) to the metadata
-                metadata["provider_key"] = provider_key
-                providers.append(metadata)
-            except Exception as e:
-                # Skip providers that can't be loaded
-                print(f"Warning: Could not load metadata for provider {provider_key}: {e}")
-                continue
+            provider_class = cls.get_provider_class(provider_key)
+            metadata = provider_class.get_provider_metadata()
+            # Add the provider key (directory name) to the metadata
+            metadata["provider_key"] = provider_key
+            providers.append(metadata)
 
         # Sort providers by name
         providers.sort(key=lambda x: x["name"])
