@@ -20,6 +20,7 @@ class AwsProvider(Provider):
     """AWS Bedrock Provider using boto3 and instructor for structured output."""
 
     PROVIDER_NAME = "AWS"
+    ENV_API_KEY_NAME = "AWS_BEARER_TOKEN_BEDROCK"
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize AWS Bedrock provider."""
@@ -31,7 +32,7 @@ class AwsProvider(Provider):
         session = boto3.Session()  # type: ignore[no-untyped-call, attr-defined]
         credentials = session.get_credentials()  # type: ignore[no-untyped-call]
 
-        bedrock_api_key = os.getenv("AWS_BEARER_TOKEN_BEDROCK", None)
+        bedrock_api_key = os.getenv(self.ENV_API_KEY_NAME)
 
         if credentials is None and bedrock_api_key is None:
             raise MissingApiKeyError(provider_name=self.PROVIDER_NAME, env_var_name=self.ENV_API_KEY_NAME)
