@@ -5,7 +5,7 @@ from any_llm.provider import ApiConfig
 from any_llm.providers.aws.aws import AwsProvider
 
 
-def test_boto3_client_created_with_api_base():
+def test_boto3_client_created_with_api_base() -> None:
     """Test that boto3.client is created with api_base as endpoint_url when provided."""
     custom_endpoint = "https://custom-bedrock-endpoint.amazonaws.com"
     region = "us-east-1"
@@ -30,7 +30,7 @@ def test_boto3_client_created_with_api_base():
                             )
 
 
-def test_boto3_client_created_without_api_base():
+def test_boto3_client_created_without_api_base() -> None:
     """Test that boto3.client is created with None endpoint_url when api_base is not provided."""
     region = "us-west-2"
 
