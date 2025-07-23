@@ -39,7 +39,7 @@ class WatsonxProvider(Provider):
         model_inference = ModelInference(
             model_id=model,
             credentials=Credentials(
-                api_key=self.api_key,
+                api_key=self.config.api_key,
                 url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL"),
             ),
             project_id=os.getenv("WATSONX_PROJECT_ID"),

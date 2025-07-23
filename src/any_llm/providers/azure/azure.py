@@ -68,7 +68,7 @@ class AzureProvider(Provider):
         body = json.dumps(data).encode("utf-8")
         headers = {
             "Content-Type": "application/json",
-            "Authorization": self.api_key or "",
+            "Authorization": self.config.api_key or "",
         }
 
         # Make the request to Azure endpoint
