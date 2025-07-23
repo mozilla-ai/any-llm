@@ -1,4 +1,3 @@
-import os
 from typing import Any, Iterator
 
 try:
@@ -11,7 +10,7 @@ from openai._streaming import Stream
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 from openai.types.chat.chat_completion import ChatCompletion
 from any_llm.provider import Provider, ApiConfig
-from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
+from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.cohere.utils import (
     _create_openai_chunk_from_cohere_chunk,
     _convert_response,
@@ -27,11 +26,7 @@ class CohereProvider(Provider):
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Cohere provider."""
-        if not config.api_key:
-            config.api_key = os.getenv(self.ENV_API_KEY_NAME)
-        if not config.api_key:
-            raise MissingApiKeyError(self.PROVIDER_NAME, self.ENV_API_KEY_NAME)
-
+        super().__init__(config)
         self.client = cohere.ClientV2(api_key=config.api_key)
 
     def _stream_completion(

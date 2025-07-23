@@ -1,4 +1,3 @@
-import os
 from typing import Any, cast, Iterator
 
 try:
@@ -14,7 +13,7 @@ from openai._streaming import Stream
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 
 from any_llm.provider import Provider, ApiConfig, convert_instructor_response
-from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
+from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.cerebras.utils import (
     _create_openai_chunk_from_cerebras_chunk,
     _convert_response,
@@ -30,17 +29,8 @@ class CerebrasProvider(Provider):
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Cerebras provider."""
-        if not config.api_key:
-            config.api_key = os.getenv(self.ENV_API_KEY_NAME)
-        if not config.api_key:
-            raise MissingApiKeyError(
-                self.PROVIDER_NAME,
-                self.ENV_API_KEY_NAME,
-            )
-
-        # Initialize the Cerebras client
+        super().__init__(config)
         self.client = cerebras.Cerebras(api_key=config.api_key)
-
         # Create instructor client for structured output support
         self.instructor_client = instructor.from_cerebras(self.client)
 
