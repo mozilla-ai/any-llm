@@ -42,6 +42,7 @@ jobs:
 
       - name: Run Integration tests (parallel with xdist)
         env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: pytest -v tests/integration -n auto
