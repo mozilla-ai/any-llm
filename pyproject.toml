@@ -83,6 +83,10 @@ ollama = [
   "ollama>=0.5.1"
 ]
 
+portkey = [
+  "portkey-ai",
+]
+
 # These providers don't require any additional dependencies, but are included for completeness.
 moonshot = []
 nebius = []
