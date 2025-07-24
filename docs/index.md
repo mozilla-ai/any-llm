@@ -21,6 +21,10 @@ and parameters that are unsupported by a specific provider.
 
 For more details on exceptions, see the [exceptions API documentation](./api/exceptions.md).
 
+### Tool Usage
+
+Learn how to define and use tools in Any LLM by referring to the [Tool Usage Documentation](./api/tool_usage.md).
+
 ## For AI Systems
 
 This documentation is available in two AI-friendly formats:
