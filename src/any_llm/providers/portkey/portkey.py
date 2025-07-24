@@ -30,5 +30,27 @@ class PortkeyProvider(Provider):
         messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> ChatCompletion | Stream[ChatCompletionChunk]:
-        response = self.client.chat(model=model, messages=messages, **kwargs)
-        return response
+        response = self.client.chat.completions.create(model=model, messages=messages, **kwargs)
+        return self._convert_to_openai_format(response)
+
+    def _convert_to_openai_format(self, response: dict) -> ChatCompletion:
+        """Convert Portkey response to OpenAI ChatCompletion format."""
+        return ChatCompletion(
+            id=response.get("id", ""),
+            model=response.get("model", ""),
+            object="chat.completion",
+            choices=[
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": response.get("content", ""),
+                    },
+                    "finish_reason": response.get("finish_reason", "stop"),
+                }
+            ],
+            usage={
+                "prompt_tokens": response.get("usage", {}).get("prompt_tokens", 0),
+                "completion_tokens": response.get("usage", {}).get("completion_tokens", 0),
+                "total_tokens": response.get("usage", {}).get("total_tokens", 0),
+            },
+        )
