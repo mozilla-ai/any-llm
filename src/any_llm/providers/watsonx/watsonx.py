@@ -9,8 +9,8 @@ except ImportError:
     raise ImportError(msg)
 
 from openai.types.chat.chat_completion import ChatCompletion
-from any_llm.provider import Provider, ApiConfig
-from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
+from any_llm.provider import Provider
+from any_llm.exceptions import UnsupportedParameterError
 from openai._streaming import Stream
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 from any_llm.providers.watsonx.utils import _convert_response
@@ -22,12 +22,6 @@ class WatsonxProvider(Provider):
     PROVIDER_NAME = "Watsonx"
     ENV_API_KEY_NAME = "WATSONX_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://www.ibm.com/watsonx"
-
-    def __init__(self, config: ApiConfig) -> None:
-        """Initialize Watsonx provider."""
-        self.api_key = config.api_key or os.getenv(self.ENV_API_KEY_NAME)
-        if not self.api_key:
-            raise MissingApiKeyError(self.PROVIDER_NAME, self.ENV_API_KEY_NAME)
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Watsonx provider."""
@@ -45,7 +39,7 @@ class WatsonxProvider(Provider):
         model_inference = ModelInference(
             model_id=model,
             credentials=Credentials(
-                api_key=self.api_key,
+                api_key=self.config.api_key,
                 url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL"),
             ),
             project_id=os.getenv("WATSONX_PROJECT_ID"),
