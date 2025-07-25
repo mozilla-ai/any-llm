@@ -40,3 +40,9 @@ jobs:
           uv sync --group tests --extra all
 
       - run: pytest tests/unit -v --cov --cov-report=xml
+
+      - name: Upload coverage reports to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
