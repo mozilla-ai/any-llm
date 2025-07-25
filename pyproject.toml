@@ -131,6 +131,12 @@ ignore_missing_imports = true # pytest related modules are not found
 [tool.pytest.ini_options]
 timeout = 120
 
+[tool.coverage.run]
+branch = true
+omit = [
+  "tests/"
+]
+
 [dependency-groups]
 dev = [
   { include-group = "docs" },

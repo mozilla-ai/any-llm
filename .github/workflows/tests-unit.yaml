@@ -39,4 +39,4 @@ jobs:
       - run: |
           uv sync --group tests --extra all
 
-      - run: pytest -v tests/unit
+      - run: pytest tests/unit -v --cov --cov-report=xml
