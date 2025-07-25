@@ -6,10 +6,14 @@ on:
     paths:
       - 'src/**'
       - 'tests/**'
+      - '.github/workflows/**'
+      - 'pyproject.toml'
   pull_request:
     paths:
       - 'src/**'
       - 'tests/**'
+      - '.github/workflows/**'
+      - 'pyproject.toml'
   workflow_dispatch:
 
 jobs:
