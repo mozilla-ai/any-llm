@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from typing import Any
 from unittest.mock import patch
 
 from any_llm.provider import ApiConfig
@@ -27,7 +28,7 @@ def test_huggingface_with_api_key() -> None:
         mock_huggingface.return_value.chat_completion.assert_called_with(model="model-id", messages=messages)
 
 
-def test_huggingface_with_tools(tools) -> None:
+def test_huggingface_with_tools(tools: list[dict[str, Any]]) -> None:
     api_key = "test-api-key"
     messages = [{"role": "user", "content": "Hello"}]
 
