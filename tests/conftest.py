@@ -33,3 +33,23 @@ def provider_model_map() -> dict[ProviderName, str]:
 @pytest.fixture(params=list(ProviderName), ids=lambda x: x.value)
 def provider(request: pytest.FixtureRequest) -> ProviderName:
     return request.param  # type: ignore[no-any-return]
+
+
+@pytest.fixture()
+def tools() -> list[dict[str, str]]:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Get current temperature for a given location.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {"type": "string", "description": "City and country e.g. Paris, France"}
+                    },
+                    "required": ["location"],
+                },
+            },
+        }
+    ]
