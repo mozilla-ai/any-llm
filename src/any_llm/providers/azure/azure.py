@@ -43,39 +43,21 @@ class AzureProvider(Provider):
                 "https://<model-deployment-name>.<region>.models.ai.azure.com"
             )
 
-        # Build the URL
         url = f"{self.base_url}/chat/completions"
         if self.api_version:
             url = f"{url}?api-version={self.api_version}"
 
-        # Prepare the request payload
-        data = {"messages": messages}
+        data = {"messages": messages, **kwargs}
 
-        # Add tools if provided
-        if "tools" in kwargs:
-            data["tools"] = kwargs["tools"]
-            kwargs.pop("tools")
-
-        # Add tool_choice if provided
-        if "tool_choice" in kwargs:
-            data["tool_choice"] = kwargs["tool_choice"]
-            kwargs.pop("tool_choice")
-
-        # Add remaining kwargs
-        data.update(kwargs)
-
-        # Prepare the request
         body = json.dumps(data).encode("utf-8")
         headers = {
             "Content-Type": "application/json",
             "Authorization": self.config.api_key or "",
         }
 
-        # Make the request to Azure endpoint
         req = urllib.request.Request(url, body, headers)
         with urllib.request.urlopen(req) as response:
             result = response.read()
             response_data = json.loads(result)
 
-            # Convert to OpenAI format
             return _convert_response(response_data)
