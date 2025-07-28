@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 from any_llm.provider import ProviderName
@@ -36,7 +38,7 @@ def provider(request: pytest.FixtureRequest) -> ProviderName:
 
 
 @pytest.fixture()
-def tools() -> list[dict[str, str]]:
+def tools() -> list[dict[str, Any]]:
     return [
         {
             "type": "function",
