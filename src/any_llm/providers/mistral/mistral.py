@@ -14,7 +14,6 @@ from any_llm.provider import Provider
 from any_llm.providers.helpers import create_completion_from_response
 from openai._streaming import Stream
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from any_llm.exceptions import UnsupportedParameterError
 
 
 class MistralProvider(Provider):
@@ -45,8 +44,7 @@ class MistralProvider(Provider):
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Mistral provider."""
-        if kwargs.get("stream", False) is True:
-            raise UnsupportedParameterError("stream", self.PROVIDER_NAME)
+        pass
 
     def _make_api_call(
         self,
