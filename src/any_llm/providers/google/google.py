@@ -56,7 +56,7 @@ class GoogleProvider(Provider):
         if kwargs.get("parallel_tool_calls", None) is not None:
             raise UnsupportedParameterError("parallel_tool_calls", self.PROVIDER_NAME)
 
-    def _make_api_call(  # type: ignore[misc]
+    def _make_api_call(
         self,
         model: str,
         messages: list[dict[str, Any]],
@@ -68,15 +68,13 @@ class GoogleProvider(Provider):
             kwargs["tools"] = tools
 
         stream = kwargs.pop("stream", False)
-
+        response_format = kwargs.pop("response_format", None)
         generation_config = types.GenerateContentConfig(
             **kwargs,
         )
-        if "response_format" in kwargs:
-            response_format = kwargs.pop("response_format")
-            if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-                kwargs["response_mime_type"] = "application/json"
-                generation_config.response_schema = response_format
+        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+            generation_config.response_mime_type = "application/json"
+            generation_config.response_schema = response_format
 
         formatted_messages = _convert_messages(messages)
 
@@ -100,9 +98,7 @@ class GoogleProvider(Provider):
             response_stream = self.client.models.generate_content_stream(
                 model=model, contents=content_text, config=generation_config
             )
-            for chunk in response_stream:
-                if openai_chunk := _create_openai_chunk_from_google_chunk(chunk):
-                    yield openai_chunk
+            return map(_create_openai_chunk_from_google_chunk, response_stream)  # type: ignore[return-value]
         else:
             response: types.GenerateContentResponse = self.client.models.generate_content(
                 model=model, contents=content_text, config=generation_config

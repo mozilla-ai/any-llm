@@ -94,14 +94,13 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
 
 def _create_openai_chunk_from_google_chunk(
     response: types.GenerateContentResponse,
-) -> ChatCompletionChunk | None:
+) -> ChatCompletionChunk:
     """Convert a Google GenerateContentResponse to an OpenAI ChatCompletionChunk."""
 
-    if not response.candidates:
-        return None
+    assert response.candidates
     candidate = response.candidates[0]
-    if not candidate.content or not candidate.content.parts:
-        return None
+    assert candidate.content
+    assert candidate.content.parts
     part = candidate.content.parts[0]
 
     delta = ChoiceDelta(content=part.text, role="assistant")
