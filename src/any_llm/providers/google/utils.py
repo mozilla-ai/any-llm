@@ -1,5 +1,12 @@
 import json
+from time import time
 from typing import Any
+
+from openai.types.chat.chat_completion_chunk import (
+    ChatCompletionChunk,
+    Choice,
+    ChoiceDelta,
+)
 
 try:
     from google.genai import types
@@ -83,3 +90,32 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
                 formatted_messages.append(types.Content(role="function", parts=[part]))
 
     return formatted_messages
+
+
+def _create_openai_chunk_from_google_chunk(
+    response: types.GenerateContentResponse,
+) -> ChatCompletionChunk | None:
+    """Convert a Google GenerateContentResponse to an OpenAI ChatCompletionChunk."""
+
+    if not response.candidates:
+        return None
+    candidate = response.candidates[0]
+    if not candidate.content or not candidate.content.parts:
+        return None
+    part = candidate.content.parts[0]
+
+    delta = ChoiceDelta(content=part.text, role="assistant")
+
+    choice = Choice(
+        index=0,
+        delta=delta,
+        finish_reason="stop" if getattr(candidate.finish_reason, "value", None) == "STOP" else None,
+    )
+
+    return ChatCompletionChunk(
+        id=f"chatcmpl-{time()}",  # Google doesn't provide an ID in the chunk
+        choices=[choice],
+        created=int(time()),
+        model=str(response.model_version),
+        object="chat.completion.chunk",
+    )
