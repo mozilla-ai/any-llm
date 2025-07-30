@@ -67,43 +67,30 @@ class GoogleProvider(Provider):
         messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> ChatCompletion | Stream[ChatCompletionChunk]:
-        # Handle response_format for Pydantic models
         response_schema = None
         if "response_format" in kwargs:
             response_format = kwargs.pop("response_format")
             if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-                # Use native Google GenAI schema configuration
                 response_schema = response_format
-                # Set the response mime type for JSON output
                 kwargs["response_mime_type"] = "application/json"
 
-        # Remove other unsupported parameters
-        if "parallel_tool_calls" in kwargs:
-            raise UnsupportedParameterError("parallel_tool_calls", self.PROVIDER_NAME)
-
-        # Convert tools if present
         tools = None
         if "tools" in kwargs:
             tools = _convert_tool_spec(kwargs["tools"])
             kwargs["tools"] = tools
 
-        # Convert messages to GenAI format
         formatted_messages = _convert_messages(messages)
 
-        # Create generation config
         generation_config = types.GenerateContentConfig(
             **kwargs,
         )
 
-        # For now, let's use a simple string-based approach
         content_text = ""
         if len(formatted_messages) == 1 and formatted_messages[0].role == "user":
             # Single user message
             parts = formatted_messages[0].parts
             if parts and hasattr(parts[0], "text"):
                 content_text = parts[0].text or ""
-            else:
-                content_text = "Hello"  # fallback
         else:
             # Multiple messages - concatenate user messages for simplicity
             content_parts = []
@@ -113,12 +100,8 @@ class GoogleProvider(Provider):
                         content_parts.append(msg.parts[0].text)
 
             content_text = "\n".join(content_parts)
-            if not content_text:
-                content_text = "Hello"  # fallback
 
-        # Generate content using the client with schema if provided
         if response_schema:
-            # Add response_schema to the config
             generation_config.response_schema = response_schema
             response = self.client.models.generate_content(model=model, contents=content_text, config=generation_config)
         else:
@@ -142,7 +125,6 @@ class GoogleProvider(Provider):
             },
         }
 
-        # Check if the response contains function calls
         if (
             response.candidates
             and len(response.candidates) > 0
@@ -154,7 +136,6 @@ class GoogleProvider(Provider):
         ):
             function_call = response.candidates[0].content.parts[0].function_call
 
-            # Convert the function call arguments to a dictionary
             args_dict = {}
             if hasattr(function_call, "args") and function_call.args:
                 for key, value in function_call.args.items():
@@ -181,7 +162,6 @@ class GoogleProvider(Provider):
                 }
             ]
         else:
-            # Handle regular text response
             content = ""
             if (
                 response.candidates
@@ -205,7 +185,6 @@ class GoogleProvider(Provider):
                 }
             ]
 
-        # Convert to OpenAI format using the new utility
         return create_completion_from_response(
             response_data=response_dict,
             model=model,
