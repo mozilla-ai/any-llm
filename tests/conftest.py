@@ -10,7 +10,7 @@ from any_llm.provider import ProviderName
 def provider_model_map() -> dict[ProviderName, str]:
     return {
         ProviderName.MISTRAL: "mistral-small-latest",
-        ProviderName.ANTHROPIC: "claude-3-5-sonnet-20240620",
+        ProviderName.ANTHROPIC: "claude-3-5-haiku-latest",
         ProviderName.DEEPSEEK: "deepseek-chat",
         ProviderName.OPENAI: "gpt-4.1-mini",
         ProviderName.GOOGLE: "gemini-2.0-flash-001",
