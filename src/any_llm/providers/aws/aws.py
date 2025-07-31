@@ -4,16 +4,22 @@ from typing import Any
 try:
     import boto3
     import instructor
+
 except ImportError:
     msg = "boto3 or instructor is not installed. Please install it with `pip install any-llm-sdk[aws]`"
     raise ImportError(msg)
 
 from openai.types.chat.chat_completion import ChatCompletion
 from any_llm.provider import Provider, ApiConfig, convert_instructor_response
-from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
+from any_llm.exceptions import MissingApiKeyError
 from openai._streaming import Stream
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from any_llm.providers.aws.utils import _convert_response, _convert_kwargs, _convert_messages
+from any_llm.providers.aws.utils import (
+    _convert_response,
+    _convert_kwargs,
+    _convert_messages,
+    _create_openai_chunk_from_aws_chunk,
+)
 
 
 class AwsProvider(Provider):
@@ -40,8 +46,7 @@ class AwsProvider(Provider):
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the AWS Bedrock provider."""
-        if kwargs.get("stream", False):
-            raise UnsupportedParameterError("stream", self.PROVIDER_NAME)
+        pass
 
     def _make_api_call(
         self,
@@ -69,16 +74,31 @@ class AwsProvider(Provider):
             # Convert instructor response to ChatCompletion format
             return convert_instructor_response(instructor_response, model, "aws")
 
-        # Regular completion flow
-        system_message, formatted_messages = _convert_messages(messages)
+        stream = kwargs.pop("stream", False)
+
         request_config = _convert_kwargs(kwargs)
 
-        response = client.converse(
-            modelId=model,
-            messages=formatted_messages,
-            system=system_message,
-            **request_config,
-        )
+        system_message, formatted_messages = _convert_messages(messages)
 
-        # Convert to OpenAI format
-        return _convert_response(response)
+        if stream:
+            response_stream = client.converse_stream(
+                modelId=model,
+                messages=formatted_messages,
+                system=system_message,
+                **request_config,
+            )
+            stream_generator = response_stream["stream"]
+            return (
+                chunk
+                for chunk in (_create_openai_chunk_from_aws_chunk(item, model=model) for item in stream_generator)
+                if chunk is not None
+            )  # type: ignore[return-value]
+        else:
+            response = client.converse(
+                modelId=model,
+                messages=formatted_messages,
+                system=system_message,
+                **request_config,
+            )
+
+            return _convert_response(response)

@@ -25,7 +25,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.COHERE: "command-a-03-2025",
         ProviderName.CEREBRAS: "llama-3.3-70b",
         ProviderName.HUGGINGFACE: "meta-llama/Llama-3.2-3B-Instruct",  # You must have novita enabled in your hf account to use this model
-        ProviderName.AWS: "amazon.nova-micro-v1:0",
+        ProviderName.AWS: "amazon.nova-lite-v1:0",
         ProviderName.WATSONX: "google/gemini-2.0-flash-001",
         ProviderName.FIREWORKS: "accounts/fireworks/models/llama4-scout-instruct-basic",
         ProviderName.GROQ: "llama-3.1-8b-instant",

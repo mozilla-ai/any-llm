@@ -1,7 +1,10 @@
 import json
-from typing import Any, Optional, Literal
+from time import time
+from typing import Any, Literal
 
 from openai.types.chat.chat_completion import ChatCompletion, Choice
+from openai.types.chat.chat_completion_chunk import ChatCompletionChunk, Choice as ChunkChoice
+from openai.types.chat.chat_completion_chunk import ChoiceDelta
 from openai.types.completion_usage import CompletionUsage
 from openai.types.chat.chat_completion_message import ChatCompletionMessage
 from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall, Function
@@ -34,7 +37,7 @@ def _convert_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     return request_config
 
 
-def _convert_tool_spec(kwargs: dict[str, Any]) -> Optional[dict[str, Any]]:
+def _convert_tool_spec(kwargs: dict[str, Any]) -> dict[str, Any] | None:
     """Convert tool specifications to Bedrock format."""
     if "tools" not in kwargs:
         return None
@@ -87,7 +90,7 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, An
     return system_message, formatted_messages
 
 
-def _convert_tool_result(message: dict[str, Any]) -> Optional[dict[str, Any]]:
+def _convert_tool_result(message: dict[str, Any]) -> dict[str, Any] | None:
     """Convert OpenAI tool result format to AWS Bedrock format."""
     if message["role"] != "tool" or "content" not in message:
         return None
@@ -108,7 +111,7 @@ def _convert_tool_result(message: dict[str, Any]) -> Optional[dict[str, Any]]:
     }
 
 
-def _convert_assistant(message: dict[str, Any]) -> Optional[dict[str, Any]]:
+def _convert_assistant(message: dict[str, Any]) -> dict[str, Any] | None:
     """Convert OpenAI assistant format to AWS Bedrock format."""
     if message["role"] != "assistant":
         return None
@@ -189,15 +192,11 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
                 usage=usage,
             )
 
-    # Handle regular text response
     content = response["output"]["message"]["content"][0]["text"]
 
-    # Map Bedrock stopReason to OpenAI finish_reason
     stop_reason = response.get("stopReason")
-    finish_reason: Literal["stop", "length", "tool_calls", "content_filter", "function_call"]
-    if stop_reason == "complete":
-        finish_reason = "stop"
-    elif stop_reason == "max_tokens":
+    finish_reason: Literal["stop", "length"]
+    if stop_reason == "max_tokens":
         finish_reason = "length"
     else:
         finish_reason = "stop"
@@ -230,4 +229,30 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
         created=response.get("created", 0),
         choices=[choice],
         usage=usage,
+    )
+
+
+def _create_openai_chunk_from_aws_chunk(chunk: dict[str, Any], model: str) -> ChatCompletionChunk | None:
+    """Create an OpenAI ChatCompletionChunk from an AWS Bedrock chunk."""
+    content: str | None = None
+    finish_reason: Literal["stop", "length"] | None = None
+    if "contentBlockDelta" in chunk:
+        content = chunk["contentBlockDelta"]["delta"]["text"]
+    elif "messageStop" in chunk:
+        if chunk["messageStop"]["stopReason"] == "max_tokens":
+            finish_reason = "length"
+        else:
+            finish_reason = "stop"
+    elif "messageStart" in chunk:
+        content = ""
+    else:
+        return None
+    delta = ChoiceDelta(content=content, role="assistant")
+    choice = ChunkChoice(delta=delta, finish_reason=finish_reason, index=0)
+    return ChatCompletionChunk(
+        id=f"chatcmpl-{time()}",  # AWS doesn't provide an ID in the chunk
+        choices=[choice],
+        model=model,
+        created=int(time()),
+        object="chat.completion.chunk",
     )
