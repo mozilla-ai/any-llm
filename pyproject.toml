@@ -18,7 +18,7 @@ dependencies = [
 [project.optional-dependencies]
 
 all = [
-  "any-llm-sdk[mistral,anthropic,huggingface,google,cohere,cerebras,fireworks,groq,aws,azure,watsonx,together,sambanova,ollama,moonshot,nebius,xai,deepseek,inception,openai]"
+  "any-llm-sdk[mistral,anthropic,huggingface,google,cohere,cerebras,fireworks,groq,aws,azure,watsonx,together,sambanova,ollama,moonshot,nebius,xai,deepseek,inception,openai,llama]"
 ]
 
 mistral = [
@@ -64,6 +64,11 @@ aws = [
 
 azure = [
   "httpx",
+]
+
+llama = [
+  "llama-api-client",
+  "instructor",
 ]
 
 watsonx = [
