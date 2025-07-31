@@ -52,3 +52,19 @@ is as easy as updating the model to specify the ollama provider and using
 ```python
 model="ollama/mistral-small3.2:latest"
 ```
+
+### Streaming
+
+For the [providers that support streaming](./providers.md), you can enable it by passing `stream=True`:
+
+```python
+output = ""
+for chunk in completion(
+    model=model,
+    messages=[{"role": "user", "content": "Hello!"}],
+    stream=True
+):
+    chunk_content = chunk.choices[0].delta.content or ""
+    print(chunk_content)
+    output += chunk_content
+```
