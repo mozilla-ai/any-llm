@@ -13,9 +13,9 @@ In your pip install, include the [supported providers](./providers.md) that you 
 
 ```bash
 pip install any-llm-sdk[mistral]  # For Mistral provider
-pip install any-llm-sdk[openai]   # For OpenAI provider
+pip install any-llm-sdk[ollama]   # For Ollama provider
 # install multiple providers
-pip install any-llm-sdk[mistral,openai,anthropic]
+pip install any-llm-sdk[mistral,ollama]
 # or install support for all providers
 pip install any-llm-sdk[all]
 ```
@@ -31,10 +31,6 @@ pip install any-llm-sdk
 In this scenario, the end users of your library will be responsible for installing the appropriate provider dependencies when they want to use specific providers. `any-llm` is designed so that you'll only encounter exceptions at runtime if you try to use a provider without having the required dependencies installed.
 
 Those exceptions will clearly describe what needs to be installed to resolve the issue.
-
-```bash
-pip install 'any-llm-sdk[mistral,ollama]'
-```
 
 Make sure you have the appropriate API key environment variable set for your provider. Alternatively,
 you could use the `api_key` parameter when making a completion call instead of setting an environment variable.
