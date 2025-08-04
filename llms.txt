@@ -6,5 +6,6 @@
 - [Quickstart](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/quickstart.md): assert os.environ.get('MISTRAL_API_KEY')
 - [Providers](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/providers.md): any-llm supports the below providers. In order to discover information about what models are supported by a provider
 - [Api - Completion](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/completion.md)
+- [Api - Embedding](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/embedding.md)
 - [Api - Exceptions](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/exceptions.md)
 - [Api - Helpers](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/helpers.md)
