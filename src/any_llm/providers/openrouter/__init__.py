@@ -1,3 +1,3 @@
-from .openrouter import OpenRouterProvider
+from .openrouter import OpenrouterProvider
 
-__all__ = ["OpenRouterProvider"]
+__all__ = ["OpenrouterProvider"]

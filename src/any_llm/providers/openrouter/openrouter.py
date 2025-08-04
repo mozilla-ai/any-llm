@@ -1,7 +1,7 @@
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
 
-class OpenRouterProvider(BaseOpenAIProvider):
+class OpenrouterProvider(BaseOpenAIProvider):
     """OpenRouter provider for accessing multiple LLMs through OpenRouter's API."""
 
     API_BASE = "https://openrouter.ai/api/v1"
