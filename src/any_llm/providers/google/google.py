@@ -28,6 +28,8 @@ class GoogleProvider(Provider):
     PROVIDER_NAME = "Google"
     PROVIDER_DOCUMENTATION_URL = "https://cloud.google.com/vertex-ai/docs"
 
+    SUPPORTS_STREAMING = True
+
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Google GenAI provider."""
         self.use_vertex_ai = os.getenv("GOOGLE_USE_VERTEX_AI", "false").lower() == "true"

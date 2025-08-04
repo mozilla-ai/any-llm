@@ -27,6 +27,8 @@ class CerebrasProvider(Provider):
     ENV_API_KEY_NAME = "CEREBRAS_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://docs.cerebras.ai/"
 
+    SUPPORTS_STREAMING = True
+
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Cerebras provider."""
         super().__init__(config)

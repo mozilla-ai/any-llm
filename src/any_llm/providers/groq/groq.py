@@ -23,6 +23,8 @@ class GroqProvider(Provider):
     ENV_API_KEY_NAME = "GROQ_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://groq.com/api"
 
+    SUPPORTS_STREAMING = False
+
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Groq provider."""
         if kwargs.get("stream", False):

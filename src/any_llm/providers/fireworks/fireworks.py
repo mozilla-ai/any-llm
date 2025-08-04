@@ -20,6 +20,8 @@ class FireworksProvider(Provider):
     ENV_API_KEY_NAME = "FIREWORKS_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://fireworks.ai/api"
 
+    SUPPORTS_STREAMING = False
+
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Fireworks provider."""
         if kwargs.get("stream", False) is True:

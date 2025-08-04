@@ -24,6 +24,8 @@ class CohereProvider(Provider):
     ENV_API_KEY_NAME = "CO_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://cohere.com/api"
 
+    SUPPORTS_STREAMING = True
+
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Cohere provider."""
         super().__init__(config)

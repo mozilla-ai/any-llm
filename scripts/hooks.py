@@ -20,21 +20,6 @@ TOC_PATTERN = r"^\s*\[\[TOC\]\]\s*$"
 MARKDOWN_LINK_PATTERN = r"\[([^\]]+)\]\(([^)]+\.md)\)"
 MARKDOWN_LINK_REPLACEMENT = r"[\1](#\2)"
 
-STREAM_SUPPORTED = [
-    "aws",
-    "anthropic",
-    "cerebras",
-    "cohere",
-    "deepseek",
-    "google",
-    "inception",
-    "mistral",
-    "moonshot",
-    "nebius",
-    "openai",
-    "xai",
-]
-
 
 async def validate_url(urls, timeout=10):
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -83,7 +68,7 @@ def generate_provider_table(providers):
         # Use fenced code block for copyable provider ID
         provider_id_copyable = f"```{provider_key.lower()}```"
 
-        stream_supported = "YES" if provider_key.lower() in STREAM_SUPPORTED else "NO"
+        stream_supported = "YES" if provider.get("streaming", False) else "NO"
 
         row = f"| {provider_id_copyable} | {doc_url} | {env_key} | {source_link} | {stream_supported} |"
         table_lines.append(row)

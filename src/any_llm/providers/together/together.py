@@ -24,6 +24,8 @@ class TogetherProvider(Provider):
     ENV_API_KEY_NAME = "TOGETHER_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://together.ai/"
 
+    SUPPORTS_STREAMING = False
+
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Together provider."""
         if kwargs.get("stream", False) is True:

@@ -19,6 +19,8 @@ class BaseOpenAIProvider(Provider, ABC):
     if needed.
     """
 
+    SUPPORTS_STREAMING = True
+
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Default is that all kwargs are supported."""
         pass

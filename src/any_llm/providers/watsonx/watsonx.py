@@ -23,6 +23,8 @@ class WatsonxProvider(Provider):
     ENV_API_KEY_NAME = "WATSONX_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://www.ibm.com/watsonx"
 
+    SUPPORTS_STREAMING = False
+
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Watsonx provider."""
         if kwargs.get("stream", False) is True:

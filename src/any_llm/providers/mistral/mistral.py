@@ -23,6 +23,8 @@ class MistralProvider(Provider):
     ENV_API_KEY_NAME = "MISTRAL_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://docs.mistral.ai/"
 
+    SUPPORTS_STREAMING = True
+
     def _stream_completion(
         self,
         client: Mistral,

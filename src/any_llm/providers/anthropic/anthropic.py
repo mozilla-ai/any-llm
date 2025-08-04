@@ -32,6 +32,8 @@ class AnthropicProvider(Provider):
     ENV_API_KEY_NAME = "ANTHROPIC_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://docs.anthropic.com/en/home"
 
+    SUPPORTS_STREAMING = True
+
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         if kwargs.get("stream", False) and kwargs.get("response_format", None):
             raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)

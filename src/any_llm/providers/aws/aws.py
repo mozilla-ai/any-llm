@@ -29,6 +29,8 @@ class AwsProvider(Provider):
     ENV_API_KEY_NAME = "AWS_BEARER_TOKEN_BEDROCK"
     PROVIDER_DOCUMENTATION_URL = "https://aws.amazon.com/bedrock/"
 
+    SUPPORTS_STREAMING = True
+
     def __init__(self, config: ApiConfig) -> None:
         """Initialize AWS Bedrock provider."""
         self.region_name = os.getenv("AWS_REGION", "us-east-1")

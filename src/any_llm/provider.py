@@ -96,6 +96,9 @@ class Provider(ABC):
     PROVIDER_NAME: str
     ENV_API_KEY_NAME: str
     PROVIDER_DOCUMENTATION_URL: str
+
+    # Feature support flags (to be set by subclasses)
+    SUPPORTS_STREAMING: bool
     # This value isn't required but may prove useful for providers that have overridable api bases.
     API_BASE: str | None = None
 
@@ -120,6 +123,7 @@ class Provider(ABC):
             "name": getattr(cls, "PROVIDER_NAME"),
             "env_key": getattr(cls, "ENV_API_KEY_NAME", "-"),
             "doc_url": getattr(cls, "PROVIDER_DOCUMENTATION_URL"),
+            "streaming": getattr(cls, "SUPPORTS_STREAMING"),
             "class_name": cls.__name__,
         }
 
@@ -246,7 +250,6 @@ class ProviderFactory:
         for provider_key in cls.get_supported_providers():
             provider_class = cls.get_provider_class(provider_key)
             metadata = provider_class.get_provider_metadata()
-            # Add the provider key (directory name) to the metadata
             metadata["provider_key"] = provider_key
             providers.append(metadata)
 
