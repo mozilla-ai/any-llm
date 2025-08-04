@@ -8,6 +8,9 @@ from openai.types.chat.chat_completion_chunk import ChoiceDelta
 from openai.types.completion_usage import CompletionUsage
 from openai.types.chat.chat_completion_message import ChatCompletionMessage
 from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall, Function
+from openai.types import CreateEmbeddingResponse
+from openai.types.embedding import Embedding
+from openai.types.create_embedding_response import Usage
 
 
 INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
@@ -255,4 +258,28 @@ def _create_openai_chunk_from_aws_chunk(chunk: dict[str, Any], model: str) -> Ch
         model=model,
         created=int(time()),
         object="chat.completion.chunk",
+    )
+
+
+def _create_openai_embedding_response_from_aws(
+    embedding_data: list[dict[str, Any]], model: str, total_tokens: int
+) -> CreateEmbeddingResponse:
+    """Convert AWS Bedrock embedding response to OpenAI CreateEmbeddingResponse format."""
+    # Convert the embedding data
+    openai_embeddings = []
+    for data in embedding_data:
+        openai_embedding = Embedding(embedding=data["embedding"], index=data["index"], object="embedding")
+        openai_embeddings.append(openai_embedding)
+
+    # Create usage information
+    usage = Usage(
+        prompt_tokens=total_tokens,
+        total_tokens=total_tokens,
+    )
+
+    return CreateEmbeddingResponse(
+        data=openai_embeddings,
+        model=model,
+        object="list",
+        usage=usage,
     )

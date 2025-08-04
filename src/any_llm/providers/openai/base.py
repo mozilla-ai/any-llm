@@ -57,6 +57,10 @@ class BaseOpenAIProvider(Provider, ABC):
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
+        # Classes that inherit from BaseOpenAIProvider may override SUPPORTS_EMBEDDING
+        if not self.SUPPORTS_EMBEDDING:
+            raise NotImplementedError("This provider does not support embeddings.")
+
         client = OpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,

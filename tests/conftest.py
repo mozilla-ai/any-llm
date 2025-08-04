@@ -40,6 +40,8 @@ def embedding_provider_model_map() -> dict[ProviderName, str]:
         ProviderName.NEBIUS: "Qwen/Qwen3-Embedding-8B",
         ProviderName.SAMBANOVA: "E5-Mistral-7B-Instruct",
         ProviderName.MISTRAL: "mistral-embed",
+        ProviderName.AWS: "amazon.titan-embed-text-v2:0",
+        ProviderName.OLLAMA: "llama3.2:1b",
     }
 
 

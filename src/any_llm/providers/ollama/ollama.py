@@ -15,9 +15,13 @@ from pydantic import BaseModel
 from openai.types.chat.chat_completion import ChatCompletion
 from openai._streaming import Stream
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+from openai.types import CreateEmbeddingResponse
 from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.helpers import create_completion_from_response
 from any_llm.exceptions import UnsupportedParameterError
+
+
+from any_llm.providers.ollama.utils import _create_openai_embedding_response_from_ollama
 
 
 class OllamaProvider(Provider):
@@ -32,7 +36,7 @@ class OllamaProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://github.com/ollama/ollama"
 
     SUPPORTS_STREAMING = False
-    SUPPORTS_EMBEDDING = False
+    SUPPORTS_EMBEDDING = True
 
     def __init__(self, config: ApiConfig) -> None:
         """We don't use the Provider init because by default we don't require an API key."""
@@ -175,3 +179,19 @@ class OllamaProvider(Provider):
             model=model,
             provider_name=self.PROVIDER_NAME,
         )
+
+    def embedding(
+        self,
+        model: str,
+        inputs: str | list[str],
+        **kwargs: Any,
+    ) -> CreateEmbeddingResponse:
+        """Generate embeddings using Ollama."""
+        client = Client(host=self.url, timeout=kwargs.pop("timeout", None))
+
+        response = client.embed(
+            model=model,
+            input=inputs,
+            **kwargs,
+        )
+        return _create_openai_embedding_response_from_ollama(response)

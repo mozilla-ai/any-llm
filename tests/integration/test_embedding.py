@@ -21,6 +21,8 @@ def test_embedding_providers(provider: ProviderName, embedding_provider_model_ma
         assert isinstance(result, CreateEmbeddingResponse)
         assert len(result.data) > 0
         assert all(isinstance(x.embedding, list) for x in result.data)
+        assert result.usage.prompt_tokens > 0
+        assert result.usage.total_tokens > 0
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError):

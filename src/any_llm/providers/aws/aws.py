@@ -1,4 +1,5 @@
 import os
+import json
 from typing import Any
 
 try:
@@ -14,11 +15,13 @@ from any_llm.provider import Provider, ApiConfig, convert_instructor_response
 from any_llm.exceptions import MissingApiKeyError
 from openai._streaming import Stream
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+from openai.types import CreateEmbeddingResponse
 from any_llm.providers.aws.utils import (
     _convert_response,
     _convert_kwargs,
     _convert_messages,
     _create_openai_chunk_from_aws_chunk,
+    _create_openai_embedding_response_from_aws,
 )
 
 
@@ -30,12 +33,12 @@ class AwsProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://aws.amazon.com/bedrock/"
 
     SUPPORTS_STREAMING = True
-    SUPPORTS_EMBEDDING = False
+    SUPPORTS_EMBEDDING = True
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize AWS Bedrock provider."""
+        super().__init__(config)
         self.region_name = os.getenv("AWS_REGION", "us-east-1")
-        self.config = config
 
     def _check_aws_credentials(self) -> None:
         """Check if AWS credentials are available."""
@@ -105,3 +108,40 @@ class AwsProvider(Provider):
             )
 
             return _convert_response(response)
+
+    def embedding(
+        self,
+        model: str,
+        inputs: str | list[str],
+        **kwargs: Any,
+    ) -> CreateEmbeddingResponse:
+        """Create embeddings using AWS Bedrock."""
+        self._check_aws_credentials()
+
+        client = boto3.client("bedrock-runtime", endpoint_url=self.config.api_base, region_name=self.region_name)  # type: ignore[no-untyped-call]
+
+        input_texts = [inputs] if isinstance(inputs, str) else inputs
+
+        embedding_data = []
+        total_tokens = 0
+
+        for index, text in enumerate(input_texts):
+            request_body = {"inputText": text}
+
+            if "dimensions" in kwargs:
+                request_body["dimensions"] = kwargs["dimensions"]
+            if "normalize" in kwargs:
+                request_body["normalize"] = kwargs["normalize"]
+
+            # Make the API call
+            response = client.invoke_model(modelId=model, body=json.dumps(request_body))
+
+            # Parse the response
+            response_body = json.loads(response["body"].read())
+
+            embedding_data.append({"embedding": response_body["embedding"], "index": index})
+
+            total_tokens += response_body.get("inputTextTokenCount", 0)
+
+        # Convert to OpenAI format
+        return _create_openai_embedding_response_from_aws(embedding_data, model, total_tokens)
