@@ -502,6 +502,7 @@ as well as what features the provider supports for each model, refer to the prov
 <th>Environment Variable</th>
 <th>Source Code</th>
 <th>Stream Supported</th>
+<th>Embedding Supported</th>
 </tr>
 </thead>
 <tbody>
@@ -511,6 +512,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td>AWS_BEARER_TOKEN_BEDROCK</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/aws/">Source</a></td>
 <td>YES</td>
+<td>YES</td>
 </tr>
 <tr>
 <td><code>anthropic</code></td>
@@ -518,12 +520,14 @@ as well as what features the provider supports for each model, refer to the prov
 <td>ANTHROPIC_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/anthropic/">Source</a></td>
 <td>YES</td>
+<td>NO</td>
 </tr>
 <tr>
 <td><code>azure</code></td>
 <td><a href="https://azure.microsoft.com/en-us/products/ai-services/openai-service">https://azure.microsoft.com/en-us/products/ai-services/openai-service</a></td>
 <td>AZURE_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/azure/">Source</a></td>
+<td>NO</td>
 <td>NO</td>
 </tr>
 <tr>
@@ -532,6 +536,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td>CEREBRAS_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/cerebras/">Source</a></td>
 <td>YES</td>
+<td>NO</td>
 </tr>
 <tr>
 <td><code>cohere</code></td>
@@ -539,6 +544,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td>CO_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/cohere/">Source</a></td>
 <td>YES</td>
+<td>NO</td>
 </tr>
 <tr>
 <td><code>deepseek</code></td>
@@ -546,12 +552,14 @@ as well as what features the provider supports for each model, refer to the prov
 <td>DEEPSEEK_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/deepseek/">Source</a></td>
 <td>YES</td>
+<td>NO</td>
 </tr>
 <tr>
 <td><code>fireworks</code></td>
 <td><a href="https://fireworks.ai/api">https://fireworks.ai/api</a></td>
 <td>FIREWORKS_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/fireworks/">Source</a></td>
+<td>NO</td>
 <td>NO</td>
 </tr>
 <tr>
@@ -560,12 +568,14 @@ as well as what features the provider supports for each model, refer to the prov
 <td>-</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/google/">Source</a></td>
 <td>YES</td>
+<td>NO</td>
 </tr>
 <tr>
 <td><code>groq</code></td>
 <td><a href="https://groq.com/api">https://groq.com/api</a></td>
 <td>GROQ_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/groq/">Source</a></td>
+<td>NO</td>
 <td>NO</td>
 </tr>
 <tr>
@@ -574,6 +584,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td>HF_TOKEN</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/huggingface/">Source</a></td>
 <td>NO</td>
+<td>NO</td>
 </tr>
 <tr>
 <td><code>inception</code></td>
@@ -581,12 +592,14 @@ as well as what features the provider supports for each model, refer to the prov
 <td>INCEPTION_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/inception/">Source</a></td>
 <td>YES</td>
+<td>NO</td>
 </tr>
 <tr>
 <td><code>mistral</code></td>
 <td><a href="https://docs.mistral.ai/">https://docs.mistral.ai/</a></td>
 <td>MISTRAL_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/mistral/">Source</a></td>
+<td>YES</td>
 <td>YES</td>
 </tr>
 <tr>
@@ -595,12 +608,14 @@ as well as what features the provider supports for each model, refer to the prov
 <td>MOONSHOT_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/moonshot/">Source</a></td>
 <td>YES</td>
+<td>NO</td>
 </tr>
 <tr>
 <td><code>nebius</code></td>
 <td><a href="https://studio.nebius.ai/">https://studio.nebius.ai/</a></td>
 <td>NEBIUS_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/nebius/">Source</a></td>
+<td>YES</td>
 <td>YES</td>
 </tr>
 <tr>
@@ -609,12 +624,14 @@ as well as what features the provider supports for each model, refer to the prov
 <td>-</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/ollama/">Source</a></td>
 <td>NO</td>
+<td>YES</td>
 </tr>
 <tr>
 <td><code>openai</code></td>
 <td><a href="https://platform.openai.com/docs/api-reference">https://platform.openai.com/docs/api-reference</a></td>
 <td>OPENAI_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/openai/">Source</a></td>
+<td>YES</td>
 <td>YES</td>
 </tr>
 <tr>
@@ -623,12 +640,14 @@ as well as what features the provider supports for each model, refer to the prov
 <td>SAMBANOVA_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/sambanova/">Source</a></td>
 <td>YES</td>
+<td>YES</td>
 </tr>
 <tr>
 <td><code>together</code></td>
 <td><a href="https://together.ai/">https://together.ai/</a></td>
 <td>TOGETHER_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/together/">Source</a></td>
+<td>NO</td>
 <td>NO</td>
 </tr>
 <tr>
@@ -637,6 +656,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td>WATSONX_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/watsonx/">Source</a></td>
 <td>NO</td>
+<td>NO</td>
 </tr>
 <tr>
 <td><code>xai</code></td>
@@ -644,6 +664,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td>XAI_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/xai/">Source</a></td>
 <td>YES</td>
+<td>NO</td>
 </tr>
 </tbody>
 </table>
