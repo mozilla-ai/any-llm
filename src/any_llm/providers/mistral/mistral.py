@@ -60,7 +60,6 @@ class MistralProvider(Provider):
         """Create a chat completion using Mistral."""
         client = Mistral(api_key=self.config.api_key, server_url=self.config.api_base)
 
-        # Handle response_format for Pydantic models
         if "response_format" in kwargs and issubclass(kwargs["response_format"], BaseModel):
             kwargs["response_format"] = response_format_from_pydantic_model(kwargs["response_format"])
 
@@ -71,14 +70,12 @@ class MistralProvider(Provider):
                 **kwargs,
             )
 
-            # Convert to OpenAI format using the new utility
             return create_completion_from_response(
                 response_data=response.model_dump(),
                 model=model,
                 provider_name=self.PROVIDER_NAME,
             )
         else:
-            # Return the streaming generator
             return self._stream_completion(client, model, messages, **kwargs)  # type: ignore[return-value]
 
     def embedding(
@@ -95,7 +92,6 @@ class MistralProvider(Provider):
             **kwargs,
         )
 
-        # Convert to OpenAI format using our utility function
         from any_llm.providers.mistral.utils import _create_openai_embedding_response_from_mistral
 
         return _create_openai_embedding_response_from_mistral(result)

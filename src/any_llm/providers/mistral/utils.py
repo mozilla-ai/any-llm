@@ -109,16 +109,13 @@ def _create_openai_embedding_response_from_mistral(
     from openai.types.embedding import Embedding
     from openai.types.create_embedding_response import Usage
 
-    # Convert the embedding data
     openai_embeddings = []
     for embedding_data in mistral_response.data:
-        # Handle the embedding vector - ensure it's not None
         embedding_vector = embedding_data.embedding or []
 
         openai_embedding = Embedding(embedding=embedding_vector, index=embedding_data.index or 0, object="embedding")
         openai_embeddings.append(openai_embedding)
 
-    # Convert usage information
     usage = Usage(
         prompt_tokens=mistral_response.usage.prompt_tokens or 0,
         total_tokens=mistral_response.usage.total_tokens or 0,

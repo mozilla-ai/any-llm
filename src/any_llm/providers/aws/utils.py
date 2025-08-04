@@ -265,13 +265,11 @@ def _create_openai_embedding_response_from_aws(
     embedding_data: list[dict[str, Any]], model: str, total_tokens: int
 ) -> CreateEmbeddingResponse:
     """Convert AWS Bedrock embedding response to OpenAI CreateEmbeddingResponse format."""
-    # Convert the embedding data
     openai_embeddings = []
     for data in embedding_data:
         openai_embedding = Embedding(embedding=data["embedding"], index=data["index"], object="embedding")
         openai_embeddings.append(openai_embedding)
 
-    # Create usage information
     usage = Usage(
         prompt_tokens=total_tokens,
         total_tokens=total_tokens,
