@@ -6,6 +6,7 @@ except ImportError:
     msg = "portkey is not installed. Please install it with `pip install any-llm-sdk[portkey]`"
     raise ImportError(msg)
 
+
 class PortkeyProvider(BaseOpenAIProvider):
     """Portkey provider for accessing 200+ LLMs through Portkey's AI Gateway."""
 
