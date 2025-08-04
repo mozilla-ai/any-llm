@@ -38,6 +38,7 @@ class AwsProvider(Provider):
     def __init__(self, config: ApiConfig) -> None:
         """Initialize AWS Bedrock provider."""
         # This intentionally does not call super().__init__(config) because AWS has a different way of handling credentials
+        self.config = config
         self.region_name = os.getenv("AWS_REGION", "us-east-1")
 
     def _check_aws_credentials(self) -> None:
