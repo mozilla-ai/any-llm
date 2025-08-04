@@ -29,6 +29,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.WATSONX: "google/gemini-2.0-flash-001",
         ProviderName.FIREWORKS: "accounts/fireworks/models/llama4-scout-instruct-basic",
         ProviderName.GROQ: "llama-3.1-8b-instant",
+        ProviderName.OPENROUTER: "moonshotai/kimi-k2:free",
     }
 
 

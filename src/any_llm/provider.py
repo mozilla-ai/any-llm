@@ -76,6 +76,7 @@ class ProviderName(str, Enum):
     NEBIUS = "nebius"
     OLLAMA = "ollama"
     OPENAI = "openai"
+    OPENROUTER = "openrouter"
     SAMBANOVA = "sambanova"
     TOGETHER = "together"
     WATSONX = "watsonx"
