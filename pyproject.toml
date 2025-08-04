@@ -18,7 +18,7 @@ dependencies = [
 [project.optional-dependencies]
 
 all = [
-  "any-llm-sdk[mistral,anthropic,huggingface,google,cohere,cerebras,fireworks,groq,aws,azure,watsonx,together,sambanova,ollama,moonshot,nebius,xai,deepseek,inception,openai,openrouter]"
+  "any-llm-sdk[mistral,anthropic,huggingface,google,cohere,cerebras,fireworks,groq,aws,azure,watsonx,together,sambanova,ollama,moonshot,nebius,xai,deepseek,inception,openai,openrouter,portkey]"
 ]
 
 mistral = [
@@ -81,6 +81,10 @@ sambanova = [
 
 ollama = [
   "ollama>=0.5.1"
+]
+
+portkey = [
+  "portkey-ai",
 ]
 
 # These providers don't require any additional dependencies, but are included for completeness.
