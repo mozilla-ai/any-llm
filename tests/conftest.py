@@ -39,6 +39,7 @@ def embedding_provider_model_map() -> dict[ProviderName, str]:
         ProviderName.OPENAI: "text-embedding-ada-002",
         ProviderName.NEBIUS: "Qwen/Qwen3-Embedding-8B",
         ProviderName.SAMBANOVA: "E5-Mistral-7B-Instruct",
+        ProviderName.MISTRAL: "mistral-embed",
     }
 
 

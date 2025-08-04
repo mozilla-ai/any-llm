@@ -3,6 +3,7 @@ from typing import Any, Iterator
 try:
     from mistralai import Mistral
     from mistralai.extra import response_format_from_pydantic_model
+    from mistralai.models.embeddingresponse import EmbeddingResponse
 except ImportError:
     msg = "mistralai is not installed. Please install it with `pip install any-llm-sdk[mistral]`"
     raise ImportError(msg)
@@ -14,6 +15,7 @@ from any_llm.provider import Provider
 from any_llm.providers.helpers import create_completion_from_response
 from openai._streaming import Stream
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+from openai.types import CreateEmbeddingResponse
 
 
 class MistralProvider(Provider):
@@ -24,7 +26,7 @@ class MistralProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://docs.mistral.ai/"
 
     SUPPORTS_STREAMING = True
-    SUPPORTS_EMBEDDING = False
+    SUPPORTS_EMBEDDING = True
 
     def _stream_completion(
         self,
@@ -78,3 +80,22 @@ class MistralProvider(Provider):
         else:
             # Return the streaming generator
             return self._stream_completion(client, model, messages, **kwargs)  # type: ignore[return-value]
+
+    def embedding(
+        self,
+        model: str,
+        inputs: str | list[str],
+        **kwargs: Any,
+    ) -> CreateEmbeddingResponse:
+        client = Mistral(api_key=self.config.api_key, server_url=self.config.api_base)
+
+        result: EmbeddingResponse = client.embeddings.create(
+            model=model,
+            inputs=inputs,
+            **kwargs,
+        )
+
+        # Convert to OpenAI format using our utility function
+        from any_llm.providers.mistral.utils import _create_openai_embedding_response_from_mistral
+
+        return _create_openai_embedding_response_from_mistral(result)

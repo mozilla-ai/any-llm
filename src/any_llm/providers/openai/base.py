@@ -55,7 +55,6 @@ class BaseOpenAIProvider(Provider, ABC):
         self,
         model: str,
         inputs: str | list[str],
-        dimensions: int | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         client = OpenAI(
@@ -65,5 +64,6 @@ class BaseOpenAIProvider(Provider, ABC):
         return client.embeddings.create(
             model=model,
             input=inputs,
-            dimensions=dimensions if dimensions else NOT_GIVEN,
+            dimensions=kwargs.get("dimensions", NOT_GIVEN),
+            **kwargs,
         )

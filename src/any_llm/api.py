@@ -264,7 +264,6 @@ def verify_kwargs(provider_name: str, **kwargs: Any) -> None:
 def embedding(
     model: str,
     inputs: str | list[str],
-    dimensions: int | None = None,
     *,
     api_key: Optional[str] = None,
     api_base: Optional[str] = None,
@@ -275,7 +274,6 @@ def embedding(
     Args:
         model: Model identifier in format 'provider/model' (e.g., 'mistral/mistral-small')
         inputs: The input text to embed
-        dimensions: The number of dimensions to embed the input into
         api_key: API key for the provider
         api_base: Base URL for the provider API
         **kwargs: Additional provider-specific parameters
@@ -295,13 +293,12 @@ def embedding(
 
     provider = ProviderFactory.create_provider(provider_key, api_config)
 
-    return provider.embedding(model_name, inputs, dimensions, **kwargs)
+    return provider.embedding(model_name, inputs, **kwargs)
 
 
 async def aembedding(
     model: str,
     inputs: str | list[str],
-    dimensions: int | None = None,
     *,
     api_key: Optional[str] = None,
     api_base: Optional[str] = None,
@@ -312,7 +309,6 @@ async def aembedding(
     Args:
         model: Model identifier in format 'provider/model' (e.g., 'openai/text-embedding-3-small')
         inputs: The input text to embed
-        dimensions: The number of dimensions to embed the input into
         api_key: API key for the provider
         api_base: Base URL for the provider API
         **kwargs: Additional provider-specific parameters
@@ -332,4 +328,4 @@ async def aembedding(
 
     provider = ProviderFactory.create_provider(provider_key, api_config)
 
-    return await provider.aembedding(model_name, inputs, dimensions, **kwargs)
+    return await provider.aembedding(model_name, inputs, **kwargs)

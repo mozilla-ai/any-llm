@@ -181,7 +181,6 @@ class Provider(ABC):
         self,
         model: str,
         inputs: str | list[str],
-        dimensions: int | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         raise NotImplementedError("Subclasses must implement this method")
@@ -190,10 +189,9 @@ class Provider(ABC):
         self,
         model: str,
         inputs: str | list[str],
-        dimensions: int | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        return await asyncio.to_thread(self.embedding, model, inputs, dimensions, **kwargs)
+        return await asyncio.to_thread(self.embedding, model, inputs, **kwargs)
 
 
 class ProviderFactory:

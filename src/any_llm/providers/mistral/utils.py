@@ -1,10 +1,12 @@
 try:
     from mistralai.models import CompletionEvent
+    from mistralai.models.embeddingresponse import EmbeddingResponse
 except ImportError:
     msg = "mistralai is not installed. Please install it with `pip install any-llm-sdk[mistral]`"
     raise ImportError(msg)
 
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+from openai.types import CreateEmbeddingResponse
 
 
 def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompletionChunk:
@@ -96,5 +98,35 @@ def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompl
         created=chunk.created or 0,
         model=chunk.model,
         object="chat.completion.chunk",
+        usage=usage,
+    )
+
+
+def _create_openai_embedding_response_from_mistral(
+    mistral_response: "EmbeddingResponse",
+) -> "CreateEmbeddingResponse":
+    """Convert a Mistral EmbeddingResponse to OpenAI CreateEmbeddingResponse format."""
+    from openai.types.embedding import Embedding
+    from openai.types.create_embedding_response import Usage
+
+    # Convert the embedding data
+    openai_embeddings = []
+    for embedding_data in mistral_response.data:
+        # Handle the embedding vector - ensure it's not None
+        embedding_vector = embedding_data.embedding or []
+
+        openai_embedding = Embedding(embedding=embedding_vector, index=embedding_data.index or 0, object="embedding")
+        openai_embeddings.append(openai_embedding)
+
+    # Convert usage information
+    usage = Usage(
+        prompt_tokens=mistral_response.usage.prompt_tokens or 0,
+        total_tokens=mistral_response.usage.total_tokens or 0,
+    )
+
+    return CreateEmbeddingResponse(
+        data=openai_embeddings,
+        model=mistral_response.model,
+        object="list",
         usage=usage,
     )
