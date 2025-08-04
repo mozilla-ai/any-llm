@@ -7,6 +7,7 @@ from openai.types.chat.chat_completion import ChatCompletion
 from openai._streaming import Stream
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 from openai.types import CreateEmbeddingResponse
+from openai._types import NOT_GIVEN
 from any_llm.provider import Provider
 
 
@@ -49,7 +50,7 @@ class BaseOpenAIProvider(Provider, ABC):
                 **kwargs,
             )
         return response  # type: ignore[no-any-return]
-    
+
     def embedding(
         self,
         model: str,
@@ -64,5 +65,5 @@ class BaseOpenAIProvider(Provider, ABC):
         return client.embeddings.create(
             model=model,
             input=inputs,
-            dimensions=dimensions,
+            dimensions=dimensions if dimensions else NOT_GIVEN,
         )

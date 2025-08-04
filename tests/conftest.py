@@ -41,6 +41,7 @@ def embedding_provider_model_map() -> dict[ProviderName, str]:
         ProviderName.SAMBANOVA: "E5-Mistral-7B-Instruct",
     }
 
+
 @pytest.fixture(params=list(ProviderName), ids=lambda x: x.value)
 def provider(request: pytest.FixtureRequest) -> ProviderName:
     return request.param  # type: ignore[no-any-return]

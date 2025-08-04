@@ -7,4 +7,4 @@ class InceptionProvider(BaseOpenAIProvider):
     PROVIDER_NAME = "Inception"
     PROVIDER_DOCUMENTATION_URL = "https://inceptionlabs.ai/"
 
-    SUPPORTS_EMBEDDING = False # Inception doesn't host an embedding model
+    SUPPORTS_EMBEDDING = False  # Inception doesn't host an embedding model

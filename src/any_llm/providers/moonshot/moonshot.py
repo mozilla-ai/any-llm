@@ -7,4 +7,4 @@ class MoonshotProvider(BaseOpenAIProvider):
     PROVIDER_NAME = "Moonshot AI"
     PROVIDER_DOCUMENTATION_URL = "https://platform.moonshot.ai/"
 
-    SUPPORTS_EMBEDDING = False # Moonshot doesn't host an embedding model
+    SUPPORTS_EMBEDDING = False  # Moonshot doesn't host an embedding model

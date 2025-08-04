@@ -176,7 +176,7 @@ class Provider(ABC):
         **kwargs: Any,
     ) -> ChatCompletion | Stream[ChatCompletionChunk]:
         return await asyncio.to_thread(self.completion, model, messages, **kwargs)
-    
+
     def embedding(
         self,
         model: str,
@@ -194,6 +194,7 @@ class Provider(ABC):
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         return await asyncio.to_thread(self.embedding, model, inputs, dimensions, **kwargs)
+
 
 class ProviderFactory:
     """Factory to dynamically load provider instances based on the naming conventions."""

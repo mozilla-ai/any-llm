@@ -6,6 +6,7 @@ from any_llm.provider import ProviderFactory, ApiConfig, Provider
 from any_llm.tools import prepare_tools
 from openai._streaming import Stream
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+from openai.types import CreateEmbeddingResponse
 
 
 def _prepare_completion_request(
@@ -260,7 +261,6 @@ def verify_kwargs(provider_name: str, **kwargs: Any) -> None:
     provider.verify_kwargs(kwargs)
 
 
-
 def embedding(
     model: str,
     inputs: str | list[str],
@@ -269,7 +269,7 @@ def embedding(
     api_key: Optional[str] = None,
     api_base: Optional[str] = None,
     **kwargs: Any,
-) -> list[float]:
+) -> CreateEmbeddingResponse:
     """Create an embedding.
 
     Args:
@@ -306,7 +306,7 @@ async def aembedding(
     api_key: Optional[str] = None,
     api_base: Optional[str] = None,
     **kwargs: Any,
-) -> list[float]:
+) -> CreateEmbeddingResponse:
     """Create an embedding asynchronously.
 
     Args:

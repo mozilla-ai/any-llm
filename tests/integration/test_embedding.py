@@ -1,15 +1,12 @@
-import asyncio
 import httpx
 import pytest
-from any_llm import embedding, aembedding, ProviderName
+from any_llm import embedding, ProviderName
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
 from openai.types import CreateEmbeddingResponse
 
-def test_embedding_providers(
-    provider: ProviderName, 
-    embedding_provider_model_map: dict[ProviderName, str]
-) -> None:
+
+def test_embedding_providers(provider: ProviderName, embedding_provider_model_map: dict[ProviderName, str]) -> None:
     """Test that all embedding-supported providers can generate embeddings successfully."""
     # first check if the provider supports embeddings
     providers_metadata = ProviderFactory.get_all_provider_metadata()
