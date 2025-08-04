@@ -68,3 +68,24 @@ for chunk in completion(
     print(chunk_content)
     output += chunk_content
 ```
+
+### Embeddings
+
+[`embedding`][any_llm.embedding] and [`aembedding`][any_llm.aembedding] allow you to create vector embeddings from text using the same unified interface across providers.
+
+Not all providers support embeddings - check the [providers documentation](./providers.md) to see which ones do.
+
+```python
+from any_llm import embedding
+import os
+model = "openai/text-embedding-3-small"
+result = embedding(
+    model=model,
+    inputs="Hello, world!" # can be either string or list of strings
+)
+
+# Access the embedding vector
+embedding_vector = result.data[0].embedding
+print(f"Embedding vector length: {len(embedding_vector)}")
+print(f"Tokens used: {result.usage.total_tokens}")
+```

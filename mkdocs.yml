@@ -9,6 +9,7 @@ nav:
   - Providers: providers.md
   - API Reference:
     - Completion: api/completion.md
+    - Embedding: api/embedding.md
     - Exceptions: api/exceptions.md
     - Helpers: api/helpers.md
 theme:
