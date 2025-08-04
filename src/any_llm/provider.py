@@ -12,7 +12,7 @@ from openai._streaming import Stream
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 from openai.types.chat.chat_completion import ChatCompletion, Choice
 from openai.types.chat.chat_completion_message import ChatCompletionMessage
-
+from openai.types import CreateEmbeddingResponse
 from pydantic import BaseModel
 
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
@@ -124,6 +124,7 @@ class Provider(ABC):
             "env_key": getattr(cls, "ENV_API_KEY_NAME", "-"),
             "doc_url": getattr(cls, "PROVIDER_DOCUMENTATION_URL"),
             "streaming": getattr(cls, "SUPPORTS_STREAMING"),
+            "embedding": getattr(cls, "SUPPORTS_EMBEDDING"),
             "class_name": cls.__name__,
         }
 
@@ -175,7 +176,24 @@ class Provider(ABC):
         **kwargs: Any,
     ) -> ChatCompletion | Stream[ChatCompletionChunk]:
         return await asyncio.to_thread(self.completion, model, messages, **kwargs)
+    
+    def embedding(
+        self,
+        model: str,
+        inputs: str | list[str],
+        dimensions: int | None = None,
+        **kwargs: Any,
+    ) -> CreateEmbeddingResponse:
+        raise NotImplementedError("Subclasses must implement this method")
 
+    async def aembedding(
+        self,
+        model: str,
+        inputs: str | list[str],
+        dimensions: int | None = None,
+        **kwargs: Any,
+    ) -> CreateEmbeddingResponse:
+        return await asyncio.to_thread(self.embedding, model, inputs, dimensions, **kwargs)
 
 class ProviderFactory:
     """Factory to dynamically load provider instances based on the naming conventions."""

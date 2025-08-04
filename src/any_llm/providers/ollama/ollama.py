@@ -32,6 +32,7 @@ class OllamaProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://github.com/ollama/ollama"
 
     SUPPORTS_STREAMING = False
+    SUPPORTS_EMBEDDING = False
 
     def __init__(self, config: ApiConfig) -> None:
         """We don't use the Provider init because by default we don't require an API key."""

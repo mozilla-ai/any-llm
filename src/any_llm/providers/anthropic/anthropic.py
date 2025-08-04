@@ -33,6 +33,7 @@ class AnthropicProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://docs.anthropic.com/en/home"
 
     SUPPORTS_STREAMING = True
+    SUPPORTS_EMBEDDING = False
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         if kwargs.get("stream", False) and kwargs.get("response_format", None):

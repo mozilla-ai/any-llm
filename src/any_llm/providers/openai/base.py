@@ -6,7 +6,7 @@ from openai import OpenAI
 from openai.types.chat.chat_completion import ChatCompletion
 from openai._streaming import Stream
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-
+from openai.types import CreateEmbeddingResponse
 from any_llm.provider import Provider
 
 
@@ -20,6 +20,7 @@ class BaseOpenAIProvider(Provider, ABC):
     """
 
     SUPPORTS_STREAMING = True
+    SUPPORTS_EMBEDDING = True
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Default is that all kwargs are supported."""
@@ -48,3 +49,20 @@ class BaseOpenAIProvider(Provider, ABC):
                 **kwargs,
             )
         return response  # type: ignore[no-any-return]
+    
+    def embedding(
+        self,
+        model: str,
+        inputs: str | list[str],
+        dimensions: int | None = None,
+        **kwargs: Any,
+    ) -> CreateEmbeddingResponse:
+        client = OpenAI(
+            base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
+            api_key=self.config.api_key,
+        )
+        return client.embeddings.create(
+            model=model,
+            input=inputs,
+            dimensions=dimensions,
+        )

@@ -30,6 +30,7 @@ class AwsProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://aws.amazon.com/bedrock/"
 
     SUPPORTS_STREAMING = True
+    SUPPORTS_EMBEDDING = False
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize AWS Bedrock provider."""

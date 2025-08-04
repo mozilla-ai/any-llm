@@ -6,3 +6,5 @@ class InceptionProvider(BaseOpenAIProvider):
     ENV_API_KEY_NAME = "INCEPTION_API_KEY"
     PROVIDER_NAME = "Inception"
     PROVIDER_DOCUMENTATION_URL = "https://inceptionlabs.ai/"
+
+    SUPPORTS_EMBEDDING = False # Inception doesn't host an embedding model

@@ -21,6 +21,7 @@ class FireworksProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://fireworks.ai/api"
 
     SUPPORTS_STREAMING = False
+    SUPPORTS_EMBEDDING = False
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Fireworks provider."""

@@ -258,3 +258,78 @@ def verify_kwargs(provider_name: str, **kwargs: Any) -> None:
     provider_key = ProviderFactory.get_provider_enum(provider_name)
     provider = ProviderFactory.create_provider(provider_key, ApiConfig())
     provider.verify_kwargs(kwargs)
+
+
+
+def embedding(
+    model: str,
+    inputs: str | list[str],
+    dimensions: int | None = None,
+    *,
+    api_key: Optional[str] = None,
+    api_base: Optional[str] = None,
+    **kwargs: Any,
+) -> list[float]:
+    """Create an embedding.
+
+    Args:
+        model: Model identifier in format 'provider/model' (e.g., 'mistral/mistral-small')
+        inputs: The input text to embed
+        dimensions: The number of dimensions to embed the input into
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        **kwargs: Additional provider-specific parameters
+
+    Returns:
+        The embedding of the input text
+
+    """
+    provider_key, model_name = ProviderFactory.split_model_provider(model)
+
+    config: dict[str, str] = {}
+    if api_key:
+        config["api_key"] = str(api_key)
+    if api_base:
+        config["api_base"] = str(api_base)
+    api_config = ApiConfig(**config)
+
+    provider = ProviderFactory.create_provider(provider_key, api_config)
+
+    return provider.embedding(model_name, inputs, dimensions, **kwargs)
+
+
+async def aembedding(
+    model: str,
+    inputs: str | list[str],
+    dimensions: int | None = None,
+    *,
+    api_key: Optional[str] = None,
+    api_base: Optional[str] = None,
+    **kwargs: Any,
+) -> list[float]:
+    """Create an embedding asynchronously.
+
+    Args:
+        model: Model identifier in format 'provider/model' (e.g., 'openai/text-embedding-3-small')
+        inputs: The input text to embed
+        dimensions: The number of dimensions to embed the input into
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        **kwargs: Additional provider-specific parameters
+
+    Returns:
+        The embedding of the input text
+
+    """
+    provider_key, model_name = ProviderFactory.split_model_provider(model)
+
+    config: dict[str, str] = {}
+    if api_key:
+        config["api_key"] = str(api_key)
+    if api_base:
+        config["api_base"] = str(api_base)
+    api_config = ApiConfig(**config)
+
+    provider = ProviderFactory.create_provider(provider_key, api_config)
+
+    return await provider.aembedding(model_name, inputs, dimensions, **kwargs)

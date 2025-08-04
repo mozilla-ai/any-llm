@@ -24,6 +24,7 @@ class MistralProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://docs.mistral.ai/"
 
     SUPPORTS_STREAMING = True
+    SUPPORTS_EMBEDDING = False
 
     def _stream_completion(
         self,

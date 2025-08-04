@@ -6,3 +6,5 @@ class XaiProvider(BaseOpenAIProvider):
     ENV_API_KEY_NAME = "XAI_API_KEY"
     PROVIDER_NAME = "xAI"
     PROVIDER_DOCUMENTATION_URL = "https://x.ai/"
+
+    SUPPORTS_EMBEDDING = False

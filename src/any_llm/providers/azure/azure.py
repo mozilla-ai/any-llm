@@ -20,6 +20,7 @@ class AzureProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://azure.microsoft.com/en-us/products/ai-services/openai-service"
 
     SUPPORTS_STREAMING = False
+    SUPPORTS_EMBEDDING = False
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Azure provider."""

@@ -15,6 +15,8 @@ class DeepseekProvider(BaseOpenAIProvider):
     PROVIDER_NAME = "DeepSeek"
     PROVIDER_DOCUMENTATION_URL = "https://platform.deepseek.com/"
 
+    SUPPORTS_EMBEDDING = False # DeepSeek doesn't host an embedding model
+
     def _make_api_call(
         self,
         model: str,

@@ -48,8 +48,8 @@ def generate_provider_table(providers):
 
     # Create table header
     table_lines = [
-        "| Provider ID | Documentation URL | Environment Variable | Source Code | Stream Supported |",
-        "|-------------| ------------------|----------------------|-------------|------------------|",
+        "| Provider ID | Documentation URL | Environment Variable | Source Code | Stream Supported | Embedding Supported |",
+        "|-------------| ------------------|----------------------|-------------|------------------|---------------------|",
     ]
 
     # Add rows for each provider
@@ -69,8 +69,9 @@ def generate_provider_table(providers):
         provider_id_copyable = f"```{provider_key.lower()}```"
 
         stream_supported = "YES" if provider.get("streaming", False) else "NO"
+        embedding_supported = "YES" if provider.get("embedding", False) else "NO"
 
-        row = f"| {provider_id_copyable} | {doc_url} | {env_key} | {source_link} | {stream_supported} |"
+        row = f"| {provider_id_copyable} | {doc_url} | {env_key} | {source_link} | {stream_supported} | {embedding_supported} |"
         table_lines.append(row)
 
     asyncio.run(validate_url(source_urls))

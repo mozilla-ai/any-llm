@@ -24,6 +24,7 @@ class WatsonxProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://www.ibm.com/watsonx"
 
     SUPPORTS_STREAMING = False
+    SUPPORTS_EMBEDDING = False
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Watsonx provider."""

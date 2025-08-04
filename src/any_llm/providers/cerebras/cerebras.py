@@ -28,6 +28,7 @@ class CerebrasProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://docs.cerebras.ai/"
 
     SUPPORTS_STREAMING = True
+    SUPPORTS_EMBEDDING = False
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Cerebras provider."""
