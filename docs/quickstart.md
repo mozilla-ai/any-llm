@@ -7,7 +7,30 @@
 
 ### Installation
 
+#### Direct Usage
+
 In your pip install, include the [supported providers](./providers.md) that you plan on using, or use the `all` option if you want to install support for all `any-llm` supported providers.
+
+```bash
+pip install any-llm-sdk[mistral]  # For Mistral provider
+pip install any-llm-sdk[openai]   # For OpenAI provider
+# install multiple providers
+pip install any-llm-sdk[mistral,openai,anthropic]
+# or install support for all providers
+pip install any-llm-sdk[all]
+```
+
+#### Library Integration
+
+If you're integrating `any-llm` into your own library that others will use, you only need to install the base package:
+
+```bash
+pip install any-llm-sdk
+```
+
+In this scenario, the end users of your library will be responsible for installing the appropriate provider dependencies when they want to use specific providers. `any-llm` is designed so that you'll only encounter exceptions at runtime if you try to use a provider without having the required dependencies installed.
+
+Those exceptions will clearly describe what needs to be installed to resolve the issue.
 
 ```bash
 pip install 'any-llm-sdk[mistral,ollama]'
