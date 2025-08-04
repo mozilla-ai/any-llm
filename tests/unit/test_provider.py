@@ -111,10 +111,6 @@ def test_all_providers_have_required_attributes(provider: str) -> None:
 def test_providers_raise_MissingApiKeyError(provider: str) -> None:
     if provider in ("aws", "ollama"):
         pytest.skip("This provider handles `api_key` differently.")
-    original_env = os.environ.copy()
-    os.environ = {}  # type: ignore[assignment]
-    try:
+    with patch.dict(os.environ, {}, clear=True):
         with pytest.raises(MissingApiKeyError):
             ProviderFactory.create_provider(provider, ApiConfig())
-    finally:
-        os.environ = original_env  # type: ignore[assignment]
