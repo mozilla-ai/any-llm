@@ -77,7 +77,6 @@ Not all providers support embeddings - check the [providers documentation](./pro
 
 ```python
 from any_llm import embedding
-import os
 model = "openai/text-embedding-3-small"
 result = embedding(
     model=model,
