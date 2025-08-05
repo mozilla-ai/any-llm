@@ -2,6 +2,9 @@ import json
 from time import time
 from typing import Any
 
+from openai.types import CreateEmbeddingResponse
+from openai.types.embedding import Embedding
+from openai.types.create_embedding_response import Usage
 from openai.types.chat.chat_completion_chunk import (
     ChatCompletionChunk,
     Choice,
@@ -90,6 +93,32 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
                 formatted_messages.append(types.Content(role="function", parts=[part]))
 
     return formatted_messages
+
+
+def _create_openai_embedding_response_from_google(
+    model: str, result: types.EmbedContentResponse
+) -> CreateEmbeddingResponse:
+    """Convert a Google embedding response to an OpenAI-compatible format."""
+
+    data = [
+        Embedding(
+            embedding=embedding.values,
+            index=i,
+            object="embedding",
+        )
+        for i, embedding in enumerate(result.embeddings or [])
+        if embedding.values
+    ]
+
+    # Google does not provide usage data in the embedding response
+    usage = Usage(prompt_tokens=0, total_tokens=0)
+
+    return CreateEmbeddingResponse(
+        data=data,
+        model=model,
+        object="list",
+        usage=usage,
+    )
 
 
 def _create_openai_chunk_from_google_chunk(

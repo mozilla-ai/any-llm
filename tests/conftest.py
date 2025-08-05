@@ -46,6 +46,7 @@ def embedding_provider_model_map() -> dict[ProviderName, str]:
         ProviderName.AWS: "amazon.titan-embed-text-v2:0",
         ProviderName.OLLAMA: "llama3.2:1b",
         ProviderName.LMSTUDIO: "text-embedding-nomic-embed-text-v1.5",
+        ProviderName.GOOGLE: "gemini-embedding-001",
     }
 
 

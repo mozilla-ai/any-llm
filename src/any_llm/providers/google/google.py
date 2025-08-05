@@ -14,12 +14,18 @@ from pydantic import BaseModel
 from openai._streaming import Stream
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 from openai.types.chat.chat_completion import ChatCompletion
+from openai.types import CreateEmbeddingResponse
 from any_llm.provider import Provider, ApiConfig
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.providers.helpers import (
     create_completion_from_response,
 )
-from any_llm.providers.google.utils import _convert_tool_spec, _convert_messages, _create_openai_chunk_from_google_chunk
+from any_llm.providers.google.utils import (
+    _convert_tool_spec,
+    _convert_messages,
+    _create_openai_chunk_from_google_chunk,
+    _create_openai_embedding_response_from_google,
+)
 
 
 class GoogleProvider(Provider):
@@ -29,7 +35,7 @@ class GoogleProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://cloud.google.com/vertex-ai/docs"
 
     SUPPORTS_STREAMING = True
-    SUPPORTS_EMBEDDING = False
+    SUPPORTS_EMBEDDING = True
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Google GenAI provider."""
@@ -50,6 +56,20 @@ class GoogleProvider(Provider):
                 raise MissingApiKeyError("Google Gemini Developer API", "GEMINI_API_KEY/GOOGLE_API_KEY")
 
             self.client = genai.Client(api_key=api_key)
+
+    def embedding(
+        self,
+        model: str,
+        inputs: str | list[str],
+        **kwargs: Any,
+    ) -> CreateEmbeddingResponse:
+        result = self.client.models.embed_content(
+            model=model,
+            contents=inputs,  # type: ignore[arg-type]
+            **kwargs,
+        )
+
+        return _create_openai_embedding_response_from_google(model, result)
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Google provider."""

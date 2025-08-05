@@ -27,11 +27,11 @@ def test_embedding_providers(provider: ProviderName, embedding_provider_model_ma
         if "model" in str(e).lower() or "embedding" in str(e).lower():
             pytest.skip(f"{provider.value} embedding model not available: {e}")
         raise
-    # Verify result is a list of floats
     assert isinstance(result, CreateEmbeddingResponse)
     assert len(result.data) > 0
-    assert all(isinstance(x.embedding, list) for x in result.data)
-    # LM Studio follows OpenAI Spec but doesn't output token use
-    if provider not in ProviderName.LMSTUDIO:
+    for entry in result.data:
+        assert all(isinstance(v, float) for v in entry.embedding)
+    # These providers don't output token use
+    if provider not in (ProviderName.GOOGLE, ProviderName.LMSTUDIO):
         assert result.usage.prompt_tokens > 0
         assert result.usage.total_tokens > 0
