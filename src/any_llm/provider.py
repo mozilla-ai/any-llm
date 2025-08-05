@@ -71,6 +71,7 @@ class ProviderName(str, Enum):
     GROQ = "groq"
     HUGGINGFACE = "huggingface"
     INCEPTION = "inception"
+    LLAMA = "llama"
     LMSTUDIO = "lmstudio"
     MISTRAL = "mistral"
     MOONSHOT = "moonshot"

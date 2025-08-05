@@ -32,6 +32,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.GROQ: "llama-3.1-8b-instant",
         ProviderName.OPENROUTER: "moonshotai/kimi-k2:free",
         ProviderName.PORTKEY: "@first-integrati-d8a10f/gpt-4.1-mini",  # Owned by njbrake in portkey UI
+        ProviderName.LLAMA: "Llama-4-Maverick-17B-128E-Instruct-FP8",
     }
 
 
