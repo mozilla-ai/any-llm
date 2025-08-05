@@ -1,3 +1,5 @@
+import json
+
 try:
     from mistralai.models import CompletionEvent
     from mistralai.models.embeddingresponse import EmbeddingResponse
@@ -12,7 +14,6 @@ from openai.types import CreateEmbeddingResponse
 def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompletionChunk:
     """Convert a Mistral CompletionEvent to OpenAI ChatCompletionChunk format."""
     from typing import Literal, cast
-    import json
 
     from openai.types.chat.chat_completion_chunk import (
         Choice,
@@ -29,48 +30,54 @@ def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompl
     for choice in chunk.choices:
         # Convert delta
         content = None
-        if hasattr(choice.delta, "content") and choice.delta.content:
+        if choice.delta.content:
             # Handle complex content types by converting to string if needed
             if isinstance(choice.delta.content, str):
                 content = choice.delta.content
+            elif isinstance(choice.delta.content, list):
+                # Extract text content from complex content types
+                text_parts = []
+                for part in choice.delta.content:
+                    if hasattr(part, "text") and part.text:
+                        text_parts.append(str(part.text))
+                content = "".join(text_parts) if text_parts else None
             else:
                 content = str(choice.delta.content)
 
         # Handle role with proper type casting
         role = None
-        if hasattr(choice.delta, "role") and choice.delta.role:
-            # Cast to one of the expected literal types
-            role_str = choice.delta.role
-            if role_str in ["developer", "system", "user", "assistant", "tool"]:
-                role = cast(Literal["developer", "system", "user", "assistant", "tool"], role_str)
+        if choice.delta.role:
+            role = cast(Literal["developer", "system", "user", "assistant", "tool"], choice.delta.role)
 
         delta = ChoiceDelta(content=content, role=role)
 
         # Convert tool calls if present
-        if hasattr(choice.delta, "tool_calls") and choice.delta.tool_calls:
+        if choice.delta.tool_calls:
             tool_calls = []
             for tool_call in choice.delta.tool_calls:
                 # Handle index with proper default
-                index = tool_call.index if hasattr(tool_call, "index") and tool_call.index is not None else 0
+                index = tool_call.index if tool_call.index is not None else 0
 
                 # Handle function arguments conversion
                 arguments = None
-                if hasattr(tool_call, "function") and tool_call.function:
-                    if hasattr(tool_call.function, "arguments") and tool_call.function.arguments is not None:
-                        if isinstance(tool_call.function.arguments, dict):
-                            arguments = json.dumps(tool_call.function.arguments)
-                        else:
-                            arguments = tool_call.function.arguments
+                if tool_call.function:
+                    func_args = tool_call.function.arguments
+                    if isinstance(func_args, dict):
+                        arguments = json.dumps(func_args)
+                    elif isinstance(func_args, str):
+                        arguments = func_args
+                    else:
+                        arguments = str(func_args) if func_args is not None else None
 
                 openai_tool_call = ChoiceDeltaToolCall(
                     index=index,
-                    id=tool_call.id if hasattr(tool_call, "id") else None,
+                    id=tool_call.id,
                     type="function",
                     function=ChoiceDeltaToolCallFunction(
-                        name=tool_call.function.name if hasattr(tool_call, "function") and tool_call.function else None,
+                        name=tool_call.function.name if tool_call.function else None,
                         arguments=arguments,
                     )
-                    if hasattr(tool_call, "function") and tool_call.function
+                    if tool_call.function
                     else None,
                 )
                 tool_calls.append(openai_tool_call)
@@ -83,13 +90,12 @@ def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompl
         )
         openai_choices.append(openai_choice)
 
-    # Convert usage if present
     usage = None
     if chunk.usage:
         usage = CompletionUsage(
-            prompt_tokens=getattr(chunk.usage, "prompt_tokens", 0),
-            completion_tokens=getattr(chunk.usage, "completion_tokens", 0),
-            total_tokens=getattr(chunk.usage, "total_tokens", 0),
+            prompt_tokens=chunk.usage.prompt_tokens or 0,
+            completion_tokens=chunk.usage.completion_tokens or 0,
+            total_tokens=chunk.usage.total_tokens or 0,
         )
 
     return ChatCompletionChunk(
