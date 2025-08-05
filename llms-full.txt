@@ -157,6 +157,37 @@ print(f"Embedding vector length: {len(embedding_vector)}")
 print(f"Tokens used: {result.usage.total_tokens}")
 ```
 
+### Tools
+
+`any-llm` supports tool calling for providers that support it. You can pass a list of tools where each tool is either:
+
+1. **Python callable** - Functions with proper docstrings and type annotations
+2. **OpenAI Format tool dict** - Already in OpenAI tool format
+
+```python
+from any_llm import completion
+
+def get_weather(location: str, unit: str = "F") -> str:
+    """Get weather information for a location.
+
+    Args:
+        location: The city or location to get weather for
+        unit: Temperature unit, either 'C' or 'F'
+    """
+    return f"Weather in {location} is sunny and 75{unit}!"
+
+response = completion(
+    model="mistral/mistral-small-latest",
+    messages=[{"role": "user", "content": "What's the weather in Pittsburgh PA?"}],
+    tools=[get_weather]
+)
+```
+
+any-llm automatically converts your Python functions to OpenAI tools format. Functions must have:
+- A docstring describing what the function does
+- Type annotations for all parameters
+- A return type annotation
+
 
 ---
 
