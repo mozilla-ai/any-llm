@@ -13,6 +13,7 @@ dependencies = [
   "openai",
   "rich",
   "httpx",
+  "typing-extensions"
 ]
 
 [project.optional-dependencies]

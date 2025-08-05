@@ -21,7 +21,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.INCEPTION: "inception-3-70b-instruct",
         ProviderName.NEBIUS: "meta-llama/Meta-Llama-3.1-8B-Instruct",
         ProviderName.OLLAMA: "llama3.2:1b",
-        ProviderName.LMSTUDIO: "qwen/qwen3-8b",  # You must have LM Studio running and the server enabled
+        ProviderName.LMSTUDIO: "google/gemma-3n-e4b",  # You must have LM Studio running and the server enabled
         ProviderName.AZURE: "gpt-4o",
         ProviderName.COHERE: "command-a-03-2025",
         ProviderName.CEREBRAS: "llama-3.3-70b",
@@ -45,7 +45,7 @@ def embedding_provider_model_map() -> dict[ProviderName, str]:
         ProviderName.MISTRAL: "mistral-embed",
         ProviderName.AWS: "amazon.titan-embed-text-v2:0",
         ProviderName.OLLAMA: "llama3.2:1b",
-        ProviderName.LMSTUDIO: "qwen/qwen3-8b",
+        ProviderName.LMSTUDIO: "text-embedding-nomic-embed-text-v1.5",
     }
 
 
