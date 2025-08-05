@@ -87,9 +87,9 @@ def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompl
     usage = None
     if chunk.usage:
         usage = CompletionUsage(
-            prompt_tokens=chunk.usage.prompt_tokens if hasattr(chunk.usage, "prompt_tokens") else 0,
-            completion_tokens=chunk.usage.completion_tokens if hasattr(chunk.usage, "completion_tokens") else 0,
-            total_tokens=chunk.usage.total_tokens if hasattr(chunk.usage, "total_tokens") else 0,
+            prompt_tokens=getattr(chunk.usage, "prompt_tokens", 0),
+            completion_tokens=getattr(chunk.usage, "completion_tokens", 0),
+            total_tokens=getattr(chunk.usage, "total_tokens", 0),
         )
 
     return ChatCompletionChunk(
