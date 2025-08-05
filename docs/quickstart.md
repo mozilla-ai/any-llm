@@ -120,7 +120,7 @@ from any_llm import completion
 
 def get_weather(location: str, unit: str = "F") -> str:
     """Get weather information for a location.
-    
+
     Args:
         location: The city or location to get weather for
         unit: Temperature unit, either 'C' or 'F'
