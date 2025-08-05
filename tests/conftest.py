@@ -22,7 +22,6 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.NEBIUS: "meta-llama/Meta-Llama-3.1-8B-Instruct",
         ProviderName.OLLAMA: "llama3.2:1b",
         ProviderName.LMSTUDIO: "google/gemma-3n-e4b",  # You must have LM Studio running and the server enabled
-        ProviderName.AZURE: "gpt-4o",
         ProviderName.COHERE: "command-a-03-2025",
         ProviderName.CEREBRAS: "llama-3.3-70b",
         ProviderName.HUGGINGFACE: "meta-llama/Llama-3.2-3B-Instruct",  # You must have novita enabled in your hf account to use this model
@@ -33,6 +32,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.OPENROUTER: "moonshotai/kimi-k2:free",
         ProviderName.PORTKEY: "@first-integrati-d8a10f/gpt-4.1-mini",  # Owned by njbrake in portkey UI
         ProviderName.LLAMA: "Llama-4-Maverick-17B-128E-Instruct-FP8",
+        ProviderName.AZURE: "openai/gpt-4.1-nano",
     }
 
 
@@ -48,6 +48,16 @@ def embedding_provider_model_map() -> dict[ProviderName, str]:
         ProviderName.OLLAMA: "llama3.2:1b",
         ProviderName.LMSTUDIO: "text-embedding-nomic-embed-text-v1.5",
         ProviderName.GOOGLE: "gemini-embedding-001",
+        ProviderName.AZURE: "openai/text-embedding-3-small",
+    }
+
+
+@pytest.fixture
+def provider_extra_kwargs_map() -> dict[ProviderName, dict[str, Any]]:
+    return {
+        ProviderName.AZURE: {
+            "api_base": "https://models.github.ai/inference",
+        },
     }
 
 

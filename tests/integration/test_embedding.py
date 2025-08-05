@@ -1,3 +1,4 @@
+from typing import Any
 import httpx
 import pytest
 from any_llm import embedding, ProviderName
@@ -7,7 +8,11 @@ from openai.types import CreateEmbeddingResponse
 from openai import APIConnectionError
 
 
-def test_embedding_providers(provider: ProviderName, embedding_provider_model_map: dict[ProviderName, str]) -> None:
+def test_embedding_providers(
+    provider: ProviderName,
+    embedding_provider_model_map: dict[ProviderName, str],
+    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+) -> None:
     """Test that all embedding-supported providers can generate embeddings successfully."""
     # first check if the provider supports embeddings
     providers_metadata = ProviderFactory.get_all_provider_metadata()
@@ -16,8 +21,9 @@ def test_embedding_providers(provider: ProviderName, embedding_provider_model_ma
         pytest.skip(f"{provider.value} does not support embeddings, skipping")
 
     model_id = embedding_provider_model_map[provider]
+    extra_kwargs = provider_extra_kwargs_map.get(provider, {})
     try:
-        result = embedding(f"{provider.value}/{model_id}", "Hello world")
+        result = embedding(f"{provider.value}/{model_id}", **extra_kwargs, inputs="Hello world")
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):

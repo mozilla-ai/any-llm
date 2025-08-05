@@ -1,3 +1,4 @@
+from typing import Any
 import httpx
 from pydantic import BaseModel
 import pytest
@@ -7,12 +8,17 @@ from openai import APIConnectionError
 from openai.types.chat.chat_completion import ChatCompletion
 
 
-def test_response_format(provider: ProviderName, provider_model_map: dict[ProviderName, str]) -> None:
+def test_response_format(
+    provider: ProviderName,
+    provider_model_map: dict[ProviderName, str],
+    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+) -> None:
     """Test that all supported providers can be loaded successfully."""
     if provider in [ProviderName.COHERE]:
         pytest.skip(f"{provider.value} does not support response_format")
         return
     model_id = provider_model_map[provider]
+    extra_kwargs = provider_extra_kwargs_map.get(provider, {})
 
     class ResponseFormat(BaseModel):
         city_name: str
@@ -21,6 +27,7 @@ def test_response_format(provider: ProviderName, provider_model_map: dict[Provid
     try:
         result = completion(
             f"{provider.value}/{model_id}",
+            **extra_kwargs,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
             response_format=ResponseFormat,

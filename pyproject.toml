@@ -64,7 +64,7 @@ aws = [
 ]
 
 azure = [
-  "httpx",
+  "azure-ai-inference",
 ]
 
 watsonx = [
