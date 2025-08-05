@@ -1,4 +1,3 @@
-import json
 from contextlib import contextmanager
 from unittest.mock import patch, MagicMock
 
@@ -9,13 +8,17 @@ from any_llm.providers.azure.azure import AzureProvider
 @contextmanager
 def mock_azure_provider():  # type: ignore[no-untyped-def]
     with (
-        patch("any_llm.providers.azure.azure.urllib.request") as mock_azure,
-        patch("any_llm.providers.azure.azure._convert_response"),
+        patch("any_llm.providers.azure.azure.ChatCompletionsClient") as mock_chat_client,
+        patch("any_llm.providers.azure.azure._convert_response") as mock_convert_response,
     ):
-        urlopen = MagicMock()
-        urlopen.read.return_value = "{}"
-        mock_azure.urlopen.return_value.__enter__.return_value = urlopen
-        yield mock_azure
+        mock_client_instance = MagicMock()
+        mock_chat_client.return_value = mock_client_instance
+
+        # Mock the complete method
+        mock_response = MagicMock()
+        mock_client_instance.complete.return_value = mock_response
+
+        yield mock_client_instance, mock_convert_response, mock_chat_client
 
 
 def test_azure_with_api_key_and_api_base() -> None:
@@ -23,20 +26,21 @@ def test_azure_with_api_key_and_api_base() -> None:
     custom_endpoint = "https://test.eu.models.ai.azure.com"
 
     messages = [{"role": "user", "content": "Hello"}]
-    with mock_azure_provider() as mock_azure:
+    with mock_azure_provider() as (mock_client, mock_convert_response, mock_chat_client):
         provider = AzureProvider(ApiConfig(api_key=api_key, api_base=custom_endpoint))
         provider._make_api_call("model-id", messages)
 
-        request_args = (
-            f"{custom_endpoint}/chat/completions",
-            json.dumps({"messages": messages}).encode("utf-8"),
-            {
-                "Content-Type": "application/json",
-                "Authorization": "test-api-key",
-            },
+        # Verify ChatCompletionsClient was created with correct parameters
+        mock_chat_client.assert_called_once()
+
+        # Verify the complete method was called with correct parameters
+        mock_client.complete.assert_called_once_with(
+            model="model-id",
+            messages=messages,
         )
-        mock_azure.Request.assert_called_with(*request_args)
-        mock_azure.urlopen.assert_called_with(mock_azure.Request(*request_args))
+
+        # Verify response conversion was called
+        mock_convert_response.assert_called_once_with(mock_client.complete.return_value)
 
 
 def test_azure_with_tools() -> None:
@@ -46,17 +50,17 @@ def test_azure_with_tools() -> None:
     messages = [{"role": "user", "content": "Hello"}]
     tools = {"type": "function", "function": "foo"}
     tool_choice = "auto"
-    with mock_azure_provider() as mock_azure:
+    with mock_azure_provider() as (mock_client, mock_convert_response, mock_chat_client):
         provider = AzureProvider(ApiConfig(api_key=api_key, api_base=custom_endpoint))
         provider._make_api_call("model-id", messages, tools=tools, tool_choice=tool_choice)
 
-        request_args = (
-            f"{custom_endpoint}/chat/completions",
-            json.dumps({"messages": messages, "tools": tools, "tool_choice": tool_choice}).encode("utf-8"),
-            {
-                "Content-Type": "application/json",
-                "Authorization": "test-api-key",
-            },
+        # Verify the complete method was called with correct parameters including tools
+        mock_client.complete.assert_called_once_with(
+            model="model-id",
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,
         )
-        mock_azure.Request.assert_called_with(*request_args)
-        mock_azure.urlopen.assert_called_with(mock_azure.Request(*request_args))
+
+        # Verify response conversion was called
+        mock_convert_response.assert_called_once_with(mock_client.complete.return_value)
