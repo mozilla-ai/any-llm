@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 
 # Install the dependencies into the mypy env.
 # Note that this can take seconds to run.
-python -m pip install -e '.[all]' --quiet
+python -m pip install -U -e '.[all]' --quiet
 
 # Run on all files.
 python -m mypy src/
