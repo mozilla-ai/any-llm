@@ -18,7 +18,7 @@ dependencies = [
 [project.optional-dependencies]
 
 all = [
-  "any-llm-sdk[mistral,anthropic,huggingface,google,cohere,cerebras,fireworks,groq,aws,azure,watsonx,together,sambanova,ollama,moonshot,nebius,xai,deepseek,inception,openai,openrouter,portkey]"
+  "any-llm-sdk[mistral,anthropic,huggingface,google,cohere,cerebras,fireworks,groq,aws,azure,watsonx,together,sambanova,ollama,moonshot,nebius,xai,deepseek,inception,openai,openrouter,portkey,lmstudio]"
 ]
 
 mistral = [
@@ -93,6 +93,7 @@ inception = []
 openai = []
 portkey = []
 openrouter = []
+lmstudio = []
 
 [project.urls]
 Documentation = "https://mozilla-ai.github.io/any-llm/"

@@ -71,6 +71,7 @@ class ProviderName(str, Enum):
     GROQ = "groq"
     HUGGINGFACE = "huggingface"
     INCEPTION = "inception"
+    LMSTUDIO = "lmstudio"
     MISTRAL = "mistral"
     MOONSHOT = "moonshot"
     NEBIUS = "nebius"
@@ -106,12 +107,17 @@ class Provider(ABC):
 
     def __init__(self, config: ApiConfig) -> None:
         self.config = config
-        # Standardized API key handling
+        self.config = self._verify_and_set_api_key(config)
+
+    def _verify_and_set_api_key(self, config: ApiConfig) -> ApiConfig:
+        # Standardized API key handling. Splitting into its own function so that providers
+        # Can easily override this method if they don't want verification (for instance, LMStudio)
         if not config.api_key:
             config.api_key = os.getenv(self.ENV_API_KEY_NAME)
 
         if not config.api_key:
             raise MissingApiKeyError(self.PROVIDER_NAME, self.ENV_API_KEY_NAME)
+        return config
 
     @classmethod
     def get_provider_metadata(cls) -> dict[str, str]:
