@@ -67,8 +67,16 @@ def generate_provider_table(providers):
         # Create provider ID as a hyperlink to the documentation URL
         provider_id_link = f"[`{provider_key.lower()}`]({provider['doc_url']})"
 
-        stream_supported = "YES" if provider.get("streaming", False) else "NO"
-        embedding_supported = "YES" if provider.get("embedding", False) else "NO"
+        stream_supported = (
+            "<span style='color: green;'>YES</span>"
+            if provider.get("streaming", False)
+            else "<span style='color: red;'>NO</span>"
+        )
+        embedding_supported = (
+            "<span style='color: green;'>YES</span>"
+            if provider.get("embedding", False)
+            else "<span style='color: red;'>NO</span>"
+        )
 
         row = f"| {provider_id_link} | {env_key} | {source_link} | {stream_supported} | {embedding_supported} |"
         table_lines.append(row)
