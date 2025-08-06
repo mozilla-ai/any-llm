@@ -161,7 +161,7 @@ def _create_response_dict_from_ollama_response(
         for tool_call in response_message.tool_calls:
             tool_calls.append(
                 {
-                    "id": str(hash(str(tool_call))),
+                    "id": str(uuid.uuid4()),
                     "function": {
                         "name": tool_call.function.name,
                         "arguments": json.dumps(tool_call.function.arguments),
