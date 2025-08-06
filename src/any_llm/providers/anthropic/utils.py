@@ -23,6 +23,24 @@ from any_llm.providers.helpers import create_completion_from_response
 DEFAULT_MAX_TOKENS = 4096
 
 
+def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str | None, list[dict[str, Any]]]:
+    """Convert messages to Anthropic format, extracting system message."""
+    system_message = None
+    filtered_messages = []
+
+    for message in messages:
+        if message["role"] == "system":
+            if system_message is None:
+                system_message = message["content"]
+            else:
+                # If multiple system messages, concatenate them
+                system_message += "\n" + message["content"]
+        else:
+            filtered_messages.append(message)
+
+    return system_message, filtered_messages
+
+
 def _create_openai_chunk_from_anthropic_chunk(chunk: Any) -> ChatCompletionChunk:
     """Convert Anthropic streaming chunk to OpenAI ChatCompletionChunk format."""
     # Default chunk structure

@@ -21,7 +21,10 @@ def test_streaming_completion(
         for result in completion(
             f"{provider.value}/{model_id}",
             **extra_kwargs,
-            messages=[{"role": "user", "content": "Say 'Hello World'"}],
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that exactly follows the user request."},
+                {"role": "user", "content": "Say the exact phrase:'Hello World'"},
+            ],
             stream=True,
             temperature=0.1,
         ):
