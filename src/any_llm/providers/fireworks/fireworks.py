@@ -50,7 +50,7 @@ class FireworksProvider(Provider):
     ) -> ChatCompletion | Stream[ChatCompletionChunk]:
         llm = LLM(
             model=model,
-            deployment_type="serverless",
+            deployment_type="auto",
             api_key=self.config.api_key,
         )
 
