@@ -17,6 +17,7 @@ from openai.types.chat.chat_completion_chunk import (
 from datetime import datetime
 from openai.types.completion_usage import CompletionUsage
 from ollama import EmbedResponse
+import uuid
 
 
 def _create_openai_embedding_response_from_ollama(
