@@ -110,7 +110,7 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
         )
 
     return ChatCompletionChunk(
-        id=f"chatcmpl-{hash(created)}",
+        id=f"chatcmpl-{uuid.uuid4()}",
         choices=[choice],
         created=created,
         model=ollama_chunk.model or "unknown",
