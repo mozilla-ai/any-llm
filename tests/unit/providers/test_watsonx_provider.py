@@ -27,7 +27,6 @@ def mock_watsonx_provider():  # type: ignore[no-untyped-def]
 def mock_watsonx_streaming_provider():  # type: ignore[no-untyped-def]
     with (
         patch("any_llm.providers.watsonx.watsonx.ModelInference") as mock_model_inference,
-        patch("any_llm.providers.watsonx.watsonx.Credentials") as mock_credentials,
         patch("any_llm.providers.watsonx.watsonx._convert_streaming_chunk") as mock_convert_streaming_chunk,
     ):
         mock_model_instance = MagicMock()
