@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Iterator
 
 try:
     import together
@@ -15,8 +15,9 @@ from openai.types.chat.chat_completion import ChatCompletion
 from openai._streaming import Stream
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 from any_llm.provider import Provider, convert_instructor_response
-from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.helpers import create_completion_from_response
+from any_llm.providers.together.utils import _create_openai_chunk_from_together_chunk
+from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
 
 
 class TogetherProvider(Provider):
@@ -24,13 +25,28 @@ class TogetherProvider(Provider):
     ENV_API_KEY_NAME = "TOGETHER_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://together.ai/"
 
-    SUPPORTS_STREAMING = False
+    SUPPORTS_STREAMING = True
     SUPPORTS_EMBEDDING = False
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Together provider."""
-        if kwargs.get("stream", False) is True:
-            raise UnsupportedParameterError("stream", self.PROVIDER_NAME)
+        pass
+
+    def _stream_completion(
+        self,
+        client: together.Together,
+        model: str,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> Iterator[ChatCompletionChunk]:
+        """Handle streaming completion - extracted to avoid generator issues."""
+        response: Iterator[TogetherChatCompletionChunk] = client.chat.completions.create(  # type: ignore[assignment]
+            model=model,
+            messages=messages,
+            **kwargs,
+        )
+        for chunk in response:
+            yield _create_openai_chunk_from_together_chunk(chunk)
 
     def _make_api_call(
         self,
@@ -56,6 +72,9 @@ class TogetherProvider(Provider):
             )
 
             return convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
+
+        if kwargs.get("stream", False):
+            return self._stream_completion(client, model, messages, **kwargs)  # type: ignore[return-value]
 
         response: ChatCompletionResponse = client.chat.completions.create(  # type: ignore[assignment]
             model=model,
