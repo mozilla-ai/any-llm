@@ -1,8 +1,19 @@
 import json
 from typing import Any
-
+import uuid
 
 from pydantic import BaseModel
+from openai.types.chat.chat_completion_chunk import (
+    ChatCompletionChunk,
+    Choice,
+    ChoiceDelta,
+)
+from openai.types.completion_usage import CompletionUsage
+from typing import Literal, cast
+
+from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
+    ChatCompletionStreamOutput as HuggingFaceChatCompletionStreamOutput,
+)
 
 
 def _convert_pydantic_to_huggingface_json(
@@ -16,10 +27,8 @@ def _convert_pydantic_to_huggingface_json(
     Returns:
         modified_messages
     """
-    # Get the JSON schema from the Pydantic model
     schema = pydantic_model.model_json_schema()
 
-    # Add JSON instructions to the last user message
     modified_messages = messages.copy()
     if modified_messages and modified_messages[-1]["role"] == "user":
         original_content = modified_messages[-1]["content"]
@@ -40,3 +49,57 @@ Answer (as JSON):"""
         raise ValueError(msg)
 
     return modified_messages
+
+
+def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletionStreamOutput) -> ChatCompletionChunk:
+    """Convert a HuggingFace streaming chunk to OpenAI ChatCompletionChunk format."""
+
+    chunk_id = f"chatcmpl-{uuid.uuid4()}"
+    created = chunk.created
+    model = chunk.model
+
+    choices = []
+    hf_choices = chunk.choices
+
+    for i, hf_choice in enumerate(hf_choices):
+        hf_delta = hf_choice.delta
+        content = hf_delta.content
+        role = hf_delta.role
+
+        openai_role = None
+        if role:
+            openai_role = cast(Literal["developer", "system", "user", "assistant", "tool"], role)
+
+        delta = ChoiceDelta(content=content, role=openai_role)
+
+        choice = Choice(
+            index=i,
+            delta=delta,
+            finish_reason=cast(
+                Literal["stop", "length", "tool_calls", "content_filter", "function_call"] | None,
+                hf_choice.finish_reason,
+            ),
+        )
+        choices.append(choice)
+
+    usage = None
+    hf_usage = chunk.usage
+    if hf_usage:
+        prompt_tokens = hf_usage.prompt_tokens
+        completion_tokens = hf_usage.completion_tokens
+        total_tokens = hf_usage.total_tokens
+
+        usage = CompletionUsage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+        )
+
+    return ChatCompletionChunk(
+        id=chunk_id,
+        choices=choices,
+        created=created,
+        model=model,
+        object="chat.completion.chunk",
+        usage=usage,
+    )

@@ -1,10 +1,13 @@
-from typing import Any
+from typing import Any, Iterator
 
 try:
     from huggingface_hub import InferenceClient
-except ImportError:
+    from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
+        ChatCompletionStreamOutput as HuggingFaceChatCompletionStreamOutput,
+    )
+except ImportError as exc:
     msg = "huggingface-hub is not installed. Please install it with `pip install any-llm-sdk[huggingface]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 from pydantic import BaseModel
 
@@ -12,11 +15,13 @@ from openai._streaming import Stream
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 from openai.types.chat.chat_completion import ChatCompletion
 from any_llm.provider import Provider
-from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.helpers import (
     create_completion_from_response,
 )
-from any_llm.providers.huggingface.utils import _convert_pydantic_to_huggingface_json
+from any_llm.providers.huggingface.utils import (
+    _convert_pydantic_to_huggingface_json,
+    _create_openai_chunk_from_huggingface_chunk,
+)
 
 
 class HuggingfaceProvider(Provider):
@@ -26,13 +31,27 @@ class HuggingfaceProvider(Provider):
     ENV_API_KEY_NAME = "HF_TOKEN"
     PROVIDER_DOCUMENTATION_URL = "https://huggingface.co/inference-endpoints"
 
-    SUPPORTS_STREAMING = False
+    SUPPORTS_STREAMING = True
     SUPPORTS_EMBEDDING = False
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the HuggingFace provider."""
-        if kwargs.get("stream", False):
-            raise UnsupportedParameterError("stream", self.PROVIDER_NAME)
+
+    def _stream_completion(
+        self,
+        client: InferenceClient,
+        model: str,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> Iterator[ChatCompletionChunk]:
+        """Handle streaming completion - extracted to avoid generator issues."""
+        response: Iterator[HuggingFaceChatCompletionStreamOutput] = client.chat_completion(
+            model=model,
+            messages=messages,
+            **kwargs,
+        )
+        for chunk in response:
+            yield _create_openai_chunk_from_huggingface_chunk(chunk)
 
     def _make_api_call(
         self,
@@ -54,7 +73,11 @@ class HuggingfaceProvider(Provider):
                 # Convert Pydantic model to HuggingFace JSON format
                 messages = _convert_pydantic_to_huggingface_json(response_format, messages)
 
-        # Make the API call
+        # Handle streaming
+        if kwargs.get("stream", False):
+            return self._stream_completion(client, model, messages, **kwargs)  # type: ignore[return-value]
+
+        # Make the non-streaming API call
         response = client.chat_completion(
             model=model,
             messages=messages,
