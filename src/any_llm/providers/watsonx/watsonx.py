@@ -1,19 +1,18 @@
 import os
-from typing import Any
+from typing import Any, Iterator
 
 try:
     from ibm_watsonx_ai import Credentials
     from ibm_watsonx_ai.foundation_models import ModelInference  # type: ignore[attr-defined]
-except ImportError:
+except ImportError as exc:
     msg = "ibm-watsonx-ai is not installed. Please install it with `pip install any-llm-sdk[watsonx]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 from openai.types.chat.chat_completion import ChatCompletion
 from any_llm.provider import Provider
-from any_llm.exceptions import UnsupportedParameterError
 from openai._streaming import Stream
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from any_llm.providers.watsonx.utils import _convert_response
+from any_llm.providers.watsonx.utils import _convert_response, _convert_streaming_chunk
 
 
 class WatsonxProvider(Provider):
@@ -23,13 +22,25 @@ class WatsonxProvider(Provider):
     ENV_API_KEY_NAME = "WATSONX_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://www.ibm.com/watsonx"
 
-    SUPPORTS_STREAMING = False
+    SUPPORTS_STREAMING = True
     SUPPORTS_EMBEDDING = False
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Watsonx provider."""
-        if kwargs.get("stream", False) is True:
-            raise UnsupportedParameterError("stream", self.PROVIDER_NAME)
+
+    def _stream_completion(
+        self,
+        model_inference: ModelInference,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> Iterator[ChatCompletionChunk]:
+        """Handle streaming completion - extracted to avoid generator issues."""
+        response_stream = model_inference.chat_stream(
+            messages=messages,
+            params=kwargs,
+        )
+        for chunk in response_stream:
+            yield _convert_streaming_chunk(chunk)
 
     def _make_api_call(
         self,
@@ -47,6 +58,9 @@ class WatsonxProvider(Provider):
             ),
             project_id=os.getenv("WATSONX_PROJECT_ID"),
         )
+
+        if kwargs.get("stream", False):
+            return self._stream_completion(model_inference, messages, **kwargs)  # type: ignore[return-value]
 
         response = model_inference.chat(
             messages=messages,
