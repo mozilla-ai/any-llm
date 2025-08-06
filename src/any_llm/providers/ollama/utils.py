@@ -81,7 +81,7 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
 
             openai_tool_call = ChoiceDeltaToolCall(
                 index=0,
-                id=str(hash(str(tool_call))),
+                id=str(uuid.uuid4()),
                 type="function",
                 function=ChoiceDeltaToolCallFunction(
                     name=func.name,
