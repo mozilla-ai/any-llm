@@ -140,7 +140,7 @@ def _create_response_dict_from_ollama_response(
     prompt_tokens = response.prompt_eval_count or 0
     completion_tokens = response.eval_count or 0
     response_dict: dict[str, Any] = {
-        "id": "chatcmpl-" + str(hash(created)),
+        "id": "chatcmpl-" + str(uuid.uuid4()),
         "model": response.model or "unknown",
         "created": created,
         "usage": {
