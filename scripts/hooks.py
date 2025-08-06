@@ -48,14 +48,13 @@ def generate_provider_table(providers):
 
     # Create table header
     table_lines = [
-        "| Provider ID | Documentation URL | Environment Variable | Source Code | Stream Supported | Embedding Supported |",
-        "|-------------| ------------------|----------------------|-------------|------------------|---------------------|",
+        "| Provider ID | Environment Variable | Source Code | Stream Supported | Embedding Supported |",
+        "|-------------|----------------------|-------------|------------------|---------------------|",
     ]
 
     # Add rows for each provider
     source_urls = []
     for provider in providers:
-        doc_url = f"[{provider['doc_url']}]({provider['doc_url']})"
         env_key = provider["env_key"]
 
         # Use the provider key (directory name) instead of display name
@@ -65,13 +64,13 @@ def generate_provider_table(providers):
 
         source_link = f"[Source]({source_url})"
 
-        # Use fenced code block for copyable provider ID
-        provider_id_copyable = f"```{provider_key.lower()}```"
+        # Create provider ID as a hyperlink to the documentation URL
+        provider_id_link = f"[`{provider_key.lower()}`]({provider['doc_url']})"
 
         stream_supported = "YES" if provider.get("streaming", False) else "NO"
         embedding_supported = "YES" if provider.get("embedding", False) else "NO"
 
-        row = f"| {provider_id_copyable} | {doc_url} | {env_key} | {source_link} | {stream_supported} | {embedding_supported} |"
+        row = f"| {provider_id_link} | {env_key} | {source_link} | {stream_supported} | {embedding_supported} |"
         table_lines.append(row)
 
     asyncio.run(validate_url(source_urls))
