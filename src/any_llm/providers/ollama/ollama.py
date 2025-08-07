@@ -60,6 +60,7 @@ class OllamaProvider(Provider):
         response: Iterator[OllamaChatResponse] = client.chat(
             model=model,
             messages=messages,
+            think=kwargs.pop("think", None),
             stream=True,
             options=kwargs,
         )
