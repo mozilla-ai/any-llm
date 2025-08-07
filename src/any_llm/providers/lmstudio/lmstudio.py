@@ -14,7 +14,7 @@ class LmstudioProvider(BaseOpenAIProvider):
     PROVIDER_DOCUMENTATION_URL = "https://lmstudio.ai/"
 
     SUPPORTS_REASONING = True
-    
+
     @override
     def _verify_and_set_api_key(self, config: ApiConfig) -> ApiConfig:
         # LM Studio doesn't require an API Key,
