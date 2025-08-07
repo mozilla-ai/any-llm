@@ -9,11 +9,8 @@ except ImportError:
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
-    CompletionUsage,
-    ChatCompletionMessage,
-    Function,
 )
-from openai.types.chat.chat_completion_message_function_tool_call import ChatCompletionMessageFunctionToolCall
+from any_llm.providers.helpers import create_completion_from_normalized_response
 
 
 def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCompletionChunk:
@@ -103,61 +100,10 @@ def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCo
 
 
 def _convert_response(response_data: Dict[str, Any]) -> ChatCompletion:
-    """Convert Cerebras response to OpenAI ChatCompletion format."""
-    # Since Cerebras is OpenAI-compliant, the response should already be in the right format
-    # We just need to create proper OpenAI objects
-
-    choice_data = response_data["choices"][0]
-    message_data = choice_data["message"]
-
-    # Handle tool calls if present
-    tool_calls = None
-    if "tool_calls" in message_data and message_data["tool_calls"]:
-        tool_calls = []
-        for tool_call in message_data["tool_calls"]:
-            tool_calls.append(
-                ChatCompletionMessageFunctionToolCall(
-                    id=tool_call.get("id"),
-                    type="function",  # Always set to "function" as it's the only valid value
-                    function=Function(
-                        name=tool_call["function"]["name"],
-                        arguments=tool_call["function"]["arguments"],
-                    ),
-                )
-            )
-
-    # Create the message
-    message = ChatCompletionMessage(
-        content=message_data.get("content"),
-        role=message_data.get("role", "assistant"),
-        tool_calls=tool_calls,  # type: ignore[arg-type]
-    )
-
-    # Create the choice
-    from any_llm.types.completion import Choice
-
-    choice = Choice(
-        finish_reason=choice_data.get("finish_reason", "stop"),
-        index=choice_data.get("index", 0),
-        message=message,
-    )
-
-    # Create usage information (if available)
-    usage = None
-    if "usage" in response_data:
-        usage_data = response_data["usage"]
-        usage = CompletionUsage(
-            completion_tokens=usage_data.get("completion_tokens", 0),
-            prompt_tokens=usage_data.get("prompt_tokens", 0),
-            total_tokens=usage_data.get("total_tokens", 0),
-        )
-
-    # Build the final ChatCompletion object
-    return ChatCompletion(
-        id=response_data.get("id", ""),
+    """Convert Cerebras response via normalization helper (it is OpenAI-like)."""
+    # Straight pass-through with minimal normalization; already OpenAI compliant
+    return create_completion_from_normalized_response(
+        response_data=response_data,  # type: ignore[arg-type]
         model=response_data.get("model", ""),
-        object="chat.completion",
-        created=response_data.get("created", 0),
-        choices=[choice],
-        usage=usage,
+        provider_name="cerebras",
     )
