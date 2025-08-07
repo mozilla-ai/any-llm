@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 dynamic = ["version"]
 dependencies = [
   "pydantic",
-  "openai",
+  "openai>=1.99.2",
   "rich",
   "httpx",
   "typing-extensions"
