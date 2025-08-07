@@ -4,6 +4,7 @@ try:
     import groq
     from groq import Stream as GroqStream
     from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
+    from groq.types.chat import ChatCompletion as GroqChatCompletion
     import instructor
 except ImportError:
     msg = "groq or instructor is not installed. Please install it with `pip install any-llm-sdk[groq]`"
@@ -14,7 +15,10 @@ from any_llm.types.completion import ChatCompletionChunk, ChatCompletion
 from any_llm.provider import Provider, convert_instructor_response
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.helpers import create_completion_from_response
-from any_llm.providers.groq.utils import _create_openai_chunk_from_groq_chunk
+from any_llm.providers.groq.utils import (
+    _create_openai_chunk_from_groq_chunk,
+    _create_response_dict_from_groq_response,
+)
 
 
 class GroqProvider(Provider):
@@ -26,7 +30,7 @@ class GroqProvider(Provider):
 
     SUPPORTS_STREAMING = True
     SUPPORTS_COMPLETION = True
-    SUPPORTS_REASONING = False
+    SUPPORTS_REASONING = True
     SUPPORTS_EMBEDDING = False
 
     @classmethod
@@ -74,14 +78,15 @@ class GroqProvider(Provider):
         if kwargs.get("stream", False):
             return self._stream_completion(client, model, messages, **kwargs)
 
-        response: ChatCompletion = client.chat.completions.create(  # type: ignore[assignment]
+        response: GroqChatCompletion = client.chat.completions.create(
             model=model,
             messages=messages,  # type: ignore[arg-type]
             **kwargs,
         )
 
+        response_dict = _create_response_dict_from_groq_response(response)
         return create_completion_from_response(
-            response_data=response.model_dump(),
+            response_data=response_dict,
             model=model,
             provider_name=self.PROVIDER_NAME,
         )

@@ -9,6 +9,7 @@ from any_llm.provider import ProviderName
 def provider_reasoning_model_map() -> dict[ProviderName, str]:
     return {
         ProviderName.MISTRAL: "magistral-small-latest",
+        ProviderName.GROQ: "openai/gpt-oss-20b",
     }
 
 

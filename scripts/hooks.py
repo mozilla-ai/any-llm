@@ -48,8 +48,8 @@ def generate_provider_table(providers):
 
     # Create table header
     table_lines = [
-        "| Provider ID | Environment Variable | Source Code | Completion | Stream | Embedding | Reasoning |",
-        "|-------------|----------------------|-------------|------------|--------|-----------|-----------|",
+        "| Provider ID | Environment Variable | Source Code | Completion | Stream | Embedding | Reasoning Content |",
+        "|-------------|----------------------|-------------|------------|--------|-----------|-------------------|",
     ]
 
     # Add rows for each provider
