@@ -11,11 +11,8 @@ from pydantic import BaseModel
 
 from any_llm.types.completion import (
     ChatCompletion,
-    Choice,
-    CompletionUsage,
-    ChatCompletionMessage,
-    Function,
     ChatCompletionChunk,
+    CompletionUsage,
     CreateEmbeddingResponse,
     ChoiceDelta,
     ChoiceDeltaToolCall,
@@ -24,8 +21,7 @@ from any_llm.types.completion import (
     Usage,
     ChunkChoice,
 )
-from openai.types.chat.chat_completion_message_function_tool_call import ChatCompletionMessageFunctionToolCall
-from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall
+from any_llm.providers.helpers import create_completion_from_response
 
 
 def _convert_response_format(
@@ -61,62 +57,58 @@ def _convert_response_format(
 
 
 def _convert_response(response_data: ChatCompletions) -> ChatCompletion:
-    """Convert Azure response to OpenAI ChatCompletion format."""
-    choices_data = response_data.choices
-    response_id = response_data.id
-    model_name = response_data.model
-    created_time = response_data.created
-    usage_data = response_data.usage
-
-    choice_data = choices_data[0]
-
+    """Convert Azure response to OpenAI ChatCompletion format using generic helper."""
+    choice_data = response_data.choices[0]
     message_data = choice_data.message
-    finish_reason = choice_data.finish_reason
-    index = choice_data.index
 
-    # Handle tool calls
-    tool_calls: Optional[List[ChatCompletionMessageToolCall]] = None
+    # Normalize tool calls to dicts expected by helpers
+    tool_calls_list: Optional[List[dict[str, Any]]] = None
     if message_data.tool_calls:
-        tool_calls = []
-        for tool_call in message_data.tool_calls:
-            tool_calls.append(
-                ChatCompletionMessageFunctionToolCall(
-                    id=tool_call.id,
-                    type=tool_call.type,
-                    function=Function(
-                        name=tool_call.function.name,
-                        arguments=tool_call.function.arguments,
-                    ),
-                )
-            )
+        tool_calls_list = [
+            {
+                "id": tc.id,
+                "type": getattr(tc, "type", "function"),
+                "function": {
+                    "name": tc.function.name if tc.function else None,
+                    "arguments": tc.function.arguments if tc.function else None,
+                },
+            }
+            for tc in message_data.tool_calls
+        ]
 
-    message = ChatCompletionMessage(
-        content=message_data.content,
-        role=cast(Literal["assistant"], message_data.role),
-        tool_calls=tool_calls,
-    )
+    # Normalize usage
+    usage_dict: Optional[dict[str, Any]] = None
+    if response_data.usage:
+        usage_dict = {
+            "prompt_tokens": response_data.usage.prompt_tokens,
+            "completion_tokens": response_data.usage.completion_tokens,
+            "total_tokens": response_data.usage.total_tokens,
+        }
 
-    choice = Choice(
-        finish_reason=cast(Literal["stop", "length", "tool_calls", "content_filter", "function_call"], finish_reason),
-        index=index,
-        message=message,
-    )
+    normalized: dict[str, Any] = {
+        "id": response_data.id,
+        "model": response_data.model,
+        "created": int(response_data.created.timestamp()),
+        "choices": [
+            {
+                "message": {
+                    "role": cast(Literal["assistant"], message_data.role),
+                    "content": message_data.content,
+                    "tool_calls": tool_calls_list,
+                    # Azure doesn’t provide explicit reasoning content in this path
+                    "reasoning_content": None,
+                },
+                "finish_reason": choice_data.finish_reason,
+                "index": choice_data.index,
+            }
+        ],
+        "usage": usage_dict,
+    }
 
-    usage: Optional[CompletionUsage] = None
-    if usage_data:
-        usage = CompletionUsage(
-            completion_tokens=usage_data.completion_tokens,
-            prompt_tokens=usage_data.prompt_tokens,
-            total_tokens=usage_data.total_tokens,
-        )
-
-    return ChatCompletion(
-        id=response_id,
-        model=model_name,
-        object="chat.completion",
-        created=int(created_time.timestamp()),
-        choices=[choice],
-        usage=usage,
+    return create_completion_from_response(
+        response_data=normalized,
+        model=response_data.model,
+        provider_name="azure",
     )
 
 
@@ -202,7 +194,7 @@ def _create_openai_embedding_response_from_azure(
 
     openai_embeddings: List[Embedding] = []
     if isinstance(data, list):
-        for i, embedding_data in enumerate(data):
+        for embedding_data in data:
             embedding_vector = embedding_data.embedding
             index = embedding_data.index
 

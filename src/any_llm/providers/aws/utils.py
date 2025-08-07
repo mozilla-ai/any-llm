@@ -4,18 +4,14 @@ from typing import Any, Literal
 
 from any_llm.types.completion import (
     ChatCompletion,
-    Choice,
     ChatCompletionChunk,
     ChoiceDelta,
-    CompletionUsage,
-    ChatCompletionMessage,
-    Function,
     CreateEmbeddingResponse,
     Embedding,
     Usage,
     ChunkChoice,
 )
-from openai.types.chat.chat_completion_message_function_tool_call import ChatCompletionMessageFunctionToolCall
+from any_llm.providers.helpers import create_completion_from_response
 
 
 INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
@@ -150,92 +146,101 @@ def _convert_assistant(message: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _convert_response(response: dict[str, Any]) -> ChatCompletion:
-    """Convert AWS Bedrock response to OpenAI ChatCompletion format."""
-    # Check if the model is requesting tool use
+    """Convert AWS Bedrock response to OpenAI format using generic helper."""
+    # Normalize tool-use path
+    choices_norm: list[dict[str, Any]] = []
+    usage_norm: dict[str, Any] | None = None
+
     if response.get("stopReason") == "tool_use":
-        tool_calls = []
+        tool_calls_list: list[dict[str, Any]] = []
         for content in response["output"]["message"]["content"]:
             if "toolUse" in content:
                 tool = content["toolUse"]
-                tool_calls.append(
-                    ChatCompletionMessageFunctionToolCall(
-                        id=tool["toolUseId"],
-                        type="function",
-                        function=Function(
-                            name=tool["name"],
-                            arguments=json.dumps(tool["input"]),
-                        ),
-                    )
+                tool_calls_list.append(
+                    {
+                        "id": tool["toolUseId"],
+                        "type": "function",
+                        "function": {
+                            "name": tool["name"],
+                            "arguments": json.dumps(tool["input"]),
+                        },
+                    }
                 )
 
-        if tool_calls:
-            message = ChatCompletionMessage(
-                content=None,
-                role="assistant",
-                tool_calls=tool_calls,  # type: ignore[arg-type]
+        if tool_calls_list:
+            choices_norm.append(
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": tool_calls_list,
+                        "reasoning_content": None,
+                    },
+                    "finish_reason": "tool_calls",
+                    "index": 0,
+                }
             )
 
-            choice = Choice(
-                finish_reason="tool_calls",
-                index=0,
-                message=message,
-            )
-
-            usage = None
             if "usage" in response:
                 usage_data = response["usage"]
-                usage = CompletionUsage(
-                    completion_tokens=usage_data.get("outputTokens", 0),
-                    prompt_tokens=usage_data.get("inputTokens", 0),
-                    total_tokens=usage_data.get("totalTokens", 0),
-                )
+                usage_norm = {
+                    "completion_tokens": usage_data.get("outputTokens", 0),
+                    "prompt_tokens": usage_data.get("inputTokens", 0),
+                    "total_tokens": usage_data.get("totalTokens", 0),
+                }
 
-            return ChatCompletion(
-                id=response.get("id", ""),
-                model=response.get("model", ""),
-                object="chat.completion",
-                created=response.get("created", 0),
-                choices=[choice],
-                usage=usage,
+            normalized = {
+                "id": response.get("id", ""),
+                "model": response.get("model", ""),
+                "created": response.get("created", 0),
+                "choices": choices_norm,
+                "usage": usage_norm,
+            }
+
+            return create_completion_from_response(
+                response_data=normalized,
+                model=normalized["model"],
+                provider_name="aws",
             )
 
+    # Normal chat response path
     content = response["output"]["message"]["content"][0]["text"]
-
     stop_reason = response.get("stopReason")
-    finish_reason: Literal["stop", "length"]
-    if stop_reason == "max_tokens":
-        finish_reason = "length"
-    else:
-        finish_reason = "stop"
+    finish_reason: Literal["stop", "length"] = "length" if stop_reason == "max_tokens" else "stop"
 
-    message = ChatCompletionMessage(
-        content=content,
-        role="assistant",
-        tool_calls=None,
+    choices_norm.append(
+        {
+            "message": {
+                "role": "assistant",
+                "content": content,
+                "tool_calls": None,
+                "reasoning_content": None,
+            },
+            "finish_reason": finish_reason,
+            "index": 0,
+        }
     )
 
-    choice = Choice(
-        finish_reason=finish_reason,
-        index=0,
-        message=message,
-    )
-
-    usage = None
     if "usage" in response:
         usage_data = response["usage"]
-        usage = CompletionUsage(
-            completion_tokens=usage_data.get("outputTokens", 0),
-            prompt_tokens=usage_data.get("inputTokens", 0),
-            total_tokens=usage_data.get("totalTokens", 0),
-        )
+        usage_norm = {
+            "completion_tokens": usage_data.get("outputTokens", 0),
+            "prompt_tokens": usage_data.get("inputTokens", 0),
+            "total_tokens": usage_data.get("totalTokens", 0),
+        }
 
-    return ChatCompletion(
-        id=response.get("id", ""),
-        model=response.get("model", ""),
-        object="chat.completion",
-        created=response.get("created", 0),
-        choices=[choice],
-        usage=usage,
+    normalized = {
+        "id": response.get("id", ""),
+        "model": response.get("model", ""),
+        "created": response.get("created", 0),
+        "choices": choices_norm,
+        "usage": usage_norm,
+    }
+
+    return create_completion_from_response(
+        response_data=normalized,
+        model=normalized["model"],
+        provider_name="aws",
     )
 
 

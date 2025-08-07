@@ -28,7 +28,8 @@ class BaseOpenAIProvider(Provider, ABC):
     SUPPORTS_REASONING = False
     SUPPORTS_EMBEDDING = True
 
-    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    @classmethod
+    def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
         """Default is that all kwargs are supported."""
         pass
 

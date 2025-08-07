@@ -46,7 +46,8 @@ class MistralProvider(Provider):
 
             yield _create_openai_chunk_from_mistral_chunk(event)
 
-    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    @classmethod
+    def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Mistral provider."""
         pass
 

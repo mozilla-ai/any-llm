@@ -37,9 +37,10 @@ class AnthropicProvider(Provider):
     SUPPORTS_REASONING = False
     SUPPORTS_EMBEDDING = False
 
-    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    @classmethod
+    def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
         if kwargs.get("stream", False) and kwargs.get("response_format", None):
-            raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
+            raise UnsupportedParameterError("stream and response_format", cls.PROVIDER_NAME)
 
     def _stream_completion(
         self,

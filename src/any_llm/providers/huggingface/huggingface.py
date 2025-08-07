@@ -34,7 +34,8 @@ class HuggingfaceProvider(Provider):
     SUPPORTS_REASONING = False
     SUPPORTS_EMBEDDING = False
 
-    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    @classmethod
+    def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the HuggingFace provider."""
 
     def _stream_completion(

@@ -10,16 +10,14 @@ try:
     from mistralai.models import ReferenceChunk as MistralReferenceChunk
     from mistralai.models.toolcall import ToolCall as MistralToolCall
     from mistralai.types.basemodel import Unset
-except ImportError:
+except ImportError as exc:
     msg = "mistralai is not installed. Please install it with `pip install any-llm-sdk[mistral]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 from any_llm.types.completion import (
     ChatCompletionChunk,
     CreateEmbeddingResponse,
     ChatCompletion,
-    Choice,
-    ChatCompletionMessage,
     Reasoning,
     CompletionUsage,
     Embedding,
@@ -30,9 +28,12 @@ from any_llm.types.completion import (
     ChoiceDeltaToolCallFunction,
     Function,
 )
+from any_llm.providers.helpers import (
+    create_completion_from_response,
+)
 from openai.types.chat.chat_completion_message_function_tool_call import ChatCompletionMessageFunctionToolCall
 from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall
-from typing import Literal, cast
+from typing import Literal, cast, Any
 
 
 def _convert_mistral_tool_calls_to_any_llm(
@@ -148,10 +149,8 @@ def _extract_mistral_content_and_reasoning(
 def _create_mistral_completion_from_response(
     response_data: MistralChatCompletionResponse, model: str
 ) -> ChatCompletion:
-    """
-    Create a ChatCompletion from Mistral response data with custom reasoning extraction.
-    """
-    choices = []
+    """Create a ChatCompletion from Mistral response via normalization helper."""
+    choices_norm: list[dict[str, Any]] = []
 
     for i, choice_data in enumerate(response_data.choices):
         message_data = choice_data.message
@@ -162,43 +161,59 @@ def _create_mistral_completion_from_response(
             content = None
             reasoning_content = None
 
-        reasoning = None
-        if reasoning_content:
-            reasoning = Reasoning(content=reasoning_content)
-
-        tool_calls = None
+        tool_calls_list: list[dict[str, Any]] | None = None
         if message_data.tool_calls is not None and not isinstance(message_data.tool_calls, Unset):
-            tool_calls = _convert_mistral_tool_calls_to_any_llm(message_data.tool_calls)
+            tool_calls_list = []
+            for tc in message_data.tool_calls:
+                args: Any = tc.function.arguments if tc.function else None
+                if isinstance(args, dict):
+                    args = json.dumps(args)
+                elif args is not None and not isinstance(args, str):
+                    args = str(args)
+                tool_calls_list.append(
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name if tc.function else None,
+                            "arguments": args,
+                        },
+                    }
+                )
 
-        message = ChatCompletionMessage(
-            role=message_data.role,  # type: ignore[arg-type]
-            content=content,
-            tool_calls=tool_calls,
-            reasoning=reasoning,
+        choices_norm.append(
+            {
+                "message": {
+                    "role": message_data.role,
+                    "content": content,
+                    "tool_calls": tool_calls_list,
+                    "reasoning_content": reasoning_content,
+                },
+                "finish_reason": choice_data.finish_reason,
+                "index": i,
+            }
         )
 
-        choice = Choice(
-            finish_reason=choice_data.finish_reason,  # type: ignore[arg-type]
-            index=i,
-            message=message,
-        )
-        choices.append(choice)
-
-    usage = None
+    usage_norm: dict[str, Any] | None = None
     if response_data.usage:
-        usage = CompletionUsage(
-            completion_tokens=response_data.usage.completion_tokens or 0,
-            prompt_tokens=response_data.usage.prompt_tokens or 0,
-            total_tokens=response_data.usage.total_tokens or 0,
-        )
+        usage_norm = {
+            "completion_tokens": response_data.usage.completion_tokens or 0,
+            "prompt_tokens": response_data.usage.prompt_tokens or 0,
+            "total_tokens": response_data.usage.total_tokens or 0,
+        }
 
-    return ChatCompletion(
-        id=response_data.id,
+    normalized: dict[str, Any] = {
+        "id": response_data.id,
+        "model": model,
+        "created": response_data.created,
+        "choices": choices_norm,
+        "usage": usage_norm,
+    }
+
+    return create_completion_from_response(
+        response_data=normalized,
         model=model,
-        object="chat.completion",
-        created=response_data.created,
-        choices=choices,
-        usage=usage,
+        provider_name="mistral",
     )
 
 

@@ -50,7 +50,8 @@ class AwsProvider(Provider):
         if credentials is None and bedrock_api_key is None:
             raise MissingApiKeyError(provider_name=self.PROVIDER_NAME, env_var_name=self.ENV_API_KEY_NAME)
 
-    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    @classmethod
+    def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the AWS Bedrock provider."""
         pass
 
