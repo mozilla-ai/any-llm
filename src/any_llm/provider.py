@@ -144,8 +144,9 @@ class Provider(ABC):
             "class_name": cls.__name__,
         }
 
+    @classmethod
     @abstractmethod
-    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
         """This method is designed to check whether a provider supports specific arguments.
         It is not used to verify the API key.
 

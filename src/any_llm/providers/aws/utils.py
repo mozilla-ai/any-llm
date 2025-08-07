@@ -1,6 +1,6 @@
 import json
 from time import time
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -12,6 +12,7 @@ from any_llm.types.completion import (
     ChunkChoice,
 )
 from any_llm.providers.helpers import create_completion_from_normalized_response
+from any_llm.types.normalized import NormalizedResponse
 
 
 INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
@@ -199,7 +200,7 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
             }
 
             return create_completion_from_normalized_response(
-                response_data=normalized,  # type: ignore[arg-type]
+                response_data=cast(NormalizedResponse, normalized),
                 model=normalized["model"],
                 provider_name="aws",
             )
@@ -239,7 +240,7 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
     }
 
     return create_completion_from_normalized_response(
-        response_data=normalized,  # type: ignore[arg-type]
+        response_data=cast(NormalizedResponse, normalized),
         model=normalized["model"],
         provider_name="aws",
     )

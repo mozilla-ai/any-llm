@@ -254,8 +254,8 @@ def verify_kwargs(provider_name: str, **kwargs: Any) -> None:
         UnsupportedParameterError: If the provider does not support the kwargs.
     """
     provider_key = ProviderFactory.get_provider_enum(provider_name)
-    provider = ProviderFactory.create_provider(provider_key, ApiConfig())
-    provider.verify_kwargs(kwargs)
+    provider_cls = ProviderFactory.get_provider_class(provider_key)
+    provider_cls.verify_kwargs(kwargs)
 
 
 def embedding(

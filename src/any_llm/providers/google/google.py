@@ -70,13 +70,14 @@ class GoogleProvider(Provider):
 
         return _create_openai_embedding_response_from_google(model, result)
 
-    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    @classmethod
+    def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Google provider."""
         if kwargs.get("stream", False) and kwargs.get("response_format", None) is not None:
-            raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
+            raise UnsupportedParameterError("stream and response_format", cls.PROVIDER_NAME)
 
         if kwargs.get("parallel_tool_calls", None) is not None:
-            raise UnsupportedParameterError("parallel_tool_calls", self.PROVIDER_NAME)
+            raise UnsupportedParameterError("parallel_tool_calls", cls.PROVIDER_NAME)
 
     def _make_api_call(
         self,

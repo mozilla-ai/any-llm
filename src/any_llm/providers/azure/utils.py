@@ -22,6 +22,7 @@ from any_llm.types.completion import (
     ChunkChoice,
 )
 from any_llm.providers.helpers import create_completion_from_normalized_response
+from any_llm.types.normalized import NormalizedResponse
 
 
 def _convert_response_format(
@@ -107,7 +108,7 @@ def _convert_response(response_data: ChatCompletions) -> ChatCompletion:
     }
 
     return create_completion_from_normalized_response(
-        response_data=normalized,  # type: ignore[arg-type]
+        response_data=cast(NormalizedResponse, normalized),
         model=response_data.model,
         provider_name="azure",
     )
@@ -195,7 +196,7 @@ def _create_openai_embedding_response_from_azure(
 
     openai_embeddings: List[Embedding] = []
     if isinstance(data, list):
-        for i, embedding_data in enumerate(data):
+        for embedding_data in data:
             embedding_vector = embedding_data.embedding
             index = embedding_data.index
 

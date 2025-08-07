@@ -10,9 +10,9 @@ try:
     from mistralai.models import ReferenceChunk as MistralReferenceChunk
     from mistralai.models.toolcall import ToolCall as MistralToolCall
     from mistralai.types.basemodel import Unset
-except ImportError:
+except ImportError as exc:
     msg = "mistralai is not installed. Please install it with `pip install any-llm-sdk[mistral]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 from any_llm.types.completion import (
     ChatCompletionChunk,
@@ -31,6 +31,7 @@ from any_llm.types.completion import (
 from any_llm.providers.helpers import (
     create_completion_from_normalized_response,
 )
+from any_llm.types.normalized import NormalizedResponse
 from openai.types.chat.chat_completion_message_function_tool_call import ChatCompletionMessageFunctionToolCall
 from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall
 from typing import Literal, cast, Any
@@ -213,7 +214,7 @@ def _create_mistral_completion_from_response(
     }
 
     return create_completion_from_normalized_response(
-        response_data=normalized,  # type: ignore[arg-type]
+        response_data=cast(NormalizedResponse, normalized),
         model=model,
         provider_name="mistral",
     )

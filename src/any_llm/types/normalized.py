@@ -37,4 +37,3 @@ class NormalizedResponse(TypedDict):
     created: int
     choices: Sequence[NormalizedChoice]
     usage: NotRequired[NormalizedUsage | None]
-

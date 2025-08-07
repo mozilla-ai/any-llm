@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 try:
     from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponse
@@ -11,6 +11,7 @@ from any_llm.types.completion import (
     ChatCompletionChunk,
 )
 from any_llm.providers.helpers import create_completion_from_normalized_response
+from any_llm.types.normalized import NormalizedResponse
 
 
 def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCompletionChunk:
@@ -103,7 +104,7 @@ def _convert_response(response_data: Dict[str, Any]) -> ChatCompletion:
     """Convert Cerebras response via normalization helper (it is OpenAI-like)."""
     # Straight pass-through with minimal normalization; already OpenAI compliant
     return create_completion_from_normalized_response(
-        response_data=response_data,  # type: ignore[arg-type]
+        response_data=cast(NormalizedResponse, response_data),
         model=response_data.get("model", ""),
         provider_name="cerebras",
     )

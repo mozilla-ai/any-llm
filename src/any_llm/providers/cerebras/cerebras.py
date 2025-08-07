@@ -37,10 +37,11 @@ class CerebrasProvider(Provider):
         # Create instructor client for structured output support
         self.instructor_client = instructor.from_cerebras(self.client)
 
-    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
+    @classmethod
+    def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
         """Verify the kwargs for the Cerebras provider."""
         if kwargs.get("stream", False) and kwargs.get("response_format", None) is not None:
-            raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
+            raise UnsupportedParameterError("stream and response_format", cls.PROVIDER_NAME)
 
     def _stream_completion(
         self,
