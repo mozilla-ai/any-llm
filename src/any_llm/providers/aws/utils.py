@@ -1,6 +1,6 @@
 import json
 from time import time
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -11,8 +11,7 @@ from any_llm.types.completion import (
     Usage,
     ChunkChoice,
 )
-from any_llm.providers.helpers import create_completion_from_normalized_response
-from any_llm.types.normalized import NormalizedResponse
+from any_llm.providers.helpers import create_completion_from_response
 
 
 INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
@@ -148,7 +147,7 @@ def _convert_assistant(message: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _convert_response(response: dict[str, Any]) -> ChatCompletion:
-    """Convert AWS Bedrock response via normalization helper."""
+    """Convert AWS Bedrock response to OpenAI format using generic helper."""
     # Normalize tool-use path
     choices_norm: list[dict[str, Any]] = []
     usage_norm: dict[str, Any] | None = None
@@ -199,8 +198,8 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
                 "usage": usage_norm,
             }
 
-            return create_completion_from_normalized_response(
-                response_data=cast(NormalizedResponse, normalized),
+            return create_completion_from_response(
+                response_data=normalized,
                 model=normalized["model"],
                 provider_name="aws",
             )
@@ -239,8 +238,8 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
         "usage": usage_norm,
     }
 
-    return create_completion_from_normalized_response(
-        response_data=cast(NormalizedResponse, normalized),
+    return create_completion_from_response(
+        response_data=normalized,
         model=normalized["model"],
         provider_name="aws",
     )

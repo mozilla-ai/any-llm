@@ -21,8 +21,7 @@ from any_llm.types.completion import (
     Usage,
     ChunkChoice,
 )
-from any_llm.providers.helpers import create_completion_from_normalized_response
-from any_llm.types.normalized import NormalizedResponse
+from any_llm.providers.helpers import create_completion_from_response
 
 
 def _convert_response_format(
@@ -59,7 +58,7 @@ def _convert_response_format(
 
 
 def _convert_response(response_data: ChatCompletions) -> ChatCompletion:
-    """Convert Azure response to OpenAI ChatCompletion format via normalization helper."""
+    """Convert Azure response to OpenAI ChatCompletion format using generic helper."""
     choice_data = response_data.choices[0]
     message_data = choice_data.message
 
@@ -107,8 +106,8 @@ def _convert_response(response_data: ChatCompletions) -> ChatCompletion:
         "usage": usage_dict,
     }
 
-    return create_completion_from_normalized_response(
-        response_data=cast(NormalizedResponse, normalized),
+    return create_completion_from_response(
+        response_data=normalized,
         model=response_data.model,
         provider_name="azure",
     )

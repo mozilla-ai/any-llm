@@ -1,4 +1,4 @@
-from typing import Any, Optional, Sequence, cast
+from typing import Any, Optional, Sequence
 import json
 
 from any_llm.types.completion import (
@@ -10,11 +10,6 @@ from any_llm.types.completion import (
     ChatCompletionMessageToolCall,
     Function,
     Reasoning,
-)
-from any_llm.types.normalized import (
-    NormalizedResponse,
-    NormalizedToolCall,
-    NormalizedUsage,
 )
 
 
@@ -44,7 +39,7 @@ def create_openai_message(
 
 
 def create_openai_completion(
-    id: str,
+    response_id: str,
     model: str,
     choices: list[Any],
     usage: Optional[Any] = None,
@@ -52,7 +47,7 @@ def create_openai_completion(
 ) -> ChatCompletion:
     """Create a standardized OpenAI ChatCompletion object."""
     return ChatCompletion(
-        id=id,
+        id=response_id,
         model=model,
         object="chat.completion",
         created=created,
@@ -62,7 +57,7 @@ def create_openai_completion(
 
 
 def create_tool_calls_from_list(
-    tool_calls_data: Sequence[dict[str, Any] | NormalizedToolCall],
+    tool_calls_data: Sequence[dict[str, Any]],
 ) -> list[ChatCompletionMessageFunctionToolCall]:
     """
     Convert a list of tool call dictionaries to ChatCompletionMessageFunctionToolCall objects.
@@ -72,7 +67,7 @@ def create_tool_calls_from_list(
     tool_calls = []
 
     for raw_tool_call in tool_calls_data:
-        tool_call = dict(raw_tool_call)  # treat TypedDicts uniformly
+        tool_call = dict(raw_tool_call)
         # Extract tool call ID (handle various formats)
         tool_call_id = tool_call.get("id") or tool_call.get("tool_call_id") or f"call_{hash(str(tool_call))}"
 
@@ -100,55 +95,6 @@ def create_tool_calls_from_list(
         tool_calls.append(create_openai_tool_call(tool_call_id, name, arguments))
 
     return tool_calls
-
-
-def create_completion_from_normalized_response(
-    response_data: NormalizedResponse,
-    model: str,
-    provider_name: str = "provider",
-) -> ChatCompletion:
-    """Typed conversion from normalized provider response into ChatCompletion."""
-    choices: list[Choice] = []
-    for i, choice_data in enumerate(response_data["choices"]):
-        message_data = choice_data["message"]
-
-        tool_calls = None
-        if "tool_calls" in message_data and message_data.get("tool_calls"):
-            tool_calls = create_tool_calls_from_list(message_data["tool_calls"] or [])
-
-        message = create_openai_message(
-            role=message_data.get("role", "assistant"),
-            content=message_data.get("content"),
-            tool_calls=cast(Optional[list[ChatCompletionMessageToolCall]], tool_calls),
-            reasoning=Reasoning(content=str(message_data.get("reasoning_content")))
-            if message_data.get("reasoning_content")
-            else None,
-        )
-
-        choices.append(
-            Choice(
-                finish_reason=choice_data["finish_reason"],
-                index=choice_data["index"],
-                message=message,
-            )
-        )
-
-    usage = None
-    if "usage" in response_data and response_data.get("usage"):
-        usage_data = cast(NormalizedUsage, response_data["usage"])
-        usage = CompletionUsage(
-            completion_tokens=usage_data.get("completion_tokens", 0),
-            prompt_tokens=usage_data.get("prompt_tokens", 0),
-            total_tokens=usage_data.get("total_tokens", 0),
-        )
-
-    return create_openai_completion(
-        id=response_data.get("id", f"{provider_name}_{hash(str(response_data))}"),
-        model=model,
-        choices=choices,
-        usage=usage,
-        created=response_data.get("created", 0),
-    )
 
 
 def create_choice_from_message_data(
@@ -278,7 +224,7 @@ def create_completion_from_response(
     response_id = response_data.get(id_field, f"{provider_name}_{hash(str(response_data))}")
 
     return create_openai_completion(
-        id=response_id,
+        response_id=response_id,
         model=model,
         choices=choices,
         usage=usage,
