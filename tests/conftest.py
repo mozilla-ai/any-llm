@@ -8,7 +8,6 @@ from any_llm.provider import ProviderName
 @pytest.fixture
 def provider_reasoning_model_map() -> dict[ProviderName, str]:
     return {
-        ProviderName.OLLAMA: "gpt-oss:20b",
         ProviderName.MISTRAL: "magistral-small-latest",
     }
 
