@@ -10,7 +10,6 @@ def provider_reasoning_model_map() -> dict[ProviderName, str]:
     return {
         ProviderName.OLLAMA: "gpt-oss:20b",
         ProviderName.MISTRAL: "magistral-small-latest",
-        ProviderName.OPENAI: "gpt-5-nano-2025-08-07",
     }
 
 
