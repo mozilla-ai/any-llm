@@ -748,8 +748,8 @@ In order to determine that info you will need to refer to the provider documenta
 </span><span id="__span-0-254"><a id="__codelineno-0-254" name="__codelineno-0-254"></a><span class="sd">        UnsupportedParameterError: If the provider does not support the kwargs.</span>
 </span><span id="__span-0-255"><a id="__codelineno-0-255" name="__codelineno-0-255"></a><span class="sd">    &quot;&quot;&quot;</span>
 </span><span id="__span-0-256"><a id="__codelineno-0-256" name="__codelineno-0-256"></a>    <span class="n">provider_key</span> <span class="o">=</span> <span class="n">ProviderFactory</span><span class="o">.</span><span class="n">get_provider_enum</span><span class="p">(</span><span class="n">provider_name</span><span class="p">)</span>
-</span><span id="__span-0-257"><a id="__codelineno-0-257" name="__codelineno-0-257"></a>    <span class="n">provider</span> <span class="o">=</span> <span class="n">ProviderFactory</span><span class="o">.</span><span class="n">create_provider</span><span class="p">(</span><span class="n">provider_key</span><span class="p">,</span> <span class="n">ApiConfig</span><span class="p">())</span>
-</span><span id="__span-0-258"><a id="__codelineno-0-258" name="__codelineno-0-258"></a>    <span class="n">provider</span><span class="o">.</span><span class="n">verify_kwargs</span><span class="p">(</span><span class="n">kwargs</span><span class="p">)</span>
+</span><span id="__span-0-257"><a id="__codelineno-0-257" name="__codelineno-0-257"></a>    <span class="n">provider_cls</span> <span class="o">=</span> <span class="n">ProviderFactory</span><span class="o">.</span><span class="n">get_provider_class</span><span class="p">(</span><span class="n">provider_key</span><span class="p">)</span>
+</span><span id="__span-0-258"><a id="__codelineno-0-258" name="__codelineno-0-258"></a>    <span class="n">provider_cls</span><span class="o">.</span><span class="n">verify_kwargs</span><span class="p">(</span><span class="n">kwargs</span><span class="p">)</span>
 </span></code></pre></div></td></tr></table></div>
             </details>
     </div>
