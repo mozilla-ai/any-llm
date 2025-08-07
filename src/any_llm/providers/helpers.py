@@ -18,13 +18,17 @@ def create_openai_tool_call(tool_call_id: str, name: str, arguments: str) -> Cha
 
 
 def create_openai_message(
-    role: str, content: Optional[str] = None, tool_calls: Optional[list[ChatCompletionMessageToolCall]] = None
+    role: str,
+    content: Optional[str] = None,
+    tool_calls: Optional[list[ChatCompletionMessageToolCall]] = None,
+    reasoning: Optional[str] = None,
 ) -> ChatCompletionMessage:
     """Create a standardized OpenAI message object."""
     return ChatCompletionMessage(
         role=role,  # type: ignore[arg-type]
         content=content,
         tool_calls=tool_calls,
+        reasoning=reasoning,  # type: ignore[call-arg]
     )
 
 
@@ -111,6 +115,7 @@ def create_choice_from_message_data(
         role=message_data.get("role", "assistant"),
         content=message_data.get("content"),
         tool_calls=tool_calls,
+        reasoning=message_data.get("reasoning"),
     )
 
     return Choice(
