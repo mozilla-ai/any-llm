@@ -29,9 +29,13 @@ def create_openai_message(
     tool_calls: Optional[list[ChatCompletionMessageToolCall]] = None,
     reasoning: Optional[Reasoning] = None,
 ) -> ChatCompletionMessage:
-    """Create a standardized OpenAI message object."""
+    """Create a standardized OpenAI message object.
+
+    Note: OpenAI ChatCompletion choices[].message is always an assistant message.
+    We therefore coerce the role to "assistant" for type correctness.
+    """
     return ChatCompletionMessage(
-        role=role,  # type: ignore[arg-type]
+        role="assistant",
         content=content,
         tool_calls=tool_calls,
         reasoning=reasoning,
@@ -58,13 +62,13 @@ def create_openai_completion(
 
 def create_tool_calls_from_list(
     tool_calls_data: Sequence[dict[str, Any]],
-) -> list[ChatCompletionMessageFunctionToolCall]:
+) -> list[ChatCompletionMessageToolCall]:
     """
     Convert a list of tool call dictionaries to ChatCompletionMessageFunctionToolCall objects.
 
     Handles common variations in tool call structure across providers.
     """
-    tool_calls = []
+    tool_calls: list[ChatCompletionMessageToolCall] = []
 
     for raw_tool_call in tool_calls_data:
         tool_call = dict(raw_tool_call)
@@ -80,19 +84,25 @@ def create_tool_calls_from_list(
                 "arguments": tool_call.get("arguments", tool_call.get("input", {})),
             }
 
-        name: str = function_info.get("name", "")
-        arguments_value = function_info.get("arguments", {})
+        name_value = function_info.get("name")
+        if not isinstance(name_value, str) or not name_value:
+            # Skip invalid tool calls without a name
+            continue
+
+        arguments_value = function_info.get("arguments")
         arguments: str
 
-        # Ensure arguments is a JSON string
-        if isinstance(arguments_value, dict):
+        # Ensure arguments is a JSON string when appropriate
+        if isinstance(arguments_value, (dict, list)):
             arguments = json.dumps(arguments_value)
         elif isinstance(arguments_value, str):
             arguments = arguments_value
+        elif arguments_value is None:
+            arguments = "{}"
         else:
             arguments = str(arguments_value)
 
-        tool_calls.append(create_openai_tool_call(tool_call_id, name, arguments))
+        tool_calls.append(create_openai_tool_call(tool_call_id, name_value, arguments))
 
     return tool_calls
 
@@ -112,21 +122,24 @@ def create_choice_from_message_data(
         finish_reason: Raw finish reason from provider
         finish_reason_mapping: Optional mapping to convert provider finish reasons to OpenAI format
     """
-    # Apply finish reason mapping if provided
-    if finish_reason_mapping and finish_reason in finish_reason_mapping:
-        finish_reason = finish_reason_mapping[finish_reason]
+    # Normalize finish reason
+    allowed_finish_reasons: set[str] = {"stop", "length", "tool_calls", "content_filter", "function_call"}
+    default_finish_reason_mapping = {"max_tokens": "length", "tool_use": "tool_calls"}
+    mapping = finish_reason_mapping or default_finish_reason_mapping
+    if finish_reason in mapping:
+        finish_reason = mapping[finish_reason]
+    if finish_reason not in allowed_finish_reasons:
+        finish_reason = "stop"
 
     # Extract tool calls if present
-    tool_calls = None
-    tool_calls_data = message_data.get("tool_calls", [])
-    if tool_calls_data:
-        tool_calls = create_tool_calls_from_list(tool_calls_data)
+    raw_tool_calls = message_data.get("tool_calls")
+    tool_calls = create_tool_calls_from_list(raw_tool_calls) if raw_tool_calls else None
 
     # Create the message
     message = create_openai_message(
-        role=message_data.get("role", "assistant"),
+        role=str(message_data.get("role", "assistant")),
         content=message_data.get("content"),
-        tool_calls=tool_calls,  # type: ignore[arg-type]
+        tool_calls=tool_calls,
         reasoning=Reasoning(content=str(message_data.get("reasoning_content")))
         if message_data.get("reasoning_content")
         else None,
