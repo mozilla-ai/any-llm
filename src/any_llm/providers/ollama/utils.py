@@ -61,13 +61,14 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
         created = int(datetime.strptime(created_str, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp())
 
     content = message.content
+    thinking = message.thinking
 
     role = None
     message_role = message.role
     if message_role:
         role = cast(Literal["developer", "system", "user", "assistant", "tool"], message_role)
 
-    delta = ChoiceDelta(content=content, role=role)
+    delta = ChoiceDelta(content=content, role=role, thinking=thinking)
 
     tool_calls = message.tool_calls
     if tool_calls:
