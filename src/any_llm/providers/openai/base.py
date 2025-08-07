@@ -33,6 +33,55 @@ class BaseOpenAIProvider(Provider, ABC):
         """Default is that all kwargs are supported."""
         pass
 
+    def _normalize_reasoning_on_message(self, message_dict: dict[str, Any]) -> None:
+        """Mutate a message dict to move provider-specific reasoning fields to our Reasoning type.
+
+        OpenAI-compatible providers attach non-standard fields such as
+        `reasoning_content` on the assistant message or chunk delta. This helper
+        normalizes such fields into our `reasoning` object shape: {"content": str}.
+        """
+        # If provider supplied a nested reasoning object already with content, keep it.
+        if isinstance(message_dict.get("reasoning"), dict) and "content" in message_dict["reasoning"]:
+            return
+
+        possible_fields = [
+            "reasoning_content",  # LM Studio, some OSS backends
+            "thinking",  # occasionally used by some providers
+            "chain_of_thought",  # generic alias
+        ]
+        value: Any | None = None
+        for field_name in possible_fields:
+            if field_name in message_dict and message_dict[field_name] is not None:
+                value = message_dict[field_name]
+                break
+
+        if value is None and isinstance(message_dict.get("reasoning"), str):
+            value = message_dict["reasoning"]
+
+        if value is not None:
+            message_dict["reasoning"] = {"content": str(value)}
+
+    def _normalize_openai_dict_response(self, response_dict: dict[str, Any]) -> dict[str, Any]:
+        """Return a dict where non-standard reasoning fields are normalized.
+
+        - For non-streaming: response.choices[*].message
+        - For streaming: chunk.choices[*].delta
+        """
+        choices = response_dict.get("choices")
+        if isinstance(choices, list):
+            for choice in choices:
+                # Non-streaming responses
+                message = choice.get("message") if isinstance(choice, dict) else None
+                if isinstance(message, dict):
+                    self._normalize_reasoning_on_message(message)
+
+                # Streaming deltas
+                delta = choice.get("delta") if isinstance(choice, dict) else None
+                if isinstance(delta, dict):
+                    self._normalize_reasoning_on_message(delta)
+
+        return response_dict
+
     def _convert_completion_response(
         self, response: OpenAIChatCompletion | Stream[OpenAIChatCompletionChunk]
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
@@ -50,7 +99,9 @@ class BaseOpenAIProvider(Provider, ABC):
                 # Sambanova returns a float instead of an int.
                 logger.warning(f"API returned an unexpected created type: {type(response.created)}. Setting to int.")
                 response.created = int(response.created)
-            return ChatCompletion.model_validate(response.model_dump())
+            # Normalize reasoning fields before validation
+            normalized = self._normalize_openai_dict_response(response.model_dump())
+            return ChatCompletion.model_validate(normalized)
         else:
             # Handle streaming response - return a generator
             def _convert_chunk(chunk: OpenAIChatCompletionChunk) -> ChatCompletionChunk:
@@ -58,7 +109,8 @@ class BaseOpenAIProvider(Provider, ABC):
                     # Sambanova returns a float instead of an int.
                     logger.warning(f"API returned an unexpected created type: {type(chunk.created)}. Setting to int.")
                     chunk.created = int(chunk.created)
-                return ChatCompletionChunk.model_validate(chunk.model_dump())
+                normalized_chunk = self._normalize_openai_dict_response(chunk.model_dump())
+                return ChatCompletionChunk.model_validate(normalized_chunk)
 
             return (_convert_chunk(chunk) for chunk in response)
 
