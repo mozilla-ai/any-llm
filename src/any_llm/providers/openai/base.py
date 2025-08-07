@@ -65,7 +65,6 @@ class BaseOpenAIProvider(Provider, ABC):
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Make the API call to OpenAI-compatible service."""
-        # Create the OpenAI client
         client = OpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,

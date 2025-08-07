@@ -57,7 +57,6 @@ class AnthropicProvider(Provider):
         if system_message:
             anthropic_kwargs["system"] = system_message
 
-        # Get the Anthropic stream
         with client.messages.stream(
             model=model,
             messages=filtered_messages,  # type: ignore[arg-type]
@@ -100,11 +99,9 @@ class AnthropicProvider(Provider):
                 **instructor_kwargs,
             )
 
-            # Convert instructor response to ChatCompletion format
             return convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
 
         if kwargs.get("stream", False):
-            # Return the streaming generator
             kwargs.pop("stream")
             return self._stream_completion(client, model, messages, **kwargs)
         else:

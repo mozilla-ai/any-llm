@@ -22,7 +22,6 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
     chunk_type = getattr(chunk, "type", None)
 
     if chunk_type == "content-delta":
-        # Handle content delta
         if (
             hasattr(chunk, "delta")
             and chunk.delta
@@ -35,7 +34,6 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
             delta["content"] = chunk.delta.message.content.text
 
     elif chunk_type == "tool-call-start":
-        # Handle tool call start
         if (
             hasattr(chunk, "delta")
             and chunk.delta
@@ -60,7 +58,6 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
             ]
 
     elif chunk_type == "tool-call-delta":
-        # Handle tool call arguments delta
         if (
             hasattr(chunk, "delta")
             and chunk.delta
@@ -81,14 +78,11 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
             ]
 
     elif chunk_type == "tool-call-end":
-        # End of tool call
         finish_reason = "tool_calls"
 
     elif chunk_type == "message-end":
-        # End of message
         finish_reason = "stop"
 
-        # Add usage info if available
         if (
             hasattr(chunk, "delta")
             and chunk.delta
@@ -120,7 +114,6 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
 
 def _convert_response(response: Any, model: str) -> ChatCompletion:
     """Convert Cohere response to OpenAI ChatCompletion format."""
-    # Convert response to dict-like structure for the utility
     prompt_tokens = 0
     completion_tokens = 0
 
@@ -139,7 +132,6 @@ def _convert_response(response: Any, model: str) -> ChatCompletion:
         },
     }
 
-    # Handle tool calls vs regular responses
     if response.finish_reason == "TOOL_CALL" and response.message.tool_calls:
         tool_call = response.message.tool_calls[0]
         response_dict["choices"] = [
@@ -163,7 +155,6 @@ def _convert_response(response: Any, model: str) -> ChatCompletion:
             }
         ]
     else:
-        # Regular text response
         content = ""
         if response.message.content and len(response.message.content) > 0:
             content = response.message.content[0].text
@@ -180,7 +171,6 @@ def _convert_response(response: Any, model: str) -> ChatCompletion:
             }
         ]
 
-    # Convert to OpenAI format using the new utility
     return create_completion_from_response(
         response_data=response_dict,
         model=model,

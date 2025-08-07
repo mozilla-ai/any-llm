@@ -126,7 +126,6 @@ class GoogleProvider(Provider):
                 model=model, contents=content_text, config=generation_config
             )
 
-            # Convert response to dict-like structure for the utility
             response_dict = {
                 "id": "google_genai_response",
                 "model": "google/genai",

@@ -34,7 +34,6 @@ class CerebrasProvider(Provider):
         """Initialize Cerebras provider."""
         super().__init__(config)
         self.client = cerebras.Cerebras(api_key=config.api_key)
-        # Create instructor client for structured output support
         self.instructor_client = instructor.from_cerebras(self.client)
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
@@ -49,7 +48,6 @@ class CerebrasProvider(Provider):
         **kwargs: Any,
     ) -> Iterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
-        # Get the Cerebras stream
         cerebras_stream = self.client.chat.completions.create(
             model=model,
             messages=messages,
@@ -83,13 +81,11 @@ class CerebrasProvider(Provider):
                 **kwargs,
             )
 
-            # Convert instructor response to ChatCompletion format
             return convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
 
         if kwargs.get("stream", False):
             # Remove stream parameter before passing to streaming method
             kwargs.pop("stream")
-            # Return the streaming generator
             return self._stream_completion(model, messages, **kwargs)
         else:
             # Use regular create method for non-structured outputs
@@ -99,7 +95,6 @@ class CerebrasProvider(Provider):
                 **kwargs,
             )
 
-            # Convert response to dict format for processing
             # Handle the case where response might be a Stream object
             if hasattr(response, "model_dump"):
                 response_data = response.model_dump()
@@ -107,5 +102,4 @@ class CerebrasProvider(Provider):
                 # If it's a streaming response, we need to handle it differently
                 raise ValueError("Streaming responses are not supported in this context")
 
-            # Convert to OpenAI format
             return _convert_response(response_data)

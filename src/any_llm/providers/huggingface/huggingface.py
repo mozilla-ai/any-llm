@@ -62,7 +62,6 @@ class HuggingfaceProvider(Provider):
         """Create a chat completion using HuggingFace."""
         client = InferenceClient(token=self.config.api_key, timeout=kwargs.get("timeout", None))
 
-        # Convert max_tokens to max_new_tokens (HuggingFace specific)
         if "max_tokens" in kwargs:
             kwargs["max_new_tokens"] = kwargs.pop("max_tokens")
 
@@ -70,7 +69,6 @@ class HuggingfaceProvider(Provider):
         if "response_format" in kwargs:
             response_format = kwargs.pop("response_format")
             if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-                # Convert Pydantic model to HuggingFace JSON format
                 messages = _convert_pydantic_to_huggingface_json(response_format, messages)
 
         # Handle streaming
@@ -84,7 +82,6 @@ class HuggingfaceProvider(Provider):
             **kwargs,
         )
 
-        # Convert to OpenAI format using the new utility
         return create_completion_from_response(
             response_data=response,
             model=model,

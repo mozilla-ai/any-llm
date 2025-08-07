@@ -199,7 +199,6 @@ def _convert_tool_spec(openai_tools: List[Dict[str, Any]]) -> List[Dict[str, Any
         }
         generic_tools.append(generic_tool)
 
-    # Convert to Anthropic-specific format
     anthropic_tools = []
     for tool in generic_tools:
         anthropic_tool = {
@@ -224,11 +223,9 @@ def _convert_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
         logger.warning(f"max_tokens is required for Anthropic, setting to {DEFAULT_MAX_TOKENS}")
         kwargs["max_tokens"] = DEFAULT_MAX_TOKENS
 
-    # Convert tools if present
     if "tools" in kwargs:
         kwargs["tools"] = _convert_tool_spec(kwargs["tools"])
 
-    # Handle parallel_tool_calls
     if "parallel_tool_calls" in kwargs:
         parallel_tool_calls = kwargs.pop("parallel_tool_calls")
         if parallel_tool_calls is False:

@@ -39,7 +39,6 @@ class CohereProvider(Provider):
         **kwargs: Any,
     ) -> Iterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
-        # Get the Cohere stream
         cohere_stream = self.client.chat_stream(
             model=model,
             messages=messages,  # type: ignore[arg-type]
@@ -69,7 +68,6 @@ class CohereProvider(Provider):
         if kwargs.get("stream", False):
             # Remove stream parameter before passing to streaming method
             kwargs.pop("stream")
-            # Return the streaming generator
             return self._stream_completion(model, messages, **kwargs)
         else:
             # Make the API call for non-streaming
@@ -79,5 +77,4 @@ class CohereProvider(Provider):
                 **kwargs,
             )
 
-            # Convert to OpenAI format
             return _convert_response(response, model)

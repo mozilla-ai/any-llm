@@ -39,5 +39,4 @@ def setup_logger(
     logger.addHandler(handler)
 
 
-# Set default configuration
 setup_logger()

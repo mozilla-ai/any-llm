@@ -25,7 +25,6 @@ def _convert_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     """Format the kwargs for AWS Bedrock."""
     kwargs = kwargs.copy()
 
-    # Convert tools and remove from kwargs
     tool_config = _convert_tool_spec(kwargs)
     kwargs.pop("tools", None)  # Remove tools from kwargs if present
 

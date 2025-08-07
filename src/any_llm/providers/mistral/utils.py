@@ -44,7 +44,6 @@ def _convert_mistral_tool_calls_to_any_llm(
 
     any_llm_tool_calls = []
     for tool_call in tool_calls:
-        # Convert function arguments to JSON string if it's a dict
         arguments = ""
         if tool_call.function and tool_call.function.arguments:
             if isinstance(tool_call.function.arguments, dict):
@@ -132,7 +131,6 @@ def _extract_mistral_content_and_reasoning(
                         if isinstance(thinking_item, MistralTextChunk):
                             thinking_texts.append(thinking_item.text)
                         elif isinstance(thinking_item, MistralReferenceChunk):
-                            # Currently any-llm doesn't handle references.
                             pass
                         else:
                             raise ValueError(f"Unsupported item type: {type(thinking_item)}")

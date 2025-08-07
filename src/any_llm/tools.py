@@ -28,10 +28,8 @@ def callable_to_tool(func: Callable[..., Any]) -> dict[str, Any]:
     if not func.__doc__:
         raise ValueError(f"Function {func.__name__} must have a docstring")
 
-    # Get function signature
     sig = inspect.signature(func)
 
-    # Get type hints
     type_hints = get_type_hints(func)
 
     # Build parameter schema
@@ -43,10 +41,8 @@ def callable_to_tool(func: Callable[..., Any]) -> dict[str, Any]:
         if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
             continue
 
-        # Get parameter type
         param_type = type_hints.get(param_name, str)
 
-        # Convert Python type to JSON Schema type
         json_type = _python_type_to_json_schema_type(param_type)
 
         properties[param_name] = {
@@ -58,7 +54,6 @@ def callable_to_tool(func: Callable[..., Any]) -> dict[str, Any]:
         if param.default == inspect.Parameter.empty:
             required.append(param_name)
 
-    # Create the tool schema
     tool_schema = {
         "type": "function",
         "function": {
@@ -111,7 +106,6 @@ def prepare_tools(tools: list[Union[dict[str, Any], Callable[..., Any]]]) -> lis
 
     for tool in tools:
         if callable(tool):
-            # Convert callable to tool format
             prepared_tools.append(callable_to_tool(tool))
         elif isinstance(tool, dict):
             # Already in tool format

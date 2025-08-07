@@ -85,7 +85,6 @@ class OllamaProvider(Provider):
         else:
             format = None
 
-        # Convert tool messages to user messages and remove tool_calls from assistant messages
         # (https://www.reddit.com/r/ollama/comments/1ked8x2/feeding_tool_output_back_to_llm/)
         cleaned_messages = []
         for message in messages:

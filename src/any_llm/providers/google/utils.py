@@ -80,7 +80,6 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
 
             formatted_messages.append(types.Content(role="model", parts=parts))
         elif message["role"] == "tool":
-            # Convert tool result to function response
             try:
                 content_json = json.loads(message["content"])
                 part = types.Part.from_function_response(name=message.get("name", "unknown"), response=content_json)

@@ -77,7 +77,6 @@ class AwsProvider(Provider):
                 **kwargs,
             )
 
-            # Convert instructor response to ChatCompletion format
             return convert_instructor_response(instructor_response, model, "aws")
 
         stream = kwargs.pop("stream", False)
@@ -143,5 +142,4 @@ class AwsProvider(Provider):
 
             total_tokens += response_body.get("inputTextTokenCount", 0)
 
-        # Convert to OpenAI format
         return _create_openai_embedding_response_from_aws(embedding_data, model, total_tokens)

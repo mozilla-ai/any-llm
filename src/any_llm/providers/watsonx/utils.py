@@ -17,21 +17,18 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
     choice_data = response["choices"][0]
     message_data = choice_data["message"]
 
-    # Create the message
     message = ChatCompletionMessage(
         content=message_data.get("content"),
         role=message_data.get("role", "assistant"),
         tool_calls=None,  # Watsonx doesn't seem to support tool calls in the aisuite implementation
     )
 
-    # Create the choice
     choice = Choice(
         finish_reason=choice_data.get("finish_reason", "stop"),
         index=choice_data.get("index", 0),
         message=message,
     )
 
-    # Create usage information (if available)
     usage = None
     if "usage" in response:
         usage_data = response["usage"]

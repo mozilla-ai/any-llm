@@ -35,7 +35,6 @@ def _convert_response_format(
     if not isinstance(response_format, type) or not issubclass(response_format, BaseModel):
         return response_format
 
-    # Convert Pydantic model to Azure JsonSchemaFormat
     schema = response_format.model_json_schema()
     # Azure requires additionalProperties to be false for structured output
     schema["additionalProperties"] = False

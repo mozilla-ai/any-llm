@@ -53,9 +53,7 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
     created_str = ollama_chunk.created_at
     created = 0
     if created_str:
-        # Handle both microseconds (6 digits) and nanoseconds (9 digits)
         if "." in created_str and len(created_str.split(".")[1].rstrip("Z")) > 6:
-            # Truncate nanoseconds to microseconds
             parts = created_str.split(".")
             microseconds = parts[1][:6]
             created_str = f"{parts[0]}.{microseconds}Z"
@@ -128,14 +126,11 @@ def _create_response_dict_from_ollama_response(
 ) -> dict[str, Any]:
     """Convert an Ollama completion response to OpenAI format."""
 
-    # Convert Ollama's timestamp format to int
     created_str = response.created_at
     if created_str is None:
         raise ValueError("Expected Ollama to provide a created_at timestamp")
 
-    # Handle both microseconds (6 digits) and nanoseconds (9 digits)
     if "." in created_str and len(created_str.split(".")[1].rstrip("Z")) > 6:
-        # Truncate nanoseconds to microseconds
         parts = created_str.split(".")
         microseconds = parts[1][:6]
         created_str = f"{parts[0]}.{microseconds}Z"
@@ -154,7 +149,6 @@ def _create_response_dict_from_ollama_response(
         },
     }
 
-    # Handle tool calls vs regular responses
     response_message: OllamaMessage = response.message
     if not response_message or not isinstance(response_message, OllamaMessage):
         raise ValueError("Unexpected output from ollama")

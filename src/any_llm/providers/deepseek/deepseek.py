@@ -25,7 +25,6 @@ class DeepseekProvider(BaseOpenAIProvider):
         if "response_format" in kwargs:
             response_format = kwargs["response_format"]
             if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-                # Convert Pydantic model to DeepSeek JSON format
                 modified_messages = _convert_pydantic_to_deepseek_json(response_format, messages)
                 kwargs["response_format"] = {"type": "json_object"}
                 messages = modified_messages

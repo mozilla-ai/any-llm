@@ -32,13 +32,11 @@ def convert_instructor_response(instructor_response: Any, model: str, provider_n
     Returns:
         ChatCompletion object with the structured response as JSON content
     """
-    # Convert the structured response to JSON string
     if hasattr(instructor_response, "model_dump"):
         content = json.dumps(instructor_response.model_dump())
     else:
         content = json.dumps(instructor_response)
 
-    # Create a mock ChatCompletion response
     message = ChatCompletionMessage(
         role="assistant",
         content=content,
@@ -218,7 +216,6 @@ class ProviderFactory:
     @classmethod
     def create_provider(cls, provider_key: Union[str, ProviderName], config: ApiConfig) -> Provider:
         """Dynamically load and create an instance of a provider based on the naming convention."""
-        # Convert to string if it's a ProviderName enum
         if isinstance(provider_key, ProviderName):
             provider_key = provider_key.value
 
@@ -233,7 +230,6 @@ class ProviderFactory:
             msg = f"Could not import module {module_path}: {e!s}. Please ensure the provider is supported by doing ProviderFactory.get_supported_providers()"
             raise ImportError(msg) from e
 
-        # Instantiate the provider class
         provider_class: Type[Provider] = getattr(module, provider_class_name)
         return provider_class(config=config)
 
@@ -247,7 +243,6 @@ class ProviderFactory:
         Returns:
             The provider class
         """
-        # Convert to string if it's a ProviderName enum
         if isinstance(provider_key, ProviderName):
             provider_key = provider_key.value
 
@@ -262,14 +257,12 @@ class ProviderFactory:
             msg = f"Could not import module {module_path}: {e!s}. Please ensure the provider is supported by doing ProviderFactory.get_supported_providers()"
             raise ImportError(msg) from e
 
-        # Get the provider class
         provider_class: Type[Provider] = getattr(module, provider_class_name)
         return provider_class
 
     @classmethod
     def get_supported_providers(cls) -> list[str]:
         """Get a list of supported provider keys."""
-        # Return the enum values as strings
         return [provider.value for provider in ProviderName]
 
     @classmethod
