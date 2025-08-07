@@ -48,8 +48,8 @@ def generate_provider_table(providers):
 
     # Create table header
     table_lines = [
-        "| Provider ID | Environment Variable | Source Code | Stream Supported | Embedding Supported |",
-        "|-------------|----------------------|-------------|------------------|---------------------|",
+        "| Provider ID | Environment Variable | Source Code | Completion | Stream | Embedding |",
+        "|-------------|----------------------|-------------|------------|--------|-----------|",
     ]
 
     # Add rows for each provider
@@ -67,10 +67,11 @@ def generate_provider_table(providers):
         # Create provider ID as a hyperlink to the documentation URL
         provider_id_link = f"[`{provider_key.lower()}`]({provider['doc_url']})"
 
+        completion_supported = "✅" if provider.get("completion", False) else "❌"
         stream_supported = "✅" if provider.get("streaming", False) else "❌"
         embedding_supported = "✅" if provider.get("embedding", False) else "❌"
 
-        row = f"| {provider_id_link} | {env_key} | {source_link} | {stream_supported} | {embedding_supported} |"
+        row = f"| {provider_id_link} | {env_key} | {source_link} | {completion_supported} | {stream_supported} | {embedding_supported} |"
         table_lines.append(row)
 
     asyncio.run(validate_url(source_urls))

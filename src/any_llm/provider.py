@@ -82,6 +82,7 @@ class ProviderName(str, Enum):
     PORTKEY = "portkey"
     SAMBANOVA = "sambanova"
     TOGETHER = "together"
+    VOYAGE = "voyage"
     WATSONX = "watsonx"
     XAI = "xai"
 
@@ -102,7 +103,9 @@ class Provider(ABC):
     PROVIDER_DOCUMENTATION_URL: str
 
     # Feature support flags (to be set by subclasses)
+    SUPPORTS_COMPLETION: bool = True
     SUPPORTS_STREAMING: bool
+
     # This value isn't required but may prove useful for providers that have overridable api bases.
     API_BASE: str | None = None
 
@@ -132,6 +135,7 @@ class Provider(ABC):
             "name": getattr(cls, "PROVIDER_NAME"),
             "env_key": getattr(cls, "ENV_API_KEY_NAME", "-"),
             "doc_url": getattr(cls, "PROVIDER_DOCUMENTATION_URL"),
+            "completion": getattr(cls, "SUPPORTS_COMPLETION"),
             "streaming": getattr(cls, "SUPPORTS_STREAMING"),
             "embedding": getattr(cls, "SUPPORTS_EMBEDDING"),
             "class_name": cls.__name__,
