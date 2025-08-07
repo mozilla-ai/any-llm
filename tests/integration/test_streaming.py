@@ -3,7 +3,6 @@ import httpx
 import pytest
 from any_llm import completion, ProviderName
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
-from any_llm.provider import ProviderFactory
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 from openai import APIConnectionError
 
@@ -14,11 +13,6 @@ def test_streaming_completion(
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
     """Test that streaming completion works for supported providers."""
-    providers_metadata = ProviderFactory.get_all_provider_metadata()
-    provider_metadata = [metadata for metadata in providers_metadata if metadata["provider_key"] == provider.value][0]
-    if not provider_metadata["streaming"]:
-        pytest.skip(f"{provider.value} does not support streaming, skipping")
-
     model_id = provider_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
     try:

@@ -7,7 +7,6 @@ from openai.types.chat.chat_completion import ChatCompletion
 
 from any_llm import completion, acompletion, ProviderName
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.provider import ProviderFactory
 
 
 def test_providers(
@@ -16,11 +15,6 @@ def test_providers(
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    providers_metadata = ProviderFactory.get_all_provider_metadata()
-    provider_metadata = [metadata for metadata in providers_metadata if metadata["provider_key"] == provider.value][0]
-    if not provider_metadata["completion"]:
-        pytest.skip(f"{provider.value} does not support completion, skipping")
-
     model_id = provider_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
     try:
