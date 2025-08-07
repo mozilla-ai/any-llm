@@ -30,6 +30,8 @@ class AwsProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://aws.amazon.com/bedrock/"
 
     SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION = True
+    SUPPORTS_REASONING = False
     SUPPORTS_EMBEDDING = True
 
     def __init__(self, config: ApiConfig) -> None:

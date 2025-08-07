@@ -4,7 +4,7 @@ import pytest
 from any_llm import embedding, ProviderName
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
-from openai.types import CreateEmbeddingResponse
+from any_llm.types.completion import CreateEmbeddingResponse
 from openai import APIConnectionError
 
 

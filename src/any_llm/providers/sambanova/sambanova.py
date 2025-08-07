@@ -40,10 +40,9 @@ class SambanovaProvider(BaseOpenAIProvider):
             )
             return convert_instructor_response(response, model, self.PROVIDER_NAME)
         else:
-            return self._convert_completion_response(
-                client.chat.completions.create(
-                    model=model,
-                    messages=messages,  # type: ignore[arg-type]
-                    **kwargs,
-                )
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,  # type: ignore[arg-type]
+                **kwargs,
             )
+            return self._convert_completion_response(response)

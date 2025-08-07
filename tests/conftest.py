@@ -5,6 +5,11 @@ import pytest
 from any_llm.provider import ProviderName
 
 
+@pytest.fixture
+def provider_reasoning_model_map() -> dict[ProviderName, str]:
+    return {ProviderName.OLLAMA: "gpt-oss:20b", ProviderName.MISTRAL: "magistral-small-latest"}
+
+
 # Use small models for testing to make sure they work
 @pytest.fixture
 def provider_model_map() -> dict[ProviderName, str]:
@@ -45,7 +50,7 @@ def embedding_provider_model_map() -> dict[ProviderName, str]:
         ProviderName.SAMBANOVA: "E5-Mistral-7B-Instruct",
         ProviderName.MISTRAL: "mistral-embed",
         ProviderName.AWS: "amazon.titan-embed-text-v2:0",
-        ProviderName.OLLAMA: "llama3.2:1b",
+        ProviderName.OLLAMA: "gpt-oss:20b",
         ProviderName.LMSTUDIO: "text-embedding-nomic-embed-text-v1.5",
         ProviderName.GOOGLE: "gemini-embedding-001",
         ProviderName.AZURE: "openai/text-embedding-3-small",
@@ -57,7 +62,7 @@ def provider_extra_kwargs_map() -> dict[ProviderName, dict[str, Any]]:
     return {
         ProviderName.AZURE: {
             "api_base": "https://models.github.ai/inference",
-        },
+        }
     }
 
 

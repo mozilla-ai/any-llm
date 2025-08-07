@@ -24,6 +24,8 @@ class TogetherProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://together.ai/"
 
     SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION = True
+    SUPPORTS_REASONING = False
     SUPPORTS_EMBEDDING = False
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:

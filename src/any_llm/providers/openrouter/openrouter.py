@@ -10,4 +10,6 @@ class OpenrouterProvider(BaseOpenAIProvider):
     PROVIDER_DOCUMENTATION_URL = "https://openrouter.ai/docs"
 
     SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION = True
+    SUPPORTS_REASONING = False
     SUPPORTS_EMBEDDING = False

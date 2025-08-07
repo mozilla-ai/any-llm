@@ -34,6 +34,8 @@ class OllamaProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://github.com/ollama/ollama"
 
     SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION = True
+    SUPPORTS_REASONING = True
     SUPPORTS_EMBEDDING = True
 
     def __init__(self, config: ApiConfig) -> None:

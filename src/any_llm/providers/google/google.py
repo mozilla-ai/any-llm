@@ -32,6 +32,8 @@ class GoogleProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://cloud.google.com/vertex-ai/docs"
 
     SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION = True
+    SUPPORTS_REASONING = False
     SUPPORTS_EMBEDDING = True
 
     def __init__(self, config: ApiConfig) -> None:

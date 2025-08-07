@@ -5,7 +5,7 @@ import pytest
 from any_llm import completion, ProviderName
 from any_llm.exceptions import MissingApiKeyError
 from openai import APIConnectionError
-from openai.types.chat.chat_completion import ChatCompletion
+from any_llm.types.completion import ChatCompletion
 
 
 def test_response_format(

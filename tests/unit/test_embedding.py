@@ -3,8 +3,7 @@ import pytest
 
 from any_llm import embedding
 from any_llm.provider import ProviderFactory, ProviderName
-from openai.types import CreateEmbeddingResponse, Embedding
-from openai.types.create_embedding_response import Usage
+from any_llm.types.completion import CreateEmbeddingResponse, Embedding, Usage
 
 
 def test_embedding_with_api_config() -> None:

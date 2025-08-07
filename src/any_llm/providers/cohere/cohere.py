@@ -23,6 +23,8 @@ class CohereProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://cohere.com/api"
 
     SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION = True
+    SUPPORTS_REASONING = False
     SUPPORTS_EMBEDDING = False
 
     def __init__(self, config: ApiConfig) -> None:

@@ -105,6 +105,9 @@ class Provider(ABC):
 
     # Feature support flags (to be set by subclasses)
     SUPPORTS_STREAMING: bool
+    SUPPORTS_COMPLETION: bool
+    SUPPORTS_REASONING: bool
+    SUPPORTS_EMBEDDING: bool
     # This value isn't required but may prove useful for providers that have overridable api bases.
     API_BASE: str | None = None
 
@@ -135,6 +138,8 @@ class Provider(ABC):
             "env_key": getattr(cls, "ENV_API_KEY_NAME", "-"),
             "doc_url": getattr(cls, "PROVIDER_DOCUMENTATION_URL"),
             "streaming": getattr(cls, "SUPPORTS_STREAMING"),
+            "reasoning": getattr(cls, "SUPPORTS_REASONING"),
+            "completion": getattr(cls, "SUPPORTS_COMPLETION"),
             "embedding": getattr(cls, "SUPPORTS_EMBEDDING"),
             "class_name": cls.__name__,
         }

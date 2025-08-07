@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 from any_llm.provider import Provider
-from any_llm.providers.helpers import create_completion_from_response
+from any_llm.providers.mistral.utils import _create_mistral_completion_from_response
 
 
 class MistralProvider(Provider):
@@ -23,6 +23,8 @@ class MistralProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://docs.mistral.ai/"
 
     SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION = True
+    SUPPORTS_REASONING = True
     SUPPORTS_EMBEDDING = True
 
     def _stream_completion(
@@ -67,10 +69,9 @@ class MistralProvider(Provider):
                 **kwargs,
             )
 
-            return create_completion_from_response(
-                response_data=response.model_dump(),
+            return _create_mistral_completion_from_response(
+                response_data=response,
                 model=model,
-                provider_name=self.PROVIDER_NAME,
             )
         else:
             return self._stream_completion(client, model, messages, **kwargs)

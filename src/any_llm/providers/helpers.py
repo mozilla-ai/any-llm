@@ -120,7 +120,9 @@ def create_choice_from_message_data(
         role=message_data.get("role", "assistant"),
         content=message_data.get("content"),
         tool_calls=tool_calls,
-        reasoning=Reasoning(content=str(message_data.get("reasoning_content"))) if message_data.get("reasoning_content") else None,
+        reasoning=Reasoning(content=str(message_data.get("reasoning_content")))
+        if message_data.get("reasoning_content")
+        else None,
     )
 
     return Choice(

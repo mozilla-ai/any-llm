@@ -11,6 +11,7 @@ from any_llm.provider import Provider
 
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
+from any_llm.logging import logger
 
 
 class BaseOpenAIProvider(Provider, ABC):
@@ -23,6 +24,8 @@ class BaseOpenAIProvider(Provider, ABC):
     """
 
     SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION = True
+    SUPPORTS_REASONING = False
     SUPPORTS_EMBEDDING = True
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
@@ -34,10 +37,29 @@ class BaseOpenAIProvider(Provider, ABC):
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Convert an OpenAI completion response to an AnyLLM completion response."""
         if isinstance(response, OpenAIChatCompletion):
-            return ChatCompletion.model_validate(response)
+            if response.object != "chat.completion":
+                # Force setting this here because it's a requirement Literal in the OpenAI API, but the Llama API has
+                # a typo where they set it to "chat.completions". I filed a ticket with them to fix it. No harm in setting it here
+                # Because this is the only accepted value anyways.
+                logger.warning(
+                    f"API returned an unexpected object type: {response.object}. Setting to 'chat.completion'."
+                )
+                response.object = "chat.completion"
+            if not isinstance(response.created, int):
+                # Sambanova returns a float instead of an int.
+                logger.warning(f"API returned an unexpected created type: {type(response.created)}. Setting to int.")
+                response.created = int(response.created)
+            return ChatCompletion.model_validate(response.model_dump())
         else:
             # Handle streaming response - return a generator
-            return (ChatCompletionChunk.model_validate(chunk) for chunk in response)
+            def _convert_chunk(chunk: OpenAIChatCompletionChunk) -> ChatCompletionChunk:
+                if not isinstance(chunk.created, int):
+                    # Sambanova returns a float instead of an int.
+                    logger.warning(f"API returned an unexpected created type: {type(chunk.created)}. Setting to int.")
+                    chunk.created = int(chunk.created)
+                return ChatCompletionChunk.model_validate(chunk.model_dump())
+
+            return (_convert_chunk(chunk) for chunk in response)
 
     def _make_api_call(
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any

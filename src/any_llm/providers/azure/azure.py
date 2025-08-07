@@ -29,6 +29,8 @@ class AzureProvider(Provider):
 
     SUPPORTS_STREAMING: bool = True
     SUPPORTS_EMBEDDING: bool = True
+    SUPPORTS_REASONING: bool = False
+    SUPPORTS_COMPLETION: bool = True
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Azure provider."""

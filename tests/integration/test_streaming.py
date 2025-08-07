@@ -3,7 +3,7 @@ import httpx
 import pytest
 from any_llm import completion, ProviderName
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+from any_llm.types.completion import ChatCompletionChunk
 from openai import APIConnectionError
 
 
@@ -17,6 +17,7 @@ def test_streaming_completion(
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
     try:
         output = ""
+        reasoning = ""
         num_chunks = 0
         for result in completion(
             f"{provider.value}/{model_id}",
@@ -33,6 +34,8 @@ def test_streaming_completion(
             assert isinstance(result, ChatCompletionChunk)
             if len(result.choices) > 0:
                 output += result.choices[0].delta.content or ""
+                if result.choices[0].delta.reasoning:
+                    reasoning += result.choices[0].delta.reasoning.content or ""
         assert num_chunks >= 2, f"Expected at least 2 chunks, got {num_chunks}"
         assert "hello world" in output.lower()
     except MissingApiKeyError:

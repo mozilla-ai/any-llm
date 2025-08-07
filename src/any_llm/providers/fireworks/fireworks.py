@@ -19,6 +19,8 @@ class FireworksProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://fireworks.ai/api"
 
     SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION = True
+    SUPPORTS_REASONING = False
     SUPPORTS_EMBEDDING = False
 
     def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
