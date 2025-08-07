@@ -10,10 +10,7 @@ except ImportError:
     raise ImportError(msg)
 
 from pydantic import BaseModel
-from openai.types.chat.chat_completion import ChatCompletion
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types import CreateEmbeddingResponse
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.helpers import create_completion_from_response
 
@@ -72,7 +69,7 @@ class OllamaProvider(Provider):
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Ollama."""
 
         if "response_format" in kwargs:
@@ -111,7 +108,7 @@ class OllamaProvider(Provider):
         client = Client(host=self.url, timeout=kwargs.pop("timeout", None))
 
         if kwargs.get("stream", False):
-            return self._stream_completion(client, model, cleaned_messages, **kwargs)  # type: ignore[return-value]
+            return self._stream_completion(client, model, cleaned_messages, **kwargs)
 
         response: OllamaChatResponse = client.chat(
             model=model,

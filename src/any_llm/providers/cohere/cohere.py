@@ -6,9 +6,7 @@ except ImportError:
     msg = "cohere is not installed. Please install it with `pip install any-llm-sdk[cohere]`"
     raise ImportError(msg)
 
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types.chat.chat_completion import ChatCompletion
+from any_llm.types.completion import ChatCompletionChunk, ChatCompletion
 from any_llm.provider import Provider, ApiConfig
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.cohere.utils import (
@@ -63,14 +61,14 @@ class CohereProvider(Provider):
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Cohere."""
 
         if kwargs.get("stream", False):
             # Remove stream parameter before passing to streaming method
             kwargs.pop("stream")
             # Return the streaming generator
-            return self._stream_completion(model, messages, **kwargs)  # type: ignore[return-value]
+            return self._stream_completion(model, messages, **kwargs)
         else:
             # Make the API call for non-streaming
             response = self.client.chat(

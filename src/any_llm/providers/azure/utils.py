@@ -9,20 +9,22 @@ from azure.ai.inference.models import (
 )
 from pydantic import BaseModel
 
-from openai.types.chat.chat_completion import ChatCompletion, Choice
-from openai.types.completion_usage import CompletionUsage
-from openai.types.chat.chat_completion_message import ChatCompletionMessage
-from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall, Function
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types import CreateEmbeddingResponse
-from openai.types.chat.chat_completion_chunk import (
-    Choice as ChunkChoice,
+from any_llm.types.completion import (
+    ChatCompletion,
+    Choice,
+    CompletionUsage,
+    ChatCompletionMessage,
+    ChatCompletionMessageToolCall,
+    Function,
+    ChatCompletionChunk,
+    CreateEmbeddingResponse,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
+    Embedding,
+    Usage,
+    ChunkChoice,
 )
-from openai.types.embedding import Embedding
-from openai.types.create_embedding_response import Usage
 
 
 def _convert_response_format(

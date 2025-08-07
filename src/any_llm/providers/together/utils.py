@@ -2,14 +2,14 @@ import uuid
 from typing import Literal, cast
 from datetime import datetime
 
-from openai.types.chat.chat_completion_chunk import (
+from any_llm.types.completion import (
     ChatCompletionChunk,
-    Choice,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
+    CompletionUsage,
+    ChunkChoice,
 )
-from openai.types.completion_usage import CompletionUsage
 from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
 
 
@@ -46,7 +46,7 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
             openai_tool_calls.append(openai_tool_call)
         delta.tool_calls = openai_tool_calls
 
-    choice = Choice(
+    choice = ChunkChoice(
         index=0,
         delta=delta,
         finish_reason=cast(

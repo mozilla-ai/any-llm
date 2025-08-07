@@ -15,8 +15,7 @@ except ImportError:
     msg = "anthropic is not installed. Please install it with `pip install any-llm-sdk[anthropic]`"
     raise ImportError(msg)
 
-from openai.types.chat.chat_completion import ChatCompletion
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 
 from any_llm.providers.helpers import create_completion_from_response
 

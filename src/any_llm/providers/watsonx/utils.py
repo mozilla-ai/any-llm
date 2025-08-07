@@ -1,12 +1,15 @@
 from typing import Any, Literal, cast
 import uuid
 
-from openai.types.chat.chat_completion import ChatCompletion, Choice
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types.chat.chat_completion_chunk import Choice as ChunkChoice
-from openai.types.chat.chat_completion_chunk import ChoiceDelta
-from openai.types.completion_usage import CompletionUsage
-from openai.types.chat.chat_completion_message import ChatCompletionMessage
+from any_llm.types.completion import (
+    ChatCompletion,
+    Choice,
+    ChatCompletionChunk,
+    ChoiceDelta,
+    CompletionUsage,
+    ChatCompletionMessage,
+    ChunkChoice,
+)
 
 
 def _convert_response(response: dict[str, Any]) -> ChatCompletion:

@@ -1,6 +1,6 @@
 import os
 import json
-from typing import Any
+from typing import Any, Iterator
 
 try:
     from google import genai
@@ -11,10 +11,7 @@ except ImportError:
 
 from pydantic import BaseModel
 
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types.chat.chat_completion import ChatCompletion
-from openai.types import CreateEmbeddingResponse
+from any_llm.types.completion import ChatCompletionChunk, ChatCompletion, CreateEmbeddingResponse
 from any_llm.provider import Provider, ApiConfig
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.providers.helpers import (
@@ -84,7 +81,7 @@ class GoogleProvider(Provider):
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         tools = None
         if "tools" in kwargs:
             tools = _convert_tool_spec(kwargs["tools"])
@@ -121,7 +118,7 @@ class GoogleProvider(Provider):
             response_stream = self.client.models.generate_content_stream(
                 model=model, contents=content_text, config=generation_config
             )
-            return map(_create_openai_chunk_from_google_chunk, response_stream)  # type: ignore[return-value]
+            return map(_create_openai_chunk_from_google_chunk, response_stream)
         else:
             response: types.GenerateContentResponse = self.client.models.generate_content(
                 model=model, contents=content_text, config=generation_config

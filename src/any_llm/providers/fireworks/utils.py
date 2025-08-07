@@ -2,12 +2,12 @@ import uuid
 from typing import Any
 from datetime import datetime
 
-from openai.types.chat.chat_completion_chunk import (
+from any_llm.types.completion import (
     ChatCompletionChunk,
-    Choice,
     ChoiceDelta,
+    ChunkChoice,
+    CompletionUsage,
 )
-from openai.types.completion_usage import CompletionUsage
 
 
 def _create_openai_chunk_from_fireworks_chunk(fireworks_chunk: Any) -> ChatCompletionChunk:
@@ -29,7 +29,7 @@ def _create_openai_chunk_from_fireworks_chunk(fireworks_chunk: Any) -> ChatCompl
         if hasattr(choice, "finish_reason"):
             finish_reason = choice.finish_reason
 
-    choice_obj = Choice(
+    choice_obj = ChunkChoice(
         index=0,
         delta=delta,
         finish_reason=finish_reason,

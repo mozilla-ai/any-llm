@@ -2,15 +2,20 @@ import json
 from time import time
 from typing import Any, Literal
 
-from openai.types.chat.chat_completion import ChatCompletion, Choice
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk, Choice as ChunkChoice
-from openai.types.chat.chat_completion_chunk import ChoiceDelta
-from openai.types.completion_usage import CompletionUsage
-from openai.types.chat.chat_completion_message import ChatCompletionMessage
-from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall, Function
-from openai.types import CreateEmbeddingResponse
-from openai.types.embedding import Embedding
-from openai.types.create_embedding_response import Usage
+from any_llm.types.completion import (
+    ChatCompletion,
+    Choice,
+    ChatCompletionChunk,
+    ChoiceDelta,
+    CompletionUsage,
+    ChatCompletionMessage,
+    ChatCompletionMessageToolCall,
+    Function,
+    CreateEmbeddingResponse,
+    Embedding,
+    Usage,
+    ChunkChoice,
+)
 
 
 INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]

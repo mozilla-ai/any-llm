@@ -7,21 +7,20 @@ except ImportError:
     msg = "mistralai is not installed. Please install it with `pip install any-llm-sdk[mistral]`"
     raise ImportError(msg)
 
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types import CreateEmbeddingResponse
+from any_llm.types.completion import ChatCompletionChunk, CreateEmbeddingResponse
 
 
 def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompletionChunk:
     """Convert a Mistral CompletionEvent to OpenAI ChatCompletionChunk format."""
     from typing import Literal, cast
 
-    from openai.types.chat.chat_completion_chunk import (
-        Choice,
+    from any_llm.types.completion import (
+        ChunkChoice,
         ChoiceDelta,
         ChoiceDeltaToolCall,
         ChoiceDeltaToolCallFunction,
+        CompletionUsage,
     )
-    from openai.types.completion_usage import CompletionUsage
 
     chunk = event.data
 
@@ -83,7 +82,7 @@ def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompl
                 tool_calls.append(openai_tool_call)
             delta.tool_calls = tool_calls
 
-        openai_choice = Choice(
+        openai_choice = ChunkChoice(
             index=choice.index,
             delta=delta,
             finish_reason=choice.finish_reason,  # type: ignore[arg-type]
@@ -112,8 +111,7 @@ def _create_openai_embedding_response_from_mistral(
     mistral_response: "EmbeddingResponse",
 ) -> "CreateEmbeddingResponse":
     """Convert a Mistral EmbeddingResponse to OpenAI CreateEmbeddingResponse format."""
-    from openai.types.embedding import Embedding
-    from openai.types.create_embedding_response import Usage
+    from any_llm.types.completion import Embedding, Usage
 
     openai_embeddings = []
     for embedding_data in mistral_response.data:

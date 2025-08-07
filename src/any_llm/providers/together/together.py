@@ -11,9 +11,7 @@ except ImportError:
     raise ImportError(msg)
 
 
-from openai.types.chat.chat_completion import ChatCompletion
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 from any_llm.provider import Provider, convert_instructor_response
 from any_llm.providers.helpers import create_completion_from_response
 from any_llm.providers.together.utils import _create_openai_chunk_from_together_chunk
@@ -53,7 +51,7 @@ class TogetherProvider(Provider):
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Make the API call to Together AI with instructor support for structured outputs."""
         if self.config.api_base:
             client = together.Together(api_key=self.config.api_key, base_url=self.config.api_base)
@@ -74,7 +72,7 @@ class TogetherProvider(Provider):
             return convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
 
         if kwargs.get("stream", False):
-            return self._stream_completion(client, model, messages, **kwargs)  # type: ignore[return-value]
+            return self._stream_completion(client, model, messages, **kwargs)
 
         response: ChatCompletionResponse = client.chat.completions.create(  # type: ignore[assignment]
             model=model,

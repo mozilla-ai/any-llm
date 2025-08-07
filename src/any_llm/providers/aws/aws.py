@@ -1,6 +1,6 @@
 import os
 import json
-from typing import Any
+from typing import Any, Iterator
 
 try:
     import boto3
@@ -10,12 +10,9 @@ except ImportError:
     msg = "boto3 or instructor is not installed. Please install it with `pip install any-llm-sdk[aws]`"
     raise ImportError(msg)
 
-from openai.types.chat.chat_completion import ChatCompletion
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 from any_llm.provider import Provider, ApiConfig, convert_instructor_response
 from any_llm.exceptions import MissingApiKeyError
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types import CreateEmbeddingResponse
 from any_llm.providers.aws.utils import (
     _convert_response,
     _convert_kwargs,
@@ -60,7 +57,7 @@ class AwsProvider(Provider):
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using AWS Bedrock with instructor support."""
         self._check_aws_credentials()
 
@@ -99,7 +96,7 @@ class AwsProvider(Provider):
                 chunk
                 for chunk in (_create_openai_chunk_from_aws_chunk(item, model=model) for item in stream_generator)
                 if chunk is not None
-            )  # type: ignore[return-value]
+            )
         else:
             response = client.converse(
                 modelId=model,

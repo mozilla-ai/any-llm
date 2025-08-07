@@ -1,14 +1,16 @@
 import os
-from typing import Any
+from typing import Any, Iterator
 from abc import ABC
 
 from openai import OpenAI
-from openai.types.chat.chat_completion import ChatCompletion
+from any_llm.types.completion import ChatCompletion, CreateEmbeddingResponse
 from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types import CreateEmbeddingResponse
+from any_llm.types.completion import ChatCompletionChunk
 from openai._types import NOT_GIVEN
 from any_llm.provider import Provider
+
+from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
+from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 
 
 class BaseOpenAIProvider(Provider, ABC):
@@ -27,9 +29,19 @@ class BaseOpenAIProvider(Provider, ABC):
         """Default is that all kwargs are supported."""
         pass
 
+    def _convert_completion_response(
+        self, response: OpenAIChatCompletion | Stream[OpenAIChatCompletionChunk]
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+        """Convert an OpenAI completion response to an AnyLLM completion response."""
+        if isinstance(response, OpenAIChatCompletion):
+            return ChatCompletion.model_validate(response)
+        else:
+            # Handle streaming response - return a generator
+            return (ChatCompletionChunk.model_validate(chunk) for chunk in response)
+
     def _make_api_call(
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Make the API call to OpenAI-compatible service."""
         # Create the OpenAI client
         client = OpenAI(
@@ -49,7 +61,7 @@ class BaseOpenAIProvider(Provider, ABC):
                 messages=messages,  # type: ignore[arg-type]
                 **kwargs,
             )
-        return response  # type: ignore[no-any-return]
+        return self._convert_completion_response(response)
 
     def embedding(
         self,

@@ -3,12 +3,12 @@ from typing import Any
 import uuid
 
 from pydantic import BaseModel
-from openai.types.chat.chat_completion_chunk import (
+from any_llm.types.completion import (
     ChatCompletionChunk,
-    Choice,
     ChoiceDelta,
+    CompletionUsage,
+    ChunkChoice,
 )
-from openai.types.completion_usage import CompletionUsage
 from typing import Literal, cast
 
 from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
@@ -72,7 +72,7 @@ def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletion
 
         delta = ChoiceDelta(content=content, role=openai_role)
 
-        choice = Choice(
+        choice = ChunkChoice(
             index=i,
             delta=delta,
             finish_reason=cast(

@@ -10,9 +10,7 @@ except ImportError:
     raise ImportError(msg)
 
 
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types.chat.chat_completion import ChatCompletion
+from any_llm.types.completion import ChatCompletionChunk, ChatCompletion
 from any_llm.provider import Provider, convert_instructor_response
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.helpers import create_completion_from_response
@@ -55,7 +53,7 @@ class GroqProvider(Provider):
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Groq."""
         client = groq.Groq(api_key=self.config.api_key)
 
@@ -71,7 +69,7 @@ class GroqProvider(Provider):
             return convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
 
         if kwargs.get("stream", False):
-            return self._stream_completion(client, model, messages, **kwargs)  # type: ignore[return-value]
+            return self._stream_completion(client, model, messages, **kwargs)
 
         response: ChatCompletion = client.chat.completions.create(  # type: ignore[assignment]
             model=model,

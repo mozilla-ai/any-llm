@@ -1,12 +1,9 @@
-from typing import Any, Optional, List, Union, Callable
+from typing import Any, Optional, List, Union, Callable, Iterator
 
-from openai.types.chat.chat_completion import ChatCompletion
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 from pydantic import BaseModel
 from any_llm.provider import ProviderFactory, ApiConfig, Provider
 from any_llm.tools import prepare_tools
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types import CreateEmbeddingResponse
 
 
 def _prepare_completion_request(
@@ -106,7 +103,7 @@ def completion(
     timeout: Optional[Union[float, int]] = None,
     user: Optional[str] = None,
     **kwargs: Any,
-) -> ChatCompletion | Stream[ChatCompletionChunk]:
+) -> ChatCompletion | Iterator[ChatCompletionChunk]:
     """Create a chat completion.
 
     Args:
@@ -183,7 +180,7 @@ async def acompletion(
     timeout: Optional[Union[float, int]] = None,
     user: Optional[str] = None,
     **kwargs: Any,
-) -> ChatCompletion | Stream[ChatCompletionChunk]:
+) -> ChatCompletion | Iterator[ChatCompletionChunk]:
     """Create a chat completion asynchronously.
 
     Args:

@@ -10,12 +10,9 @@ except ImportError:
 
 from pydantic import BaseModel
 
-from openai.types.chat.chat_completion import ChatCompletion
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 from any_llm.provider import Provider
 from any_llm.providers.helpers import create_completion_from_response
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types import CreateEmbeddingResponse
 
 
 class MistralProvider(Provider):
@@ -56,7 +53,7 @@ class MistralProvider(Provider):
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Mistral."""
         client = Mistral(api_key=self.config.api_key, server_url=self.config.api_base)
 
@@ -76,7 +73,7 @@ class MistralProvider(Provider):
                 provider_name=self.PROVIDER_NAME,
             )
         else:
-            return self._stream_completion(client, model, messages, **kwargs)  # type: ignore[return-value]
+            return self._stream_completion(client, model, messages, **kwargs)
 
     def embedding(
         self,

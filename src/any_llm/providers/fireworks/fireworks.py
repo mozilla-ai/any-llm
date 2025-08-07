@@ -7,9 +7,7 @@ except ImportError:
     raise ImportError(msg)
 
 from pydantic import BaseModel
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types.chat.chat_completion import ChatCompletion
+from any_llm.types.completion import ChatCompletionChunk, ChatCompletion
 from any_llm.provider import Provider
 from any_llm.providers.helpers import create_completion_from_response
 from any_llm.providers.fireworks.utils import _create_openai_chunk_from_fireworks_chunk
@@ -47,7 +45,7 @@ class FireworksProvider(Provider):
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         llm = LLM(
             model=model,
             deployment_type="auto",
@@ -65,7 +63,7 @@ class FireworksProvider(Provider):
                 kwargs["response_format"] = response_format
 
         if kwargs.get("stream", False):
-            return self._stream_completion(llm, messages, **kwargs)  # type: ignore[return-value]
+            return self._stream_completion(llm, messages, **kwargs)
 
         response = llm.chat.completions.create(
             messages=messages,  # type: ignore[arg-type]

@@ -1,21 +1,22 @@
 import json
 from typing import Any
 
-from openai.types import CreateEmbeddingResponse
-from openai.types.embedding import Embedding
-from openai.types.create_embedding_response import Usage
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from ollama import ChatResponse as OllamaChatResponse
-from ollama import Message as OllamaMessage
-from typing import Literal, cast
-from openai.types.chat.chat_completion_chunk import (
-    Choice,
+from any_llm.types.completion import (
+    CreateEmbeddingResponse,
+    Embedding,
+    Usage,
+    ChatCompletionChunk,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
+    CompletionUsage,
+    ChunkChoice,
+    Reasoning,
 )
+from ollama import ChatResponse as OllamaChatResponse
+from ollama import Message as OllamaMessage
+from typing import Literal, cast
 from datetime import datetime
-from openai.types.completion_usage import CompletionUsage
 from ollama import EmbedResponse
 import uuid
 
@@ -61,18 +62,13 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
         created = int(datetime.strptime(created_str, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp())
 
     content = message.content
-    reasoning = message.thinking
 
     role = None
     message_role = message.role
     if message_role:
         role = cast(Literal["developer", "system", "user", "assistant", "tool"], message_role)
 
-    delta = (
-        ChoiceDelta(content=content, role=role, reasoning=reasoning)  # type: ignore[call-arg]
-        if reasoning
-        else ChoiceDelta(content=content, role=role)
-    )
+    delta = ChoiceDelta(content=content, role=role, reasoning=Reasoning(content=message.thinking) if message.thinking else None)
 
     tool_calls = message.tool_calls
     if tool_calls:
@@ -97,7 +93,7 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
             openai_tool_calls.append(openai_tool_call)
         delta.tool_calls = openai_tool_calls
 
-    choice = Choice(
+    choice = ChunkChoice(
         index=0,
         delta=delta,
         finish_reason=cast(
@@ -180,7 +176,7 @@ def _create_response_dict_from_ollama_response(
                 "message": {
                     "role": response_message.role,
                     "content": response_message.content,
-                    "reasoning": response_message.thinking,
+                    "reasoning_content": response_message.thinking,
                     "tool_calls": tool_calls,
                 },
                 "finish_reason": "tool_calls",
@@ -193,7 +189,7 @@ def _create_response_dict_from_ollama_response(
                 "message": {
                     "role": response_message.role,
                     "content": response_message.content,
-                    "reasoning": response_message.thinking,
+                    "reasoning_content": response_message.thinking,
                     "tool_calls": None,
                 },
                 "finish_reason": response.done_reason,

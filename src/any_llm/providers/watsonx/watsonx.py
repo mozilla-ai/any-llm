@@ -8,10 +8,8 @@ except ImportError as exc:
     msg = "ibm-watsonx-ai is not installed. Please install it with `pip install any-llm-sdk[watsonx]`"
     raise ImportError(msg) from exc
 
-from openai.types.chat.chat_completion import ChatCompletion
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 from any_llm.provider import Provider
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 from any_llm.providers.watsonx.utils import _convert_response, _convert_streaming_chunk
 
 
@@ -47,7 +45,7 @@ class WatsonxProvider(Provider):
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Watsonx."""
 
         model_inference = ModelInference(
@@ -60,7 +58,7 @@ class WatsonxProvider(Provider):
         )
 
         if kwargs.get("stream", False):
-            return self._stream_completion(model_inference, messages, **kwargs)  # type: ignore[return-value]
+            return self._stream_completion(model_inference, messages, **kwargs)
 
         response = model_inference.chat(
             messages=messages,

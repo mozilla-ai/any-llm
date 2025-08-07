@@ -6,11 +6,14 @@ except ImportError:
     msg = "cerebras is not installed. Please install it with `pip install any-llm-sdk[cerebras]`"
     raise ImportError(msg)
 
-from openai.types.chat.chat_completion import ChatCompletion
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types.completion_usage import CompletionUsage
-from openai.types.chat.chat_completion_message import ChatCompletionMessage
-from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall, Function
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    CompletionUsage,
+    ChatCompletionMessage,
+    ChatCompletionMessageToolCall,
+    Function,
+)
 
 
 def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCompletionChunk:
@@ -131,7 +134,7 @@ def _convert_response(response_data: Dict[str, Any]) -> ChatCompletion:
     )
 
     # Create the choice
-    from openai.types.chat.chat_completion import Choice
+    from any_llm.types.completion import Choice
 
     choice = Choice(
         finish_reason=choice_data.get("finish_reason", "stop"),

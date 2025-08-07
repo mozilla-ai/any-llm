@@ -2,13 +2,13 @@ import json
 from time import time
 from typing import Any
 
-from openai.types import CreateEmbeddingResponse
-from openai.types.embedding import Embedding
-from openai.types.create_embedding_response import Usage
-from openai.types.chat.chat_completion_chunk import (
+from any_llm.types.completion import (
+    CreateEmbeddingResponse,
+    Embedding,
+    Usage,
     ChatCompletionChunk,
-    Choice,
     ChoiceDelta,
+    ChunkChoice,
 )
 
 try:
@@ -134,7 +134,7 @@ def _create_openai_chunk_from_google_chunk(
 
     delta = ChoiceDelta(content=part.text, role="assistant")
 
-    choice = Choice(
+    choice = ChunkChoice(
         index=0,
         delta=delta,
         finish_reason="stop" if getattr(candidate.finish_reason, "value", None) == "STOP" else None,

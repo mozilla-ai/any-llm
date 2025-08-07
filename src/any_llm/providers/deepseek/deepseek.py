@@ -1,11 +1,9 @@
-from typing import Any
+from typing import Any, Iterator
 
 from pydantic import BaseModel
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types.chat.chat_completion import ChatCompletion
+from any_llm.types.completion import ChatCompletionChunk, ChatCompletion
 from any_llm.providers.deepseek.utils import _convert_pydantic_to_deepseek_json
 
 
@@ -22,7 +20,7 @@ class DeepseekProvider(BaseOpenAIProvider):
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         # Handle Pydantic model conversion for DeepSeek
         if "response_format" in kwargs:
             response_format = kwargs["response_format"]

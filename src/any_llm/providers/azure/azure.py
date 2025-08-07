@@ -9,10 +9,7 @@ except ImportError as exc:
     msg = "azure-ai-inference is not installed. Please install it with `pip install any-llm-sdk[azure]`"
     raise ImportError(msg) from exc
 
-from openai.types.chat.chat_completion import ChatCompletion
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types import CreateEmbeddingResponse
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 
 from any_llm.provider import Provider, ApiConfig
 from any_llm.providers.azure.utils import (
@@ -90,7 +87,7 @@ class AzureProvider(Provider):
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> Union[ChatCompletion, Stream[ChatCompletionChunk]]:
+    ) -> Union[ChatCompletion, Iterator[ChatCompletionChunk]]:
         """Create a chat completion using Azure AI Inference SDK."""
         client: ChatCompletionsClient = self._create_chat_client()
 
@@ -100,7 +97,7 @@ class AzureProvider(Provider):
 
         # Handle streaming vs non-streaming
         if kwargs.get("stream", False):
-            return self._stream_completion(client, model, messages, **kwargs)  # type: ignore[return-value]
+            return self._stream_completion(client, model, messages, **kwargs)
         else:
             response: ChatCompletions = client.complete(
                 model=model,

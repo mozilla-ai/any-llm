@@ -1,13 +1,13 @@
 from typing import cast, Literal
 
-from openai.types.chat.chat_completion_chunk import (
+from any_llm.types.completion import (
     ChatCompletionChunk,
-    Choice,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
+    CompletionUsage,
+    ChunkChoice,
 )
-from openai.types.completion_usage import CompletionUsage
 
 from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
 
@@ -42,7 +42,7 @@ def _create_openai_chunk_from_groq_chunk(groq_chunk: GroqChatCompletionChunk) ->
     else:
         delta.tool_calls = None
 
-    choice = Choice(
+    choice = ChunkChoice(
         index=choice_data.index,
         delta=delta,
         finish_reason=choice_data.finish_reason,

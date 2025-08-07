@@ -1,5 +1,5 @@
 import os
-from typing import Any
+from typing import Any, Iterator
 
 try:
     import instructor
@@ -8,9 +8,7 @@ except ImportError:
     raise ImportError(msg)
 
 from openai import OpenAI
-from openai.types.chat.chat_completion import ChatCompletion
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 
 from any_llm.provider import convert_instructor_response
 from any_llm.providers.openai.base import BaseOpenAIProvider
@@ -24,7 +22,7 @@ class SambanovaProvider(BaseOpenAIProvider):
 
     def completion(
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Make the API call to SambaNova service with instructor for structured output."""
         client = OpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
@@ -42,8 +40,10 @@ class SambanovaProvider(BaseOpenAIProvider):
             )
             return convert_instructor_response(response, model, self.PROVIDER_NAME)
         else:
-            return client.chat.completions.create(
-                model=model,
-                messages=messages,  # type: ignore[arg-type]
-                **kwargs,
+            return self._convert_completion_response(
+                client.chat.completions.create(
+                    model=model,
+                    messages=messages,  # type: ignore[arg-type]
+                    **kwargs,
+                )
             )
