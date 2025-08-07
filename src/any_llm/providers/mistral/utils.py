@@ -28,9 +28,10 @@ from any_llm.types.completion import (
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
-    ChatCompletionMessageToolCall,
     Function,
 )
+from openai.types.chat.chat_completion_message_function_tool_call import ChatCompletionMessageFunctionToolCall
+from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall
 from typing import Literal, cast
 
 
@@ -57,7 +58,7 @@ def _convert_mistral_tool_calls_to_any_llm(
         if not tool_call.id or not tool_call.function or not tool_call.function.name:
             continue
 
-        any_llm_tool_call = ChatCompletionMessageToolCall(
+        any_llm_tool_call = ChatCompletionMessageFunctionToolCall(
             id=tool_call.id,
             type="function",
             function=Function(
@@ -67,7 +68,7 @@ def _convert_mistral_tool_calls_to_any_llm(
         )
         any_llm_tool_calls.append(any_llm_tool_call)
 
-    return any_llm_tool_calls
+    return any_llm_tool_calls  # type: ignore[return-value]
 
 
 def _convert_mistral_streaming_tool_calls_to_any_llm(

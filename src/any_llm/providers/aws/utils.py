@@ -9,13 +9,13 @@ from any_llm.types.completion import (
     ChoiceDelta,
     CompletionUsage,
     ChatCompletionMessage,
-    ChatCompletionMessageToolCall,
     Function,
     CreateEmbeddingResponse,
     Embedding,
     Usage,
     ChunkChoice,
 )
+from openai.types.chat.chat_completion_message_function_tool_call import ChatCompletionMessageFunctionToolCall
 
 
 INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
@@ -159,7 +159,7 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
             if "toolUse" in content:
                 tool = content["toolUse"]
                 tool_calls.append(
-                    ChatCompletionMessageToolCall(
+                    ChatCompletionMessageFunctionToolCall(
                         id=tool["toolUseId"],
                         type="function",
                         function=Function(
@@ -173,7 +173,7 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
             message = ChatCompletionMessage(
                 content=None,
                 role="assistant",
-                tool_calls=tool_calls,
+                tool_calls=tool_calls,  # type: ignore[arg-type]
             )
 
             choice = Choice(

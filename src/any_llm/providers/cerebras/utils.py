@@ -11,9 +11,9 @@ from any_llm.types.completion import (
     ChatCompletionChunk,
     CompletionUsage,
     ChatCompletionMessage,
-    ChatCompletionMessageToolCall,
     Function,
 )
+from openai.types.chat.chat_completion_message_function_tool_call import ChatCompletionMessageFunctionToolCall
 
 
 def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCompletionChunk:
@@ -116,7 +116,7 @@ def _convert_response(response_data: Dict[str, Any]) -> ChatCompletion:
         tool_calls = []
         for tool_call in message_data["tool_calls"]:
             tool_calls.append(
-                ChatCompletionMessageToolCall(
+                ChatCompletionMessageFunctionToolCall(
                     id=tool_call.get("id"),
                     type="function",  # Always set to "function" as it's the only valid value
                     function=Function(
@@ -130,7 +130,7 @@ def _convert_response(response_data: Dict[str, Any]) -> ChatCompletion:
     message = ChatCompletionMessage(
         content=message_data.get("content"),
         role=message_data.get("role", "assistant"),
-        tool_calls=tool_calls,
+        tool_calls=tool_calls,  # type: ignore[arg-type]
     )
 
     # Create the choice

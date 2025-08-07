@@ -5,6 +5,9 @@ from openai.types.chat.chat_completion_message import ChatCompletionMessage as O
 from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall as OpenAIChatCompletionMessageToolCall,
 )
+from openai.types.chat.chat_completion_message_function_tool_call import (
+    ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
+)
 from openai.types.chat.chat_completion_message_function_tool_call import Function as OpenAIFunction
 from openai.types.completion_usage import CompletionUsage as OpenAICompletionUsage
 from openai.types import CreateEmbeddingResponse as OpenAICreateEmbeddingResponse
@@ -57,3 +60,6 @@ Embedding = OpenAIEmbedding
 Usage = OpenAIUsage
 ChoiceDeltaToolCall = OpenAIChoiceDeltaToolCall
 ChoiceDeltaToolCallFunction = OpenAIChoiceDeltaToolCallFunction
+
+
+ChatCompletionMessageFunctionToolCall = OpenAIChatCompletionMessageFunctionToolCall

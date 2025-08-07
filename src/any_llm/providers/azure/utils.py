@@ -14,7 +14,6 @@ from any_llm.types.completion import (
     Choice,
     CompletionUsage,
     ChatCompletionMessage,
-    ChatCompletionMessageToolCall,
     Function,
     ChatCompletionChunk,
     CreateEmbeddingResponse,
@@ -25,6 +24,8 @@ from any_llm.types.completion import (
     Usage,
     ChunkChoice,
 )
+from openai.types.chat.chat_completion_message_function_tool_call import ChatCompletionMessageFunctionToolCall
+from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall
 
 
 def _convert_response_format(
@@ -80,7 +81,7 @@ def _convert_response(response_data: ChatCompletions) -> ChatCompletion:
         tool_calls = []
         for tool_call in message_data.tool_calls:
             tool_calls.append(
-                ChatCompletionMessageToolCall(
+                ChatCompletionMessageFunctionToolCall(
                     id=tool_call.id,
                     type=tool_call.type,
                     function=Function(

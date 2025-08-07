@@ -6,6 +6,7 @@ from any_llm.types.completion import (
     Choice,
     CompletionUsage,
     ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
     ChatCompletionMessageToolCall,
     Function,
     Reasoning,
@@ -13,9 +14,9 @@ from any_llm.types.completion import (
 
 
 # Common utility functions that can be shared across providers
-def create_openai_tool_call(tool_call_id: str, name: str, arguments: str) -> ChatCompletionMessageToolCall:
+def create_openai_tool_call(tool_call_id: str, name: str, arguments: str) -> ChatCompletionMessageFunctionToolCall:
     """Create a standardized OpenAI tool call object."""
-    return ChatCompletionMessageToolCall(
+    return ChatCompletionMessageFunctionToolCall(
         id=tool_call_id,
         type="function",
         function=Function(name=name, arguments=arguments),
@@ -55,9 +56,9 @@ def create_openai_completion(
     )
 
 
-def create_tool_calls_from_list(tool_calls_data: list[dict[str, Any]]) -> list[ChatCompletionMessageToolCall]:
+def create_tool_calls_from_list(tool_calls_data: list[dict[str, Any]]) -> list[ChatCompletionMessageFunctionToolCall]:
     """
-    Convert a list of tool call dictionaries to ChatCompletionMessageToolCall objects.
+    Convert a list of tool call dictionaries to ChatCompletionMessageFunctionToolCall objects.
 
     Handles common variations in tool call structure across providers.
     """
@@ -119,7 +120,7 @@ def create_choice_from_message_data(
     message = create_openai_message(
         role=message_data.get("role", "assistant"),
         content=message_data.get("content"),
-        tool_calls=tool_calls,
+        tool_calls=tool_calls,  # type: ignore[arg-type]
         reasoning=Reasoning(content=str(message_data.get("reasoning_content")))
         if message_data.get("reasoning_content")
         else None,

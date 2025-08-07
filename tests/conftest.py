@@ -7,7 +7,11 @@ from any_llm.provider import ProviderName
 
 @pytest.fixture
 def provider_reasoning_model_map() -> dict[ProviderName, str]:
-    return {ProviderName.OLLAMA: "gpt-oss:20b", ProviderName.MISTRAL: "magistral-small-latest"}
+    return {
+        ProviderName.OLLAMA: "gpt-oss:20b",
+        ProviderName.MISTRAL: "magistral-small-latest",
+        ProviderName.OPENAI: "gpt-5-nano-2025-08-07",
+    }
 
 
 # Use small models for testing to make sure they work

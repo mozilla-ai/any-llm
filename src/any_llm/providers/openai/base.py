@@ -71,18 +71,11 @@ class BaseOpenAIProvider(Provider, ABC):
             api_key=self.config.api_key,
         )
 
-        if "response_format" in kwargs:
-            response = client.chat.completions.parse(  # type: ignore[attr-defined]
-                model=model,
-                messages=messages,
-                **kwargs,
-            )
-        else:
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,  # type: ignore[arg-type]
-                **kwargs,
-            )
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,  # type: ignore[arg-type]
+            **kwargs,
+        )
         return self._convert_completion_response(response)
 
     def embedding(
