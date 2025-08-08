@@ -51,6 +51,15 @@ def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[types.Tool]:
     return [types.Tool(function_declarations=function_declarations)]
 
 
+def _convert_tool_choice(tool_choice: str) -> types.ToolConfig:
+    tool_choice_to_mode = {
+        "required": types.FunctionCallingConfigMode.ANY,
+        "auto": types.FunctionCallingConfigMode.AUTO,
+    }
+
+    return types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode=tool_choice_to_mode[tool_choice]))
+
+
 def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
     """Convert messages to Google GenAI format."""
     formatted_messages = []
@@ -92,6 +101,87 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
                 formatted_messages.append(types.Content(role="function", parts=[part]))
 
     return formatted_messages
+
+
+def _convert_response_to_response_dict(response: types.GenerateContentResponse) -> dict[str, Any]:
+    response_dict = {
+        "id": "google_genai_response",
+        "model": "google/genai",
+        "created": 0,
+        "usage": {
+            "prompt_tokens": getattr(response.usage_metadata, "prompt_token_count", 0)
+            if hasattr(response, "usage_metadata")
+            else 0,
+            "completion_tokens": getattr(response.usage_metadata, "candidates_token_count", 0)
+            if hasattr(response, "usage_metadata")
+            else 0,
+            "total_tokens": getattr(response.usage_metadata, "total_token_count", 0)
+            if hasattr(response, "usage_metadata")
+            else 0,
+        },
+    }
+
+    if (
+        response.candidates
+        and len(response.candidates) > 0
+        and response.candidates[0].content
+        and response.candidates[0].content.parts
+        and len(response.candidates[0].content.parts) > 0
+        and hasattr(response.candidates[0].content.parts[0], "function_call")
+        and response.candidates[0].content.parts[0].function_call
+    ):
+        function_call = response.candidates[0].content.parts[0].function_call
+
+        args_dict = {}
+        if hasattr(function_call, "args") and function_call.args:
+            for key, value in function_call.args.items():
+                args_dict[key] = value
+
+        response_dict["choices"] = [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": f"call_{hash(function_call.name)}",
+                            "function": {
+                                "name": function_call.name,
+                                "arguments": json.dumps(args_dict),
+                            },
+                            "type": "function",
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+                "index": 0,
+            }
+        ]
+    else:
+        content = ""
+        if (
+            response.candidates
+            and len(response.candidates) > 0
+            and response.candidates[0].content
+            and response.candidates[0].content.parts
+            and len(response.candidates[0].content.parts) > 0
+            and hasattr(response.candidates[0].content.parts[0], "text")
+        ):
+            content = response.candidates[0].content.parts[0].text or ""
+
+        response_dict["choices"] = [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": content,
+                    "tool_calls": None,
+                },
+                "finish_reason": "stop",
+                "index": 0,
+            }
+        ]
+
+    return response_dict
 
 
 def _create_openai_embedding_response_from_google(

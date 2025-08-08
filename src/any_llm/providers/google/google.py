@@ -1,5 +1,4 @@
 import os
-import json
 from typing import Any, Iterator
 
 try:
@@ -18,8 +17,10 @@ from any_llm.providers.helpers import (
     create_completion_from_response,
 )
 from any_llm.providers.google.utils import (
+    _convert_tool_choice,
     _convert_tool_spec,
     _convert_messages,
+    _convert_response_to_response_dict,
     _create_openai_chunk_from_google_chunk,
     _create_openai_embedding_response_from_google,
 )
@@ -91,6 +92,9 @@ class GoogleProvider(Provider):
             tools = _convert_tool_spec(kwargs["tools"])
             kwargs["tools"] = tools
 
+        if tool_choice := kwargs.pop("tool_choice", None):
+            kwargs["tool_config"] = _convert_tool_choice(tool_choice)
+
         stream = kwargs.pop("stream", False)
         response_format = kwargs.pop("response_format", None)
         generation_config = types.GenerateContentConfig(
@@ -128,82 +132,7 @@ class GoogleProvider(Provider):
                 model=model, contents=content_text, config=generation_config
             )
 
-            response_dict = {
-                "id": "google_genai_response",
-                "model": "google/genai",
-                "created": 0,
-                "usage": {
-                    "prompt_tokens": getattr(response.usage_metadata, "prompt_token_count", 0)
-                    if hasattr(response, "usage_metadata")
-                    else 0,
-                    "completion_tokens": getattr(response.usage_metadata, "candidates_token_count", 0)
-                    if hasattr(response, "usage_metadata")
-                    else 0,
-                    "total_tokens": getattr(response.usage_metadata, "total_token_count", 0)
-                    if hasattr(response, "usage_metadata")
-                    else 0,
-                },
-            }
-
-            if (
-                response.candidates
-                and len(response.candidates) > 0
-                and response.candidates[0].content
-                and response.candidates[0].content.parts
-                and len(response.candidates[0].content.parts) > 0
-                and hasattr(response.candidates[0].content.parts[0], "function_call")
-                and response.candidates[0].content.parts[0].function_call
-            ):
-                function_call = response.candidates[0].content.parts[0].function_call
-
-                args_dict = {}
-                if hasattr(function_call, "args") and function_call.args:
-                    for key, value in function_call.args.items():
-                        args_dict[key] = value
-
-                response_dict["choices"] = [
-                    {
-                        "message": {
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": [
-                                {
-                                    "id": f"call_{hash(function_call.name)}",
-                                    "function": {
-                                        "name": function_call.name,
-                                        "arguments": json.dumps(args_dict),
-                                    },
-                                    "type": "function",
-                                }
-                            ],
-                        },
-                        "finish_reason": "tool_calls",
-                        "index": 0,
-                    }
-                ]
-            else:
-                content = ""
-                if (
-                    response.candidates
-                    and len(response.candidates) > 0
-                    and response.candidates[0].content
-                    and response.candidates[0].content.parts
-                    and len(response.candidates[0].content.parts) > 0
-                    and hasattr(response.candidates[0].content.parts[0], "text")
-                ):
-                    content = response.candidates[0].content.parts[0].text or ""
-
-                response_dict["choices"] = [
-                    {
-                        "message": {
-                            "role": "assistant",
-                            "content": content,
-                            "tool_calls": None,
-                        },
-                        "finish_reason": "stop",
-                        "index": 0,
-                    }
-                ]
+            response_dict = _convert_response_to_response_dict(response)
 
             return create_completion_from_response(
                 response_data=response_dict,
