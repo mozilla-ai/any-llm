@@ -78,8 +78,6 @@ class AnthropicProvider(Provider):
         kwargs = _convert_kwargs(kwargs)
 
         if "response_format" in kwargs:
-            if kwargs.get("stream", False):
-                raise UnsupportedParameterError("response_format with streaming", self.PROVIDER_NAME)
             instructor_client = instructor.from_anthropic(client)
 
             response_format = kwargs.pop("response_format")
