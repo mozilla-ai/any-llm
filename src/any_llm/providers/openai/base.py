@@ -12,6 +12,7 @@ from any_llm.provider import Provider
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from any_llm.logging import logger
+from any_llm.types.responses import Response, ResponseStreamEvent
 
 
 class BaseOpenAIProvider(Provider, ABC):
@@ -25,13 +26,14 @@ class BaseOpenAIProvider(Provider, ABC):
 
     SUPPORTS_STREAMING = True
     SUPPORTS_COMPLETION = True
+    SUPPORTS_RESPONSES = False
     SUPPORTS_REASONING = False
     SUPPORTS_EMBEDDING = True
 
     @classmethod
     def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
         """Default is that all kwargs are supported."""
-        pass
+        return None
 
     def _normalize_reasoning_on_message(self, message_dict: dict[str, Any]) -> None:
         """Mutate a message dict to move provider-specific reasoning fields to our Reasoning type.
@@ -92,12 +94,16 @@ class BaseOpenAIProvider(Provider, ABC):
                 # a typo where they set it to "chat.completions". I filed a ticket with them to fix it. No harm in setting it here
                 # Because this is the only accepted value anyways.
                 logger.warning(
-                    f"API returned an unexpected object type: {response.object}. Setting to 'chat.completion'."
+                    "API returned an unexpected object type: %s. Setting to 'chat.completion'.",
+                    response.object,
                 )
                 response.object = "chat.completion"
             if not isinstance(response.created, int):
                 # Sambanova returns a float instead of an int.
-                logger.warning(f"API returned an unexpected created type: {type(response.created)}. Setting to int.")
+                logger.warning(
+                    "API returned an unexpected created type: %s. Setting to int.",
+                    type(response.created),
+                )
                 response.created = int(response.created)
             # Normalize reasoning fields before validation
             normalized = self._normalize_openai_dict_response(response.model_dump())
@@ -107,7 +113,10 @@ class BaseOpenAIProvider(Provider, ABC):
             def _convert_chunk(chunk: OpenAIChatCompletionChunk) -> ChatCompletionChunk:
                 if not isinstance(chunk.created, int):
                     # Sambanova returns a float instead of an int.
-                    logger.warning(f"API returned an unexpected created type: {type(chunk.created)}. Setting to int.")
+                    logger.warning(
+                        "API returned an unexpected created type: %s. Setting to int.",
+                        type(chunk.created),
+                    )
                     chunk.created = int(chunk.created)
                 normalized_chunk = self._normalize_openai_dict_response(chunk.model_dump())
                 return ChatCompletionChunk.model_validate(normalized_chunk)
@@ -136,6 +145,25 @@ class BaseOpenAIProvider(Provider, ABC):
                 **kwargs,
             )
         return self._convert_completion_response(response)
+
+    def responses(self, model: str, input_data: Any, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
+        """Call OpenAI Responses API and normalize into ChatCompletion/Chunks.
+
+        For now we only return a non-streaming ChatCompletion, or streaming chunks
+        mapped to ChatCompletionChunk using the same converter.
+        """
+        client = OpenAI(
+            base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
+            api_key=self.config.api_key,
+        )
+        response = client.responses.create(
+            model=model,
+            input=input_data,
+            **kwargs,
+        )
+        if not isinstance(response, (Response, Stream)):
+            raise ValueError(f"Responses API returned an unexpected type: {type(response)}")
+        return response
 
     def embedding(
         self,

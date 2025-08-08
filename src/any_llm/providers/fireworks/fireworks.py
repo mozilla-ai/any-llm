@@ -20,6 +20,7 @@ class FireworksProvider(Provider):
 
     SUPPORTS_STREAMING = True
     SUPPORTS_COMPLETION = True
+    SUPPORTS_RESPONSES = False
     SUPPORTS_REASONING = False
     SUPPORTS_EMBEDDING = False
 

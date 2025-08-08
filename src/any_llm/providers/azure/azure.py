@@ -23,14 +23,15 @@ from any_llm.providers.azure.utils import (
 class AzureProvider(Provider):
     """Azure Provider using the official Azure AI Inference SDK."""
 
-    PROVIDER_NAME: str = "Azure"
-    ENV_API_KEY_NAME: str = "AZURE_API_KEY"
-    PROVIDER_DOCUMENTATION_URL: str = "https://azure.microsoft.com/en-us/products/ai-services/openai-service"
+    PROVIDER_NAME = "Azure"
+    ENV_API_KEY_NAME = "AZURE_API_KEY"
+    PROVIDER_DOCUMENTATION_URL = "https://azure.microsoft.com/en-us/products/ai-services/openai-service"
 
-    SUPPORTS_STREAMING: bool = True
-    SUPPORTS_EMBEDDING: bool = True
-    SUPPORTS_REASONING: bool = False
-    SUPPORTS_COMPLETION: bool = True
+    SUPPORTS_STREAMING = True
+    SUPPORTS_EMBEDDING = True
+    SUPPORTS_REASONING = False
+    SUPPORTS_COMPLETION = True
+    SUPPORTS_RESPONSES = False
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Azure provider."""

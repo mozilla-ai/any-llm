@@ -6,7 +6,7 @@ from any_llm.provider import ProviderName
 
 
 @pytest.fixture
-def provider_reasoning_model_map() -> dict[ProviderName, str]:
+def provider_completion_reasoning_model_map() -> dict[ProviderName, str]:
     return {
         ProviderName.MISTRAL: "magistral-small-latest",
         ProviderName.GROQ: "openai/gpt-oss-20b",
@@ -20,7 +20,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.MISTRAL: "mistral-small-latest",
         ProviderName.ANTHROPIC: "claude-3-5-haiku-latest",
         ProviderName.DEEPSEEK: "deepseek-chat",
-        ProviderName.OPENAI: "gpt-4.1-mini",
+        ProviderName.OPENAI: "gpt-5-nano",
         ProviderName.GOOGLE: "gemini-2.0-flash-001",
         ProviderName.MOONSHOT: "moonshot-v1-8k",
         ProviderName.SAMBANOVA: "Meta-Llama-3.1-8B-Instruct",

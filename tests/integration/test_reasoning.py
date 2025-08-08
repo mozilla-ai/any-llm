@@ -10,11 +10,11 @@ from any_llm.exceptions import MissingApiKeyError
 
 def test_reasoning_providers(
     provider: ProviderName,
-    provider_reasoning_model_map: dict[ProviderName, str],
+    provider_completion_reasoning_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    model_id = provider_reasoning_model_map.get(provider, None)
+    model_id = provider_completion_reasoning_model_map.get(provider, None)
     if not model_id:
         pytest.skip(f"{provider.value} does not yet test reasoning, skipping")
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})

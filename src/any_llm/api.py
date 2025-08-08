@@ -4,6 +4,7 @@ from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, Create
 from pydantic import BaseModel
 from any_llm.provider import ProviderFactory, ApiConfig, Provider
 from any_llm.tools import prepare_tools
+from any_llm.types.responses import Response, ResponseStreamEvent
 
 
 def _prepare_completion_request(
@@ -233,6 +234,106 @@ async def acompletion(
     )
 
     return await provider.acompletion(model_name, messages, **completion_kwargs)
+
+
+def responses(
+    model: str,
+    input_data: Any,
+    *,
+    tools: Optional[List[Union[dict[str, Any], Callable[..., Any]]]] = None,
+    tool_choice: Optional[Union[str, dict[str, Any]]] = None,
+    max_output_tokens: Optional[int] = None,
+    temperature: Optional[float] = None,
+    top_p: Optional[float] = None,
+    stream: Optional[bool] = None,
+    api_key: Optional[str] = None,
+    api_base: Optional[str] = None,
+    timeout: Optional[Union[float, int]] = None,
+    user: Optional[str] = None,
+    **kwargs: Any,
+) -> Response | Iterator[ResponseStreamEvent]:
+    """Create a response using the Responses API.
+
+    This normalizes to the same ChatCompletion/Chunk types for compatibility.
+    """
+    provider_key, model_name = ProviderFactory.split_model_provider(model)
+
+    config: dict[str, str] = {}
+    if api_key:
+        config["api_key"] = str(api_key)
+    if api_base:
+        config["api_base"] = str(api_base)
+    api_config = ApiConfig(**config)
+
+    provider = ProviderFactory.create_provider(provider_key, api_config)
+
+    responses_kwargs = kwargs.copy()
+    if tools is not None:
+        responses_kwargs["tools"] = prepare_tools(tools)
+    if tool_choice is not None:
+        responses_kwargs["tool_choice"] = tool_choice
+    if max_output_tokens is not None:
+        responses_kwargs["max_output_tokens"] = max_output_tokens
+    if temperature is not None:
+        responses_kwargs["temperature"] = temperature
+    if top_p is not None:
+        responses_kwargs["top_p"] = top_p
+    if stream is not None:
+        responses_kwargs["stream"] = stream
+    if timeout is not None:
+        responses_kwargs["timeout"] = timeout
+    if user is not None:
+        responses_kwargs["user"] = user
+
+    return provider.responses(model_name, input_data, **responses_kwargs)
+
+
+async def aresponses(
+    model: str,
+    input_data: Any,
+    *,
+    tools: Optional[List[Union[dict[str, Any], Callable[..., Any]]]] = None,
+    tool_choice: Optional[Union[str, dict[str, Any]]] = None,
+    max_output_tokens: Optional[int] = None,
+    temperature: Optional[float] = None,
+    top_p: Optional[float] = None,
+    stream: Optional[bool] = None,
+    api_key: Optional[str] = None,
+    api_base: Optional[str] = None,
+    timeout: Optional[Union[float, int]] = None,
+    user: Optional[str] = None,
+    **kwargs: Any,
+) -> Response | Iterator[ResponseStreamEvent]:
+    provider_key, model_name = ProviderFactory.split_model_provider(model)
+
+    config: dict[str, str] = {}
+    if api_key:
+        config["api_key"] = str(api_key)
+    if api_base:
+        config["api_base"] = str(api_base)
+    api_config = ApiConfig(**config)
+
+    provider = ProviderFactory.create_provider(provider_key, api_config)
+
+    responses_kwargs = kwargs.copy()
+    if tools is not None:
+        responses_kwargs["tools"] = prepare_tools(tools)
+    if tool_choice is not None:
+        responses_kwargs["tool_choice"] = tool_choice
+    if max_output_tokens is not None:
+        responses_kwargs["max_output_tokens"] = max_output_tokens
+    if temperature is not None:
+        responses_kwargs["temperature"] = temperature
+    if top_p is not None:
+        responses_kwargs["top_p"] = top_p
+    if stream is not None:
+        responses_kwargs["stream"] = stream
+    if timeout is not None:
+        responses_kwargs["timeout"] = timeout
+    if user is not None:
+        responses_kwargs["user"] = user
+
+    return await provider.aresponses(model_name, input_data, **responses_kwargs)
 
 
 def verify_kwargs(provider_name: str, **kwargs: Any) -> None:
