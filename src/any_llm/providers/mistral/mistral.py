@@ -4,9 +4,9 @@ try:
     from mistralai import Mistral
     from mistralai.extra import response_format_from_pydantic_model
     from mistralai.models.embeddingresponse import EmbeddingResponse
-except ImportError:
+except ImportError as exc:
     msg = "mistralai is not installed. Please install it with `pip install any-llm-sdk[mistral]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 from pydantic import BaseModel
 

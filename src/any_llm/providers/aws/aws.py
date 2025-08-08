@@ -6,9 +6,9 @@ try:
     import boto3
     import instructor
 
-except ImportError:
+except ImportError as exc:
     msg = "boto3 or instructor is not installed. Please install it with `pip install any-llm-sdk[aws]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 from any_llm.provider import Provider, ApiConfig, convert_instructor_response

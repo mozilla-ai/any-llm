@@ -6,9 +6,9 @@ try:
         ChatCompletionResponse,
     )
     import instructor
-except ImportError:
+except ImportError as exc:
     msg = "together or instructor is not installed. Please install it with `pip install any-llm-sdk[together]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk

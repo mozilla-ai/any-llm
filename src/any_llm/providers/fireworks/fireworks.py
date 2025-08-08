@@ -2,9 +2,9 @@ from typing import Any, Iterator
 
 try:
     from fireworks import LLM
-except ImportError:
+except ImportError as exc:
     msg = "fireworks-ai is not installed. Please install it with `pip install any-llm-sdk[fireworks]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 from pydantic import BaseModel
 from any_llm.types.completion import ChatCompletionChunk, ChatCompletion

@@ -5,9 +5,9 @@ import json
 try:
     from ollama import ChatResponse as OllamaChatResponse
     from ollama import Client
-except ImportError:
+except ImportError as exc:
     msg = "ollama is not installed. Please install it with `pip install any-llm-sdk[ollama]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 from pydantic import BaseModel
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse

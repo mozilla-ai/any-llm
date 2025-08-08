@@ -4,9 +4,9 @@ from typing import Any, Iterator
 try:
     from google import genai
     from google.genai import types
-except ImportError:
+except ImportError as exc:
     msg = "google-genai is not installed. Please install it with `pip install any-llm-sdk[google]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 from pydantic import BaseModel
 

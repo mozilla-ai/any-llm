@@ -34,8 +34,8 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.CEREBRAS: "llama-3.3-70b",
         ProviderName.HUGGINGFACE: "meta-llama/Llama-3.2-3B-Instruct",  # You must have novita enabled in your hf account to use this model
         ProviderName.AWS: "amazon.nova-lite-v1:0",
-        ProviderName.WATSONX: "google/gemini-2.0-flash-001",
-        ProviderName.FIREWORKS: "accounts/fireworks/models/llama4-scout-instruct-basic",
+        ProviderName.WATSONX: "ibm/granite-3-8b-instruct",
+        ProviderName.FIREWORKS: "accounts/fireworks/models/gpt-oss-20b",
         ProviderName.GROQ: "llama-3.1-8b-instant",
         ProviderName.OPENROUTER: "moonshotai/kimi-k2:free",
         ProviderName.PORTKEY: "@first-integrati-d8a10f/gpt-4.1-mini",  # Owned by njbrake in portkey UI
@@ -65,7 +65,11 @@ def provider_extra_kwargs_map() -> dict[ProviderName, dict[str, Any]]:
     return {
         ProviderName.AZURE: {
             "api_base": "https://models.github.ai/inference",
-        }
+        },
+        ProviderName.WATSONX: {
+            "api_base": "https://us-south.ml.cloud.ibm.com",
+            "project_id": "5b083ace-95a6-4f95-a0a0-d4c5d9e98ca0",
+        },
     }
 
 

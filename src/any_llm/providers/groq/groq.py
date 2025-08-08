@@ -6,9 +6,9 @@ try:
     from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
     from groq.types.chat import ChatCompletion as GroqChatCompletion
     import instructor
-except ImportError:
+except ImportError as exc:
     msg = "groq or instructor is not installed. Please install it with `pip install any-llm-sdk[groq]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 
 from any_llm.types.completion import ChatCompletionChunk, ChatCompletion

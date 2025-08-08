@@ -3,9 +3,9 @@ from typing import Any, Iterator
 
 try:
     import instructor
-except ImportError:
+except ImportError as exc:
     msg = "instructor is not installed. Please install it with `pip install any-llm-sdk[sambanova]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 from openai import OpenAI
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
