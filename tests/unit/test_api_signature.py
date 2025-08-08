@@ -1,5 +1,5 @@
 import inspect
-from any_llm.api import completion, acompletion
+from any_llm.api import completion, acompletion, responses, aresponses
 
 
 def test_completion_and_acompletion_have_same_signature() -> None:
@@ -60,5 +60,52 @@ def test_completion_and_acompletion_parameter_details() -> None:
 
         # Check parameter kind (positional, keyword, etc.)
         assert completion_param.kind == acompletion_param.kind, (
+            f"Parameter '{param_name}' should have identical parameter kinds"
+        )
+
+
+def test_responses_and_aresponses_have_same_signature() -> None:
+    """Test that responses and aresponses have identical signatures."""
+    responses_sig = inspect.signature(responses)
+    aresponses_sig = inspect.signature(aresponses)
+
+    assert responses_sig.parameters == aresponses_sig.parameters, (
+        "responses and aresponses should have identical parameters"
+    )
+
+    assert responses_sig.return_annotation == aresponses_sig.return_annotation, (
+        "responses and aresponses should have identical return annotations"
+    )
+
+
+def test_responses_and_aresponses_have_same_docstring() -> None:
+    """Test that responses and aresponses have identical docstrings."""
+    responses_doc = responses.__doc__
+    aresponses_doc = aresponses.__doc__
+
+    assert responses_doc is not None, "responses should have a docstring"
+    assert aresponses_doc is not None, "aresponses should have a docstring"
+
+    assert responses_doc == aresponses_doc, "responses and aresponses should have identical docstrings"
+
+
+def test_responses_and_aresponses_parameter_details() -> None:
+    """Test that responses and aresponses parameters have identical details."""
+    responses_sig = inspect.signature(responses)
+    aresponses_sig = inspect.signature(aresponses)
+
+    for param_name in responses_sig.parameters:
+        responses_param = responses_sig.parameters[param_name]
+        aresponses_param = aresponses_sig.parameters[param_name]
+
+        assert responses_param.annotation == aresponses_param.annotation, (
+            f"Parameter '{param_name}' should have identical annotations"
+        )
+
+        assert responses_param.default == aresponses_param.default, (
+            f"Parameter '{param_name}' should have identical default values"
+        )
+
+        assert responses_param.kind == aresponses_param.kind, (
             f"Parameter '{param_name}' should have identical parameter kinds"
         )

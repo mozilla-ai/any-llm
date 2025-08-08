@@ -95,3 +95,23 @@ response = completion(
 )
 print(response.choices[0].message.content)
 ```
+
+### Responses API
+
+For providers that implement the OpenAI-style Responses API, use [`responses`](https://mozilla-ai.github.io/any-llm/api/responses/) or `aresponses`:
+
+```python
+from any_llm import responses
+
+result = responses(
+    model="openai/gpt-4o-mini",
+    input_data=[
+        {"role": "user", "content": [
+            {"type": "text", "text": "Summarize this in one sentence."}
+        ]}
+    ],
+)
+
+# Non-streaming returns an OpenAI-compatible Responses object alias
+print(result.output_text)
+```

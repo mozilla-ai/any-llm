@@ -252,9 +252,35 @@ def responses(
     user: Optional[str] = None,
     **kwargs: Any,
 ) -> Response | Iterator[ResponseStreamEvent]:
-    """Create a response using the Responses API.
+    """Create a response using the OpenAI-style Responses API.
 
-    This normalizes to the same ChatCompletion/Chunk types for compatibility.
+    This follows the OpenAI Responses API shape and returns the aliased
+    `any_llm.types.responses.Response` type. If `stream=True`, an iterator of
+    `any_llm.types.responses.ResponseStreamEvent` items is returned.
+
+    Args:
+        model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o')
+        input_data: The input payload accepted by provider's Responses API.
+            For OpenAI-compatible providers, this is typically a list mixing
+            text, images, and tool instructions, or a dict per OpenAI spec.
+        tools: Optional tools for tool calling (Python callables or OpenAI tool dicts)
+        tool_choice: Controls which tools the model can call
+        max_output_tokens: Maximum number of output tokens to generate
+        temperature: Controls randomness in the response (0.0 to 2.0)
+        top_p: Controls diversity via nucleus sampling (0.0 to 1.0)
+        stream: Whether to stream response events
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        timeout: Request timeout in seconds
+        user: Unique identifier for the end user
+        **kwargs: Additional provider-specific parameters
+
+    Returns:
+        Either a `Response` object (non-streaming) or an iterator of
+        `ResponseStreamEvent` (streaming).
+
+    Raises:
+        NotImplementedError: If the selected provider does not support the Responses API.
     """
     provider_key, model_name = ProviderFactory.split_model_provider(model)
 
@@ -304,6 +330,36 @@ async def aresponses(
     user: Optional[str] = None,
     **kwargs: Any,
 ) -> Response | Iterator[ResponseStreamEvent]:
+    """Create a response using the OpenAI-style Responses API.
+
+    This follows the OpenAI Responses API shape and returns the aliased
+    `any_llm.types.responses.Response` type. If `stream=True`, an iterator of
+    `any_llm.types.responses.ResponseStreamEvent` items is returned.
+
+    Args:
+        model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o')
+        input_data: The input payload accepted by provider's Responses API.
+            For OpenAI-compatible providers, this is typically a list mixing
+            text, images, and tool instructions, or a dict per OpenAI spec.
+        tools: Optional tools for tool calling (Python callables or OpenAI tool dicts)
+        tool_choice: Controls which tools the model can call
+        max_output_tokens: Maximum number of output tokens to generate
+        temperature: Controls randomness in the response (0.0 to 2.0)
+        top_p: Controls diversity via nucleus sampling (0.0 to 1.0)
+        stream: Whether to stream response events
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        timeout: Request timeout in seconds
+        user: Unique identifier for the end user
+        **kwargs: Additional provider-specific parameters
+
+    Returns:
+        Either a `Response` object (non-streaming) or an iterator of
+        `ResponseStreamEvent` (streaming).
+
+    Raises:
+        NotImplementedError: If the selected provider does not support the Responses API.
+    """
     provider_key, model_name = ProviderFactory.split_model_provider(model)
 
     config: dict[str, str] = {}

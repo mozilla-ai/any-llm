@@ -10,6 +10,7 @@ nav:
   - API Reference:
     - Completion: api/completion.md
     - Embedding: api/embedding.md
+    - Responses: api/responses.md
     - Exceptions: api/exceptions.md
     - Helpers: api/helpers.md
 theme:

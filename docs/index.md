@@ -12,7 +12,7 @@ Refer to the [Quickstart](./quickstart.md) for instructions on installation and 
 
 ### Parameters
 
-For a complete list of available functions and their parameters, see the [completion API documentation](./api/completion.md).
+For a complete list of available functions and their parameters, see the [completion](./api/completion.md), [embedding](./api/embedding.md), and [responses](./api/responses.md) API documentation.
 
 ### Error Handling
 
