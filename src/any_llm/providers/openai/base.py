@@ -33,7 +33,7 @@ class BaseOpenAIProvider(Provider, ABC):
     @classmethod
     def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
         """Default is that all kwargs are supported."""
-        return None
+        pass
 
     def _normalize_reasoning_on_message(self, message_dict: dict[str, Any]) -> None:
         """Mutate a message dict to move provider-specific reasoning fields to our Reasoning type.
