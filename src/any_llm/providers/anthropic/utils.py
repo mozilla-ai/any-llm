@@ -215,6 +215,14 @@ def _convert_tool_spec(openai_tools: List[Dict[str, Any]]) -> List[Dict[str, Any
     return anthropic_tools
 
 
+def _convert_tool_choice(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    parallel_tool_calls = kwargs.pop("parallel_tool_calls", True)
+    tool_choice = kwargs.pop("tool_choice", "any")
+    if tool_choice == "required":
+        tool_choice = "any"
+    return {"type": tool_choice, "disable_parallel_tool_use": not parallel_tool_calls}
+
+
 def _convert_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
     """Convert kwargs to Anthropic format."""
     kwargs = kwargs.copy()
@@ -226,10 +234,7 @@ def _convert_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
     if "tools" in kwargs:
         kwargs["tools"] = _convert_tool_spec(kwargs["tools"])
 
-    if "parallel_tool_calls" in kwargs:
-        parallel_tool_calls = kwargs.pop("parallel_tool_calls")
-        if parallel_tool_calls is False:
-            tool_choice = {"type": kwargs.get("tool_choice", "any"), "disable_parallel_tool_use": True}
-            kwargs["tool_choice"] = tool_choice
+    if "tool_choice" in kwargs or "parallel_tool_calls" in kwargs:
+        kwargs["tool_choice"] = _convert_tool_choice(kwargs)
 
     return kwargs
