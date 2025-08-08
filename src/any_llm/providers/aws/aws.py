@@ -29,10 +29,10 @@ class AwsProvider(Provider):
     ENV_API_KEY_NAME = "AWS_BEARER_TOKEN_BEDROCK"
     PROVIDER_DOCUMENTATION_URL = "https://aws.amazon.com/bedrock/"
 
-    SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
-    SUPPORTS_REASONING = False
+    SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = True
 
     def __init__(self, config: ApiConfig) -> None:

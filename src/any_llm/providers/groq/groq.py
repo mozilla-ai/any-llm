@@ -28,10 +28,10 @@ class GroqProvider(Provider):
     ENV_API_KEY_NAME = "GROQ_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://groq.com/api"
 
-    SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
-    SUPPORTS_REASONING = True
+    SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = False
 
     @classmethod

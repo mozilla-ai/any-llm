@@ -9,8 +9,8 @@ class PortkeyProvider(BaseOpenAIProvider):
     PROVIDER_NAME = "Portkey"
     PROVIDER_DOCUMENTATION_URL = "https://portkey.ai/docs"
 
-    SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
-    SUPPORTS_REASONING = False
+    SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False

@@ -27,7 +27,6 @@ def test_streaming_completion(
                 {"role": "user", "content": "Say the exact phrase:'Hello World'"},
             ],
             stream=True,
-            temperature=0.1,
         ):
             num_chunks += 1
             # Verify the response is still a valid ChatCompletion object

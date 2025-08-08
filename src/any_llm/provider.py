@@ -103,9 +103,9 @@ class Provider(ABC):
     PROVIDER_DOCUMENTATION_URL: str
 
     # Feature support flags (to be set by subclasses)
-    SUPPORTS_STREAMING: bool
+    SUPPORTS_COMPLETION_STREAMING: bool
     SUPPORTS_COMPLETION: bool
-    SUPPORTS_REASONING: bool
+    SUPPORTS_COMPLETION_REASONING: bool
     SUPPORTS_EMBEDDING: bool
     SUPPORTS_RESPONSES: bool
 
@@ -138,8 +138,8 @@ class Provider(ABC):
             "name": getattr(cls, "PROVIDER_NAME"),
             "env_key": getattr(cls, "ENV_API_KEY_NAME", "-"),
             "doc_url": getattr(cls, "PROVIDER_DOCUMENTATION_URL"),
-            "streaming": getattr(cls, "SUPPORTS_STREAMING"),
-            "reasoning": getattr(cls, "SUPPORTS_REASONING"),
+            "streaming": getattr(cls, "SUPPORTS_COMPLETION_STREAMING"),
+            "reasoning": getattr(cls, "SUPPORTS_COMPLETION_REASONING"),
             "completion": getattr(cls, "SUPPORTS_COMPLETION"),
             "embedding": getattr(cls, "SUPPORTS_EMBEDDING"),
             "responses": getattr(cls, "SUPPORTS_RESPONSES"),

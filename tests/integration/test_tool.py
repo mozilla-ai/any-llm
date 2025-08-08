@@ -25,7 +25,6 @@ def test_tool(
             f"{provider.value}/{model_id}",
             **extra_kwargs,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
             tools=[capital_city],
         )
         assert any(choice.message.tool_calls is not None for choice in result.choices)  # type: ignore[union-attr]

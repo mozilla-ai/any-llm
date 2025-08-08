@@ -29,7 +29,6 @@ def test_response_format(
             f"{provider.value}/{model_id}",
             **extra_kwargs,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
             response_format=ResponseFormat,
         )
         assert isinstance(result, ChatCompletion)

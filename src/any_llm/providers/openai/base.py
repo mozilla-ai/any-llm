@@ -24,10 +24,10 @@ class BaseOpenAIProvider(Provider, ABC):
     if needed.
     """
 
-    SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
-    SUPPORTS_REASONING = False
+    SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = True
 
     @classmethod
@@ -161,7 +161,7 @@ class BaseOpenAIProvider(Provider, ABC):
             input=input_data,
             **kwargs,
         )
-        if not isinstance(response, (Response, Stream)):
+        if not isinstance(response, (Response, Iterator)):
             raise ValueError(f"Responses API returned an unexpected type: {type(response)}")
         return response
 

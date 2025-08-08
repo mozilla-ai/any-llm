@@ -88,10 +88,10 @@ def test_watsonx_streaming() -> None:
         assert result_list is not None
 
 
-def test_watsonx_supports_streaming() -> None:
+def test_watsonx_SUPPORTS_COMPLETION_STREAMING() -> None:
     """Test that WatsonxProvider correctly advertises streaming support."""
     provider = WatsonxProvider(ApiConfig(api_key="test-key"))
-    assert provider.SUPPORTS_STREAMING is True
+    assert provider.SUPPORTS_COMPLETION_STREAMING is True
 
 
 def test_watsonx_verify_kwargs() -> None:

@@ -20,10 +20,10 @@ class WatsonxProvider(Provider):
     ENV_API_KEY_NAME = "WATSONX_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://www.ibm.com/watsonx"
 
-    SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
-    SUPPORTS_REASONING = False
+    SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
 
     @classmethod

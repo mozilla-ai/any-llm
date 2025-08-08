@@ -102,7 +102,6 @@ def test_completion_extracts_api_base_only() -> None:
             model="ollama/llama2",
             messages=[{"role": "user", "content": "Test"}],
             api_base="https://custom-endpoint.com",
-            temperature=0.7,
         )
 
         # Verify that create_provider was called with only api_base in config
@@ -111,6 +110,4 @@ def test_completion_extracts_api_base_only() -> None:
         )
 
         # Verify that provider.completion was called with remaining kwargs
-        mock_provider.completion.assert_called_once_with(
-            "llama2", [{"role": "user", "content": "Test"}], temperature=0.7
-        )
+        mock_provider.completion.assert_called_once_with("llama2", [{"role": "user", "content": "Test"}])

@@ -32,10 +32,10 @@ class AnthropicProvider(Provider):
     ENV_API_KEY_NAME = "ANTHROPIC_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://docs.anthropic.com/en/home"
 
-    SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
-    SUPPORTS_REASONING = False
+    SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
 
     @classmethod
