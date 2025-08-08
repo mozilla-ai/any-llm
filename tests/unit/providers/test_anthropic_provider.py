@@ -53,7 +53,7 @@ def test_make_api_call_with_system_message() -> None:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
         provider._make_api_call(model, messages)
 
-        mock_anthropic.return_value.messages.create.assert_called_once_with(  # type: ignore[attr-defined]
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
             messages=[{"role": "user", "content": "Hello"}],
             system="You are a helpful assistant.",
@@ -75,7 +75,7 @@ def test_make_api_call_with_multiple_system_messages() -> None:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
         provider._make_api_call(model, messages)
 
-        mock_anthropic.return_value.messages.create.assert_called_once_with(  # type: ignore[attr-defined]
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
             messages=[{"role": "user", "content": "Hello"}],
             system="First part.\nSecond part.",
@@ -94,7 +94,7 @@ def test_make_api_call_with_kwargs() -> None:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
         provider._make_api_call(model, messages, **kwargs)
 
-        mock_anthropic.return_value.messages.create.assert_called_once_with(  # type: ignore[attr-defined]
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
             messages=messages,
             **kwargs,
@@ -114,7 +114,7 @@ def test_make_api_call_with_tool_choice_required() -> None:
 
         expected_kwargs = {"tool_choice": {"type": "any", "disable_parallel_tool_use": False}}
 
-        mock_anthropic.return_value.messages.create.assert_called_once_with(  # type: ignore[attr-defined]
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
             messages=messages,
             max_tokens=4096,
@@ -135,7 +135,7 @@ def test_make_api_call_with_tool_choice_and_parallel_tool_calls() -> None:
 
         expected_kwargs = {"tool_choice": {"type": "auto", "disable_parallel_tool_use": False}}
 
-        mock_anthropic.return_value.messages.create.assert_called_once_with(  # type: ignore[attr-defined]
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
             messages=[{"role": "user", "content": "Hello"}],
             max_tokens=4096,
@@ -156,7 +156,7 @@ def test_make_api_call_with_tool_choice_and_no_parallel_tool_calls() -> None:
 
         expected_kwargs = {"tool_choice": {"type": "auto", "disable_parallel_tool_use": True}}
 
-        mock_anthropic.return_value.messages.create.assert_called_once_with(  # type: ignore[attr-defined]
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
             messages=messages,
             max_tokens=4096,
