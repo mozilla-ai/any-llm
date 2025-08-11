@@ -54,3 +54,27 @@ def _create_openai_chunk_from_fireworks_chunk(fireworks_chunk: Any) -> ChatCompl
         object="chat.completion.chunk",
         usage=usage,
     )
+
+class ResponseWrapper:
+    """Wrapper class to add output_text property to Fireworks Response objects."""
+    def __init__(self, response):
+        self._response = response
+        self._output_text = None
+    
+    def __getattr__(self, name):
+        return getattr(self._response, name)
+    
+    @property
+    def output_text(self):
+        if self._output_text is None and hasattr(self._response, 'output') and self._response.output:
+            try:
+                raw_output = self._response.output[-1].content[0].text
+                self._output_text = raw_output.split("</think>")[-1].strip()
+            except (IndexError, AttributeError):
+                self._output_text = ""
+        return self._output_text or ""
+
+
+def _create_response_with_output_text(fireworks_response: Any) -> Any:
+    """Wrap a Fireworks response to add output_text property."""
+    return ResponseWrapper(fireworks_response)

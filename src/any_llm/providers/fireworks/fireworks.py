@@ -10,8 +10,10 @@ from pydantic import BaseModel
 from any_llm.types.completion import ChatCompletionChunk, ChatCompletion
 from any_llm.provider import Provider
 from any_llm.providers.helpers import create_completion_from_response
-from any_llm.providers.fireworks.utils import _create_openai_chunk_from_fireworks_chunk
+from any_llm.providers.fireworks.utils import _create_openai_chunk_from_fireworks_chunk, _create_response_with_output_text
+from any_llm.types.responses import Response, ResponseStreamEvent
 
+from openai import Stream,OpenAI
 
 class FireworksProvider(Provider):
     PROVIDER_NAME = "Fireworks"
@@ -20,7 +22,7 @@ class FireworksProvider(Provider):
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
-    SUPPORTS_RESPONSES = False
+    SUPPORTS_RESPONSES = True
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
 
@@ -74,3 +76,21 @@ class FireworksProvider(Provider):
             provider_name="Fireworks",
             model=model,
         )
+
+    def responses(self, model, input_data, **kwargs) -> Response | Iterator[ResponseStreamEvent]:
+        """Call Fireworks Responses API and normalize into ChatCompletion/Chunks."""
+        client = OpenAI(
+            base_url="https://api.fireworks.ai/inference/v1",
+            api_key=self.config.api_key,
+        )
+
+        response = client.responses.create(
+            model=f'accounts/fireworks/models/{model}',
+            input=input_data,
+            **kwargs,
+        )
+
+        if not isinstance(response, (Response, Stream)):
+            raise ValueError(f"Responses API returned an unexpected type: {type(response)}")
+
+        return _create_response_with_output_text(response)
