@@ -35,7 +35,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.HUGGINGFACE: "meta-llama/Llama-3.2-3B-Instruct",  # You must have novita enabled in your hf account to use this model
         ProviderName.AWS: "amazon.nova-lite-v1:0",
         ProviderName.WATSONX: "ibm/granite-3-8b-instruct",
-        ProviderName.FIREWORKS: "accounts/fireworks/models/gpt-oss-20b",
+        ProviderName.FIREWORKS: "accounts/fireworks/models/llama4-scout-instruct-basic",
         ProviderName.GROQ: "llama-3.1-8b-instant",
         ProviderName.OPENROUTER: "moonshotai/kimi-k2:free",
         ProviderName.PORTKEY: "@first-integrati-d8a10f/gpt-4.1-mini",  # Owned by njbrake in portkey UI
