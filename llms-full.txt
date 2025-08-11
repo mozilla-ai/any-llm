@@ -267,14 +267,3 @@ as well as what features the provider supports for each model, refer to the prov
 
 
 ---
-
-## api/helpers.md
-
-<!-- Source: api/helpers.md -->
-
-## Helpers
-
-::: any_llm.verify_kwargs
-
-
----

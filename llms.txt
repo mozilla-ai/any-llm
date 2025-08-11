@@ -9,4 +9,3 @@
 - [Api - Embedding](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/embedding.md)
 - [Api - Responses](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/responses.md)
 - [Api - Exceptions](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/exceptions.md)
-- [Api - Helpers](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/helpers.md)
