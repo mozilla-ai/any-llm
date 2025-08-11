@@ -11,9 +11,9 @@ try:
         Message,
         MessageStopEvent,
     )
-except ImportError:
+except ImportError as exc:
     msg = "anthropic is not installed. Please install it with `pip install any-llm-sdk[anthropic]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -148,7 +148,8 @@ def _convert_response(response: Message) -> ChatCompletion:
             # Provider does not advertise reasoning support; include in content for completeness
             content_parts.append(content_block.thinking)
         else:
-            raise ValueError(f"Unsupported content block type: {content_block.type}")
+            msg = f"Unsupported content block type: {content_block.type}"
+            raise ValueError(msg)
 
     message = ChatCompletionMessage(role="assistant", content="".join(content_parts), tool_calls=tool_calls or None)
 

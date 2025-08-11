@@ -145,8 +145,9 @@ class BaseOpenAIProvider(Provider, ABC):
             input=input_data,
             **kwargs,
         )
-        if not isinstance(response, (Response, Stream)):
-            raise ValueError(f"Responses API returned an unexpected type: {type(response)}")
+        if not isinstance(response, Response | Stream):
+            msg = f"Responses API returned an unexpected type: {type(response)}"
+            raise ValueError(msg)
         return response
 
     def embedding(
@@ -157,7 +158,8 @@ class BaseOpenAIProvider(Provider, ABC):
     ) -> CreateEmbeddingResponse:
         # Classes that inherit from BaseOpenAIProvider may override SUPPORTS_EMBEDDING
         if not self.SUPPORTS_EMBEDDING:
-            raise NotImplementedError("This provider does not support embeddings.")
+            msg = "This provider does not support embeddings."
+            raise NotImplementedError(msg)
 
         client = OpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),

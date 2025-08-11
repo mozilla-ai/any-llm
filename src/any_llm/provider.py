@@ -161,7 +161,8 @@ class Provider(ABC):
         Returns:
             The response from the API call
         """
-        raise NotImplementedError("Subclasses must implement this method")
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
 
     def completion(
         self,
@@ -185,7 +186,8 @@ class Provider(ABC):
         Default implementation raises NotImplementedError. Providers that set
         SUPPORTS_RESPONSES to True must override this method.
         """
-        raise NotImplementedError("This provider does not support the Responses API.")
+        msg = "This provider does not support the Responses API."
+        raise NotImplementedError(msg)
 
     async def aresponses(self, model: str, input_data: Any, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
         return await asyncio.to_thread(self.responses, model, input_data, **kwargs)
@@ -196,7 +198,8 @@ class Provider(ABC):
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        raise NotImplementedError("Subclasses must implement this method")
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
 
     async def aembedding(
         self,
@@ -287,9 +290,9 @@ class ProviderFactory:
         """Convert a string provider key to a ProviderName enum."""
         try:
             return ProviderName(provider_key)
-        except ValueError:
+        except ValueError as e:
             supported = [provider.value for provider in ProviderName]
-            raise UnsupportedProviderError(provider_key, supported)
+            raise UnsupportedProviderError(provider_key, supported) from e
 
     @classmethod
     def split_model_provider(cls, model: str) -> tuple[ProviderName, str]:

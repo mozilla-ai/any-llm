@@ -47,7 +47,7 @@ def _convert_tool_spec(kwargs: dict[str, Any]) -> dict[str, Any] | None:
     if "tools" not in kwargs:
         return None
 
-    tool_config = {
+    return {
         "tools": [
             {
                 "toolSpec": {
@@ -59,7 +59,6 @@ def _convert_tool_spec(kwargs: dict[str, Any]) -> dict[str, Any] | None:
             for tool in kwargs["tools"]
         ]
     }
-    return tool_config
 
 
 def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -100,7 +99,8 @@ def _convert_tool_result(message: dict[str, Any]) -> dict[str, Any] | None:
 
     tool_call_id = message.get("tool_call_id")
     if not tool_call_id:
-        raise RuntimeError("Tool result message must include tool_call_id")
+        msg = "Tool result message must include tool_call_id"
+        raise RuntimeError(msg)
 
     try:
         content_json = json.loads(message["content"])

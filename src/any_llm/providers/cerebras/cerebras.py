@@ -5,9 +5,9 @@ try:
     import cerebras.cloud.sdk as cerebras
     import instructor
     from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponse
-except ImportError:
+except ImportError as exc:
     msg = "cerebras or instructor is not installed. Please install it with `pip install any-llm-sdk[cerebras]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ApiConfig, Provider, convert_instructor_response
@@ -45,7 +45,8 @@ class CerebrasProvider(Provider):
     ) -> Iterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
         if kwargs.get("response_format", None) is not None:
-            raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
+            msg = "stream and response_format"
+            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
         cerebras_stream = self.client.chat.completions.create(
             model=model,
             messages=messages,
@@ -57,7 +58,8 @@ class CerebrasProvider(Provider):
             if isinstance(chunk, ChatChunkResponse):
                 yield _create_openai_chunk_from_cerebras_chunk(chunk)
             else:
-                raise ValueError(f"Unsupported chunk type: {type(chunk)}")
+                msg = f"Unsupported chunk type: {type(chunk)}"
+                raise ValueError(msg)
 
     def _make_api_call(
         self,
@@ -89,6 +91,7 @@ class CerebrasProvider(Provider):
         if hasattr(response, "model_dump"):
             response_data = response.model_dump()
         else:
-            raise ValueError("Streaming responses are not supported in this context")
+            msg = "Streaming responses are not supported in this context"
+            raise ValueError(msg)
 
         return _convert_response(response_data)

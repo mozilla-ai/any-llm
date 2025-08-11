@@ -28,7 +28,8 @@ def callable_to_tool(func: Callable[..., Any]) -> dict[str, Any]:
     """
     # Validate the function has a docstring
     if not func.__doc__:
-        raise ValueError(f"Function {func.__name__} must have a docstring")
+        msg = f"Function {func.__name__} must have a docstring"
+        raise ValueError(msg)
 
     sig = inspect.signature(func)
 
@@ -53,7 +54,7 @@ def callable_to_tool(func: Callable[..., Any]) -> dict[str, Any]:
         if param.default == inspect.Parameter.empty:
             required.append(param_name)
 
-    tool_schema = {
+    return {
         "type": "function",
         "function": {
             "name": func.__name__,
@@ -61,8 +62,6 @@ def callable_to_tool(func: Callable[..., Any]) -> dict[str, Any]:
             "parameters": {"type": "object", "properties": properties, "required": required},
         },
     }
-
-    return tool_schema
 
 
 def _python_type_to_json_schema_type(python_type: type) -> str:
@@ -108,6 +107,7 @@ def prepare_tools(tools: list[dict[str, Any] | Callable[..., Any]]) -> list[dict
         elif isinstance(tool, dict):
             prepared_tools.append(tool)
         else:
-            raise ValueError(f"Tool must be callable or dict, got {type(tool)}")
+            msg = f"Tool must be callable or dict, got {type(tool)}"
+            raise ValueError(msg)
 
     return prepared_tools

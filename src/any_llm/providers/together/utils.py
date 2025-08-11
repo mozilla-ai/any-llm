@@ -18,12 +18,14 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
     """Convert a Together streaming chunk to OpenAI ChatCompletionChunk format."""
 
     if not together_chunk.choices:
-        raise ValueError("Together chunk has no choices")
+        msg = "Together chunk has no choices"
+        raise ValueError(msg)
 
     together_choice = together_chunk.choices[0]
     delta_content = together_choice.delta
     if not delta_content:
-        raise ValueError("Together chunk has no delta")
+        msg = "Together chunk has no delta"
+        raise ValueError(msg)
 
     content = delta_content.content
     role = None

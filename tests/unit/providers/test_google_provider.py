@@ -34,7 +34,7 @@ def mock_google_provider():  # type: ignore[no-untyped-def]
 
 
 @pytest.mark.parametrize(
-    "tool_choice,expected_mode",
+    ("tool_choice", "expected_mode"),
     [
         ("auto", "AUTO"),
         ("required", "ANY"),

@@ -13,9 +13,9 @@ from any_llm.types.completion import (
 
 try:
     from google.genai import types
-except ImportError:
+except ImportError as exc:
     msg = "google-genai is not installed. Please install it with `pip install any-llm-sdk[google]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 
 def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[types.Tool]:

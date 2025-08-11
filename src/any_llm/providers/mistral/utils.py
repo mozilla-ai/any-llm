@@ -7,14 +7,13 @@ try:
     from mistralai.models import TextChunk as MistralTextChunk
     from mistralai.models import ThinkChunk as MistralThinkChunk
     from mistralai.models.chatcompletionresponse import ChatCompletionResponse as MistralChatCompletionResponse
-    from mistralai.models.embeddingresponse import EmbeddingResponse
     from mistralai.models.toolcall import ToolCall as MistralToolCall
     from mistralai.types.basemodel import Unset
 except ImportError as exc:
     msg = "mistralai is not installed. Please install it with `pip install any-llm-sdk[mistral]`"
     raise ImportError(msg) from exc
 
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -34,6 +33,9 @@ from any_llm.types.completion import (
     Reasoning,
     Usage,
 )
+
+if TYPE_CHECKING:
+    from mistralai.models.embeddingresponse import EmbeddingResponse
 
 
 def _convert_mistral_tool_calls_to_any_llm(
@@ -133,7 +135,8 @@ def _extract_mistral_content_and_reasoning(
                         elif isinstance(thinking_item, MistralReferenceChunk):
                             pass
                         else:
-                            raise ValueError(f"Unsupported item type: {type(thinking_item)}")
+                            msg = f"Unsupported item type: {type(thinking_item)}"
+                            raise ValueError(msg)
                     if thinking_texts:
                         reasoning_content = "\n".join(thinking_texts)
                 elif isinstance(thinking_data, str):

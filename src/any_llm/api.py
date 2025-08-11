@@ -180,7 +180,7 @@ async def acompletion(
     seed: int | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
-    timeout: float | None = None,
+    api_timeout: float | None = None,
     user: str | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
@@ -204,7 +204,7 @@ async def acompletion(
         seed: Random seed for reproducible results
         api_key: API key for the provider
         api_base: Base URL for the provider API
-        timeout: Request timeout in seconds
+        api_timeout: Request timeout in seconds
         user: Unique identifier for the end user
         **kwargs: Additional provider-specific parameters
 
@@ -230,7 +230,7 @@ async def acompletion(
         seed=seed,
         api_key=api_key,
         api_base=api_base,
-        timeout=timeout,
+        timeout=api_timeout,
         user=user,
         **kwargs,
     )
@@ -250,7 +250,7 @@ def responses(
     stream: bool | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
-    timeout: float | None = None,
+    api_timeout: float | None = None,
     user: str | None = None,
     **kwargs: Any,
 ) -> Response | Iterator[ResponseStreamEvent]:
@@ -273,7 +273,7 @@ def responses(
         stream: Whether to stream response events
         api_key: API key for the provider
         api_base: Base URL for the provider API
-        timeout: Request timeout in seconds
+        api_timeout: Request timeout in seconds
         user: Unique identifier for the end user
         **kwargs: Additional provider-specific parameters
 
@@ -309,8 +309,8 @@ def responses(
         responses_kwargs["top_p"] = top_p
     if stream is not None:
         responses_kwargs["stream"] = stream
-    if timeout is not None:
-        responses_kwargs["timeout"] = timeout
+    if api_timeout is not None:
+        responses_kwargs["timeout"] = api_timeout
     if user is not None:
         responses_kwargs["user"] = user
 
@@ -329,7 +329,7 @@ async def aresponses(
     stream: bool | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
-    timeout: float | None = None,
+    api_timeout: float | None = None,
     user: str | None = None,
     **kwargs: Any,
 ) -> Response | Iterator[ResponseStreamEvent]:
@@ -352,7 +352,7 @@ async def aresponses(
         stream: Whether to stream response events
         api_key: API key for the provider
         api_base: Base URL for the provider API
-        timeout: Request timeout in seconds
+        api_timeout: Request timeout in seconds
         user: Unique identifier for the end user
         **kwargs: Additional provider-specific parameters
 
@@ -388,8 +388,8 @@ async def aresponses(
         responses_kwargs["top_p"] = top_p
     if stream is not None:
         responses_kwargs["stream"] = stream
-    if timeout is not None:
-        responses_kwargs["timeout"] = timeout
+    if api_timeout is not None:
+        responses_kwargs["timeout"] = api_timeout
     if user is not None:
         responses_kwargs["user"] = user
 

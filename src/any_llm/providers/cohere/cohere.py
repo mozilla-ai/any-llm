@@ -3,9 +3,9 @@ from typing import Any
 
 try:
     import cohere
-except ImportError:
+except ImportError as exc:
     msg = "cohere is not installed. Please install it with `pip install any-llm-sdk[cohere]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ApiConfig, Provider
@@ -58,11 +58,14 @@ class CohereProvider(Provider):
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Cohere."""
         if kwargs.get("response_format", None) is not None:
-            raise UnsupportedParameterError("response_format", self.PROVIDER_NAME)
+            msg = "response_format"
+            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
         if kwargs.get("stream", False) and kwargs.get("response_format", None) is not None:
-            raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
+            msg = "stream and response_format"
+            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
         if kwargs.get("parallel_tool_calls", None) is not None:
-            raise UnsupportedParameterError("parallel_tool_calls", self.PROVIDER_NAME)
+            msg = "parallel_tool_calls"
+            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
 
         if kwargs.get("stream", False):
             kwargs.pop("stream")

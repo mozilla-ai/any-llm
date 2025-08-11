@@ -1,10 +1,9 @@
 import os
 from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 try:
     from azure.ai.inference import ChatCompletionsClient, EmbeddingsClient
-    from azure.ai.inference.models import ChatCompletions, EmbeddingsResult, StreamingChatCompletionsUpdate
     from azure.core.credentials import AzureKeyCredential
 except ImportError as exc:
     msg = "azure-ai-inference is not installed. Please install it with `pip install any-llm-sdk[azure]`"
@@ -18,6 +17,9 @@ from any_llm.providers.azure.utils import (
     _create_openai_embedding_response_from_azure,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
+
+if TYPE_CHECKING:
+    from azure.ai.inference.models import ChatCompletions, EmbeddingsResult, StreamingChatCompletionsUpdate
 
 
 class AzureProvider(Provider):
@@ -43,10 +45,11 @@ class AzureProvider(Provider):
         if self.config.api_base:
             return self.config.api_base
 
-        raise ValueError(
+        msg = (
             "For Azure, api_base is required. Check your deployment page for a URL like this - "
             "https://<model-deployment-name>.<region>.models.ai.azure.com"
         )
+        raise ValueError(msg)
 
     def _create_chat_client(self) -> ChatCompletionsClient:
         """Create and configure a ChatCompletionsClient."""

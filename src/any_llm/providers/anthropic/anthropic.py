@@ -44,7 +44,8 @@ class AnthropicProvider(Provider):
         **kwargs: Any,
     ) -> Iterator[ChatCompletionChunk]:
         if kwargs.get("response_format", None):
-            raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
+            msg = "stream and response_format"
+            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
         """Handle streaming completion - extracted to avoid generator issues."""
         system_message, filtered_messages = _convert_messages_for_anthropic(messages)
 

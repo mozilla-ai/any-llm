@@ -1,11 +1,8 @@
 from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 try:
     from huggingface_hub import InferenceClient
-    from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
-        ChatCompletionStreamOutput as HuggingFaceChatCompletionStreamOutput,
-    )
 except ImportError as exc:
     msg = "huggingface-hub is not installed. Please install it with `pip install any-llm-sdk[huggingface]`"
     raise ImportError(msg) from exc
@@ -18,6 +15,11 @@ from any_llm.providers.huggingface.utils import (
     _create_openai_chunk_from_huggingface_chunk,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, Choice, CompletionUsage
+
+if TYPE_CHECKING:
+    from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
+        ChatCompletionStreamOutput as HuggingFaceChatCompletionStreamOutput,
+    )
 
 
 class HuggingfaceProvider(Provider):

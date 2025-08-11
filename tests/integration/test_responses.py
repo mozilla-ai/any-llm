@@ -17,7 +17,7 @@ def test_responses(
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
     providers_metadata = ProviderFactory.get_all_provider_metadata()
-    provider_metadata = [metadata for metadata in providers_metadata if metadata["provider_key"] == provider.value][0]
+    provider_metadata = next(metadata for metadata in providers_metadata if metadata["provider_key"] == provider.value)
     if not provider_metadata["responses"]:
         pytest.skip(f"{provider.value} does not support responses, skipping")
     model_id = provider_model_map[provider]

@@ -84,12 +84,12 @@ class OllamaProvider(Provider):
             response_format = kwargs.pop("response_format")
             if isinstance(response_format, type) and issubclass(response_format, BaseModel):
                 # response_format is a Pydantic model class
-                format = response_format.model_json_schema()
+                output_format = response_format.model_json_schema()
             else:
                 # response_format is already a dict/schema
-                format = response_format
+                output_format = response_format
         else:
-            format = None
+            output_format = None
 
         # (https://www.reddit.com/r/ollama/comments/1ked8x2/feeding_tool_output_back_to_llm/)
         cleaned_messages = []
@@ -122,7 +122,7 @@ class OllamaProvider(Provider):
             tools=kwargs.pop("tools", None),
             think=kwargs.pop("think", None),
             messages=cleaned_messages,
-            format=format,
+            format=output_format,
             options=kwargs,
         )
 

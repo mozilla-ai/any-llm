@@ -50,6 +50,7 @@ class UnsupportedParameterError(Exception):
 
         Args:
             parameter_name: Name of the parameter that was provided
+            provider_name: Name of the provider that does not support the parameter
 
         """
         self.parameter_name = parameter_name

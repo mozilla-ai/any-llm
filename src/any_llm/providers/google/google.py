@@ -55,14 +55,16 @@ class GoogleProvider(Provider):
             self.location = os.getenv("GOOGLE_REGION", "us-central1")
 
             if not self.project_id:
-                raise MissingApiKeyError("Google Vertex AI", "GOOGLE_PROJECT_ID")
+                msg = "Google Vertex AI"
+                raise MissingApiKeyError(msg, "GOOGLE_PROJECT_ID")
 
             self.client = genai.Client(vertexai=True, project=self.project_id, location=self.location)
         else:
             api_key = getattr(config, "api_key", None) or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
             if not api_key:
-                raise MissingApiKeyError("Google Gemini Developer API", "GEMINI_API_KEY/GOOGLE_API_KEY")
+                msg = "Google Gemini Developer API"
+                raise MissingApiKeyError(msg, "GEMINI_API_KEY/GOOGLE_API_KEY")
 
             self.client = genai.Client(api_key=api_key)
 
@@ -87,10 +89,12 @@ class GoogleProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         if kwargs.get("stream", False) and kwargs.get("response_format", None) is not None:
-            raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
+            error_message = "stream and response_format"
+            raise UnsupportedParameterError(error_message, self.PROVIDER_NAME)
 
         if kwargs.get("parallel_tool_calls", None) is not None:
-            raise UnsupportedParameterError("parallel_tool_calls", self.PROVIDER_NAME)
+            error_message = "parallel_tool_calls"
+            raise UnsupportedParameterError(error_message, self.PROVIDER_NAME)
         tools = None
         if "tools" in kwargs:
             tools = _convert_tool_spec(kwargs["tools"])
@@ -119,10 +123,10 @@ class GoogleProvider(Provider):
         else:
             # Multiple messages - concatenate user messages for simplicity
             content_parts = []
-            for msg in formatted_messages:
-                if msg.role == "user" and msg.parts:
-                    if hasattr(msg.parts[0], "text") and msg.parts[0].text:
-                        content_parts.append(msg.parts[0].text)
+            for content_item in formatted_messages:
+                if content_item.role == "user" and content_item.parts:
+                    if hasattr(content_item.parts[0], "text") and content_item.parts[0].text:
+                        content_parts.append(content_item.parts[0].text)
 
             content_text = "\n".join(content_parts)
 
