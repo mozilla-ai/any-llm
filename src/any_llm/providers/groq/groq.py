@@ -18,10 +18,9 @@ except ImportError as exc:
 from any_llm.types.completion import ChatCompletionChunk, ChatCompletion
 from any_llm.provider import Provider, convert_instructor_response
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.providers.helpers import create_completion_from_response
 from any_llm.providers.groq.utils import (
     _create_openai_chunk_from_groq_chunk,
-    _create_response_dict_from_groq_response,
+    to_chat_completion,
 )
 
 
@@ -85,12 +84,7 @@ class GroqProvider(Provider):
             **kwargs,
         )
 
-        response_dict = _create_response_dict_from_groq_response(response)
-        return create_completion_from_response(
-            response_data=response_dict,
-            model=model,
-            provider_name=self.PROVIDER_NAME,
-        )
+        return to_chat_completion(response)
 
     def responses(self, model: str, input_data: Any, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
         """Call Groq Responses API and normalize into ChatCompletion/Chunks."""

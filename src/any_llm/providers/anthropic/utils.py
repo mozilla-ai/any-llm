@@ -15,9 +15,16 @@ except ImportError:
     msg = "anthropic is not installed. Please install it with `pip install any-llm-sdk[anthropic]`"
     raise ImportError(msg)
 
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
-
-from any_llm.providers.helpers import create_completion_from_response
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageToolCall,
+    Choice,
+    CompletionUsage,
+    Function,
+)
 
 DEFAULT_MAX_TOKENS = 4096
 
@@ -117,68 +124,61 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any) -> ChatCompletionChunk
 
 
 def _convert_response(response: Message) -> ChatCompletion:
-    """Convert Anthropic response to OpenAI format using base_framework utility."""
-    finish_reason_mapping = {
-        "end_turn": "stop",
-        "max_tokens": "length",
-        "tool_use": "tool_calls",
-    }
+    """Convert Anthropic Message to OpenAI ChatCompletion format."""
+    finish_reason_raw = response.stop_reason or "end_turn"
+    finish_reason_map = {"end_turn": "stop", "max_tokens": "length", "tool_use": "tool_calls"}
+    finish_reason = finish_reason_map.get(finish_reason_raw, "stop")
 
-    # Process content blocks into structured format
-    choices = []
+    content_parts: list[str] = []
+    tool_calls: list[ChatCompletionMessageToolCall] = []
 
     for content_block in response.content:
-        tool_calls = []
-        content = ""
         if content_block.type == "text":
-            content = content_block.text
+            content_parts.append(content_block.text)
         elif content_block.type == "tool_use":
             tool_calls.append(
-                {
-                    "id": content_block.id,
-                    "function": {
-                        "name": content_block.name,
-                        "arguments": json.dumps(content_block.input),
-                    },
-                    "type": "function",
-                }
+                ChatCompletionMessageFunctionToolCall(
+                    id=content_block.id,
+                    type="function",
+                    function=Function(
+                        name=content_block.name,
+                        arguments=json.dumps(content_block.input),
+                    ),
+                )
             )
         elif content_block.type == "thinking":
-            content = content_block.thinking
+            # Provider does not advertise reasoning support; include in content for completeness
+            content_parts.append(content_block.thinking)
         else:
             raise ValueError(f"Unsupported content block type: {content_block.type}")
 
-        choices.append(
-            {
-                "message": {
-                    "role": "assistant",
-                    "content": content,
-                    "tool_calls": tool_calls,
-                },
-                "finish_reason": response.stop_reason or "end_turn",
-                "index": 0,
-            }
-        )
+    message = ChatCompletionMessage(role="assistant", content="".join(content_parts), tool_calls=tool_calls or None)
 
-    # Structure response data for the utility
-    response_dict = {
-        "id": response.id,
-        "model": response.model,
-        "created": int(response.created_at.timestamp()) if hasattr(response, "created_at") else 0,
-        "choices": choices,
-        "usage": {
-            "completion_tokens": response.usage.output_tokens,
-            "prompt_tokens": response.usage.input_tokens,
-            "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
-        },
-    }
+    usage = CompletionUsage(
+        completion_tokens=response.usage.output_tokens,
+        prompt_tokens=response.usage.input_tokens,
+        total_tokens=response.usage.input_tokens + response.usage.output_tokens,
+    )
 
-    # Use base_framework utility for conversion
-    return create_completion_from_response(
-        response_data=response_dict,
+    from typing import Literal, cast
+
+    choice = Choice(
+        index=0,
+        finish_reason=cast(
+            Literal["stop", "length", "tool_calls", "content_filter", "function_call"], finish_reason or "stop"
+        ),
+        message=message,
+    )
+
+    created_ts = int(response.created_at.timestamp()) if hasattr(response, "created_at") else 0
+
+    return ChatCompletion(
+        id=response.id,
         model=response.model,
-        provider_name="anthropic",
-        finish_reason_mapping=finish_reason_mapping,
+        created=created_ts,
+        object="chat.completion",
+        choices=[choice],
+        usage=usage,
     )
 
 
