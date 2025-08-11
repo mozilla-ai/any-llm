@@ -130,19 +130,21 @@ class OllamaProvider(Provider):
         choices_out: list[Choice] = []
         for i, ch in enumerate(response_dict.get("choices", [])):
             msg_dict: dict[str, Any] = ch.get("message", {})
-            tool_calls: list[ChatCompletionMessageToolCall] | None = None
+            tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] | None = None
             if msg_dict.get("tool_calls"):
-                tool_calls = [
-                    ChatCompletionMessageFunctionToolCall(
-                        id=tc.get("id"),
-                        type="function",
-                        function=Function(
-                            name=tc["function"]["name"],
-                            arguments=tc["function"]["arguments"],
-                        ),
+                tool_calls_list: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
+                for tc in msg_dict["tool_calls"]:
+                    tool_calls_list.append(
+                        ChatCompletionMessageFunctionToolCall(
+                            id=tc.get("id"),
+                            type="function",
+                            function=Function(
+                                name=tc["function"]["name"],
+                                arguments=tc["function"]["arguments"],
+                            ),
+                        )
                     )
-                    for tc in msg_dict["tool_calls"]
-                ]
+                tool_calls = tool_calls_list
             message = ChatCompletionMessage(
                 role="assistant",
                 content=msg_dict.get("content"),

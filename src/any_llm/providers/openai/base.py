@@ -31,20 +31,14 @@ class BaseOpenAIProvider(Provider, ABC):
     SUPPORTS_EMBEDDING = True
 
     def _normalize_reasoning_on_message(self, message_dict: dict[str, Any]) -> None:
-        """Mutate a message dict to move provider-specific reasoning fields to our Reasoning type.
-
-        OpenAI-compatible providers attach non-standard fields such as
-        `reasoning_content` on the assistant message or chunk delta. This helper
-        normalizes such fields into our `reasoning` object shape: {"content": str}.
-        """
-        # If provider supplied a nested reasoning object already with content, keep it.
+        """Mutate a message dict to move provider-specific reasoning fields to our Reasoning type."""
         if isinstance(message_dict.get("reasoning"), dict) and "content" in message_dict["reasoning"]:
             return
 
         possible_fields = [
-            "reasoning_content",  # LM Studio, some OSS backends
-            "thinking",  # occasionally used by some providers
-            "chain_of_thought",  # generic alias
+            "reasoning_content",
+            "thinking",
+            "chain_of_thought",
         ]
         value: Any | None = None
         for field_name in possible_fields:

@@ -60,17 +60,14 @@ class HuggingfaceProvider(Provider):
         if "max_tokens" in kwargs:
             kwargs["max_new_tokens"] = kwargs.pop("max_tokens")
 
-        # Handle response_format for Pydantic models
         if "response_format" in kwargs:
             response_format = kwargs.pop("response_format")
             if isinstance(response_format, type) and issubclass(response_format, BaseModel):
                 messages = _convert_pydantic_to_huggingface_json(response_format, messages)
 
-        # Handle streaming
         if kwargs.get("stream", False):
             return self._stream_completion(client, model, messages, **kwargs)
 
-        # Make the non-streaming API call
         response = client.chat_completion(
             model=model,
             messages=messages,

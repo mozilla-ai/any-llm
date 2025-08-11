@@ -13,7 +13,6 @@ from any_llm.types.completion import (
 
 def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
     """Convert Cohere streaming chunk to OpenAI ChatCompletionChunk format."""
-    # Default chunk structure
     chunk_dict: Dict[str, Any] = {
         "id": f"chatcmpl-{hash(str(chunk))}",
         "object": "chat.completion.chunk",

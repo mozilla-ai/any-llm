@@ -128,7 +128,7 @@ def _convert_response(response: Message) -> ChatCompletion:
     finish_reason = finish_reason_map.get(finish_reason_raw, "stop")
 
     content_parts: list[str] = []
-    tool_calls: list[ChatCompletionMessageToolCall] = []
+    tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
 
     for content_block in response.content:
         if content_block.type == "text":
@@ -182,7 +182,6 @@ def _convert_response(response: Message) -> ChatCompletion:
 
 def _convert_tool_spec(openai_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Convert OpenAI tool specification to Anthropic format."""
-    # Use the generic utility first
     generic_tools = []
 
     for tool in openai_tools:

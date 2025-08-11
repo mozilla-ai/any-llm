@@ -35,15 +35,15 @@ def to_chat_completion(response: GroqChatCompletion) -> ChatCompletion:
     for choice in response.choices:
         message = choice.message
 
-        tool_calls: list[ChatCompletionMessageToolCall] | None = None
+        tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] | None = None
         if message.tool_calls:
-            tool_calls = []
+            tool_calls_list: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
             for tool_call in message.tool_calls:
                 arguments = tool_call.function.arguments
                 if not isinstance(arguments, str):
                     # Ensure arguments is a string
                     arguments = str(arguments)
-                tool_calls.append(
+                tool_calls_list.append(
                     ChatCompletionMessageFunctionToolCall(
                         id=tool_call.id,
                         type="function",
@@ -53,6 +53,7 @@ def to_chat_completion(response: GroqChatCompletion) -> ChatCompletion:
                         ),
                     )
                 )
+            tool_calls = tool_calls_list
 
         msg = ChatCompletionMessage(
             role=cast(Literal["assistant"], "assistant"),

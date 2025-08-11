@@ -66,18 +66,19 @@ def _convert_response(response_data: ChatCompletions) -> ChatCompletion:
     message_data = choice_data.message
 
     # Convert tool calls
-    tool_calls: Optional[List[ChatCompletionMessageToolCall]] = None
+    tool_calls: Optional[List[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall]] = None
     if message_data.tool_calls:
-        tool_calls = []
+        tool_calls_list: List[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
         for tc in message_data.tool_calls:
             func = tc.function
-            tool_calls.append(
+            tool_calls_list.append(
                 ChatCompletionMessageFunctionToolCall(
                     id=tc.id,
                     type="function",
                     function=Function(name=func.name if func else "", arguments=func.arguments if func else ""),
                 )
             )
+        tool_calls = tool_calls_list
 
     # Usage
     usage = None

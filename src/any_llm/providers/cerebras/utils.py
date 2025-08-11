@@ -32,7 +32,6 @@ def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCo
             }
         )
 
-    # Default chunk structure
     chunk_dict: Dict[str, Any] = {
         "id": getattr(chunk, "id", None) or f"chatcmpl-{hash(str(chunk))}",
         "object": "chat.completion.chunk",
@@ -104,12 +103,12 @@ def _convert_response(response_data: Dict[str, Any]) -> ChatCompletion:
     for i, choice_data in enumerate(response_data.get("choices", [])):
         message_data = choice_data.get("message", {})
         tool_calls_data = message_data.get("tool_calls") or []
-        tool_calls: list[ChatCompletionMessageToolCall] | None = None
+        tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] | None = None
         if tool_calls_data:
-            tool_calls = []
+            tool_calls_list: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
             for tc in tool_calls_data:
                 func = tc.get("function", {})
-                tool_calls.append(
+                tool_calls_list.append(
                     ChatCompletionMessageFunctionToolCall(
                         id=tc.get("id", f"call_{i}"),
                         type="function",
@@ -119,6 +118,7 @@ def _convert_response(response_data: Dict[str, Any]) -> ChatCompletion:
                         ),
                     )
                 )
+            tool_calls = tool_calls_list
         message = ChatCompletionMessage(
             role=message_data.get("role", "assistant"),
             content=message_data.get("content"),

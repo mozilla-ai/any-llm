@@ -26,11 +26,11 @@ from any_llm.types.completion import (
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
+    ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageToolCall,
     Function,
 )
 from any_llm.types.completion import ChatCompletionMessage, Choice
-from openai.types.chat.chat_completion_message_function_tool_call import ChatCompletionMessageFunctionToolCall
-from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall
 from typing import Literal, cast, Any
 
 
@@ -41,7 +41,7 @@ def _convert_mistral_tool_calls_to_any_llm(
     if not tool_calls:
         return None
 
-    any_llm_tool_calls = []
+    any_llm_tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
     for tool_call in tool_calls:
         arguments = ""
         if tool_call.function and tool_call.function.arguments:
@@ -52,7 +52,6 @@ def _convert_mistral_tool_calls_to_any_llm(
             else:
                 arguments = str(tool_call.function.arguments)
 
-        # Skip tool calls without required fields
         if not tool_call.id or not tool_call.function or not tool_call.function.name:
             continue
 
@@ -66,7 +65,7 @@ def _convert_mistral_tool_calls_to_any_llm(
         )
         any_llm_tool_calls.append(any_llm_tool_call)
 
-    return any_llm_tool_calls  # type: ignore[return-value]
+    return any_llm_tool_calls
 
 
 def _convert_mistral_streaming_tool_calls_to_any_llm(
@@ -236,7 +235,6 @@ def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompl
                     if hasattr(part, "text") and part.text:
                         text_parts.append(str(part.text))
                     elif isinstance(part, dict):
-                        # Handle reasoning content in streaming
                         if part.type == "thinking":
                             thinking_data = part.thinking
                             if isinstance(thinking_data, list):

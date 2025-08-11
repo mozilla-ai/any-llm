@@ -90,11 +90,9 @@ class AzureProvider(Provider):
         """Create a chat completion using Azure AI Inference SDK."""
         client: ChatCompletionsClient = self._create_chat_client()
 
-        # Handle response_format conversion for Pydantic models
         if "response_format" in kwargs:
             kwargs["response_format"] = _convert_response_format(kwargs["response_format"])
 
-        # Handle streaming vs non-streaming
         if kwargs.get("stream", False):
             return self._stream_completion(client, model, messages, **kwargs)
         else:

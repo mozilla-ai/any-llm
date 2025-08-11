@@ -32,12 +32,10 @@ def callable_to_tool(func: Callable[..., Any]) -> dict[str, Any]:
 
     type_hints = get_type_hints(func)
 
-    # Build parameter schema
     properties = {}
     required = []
 
     for param_name, param in sig.parameters.items():
-        # Skip *args and **kwargs
         if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
             continue
 
@@ -50,7 +48,6 @@ def callable_to_tool(func: Callable[..., Any]) -> dict[str, Any]:
             "description": f"Parameter {param_name} of type {param_type.__name__}",
         }
 
-        # Add to required if no default value
         if param.default == inspect.Parameter.empty:
             required.append(param_name)
 
@@ -81,7 +78,6 @@ def _python_type_to_json_schema_type(python_type: type) -> str:
     elif python_type is dict:
         return "object"
     else:
-        # Default to string for unknown types
         return "string"
 
 
@@ -108,7 +104,6 @@ def prepare_tools(tools: list[Union[dict[str, Any], Callable[..., Any]]]) -> lis
         if callable(tool):
             prepared_tools.append(callable_to_tool(tool))
         elif isinstance(tool, dict):
-            # Already in tool format
             prepared_tools.append(tool)
         else:
             raise ValueError(f"Tool must be callable or dict, got {type(tool)}")

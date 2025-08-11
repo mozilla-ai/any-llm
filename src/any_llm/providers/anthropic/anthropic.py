@@ -48,7 +48,6 @@ class AnthropicProvider(Provider):
         if kwargs.get("response_format", None):
             raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
         """Handle streaming completion - extracted to avoid generator issues."""
-        # Convert messages for Anthropic format
         system_message, filtered_messages = _convert_messages_for_anthropic(messages)
 
         # Prepare kwargs for Anthropic
@@ -80,15 +79,12 @@ class AnthropicProvider(Provider):
 
             response_format = kwargs.pop("response_format")
 
-            # Convert messages for Anthropic format
             system_message, filtered_messages = _convert_messages_for_anthropic(messages)
 
-            # Prepare kwargs for instructor
             instructor_kwargs = kwargs.copy()
             if system_message:
                 instructor_kwargs["system"] = system_message
 
-            # Use instructor for structured output
             instructor_response = instructor_client.messages.create(
                 model=model,
                 messages=filtered_messages,  # type: ignore[arg-type]
@@ -102,10 +98,8 @@ class AnthropicProvider(Provider):
             kwargs.pop("stream")
             return self._stream_completion(client, model, messages, **kwargs)
         else:
-            # Convert messages for Anthropic format
             system_message, filtered_messages = _convert_messages_for_anthropic(messages)
 
-            # Prepare kwargs for Anthropic
             anthropic_kwargs = kwargs.copy()
             if system_message:
                 anthropic_kwargs["system"] = system_message

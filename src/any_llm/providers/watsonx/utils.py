@@ -38,7 +38,6 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
             total_tokens=usage_data.get("total_tokens", 0),
         )
 
-    # Build the final ChatCompletion object
     return ChatCompletion(
         id=response.get("id", ""),
         model=response.get("model", ""),

@@ -141,19 +141,21 @@ class GoogleProvider(Provider):
             choices_out: list[Choice] = []
             for i, choice_item in enumerate(response_dict.get("choices", [])):
                 message_dict: dict[str, Any] = choice_item.get("message", {})
-                tool_calls: list[ChatCompletionMessageToolCall] | None = None
+                tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] | None = None
                 if message_dict.get("tool_calls"):
-                    tool_calls = [
-                        ChatCompletionMessageFunctionToolCall(
-                            id=tc.get("id"),
-                            type="function",
-                            function=Function(
-                                name=tc["function"]["name"],
-                                arguments=tc["function"]["arguments"],
-                            ),
+                    tool_calls_list: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
+                    for tc in message_dict["tool_calls"]:
+                        tool_calls_list.append(
+                            ChatCompletionMessageFunctionToolCall(
+                                id=tc.get("id"),
+                                type="function",
+                                function=Function(
+                                    name=tc["function"]["name"],
+                                    arguments=tc["function"]["arguments"],
+                                ),
+                            )
                         )
-                        for tc in message_dict["tool_calls"]
-                    ]
+                    tool_calls = tool_calls_list
                 message = ChatCompletionMessage(
                     role="assistant",
                     content=message_dict.get("content"),
