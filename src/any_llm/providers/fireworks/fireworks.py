@@ -85,7 +85,7 @@ class FireworksProvider(Provider):
         )
 
         response = client.responses.create(
-            model=f'accounts/fireworks/models/{model}',
+            model=model,
             input=input_data,
             **kwargs,
         )
