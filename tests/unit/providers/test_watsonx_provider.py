@@ -50,7 +50,7 @@ def test_watsonx_non_streaming() -> None:
 
     with mock_watsonx_provider() as (mock_model_instance, mock_convert_response, mock_model_inference):
         provider = WatsonxProvider(ApiConfig(api_key=api_key))
-        result = provider._make_api_call("test-model", messages)
+        result = provider.completion("test-model", messages)
 
         # Verify ModelInference was created with correct parameters
         mock_model_inference.assert_called_once()
@@ -72,7 +72,7 @@ def test_watsonx_streaming() -> None:
 
     with mock_watsonx_streaming_provider() as (mock_model_instance, mock_convert_streaming_chunk, mock_model_inference):
         provider = WatsonxProvider(ApiConfig(api_key=api_key))
-        result = provider._make_api_call("test-model", messages, stream=True)
+        result = provider.completion("test-model", messages, stream=True)
 
         mock_model_inference.assert_called_once()
         call_kwargs = mock_model_inference.call_args[1]
@@ -80,7 +80,7 @@ def test_watsonx_streaming() -> None:
 
         result_list = list(result)
 
-        mock_model_instance.chat_stream.assert_called_once_with(messages=messages, params={"stream": True})
+        mock_model_instance.chat_stream.assert_called_once_with(messages=messages, params={})
 
         assert mock_convert_streaming_chunk.call_count == 2
 

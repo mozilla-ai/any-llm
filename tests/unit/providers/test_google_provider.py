@@ -40,8 +40,8 @@ def mock_google_provider():  # type: ignore[no-untyped-def]
         ("required", "ANY"),
     ],
 )
-def test_make_api_call_with_tool_choice_auto(tool_choice: str, expected_mode: str) -> None:
-    """Test that _make_api_call correctly processes tool_choice='auto'."""
+def testcompletion_with_tool_choice_auto(tool_choice: str, expected_mode: str) -> None:
+    """Test that completion correctly processes tool_choice='auto'."""
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
@@ -49,7 +49,7 @@ def test_make_api_call_with_tool_choice_auto(tool_choice: str, expected_mode: st
 
     with mock_google_provider() as mock_genai:
         provider = GoogleProvider(ApiConfig(api_key=api_key))
-        provider._make_api_call(model, messages, **kwargs)
+        provider.completion(model, messages, **kwargs)
 
         _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
         generation_config = call_kwargs["config"]
@@ -57,15 +57,15 @@ def test_make_api_call_with_tool_choice_auto(tool_choice: str, expected_mode: st
         assert generation_config.tool_config.function_calling_config.mode.value == expected_mode
 
 
-def test_make_api_call_without_tool_choice() -> None:
-    """Test that _make_api_call works correctly without tool_choice."""
+def testcompletion_without_tool_choice() -> None:
+    """Test that completion works correctly without tool_choice."""
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_google_provider() as mock_genai:
         provider = GoogleProvider(ApiConfig(api_key=api_key))
-        provider._make_api_call(model, messages)
+        provider.completion(model, messages)
 
         _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
         generation_config = call_kwargs["config"]
@@ -73,7 +73,7 @@ def test_make_api_call_without_tool_choice() -> None:
         assert generation_config.tool_config is None
 
 
-def test_make_api_call_with_stream_and_response_format_raises() -> None:
+def testcompletion_with_stream_and_response_format_raises() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
@@ -81,7 +81,7 @@ def test_make_api_call_with_stream_and_response_format_raises() -> None:
     with mock_google_provider():
         provider = GoogleProvider(ApiConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
-            provider._make_api_call(
+            provider.completion(
                 model,
                 messages,
                 stream=True,
@@ -89,7 +89,7 @@ def test_make_api_call_with_stream_and_response_format_raises() -> None:
             )
 
 
-def test_make_api_call_with_parallel_tool_calls_raises() -> None:
+def testcompletion_with_parallel_tool_calls_raises() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
@@ -97,7 +97,7 @@ def test_make_api_call_with_parallel_tool_calls_raises() -> None:
     with mock_google_provider():
         provider = GoogleProvider(ApiConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
-            provider._make_api_call(
+            provider.completion(
                 model,
                 messages,
                 parallel_tool_calls=True,

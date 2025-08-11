@@ -84,7 +84,7 @@ class AzureProvider(Provider):
         for chunk in azure_stream:
             yield _create_openai_chunk_from_azure_chunk(chunk)
 
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],

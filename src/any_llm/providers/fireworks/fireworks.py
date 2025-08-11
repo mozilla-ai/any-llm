@@ -40,7 +40,7 @@ class FireworksProvider(Provider):
         for chunk in response_generator:
             yield _create_openai_chunk_from_fireworks_chunk(chunk)
 
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],

@@ -16,7 +16,7 @@ class DeepseekProvider(BaseOpenAIProvider):
 
     SUPPORTS_EMBEDDING = False  # DeepSeek doesn't host an embedding model
 
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],
@@ -29,4 +29,4 @@ class DeepseekProvider(BaseOpenAIProvider):
                 kwargs["response_format"] = {"type": "json_object"}
                 messages = modified_messages
 
-        return super()._make_api_call(model, messages, **kwargs)
+        return super().completion(model, messages, **kwargs)

@@ -72,7 +72,7 @@ class OllamaProvider(Provider):
         for chunk in response:
             yield _create_openai_chunk_from_ollama_chunk(chunk)
 
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],

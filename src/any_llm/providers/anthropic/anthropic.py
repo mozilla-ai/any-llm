@@ -62,7 +62,7 @@ class AnthropicProvider(Provider):
             for event in anthropic_stream:
                 yield _create_openai_chunk_from_anthropic_chunk(event)
 
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],

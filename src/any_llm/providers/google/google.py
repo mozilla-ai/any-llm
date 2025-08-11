@@ -82,7 +82,7 @@ class GoogleProvider(Provider):
 
         return _create_openai_embedding_response_from_google(model, result)
 
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],

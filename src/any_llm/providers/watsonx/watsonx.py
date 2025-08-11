@@ -47,7 +47,7 @@ class WatsonxProvider(Provider):
         for chunk in response_stream:
             yield _convert_streaming_chunk(chunk)
 
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],

@@ -27,7 +27,7 @@ def test_anthropic_client_created_with_api_key_and_api_base() -> None:
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key, api_base=custom_endpoint))
-        provider._make_api_call("model-id", [{"role": "user", "content": "Hello"}])
+        provider.completion("model-id", [{"role": "user", "content": "Hello"}])
 
         mock_anthropic.assert_called_once_with(api_key=api_key, base_url=custom_endpoint)
 
@@ -38,13 +38,13 @@ def test_anthropic_client_created_without_api_base() -> None:
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
-        provider._make_api_call("model-id", [{"role": "user", "content": "Hello"}])
+        provider.completion("model-id", [{"role": "user", "content": "Hello"}])
 
         mock_anthropic.assert_called_once_with(api_key=api_key, base_url=None)
 
 
-def test_make_api_call_with_system_message() -> None:
-    """Test that _make_api_call correctly processes a system message."""
+def testcompletion_with_system_message() -> None:
+    """Test that completion correctly processes a system message."""
     api_key = "test-api-key"
     model = "model-id"
     messages = [
@@ -54,7 +54,7 @@ def test_make_api_call_with_system_message() -> None:
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
-        provider._make_api_call(model, messages)
+        provider.completion(model, messages)
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
@@ -64,8 +64,8 @@ def test_make_api_call_with_system_message() -> None:
         )
 
 
-def test_make_api_call_with_multiple_system_messages() -> None:
-    """Test that _make_api_call concatenates multiple system messages."""
+def testcompletion_with_multiple_system_messages() -> None:
+    """Test that completion concatenates multiple system messages."""
     api_key = "test-api-key"
     model = "model-id"
     messages = [
@@ -76,7 +76,7 @@ def test_make_api_call_with_multiple_system_messages() -> None:
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
-        provider._make_api_call(model, messages)
+        provider.completion(model, messages)
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
@@ -86,8 +86,8 @@ def test_make_api_call_with_multiple_system_messages() -> None:
         )
 
 
-def test_make_api_call_with_kwargs() -> None:
-    """Test that _make_api_call passes kwargs to the Anthropic client."""
+def testcompletion_with_kwargs() -> None:
+    """Test that completion passes kwargs to the Anthropic client."""
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
@@ -95,7 +95,7 @@ def test_make_api_call_with_kwargs() -> None:
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
-        provider._make_api_call(model, messages, **kwargs)
+        provider.completion(model, messages, **kwargs)
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
@@ -104,8 +104,8 @@ def test_make_api_call_with_kwargs() -> None:
         )
 
 
-def test_make_api_call_with_tool_choice_required() -> None:
-    """Test that _make_api_call correctly processes tool_choice='required'."""
+def testcompletion_with_tool_choice_required() -> None:
+    """Test that completion correctly processes tool_choice='required'."""
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
@@ -113,7 +113,7 @@ def test_make_api_call_with_tool_choice_required() -> None:
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
-        provider._make_api_call(model, messages, **kwargs)
+        provider.completion(model, messages, **kwargs)
 
         expected_kwargs = {"tool_choice": {"type": "any", "disable_parallel_tool_use": False}}
 
@@ -126,8 +126,8 @@ def test_make_api_call_with_tool_choice_required() -> None:
 
 
 @pytest.mark.parametrize("parallel_tool_calls", [True, False])
-def test_make_api_call_with_tool_choice_and_parallel_tool_calls(parallel_tool_calls: bool) -> None:
-    """Test that _make_api_call correctly processes tool_choice and parallel_tool_calls."""
+def testcompletion_with_tool_choice_and_parallel_tool_calls(parallel_tool_calls: bool) -> None:
+    """Test that completion correctly processes tool_choice and parallel_tool_calls."""
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
@@ -135,7 +135,7 @@ def test_make_api_call_with_tool_choice_and_parallel_tool_calls(parallel_tool_ca
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
-        provider._make_api_call(model, messages, **kwargs)
+        provider.completion(model, messages, **kwargs)
 
         expected_kwargs = {"tool_choice": {"type": "auto", "disable_parallel_tool_use": not parallel_tool_calls}}
 

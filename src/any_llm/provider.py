@@ -148,8 +148,11 @@ class Provider(ABC):
         }
 
     @abstractmethod
-    def _make_api_call(
-        self, model: str, messages: list[dict[str, Any]], **kwargs: Any
+    def completion(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """This method is designed to make the API call to the provider.
 
@@ -163,14 +166,6 @@ class Provider(ABC):
         """
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
-
-    def completion(
-        self,
-        model: str,
-        messages: list[dict[str, Any]],
-        **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        return self._make_api_call(model, messages, **kwargs)
 
     async def acompletion(
         self,

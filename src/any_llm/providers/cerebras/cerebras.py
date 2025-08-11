@@ -61,7 +61,7 @@ class CerebrasProvider(Provider):
                 msg = f"Unsupported chunk type: {type(chunk)}"
                 raise ValueError(msg)
 
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],

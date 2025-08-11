@@ -107,7 +107,7 @@ class BaseOpenAIProvider(Provider, ABC):
 
         return (_convert_chunk(chunk) for chunk in response)
 
-    def _make_api_call(
+    def completion(
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Make the API call to OpenAI-compatible service."""

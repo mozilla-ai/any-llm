@@ -52,7 +52,7 @@ class AwsProvider(Provider):
         if credentials is None and bedrock_api_key is None:
             raise MissingApiKeyError(provider_name=self.PROVIDER_NAME, env_var_name=self.ENV_API_KEY_NAME)
 
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],
