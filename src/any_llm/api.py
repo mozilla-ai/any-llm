@@ -28,7 +28,7 @@ def _prepare_completion_request(
     seed: int | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
-    timeout: float | None = None,
+    api_timeout: float | None = None,
     user: str | None = None,
     **kwargs: Any,
 ) -> tuple[Provider, str, dict[str, Any]]:
@@ -76,8 +76,8 @@ def _prepare_completion_request(
         completion_kwargs["frequency_penalty"] = frequency_penalty
     if seed is not None:
         completion_kwargs["seed"] = seed
-    if timeout is not None:
-        completion_kwargs["timeout"] = timeout
+    if api_timeout is not None:
+        completion_kwargs["timeout"] = api_timeout
     if user is not None:
         completion_kwargs["user"] = user
 
@@ -103,7 +103,7 @@ def completion(
     seed: int | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
-    timeout: float | None = None,
+    api_timeout: float | None = None,
     user: str | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
@@ -127,7 +127,7 @@ def completion(
         seed: Random seed for reproducible results
         api_key: API key for the provider
         api_base: Base URL for the provider API
-        timeout: Request timeout in seconds
+        api_timeout: Request timeout in seconds
         user: Unique identifier for the end user
         **kwargs: Additional provider-specific parameters
 
@@ -153,7 +153,7 @@ def completion(
         seed=seed,
         api_key=api_key,
         api_base=api_base,
-        timeout=timeout,
+        api_timeout=api_timeout,
         user=user,
         **kwargs,
     )
@@ -230,7 +230,7 @@ async def acompletion(
         seed=seed,
         api_key=api_key,
         api_base=api_base,
-        timeout=api_timeout,
+        api_timeout=api_timeout,
         user=user,
         **kwargs,
     )
