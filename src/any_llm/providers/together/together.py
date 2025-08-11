@@ -29,11 +29,6 @@ class TogetherProvider(Provider):
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
 
-    @classmethod
-    def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
-        """Verify the kwargs for the Together provider."""
-        pass
-
     def _stream_completion(
         self,
         client: together.Together,

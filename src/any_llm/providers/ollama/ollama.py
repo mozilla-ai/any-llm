@@ -44,11 +44,6 @@ class OllamaProvider(Provider):
 
         self.url = config.api_base or os.getenv("OLLAMA_API_URL")
 
-    @classmethod
-    def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
-        """Verify the kwargs for the Ollama provider."""
-        pass
-
     def _stream_completion(
         self,
         client: Client,

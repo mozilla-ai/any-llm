@@ -92,11 +92,3 @@ def test_watsonx_SUPPORTS_COMPLETION_STREAMING() -> None:
     """Test that WatsonxProvider correctly advertises streaming support."""
     provider = WatsonxProvider(ApiConfig(api_key="test-key"))
     assert provider.SUPPORTS_COMPLETION_STREAMING is True
-
-
-def test_watsonx_verify_kwargs() -> None:
-    """Test that verify_kwargs doesn't raise any errors."""
-    provider = WatsonxProvider(ApiConfig(api_key="test-key"))
-    provider.verify_kwargs({"stream": True})
-    provider.verify_kwargs({"stream": False})
-    provider.verify_kwargs({})

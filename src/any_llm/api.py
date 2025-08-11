@@ -392,29 +392,6 @@ async def aresponses(
     return await provider.aresponses(model_name, input_data, **responses_kwargs)
 
 
-def verify_kwargs(provider_name: str, **kwargs: Any) -> None:
-    """Check if the provider supports the kwargs.
-
-    For example, if the provider does not yet support streaming, it will raise an error.
-
-    This does not verify that the provider supports the model or that the model supports the kwargs.
-    In order to determine that info you will need to refer to the provider documentation.
-
-    Args:
-        provider_name: The name of the provider to check
-        **kwargs: The kwargs to check
-
-    Returns:
-        None
-
-    Raises:
-        UnsupportedParameterError: If the provider does not support the kwargs.
-    """
-    provider_key = ProviderFactory.get_provider_enum(provider_name)
-    provider_cls = ProviderFactory.get_provider_class(provider_key)
-    provider_cls.verify_kwargs(kwargs)
-
-
 def embedding(
     model: str,
     inputs: str | list[str],

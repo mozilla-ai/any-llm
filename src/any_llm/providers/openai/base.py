@@ -30,11 +30,6 @@ class BaseOpenAIProvider(Provider, ABC):
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = True
 
-    @classmethod
-    def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
-        """Default is that all kwargs are supported."""
-        pass
-
     def _normalize_reasoning_on_message(self, message_dict: dict[str, Any]) -> None:
         """Mutate a message dict to move provider-specific reasoning fields to our Reasoning type.
 

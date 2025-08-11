@@ -146,23 +146,6 @@ class Provider(ABC):
             "class_name": cls.__name__,
         }
 
-    @classmethod
-    @abstractmethod
-    def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
-        """This method is designed to check whether a provider supports specific arguments.
-        It is not used to verify the API key.
-
-        Args:
-            kwargs: The kwargs to check
-
-        Returns:
-            None
-
-        Raises:
-            UnsupportedParameterError: If the provider does not support the argument
-        """
-        return None
-
     @abstractmethod
     def _make_api_call(
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any
@@ -185,7 +168,6 @@ class Provider(ABC):
         messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        self.verify_kwargs(kwargs)
         return self._make_api_call(model, messages, **kwargs)
 
     async def acompletion(

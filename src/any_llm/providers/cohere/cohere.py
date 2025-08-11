@@ -49,16 +49,6 @@ class CohereProvider(Provider):
         for chunk in cohere_stream:
             yield _create_openai_chunk_from_cohere_chunk(chunk)
 
-    @classmethod
-    def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
-        """Verify the kwargs for the Cohere provider."""
-        if kwargs.get("response_format", None) is not None:
-            raise UnsupportedParameterError("response_format", cls.PROVIDER_NAME)
-        if kwargs.get("stream", False) and kwargs.get("response_format", None) is not None:
-            raise UnsupportedParameterError("stream and response_format", cls.PROVIDER_NAME)
-        if kwargs.get("parallel_tool_calls", None) is not None:
-            raise UnsupportedParameterError("parallel_tool_calls", cls.PROVIDER_NAME)
-
     def _make_api_call(
         self,
         model: str,
@@ -66,6 +56,12 @@ class CohereProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Cohere."""
+        if kwargs.get("response_format", None) is not None:
+            raise UnsupportedParameterError("response_format", self.PROVIDER_NAME)
+        if kwargs.get("stream", False) and kwargs.get("response_format", None) is not None:
+            raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
+        if kwargs.get("parallel_tool_calls", None) is not None:
+            raise UnsupportedParameterError("parallel_tool_calls", self.PROVIDER_NAME)
 
         if kwargs.get("stream", False):
             # Remove stream parameter before passing to streaming method

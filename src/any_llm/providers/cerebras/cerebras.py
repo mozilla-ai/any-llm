@@ -37,12 +37,6 @@ class CerebrasProvider(Provider):
         self.client = cerebras.Cerebras(api_key=config.api_key)
         self.instructor_client = instructor.from_cerebras(self.client)
 
-    @classmethod
-    def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
-        """Verify the kwargs for the Cerebras provider."""
-        if kwargs.get("stream", False) and kwargs.get("response_format", None) is not None:
-            raise UnsupportedParameterError("stream and response_format", cls.PROVIDER_NAME)
-
     def _stream_completion(
         self,
         model: str,
@@ -50,6 +44,8 @@ class CerebrasProvider(Provider):
         **kwargs: Any,
     ) -> Iterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
+        if kwargs.get("response_format", None) is not None:
+            raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
         cerebras_stream = self.client.chat.completions.create(
             model=model,
             messages=messages,

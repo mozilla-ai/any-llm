@@ -26,10 +26,6 @@ class WatsonxProvider(Provider):
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
 
-    @classmethod
-    def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
-        """Verify the kwargs for the Watsonx provider."""
-
     def _stream_completion(
         self,
         model_inference: ModelInference,

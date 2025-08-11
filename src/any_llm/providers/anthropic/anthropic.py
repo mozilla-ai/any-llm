@@ -38,11 +38,6 @@ class AnthropicProvider(Provider):
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
 
-    @classmethod
-    def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
-        if kwargs.get("stream", False) and kwargs.get("response_format", None):
-            raise UnsupportedParameterError("stream and response_format", cls.PROVIDER_NAME)
-
     def _stream_completion(
         self,
         client: Anthropic,
@@ -50,6 +45,8 @@ class AnthropicProvider(Provider):
         messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> Iterator[ChatCompletionChunk]:
+        if kwargs.get("response_format", None):
+            raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
         """Handle streaming completion - extracted to avoid generator issues."""
         # Convert messages for Anthropic format
         system_message, filtered_messages = _convert_messages_for_anthropic(messages)

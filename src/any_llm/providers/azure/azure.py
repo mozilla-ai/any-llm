@@ -81,11 +81,6 @@ class AzureProvider(Provider):
         for chunk in azure_stream:
             yield _create_openai_chunk_from_azure_chunk(chunk)
 
-    @classmethod
-    def verify_kwargs(cls, kwargs: dict[str, Any]) -> None:
-        """Verify the kwargs for the Azure provider."""
-        # No specific validation needed for Azure provider currently
-
     def _make_api_call(
         self,
         model: str,
