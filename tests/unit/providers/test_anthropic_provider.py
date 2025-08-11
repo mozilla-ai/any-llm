@@ -5,6 +5,7 @@ import pytest
 
 from any_llm.provider import ApiConfig
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
+from any_llm.exceptions import UnsupportedParameterError
 
 
 @contextmanager
@@ -143,4 +144,22 @@ def test_make_api_call_with_tool_choice_and_parallel_tool_calls(parallel_tool_ca
             messages=[{"role": "user", "content": "Hello"}],
             max_tokens=4096,
             **expected_kwargs,
+        )
+
+
+def test_stream_with_response_format_raises() -> None:
+    api_key = "test-api-key"
+    model = "model-id"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    provider = AnthropicProvider(ApiConfig(api_key=api_key))
+
+    with pytest.raises(UnsupportedParameterError):
+        next(
+            provider._stream_completion(
+                client=Mock(),
+                model=model,
+                messages=messages,
+                response_format={"type": "json_object"},
+            )
         )

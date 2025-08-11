@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pytest
 
 from any_llm.provider import ApiConfig
+from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.google.google import GoogleProvider
 
 
@@ -56,3 +57,34 @@ def test_make_api_call_without_tool_choice() -> None:
         generation_config = call_kwargs["config"]
 
         assert generation_config.tool_config is None
+
+
+def test_make_api_call_with_stream_and_response_format_raises() -> None:
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_google_provider():
+        provider = GoogleProvider(ApiConfig(api_key=api_key))
+        with pytest.raises(UnsupportedParameterError):
+            provider._make_api_call(
+                model,
+                messages,
+                stream=True,
+                response_format={"type": "json_object"},
+            )
+
+
+def test_make_api_call_with_parallel_tool_calls_raises() -> None:
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_google_provider():
+        provider = GoogleProvider(ApiConfig(api_key=api_key))
+        with pytest.raises(UnsupportedParameterError):
+            provider._make_api_call(
+                model,
+                messages,
+                parallel_tool_calls=True,
+            )
