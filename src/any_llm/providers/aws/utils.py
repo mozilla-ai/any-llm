@@ -26,9 +26,8 @@ def _convert_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     kwargs = kwargs.copy()
 
     tool_config = _convert_tool_spec(kwargs)
-    kwargs.pop("tools", None)  # Remove tools from kwargs if present
+    kwargs.pop("tools", None)
 
-    # Prepare inference config
     inference_config = {key: kwargs[key] for key in INFERENCE_PARAMETERS if key in kwargs}
 
     additional_fields = {key: value for key, value in kwargs.items() if key not in INFERENCE_PARAMETERS}
@@ -66,7 +65,6 @@ def _convert_tool_spec(kwargs: dict[str, Any]) -> dict[str, Any] | None:
 
 def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Convert messages to AWS Bedrock format."""
-    # Handle system message
     system_message = []
     if messages and messages[0]["role"] == "system":
         system_message = [{"text": messages[0]["content"]}]
@@ -74,7 +72,6 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, An
 
     formatted_messages = []
     for message in messages:
-        # Skip any additional system messages
         if message["role"] == "system":
             continue
 
@@ -151,7 +148,6 @@ def _convert_assistant(message: dict[str, Any]) -> dict[str, Any] | None:
 
 def _convert_response(response: dict[str, Any]) -> ChatCompletion:
     """Convert AWS Bedrock response to OpenAI format directly."""
-    # Normalize tool-use path
     choices_out: list[Choice] = []
     usage: CompletionUsage | None = None
 
@@ -206,7 +202,6 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
                 usage=usage,
             )
 
-    # Normal chat response path
     content = response["output"]["message"]["content"][0]["text"]
     stop_reason = response.get("stopReason")
     finish_reason: Literal["stop", "length"] = "length" if stop_reason == "max_tokens" else "stop"

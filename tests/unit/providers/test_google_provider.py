@@ -16,9 +16,7 @@ def mock_google_provider():  # type: ignore[no-untyped-def]
         patch("any_llm.providers.google.google._convert_messages") as mock_convert_messages,
         patch("any_llm.providers.google.google._convert_response_to_response_dict") as mock_convert_response,
     ):
-        mock_convert_messages.return_value = [
-            SimpleNamespace(role="user", parts=[SimpleNamespace(text="Hello")])
-        ]
+        mock_convert_messages.return_value = [SimpleNamespace(role="user", parts=[SimpleNamespace(text="Hello")])]
         mock_convert_response.return_value = {
             "id": "google_genai_response",
             "model": "google/genai",

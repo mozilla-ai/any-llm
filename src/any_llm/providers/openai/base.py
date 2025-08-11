@@ -67,12 +67,10 @@ class BaseOpenAIProvider(Provider, ABC):
         choices = response_dict.get("choices")
         if isinstance(choices, list):
             for choice in choices:
-                # Non-streaming responses
                 message = choice.get("message") if isinstance(choice, dict) else None
                 if isinstance(message, dict):
                     self._normalize_reasoning_on_message(message)
 
-                # Streaming deltas
                 delta = choice.get("delta") if isinstance(choice, dict) else None
                 if isinstance(delta, dict):
                     self._normalize_reasoning_on_message(delta)
@@ -100,14 +98,12 @@ class BaseOpenAIProvider(Provider, ABC):
                     type(response.created),
                 )
                 response.created = int(response.created)
-            # Normalize reasoning fields before validation
             normalized = self._normalize_openai_dict_response(response.model_dump())
             return ChatCompletion.model_validate(normalized)
         else:
-            # Handle streaming response - return a generator
+
             def _convert_chunk(chunk: OpenAIChatCompletionChunk) -> ChatCompletionChunk:
                 if not isinstance(chunk.created, int):
-                    # Sambanova returns a float instead of an int.
                     logger.warning(
                         "API returned an unexpected created type: %s. Setting to int.",
                         type(chunk.created),

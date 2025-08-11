@@ -39,7 +39,6 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
             if system_message is None:
                 system_message = message["content"]
             else:
-                # If multiple system messages, concatenate them
                 system_message += "\n" + message["content"]
         else:
             filtered_messages.append(message)
@@ -49,7 +48,6 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
 
 def _create_openai_chunk_from_anthropic_chunk(chunk: Any) -> ChatCompletionChunk:
     """Convert Anthropic streaming chunk to OpenAI ChatCompletionChunk format."""
-    # Default chunk structure
     chunk_dict = {
         "id": f"chatcmpl-{hash(str(chunk))}",
         "object": "chat.completion.chunk",
