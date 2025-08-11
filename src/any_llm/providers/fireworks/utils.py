@@ -1,6 +1,6 @@
 import uuid
-from typing import Any
 from datetime import datetime
+from typing import Any
 
 from any_llm.types.completion import (
     ChatCompletionChunk,
@@ -12,7 +12,6 @@ from any_llm.types.completion import (
 
 def _create_openai_chunk_from_fireworks_chunk(fireworks_chunk: Any) -> ChatCompletionChunk:
     """Convert a Fireworks streaming chunk to OpenAI ChatCompletionChunk format."""
-
     content = None
     if hasattr(fireworks_chunk, "choices") and fireworks_chunk.choices:
         choice = fireworks_chunk.choices[0]

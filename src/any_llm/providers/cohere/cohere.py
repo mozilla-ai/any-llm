@@ -1,18 +1,19 @@
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 try:
     import cohere
-except ImportError:
+except ImportError as e:
     msg = "cohere is not installed. Please install it with `pip install any-llm-sdk[cohere]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from e
 
-from any_llm.types.completion import ChatCompletionChunk, ChatCompletion
-from any_llm.provider import Provider, ApiConfig
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.cohere.utils import (
-    _create_openai_chunk_from_cohere_chunk,
     _convert_response,
+    _create_openai_chunk_from_cohere_chunk,
 )
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 
 
 class CohereProvider(Provider):
@@ -57,22 +58,24 @@ class CohereProvider(Provider):
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Cohere."""
         if kwargs.get("response_format", None) is not None:
-            raise UnsupportedParameterError("response_format", self.PROVIDER_NAME)
+            msg = "response_format"
+            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
         if kwargs.get("stream", False) and kwargs.get("response_format", None) is not None:
-            raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
+            msg = "stream and response_format"
+            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
         if kwargs.get("parallel_tool_calls", None) is not None:
-            raise UnsupportedParameterError("parallel_tool_calls", self.PROVIDER_NAME)
+            msg = "parallel_tool_calls"
+            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
 
         if kwargs.get("stream", False):
             # Remove stream parameter before passing to streaming method
             kwargs.pop("stream")
             return self._stream_completion(model, messages, **kwargs)
-        else:
-            # Make the API call for non-streaming
-            response = self.client.chat(
-                model=model,
-                messages=messages,  # type: ignore[arg-type]
-                **kwargs,
-            )
+        # Make the API call for non-streaming
+        response = self.client.chat(
+            model=model,
+            messages=messages,  # type: ignore[arg-type]
+            **kwargs,
+        )
 
-            return _convert_response(response, model)
+        return _convert_response(response, model)

@@ -1,10 +1,11 @@
 import os
 from pathlib import Path
 from unittest.mock import patch
+
 import pytest
 
-from any_llm.provider import ApiConfig, ProviderFactory, ProviderName
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
+from any_llm.provider import ApiConfig, ProviderFactory, ProviderName
 
 
 def test_all_providers_in_enum() -> None:
@@ -82,14 +83,13 @@ def test_unsupported_provider_error_message() -> None:
 
 def test_unsupported_provider_error_attributes() -> None:
     """Test UnsupportedProviderError has correct attributes."""
-    try:
+    with pytest.raises(UnsupportedProviderError) as exc_info:
         ProviderFactory.get_provider_enum("nonexistent")
-    except UnsupportedProviderError as e:
-        assert e.provider_key == "nonexistent"
-        assert e.supported_providers == ProviderFactory.get_supported_providers()
-        assert "Supported providers:" in str(e)
-    else:
-        pytest.fail("Expected UnsupportedProviderError to be raised")
+
+    exception = exc_info.value
+    assert exception.provider_key == "nonexistent"
+    assert exception.supported_providers == ProviderFactory.get_supported_providers()
+    assert "Supported providers:" in str(exception)
 
 
 def test_all_providers_have_required_attributes(provider: str) -> None:

@@ -1,11 +1,13 @@
 from typing import Any
+
 import httpx
 import pytest
-from any_llm import embedding, ProviderName
+from openai import APIConnectionError
+
+from any_llm import ProviderName, embedding
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
 from any_llm.types.completion import CreateEmbeddingResponse
-from openai import APIConnectionError
 
 
 def test_embedding_providers(
@@ -16,7 +18,7 @@ def test_embedding_providers(
     """Test that all embedding-supported providers can generate embeddings successfully."""
     # first check if the provider supports embeddings
     providers_metadata = ProviderFactory.get_all_provider_metadata()
-    provider_metadata = [metadata for metadata in providers_metadata if metadata["provider_key"] == provider.value][0]
+    provider_metadata = next(metadata for metadata in providers_metadata if metadata["provider_key"] == provider.value)
     if not provider_metadata["embedding"]:
         pytest.skip(f"{provider.value} does not support embeddings, skipping")
 

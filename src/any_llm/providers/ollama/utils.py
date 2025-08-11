@@ -1,31 +1,30 @@
 import json
-from typing import Any
+import uuid
+from datetime import datetime
+from typing import Any, Literal, cast
+
+from ollama import ChatResponse as OllamaChatResponse
+from ollama import EmbedResponse
+from ollama import Message as OllamaMessage
 
 from any_llm.types.completion import (
-    CreateEmbeddingResponse,
-    Embedding,
-    Usage,
     ChatCompletionChunk,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
-    CompletionUsage,
     ChunkChoice,
+    CompletionUsage,
+    CreateEmbeddingResponse,
+    Embedding,
     Reasoning,
+    Usage,
 )
-from ollama import ChatResponse as OllamaChatResponse
-from ollama import Message as OllamaMessage
-from typing import Literal, cast
-from datetime import datetime
-from ollama import EmbedResponse
-import uuid
 
 
 def _create_openai_embedding_response_from_ollama(
     ollama_response: EmbedResponse,
 ) -> CreateEmbeddingResponse:
     """Convert an Ollama embedding response to OpenAI CreateEmbeddingResponse format."""
-
     openai_embeddings = []
 
     for index, embedding_vector in enumerate(ollama_response.embeddings):
@@ -48,7 +47,6 @@ def _create_openai_embedding_response_from_ollama(
 
 def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> ChatCompletionChunk:
     """Convert an Ollama streaming chunk to OpenAI ChatCompletionChunk format."""
-
     message = ollama_chunk.message
     created_str = ollama_chunk.created_at
     created = 0
@@ -57,14 +55,14 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
             parts = created_str.split(".")
             microseconds = parts[1][:6]
             created_str = f"{parts[0]}.{microseconds}Z"
-        created = int(datetime.strptime(created_str, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp())
+        created = int(datetime.strptime(created_str, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp())  # noqa: DTZ007
 
     content = message.content
 
     role = None
     message_role = message.role
     if message_role:
-        role = cast(Literal["developer", "system", "user", "assistant", "tool"], message_role)
+        role = cast("Literal['developer', 'system', 'user', 'assistant', 'tool']", message_role)
 
     delta = ChoiceDelta(
         content=content, role=role, reasoning=Reasoning(content=message.thinking) if message.thinking else None
@@ -97,7 +95,8 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
         index=0,
         delta=delta,
         finish_reason=cast(
-            Literal["stop", "length", "tool_calls", "content_filter", "function_call"] | None, ollama_chunk.done_reason
+            "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call'] | None",
+            ollama_chunk.done_reason,
         ),
     )
 
@@ -125,16 +124,16 @@ def _create_response_dict_from_ollama_response(
     response: OllamaChatResponse,
 ) -> dict[str, Any]:
     """Convert an Ollama completion response to OpenAI format."""
-
     created_str = response.created_at
     if created_str is None:
-        raise ValueError("Expected Ollama to provide a created_at timestamp")
+        msg = "Expected Ollama to provide a created_at timestamp"
+        raise ValueError(msg)
 
     if "." in created_str and len(created_str.split(".")[1].rstrip("Z")) > 6:
         parts = created_str.split(".")
         microseconds = parts[1][:6]
         created_str = f"{parts[0]}.{microseconds}Z"
-    created = int(datetime.strptime(created_str, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp())
+    created = int(datetime.strptime(created_str, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp())  # noqa: DTZ007
 
     prompt_tokens = response.prompt_eval_count or 0
     completion_tokens = response.eval_count or 0
@@ -151,7 +150,8 @@ def _create_response_dict_from_ollama_response(
 
     response_message: OllamaMessage = response.message
     if not response_message or not isinstance(response_message, OllamaMessage):
-        raise ValueError("Unexpected output from ollama")
+        msg = "Unexpected output from ollama"
+        raise ValueError(msg)
 
     if response_message.tool_calls:
         tool_calls = []

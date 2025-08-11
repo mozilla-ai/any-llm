@@ -1,6 +1,7 @@
-import os
-from typing import Any, Iterator
 import json
+import os
+from collections.abc import Iterator
+from typing import Any
 
 try:
     from ollama import ChatResponse as OllamaChatResponse
@@ -10,21 +11,19 @@ except ImportError as exc:
     raise ImportError(msg) from exc
 
 from pydantic import BaseModel
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
+
 from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.helpers import create_completion_from_response
-
-
 from any_llm.providers.ollama.utils import (
-    _create_openai_embedding_response_from_ollama,
     _create_openai_chunk_from_ollama_chunk,
+    _create_openai_embedding_response_from_ollama,
     _create_response_dict_from_ollama_response,
 )
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 
 
 class OllamaProvider(Provider):
-    """
-    Ollama Provider using the new response conversion utilities.
+    """Ollama Provider using the new response conversion utilities.
 
     It uses the ollama sdk.
     Read more here - https://github.com/ollama/ollama-python
@@ -41,7 +40,6 @@ class OllamaProvider(Provider):
 
     def __init__(self, config: ApiConfig) -> None:
         """We don't use the Provider init because by default we don't require an API key."""
-
         self.url = config.api_base or os.getenv("OLLAMA_API_URL")
 
     def _stream_completion(
@@ -70,17 +68,9 @@ class OllamaProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Ollama."""
-
-        if "response_format" in kwargs:
-            response_format = kwargs.pop("response_format")
-            if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-                # response_format is a Pydantic model class
-                format = response_format.model_json_schema()
-            else:
-                # response_format is already a dict/schema
-                format = response_format
-        else:
-            format = None
+        response_format = kwargs.pop("response_format", None)
+        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+            response_format = response_format.model_json_schema()
 
         # (https://www.reddit.com/r/ollama/comments/1ked8x2/feeding_tool_output_back_to_llm/)
         cleaned_messages = []
@@ -113,7 +103,7 @@ class OllamaProvider(Provider):
             tools=kwargs.pop("tools", None),
             think=kwargs.pop("think", None),
             messages=cleaned_messages,
-            format=format,
+            format=response_format,
             options=kwargs,
         )
 

@@ -1,10 +1,11 @@
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 from pydantic import BaseModel
 
-from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.types.completion import ChatCompletionChunk, ChatCompletion
 from any_llm.providers.deepseek.utils import _convert_pydantic_to_deepseek_json
+from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 
 
 class DeepseekProvider(BaseOpenAIProvider):

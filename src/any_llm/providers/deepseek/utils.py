@@ -7,8 +7,7 @@ from pydantic import BaseModel
 def _convert_pydantic_to_deepseek_json(
     pydantic_model: type[BaseModel], messages: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """
-    Convert Pydantic model to DeepSeek JSON format.
+    """Convert Pydantic model to DeepSeek JSON format.
 
     DeepSeek requires:
     1. response_format = {'type': 'json_object'}
@@ -20,6 +19,7 @@ def _convert_pydantic_to_deepseek_json(
 
     Returns:
         modified_messages
+
     """
     # Get the JSON schema from the Pydantic model
     schema = pydantic_model.model_json_schema()

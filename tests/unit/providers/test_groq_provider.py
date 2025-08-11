@@ -2,8 +2,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from any_llm.provider import ApiConfig
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.provider import ApiConfig
 
 
 def test_stream_with_response_format_raises() -> None:

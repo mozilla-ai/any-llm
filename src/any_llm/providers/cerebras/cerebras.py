@@ -1,21 +1,21 @@
-from typing import Any, cast, Iterator
+from collections.abc import Iterator
+from typing import Any, cast
 
 try:
     import cerebras.cloud.sdk as cerebras
-    from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponse
     import instructor
-except ImportError:
+    from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponse
+except ImportError as e:
     msg = "cerebras or instructor is not installed. Please install it with `pip install any-llm-sdk[cerebras]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from e
 
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
-
-from any_llm.provider import Provider, ApiConfig, convert_instructor_response
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.provider import ApiConfig, Provider, convert_instructor_response
 from any_llm.providers.cerebras.utils import (
-    _create_openai_chunk_from_cerebras_chunk,
     _convert_response,
+    _create_openai_chunk_from_cerebras_chunk,
 )
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 
 
 class CerebrasProvider(Provider):
@@ -45,7 +45,8 @@ class CerebrasProvider(Provider):
     ) -> Iterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
         if kwargs.get("response_format", None) is not None:
-            raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
+            msg = "stream and response_format"
+            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
         cerebras_stream = self.client.chat.completions.create(
             model=model,
             messages=messages,
@@ -58,7 +59,8 @@ class CerebrasProvider(Provider):
             if isinstance(chunk, ChatChunkResponse):
                 yield _create_openai_chunk_from_cerebras_chunk(chunk)
             else:
-                raise ValueError(f"Unsupported chunk type: {type(chunk)}")
+                msg = f"Unsupported chunk type: {type(chunk)}"
+                raise ValueError(msg)
 
     def _make_api_call(
         self,
@@ -67,14 +69,13 @@ class CerebrasProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Cerebras with instructor support for structured outputs."""
-
         # Handle response_format for structured output
         if "response_format" in kwargs:
             response_format = kwargs.pop("response_format")
             # Use instructor for structured output
             instructor_response = self.instructor_client.chat.completions.create(
                 model=model,
-                messages=cast(Any, messages),
+                messages=cast("Any", messages),
                 response_model=response_format,
                 **kwargs,
             )
@@ -85,19 +86,19 @@ class CerebrasProvider(Provider):
             # Remove stream parameter before passing to streaming method
             kwargs.pop("stream")
             return self._stream_completion(model, messages, **kwargs)
+        # Use regular create method for non-structured outputs
+        response = self.client.chat.completions.create(
+            model=model,
+            messages=messages,
+            **kwargs,
+        )
+
+        # Handle the case where response might be a Stream object
+        if hasattr(response, "model_dump"):
+            response_data = response.model_dump()
         else:
-            # Use regular create method for non-structured outputs
-            response = self.client.chat.completions.create(
-                model=model,
-                messages=messages,
-                **kwargs,
-            )
+            # If it's a streaming response, we need to handle it differently
+            msg = "Streaming responses are not supported in this context"
+            raise ValueError(msg)
 
-            # Handle the case where response might be a Stream object
-            if hasattr(response, "model_dump"):
-                response_data = response.model_dump()
-            else:
-                # If it's a streaming response, we need to handle it differently
-                raise ValueError("Streaming responses are not supported in this context")
-
-            return _convert_response(response_data)
+        return _convert_response(response_data)

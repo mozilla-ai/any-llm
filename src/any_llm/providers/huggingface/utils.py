@@ -1,31 +1,30 @@
 import json
-from typing import Any
 import uuid
-
-from pydantic import BaseModel
-from any_llm.types.completion import (
-    ChatCompletionChunk,
-    ChoiceDelta,
-    CompletionUsage,
-    ChunkChoice,
-)
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
     ChatCompletionStreamOutput as HuggingFaceChatCompletionStreamOutput,
+)
+from pydantic import BaseModel
+
+from any_llm.types.completion import (
+    ChatCompletionChunk,
+    ChoiceDelta,
+    ChunkChoice,
+    CompletionUsage,
 )
 
 
 def _convert_pydantic_to_huggingface_json(
     pydantic_model: type[BaseModel], messages: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """
-    Convert Pydantic model to HuggingFace-compatible JSON instructions.
+    """Convert Pydantic model to HuggingFace-compatible JSON instructions.
 
     Following a similar pattern to the DeepSeek provider but adapted for HuggingFace.
 
     Returns:
         modified_messages
+
     """
     schema = pydantic_model.model_json_schema()
 
@@ -53,7 +52,6 @@ Answer (as JSON):"""
 
 def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletionStreamOutput) -> ChatCompletionChunk:
     """Convert a HuggingFace streaming chunk to OpenAI ChatCompletionChunk format."""
-
     chunk_id = f"chatcmpl-{uuid.uuid4()}"
     created = chunk.created
     model = chunk.model
@@ -68,7 +66,7 @@ def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletion
 
         openai_role = None
         if role:
-            openai_role = cast(Literal["developer", "system", "user", "assistant", "tool"], role)
+            openai_role = cast("Literal['developer', 'system', 'user', 'assistant', 'tool']", role)
 
         delta = ChoiceDelta(content=content, role=openai_role)
 
@@ -76,7 +74,7 @@ def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletion
             index=i,
             delta=delta,
             finish_reason=cast(
-                Literal["stop", "length", "tool_calls", "content_filter", "function_call"] | None,
+                "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call'] | None",
                 hf_choice.finish_reason,
             ),
         )

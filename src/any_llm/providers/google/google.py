@@ -1,5 +1,6 @@
 import os
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 try:
     from google import genai
@@ -10,20 +11,20 @@ except ImportError as exc:
 
 from pydantic import BaseModel
 
-from any_llm.types.completion import ChatCompletionChunk, ChatCompletion, CreateEmbeddingResponse
-from any_llm.provider import Provider, ApiConfig
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
-from any_llm.providers.helpers import (
-    create_completion_from_response,
-)
+from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.google.utils import (
-    _convert_tool_choice,
-    _convert_tool_spec,
     _convert_messages,
     _convert_response_to_response_dict,
+    _convert_tool_choice,
+    _convert_tool_spec,
     _create_openai_chunk_from_google_chunk,
     _create_openai_embedding_response_from_google,
 )
+from any_llm.providers.helpers import (
+    create_completion_from_response,
+)
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 
 
 class GoogleProvider(Provider):
@@ -47,14 +48,16 @@ class GoogleProvider(Provider):
             self.location = os.getenv("GOOGLE_REGION", "us-central1")
 
             if not self.project_id:
-                raise MissingApiKeyError("Google Vertex AI", "GOOGLE_PROJECT_ID")
+                msg = "Google Vertex AI"
+                raise MissingApiKeyError(msg, "GOOGLE_PROJECT_ID")
 
             self.client = genai.Client(vertexai=True, project=self.project_id, location=self.location)
         else:
             api_key = getattr(config, "api_key", None) or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
             if not api_key:
-                raise MissingApiKeyError("Google Gemini Developer API", "GEMINI_API_KEY/GOOGLE_API_KEY")
+                msg = "Google Gemini Developer API"
+                raise MissingApiKeyError(msg, "GEMINI_API_KEY/GOOGLE_API_KEY")
 
             self.client = genai.Client(api_key=api_key)
 
@@ -79,10 +82,12 @@ class GoogleProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         if kwargs.get("stream", False) and kwargs.get("response_format", None) is not None:
-            raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
+            msg = "stream and response_format"
+            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
 
         if kwargs.get("parallel_tool_calls", None) is not None:
-            raise UnsupportedParameterError("parallel_tool_calls", self.PROVIDER_NAME)
+            msg = "parallel_tool_calls"
+            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
         tools = None
         if "tools" in kwargs:
             tools = _convert_tool_spec(kwargs["tools"])
@@ -123,15 +128,14 @@ class GoogleProvider(Provider):
                 model=model, contents=content_text, config=generation_config
             )
             return map(_create_openai_chunk_from_google_chunk, response_stream)
-        else:
-            response: types.GenerateContentResponse = self.client.models.generate_content(
-                model=model, contents=content_text, config=generation_config
-            )
+        response: types.GenerateContentResponse = self.client.models.generate_content(
+            model=model, contents=content_text, config=generation_config
+        )
 
-            response_dict = _convert_response_to_response_dict(response)
+        response_dict = _convert_response_to_response_dict(response)
 
-            return create_completion_from_response(
-                response_data=response_dict,
-                model=model,
-                provider_name=self.PROVIDER_NAME,
-            )
+        return create_completion_from_response(
+            response_data=response_dict,
+            model=model,
+            provider_name=self.PROVIDER_NAME,
+        )

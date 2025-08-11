@@ -1,23 +1,22 @@
 import os
-from typing import Any, Iterator
 from abc import ABC
+from collections.abc import Iterator
+from typing import Any
 
 from openai import OpenAI
-from any_llm.types.completion import ChatCompletion, CreateEmbeddingResponse
 from openai._streaming import Stream
-from any_llm.types.completion import ChatCompletionChunk
 from openai._types import NOT_GIVEN
-from any_llm.provider import Provider
-
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
-from any_llm.logging import logger
+
+from any_llm.logger import logger
+from any_llm.provider import Provider
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 from any_llm.types.responses import Response, ResponseStreamEvent
 
 
 class BaseOpenAIProvider(Provider, ABC):
-    """
-    Base provider for OpenAI-compatible services.
+    """Base provider for OpenAI-compatible services.
 
     This class provides a common foundation for providers that use OpenAI-compatible APIs.
     Subclasses only need to override configuration defaults and client initialization
@@ -103,20 +102,20 @@ class BaseOpenAIProvider(Provider, ABC):
             # Normalize reasoning fields before validation
             normalized = self._normalize_openai_dict_response(response.model_dump())
             return ChatCompletion.model_validate(normalized)
-        else:
-            # Handle streaming response - return a generator
-            def _convert_chunk(chunk: OpenAIChatCompletionChunk) -> ChatCompletionChunk:
-                if not isinstance(chunk.created, int):
-                    # Sambanova returns a float instead of an int.
-                    logger.warning(
-                        "API returned an unexpected created type: %s. Setting to int.",
-                        type(chunk.created),
-                    )
-                    chunk.created = int(chunk.created)
-                normalized_chunk = self._normalize_openai_dict_response(chunk.model_dump())
-                return ChatCompletionChunk.model_validate(normalized_chunk)
 
-            return (_convert_chunk(chunk) for chunk in response)
+        # Handle streaming response - return a generator
+        def _convert_chunk(chunk: OpenAIChatCompletionChunk) -> ChatCompletionChunk:
+            if not isinstance(chunk.created, int):
+                # Sambanova returns a float instead of an int.
+                logger.warning(
+                    "API returned an unexpected created type: %s. Setting to int.",
+                    type(chunk.created),
+                )
+                chunk.created = int(chunk.created)
+            normalized_chunk = self._normalize_openai_dict_response(chunk.model_dump())
+            return ChatCompletionChunk.model_validate(normalized_chunk)
+
+        return (_convert_chunk(chunk) for chunk in response)
 
     def _make_api_call(
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any
@@ -156,8 +155,9 @@ class BaseOpenAIProvider(Provider, ABC):
             input=input_data,
             **kwargs,
         )
-        if not isinstance(response, (Response, Stream)):
-            raise ValueError(f"Responses API returned an unexpected type: {type(response)}")
+        if not isinstance(response, Response | Stream):
+            msg = f"Responses API returned an unexpected type: {type(response)}"
+            raise ValueError(msg)
         return response
 
     def embedding(
@@ -168,7 +168,8 @@ class BaseOpenAIProvider(Provider, ABC):
     ) -> CreateEmbeddingResponse:
         # Classes that inherit from BaseOpenAIProvider may override SUPPORTS_EMBEDDING
         if not self.SUPPORTS_EMBEDDING:
-            raise NotImplementedError("This provider does not support embeddings.")
+            msg = "This provider does not support embeddings."
+            raise NotImplementedError(msg)
 
         client = OpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),

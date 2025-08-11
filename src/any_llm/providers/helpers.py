@@ -1,13 +1,14 @@
-from typing import Any, Optional, Sequence
 import json
+from collections.abc import Sequence
+from typing import Any
 
 from any_llm.types.completion import (
     ChatCompletion,
-    Choice,
-    CompletionUsage,
     ChatCompletionMessage,
     ChatCompletionMessageFunctionToolCall,
     ChatCompletionMessageToolCall,
+    Choice,
+    CompletionUsage,
     Function,
     Reasoning,
 )
@@ -16,8 +17,7 @@ from any_llm.types.completion import (
 def create_tool_calls_from_list(
     tool_calls_data: Sequence[dict[str, Any]],
 ) -> list[ChatCompletionMessageToolCall]:
-    """
-    Convert a list of tool call dictionaries to ChatCompletionMessageFunctionToolCall objects.
+    """Convert a list of tool call dictionaries to ChatCompletionMessageFunctionToolCall objects.
 
     Handles common variations in tool call structure across providers.
     """
@@ -44,7 +44,7 @@ def create_tool_calls_from_list(
         arguments: str
 
         # Ensure arguments is a JSON string when appropriate
-        if isinstance(arguments_value, (dict, list)):
+        if isinstance(arguments_value, dict | list):
             arguments = json.dumps(arguments_value)
         elif isinstance(arguments_value, str):
             arguments = arguments_value
@@ -68,16 +68,16 @@ def create_choice_from_message_data(
     message_data: dict[str, Any],
     index: int = 0,
     finish_reason: str = "stop",
-    finish_reason_mapping: Optional[dict[str, str]] = None,
+    finish_reason_mapping: dict[str, str] | None = None,
 ) -> Choice:
-    """
-    Create a Choice object from message data, handling tool calls and content.
+    """Create a Choice object from message data, handling tool calls and content.
 
     Args:
         message_data: Dictionary containing message content and tool calls
         index: Choice index (default 0)
         finish_reason: Raw finish reason from provider
         finish_reason_mapping: Optional mapping to convert provider finish reasons to OpenAI format
+
     """
     # Normalize finish reason
     allowed_finish_reasons: set[str] = {"stop", "length", "tool_calls", "content_filter", "function_call"}
@@ -110,14 +110,14 @@ def create_choice_from_message_data(
 
 
 def create_usage_from_data(
-    usage_data: dict[str, Any], token_field_mapping: Optional[dict[str, str]] = None
+    usage_data: dict[str, Any], token_field_mapping: dict[str, str] | None = None
 ) -> CompletionUsage:
-    """
-    Create CompletionUsage from provider usage data.
+    """Create CompletionUsage from provider usage data.
 
     Args:
         usage_data: Dictionary containing usage information
         token_field_mapping: Optional mapping for field names (e.g., {"input_tokens": "prompt_tokens"})
+
     """
     default_mapping = {
         "completion_tokens": "completion_tokens",
@@ -141,15 +141,14 @@ def create_completion_from_response(
     response_data: dict[str, Any],
     model: str,
     provider_name: str = "provider",
-    finish_reason_mapping: Optional[dict[str, str]] = None,
-    token_field_mapping: Optional[dict[str, str]] = None,
+    finish_reason_mapping: dict[str, str] | None = None,
+    token_field_mapping: dict[str, str] | None = None,
     id_field: str = "id",
     created_field: str = "created",
     choices_field: str = "choices",
     usage_field: str = "usage",
 ) -> ChatCompletion:
-    """
-    Create a complete ChatCompletion from provider response data.
+    """Create a complete ChatCompletion from provider response data.
 
     This is the main utility that most providers can use to convert their responses.
 
@@ -163,6 +162,7 @@ def create_completion_from_response(
         created_field: Field name for creation timestamp
         choices_field: Field name for choices array
         usage_field: Field name for usage data
+
     """
     choices: list[Choice] = []
     choices_data = response_data.get(choices_field, [])
@@ -181,7 +181,7 @@ def create_completion_from_response(
         )
         choices.append(choice)
     usage = None
-    if usage_field in response_data and response_data[usage_field]:
+    if response_data.get(usage_field):
         usage = create_usage_from_data(response_data[usage_field], token_field_mapping)
 
     response_id = response_data.get(id_field, f"{provider_name}_{hash(str(response_data))}")

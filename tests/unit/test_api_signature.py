@@ -1,5 +1,6 @@
 import inspect
-from any_llm.api import completion, acompletion, responses, aresponses
+
+from any_llm.api import acompletion, aresponses, completion, responses
 
 
 def test_completion_and_acompletion_have_same_signature() -> None:

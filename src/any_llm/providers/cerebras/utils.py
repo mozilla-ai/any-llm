@@ -1,16 +1,16 @@
-from typing import Any, Dict
+from typing import Any
 
 try:
     from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponse
-except ImportError:
+except ImportError as e:
     msg = "cerebras is not installed. Please install it with `pip install any-llm-sdk[cerebras]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from e
 
+from any_llm.providers.helpers import create_completion_from_response
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
 )
-from any_llm.providers.helpers import create_completion_from_response
 
 
 def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCompletionChunk:
@@ -28,7 +28,7 @@ def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCo
         )
 
     # Default chunk structure
-    chunk_dict: Dict[str, Any] = {
+    chunk_dict: dict[str, Any] = {
         "id": getattr(chunk, "id", None) or f"chatcmpl-{hash(str(chunk))}",
         "object": "chat.completion.chunk",
         "created": getattr(chunk, "created", None) or 0,
@@ -37,7 +37,7 @@ def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCo
         "usage": None,
     }
 
-    delta: Dict[str, Any] = {}
+    delta: dict[str, Any] = {}
     finish_reason = None
 
     choices = getattr(chunk, "choices", None)
@@ -93,7 +93,7 @@ def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCo
     return ChatCompletionChunk.model_validate(chunk_dict)
 
 
-def _convert_response(response_data: Dict[str, Any]) -> ChatCompletion:
+def _convert_response(response_data: dict[str, Any]) -> ChatCompletion:
     """Convert Cerebras response using generic helper (already OpenAI-like)."""
     # Straight pass-through with minimal normalization; already OpenAI compliant
     return create_completion_from_response(

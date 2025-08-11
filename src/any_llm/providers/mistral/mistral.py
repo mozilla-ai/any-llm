@@ -1,18 +1,21 @@
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any
 
 try:
     from mistralai import Mistral
     from mistralai.extra import response_format_from_pydantic_model
-    from mistralai.models.embeddingresponse import EmbeddingResponse
 except ImportError as exc:
     msg = "mistralai is not installed. Please install it with `pip install any-llm-sdk[mistral]`"
     raise ImportError(msg) from exc
 
 from pydantic import BaseModel
 
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 from any_llm.provider import Provider
 from any_llm.providers.mistral.utils import _create_mistral_completion_from_response
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
+
+if TYPE_CHECKING:
+    from mistralai.models.embeddingresponse import EmbeddingResponse
 
 
 class MistralProvider(Provider):
@@ -70,8 +73,7 @@ class MistralProvider(Provider):
                 response_data=response,
                 model=model,
             )
-        else:
-            return self._stream_completion(client, model, messages, **kwargs)
+        return self._stream_completion(client, model, messages, **kwargs)
 
     def embedding(
         self,

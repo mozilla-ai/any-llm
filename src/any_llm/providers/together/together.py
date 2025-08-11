@@ -1,21 +1,24 @@
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any
 
 try:
-    import together
-    from together.types import (
-        ChatCompletionResponse,
-    )
     import instructor
+    import together
 except ImportError as exc:
     msg = "together or instructor is not installed. Please install it with `pip install any-llm-sdk[together]`"
     raise ImportError(msg) from exc
 
 
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 from any_llm.provider import Provider, convert_instructor_response
 from any_llm.providers.helpers import create_completion_from_response
 from any_llm.providers.together.utils import _create_openai_chunk_from_together_chunk
-from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+
+if TYPE_CHECKING:
+    from together.types import (
+        ChatCompletionResponse,
+    )
+    from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
 
 
 class TogetherProvider(Provider):

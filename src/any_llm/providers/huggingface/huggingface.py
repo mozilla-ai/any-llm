@@ -1,17 +1,14 @@
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any
 
 try:
     from huggingface_hub import InferenceClient
-    from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
-        ChatCompletionStreamOutput as HuggingFaceChatCompletionStreamOutput,
-    )
 except ImportError as exc:
     msg = "huggingface-hub is not installed. Please install it with `pip install any-llm-sdk[huggingface]`"
     raise ImportError(msg) from exc
 
 from pydantic import BaseModel
 
-from any_llm.types.completion import ChatCompletionChunk, ChatCompletion
 from any_llm.provider import Provider
 from any_llm.providers.helpers import (
     create_completion_from_response,
@@ -20,6 +17,12 @@ from any_llm.providers.huggingface.utils import (
     _convert_pydantic_to_huggingface_json,
     _create_openai_chunk_from_huggingface_chunk,
 )
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+
+if TYPE_CHECKING:
+    from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
+        ChatCompletionStreamOutput as HuggingFaceChatCompletionStreamOutput,
+    )
 
 
 class HuggingfaceProvider(Provider):

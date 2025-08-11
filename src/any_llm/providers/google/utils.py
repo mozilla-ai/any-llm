@@ -3,19 +3,19 @@ from time import time
 from typing import Any
 
 from any_llm.types.completion import (
-    CreateEmbeddingResponse,
-    Embedding,
-    Usage,
     ChatCompletionChunk,
     ChoiceDelta,
     ChunkChoice,
+    CreateEmbeddingResponse,
+    Embedding,
+    Usage,
 )
 
 try:
     from google.genai import types
-except ImportError:
+except ImportError as e:
     msg = "google-genai is not installed. Please install it with `pip install any-llm-sdk[google]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from e
 
 
 def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[types.Tool]:
@@ -73,7 +73,7 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
             parts = [types.Part.from_text(text=message["content"])]
             formatted_messages.append(types.Content(role="user", parts=parts))
         elif message["role"] == "assistant":
-            if "tool_calls" in message and message["tool_calls"]:
+            if message.get("tool_calls"):
                 # Handle function calls
                 tool_call = message["tool_calls"][0]  # Assuming single function call for now
                 function_call = tool_call["function"]
@@ -188,7 +188,6 @@ def _create_openai_embedding_response_from_google(
     model: str, result: types.EmbedContentResponse
 ) -> CreateEmbeddingResponse:
     """Convert a Google embedding response to an OpenAI-compatible format."""
-
     data = [
         Embedding(
             embedding=embedding.values,
@@ -214,7 +213,6 @@ def _create_openai_chunk_from_google_chunk(
     response: types.GenerateContentResponse,
 ) -> ChatCompletionChunk:
     """Convert a Google GenerateContentResponse to an OpenAI ChatCompletionChunk."""
-
     assert response.candidates
     candidate = response.candidates[0]
     assert candidate.content

@@ -1,13 +1,13 @@
-from typing import Any, Dict
+from typing import Any
 
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 from any_llm.providers.helpers import create_completion_from_response
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 
 
 def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
     """Convert Cohere streaming chunk to OpenAI ChatCompletionChunk format."""
     # Default chunk structure
-    chunk_dict: Dict[str, Any] = {
+    chunk_dict: dict[str, Any] = {
         "id": f"chatcmpl-{hash(str(chunk))}",
         "object": "chat.completion.chunk",
         "created": 0,
@@ -16,7 +16,7 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
         "usage": None,
     }
 
-    delta: Dict[str, Any] = {}
+    delta: dict[str, Any] = {}
     finish_reason = None
 
     chunk_type = getattr(chunk, "type", None)

@@ -1,24 +1,23 @@
-from typing import cast, Literal, Any
+from typing import Any, Literal, cast
+
+from groq.types.chat import ChatCompletion as GroqChatCompletion
+from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
 
 from any_llm.types.completion import (
     ChatCompletionChunk,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
-    CompletionUsage,
     ChunkChoice,
+    CompletionUsage,
     Reasoning,
 )
-
-from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
-from groq.types.chat import ChatCompletion as GroqChatCompletion
 
 
 def _create_response_dict_from_groq_response(
     response: GroqChatCompletion,
 ) -> dict[str, Any]:
     """Convert a Groq completion response to OpenAI format."""
-
     response_dict: dict[str, Any] = {
         "id": response.id,
         "model": response.model,
@@ -80,14 +79,13 @@ def _create_response_dict_from_groq_response(
 
 def _create_openai_chunk_from_groq_chunk(groq_chunk: GroqChatCompletionChunk) -> ChatCompletionChunk:
     """Convert a Groq streaming chunk to OpenAI ChatCompletionChunk format."""
-
     choice_data = groq_chunk.choices[0]
     delta_data = choice_data.delta
 
     delta = ChoiceDelta(
         content=delta_data.content,
         reasoning=Reasoning(content=delta_data.reasoning) if delta_data.reasoning else None,
-        role=cast(Literal["developer", "system", "user", "assistant", "tool"] | None, delta_data.role),
+        role=cast("Literal['developer', 'system', 'user', 'assistant', 'tool'] | None", delta_data.role),
     )
 
     if delta_data.tool_calls:

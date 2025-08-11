@@ -1,4 +1,5 @@
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any
 
 from openai import OpenAI, Stream
 
@@ -6,23 +7,25 @@ from any_llm.types.responses import Response, ResponseStreamEvent
 
 try:
     import groq
-    from groq import Stream as GroqStream
-    from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
-    from groq.types.chat import ChatCompletion as GroqChatCompletion
     import instructor
+    from groq import Stream as GroqStream
 except ImportError as exc:
     msg = "groq or instructor is not installed. Please install it with `pip install any-llm-sdk[groq]`"
     raise ImportError(msg) from exc
 
 
-from any_llm.types.completion import ChatCompletionChunk, ChatCompletion
-from any_llm.provider import Provider, convert_instructor_response
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.providers.helpers import create_completion_from_response
+from any_llm.provider import Provider, convert_instructor_response
 from any_llm.providers.groq.utils import (
     _create_openai_chunk_from_groq_chunk,
     _create_response_dict_from_groq_response,
 )
+from any_llm.providers.helpers import create_completion_from_response
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+
+if TYPE_CHECKING:
+    from groq.types.chat import ChatCompletion as GroqChatCompletion
+    from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
 
 
 class GroqProvider(Provider):
@@ -47,7 +50,8 @@ class GroqProvider(Provider):
     ) -> Iterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
         if kwargs.get("stream", False) and kwargs.get("response_format", None):
-            raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
+            msg = "stream and response_format"
+            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
         stream: GroqStream[GroqChatCompletionChunk] = client.chat.completions.create(  # type: ignore[assignment]
             model=model,
             messages=messages,  # type: ignore[arg-type]
@@ -104,6 +108,7 @@ class GroqProvider(Provider):
             input=input_data,
             **kwargs,
         )
-        if not isinstance(response, (Response, Stream)):
-            raise ValueError(f"Responses API returned an unexpected type: {type(response)}")
+        if not isinstance(response, Response | Stream):
+            msg = f"Responses API returned an unexpected type: {type(response)}"
+            raise ValueError(msg)
         return response

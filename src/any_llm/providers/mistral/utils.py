@@ -1,39 +1,43 @@
 import json
 
 try:
-    from mistralai.models import CompletionEvent
-    from mistralai.models.embeddingresponse import EmbeddingResponse
-    from mistralai.models.chatcompletionresponse import ChatCompletionResponse as MistralChatCompletionResponse
     from mistralai.models import AssistantMessageContent as MistralAssistantMessageContent
-    from mistralai.models import ThinkChunk as MistralThinkChunk
-    from mistralai.models import TextChunk as MistralTextChunk
+    from mistralai.models import CompletionEvent
     from mistralai.models import ReferenceChunk as MistralReferenceChunk
+    from mistralai.models import TextChunk as MistralTextChunk
+    from mistralai.models import ThinkChunk as MistralThinkChunk
+    from mistralai.models.chatcompletionresponse import ChatCompletionResponse as MistralChatCompletionResponse
     from mistralai.models.toolcall import ToolCall as MistralToolCall
     from mistralai.types.basemodel import Unset
 except ImportError as exc:
     msg = "mistralai is not installed. Please install it with `pip install any-llm-sdk[mistral]`"
     raise ImportError(msg) from exc
 
-from any_llm.types.completion import (
-    ChatCompletionChunk,
-    CreateEmbeddingResponse,
-    ChatCompletion,
-    Reasoning,
-    CompletionUsage,
-    Embedding,
-    Usage,
-    ChunkChoice,
-    ChoiceDelta,
-    ChoiceDeltaToolCall,
-    ChoiceDeltaToolCallFunction,
-    Function,
-)
+from typing import TYPE_CHECKING, Any, Literal, cast
+
+from openai.types.chat.chat_completion_message_function_tool_call import ChatCompletionMessageFunctionToolCall
+from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall
+
 from any_llm.providers.helpers import (
     create_completion_from_response,
 )
-from openai.types.chat.chat_completion_message_function_tool_call import ChatCompletionMessageFunctionToolCall
-from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall
-from typing import Literal, cast, Any
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChoiceDelta,
+    ChoiceDeltaToolCall,
+    ChoiceDeltaToolCallFunction,
+    ChunkChoice,
+    CompletionUsage,
+    CreateEmbeddingResponse,
+    Embedding,
+    Function,
+    Reasoning,
+    Usage,
+)
+
+if TYPE_CHECKING:
+    from mistralai.models.embeddingresponse import EmbeddingResponse
 
 
 def _convert_mistral_tool_calls_to_any_llm(
@@ -111,12 +115,10 @@ def _convert_mistral_streaming_tool_calls_to_any_llm(
 def _extract_mistral_content_and_reasoning(
     content_data: MistralAssistantMessageContent,
 ) -> tuple[str | None, str | None]:
-    """
-    Extract text content and reasoning from Mistral's content structure.
+    """Extract text content and reasoning from Mistral's content structure.
 
     Mistral returns content as an array of objects, where reasoning is in a 'thinking' object.
     """
-
     text_parts = []
     reasoning_content = None
 
@@ -134,7 +136,8 @@ def _extract_mistral_content_and_reasoning(
                         elif isinstance(thinking_item, MistralReferenceChunk):
                             pass
                         else:
-                            raise ValueError(f"Unsupported item type: {type(thinking_item)}")
+                            msg = f"Unsupported item type: {type(thinking_item)}"
+                            raise ValueError(msg)
                     if thinking_texts:
                         reasoning_content = "\n".join(thinking_texts)
                 elif isinstance(thinking_data, str):
@@ -255,7 +258,7 @@ def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompl
 
         role = None
         if choice.delta.role:
-            role = cast(Literal["developer", "system", "user", "assistant", "tool"], choice.delta.role)
+            role = cast("Literal['developer', 'system', 'user', 'assistant', 'tool']", choice.delta.role)
 
         reasoning = None
         if reasoning_content:
@@ -296,7 +299,6 @@ def _create_openai_embedding_response_from_mistral(
     mistral_response: "EmbeddingResponse",
 ) -> "CreateEmbeddingResponse":
     """Convert a Mistral EmbeddingResponse to OpenAI CreateEmbeddingResponse format."""
-
     openai_embeddings = []
     for embedding_data in mistral_response.data:
         embedding_vector = embedding_data.embedding or []
