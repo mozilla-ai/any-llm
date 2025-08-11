@@ -10,8 +10,18 @@ from any_llm.providers.huggingface.huggingface import HuggingfaceProvider
 def mock_huggingface_provider():  # type: ignore[no-untyped-def]
     with (
         patch("any_llm.providers.huggingface.huggingface.InferenceClient") as mock_huggingface,
-        patch("any_llm.providers.huggingface.huggingface.create_completion_from_response"),
     ):
+        mock_huggingface.return_value.chat_completion.return_value = {
+            "id": "hf-response-id",
+            "created": 0,
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": "ok", "tool_calls": None},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
         yield mock_huggingface
 
 

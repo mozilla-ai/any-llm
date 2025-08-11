@@ -9,8 +9,13 @@ except ImportError:
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageToolCall,
+    Choice,
+    CompletionUsage,
+    Function,
 )
-from any_llm.providers.helpers import create_completion_from_response
 
 
 def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCompletionChunk:
@@ -27,7 +32,6 @@ def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCo
             }
         )
 
-    # Default chunk structure
     chunk_dict: Dict[str, Any] = {
         "id": getattr(chunk, "id", None) or f"chatcmpl-{hash(str(chunk))}",
         "object": "chat.completion.chunk",
@@ -94,10 +98,59 @@ def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCo
 
 
 def _convert_response(response_data: Dict[str, Any]) -> ChatCompletion:
-    """Convert Cerebras response using generic helper (already OpenAI-like)."""
-    # Straight pass-through with minimal normalization; already OpenAI compliant
-    return create_completion_from_response(
-        response_data=response_data,
+    """Convert Cerebras response to OpenAI ChatCompletion directly."""
+    choices_out: list[Choice] = []
+    for i, choice_data in enumerate(response_data.get("choices", [])):
+        message_data = choice_data.get("message", {})
+        tool_calls_data = message_data.get("tool_calls") or []
+        tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] | None = None
+        if tool_calls_data:
+            tool_calls_list: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
+            for tc in tool_calls_data:
+                func = tc.get("function", {})
+                tool_calls_list.append(
+                    ChatCompletionMessageFunctionToolCall(
+                        id=tc.get("id", f"call_{i}"),
+                        type="function",
+                        function=Function(
+                            name=func.get("name"),
+                            arguments=func.get("arguments"),
+                        ),
+                    )
+                )
+            tool_calls = tool_calls_list
+        message = ChatCompletionMessage(
+            role=message_data.get("role", "assistant"),
+            content=message_data.get("content"),
+            tool_calls=tool_calls,
+        )
+        from typing import Literal, cast
+
+        choices_out.append(
+            Choice(
+                index=choice_data.get("index", i),
+                finish_reason=cast(
+                    Literal["stop", "length", "tool_calls", "content_filter", "function_call"],
+                    choice_data.get("finish_reason", "stop"),
+                ),
+                message=message,
+            )
+        )
+
+    usage = None
+    if response_data.get("usage"):
+        usage_raw = response_data["usage"]
+        usage = CompletionUsage(
+            prompt_tokens=usage_raw.get("prompt_tokens", 0),
+            completion_tokens=usage_raw.get("completion_tokens", 0),
+            total_tokens=usage_raw.get("total_tokens", 0),
+        )
+
+    return ChatCompletion(
+        id=response_data.get("id", ""),
         model=response_data.get("model", ""),
-        provider_name="cerebras",
+        created=response_data.get("created", 0),
+        object="chat.completion",
+        choices=choices_out,
+        usage=usage,
     )

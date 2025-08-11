@@ -66,7 +66,6 @@ class AwsProvider(Provider):
             instructor_client = instructor.from_bedrock(client)
             response_format = kwargs.pop("response_format")
 
-            # Use instructor for structured output
             instructor_response = instructor_client.chat.completions.create(
                 model=model,
                 messages=messages,  # type: ignore[arg-type]
@@ -129,10 +128,8 @@ class AwsProvider(Provider):
             if "normalize" in kwargs:
                 request_body["normalize"] = kwargs["normalize"]
 
-            # Make the API call
             response = client.invoke_model(modelId=model, body=json.dumps(request_body))
 
-            # Parse the response
             response_body = json.loads(response["body"].read())
 
             embedding_data.append({"embedding": response_body["embedding"], "index": index})

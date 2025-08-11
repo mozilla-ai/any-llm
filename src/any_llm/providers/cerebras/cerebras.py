@@ -54,7 +54,6 @@ class CerebrasProvider(Provider):
         )
 
         for chunk in cerebras_stream:
-            # Only process ChatChunkResponse objects
             if isinstance(chunk, ChatChunkResponse):
                 yield _create_openai_chunk_from_cerebras_chunk(chunk)
             else:
@@ -67,11 +66,8 @@ class CerebrasProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Cerebras with instructor support for structured outputs."""
-
-        # Handle response_format for structured output
         if "response_format" in kwargs:
             response_format = kwargs.pop("response_format")
-            # Use instructor for structured output
             instructor_response = self.instructor_client.chat.completions.create(
                 model=model,
                 messages=cast(Any, messages),
@@ -82,22 +78,18 @@ class CerebrasProvider(Provider):
             return convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
 
         if kwargs.get("stream", False):
-            # Remove stream parameter before passing to streaming method
             kwargs.pop("stream")
             return self._stream_completion(model, messages, **kwargs)
         else:
-            # Use regular create method for non-structured outputs
             response = self.client.chat.completions.create(
                 model=model,
                 messages=messages,
                 **kwargs,
             )
 
-            # Handle the case where response might be a Stream object
             if hasattr(response, "model_dump"):
                 response_data = response.model_dump()
             else:
-                # If it's a streaming response, we need to handle it differently
                 raise ValueError("Streaming responses are not supported in this context")
 
             return _convert_response(response_data)

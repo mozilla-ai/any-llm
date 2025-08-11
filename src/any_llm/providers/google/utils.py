@@ -66,7 +66,6 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
 
     for message in messages:
         if message["role"] == "system":
-            # System messages are treated as user messages in GenAI
             parts = [types.Part.from_text(text=message["content"])]
             formatted_messages.append(types.Content(role="user", parts=parts))
         elif message["role"] == "user":
@@ -74,7 +73,6 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
             formatted_messages.append(types.Content(role="user", parts=parts))
         elif message["role"] == "assistant":
             if "tool_calls" in message and message["tool_calls"]:
-                # Handle function calls
                 tool_call = message["tool_calls"][0]  # Assuming single function call for now
                 function_call = tool_call["function"]
 
@@ -84,7 +82,6 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
                     )
                 ]
             else:
-                # Handle regular text messages
                 parts = [types.Part.from_text(text=message["content"])]
 
             formatted_messages.append(types.Content(role="model", parts=parts))
@@ -94,7 +91,6 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
                 part = types.Part.from_function_response(name=message.get("name", "unknown"), response=content_json)
                 formatted_messages.append(types.Content(role="function", parts=[part]))
             except json.JSONDecodeError:
-                # If not JSON, treat as text
                 part = types.Part.from_function_response(
                     name=message.get("name", "unknown"), response={"result": message["content"]}
                 )

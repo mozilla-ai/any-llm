@@ -64,11 +64,9 @@ class CohereProvider(Provider):
             raise UnsupportedParameterError("parallel_tool_calls", self.PROVIDER_NAME)
 
         if kwargs.get("stream", False):
-            # Remove stream parameter before passing to streaming method
             kwargs.pop("stream")
             return self._stream_completion(model, messages, **kwargs)
         else:
-            # Make the API call for non-streaming
             response = self.client.chat(
                 model=model,
                 messages=messages,  # type: ignore[arg-type]

@@ -1,12 +1,18 @@
-from typing import cast, Literal, Any
+from typing import cast, Literal
 
 from any_llm.types.completion import (
+    ChatCompletion,
     ChatCompletionChunk,
+    ChatCompletionMessage,
+    ChatCompletionMessageToolCall,
+    ChatCompletionMessageFunctionToolCall,
+    Choice,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
     CompletionUsage,
     ChunkChoice,
+    Function,
     Reasoning,
 )
 
@@ -14,68 +20,67 @@ from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
 from groq.types.chat import ChatCompletion as GroqChatCompletion
 
 
-def _create_response_dict_from_groq_response(
-    response: GroqChatCompletion,
-) -> dict[str, Any]:
-    """Convert a Groq completion response to OpenAI format."""
+def to_chat_completion(response: GroqChatCompletion) -> ChatCompletion:
+    """Convert Groq ChatCompletion into our ChatCompletion type directly."""
 
-    response_dict: dict[str, Any] = {
-        "id": response.id,
-        "model": response.model,
-        "created": response.created,
-        "object": "chat.completion",
-    }
-
-    # Handle usage
+    usage = None
     if response.usage:
-        response_dict["usage"] = {
-            "prompt_tokens": response.usage.prompt_tokens,
-            "completion_tokens": response.usage.completion_tokens,
-            "total_tokens": response.usage.total_tokens,
-        }
+        usage = CompletionUsage(
+            prompt_tokens=response.usage.prompt_tokens,
+            completion_tokens=response.usage.completion_tokens,
+            total_tokens=response.usage.total_tokens,
+        )
 
-    # Handle choices
-    choices = []
+    choices: list[Choice] = []
     for choice in response.choices:
-        choice_dict: dict[str, Any] = {
-            "index": choice.index,
-            "finish_reason": choice.finish_reason,
-        }
-
-        # Handle message
         message = choice.message
-        message_dict: dict[str, Any] = {
-            "role": message.role,
-            "content": message.content,
-        }
 
-        # Handle tool calls if present
+        tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] | None = None
         if message.tool_calls:
-            tool_calls = []
+            tool_calls_list: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
             for tool_call in message.tool_calls:
-                tool_call_dict = {
-                    "id": tool_call.id,
-                    "type": "function",
-                    "function": {
-                        "name": tool_call.function.name,
-                        "arguments": tool_call.function.arguments,
-                    },
-                }
-                tool_calls.append(tool_call_dict)
-            message_dict["tool_calls"] = tool_calls
-        else:
-            message_dict["tool_calls"] = None
+                arguments = tool_call.function.arguments
+                if not isinstance(arguments, str):
+                    # Ensure arguments is a string
+                    arguments = str(arguments)
+                tool_calls_list.append(
+                    ChatCompletionMessageFunctionToolCall(
+                        id=tool_call.id,
+                        type="function",
+                        function=Function(
+                            name=tool_call.function.name,
+                            arguments=arguments,
+                        ),
+                    )
+                )
+            tool_calls = tool_calls_list
 
-        # Handle reasoning if present (Groq specific)
-        if message.reasoning:
-            message_dict["reasoning_content"] = message.reasoning
+        msg = ChatCompletionMessage(
+            role=cast(Literal["assistant"], "assistant"),
+            content=message.content,
+            tool_calls=tool_calls,
+            reasoning=Reasoning(content=cast(str, message.reasoning)) if getattr(message, "reasoning", None) else None,
+        )
 
-        choice_dict["message"] = message_dict
-        choices.append(choice_dict)
+        choices.append(
+            Choice(
+                index=choice.index,
+                finish_reason=cast(
+                    Literal["stop", "length", "tool_calls", "content_filter", "function_call"],
+                    choice.finish_reason or "stop",
+                ),
+                message=msg,
+            )
+        )
 
-    response_dict["choices"] = choices
-
-    return response_dict
+    return ChatCompletion(
+        id=response.id,
+        model=response.model,
+        created=response.created,
+        object="chat.completion",
+        choices=choices,
+        usage=usage,
+    )
 
 
 def _create_openai_chunk_from_groq_chunk(groq_chunk: GroqChatCompletionChunk) -> ChatCompletionChunk:

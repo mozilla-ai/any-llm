@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -12,10 +13,23 @@ from any_llm.providers.google.google import GoogleProvider
 def mock_google_provider():  # type: ignore[no-untyped-def]
     with (
         patch("any_llm.providers.google.google.genai.Client") as mock_genai,
-        patch("any_llm.providers.google.google._convert_messages"),
-        patch("any_llm.providers.google.google._convert_response_to_response_dict"),
-        patch("any_llm.providers.google.google.create_completion_from_response"),
+        patch("any_llm.providers.google.google._convert_messages") as mock_convert_messages,
+        patch("any_llm.providers.google.google._convert_response_to_response_dict") as mock_convert_response,
     ):
+        mock_convert_messages.return_value = [SimpleNamespace(role="user", parts=[SimpleNamespace(text="Hello")])]
+        mock_convert_response.return_value = {
+            "id": "google_genai_response",
+            "model": "google/genai",
+            "created": 0,
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": "ok", "tool_calls": None},
+                    "finish_reason": "stop",
+                    "index": 0,
+                }
+            ],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
         yield mock_genai
 
 

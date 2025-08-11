@@ -2,8 +2,8 @@ from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenA
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion import Choice as OpenAIChoice
 from openai.types.chat.chat_completion_message import ChatCompletionMessage as OpenAIChatCompletionMessage
-from openai.types.chat.chat_completion_message_tool_call import (
-    ChatCompletionMessageToolCall as OpenAIChatCompletionMessageToolCall,
+from openai.types.chat.chat_completion_message_custom_tool_call import (
+    ChatCompletionMessageCustomToolCall as OpenAIChatCompletionMessageToolCall,
 )
 from openai.types.chat.chat_completion_message_function_tool_call import (
     ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
@@ -52,7 +52,8 @@ class ChatCompletionChunk(OpenAIChatCompletionChunk):
     choices: list[ChunkChoice]  # type: ignore[assignment]
 
 
-ChatCompletionMessageToolCall = OpenAIChatCompletionMessageToolCall
+ChatCompletionMessageFunctionToolCall = OpenAIChatCompletionMessageFunctionToolCall
+ChatCompletionMessageToolCall = OpenAIChatCompletionMessageFunctionToolCall | OpenAIChatCompletionMessageToolCall
 Function = OpenAIFunction
 CompletionUsage = OpenAICompletionUsage
 CreateEmbeddingResponse = OpenAICreateEmbeddingResponse
@@ -60,6 +61,3 @@ Embedding = OpenAIEmbedding
 Usage = OpenAIUsage
 ChoiceDeltaToolCall = OpenAIChoiceDeltaToolCall
 ChoiceDeltaToolCallFunction = OpenAIChoiceDeltaToolCallFunction
-
-
-ChatCompletionMessageFunctionToolCall = OpenAIChatCompletionMessageFunctionToolCall

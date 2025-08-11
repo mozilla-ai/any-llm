@@ -21,7 +21,6 @@ class DeepseekProvider(BaseOpenAIProvider):
         messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        # Handle Pydantic model conversion for DeepSeek
         if "response_format" in kwargs:
             response_format = kwargs["response_format"]
             if isinstance(response_format, type) and issubclass(response_format, BaseModel):
