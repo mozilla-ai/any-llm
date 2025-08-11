@@ -120,6 +120,49 @@ disable = [
 [tool.ruff]
 line-length = 120
 
+
+[tool.ruff.lint]
+ignore = [
+  "TD",
+  "FIX",
+  "D100",  # We don't use module docstrings
+  "D104",  # We don't use package docstrings
+  "D203",  # <- disable to resolve conflict with D211
+  "D213",  # <- disable to resolve conflict with D212
+  "FBT",
+  "COM",
+  "ANN",
+  "ARG",
+  "S101",
+  "E501",
+  "INP001",
+  "PERF",
+  "PLR",
+  "SIM",
+  "PTH",
+  "DTZ005",
+  "BLE001",
+  "TRY004",
+  "S113",
+  "PLW2901",
+  "C901",
+  "ERA001",
+  "SLF001",
+  "PD901",
+  "PLC0415", # We use lazy imports in several places
+  "PLR0912",
+  "PLR0913",
+  "N999",
+  "B024",
+]
+extend-select = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D", "N802"]
+"src/any_llm/providers/**" = ["D"]
+"src/any_llm/provider.py" = ["D"]
+"src/any_llm/types/**" = ["A005", "D"]
+
 [tool.mypy]
 strict = true
 disallow_untyped_calls = true
