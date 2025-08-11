@@ -44,5 +44,3 @@ def test_parallel_tool_calls_raises() -> None:
             messages=[{"role": "user", "content": "Hello"}],
             parallel_tool_calls=False,
         )
-
-

@@ -22,5 +22,3 @@ def test_stream_with_response_format_raises() -> None:
                 response_format={"type": "json_object"},
             )
         )
-
-
