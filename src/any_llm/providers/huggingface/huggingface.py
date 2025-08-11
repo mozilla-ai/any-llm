@@ -1,4 +1,5 @@
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 try:
     from huggingface_hub import InferenceClient
@@ -11,12 +12,12 @@ except ImportError as exc:
 
 from pydantic import BaseModel
 
-from any_llm.types.completion import ChatCompletionChunk, ChatCompletion, ChatCompletionMessage, Choice, CompletionUsage
 from any_llm.provider import Provider
 from any_llm.providers.huggingface.utils import (
     _convert_pydantic_to_huggingface_json,
     _create_openai_chunk_from_huggingface_chunk,
 )
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, Choice, CompletionUsage
 
 
 class HuggingfaceProvider(Provider):

@@ -1,24 +1,24 @@
 import json
-from typing import Any
+import uuid
+from datetime import datetime
+from typing import Any, Literal, cast
+
+from ollama import ChatResponse as OllamaChatResponse
+from ollama import EmbedResponse
+from ollama import Message as OllamaMessage
 
 from any_llm.types.completion import (
-    CreateEmbeddingResponse,
-    Embedding,
-    Usage,
     ChatCompletionChunk,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
-    CompletionUsage,
     ChunkChoice,
+    CompletionUsage,
+    CreateEmbeddingResponse,
+    Embedding,
     Reasoning,
+    Usage,
 )
-from ollama import ChatResponse as OllamaChatResponse
-from ollama import Message as OllamaMessage
-from typing import Literal, cast
-from datetime import datetime
-from ollama import EmbedResponse
-import uuid
 
 
 def _create_openai_embedding_response_from_ollama(
@@ -64,7 +64,7 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
     role = None
     message_role = message.role
     if message_role:
-        role = cast(Literal["developer", "system", "user", "assistant", "tool"], message_role)
+        role = cast("Literal['developer', 'system', 'user', 'assistant', 'tool']", message_role)
 
     delta = ChoiceDelta(
         content=content, role=role, reasoning=Reasoning(content=message.thinking) if message.thinking else None
@@ -97,7 +97,8 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
         index=0,
         delta=delta,
         finish_reason=cast(
-            Literal["stop", "length", "tool_calls", "content_filter", "function_call"] | None, ollama_chunk.done_reason
+            "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call'] | None",
+            ollama_chunk.done_reason,
         ),
     )
 

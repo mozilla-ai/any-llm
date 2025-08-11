@@ -1,16 +1,17 @@
 import uuid
-from typing import Literal, cast
 from datetime import datetime
+from typing import Literal, cast
+
+from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
 
 from any_llm.types.completion import (
     ChatCompletionChunk,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
-    CompletionUsage,
     ChunkChoice,
+    CompletionUsage,
 )
-from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
 
 
 def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatCompletionChunk) -> ChatCompletionChunk:
@@ -27,7 +28,7 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
     content = delta_content.content
     role = None
     if delta_content.role:  # type: ignore[attr-defined]
-        role = cast(Literal["assistant", "user", "system"], delta_content.role)  # type: ignore[attr-defined]
+        role = cast("Literal['assistant', 'user', 'system']", delta_content.role)  # type: ignore[attr-defined]
 
     delta = ChoiceDelta(content=content, role=role)
 
@@ -50,7 +51,7 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
         index=0,
         delta=delta,
         finish_reason=cast(
-            Literal["stop", "length", "tool_calls", "content_filter", "function_call"] | None,
+            "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call'] | None",
             together_choice.finish_reason,
         ),
     )

@@ -9,6 +9,7 @@ import os
 import re
 import sys
 from pathlib import Path
+
 import httpx
 
 # Constants
@@ -371,4 +372,3 @@ def on_page_markdown(markdown, page, config, files):
 
 def on_pre_build(config, **kwargs):
     """Pre-build hook - currently unused but kept for potential future use."""
-    pass

@@ -1,6 +1,7 @@
-import os
-from typing import Any, Iterator
 import json
+import os
+from collections.abc import Iterator
+from typing import Any
 
 try:
     from ollama import ChatResponse as OllamaChatResponse
@@ -10,24 +11,23 @@ except ImportError as exc:
     raise ImportError(msg) from exc
 
 from pydantic import BaseModel
+
+from any_llm.provider import ApiConfig, Provider
+from any_llm.providers.ollama.utils import (
+    _create_openai_chunk_from_ollama_chunk,
+    _create_openai_embedding_response_from_ollama,
+    _create_response_dict_from_ollama_response,
+)
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
-    CreateEmbeddingResponse,
     ChatCompletionMessage,
-    ChatCompletionMessageToolCall,
     ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageToolCall,
     Choice,
     CompletionUsage,
+    CreateEmbeddingResponse,
     Function,
-)
-from any_llm.provider import ApiConfig, Provider
-
-
-from any_llm.providers.ollama.utils import (
-    _create_openai_embedding_response_from_ollama,
-    _create_openai_chunk_from_ollama_chunk,
-    _create_response_dict_from_ollama_response,
 )
 
 
@@ -156,7 +156,7 @@ class OllamaProvider(Provider):
                 Choice(
                     index=i,
                     finish_reason=cast(
-                        Literal["stop", "length", "tool_calls", "content_filter", "function_call"],
+                        "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']",
                         ch.get("finish_reason", "stop"),
                     ),
                     message=message,

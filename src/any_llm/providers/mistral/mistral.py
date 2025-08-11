@@ -1,4 +1,5 @@
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 try:
     from mistralai import Mistral
@@ -10,9 +11,9 @@ except ImportError as exc:
 
 from pydantic import BaseModel
 
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 from any_llm.provider import Provider
 from any_llm.providers.mistral.utils import _create_mistral_completion_from_response
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 
 
 class MistralProvider(Provider):
@@ -70,8 +71,7 @@ class MistralProvider(Provider):
                 response_data=response,
                 model=model,
             )
-        else:
-            return self._stream_completion(client, model, messages, **kwargs)
+        return self._stream_completion(client, model, messages, **kwargs)
 
     def embedding(
         self,

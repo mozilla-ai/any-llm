@@ -1,5 +1,6 @@
 import os
-from typing import Any, Iterator, Union
+from collections.abc import Iterator
+from typing import Any
 
 try:
     from azure.ai.inference import ChatCompletionsClient, EmbeddingsClient
@@ -9,15 +10,14 @@ except ImportError as exc:
     msg = "azure-ai-inference is not installed. Please install it with `pip install any-llm-sdk[azure]`"
     raise ImportError(msg) from exc
 
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
-
-from any_llm.provider import Provider, ApiConfig
+from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.azure.utils import (
     _convert_response,
+    _convert_response_format,
     _create_openai_chunk_from_azure_chunk,
     _create_openai_embedding_response_from_azure,
-    _convert_response_format,
 )
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 
 
 class AzureProvider(Provider):
@@ -86,7 +86,7 @@ class AzureProvider(Provider):
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> Union[ChatCompletion, Iterator[ChatCompletionChunk]]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Azure AI Inference SDK."""
         client: ChatCompletionsClient = self._create_chat_client()
 
@@ -95,19 +95,18 @@ class AzureProvider(Provider):
 
         if kwargs.get("stream", False):
             return self._stream_completion(client, model, messages, **kwargs)
-        else:
-            response: ChatCompletions = client.complete(
-                model=model,
-                messages=messages,
-                **kwargs,
-            )
+        response: ChatCompletions = client.complete(
+            model=model,
+            messages=messages,
+            **kwargs,
+        )
 
-            return _convert_response(response)
+        return _convert_response(response)
 
     def embedding(
         self,
         model: str,
-        inputs: Union[str, list[str]],
+        inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         """Create embeddings using Azure AI Inference SDK."""

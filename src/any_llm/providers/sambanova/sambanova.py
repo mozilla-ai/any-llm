@@ -1,5 +1,6 @@
 import os
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 try:
     import instructor
@@ -8,10 +9,10 @@ except ImportError as exc:
     raise ImportError(msg) from exc
 
 from openai import OpenAI
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 
 from any_llm.provider import convert_instructor_response
 from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 
 
 class SambanovaProvider(BaseOpenAIProvider):
@@ -39,10 +40,9 @@ class SambanovaProvider(BaseOpenAIProvider):
                 **kwargs,
             )
             return convert_instructor_response(response, model, self.PROVIDER_NAME)
-        else:
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,  # type: ignore[arg-type]
-                **kwargs,
-            )
-            return self._convert_completion_response(response)
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,  # type: ignore[arg-type]
+            **kwargs,
+        )
+        return self._convert_completion_response(response)

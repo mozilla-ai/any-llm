@@ -1,8 +1,9 @@
 from typing import Any
+
 import pytest
 
-from any_llm.provider import ApiConfig
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.provider import ApiConfig
 
 
 def _mk_provider() -> Any:

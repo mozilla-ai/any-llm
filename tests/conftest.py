@@ -78,7 +78,7 @@ def provider(request: pytest.FixtureRequest) -> ProviderName:
     return request.param  # type: ignore[no-any-return]
 
 
-@pytest.fixture()
+@pytest.fixture
 def tools() -> list[dict[str, Any]]:
     return [
         {

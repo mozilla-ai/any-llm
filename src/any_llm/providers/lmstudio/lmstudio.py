@@ -1,6 +1,7 @@
+from typing_extensions import override
+
 from any_llm.provider import ApiConfig
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from typing_extensions import override
 
 # LM Studio has a python sdk, but per their docs they are compliant with OpenAI spec
 # https://lmstudio.ai/docs/app/api/endpoints/openai

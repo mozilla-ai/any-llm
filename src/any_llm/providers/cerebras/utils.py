@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any
 
 try:
     from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponse
@@ -32,7 +32,7 @@ def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCo
             }
         )
 
-    chunk_dict: Dict[str, Any] = {
+    chunk_dict: dict[str, Any] = {
         "id": getattr(chunk, "id", None) or f"chatcmpl-{hash(str(chunk))}",
         "object": "chat.completion.chunk",
         "created": getattr(chunk, "created", None) or 0,
@@ -41,7 +41,7 @@ def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCo
         "usage": None,
     }
 
-    delta: Dict[str, Any] = {}
+    delta: dict[str, Any] = {}
     finish_reason = None
 
     choices = getattr(chunk, "choices", None)
@@ -97,7 +97,7 @@ def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCo
     return ChatCompletionChunk.model_validate(chunk_dict)
 
 
-def _convert_response(response_data: Dict[str, Any]) -> ChatCompletion:
+def _convert_response(response_data: dict[str, Any]) -> ChatCompletion:
     """Convert Cerebras response to OpenAI ChatCompletion directly."""
     choices_out: list[Choice] = []
     for i, choice_data in enumerate(response_data.get("choices", [])):
@@ -130,7 +130,7 @@ def _convert_response(response_data: Dict[str, Any]) -> ChatCompletion:
             Choice(
                 index=choice_data.get("index", i),
                 finish_reason=cast(
-                    Literal["stop", "length", "tool_calls", "content_filter", "function_call"],
+                    "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']",
                     choice_data.get("finish_reason", "stop"),
                 ),
                 message=message,

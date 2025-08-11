@@ -1,10 +1,12 @@
 from typing import Any
+
 import httpx
 import pytest
-from any_llm import completion, ProviderName
+from openai import APIConnectionError
+
+from any_llm import ProviderName, completion
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.types.completion import ChatCompletionChunk
-from openai import APIConnectionError
 
 
 def test_streaming_completion(

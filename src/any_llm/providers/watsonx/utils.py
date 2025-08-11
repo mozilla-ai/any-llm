@@ -1,14 +1,14 @@
-from typing import Any, Literal, cast
 import uuid
+from typing import Any, Literal, cast
 
 from any_llm.types.completion import (
     ChatCompletion,
-    Choice,
     ChatCompletionChunk,
-    ChoiceDelta,
-    CompletionUsage,
     ChatCompletionMessage,
+    Choice,
+    ChoiceDelta,
     ChunkChoice,
+    CompletionUsage,
 )
 
 
@@ -64,7 +64,7 @@ def _convert_streaming_chunk(chunk: dict[str, Any]) -> ChatCompletionChunk:
 
         openai_role = None
         if role:
-            openai_role = cast(Literal["developer", "system", "user", "assistant", "tool"], role)
+            openai_role = cast("Literal['developer', 'system', 'user', 'assistant', 'tool']", role)
 
         delta = ChoiceDelta(content=content, role=openai_role)
 
@@ -72,7 +72,7 @@ def _convert_streaming_chunk(chunk: dict[str, Any]) -> ChatCompletionChunk:
             index=i,
             delta=delta,
             finish_reason=cast(
-                Literal["stop", "length", "tool_calls", "content_filter", "function_call"] | None,
+                "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call'] | None",
                 chunk_choice.get("finish_reason"),
             ),
         )

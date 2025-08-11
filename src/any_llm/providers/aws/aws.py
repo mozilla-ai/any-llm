@@ -1,6 +1,7 @@
-import os
 import json
-from typing import Any, Iterator
+import os
+from collections.abc import Iterator
+from typing import Any
 
 try:
     import boto3
@@ -10,16 +11,16 @@ except ImportError as exc:
     msg = "boto3 or instructor is not installed. Please install it with `pip install any-llm-sdk[aws]`"
     raise ImportError(msg) from exc
 
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
-from any_llm.provider import Provider, ApiConfig, convert_instructor_response
 from any_llm.exceptions import MissingApiKeyError
+from any_llm.provider import ApiConfig, Provider, convert_instructor_response
 from any_llm.providers.aws.utils import (
-    _convert_response,
     _convert_kwargs,
     _convert_messages,
+    _convert_response,
     _create_openai_chunk_from_aws_chunk,
     _create_openai_embedding_response_from_aws,
 )
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 
 
 class AwsProvider(Provider):
@@ -94,15 +95,14 @@ class AwsProvider(Provider):
                 for chunk in (_create_openai_chunk_from_aws_chunk(item, model=model) for item in stream_generator)
                 if chunk is not None
             )
-        else:
-            response = client.converse(
-                modelId=model,
-                messages=formatted_messages,
-                system=system_message,
-                **request_config,
-            )
+        response = client.converse(
+            modelId=model,
+            messages=formatted_messages,
+            system=system_message,
+            **request_config,
+        )
 
-            return _convert_response(response)
+        return _convert_response(response)
 
     def embedding(
         self,

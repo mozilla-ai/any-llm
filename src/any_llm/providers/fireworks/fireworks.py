@@ -1,4 +1,5 @@
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 try:
     from fireworks import LLM
@@ -7,10 +8,10 @@ except ImportError as exc:
     raise ImportError(msg) from exc
 
 from pydantic import BaseModel
-from any_llm.types.completion import ChatCompletionChunk, ChatCompletion
+
 from any_llm.provider import Provider
-from any_llm.types.completion import ChatCompletionMessage, Choice, CompletionUsage
 from any_llm.providers.fireworks.utils import _create_openai_chunk_from_fireworks_chunk
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, Choice, CompletionUsage
 
 
 class FireworksProvider(Provider):

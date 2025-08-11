@@ -1,23 +1,23 @@
-from typing import cast, Literal
+from typing import Literal, cast
+
+from groq.types.chat import ChatCompletion as GroqChatCompletion
+from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
 
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
     ChatCompletionMessage,
-    ChatCompletionMessageToolCall,
     ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageToolCall,
     Choice,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
-    CompletionUsage,
     ChunkChoice,
+    CompletionUsage,
     Function,
     Reasoning,
 )
-
-from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
-from groq.types.chat import ChatCompletion as GroqChatCompletion
 
 
 def to_chat_completion(response: GroqChatCompletion) -> ChatCompletion:
@@ -56,17 +56,19 @@ def to_chat_completion(response: GroqChatCompletion) -> ChatCompletion:
             tool_calls = tool_calls_list
 
         msg = ChatCompletionMessage(
-            role=cast(Literal["assistant"], "assistant"),
+            role=cast("Literal['assistant']", "assistant"),
             content=message.content,
             tool_calls=tool_calls,
-            reasoning=Reasoning(content=cast(str, message.reasoning)) if getattr(message, "reasoning", None) else None,
+            reasoning=Reasoning(content=cast("str", message.reasoning))
+            if getattr(message, "reasoning", None)
+            else None,
         )
 
         choices.append(
             Choice(
                 index=choice.index,
                 finish_reason=cast(
-                    Literal["stop", "length", "tool_calls", "content_filter", "function_call"],
+                    "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']",
                     choice.finish_reason or "stop",
                 ),
                 message=msg,
@@ -92,7 +94,7 @@ def _create_openai_chunk_from_groq_chunk(groq_chunk: GroqChatCompletionChunk) ->
     delta = ChoiceDelta(
         content=delta_data.content,
         reasoning=Reasoning(content=delta_data.reasoning) if delta_data.reasoning else None,
-        role=cast(Literal["developer", "system", "user", "assistant", "tool"] | None, delta_data.role),
+        role=cast("Literal['developer', 'system', 'user', 'assistant', 'tool'] | None", delta_data.role),
     )
 
     if delta_data.tool_calls:

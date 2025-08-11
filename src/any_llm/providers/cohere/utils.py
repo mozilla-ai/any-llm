@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -13,7 +13,7 @@ from any_llm.types.completion import (
 
 def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
     """Convert Cohere streaming chunk to OpenAI ChatCompletionChunk format."""
-    chunk_dict: Dict[str, Any] = {
+    chunk_dict: dict[str, Any] = {
         "id": f"chatcmpl-{hash(str(chunk))}",
         "object": "chat.completion.chunk",
         "created": 0,
@@ -22,7 +22,7 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
         "usage": None,
     }
 
-    delta: Dict[str, Any] = {}
+    delta: dict[str, Any] = {}
     finish_reason = None
 
     chunk_type = getattr(chunk, "type", None)
@@ -158,24 +158,23 @@ def _convert_response(response: Any, model: str) -> ChatCompletion:
             choices=[choice],
             usage=usage,
         )
-    else:
-        content = ""
-        if response.message.content and len(response.message.content) > 0:
-            content = response.message.content[0].text
+    content = ""
+    if response.message.content and len(response.message.content) > 0:
+        content = response.message.content[0].text
 
-        from typing import Literal, cast
+    from typing import Literal, cast
 
-        message = ChatCompletionMessage(role=cast(Literal["assistant"], "assistant"), content=content, tool_calls=None)
-        choice = Choice(
-            index=0,
-            finish_reason=cast(Literal["stop", "length", "tool_calls", "content_filter", "function_call"], "stop"),
-            message=message,
-        )
-        return ChatCompletion(
-            id=getattr(response, "id", ""),
-            model=model,
-            created=getattr(response, "created", 0),
-            object="chat.completion",
-            choices=[choice],
-            usage=usage,
-        )
+    message = ChatCompletionMessage(role=cast("Literal['assistant']", "assistant"), content=content, tool_calls=None)
+    choice = Choice(
+        index=0,
+        finish_reason=cast("Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']", "stop"),
+        message=message,
+    )
+    return ChatCompletion(
+        id=getattr(response, "id", ""),
+        model=model,
+        created=getattr(response, "created", 0),
+        object="chat.completion",
+        choices=[choice],
+        usage=usage,
+    )

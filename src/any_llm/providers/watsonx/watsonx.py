@@ -1,5 +1,6 @@
 import os
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 try:
     from ibm_watsonx_ai import Credentials
@@ -8,9 +9,9 @@ except ImportError as exc:
     msg = "ibm-watsonx-ai is not installed. Please install it with `pip install any-llm-sdk[watsonx]`"
     raise ImportError(msg) from exc
 
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 from any_llm.provider import Provider
 from any_llm.providers.watsonx.utils import _convert_response, _convert_streaming_chunk
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 
 
 class WatsonxProvider(Provider):

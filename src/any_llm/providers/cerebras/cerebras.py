@@ -1,21 +1,21 @@
-from typing import Any, cast, Iterator
+from collections.abc import Iterator
+from typing import Any, cast
 
 try:
     import cerebras.cloud.sdk as cerebras
-    from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponse
     import instructor
+    from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponse
 except ImportError:
     msg = "cerebras or instructor is not installed. Please install it with `pip install any-llm-sdk[cerebras]`"
     raise ImportError(msg)
 
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
-
-from any_llm.provider import Provider, ApiConfig, convert_instructor_response
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.provider import ApiConfig, Provider, convert_instructor_response
 from any_llm.providers.cerebras.utils import (
-    _create_openai_chunk_from_cerebras_chunk,
     _convert_response,
+    _create_openai_chunk_from_cerebras_chunk,
 )
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 
 
 class CerebrasProvider(Provider):
@@ -70,7 +70,7 @@ class CerebrasProvider(Provider):
             response_format = kwargs.pop("response_format")
             instructor_response = self.instructor_client.chat.completions.create(
                 model=model,
-                messages=cast(Any, messages),
+                messages=cast("Any", messages),
                 response_model=response_format,
                 **kwargs,
             )
@@ -80,16 +80,15 @@ class CerebrasProvider(Provider):
         if kwargs.get("stream", False):
             kwargs.pop("stream")
             return self._stream_completion(model, messages, **kwargs)
+        response = self.client.chat.completions.create(
+            model=model,
+            messages=messages,
+            **kwargs,
+        )
+
+        if hasattr(response, "model_dump"):
+            response_data = response.model_dump()
         else:
-            response = self.client.chat.completions.create(
-                model=model,
-                messages=messages,
-                **kwargs,
-            )
+            raise ValueError("Streaming responses are not supported in this context")
 
-            if hasattr(response, "model_dump"):
-                response_data = response.model_dump()
-            else:
-                raise ValueError("Streaming responses are not supported in this context")
-
-            return _convert_response(response_data)
+        return _convert_response(response_data)

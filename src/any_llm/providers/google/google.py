@@ -1,5 +1,6 @@
 import os
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 try:
     from google import genai
@@ -10,26 +11,26 @@ except ImportError as exc:
 
 from pydantic import BaseModel
 
-from any_llm.types.completion import (
-    ChatCompletionChunk,
-    ChatCompletion,
-    CreateEmbeddingResponse,
-    ChatCompletionMessage,
-    ChatCompletionMessageToolCall,
-    ChatCompletionMessageFunctionToolCall,
-    Choice,
-    CompletionUsage,
-    Function,
-)
-from any_llm.provider import Provider, ApiConfig
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
+from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.google.utils import (
-    _convert_tool_choice,
-    _convert_tool_spec,
     _convert_messages,
     _convert_response_to_response_dict,
+    _convert_tool_choice,
+    _convert_tool_spec,
     _create_openai_chunk_from_google_chunk,
     _create_openai_embedding_response_from_google,
+)
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageToolCall,
+    Choice,
+    CompletionUsage,
+    CreateEmbeddingResponse,
+    Function,
 )
 
 
@@ -130,62 +131,61 @@ class GoogleProvider(Provider):
                 model=model, contents=content_text, config=generation_config
             )
             return map(_create_openai_chunk_from_google_chunk, response_stream)
-        else:
-            response: types.GenerateContentResponse = self.client.models.generate_content(
-                model=model, contents=content_text, config=generation_config
-            )
+        response: types.GenerateContentResponse = self.client.models.generate_content(
+            model=model, contents=content_text, config=generation_config
+        )
 
-            response_dict = _convert_response_to_response_dict(response)
+        response_dict = _convert_response_to_response_dict(response)
 
-            # Directly construct ChatCompletion
-            choices_out: list[Choice] = []
-            for i, choice_item in enumerate(response_dict.get("choices", [])):
-                message_dict: dict[str, Any] = choice_item.get("message", {})
-                tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] | None = None
-                if message_dict.get("tool_calls"):
-                    tool_calls_list: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
-                    for tc in message_dict["tool_calls"]:
-                        tool_calls_list.append(
-                            ChatCompletionMessageFunctionToolCall(
-                                id=tc.get("id"),
-                                type="function",
-                                function=Function(
-                                    name=tc["function"]["name"],
-                                    arguments=tc["function"]["arguments"],
-                                ),
-                            )
+        # Directly construct ChatCompletion
+        choices_out: list[Choice] = []
+        for i, choice_item in enumerate(response_dict.get("choices", [])):
+            message_dict: dict[str, Any] = choice_item.get("message", {})
+            tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] | None = None
+            if message_dict.get("tool_calls"):
+                tool_calls_list: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
+                for tc in message_dict["tool_calls"]:
+                    tool_calls_list.append(
+                        ChatCompletionMessageFunctionToolCall(
+                            id=tc.get("id"),
+                            type="function",
+                            function=Function(
+                                name=tc["function"]["name"],
+                                arguments=tc["function"]["arguments"],
+                            ),
                         )
-                    tool_calls = tool_calls_list
-                message = ChatCompletionMessage(
-                    role="assistant",
-                    content=message_dict.get("content"),
-                    tool_calls=tool_calls,
-                )
-                from typing import Literal, cast
-
-                choices_out.append(
-                    Choice(
-                        index=i,
-                        finish_reason=cast(
-                            Literal["stop", "length", "tool_calls", "content_filter", "function_call"],
-                            choice_item.get("finish_reason", "stop"),
-                        ),
-                        message=message,
                     )
+                tool_calls = tool_calls_list
+            message = ChatCompletionMessage(
+                role="assistant",
+                content=message_dict.get("content"),
+                tool_calls=tool_calls,
+            )
+            from typing import Literal, cast
+
+            choices_out.append(
+                Choice(
+                    index=i,
+                    finish_reason=cast(
+                        "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']",
+                        choice_item.get("finish_reason", "stop"),
+                    ),
+                    message=message,
                 )
-
-            usage_dict = response_dict.get("usage", {})
-            usage = CompletionUsage(
-                prompt_tokens=usage_dict.get("prompt_tokens", 0),
-                completion_tokens=usage_dict.get("completion_tokens", 0),
-                total_tokens=usage_dict.get("total_tokens", 0),
             )
 
-            return ChatCompletion(
-                id=response_dict.get("id", ""),
-                model=model,
-                created=response_dict.get("created", 0),
-                object="chat.completion",
-                choices=choices_out,
-                usage=usage,
-            )
+        usage_dict = response_dict.get("usage", {})
+        usage = CompletionUsage(
+            prompt_tokens=usage_dict.get("prompt_tokens", 0),
+            completion_tokens=usage_dict.get("completion_tokens", 0),
+            total_tokens=usage_dict.get("total_tokens", 0),
+        )
+
+        return ChatCompletion(
+            id=response_dict.get("id", ""),
+            model=model,
+            created=response_dict.get("created", 0),
+            object="chat.completion",
+            choices=choices_out,
+            usage=usage,
+        )

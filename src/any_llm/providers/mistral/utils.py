@@ -1,37 +1,39 @@
 import json
 
 try:
-    from mistralai.models import CompletionEvent
-    from mistralai.models.embeddingresponse import EmbeddingResponse
-    from mistralai.models.chatcompletionresponse import ChatCompletionResponse as MistralChatCompletionResponse
     from mistralai.models import AssistantMessageContent as MistralAssistantMessageContent
-    from mistralai.models import ThinkChunk as MistralThinkChunk
-    from mistralai.models import TextChunk as MistralTextChunk
+    from mistralai.models import CompletionEvent
     from mistralai.models import ReferenceChunk as MistralReferenceChunk
+    from mistralai.models import TextChunk as MistralTextChunk
+    from mistralai.models import ThinkChunk as MistralThinkChunk
+    from mistralai.models.chatcompletionresponse import ChatCompletionResponse as MistralChatCompletionResponse
+    from mistralai.models.embeddingresponse import EmbeddingResponse
     from mistralai.models.toolcall import ToolCall as MistralToolCall
     from mistralai.types.basemodel import Unset
 except ImportError as exc:
     msg = "mistralai is not installed. Please install it with `pip install any-llm-sdk[mistral]`"
     raise ImportError(msg) from exc
 
+from typing import Any, Literal, cast
+
 from any_llm.types.completion import (
-    ChatCompletionChunk,
-    CreateEmbeddingResponse,
     ChatCompletion,
-    Reasoning,
-    CompletionUsage,
-    Embedding,
-    Usage,
-    ChunkChoice,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageToolCall,
+    Choice,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
-    ChatCompletionMessageFunctionToolCall,
-    ChatCompletionMessageToolCall,
+    ChunkChoice,
+    CompletionUsage,
+    CreateEmbeddingResponse,
+    Embedding,
     Function,
+    Reasoning,
+    Usage,
 )
-from any_llm.types.completion import ChatCompletionMessage, Choice
-from typing import Literal, cast, Any
 
 
 def _convert_mistral_tool_calls_to_any_llm(
@@ -192,7 +194,7 @@ def _create_mistral_completion_from_response(
         choice = Choice(
             index=i,
             finish_reason=cast(
-                Literal["stop", "length", "tool_calls", "content_filter", "function_call"],
+                "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']",
                 choice_data.finish_reason,
             ),
             message=message,
@@ -254,7 +256,7 @@ def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompl
 
         role = None
         if choice.delta.role:
-            role = cast(Literal["developer", "system", "user", "assistant", "tool"], choice.delta.role)
+            role = cast("Literal['developer', 'system', 'user', 'assistant', 'tool']", choice.delta.role)
 
         reasoning = None
         if reasoning_content:

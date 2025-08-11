@@ -1,11 +1,11 @@
 from contextlib import contextmanager
-from unittest.mock import patch, Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
+from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ApiConfig
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
-from any_llm.exceptions import UnsupportedParameterError
 
 
 @contextmanager

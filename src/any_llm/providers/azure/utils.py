@@ -1,10 +1,10 @@
-from typing import Any, Union, Optional, List, cast, Literal
 import json
+from typing import Any, Literal, cast
 
 from azure.ai.inference.models import (
-    JsonSchemaFormat,
     ChatCompletions,
     EmbeddingsResult,
+    JsonSchemaFormat,
     StreamingChatCompletionsUpdate,
 )
 from pydantic import BaseModel
@@ -16,21 +16,21 @@ from any_llm.types.completion import (
     ChatCompletionMessageFunctionToolCall,
     ChatCompletionMessageToolCall,
     Choice,
-    CompletionUsage,
-    CreateEmbeddingResponse,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
-    Embedding,
-    Usage,
     ChunkChoice,
+    CompletionUsage,
+    CreateEmbeddingResponse,
+    Embedding,
     Function,
+    Usage,
 )
 
 
 def _convert_response_format(
-    response_format: Union[type[BaseModel], str, JsonSchemaFormat, Any],
-) -> Union[JsonSchemaFormat, str, Any]:
+    response_format: type[BaseModel] | str | JsonSchemaFormat | Any,
+) -> JsonSchemaFormat | str | Any:
     """Convert Pydantic model to Azure JsonSchemaFormat."""
     if not isinstance(response_format, type) or not issubclass(response_format, BaseModel):
         return response_format
@@ -66,9 +66,9 @@ def _convert_response(response_data: ChatCompletions) -> ChatCompletion:
     message_data = choice_data.message
 
     # Convert tool calls
-    tool_calls: Optional[List[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall]] = None
+    tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] | None = None
     if message_data.tool_calls:
-        tool_calls_list: List[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
+        tool_calls_list: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
         for tc in message_data.tool_calls:
             func = tc.function
             tool_calls_list.append(
@@ -90,7 +90,7 @@ def _convert_response(response_data: ChatCompletions) -> ChatCompletion:
         )
 
     message = ChatCompletionMessage(
-        role=cast(Literal["assistant"], "assistant"),
+        role=cast("Literal['assistant']", "assistant"),
         content=message_data.content,
         tool_calls=tool_calls,
     )
@@ -98,7 +98,7 @@ def _convert_response(response_data: ChatCompletions) -> ChatCompletion:
     choice = Choice(
         index=choice_data.index,
         finish_reason=cast(
-            Literal["stop", "length", "tool_calls", "content_filter", "function_call"], choice_data.finish_reason
+            "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']", choice_data.finish_reason
         ),
         message=message,
     )
@@ -128,9 +128,9 @@ def _create_openai_chunk_from_azure_chunk(azure_chunk: StreamingChatCompletionsU
         delta_role = None
 
         if role_value and role_value in ["developer", "system", "user", "assistant", "tool"]:
-            delta_role = cast(Literal["developer", "system", "user", "assistant", "tool"], role_value)
+            delta_role = cast("Literal['developer', 'system', 'user', 'assistant', 'tool']", role_value)
 
-        delta_tool_calls: Optional[List[ChoiceDeltaToolCall]] = None
+        delta_tool_calls: list[ChoiceDeltaToolCall] | None = None
         if delta.tool_calls:
             delta_tool_calls = []
             for tool_call in delta.tool_calls:
@@ -159,7 +159,7 @@ def _create_openai_chunk_from_azure_chunk(azure_chunk: StreamingChatCompletionsU
                 tool_calls=delta_tool_calls,
             ),
             finish_reason=cast(
-                Literal["stop", "length", "tool_calls", "content_filter", "function_call"], choice.finish_reason
+                "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']", choice.finish_reason
             )
             if choice.finish_reason
             else None,
@@ -193,7 +193,7 @@ def _create_openai_embedding_response_from_azure(
     model_name = azure_response.model
     usage_data = azure_response.usage
 
-    openai_embeddings: List[Embedding] = []
+    openai_embeddings: list[Embedding] = []
     if isinstance(data, list):
         for embedding_data in data:
             embedding_vector = embedding_data.embedding

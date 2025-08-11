@@ -1,10 +1,12 @@
 from typing import Any
+
 import httpx
-from pydantic import BaseModel
 import pytest
-from any_llm import completion, ProviderName
-from any_llm.exceptions import MissingApiKeyError
 from openai import APIConnectionError
+from pydantic import BaseModel
+
+from any_llm import ProviderName, completion
+from any_llm.exceptions import MissingApiKeyError
 from any_llm.types.completion import ChatCompletion
 
 

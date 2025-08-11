@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from any_llm.provider import ApiConfig
 from any_llm.providers.azure.azure import AzureProvider

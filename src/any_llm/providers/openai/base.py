@@ -1,17 +1,17 @@
 import os
-from typing import Any, Iterator
 from abc import ABC
+from collections.abc import Iterator
+from typing import Any
 
 from openai import OpenAI
-from any_llm.types.completion import ChatCompletion, CreateEmbeddingResponse
 from openai._streaming import Stream
-from any_llm.types.completion import ChatCompletionChunk
 from openai._types import NOT_GIVEN
-from any_llm.provider import Provider
-
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
+
 from any_llm.logging import logger
+from any_llm.provider import Provider
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 from any_llm.types.responses import Response, ResponseStreamEvent
 
 
@@ -94,19 +94,18 @@ class BaseOpenAIProvider(Provider, ABC):
                 response.created = int(response.created)
             normalized = self._normalize_openai_dict_response(response.model_dump())
             return ChatCompletion.model_validate(normalized)
-        else:
 
-            def _convert_chunk(chunk: OpenAIChatCompletionChunk) -> ChatCompletionChunk:
-                if not isinstance(chunk.created, int):
-                    logger.warning(
-                        "API returned an unexpected created type: %s. Setting to int.",
-                        type(chunk.created),
-                    )
-                    chunk.created = int(chunk.created)
-                normalized_chunk = self._normalize_openai_dict_response(chunk.model_dump())
-                return ChatCompletionChunk.model_validate(normalized_chunk)
+        def _convert_chunk(chunk: OpenAIChatCompletionChunk) -> ChatCompletionChunk:
+            if not isinstance(chunk.created, int):
+                logger.warning(
+                    "API returned an unexpected created type: %s. Setting to int.",
+                    type(chunk.created),
+                )
+                chunk.created = int(chunk.created)
+            normalized_chunk = self._normalize_openai_dict_response(chunk.model_dump())
+            return ChatCompletionChunk.model_validate(normalized_chunk)
 
-            return (_convert_chunk(chunk) for chunk in response)
+        return (_convert_chunk(chunk) for chunk in response)
 
     def _make_api_call(
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any

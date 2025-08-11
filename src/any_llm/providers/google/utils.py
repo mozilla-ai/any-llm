@@ -3,12 +3,12 @@ from time import time
 from typing import Any
 
 from any_llm.types.completion import (
-    CreateEmbeddingResponse,
-    Embedding,
-    Usage,
     ChatCompletionChunk,
     ChoiceDelta,
     ChunkChoice,
+    CreateEmbeddingResponse,
+    Embedding,
+    Usage,
 )
 
 try:
@@ -72,7 +72,7 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
             parts = [types.Part.from_text(text=message["content"])]
             formatted_messages.append(types.Content(role="user", parts=parts))
         elif message["role"] == "assistant":
-            if "tool_calls" in message and message["tool_calls"]:
+            if message.get("tool_calls"):
                 tool_call = message["tool_calls"][0]  # Assuming single function call for now
                 function_call = tool_call["function"]
 

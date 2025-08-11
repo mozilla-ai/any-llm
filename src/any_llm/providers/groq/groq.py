@@ -1,4 +1,5 @@
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 from openai import OpenAI, Stream
 
@@ -6,22 +7,22 @@ from any_llm.types.responses import Response, ResponseStreamEvent
 
 try:
     import groq
-    from groq import Stream as GroqStream
-    from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
-    from groq.types.chat import ChatCompletion as GroqChatCompletion
     import instructor
+    from groq import Stream as GroqStream
+    from groq.types.chat import ChatCompletion as GroqChatCompletion
+    from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
 except ImportError as exc:
     msg = "groq or instructor is not installed. Please install it with `pip install any-llm-sdk[groq]`"
     raise ImportError(msg) from exc
 
 
-from any_llm.types.completion import ChatCompletionChunk, ChatCompletion
-from any_llm.provider import Provider, convert_instructor_response
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.provider import Provider, convert_instructor_response
 from any_llm.providers.groq.utils import (
     _create_openai_chunk_from_groq_chunk,
     to_chat_completion,
 )
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 
 
 class GroqProvider(Provider):

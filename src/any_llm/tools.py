@@ -1,7 +1,8 @@
 """Tools utilities for converting Python callables to OpenAI tools format."""
 
 import inspect
-from typing import Any, Callable, Union, get_type_hints
+from collections.abc import Callable
+from typing import Any, get_type_hints
 
 
 def callable_to_tool(func: Callable[..., Any]) -> dict[str, Any]:
@@ -23,6 +24,7 @@ def callable_to_tool(func: Callable[..., Any]) -> dict[str, Any]:
         >>>
         >>> tool = callable_to_tool(get_weather)
         >>> # Returns OpenAI tools format dict
+
     """
     # Validate the function has a docstring
     if not func.__doc__:
@@ -67,21 +69,20 @@ def _python_type_to_json_schema_type(python_type: type) -> str:
     """Convert Python type to JSON Schema type string."""
     if python_type is str:
         return "string"
-    elif python_type is int:
+    if python_type is int:
         return "integer"
-    elif python_type is float:
+    if python_type is float:
         return "number"
-    elif python_type is bool:
+    if python_type is bool:
         return "boolean"
-    elif python_type is list:
+    if python_type is list:
         return "array"
-    elif python_type is dict:
+    if python_type is dict:
         return "object"
-    else:
-        return "string"
+    return "string"
 
 
-def prepare_tools(tools: list[Union[dict[str, Any], Callable[..., Any]]]) -> list[dict[str, Any]]:
+def prepare_tools(tools: list[dict[str, Any] | Callable[..., Any]]) -> list[dict[str, Any]]:
     """Prepare tools for completion API by converting callables to OpenAI format.
 
     Args:
@@ -97,6 +98,7 @@ def prepare_tools(tools: list[Union[dict[str, Any], Callable[..., Any]]]) -> lis
         >>>
         >>> tools = prepare_tools([add])
         >>> # Returns list of OpenAI format tool dicts
+
     """
     prepared_tools = []
 

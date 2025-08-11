@@ -1,4 +1,5 @@
 from unittest.mock import Mock, patch
+
 import pytest
 
 from any_llm import embedding

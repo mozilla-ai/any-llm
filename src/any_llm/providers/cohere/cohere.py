@@ -1,4 +1,5 @@
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 try:
     import cohere
@@ -6,13 +7,13 @@ except ImportError:
     msg = "cohere is not installed. Please install it with `pip install any-llm-sdk[cohere]`"
     raise ImportError(msg)
 
-from any_llm.types.completion import ChatCompletionChunk, ChatCompletion
-from any_llm.provider import Provider, ApiConfig
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.cohere.utils import (
-    _create_openai_chunk_from_cohere_chunk,
     _convert_response,
+    _create_openai_chunk_from_cohere_chunk,
 )
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 
 
 class CohereProvider(Provider):
@@ -66,11 +67,10 @@ class CohereProvider(Provider):
         if kwargs.get("stream", False):
             kwargs.pop("stream")
             return self._stream_completion(model, messages, **kwargs)
-        else:
-            response = self.client.chat(
-                model=model,
-                messages=messages,  # type: ignore[arg-type]
-                **kwargs,
-            )
+        response = self.client.chat(
+            model=model,
+            messages=messages,  # type: ignore[arg-type]
+            **kwargs,
+        )
 
-            return _convert_response(response, model)
+        return _convert_response(response, model)

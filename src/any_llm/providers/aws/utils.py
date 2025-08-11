@@ -7,16 +7,15 @@ from any_llm.types.completion import (
     ChatCompletionChunk,
     ChatCompletionMessage,
     ChatCompletionMessageFunctionToolCall,
-    ChoiceDelta,
     Choice,
-    CreateEmbeddingResponse,
-    Embedding,
-    Usage,
+    ChoiceDelta,
     ChunkChoice,
     CompletionUsage,
+    CreateEmbeddingResponse,
+    Embedding,
     Function,
+    Usage,
 )
-
 
 INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
 
@@ -212,7 +211,7 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
         Choice(
             index=0,
             finish_reason=cast(
-                Literal["stop", "length", "tool_calls", "content_filter", "function_call"], finish_reason
+                "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']", finish_reason
             ),
             message=message,
         )
