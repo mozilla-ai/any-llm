@@ -1,5 +1,9 @@
 from typing import Any, Iterator
 
+from openai import OpenAI, Stream
+
+from any_llm.types.responses import Response, ResponseStreamEvent
+
 try:
     import groq
     from groq import Stream as GroqStream
@@ -30,7 +34,7 @@ class GroqProvider(Provider):
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
-    SUPPORTS_RESPONSES = False
+    SUPPORTS_RESPONSES = True
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = False
 
@@ -91,3 +95,19 @@ class GroqProvider(Provider):
             model=model,
             provider_name=self.PROVIDER_NAME,
         )
+
+    def responses(self, model: str, input_data: Any, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
+        """Call Groq Responses API and normalize into ChatCompletion/Chunks."""
+        # Python SDK doesn't yet support it: https://community.groq.com/feature-requests-6/groq-python-sdk-support-for-responses-api-262
+        client = OpenAI(
+            base_url="https://api.groq.com/openai/v1",
+            api_key=self.config.api_key,
+        )
+        response = client.responses.create(
+            model=model,
+            input=input_data,
+            **kwargs,
+        )
+        if not isinstance(response, (Response, Stream)):
+            raise ValueError(f"Responses API returned an unexpected type: {type(response)}")
+        return response
