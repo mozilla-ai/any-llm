@@ -1,18 +1,17 @@
 import json
-from typing import Any
 import uuid
-
-from pydantic import BaseModel
-from any_llm.types.completion import (
-    ChatCompletionChunk,
-    ChoiceDelta,
-    CompletionUsage,
-    ChunkChoice,
-)
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
     ChatCompletionStreamOutput as HuggingFaceChatCompletionStreamOutput,
+)
+from pydantic import BaseModel
+
+from any_llm.types.completion import (
+    ChatCompletionChunk,
+    ChoiceDelta,
+    ChunkChoice,
+    CompletionUsage,
 )
 
 
@@ -68,7 +67,7 @@ def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletion
 
         openai_role = None
         if role:
-            openai_role = cast(Literal["developer", "system", "user", "assistant", "tool"], role)
+            openai_role = cast("Literal['developer', 'system', 'user', 'assistant', 'tool']", role)
 
         delta = ChoiceDelta(content=content, role=openai_role)
 
@@ -76,7 +75,7 @@ def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletion
             index=i,
             delta=delta,
             finish_reason=cast(
-                Literal["stop", "length", "tool_calls", "content_filter", "function_call"] | None,
+                "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call'] | None",
                 hf_choice.finish_reason,
             ),
         )

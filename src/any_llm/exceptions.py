@@ -10,6 +10,7 @@ class MissingApiKeyError(Exception):
         Args:
             provider_name: Name of the provider (e.g., "OpenAI", "Google", "Mistral")
             env_var_name: Name of the environment variable that should contain the API key
+
         """
         self.provider_name = provider_name
         self.env_var_name = env_var_name
@@ -31,6 +32,7 @@ class UnsupportedProviderError(Exception):
         Args:
             provider_key: The provider key that was requested
             supported_providers: List of supported provider keys
+
         """
         self.provider_key = provider_key
         self.supported_providers = supported_providers
@@ -48,6 +50,8 @@ class UnsupportedParameterError(Exception):
 
         Args:
             parameter_name: Name of the parameter that was provided
+            provider_name: Name of the provider that does not support the parameter
+
         """
         self.parameter_name = parameter_name
         self.provider_name = provider_name

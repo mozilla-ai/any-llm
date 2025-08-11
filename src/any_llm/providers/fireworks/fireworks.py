@@ -1,4 +1,5 @@
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 try:
     from fireworks import LLM
@@ -6,14 +7,14 @@ except ImportError as exc:
     msg = "fireworks-ai is not installed. Please install it with `pip install any-llm-sdk[fireworks]`"
     raise ImportError(msg) from exc
 
+from openai import OpenAI, Stream
 from pydantic import BaseModel
-from any_llm.types.completion import ChatCompletionChunk, ChatCompletion
+
 from any_llm.provider import Provider
-from any_llm.providers.helpers import create_completion_from_response
 from any_llm.providers.fireworks.utils import _create_openai_chunk_from_fireworks_chunk
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, Choice, CompletionUsage
 from any_llm.types.responses import Response, ResponseStreamEvent
 
-from openai import Stream,OpenAI
 
 class FireworksProvider(Provider):
     PROVIDER_NAME = "Fireworks"
@@ -22,7 +23,7 @@ class FireworksProvider(Provider):
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
-    SUPPORTS_RESPONSES = True
+    SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
 
@@ -41,7 +42,7 @@ class FireworksProvider(Provider):
         for chunk in response_generator:
             yield _create_openai_chunk_from_fireworks_chunk(chunk)
 
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],
@@ -70,29 +71,45 @@ class FireworksProvider(Provider):
             messages=messages,  # type: ignore[arg-type]
             **kwargs,
         )
-
-        return create_completion_from_response(
-            response_data=response.model_dump(),
-            provider_name="Fireworks",
+        response_data = response.model_dump()
+        choices_out: list[Choice] = []
+        for i, ch in enumerate(response_data.get("choices", [])):
+            msg = ch.get("message", {})
+            message = ChatCompletionMessage(
+                role="assistant",
+                content=msg.get("content"),
+                tool_calls=msg.get("tool_calls"),  # Already OpenAI compatible
+            )
+            choices_out.append(Choice(index=i, finish_reason=ch.get("finish_reason"), message=message))
+        usage = None
+        if response_data.get("usage"):
+            u = response_data["usage"]
+            usage = CompletionUsage(
+                prompt_tokens=u.get("prompt_tokens", 0),
+                completion_tokens=u.get("completion_tokens", 0),
+                total_tokens=u.get("total_tokens", 0),
+            )
+        return ChatCompletion(
+            id=response_data.get("id", ""),
             model=model,
+            created=response_data.get("created", 0),
+            object="chat.completion",
+            choices=choices_out,
+            usage=usage,
         )
 
-    def responses(self, model, input_data, **kwargs) -> Response | Iterator[ResponseStreamEvent]:
+    def responses(self, model: str, input_data: Any, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
         """Call Fireworks Responses API and normalize into ChatCompletion/Chunks."""
         client = OpenAI(
             base_url="https://api.fireworks.ai/inference/v1",
             api_key=self.config.api_key,
         )
-
         response = client.responses.create(
             model=model,
             input=input_data,
             **kwargs,
         )
-
-        if not isinstance(response, (Response, Stream)):
-            raise ValueError(f"Responses API returned an unexpected type: {type(response)}")
-
-        response = Response.model_validate(response.model_dump())
-
+        if not isinstance(response, Response | Stream):
+            msg = f"Responses API returned an unexpected type: {type(response)}"
+            raise ValueError(msg)
         return response

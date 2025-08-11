@@ -1,6 +1,7 @@
-import os
 import json
-from typing import Any, Iterator
+import os
+from collections.abc import Iterator
+from typing import Any
 
 try:
     import boto3
@@ -10,16 +11,16 @@ except ImportError as exc:
     msg = "boto3 or instructor is not installed. Please install it with `pip install any-llm-sdk[aws]`"
     raise ImportError(msg) from exc
 
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
-from any_llm.provider import Provider, ApiConfig, convert_instructor_response
 from any_llm.exceptions import MissingApiKeyError
+from any_llm.provider import ApiConfig, Provider, convert_instructor_response
 from any_llm.providers.aws.utils import (
-    _convert_response,
     _convert_kwargs,
     _convert_messages,
+    _convert_response,
     _create_openai_chunk_from_aws_chunk,
     _create_openai_embedding_response_from_aws,
 )
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 
 
 class AwsProvider(Provider):
@@ -51,7 +52,7 @@ class AwsProvider(Provider):
         if credentials is None and bedrock_api_key is None:
             raise MissingApiKeyError(provider_name=self.PROVIDER_NAME, env_var_name=self.ENV_API_KEY_NAME)
 
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],
@@ -66,7 +67,6 @@ class AwsProvider(Provider):
             instructor_client = instructor.from_bedrock(client)
             response_format = kwargs.pop("response_format")
 
-            # Use instructor for structured output
             instructor_response = instructor_client.chat.completions.create(
                 model=model,
                 messages=messages,  # type: ignore[arg-type]
@@ -95,15 +95,14 @@ class AwsProvider(Provider):
                 for chunk in (_create_openai_chunk_from_aws_chunk(item, model=model) for item in stream_generator)
                 if chunk is not None
             )
-        else:
-            response = client.converse(
-                modelId=model,
-                messages=formatted_messages,
-                system=system_message,
-                **request_config,
-            )
+        response = client.converse(
+            modelId=model,
+            messages=formatted_messages,
+            system=system_message,
+            **request_config,
+        )
 
-            return _convert_response(response)
+        return _convert_response(response)
 
     def embedding(
         self,
@@ -129,10 +128,8 @@ class AwsProvider(Provider):
             if "normalize" in kwargs:
                 request_body["normalize"] = kwargs["normalize"]
 
-            # Make the API call
             response = client.invoke_model(modelId=model, body=json.dumps(request_body))
 
-            # Parse the response
             response_body = json.loads(response["body"].read())
 
             embedding_data.append({"embedding": response_body["embedding"], "index": index})

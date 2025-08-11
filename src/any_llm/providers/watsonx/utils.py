@@ -1,14 +1,17 @@
-from typing import Any, Literal, cast
+import json
 import uuid
+from typing import Any, Literal, cast
+
+from pydantic import BaseModel
 
 from any_llm.types.completion import (
     ChatCompletion,
-    Choice,
     ChatCompletionChunk,
-    ChoiceDelta,
-    CompletionUsage,
     ChatCompletionMessage,
+    Choice,
+    ChoiceDelta,
     ChunkChoice,
+    CompletionUsage,
 )
 
 
@@ -20,7 +23,7 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
     message = ChatCompletionMessage(
         content=message_data.get("content"),
         role=message_data.get("role", "assistant"),
-        tool_calls=None,  # Watsonx doesn't seem to support tool calls in the aisuite implementation
+        tool_calls=message_data.get("tool_calls"),
     )
 
     choice = Choice(
@@ -38,7 +41,6 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
             total_tokens=usage_data.get("total_tokens", 0),
         )
 
-    # Build the final ChatCompletion object
     return ChatCompletion(
         id=response.get("id", ""),
         model=response.get("model", ""),
@@ -65,7 +67,7 @@ def _convert_streaming_chunk(chunk: dict[str, Any]) -> ChatCompletionChunk:
 
         openai_role = None
         if role:
-            openai_role = cast(Literal["developer", "system", "user", "assistant", "tool"], role)
+            openai_role = cast("Literal['developer', 'system', 'user', 'assistant', 'tool']", role)
 
         delta = ChoiceDelta(content=content, role=openai_role)
 
@@ -73,7 +75,7 @@ def _convert_streaming_chunk(chunk: dict[str, Any]) -> ChatCompletionChunk:
             index=i,
             delta=delta,
             finish_reason=cast(
-                Literal["stop", "length", "tool_calls", "content_filter", "function_call"] | None,
+                "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call'] | None",
                 chunk_choice.get("finish_reason"),
             ),
         )
@@ -100,3 +102,34 @@ def _convert_streaming_chunk(chunk: dict[str, Any]) -> ChatCompletionChunk:
         object="chat.completion.chunk",
         usage=usage,
     )
+
+
+def _convert_pydantic_to_watsonx_json(
+    pydantic_model: type[BaseModel], messages: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """
+    Convert a Pydantic model to an inline JSON instruction for Watsonx.
+
+    This mirrors the generic JSON-mode prompt approach used for providers
+    without native structured output support.
+    """
+    schema = pydantic_model.model_json_schema()
+
+    modified_messages = messages.copy()
+    if modified_messages and modified_messages[-1]["role"] == "user":
+        original_content = modified_messages[-1]["content"]
+        json_instruction = f"""
+Please respond with a JSON object that can be loaded into a pydantic model that matches the following schema:
+
+{json.dumps(schema, indent=2)}
+
+Return the JSON object only, no other text, do not wrap it in ```json or ```.
+
+{original_content}
+"""
+        modified_messages[-1]["content"] = json_instruction
+    else:
+        msg = "Last message is not a user message"
+        raise ValueError(msg)
+
+    return modified_messages

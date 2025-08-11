@@ -1,10 +1,11 @@
 from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
-from any_llm.provider import ApiConfig
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.provider import ApiConfig
 from any_llm.providers.google.google import GoogleProvider
 
 
@@ -12,22 +13,35 @@ from any_llm.providers.google.google import GoogleProvider
 def mock_google_provider():  # type: ignore[no-untyped-def]
     with (
         patch("any_llm.providers.google.google.genai.Client") as mock_genai,
-        patch("any_llm.providers.google.google._convert_messages"),
-        patch("any_llm.providers.google.google._convert_response_to_response_dict"),
-        patch("any_llm.providers.google.google.create_completion_from_response"),
+        patch("any_llm.providers.google.google._convert_messages") as mock_convert_messages,
+        patch("any_llm.providers.google.google._convert_response_to_response_dict") as mock_convert_response,
     ):
+        mock_convert_messages.return_value = [SimpleNamespace(role="user", parts=[SimpleNamespace(text="Hello")])]
+        mock_convert_response.return_value = {
+            "id": "google_genai_response",
+            "model": "google/genai",
+            "created": 0,
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": "ok", "tool_calls": None},
+                    "finish_reason": "stop",
+                    "index": 0,
+                }
+            ],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
         yield mock_genai
 
 
 @pytest.mark.parametrize(
-    "tool_choice,expected_mode",
+    ("tool_choice", "expected_mode"),
     [
         ("auto", "AUTO"),
         ("required", "ANY"),
     ],
 )
-def test_make_api_call_with_tool_choice_auto(tool_choice: str, expected_mode: str) -> None:
-    """Test that _make_api_call correctly processes tool_choice='auto'."""
+def testcompletion_with_tool_choice_auto(tool_choice: str, expected_mode: str) -> None:
+    """Test that completion correctly processes tool_choice='auto'."""
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
@@ -35,7 +49,7 @@ def test_make_api_call_with_tool_choice_auto(tool_choice: str, expected_mode: st
 
     with mock_google_provider() as mock_genai:
         provider = GoogleProvider(ApiConfig(api_key=api_key))
-        provider._make_api_call(model, messages, **kwargs)
+        provider.completion(model, messages, **kwargs)
 
         _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
         generation_config = call_kwargs["config"]
@@ -43,15 +57,15 @@ def test_make_api_call_with_tool_choice_auto(tool_choice: str, expected_mode: st
         assert generation_config.tool_config.function_calling_config.mode.value == expected_mode
 
 
-def test_make_api_call_without_tool_choice() -> None:
-    """Test that _make_api_call works correctly without tool_choice."""
+def testcompletion_without_tool_choice() -> None:
+    """Test that completion works correctly without tool_choice."""
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_google_provider() as mock_genai:
         provider = GoogleProvider(ApiConfig(api_key=api_key))
-        provider._make_api_call(model, messages)
+        provider.completion(model, messages)
 
         _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
         generation_config = call_kwargs["config"]
@@ -59,7 +73,7 @@ def test_make_api_call_without_tool_choice() -> None:
         assert generation_config.tool_config is None
 
 
-def test_make_api_call_with_stream_and_response_format_raises() -> None:
+def testcompletion_with_stream_and_response_format_raises() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
@@ -67,7 +81,7 @@ def test_make_api_call_with_stream_and_response_format_raises() -> None:
     with mock_google_provider():
         provider = GoogleProvider(ApiConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
-            provider._make_api_call(
+            provider.completion(
                 model,
                 messages,
                 stream=True,
@@ -75,7 +89,7 @@ def test_make_api_call_with_stream_and_response_format_raises() -> None:
             )
 
 
-def test_make_api_call_with_parallel_tool_calls_raises() -> None:
+def testcompletion_with_parallel_tool_calls_raises() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
@@ -83,7 +97,7 @@ def test_make_api_call_with_parallel_tool_calls_raises() -> None:
     with mock_google_provider():
         provider = GoogleProvider(ApiConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
-            provider._make_api_call(
+            provider.completion(
                 model,
                 messages,
                 parallel_tool_calls=True,

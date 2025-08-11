@@ -1,8 +1,9 @@
-import pytest
 from unittest.mock import Mock, patch
 
+import pytest
+
 from any_llm import completion
-from any_llm.provider import ProviderFactory, ApiConfig, Provider, ProviderName
+from any_llm.provider import ApiConfig, Provider, ProviderFactory, ProviderName
 
 
 def test_completion_invalid_model_format_no_slash() -> None:

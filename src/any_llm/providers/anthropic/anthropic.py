@@ -1,24 +1,22 @@
-from typing import Any, Iterator
-
+from collections.abc import Iterator
+from typing import Any
 
 try:
-    from anthropic import Anthropic
     import instructor
+    from anthropic import Anthropic
 except ImportError as exc:
     msg = "anthropic or instructor is not installed. Please install it with `pip install any-llm-sdk[anthropic]`"
     raise ImportError(msg) from exc
 
-from any_llm.types.completion import ChatCompletion
-from any_llm.types.completion import ChatCompletionChunk
-
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import Provider, convert_instructor_response
 from any_llm.providers.anthropic.utils import (
-    _create_openai_chunk_from_anthropic_chunk,
-    _convert_response,
     _convert_kwargs,
     _convert_messages_for_anthropic,
+    _convert_response,
+    _create_openai_chunk_from_anthropic_chunk,
 )
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 
 
 class AnthropicProvider(Provider):
@@ -46,9 +44,9 @@ class AnthropicProvider(Provider):
         **kwargs: Any,
     ) -> Iterator[ChatCompletionChunk]:
         if kwargs.get("response_format", None):
-            raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
+            msg = "stream and response_format"
+            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
         """Handle streaming completion - extracted to avoid generator issues."""
-        # Convert messages for Anthropic format
         system_message, filtered_messages = _convert_messages_for_anthropic(messages)
 
         # Prepare kwargs for Anthropic
@@ -64,7 +62,7 @@ class AnthropicProvider(Provider):
             for event in anthropic_stream:
                 yield _create_openai_chunk_from_anthropic_chunk(event)
 
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],
@@ -80,15 +78,12 @@ class AnthropicProvider(Provider):
 
             response_format = kwargs.pop("response_format")
 
-            # Convert messages for Anthropic format
             system_message, filtered_messages = _convert_messages_for_anthropic(messages)
 
-            # Prepare kwargs for instructor
             instructor_kwargs = kwargs.copy()
             if system_message:
                 instructor_kwargs["system"] = system_message
 
-            # Use instructor for structured output
             instructor_response = instructor_client.messages.create(
                 model=model,
                 messages=filtered_messages,  # type: ignore[arg-type]
@@ -101,18 +96,15 @@ class AnthropicProvider(Provider):
         if kwargs.get("stream", False):
             kwargs.pop("stream")
             return self._stream_completion(client, model, messages, **kwargs)
-        else:
-            # Convert messages for Anthropic format
-            system_message, filtered_messages = _convert_messages_for_anthropic(messages)
+        system_message, filtered_messages = _convert_messages_for_anthropic(messages)
 
-            # Prepare kwargs for Anthropic
-            anthropic_kwargs = kwargs.copy()
-            if system_message:
-                anthropic_kwargs["system"] = system_message
+        anthropic_kwargs = kwargs.copy()
+        if system_message:
+            anthropic_kwargs["system"] = system_message
 
-            message = client.messages.create(
-                model=model,
-                messages=filtered_messages,  # type: ignore[arg-type]
-                **anthropic_kwargs,
-            )
-            return _convert_response(message)
+        message = client.messages.create(
+            model=model,
+            messages=filtered_messages,  # type: ignore[arg-type]
+            **anthropic_kwargs,
+        )
+        return _convert_response(message)

@@ -1,10 +1,10 @@
-from typing import Any, Union, Optional, List, cast, Literal
 import json
+from typing import Any, Literal, cast
 
 from azure.ai.inference.models import (
-    JsonSchemaFormat,
     ChatCompletions,
     EmbeddingsResult,
+    JsonSchemaFormat,
     StreamingChatCompletionsUpdate,
 )
 from pydantic import BaseModel
@@ -12,21 +12,25 @@ from pydantic import BaseModel
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
-    CompletionUsage,
-    CreateEmbeddingResponse,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageToolCall,
+    Choice,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
-    Embedding,
-    Usage,
     ChunkChoice,
+    CompletionUsage,
+    CreateEmbeddingResponse,
+    Embedding,
+    Function,
+    Usage,
 )
-from any_llm.providers.helpers import create_completion_from_response
 
 
 def _convert_response_format(
-    response_format: Union[type[BaseModel], str, JsonSchemaFormat, Any],
-) -> Union[JsonSchemaFormat, str, Any]:
+    response_format: type[BaseModel] | str | JsonSchemaFormat | Any,
+) -> JsonSchemaFormat | str | Any:
     """Convert Pydantic model to Azure JsonSchemaFormat."""
     if not isinstance(response_format, type) or not issubclass(response_format, BaseModel):
         return response_format
@@ -57,58 +61,55 @@ def _convert_response_format(
 
 
 def _convert_response(response_data: ChatCompletions) -> ChatCompletion:
-    """Convert Azure response to OpenAI ChatCompletion format using generic helper."""
+    """Convert Azure response to OpenAI ChatCompletion format directly."""
     choice_data = response_data.choices[0]
     message_data = choice_data.message
 
-    # Normalize tool calls to dicts expected by helpers
-    tool_calls_list: Optional[List[dict[str, Any]]] = None
+    # Convert tool calls
+    tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] | None = None
     if message_data.tool_calls:
-        tool_calls_list = [
-            {
-                "id": tc.id,
-                "type": getattr(tc, "type", "function"),
-                "function": {
-                    "name": tc.function.name if tc.function else None,
-                    "arguments": tc.function.arguments if tc.function else None,
-                },
-            }
-            for tc in message_data.tool_calls
-        ]
+        tool_calls_list: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
+        for tc in message_data.tool_calls:
+            func = tc.function
+            tool_calls_list.append(
+                ChatCompletionMessageFunctionToolCall(
+                    id=tc.id,
+                    type="function",
+                    function=Function(name=func.name if func else "", arguments=func.arguments if func else ""),
+                )
+            )
+        tool_calls = tool_calls_list
 
-    # Normalize usage
-    usage_dict: Optional[dict[str, Any]] = None
+    # Usage
+    usage = None
     if response_data.usage:
-        usage_dict = {
-            "prompt_tokens": response_data.usage.prompt_tokens,
-            "completion_tokens": response_data.usage.completion_tokens,
-            "total_tokens": response_data.usage.total_tokens,
-        }
+        usage = CompletionUsage(
+            prompt_tokens=response_data.usage.prompt_tokens,
+            completion_tokens=response_data.usage.completion_tokens,
+            total_tokens=response_data.usage.total_tokens,
+        )
 
-    normalized: dict[str, Any] = {
-        "id": response_data.id,
-        "model": response_data.model,
-        "created": int(response_data.created.timestamp()),
-        "choices": [
-            {
-                "message": {
-                    "role": cast(Literal["assistant"], message_data.role),
-                    "content": message_data.content,
-                    "tool_calls": tool_calls_list,
-                    # Azure doesn’t provide explicit reasoning content in this path
-                    "reasoning_content": None,
-                },
-                "finish_reason": choice_data.finish_reason,
-                "index": choice_data.index,
-            }
-        ],
-        "usage": usage_dict,
-    }
+    message = ChatCompletionMessage(
+        role=cast("Literal['assistant']", "assistant"),
+        content=message_data.content,
+        tool_calls=tool_calls,
+    )
 
-    return create_completion_from_response(
-        response_data=normalized,
+    choice = Choice(
+        index=choice_data.index,
+        finish_reason=cast(
+            "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']", choice_data.finish_reason
+        ),
+        message=message,
+    )
+
+    return ChatCompletion(
+        id=response_data.id,
         model=response_data.model,
-        provider_name="azure",
+        created=int(response_data.created.timestamp()),
+        object="chat.completion",
+        choices=[choice],
+        usage=usage,
     )
 
 
@@ -127,9 +128,9 @@ def _create_openai_chunk_from_azure_chunk(azure_chunk: StreamingChatCompletionsU
         delta_role = None
 
         if role_value and role_value in ["developer", "system", "user", "assistant", "tool"]:
-            delta_role = cast(Literal["developer", "system", "user", "assistant", "tool"], role_value)
+            delta_role = cast("Literal['developer', 'system', 'user', 'assistant', 'tool']", role_value)
 
-        delta_tool_calls: Optional[List[ChoiceDeltaToolCall]] = None
+        delta_tool_calls: list[ChoiceDeltaToolCall] | None = None
         if delta.tool_calls:
             delta_tool_calls = []
             for tool_call in delta.tool_calls:
@@ -158,7 +159,7 @@ def _create_openai_chunk_from_azure_chunk(azure_chunk: StreamingChatCompletionsU
                 tool_calls=delta_tool_calls,
             ),
             finish_reason=cast(
-                Literal["stop", "length", "tool_calls", "content_filter", "function_call"], choice.finish_reason
+                "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']", choice.finish_reason
             )
             if choice.finish_reason
             else None,
@@ -192,7 +193,7 @@ def _create_openai_embedding_response_from_azure(
     model_name = azure_response.model
     usage_data = azure_response.usage
 
-    openai_embeddings: List[Embedding] = []
+    openai_embeddings: list[Embedding] = []
     if isinstance(data, list):
         for embedding_data in data:
             embedding_vector = embedding_data.embedding

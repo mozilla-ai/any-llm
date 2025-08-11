@@ -1,11 +1,12 @@
 from typing import Any
+
 import httpx
 import pytest
 from openai import APIConnectionError
-from any_llm.types.completion import ChatCompletion
 
-from any_llm import completion, ProviderName
+from any_llm import ProviderName, completion
 from any_llm.exceptions import MissingApiKeyError
+from any_llm.types.completion import ChatCompletion
 
 
 def test_reasoning_providers(

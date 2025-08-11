@@ -1,9 +1,11 @@
 from typing import Any
+
 import httpx
 import pytest
-from any_llm import completion, ProviderName
-from any_llm.exceptions import MissingApiKeyError
 from openai import APIConnectionError
+
+from any_llm import ProviderName, completion
+from any_llm.exceptions import MissingApiKeyError
 
 
 def test_tool(

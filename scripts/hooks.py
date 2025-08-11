@@ -9,7 +9,14 @@ import os
 import re
 import sys
 from pathlib import Path
+
 import httpx
+
+
+# Exceptions
+class UrlValidationError(Exception):
+    """Exception raised when a URL is invalid."""
+
 
 # Constants
 MARKDOWN_EXTENSION = ".md"
@@ -21,12 +28,14 @@ MARKDOWN_LINK_PATTERN = r"\[([^\]]+)\]\(([^)]+\.md)\)"
 MARKDOWN_LINK_REPLACEMENT = r"[\1](#\2)"
 
 
-async def validate_url(urls, timeout=10):
-    async with httpx.AsyncClient(timeout=timeout) as client:
+async def validate_url(urls, http_timeout=10):
+    """Validate that all URLs are valid."""
+    async with httpx.AsyncClient(timeout=http_timeout) as client:
         responses = await asyncio.gather(*[client.head(url, follow_redirects=True) for url in urls])
         for response in responses:
             if response.status_code != 200:
-                raise Exception(f"URL {response.url} returned status code {response.status_code}")
+                msg = f"URL {response.url} returned status code {response.status_code}"
+                raise UrlValidationError(msg)
 
 
 def get_provider_metadata(provider_dir):
@@ -85,27 +94,19 @@ def generate_provider_table(providers):
 
 def inject_provider_table_in_markdown(markdown_content, provider_dir):
     """Inject the provider table into markdown content during build."""
-    # Check if this page needs the provider table
     start_marker = "<!-- AUTO-GENERATED TABLE START -->"
     end_marker = "<!-- AUTO-GENERATED TABLE END -->"
 
     if start_marker not in markdown_content or end_marker not in markdown_content:
         return markdown_content
 
-    # Generate the table
     provider_metadata = get_provider_metadata(provider_dir)
     provider_table = generate_provider_table(provider_metadata)
 
-    # Find the markers and replace content between them
     start_idx = markdown_content.find(start_marker)
     end_idx = markdown_content.find(end_marker)
 
-    # Replace only the content between the markers
-    new_content = (
-        markdown_content[: start_idx + len(start_marker)] + "\n" + provider_table + "\n" + markdown_content[end_idx:]
-    )
-
-    return new_content
+    return markdown_content[: start_idx + len(start_marker)] + "\n" + provider_table + "\n" + markdown_content[end_idx:]
 
 
 def get_nav_files(nav_config):
@@ -371,4 +372,3 @@ def on_page_markdown(markdown, page, config, files):
 
 def on_pre_build(config, **kwargs):
     """Pre-build hook - currently unused but kept for potential future use."""
-    pass

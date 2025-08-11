@@ -1,5 +1,6 @@
 import os
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 try:
     from google import genai
@@ -10,19 +11,26 @@ except ImportError as exc:
 
 from pydantic import BaseModel
 
-from any_llm.types.completion import ChatCompletionChunk, ChatCompletion, CreateEmbeddingResponse
-from any_llm.provider import Provider, ApiConfig
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
-from any_llm.providers.helpers import (
-    create_completion_from_response,
-)
+from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.google.utils import (
-    _convert_tool_choice,
-    _convert_tool_spec,
     _convert_messages,
     _convert_response_to_response_dict,
+    _convert_tool_choice,
+    _convert_tool_spec,
     _create_openai_chunk_from_google_chunk,
     _create_openai_embedding_response_from_google,
+)
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageToolCall,
+    Choice,
+    CompletionUsage,
+    CreateEmbeddingResponse,
+    Function,
 )
 
 
@@ -47,14 +55,16 @@ class GoogleProvider(Provider):
             self.location = os.getenv("GOOGLE_REGION", "us-central1")
 
             if not self.project_id:
-                raise MissingApiKeyError("Google Vertex AI", "GOOGLE_PROJECT_ID")
+                msg = "Google Vertex AI"
+                raise MissingApiKeyError(msg, "GOOGLE_PROJECT_ID")
 
             self.client = genai.Client(vertexai=True, project=self.project_id, location=self.location)
         else:
             api_key = getattr(config, "api_key", None) or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
             if not api_key:
-                raise MissingApiKeyError("Google Gemini Developer API", "GEMINI_API_KEY/GOOGLE_API_KEY")
+                msg = "Google Gemini Developer API"
+                raise MissingApiKeyError(msg, "GEMINI_API_KEY/GOOGLE_API_KEY")
 
             self.client = genai.Client(api_key=api_key)
 
@@ -72,17 +82,19 @@ class GoogleProvider(Provider):
 
         return _create_openai_embedding_response_from_google(model, result)
 
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         if kwargs.get("stream", False) and kwargs.get("response_format", None) is not None:
-            raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
+            error_message = "stream and response_format"
+            raise UnsupportedParameterError(error_message, self.PROVIDER_NAME)
 
         if kwargs.get("parallel_tool_calls", None) is not None:
-            raise UnsupportedParameterError("parallel_tool_calls", self.PROVIDER_NAME)
+            error_message = "parallel_tool_calls"
+            raise UnsupportedParameterError(error_message, self.PROVIDER_NAME)
         tools = None
         if "tools" in kwargs:
             tools = _convert_tool_spec(kwargs["tools"])
@@ -111,10 +123,10 @@ class GoogleProvider(Provider):
         else:
             # Multiple messages - concatenate user messages for simplicity
             content_parts = []
-            for msg in formatted_messages:
-                if msg.role == "user" and msg.parts:
-                    if hasattr(msg.parts[0], "text") and msg.parts[0].text:
-                        content_parts.append(msg.parts[0].text)
+            for content_item in formatted_messages:
+                if content_item.role == "user" and content_item.parts:
+                    if hasattr(content_item.parts[0], "text") and content_item.parts[0].text:
+                        content_parts.append(content_item.parts[0].text)
 
             content_text = "\n".join(content_parts)
 
@@ -123,15 +135,61 @@ class GoogleProvider(Provider):
                 model=model, contents=content_text, config=generation_config
             )
             return map(_create_openai_chunk_from_google_chunk, response_stream)
-        else:
-            response: types.GenerateContentResponse = self.client.models.generate_content(
-                model=model, contents=content_text, config=generation_config
+        response: types.GenerateContentResponse = self.client.models.generate_content(
+            model=model, contents=content_text, config=generation_config
+        )
+
+        response_dict = _convert_response_to_response_dict(response)
+
+        # Directly construct ChatCompletion
+        choices_out: list[Choice] = []
+        for i, choice_item in enumerate(response_dict.get("choices", [])):
+            message_dict: dict[str, Any] = choice_item.get("message", {})
+            tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] | None = None
+            if message_dict.get("tool_calls"):
+                tool_calls_list: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
+                for tc in message_dict["tool_calls"]:
+                    tool_calls_list.append(
+                        ChatCompletionMessageFunctionToolCall(
+                            id=tc.get("id"),
+                            type="function",
+                            function=Function(
+                                name=tc["function"]["name"],
+                                arguments=tc["function"]["arguments"],
+                            ),
+                        )
+                    )
+                tool_calls = tool_calls_list
+            message = ChatCompletionMessage(
+                role="assistant",
+                content=message_dict.get("content"),
+                tool_calls=tool_calls,
+            )
+            from typing import Literal, cast
+
+            choices_out.append(
+                Choice(
+                    index=i,
+                    finish_reason=cast(
+                        "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']",
+                        choice_item.get("finish_reason", "stop"),
+                    ),
+                    message=message,
+                )
             )
 
-            response_dict = _convert_response_to_response_dict(response)
+        usage_dict = response_dict.get("usage", {})
+        usage = CompletionUsage(
+            prompt_tokens=usage_dict.get("prompt_tokens", 0),
+            completion_tokens=usage_dict.get("completion_tokens", 0),
+            total_tokens=usage_dict.get("total_tokens", 0),
+        )
 
-            return create_completion_from_response(
-                response_data=response_dict,
-                model=model,
-                provider_name=self.PROVIDER_NAME,
-            )
+        return ChatCompletion(
+            id=response_dict.get("id", ""),
+            model=model,
+            created=response_dict.get("created", 0),
+            object="chat.completion",
+            choices=choices_out,
+            usage=usage,
+        )

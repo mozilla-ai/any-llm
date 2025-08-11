@@ -3,19 +3,19 @@ from time import time
 from typing import Any
 
 from any_llm.types.completion import (
-    CreateEmbeddingResponse,
-    Embedding,
-    Usage,
     ChatCompletionChunk,
     ChoiceDelta,
     ChunkChoice,
+    CreateEmbeddingResponse,
+    Embedding,
+    Usage,
 )
 
 try:
     from google.genai import types
-except ImportError:
+except ImportError as exc:
     msg = "google-genai is not installed. Please install it with `pip install any-llm-sdk[google]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 
 def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[types.Tool]:
@@ -66,15 +66,13 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
 
     for message in messages:
         if message["role"] == "system":
-            # System messages are treated as user messages in GenAI
             parts = [types.Part.from_text(text=message["content"])]
             formatted_messages.append(types.Content(role="user", parts=parts))
         elif message["role"] == "user":
             parts = [types.Part.from_text(text=message["content"])]
             formatted_messages.append(types.Content(role="user", parts=parts))
         elif message["role"] == "assistant":
-            if "tool_calls" in message and message["tool_calls"]:
-                # Handle function calls
+            if message.get("tool_calls"):
                 tool_call = message["tool_calls"][0]  # Assuming single function call for now
                 function_call = tool_call["function"]
 
@@ -84,7 +82,6 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
                     )
                 ]
             else:
-                # Handle regular text messages
                 parts = [types.Part.from_text(text=message["content"])]
 
             formatted_messages.append(types.Content(role="model", parts=parts))
@@ -94,7 +91,6 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
                 part = types.Part.from_function_response(name=message.get("name", "unknown"), response=content_json)
                 formatted_messages.append(types.Content(role="function", parts=[part]))
             except json.JSONDecodeError:
-                # If not JSON, treat as text
                 part = types.Part.from_function_response(
                     name=message.get("name", "unknown"), response={"result": message["content"]}
                 )

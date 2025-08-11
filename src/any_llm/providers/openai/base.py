@@ -1,17 +1,17 @@
 import os
-from typing import Any, Iterator
 from abc import ABC
+from collections.abc import Iterator
+from typing import Any
 
 from openai import OpenAI
-from any_llm.types.completion import ChatCompletion, CreateEmbeddingResponse
 from openai._streaming import Stream
-from any_llm.types.completion import ChatCompletionChunk
 from openai._types import NOT_GIVEN
-from any_llm.provider import Provider
-
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
+
 from any_llm.logging import logger
+from any_llm.provider import Provider
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 from any_llm.types.responses import Response, ResponseStreamEvent
 
 
@@ -31,20 +31,14 @@ class BaseOpenAIProvider(Provider, ABC):
     SUPPORTS_EMBEDDING = True
 
     def _normalize_reasoning_on_message(self, message_dict: dict[str, Any]) -> None:
-        """Mutate a message dict to move provider-specific reasoning fields to our Reasoning type.
-
-        OpenAI-compatible providers attach non-standard fields such as
-        `reasoning_content` on the assistant message or chunk delta. This helper
-        normalizes such fields into our `reasoning` object shape: {"content": str}.
-        """
-        # If provider supplied a nested reasoning object already with content, keep it.
+        """Mutate a message dict to move provider-specific reasoning fields to our Reasoning type."""
         if isinstance(message_dict.get("reasoning"), dict) and "content" in message_dict["reasoning"]:
             return
 
         possible_fields = [
-            "reasoning_content",  # LM Studio, some OSS backends
-            "thinking",  # occasionally used by some providers
-            "chain_of_thought",  # generic alias
+            "reasoning_content",
+            "thinking",
+            "chain_of_thought",
         ]
         value: Any | None = None
         for field_name in possible_fields:
@@ -67,12 +61,10 @@ class BaseOpenAIProvider(Provider, ABC):
         choices = response_dict.get("choices")
         if isinstance(choices, list):
             for choice in choices:
-                # Non-streaming responses
                 message = choice.get("message") if isinstance(choice, dict) else None
                 if isinstance(message, dict):
                     self._normalize_reasoning_on_message(message)
 
-                # Streaming deltas
                 delta = choice.get("delta") if isinstance(choice, dict) else None
                 if isinstance(delta, dict):
                     self._normalize_reasoning_on_message(delta)
@@ -100,25 +92,22 @@ class BaseOpenAIProvider(Provider, ABC):
                     type(response.created),
                 )
                 response.created = int(response.created)
-            # Normalize reasoning fields before validation
             normalized = self._normalize_openai_dict_response(response.model_dump())
             return ChatCompletion.model_validate(normalized)
-        else:
-            # Handle streaming response - return a generator
-            def _convert_chunk(chunk: OpenAIChatCompletionChunk) -> ChatCompletionChunk:
-                if not isinstance(chunk.created, int):
-                    # Sambanova returns a float instead of an int.
-                    logger.warning(
-                        "API returned an unexpected created type: %s. Setting to int.",
-                        type(chunk.created),
-                    )
-                    chunk.created = int(chunk.created)
-                normalized_chunk = self._normalize_openai_dict_response(chunk.model_dump())
-                return ChatCompletionChunk.model_validate(normalized_chunk)
 
-            return (_convert_chunk(chunk) for chunk in response)
+        def _convert_chunk(chunk: OpenAIChatCompletionChunk) -> ChatCompletionChunk:
+            if not isinstance(chunk.created, int):
+                logger.warning(
+                    "API returned an unexpected created type: %s. Setting to int.",
+                    type(chunk.created),
+                )
+                chunk.created = int(chunk.created)
+            normalized_chunk = self._normalize_openai_dict_response(chunk.model_dump())
+            return ChatCompletionChunk.model_validate(normalized_chunk)
 
-    def _make_api_call(
+        return (_convert_chunk(chunk) for chunk in response)
+
+    def completion(
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Make the API call to OpenAI-compatible service."""
@@ -156,8 +145,9 @@ class BaseOpenAIProvider(Provider, ABC):
             input=input_data,
             **kwargs,
         )
-        if not isinstance(response, (Response, Stream)):
-            raise ValueError(f"Responses API returned an unexpected type: {type(response)}")
+        if not isinstance(response, Response | Stream):
+            msg = f"Responses API returned an unexpected type: {type(response)}"
+            raise ValueError(msg)
         return response
 
     def embedding(
@@ -168,7 +158,8 @@ class BaseOpenAIProvider(Provider, ABC):
     ) -> CreateEmbeddingResponse:
         # Classes that inherit from BaseOpenAIProvider may override SUPPORTS_EMBEDDING
         if not self.SUPPORTS_EMBEDDING:
-            raise NotImplementedError("This provider does not support embeddings.")
+            msg = "This provider does not support embeddings."
+            raise NotImplementedError(msg)
 
         client = OpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),

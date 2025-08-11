@@ -1,9 +1,11 @@
-from typing import Any, Optional, List, Union, Callable, Iterator
+from collections.abc import Callable, Iterator
+from typing import Any
 
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 from pydantic import BaseModel
-from any_llm.provider import ProviderFactory, ApiConfig, Provider
+
+from any_llm.provider import ApiConfig, Provider, ProviderFactory
 from any_llm.tools import prepare_tools
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 from any_llm.types.responses import Response, ResponseStreamEvent
 
 
@@ -11,31 +13,31 @@ def _prepare_completion_request(
     model: str,
     messages: list[dict[str, Any]],
     *,
-    tools: Optional[List[Union[dict[str, Any], Callable[..., Any]]]] = None,
-    tool_choice: Optional[Union[str, dict[str, Any]]] = None,
-    max_turns: Optional[int] = None,
-    temperature: Optional[float] = None,
-    top_p: Optional[float] = None,
-    max_tokens: Optional[int] = None,
+    tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
+    max_turns: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    max_tokens: int | None = None,
     response_format: dict[str, Any] | type[BaseModel] | None = None,
-    stream: Optional[bool] = None,
-    n: Optional[int] = None,
-    stop: Optional[Union[str, List[str]]] = None,
-    presence_penalty: Optional[float] = None,
-    frequency_penalty: Optional[float] = None,
-    seed: Optional[int] = None,
-    api_key: Optional[str] = None,
-    api_base: Optional[str] = None,
-    timeout: Optional[Union[float, int]] = None,
-    user: Optional[str] = None,
+    stream: bool | None = None,
+    n: int | None = None,
+    stop: str | list[str] | None = None,
+    presence_penalty: float | None = None,
+    frequency_penalty: float | None = None,
+    seed: int | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    api_timeout: float | None = None,
+    user: str | None = None,
     **kwargs: Any,
 ) -> tuple[Provider, str, dict[str, Any]]:
     """Prepare a completion request by validating inputs and creating provider instance.
 
     Returns:
         tuple: (provider_instance, model_name, completion_kwargs)
-    """
 
+    """
     provider_key, model_name = ProviderFactory.split_model_provider(model)
 
     config: dict[str, str] = {}
@@ -74,8 +76,8 @@ def _prepare_completion_request(
         completion_kwargs["frequency_penalty"] = frequency_penalty
     if seed is not None:
         completion_kwargs["seed"] = seed
-    if timeout is not None:
-        completion_kwargs["timeout"] = timeout
+    if api_timeout is not None:
+        completion_kwargs["timeout"] = api_timeout
     if user is not None:
         completion_kwargs["user"] = user
 
@@ -86,23 +88,23 @@ def completion(
     model: str,
     messages: list[dict[str, Any]],
     *,
-    tools: Optional[List[Union[dict[str, Any], Callable[..., Any]]]] = None,
-    tool_choice: Optional[Union[str, dict[str, Any]]] = None,
-    max_turns: Optional[int] = None,
-    temperature: Optional[float] = None,
-    top_p: Optional[float] = None,
-    max_tokens: Optional[int] = None,
+    tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
+    max_turns: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    max_tokens: int | None = None,
     response_format: dict[str, Any] | type[BaseModel] | None = None,
-    stream: Optional[bool] = None,
-    n: Optional[int] = None,
-    stop: Optional[Union[str, List[str]]] = None,
-    presence_penalty: Optional[float] = None,
-    frequency_penalty: Optional[float] = None,
-    seed: Optional[int] = None,
-    api_key: Optional[str] = None,
-    api_base: Optional[str] = None,
-    timeout: Optional[Union[float, int]] = None,
-    user: Optional[str] = None,
+    stream: bool | None = None,
+    n: int | None = None,
+    stop: str | list[str] | None = None,
+    presence_penalty: float | None = None,
+    frequency_penalty: float | None = None,
+    seed: int | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    api_timeout: float | None = None,
+    user: str | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
     """Create a chat completion.
@@ -125,7 +127,7 @@ def completion(
         seed: Random seed for reproducible results
         api_key: API key for the provider
         api_base: Base URL for the provider API
-        timeout: Request timeout in seconds
+        api_timeout: Request timeout in seconds
         user: Unique identifier for the end user
         **kwargs: Additional provider-specific parameters
 
@@ -151,7 +153,7 @@ def completion(
         seed=seed,
         api_key=api_key,
         api_base=api_base,
-        timeout=timeout,
+        api_timeout=api_timeout,
         user=user,
         **kwargs,
     )
@@ -163,23 +165,23 @@ async def acompletion(
     model: str,
     messages: list[dict[str, Any]],
     *,
-    tools: Optional[List[Union[dict[str, Any], Callable[..., Any]]]] = None,
-    tool_choice: Optional[Union[str, dict[str, Any]]] = None,
-    max_turns: Optional[int] = None,
-    temperature: Optional[float] = None,
-    top_p: Optional[float] = None,
-    max_tokens: Optional[int] = None,
+    tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
+    max_turns: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    max_tokens: int | None = None,
     response_format: dict[str, Any] | type[BaseModel] | None = None,
-    stream: Optional[bool] = None,
-    n: Optional[int] = None,
-    stop: Optional[Union[str, List[str]]] = None,
-    presence_penalty: Optional[float] = None,
-    frequency_penalty: Optional[float] = None,
-    seed: Optional[int] = None,
-    api_key: Optional[str] = None,
-    api_base: Optional[str] = None,
-    timeout: Optional[Union[float, int]] = None,
-    user: Optional[str] = None,
+    stream: bool | None = None,
+    n: int | None = None,
+    stop: str | list[str] | None = None,
+    presence_penalty: float | None = None,
+    frequency_penalty: float | None = None,
+    seed: int | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    api_timeout: float | None = None,
+    user: str | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
     """Create a chat completion asynchronously.
@@ -202,7 +204,7 @@ async def acompletion(
         seed: Random seed for reproducible results
         api_key: API key for the provider
         api_base: Base URL for the provider API
-        timeout: Request timeout in seconds
+        api_timeout: Request timeout in seconds
         user: Unique identifier for the end user
         **kwargs: Additional provider-specific parameters
 
@@ -228,7 +230,7 @@ async def acompletion(
         seed=seed,
         api_key=api_key,
         api_base=api_base,
-        timeout=timeout,
+        api_timeout=api_timeout,
         user=user,
         **kwargs,
     )
@@ -240,16 +242,16 @@ def responses(
     model: str,
     input_data: Any,
     *,
-    tools: Optional[List[Union[dict[str, Any], Callable[..., Any]]]] = None,
-    tool_choice: Optional[Union[str, dict[str, Any]]] = None,
-    max_output_tokens: Optional[int] = None,
-    temperature: Optional[float] = None,
-    top_p: Optional[float] = None,
-    stream: Optional[bool] = None,
-    api_key: Optional[str] = None,
-    api_base: Optional[str] = None,
-    timeout: Optional[Union[float, int]] = None,
-    user: Optional[str] = None,
+    tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
+    max_output_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    stream: bool | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    api_timeout: float | None = None,
+    user: str | None = None,
     **kwargs: Any,
 ) -> Response | Iterator[ResponseStreamEvent]:
     """Create a response using the OpenAI-style Responses API.
@@ -271,7 +273,7 @@ def responses(
         stream: Whether to stream response events
         api_key: API key for the provider
         api_base: Base URL for the provider API
-        timeout: Request timeout in seconds
+        api_timeout: Request timeout in seconds
         user: Unique identifier for the end user
         **kwargs: Additional provider-specific parameters
 
@@ -281,6 +283,7 @@ def responses(
 
     Raises:
         NotImplementedError: If the selected provider does not support the Responses API.
+
     """
     provider_key, model_name = ProviderFactory.split_model_provider(model)
 
@@ -306,8 +309,8 @@ def responses(
         responses_kwargs["top_p"] = top_p
     if stream is not None:
         responses_kwargs["stream"] = stream
-    if timeout is not None:
-        responses_kwargs["timeout"] = timeout
+    if api_timeout is not None:
+        responses_kwargs["timeout"] = api_timeout
     if user is not None:
         responses_kwargs["user"] = user
 
@@ -318,16 +321,16 @@ async def aresponses(
     model: str,
     input_data: Any,
     *,
-    tools: Optional[List[Union[dict[str, Any], Callable[..., Any]]]] = None,
-    tool_choice: Optional[Union[str, dict[str, Any]]] = None,
-    max_output_tokens: Optional[int] = None,
-    temperature: Optional[float] = None,
-    top_p: Optional[float] = None,
-    stream: Optional[bool] = None,
-    api_key: Optional[str] = None,
-    api_base: Optional[str] = None,
-    timeout: Optional[Union[float, int]] = None,
-    user: Optional[str] = None,
+    tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
+    max_output_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    stream: bool | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    api_timeout: float | None = None,
+    user: str | None = None,
     **kwargs: Any,
 ) -> Response | Iterator[ResponseStreamEvent]:
     """Create a response using the OpenAI-style Responses API.
@@ -349,7 +352,7 @@ async def aresponses(
         stream: Whether to stream response events
         api_key: API key for the provider
         api_base: Base URL for the provider API
-        timeout: Request timeout in seconds
+        api_timeout: Request timeout in seconds
         user: Unique identifier for the end user
         **kwargs: Additional provider-specific parameters
 
@@ -359,6 +362,7 @@ async def aresponses(
 
     Raises:
         NotImplementedError: If the selected provider does not support the Responses API.
+
     """
     provider_key, model_name = ProviderFactory.split_model_provider(model)
 
@@ -384,8 +388,8 @@ async def aresponses(
         responses_kwargs["top_p"] = top_p
     if stream is not None:
         responses_kwargs["stream"] = stream
-    if timeout is not None:
-        responses_kwargs["timeout"] = timeout
+    if api_timeout is not None:
+        responses_kwargs["timeout"] = api_timeout
     if user is not None:
         responses_kwargs["user"] = user
 
@@ -396,8 +400,8 @@ def embedding(
     model: str,
     inputs: str | list[str],
     *,
-    api_key: Optional[str] = None,
-    api_base: Optional[str] = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
     **kwargs: Any,
 ) -> CreateEmbeddingResponse:
     """Create an embedding.
@@ -431,8 +435,8 @@ async def aembedding(
     model: str,
     inputs: str | list[str],
     *,
-    api_key: Optional[str] = None,
-    api_base: Optional[str] = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
     **kwargs: Any,
 ) -> CreateEmbeddingResponse:
     """Create an embedding asynchronously.

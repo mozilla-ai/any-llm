@@ -2,23 +2,24 @@
 import asyncio
 import importlib
 import json
-from abc import ABC, abstractmethod
-from enum import Enum
 import os
+from abc import ABC, abstractmethod
+from collections.abc import Iterator
+from enum import Enum
 from pathlib import Path
-from typing import Any, Type, Union, Iterator
+from typing import Any
 
-from any_llm.types.completion import (
-    ChatCompletion,
-    ChatCompletionChunk,
-    Choice,
-    ChatCompletionMessage,
-    CreateEmbeddingResponse,
-)
-from any_llm.types.responses import Response, ResponseStreamEvent
 from pydantic import BaseModel
 
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    Choice,
+    CreateEmbeddingResponse,
+)
+from any_llm.types.responses import Response, ResponseStreamEvent
 
 
 def convert_instructor_response(instructor_response: Any, model: str, provider_name: str) -> ChatCompletion:
@@ -127,7 +128,7 @@ class Provider(ABC):
         return config
 
     @classmethod
-    def get_provider_metadata(cls) -> dict[str, str]:
+    def get_provider_metadata(cls) -> dict[str, str | bool]:
         """Get provider metadata without requiring instantiation.
 
         Returns:
@@ -135,20 +136,23 @@ class Provider(ABC):
             documentation URL, and class name.
         """
         return {
-            "name": getattr(cls, "PROVIDER_NAME"),
+            "name": cls.PROVIDER_NAME,
             "env_key": getattr(cls, "ENV_API_KEY_NAME", "-"),
-            "doc_url": getattr(cls, "PROVIDER_DOCUMENTATION_URL"),
-            "streaming": getattr(cls, "SUPPORTS_COMPLETION_STREAMING"),
-            "reasoning": getattr(cls, "SUPPORTS_COMPLETION_REASONING"),
-            "completion": getattr(cls, "SUPPORTS_COMPLETION"),
-            "embedding": getattr(cls, "SUPPORTS_EMBEDDING"),
-            "responses": getattr(cls, "SUPPORTS_RESPONSES"),
+            "doc_url": cls.PROVIDER_DOCUMENTATION_URL,
+            "streaming": cls.SUPPORTS_COMPLETION_STREAMING,
+            "reasoning": cls.SUPPORTS_COMPLETION_REASONING,
+            "completion": cls.SUPPORTS_COMPLETION,
+            "embedding": cls.SUPPORTS_EMBEDDING,
+            "responses": cls.SUPPORTS_RESPONSES,
             "class_name": cls.__name__,
         }
 
     @abstractmethod
-    def _make_api_call(
-        self, model: str, messages: list[dict[str, Any]], **kwargs: Any
+    def completion(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """This method is designed to make the API call to the provider.
 
@@ -160,15 +164,8 @@ class Provider(ABC):
         Returns:
             The response from the API call
         """
-        raise NotImplementedError("Subclasses must implement this method")
-
-    def completion(
-        self,
-        model: str,
-        messages: list[dict[str, Any]],
-        **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        return self._make_api_call(model, messages, **kwargs)
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
 
     async def acompletion(
         self,
@@ -184,7 +181,8 @@ class Provider(ABC):
         Default implementation raises NotImplementedError. Providers that set
         SUPPORTS_RESPONSES to True must override this method.
         """
-        raise NotImplementedError("This provider does not support the Responses API.")
+        msg = "This provider does not support the Responses API."
+        raise NotImplementedError(msg)
 
     async def aresponses(self, model: str, input_data: Any, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
         return await asyncio.to_thread(self.responses, model, input_data, **kwargs)
@@ -195,7 +193,8 @@ class Provider(ABC):
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        raise NotImplementedError("Subclasses must implement this method")
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
 
     async def aembedding(
         self,
@@ -212,7 +211,7 @@ class ProviderFactory:
     PROVIDERS_DIR = Path(__file__).parent / "providers"
 
     @classmethod
-    def create_provider(cls, provider_key: Union[str, ProviderName], config: ApiConfig) -> Provider:
+    def create_provider(cls, provider_key: str | ProviderName, config: ApiConfig) -> Provider:
         """Dynamically load and create an instance of a provider based on the naming convention."""
         if isinstance(provider_key, ProviderName):
             provider_key = provider_key.value
@@ -228,11 +227,11 @@ class ProviderFactory:
             msg = f"Could not import module {module_path}: {e!s}. Please ensure the provider is supported by doing ProviderFactory.get_supported_providers()"
             raise ImportError(msg) from e
 
-        provider_class: Type[Provider] = getattr(module, provider_class_name)
+        provider_class: type[Provider] = getattr(module, provider_class_name)
         return provider_class(config=config)
 
     @classmethod
-    def get_provider_class(cls, provider_key: Union[str, ProviderName]) -> Type[Provider]:
+    def get_provider_class(cls, provider_key: str | ProviderName) -> type[Provider]:
         """Get the provider class without instantiating it.
 
         Args:
@@ -255,7 +254,7 @@ class ProviderFactory:
             msg = f"Could not import module {module_path}: {e!s}. Please ensure the provider is supported by doing ProviderFactory.get_supported_providers()"
             raise ImportError(msg) from e
 
-        provider_class: Type[Provider] = getattr(module, provider_class_name)
+        provider_class: type[Provider] = getattr(module, provider_class_name)
         return provider_class
 
     @classmethod
@@ -264,7 +263,7 @@ class ProviderFactory:
         return [provider.value for provider in ProviderName]
 
     @classmethod
-    def get_all_provider_metadata(cls) -> list[dict[str, str]]:
+    def get_all_provider_metadata(cls) -> list[dict[str, str | bool]]:
         """Get metadata for all supported providers.
 
         Returns:
@@ -286,9 +285,9 @@ class ProviderFactory:
         """Convert a string provider key to a ProviderName enum."""
         try:
             return ProviderName(provider_key)
-        except ValueError:
+        except ValueError as e:
             supported = [provider.value for provider in ProviderName]
-            raise UnsupportedProviderError(provider_key, supported)
+            raise UnsupportedProviderError(provider_key, supported) from e
 
     @classmethod
     def split_model_provider(cls, model: str) -> tuple[ProviderName, str]:

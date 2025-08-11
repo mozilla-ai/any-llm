@@ -1,5 +1,6 @@
 import os
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 try:
     from ibm_watsonx_ai import Credentials
@@ -8,9 +9,15 @@ except ImportError as exc:
     msg = "ibm-watsonx-ai is not installed. Please install it with `pip install any-llm-sdk[watsonx]`"
     raise ImportError(msg) from exc
 
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+from pydantic import BaseModel
+
 from any_llm.provider import Provider
-from any_llm.providers.watsonx.utils import _convert_response, _convert_streaming_chunk
+from any_llm.providers.watsonx.utils import (
+    _convert_pydantic_to_watsonx_json,
+    _convert_response,
+    _convert_streaming_chunk,
+)
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 
 
 class WatsonxProvider(Provider):
@@ -40,7 +47,7 @@ class WatsonxProvider(Provider):
         for chunk in response_stream:
             yield _convert_streaming_chunk(chunk)
 
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],
@@ -57,7 +64,13 @@ class WatsonxProvider(Provider):
             project_id=kwargs.get("project_id") or os.getenv("WATSONX_PROJECT_ID"),
         )
 
+        # Handle response_format by inlining schema guidance into the prompt
+        response_format = kwargs.pop("response_format", None)
+        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+            messages = _convert_pydantic_to_watsonx_json(response_format, messages)
+
         if kwargs.get("stream", False):
+            kwargs.pop("stream")
             return self._stream_completion(model_inference, messages, **kwargs)
 
         response = model_inference.chat(
