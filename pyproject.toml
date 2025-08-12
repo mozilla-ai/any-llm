@@ -84,11 +84,13 @@ ollama = [
   "ollama>=0.5.1"
 ]
 
+xai = [
+  "xai-sdk>=1.0.1",
+]
 
 # These providers don't require any additional dependencies, but are included for completeness.
 moonshot = []
 nebius = []
-xai = []
 deepseek = []
 inception = []
 openai = []
