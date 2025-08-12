@@ -14,21 +14,11 @@ from pydantic import BaseModel
 
 from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.ollama.utils import (
+    _create_chat_completion_from_ollama_response,
     _create_openai_chunk_from_ollama_chunk,
     _create_openai_embedding_response_from_ollama,
-    _create_response_dict_from_ollama_response,
 )
-from any_llm.types.completion import (
-    ChatCompletion,
-    ChatCompletionChunk,
-    ChatCompletionMessage,
-    ChatCompletionMessageFunctionToolCall,
-    ChatCompletionMessageToolCall,
-    Choice,
-    CompletionUsage,
-    CreateEmbeddingResponse,
-    Function,
-)
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 
 
 class OllamaProvider(Provider):
@@ -125,59 +115,7 @@ class OllamaProvider(Provider):
             format=output_format,
             options=kwargs,
         )
-
-        response_dict = _create_response_dict_from_ollama_response(response)
-        choices_out: list[Choice] = []
-        for i, ch in enumerate(response_dict.get("choices", [])):
-            msg_dict: dict[str, Any] = ch.get("message", {})
-            tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] | None = None
-            if msg_dict.get("tool_calls"):
-                tool_calls_list: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
-                for tc in msg_dict["tool_calls"]:
-                    tool_calls_list.append(
-                        ChatCompletionMessageFunctionToolCall(
-                            id=tc.get("id"),
-                            type="function",
-                            function=Function(
-                                name=tc["function"]["name"],
-                                arguments=tc["function"]["arguments"],
-                            ),
-                        )
-                    )
-                tool_calls = tool_calls_list
-            message = ChatCompletionMessage(
-                role="assistant",
-                content=msg_dict.get("content"),
-                tool_calls=tool_calls,
-            )
-            from typing import Literal, cast
-
-            choices_out.append(
-                Choice(
-                    index=i,
-                    finish_reason=cast(
-                        "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']",
-                        ch.get("finish_reason", "stop"),
-                    ),
-                    message=message,
-                )
-            )
-
-        usage_dict = response_dict.get("usage", {})
-        usage = CompletionUsage(
-            prompt_tokens=usage_dict.get("prompt_tokens", 0),
-            completion_tokens=usage_dict.get("completion_tokens", 0),
-            total_tokens=usage_dict.get("total_tokens", 0),
-        )
-
-        return ChatCompletion(
-            id=response_dict.get("id", ""),
-            model=model,
-            created=response_dict.get("created", 0),
-            object="chat.completion",
-            choices=choices_out,
-            usage=usage,
-        )
+        return _create_chat_completion_from_ollama_response(response)
 
     def embedding(
         self,
