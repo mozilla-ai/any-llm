@@ -12,8 +12,15 @@ from pydantic import BaseModel
 
 from any_llm.provider import Provider
 from any_llm.providers.fireworks.utils import _create_openai_chunk_from_fireworks_chunk
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, Choice, CompletionUsage
-from any_llm.types.responses import Response, ResponseStreamEvent
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    Choice,
+    CompletionUsage,
+    Reasoning,
+)
+from any_llm.types.responses import Response, ResponseOutputMessage, ResponseStreamEvent
 
 
 class FireworksProvider(Provider):
@@ -23,7 +30,7 @@ class FireworksProvider(Provider):
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
-    SUPPORTS_RESPONSES = False
+    SUPPORTS_RESPONSES = True
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
 
@@ -112,4 +119,11 @@ class FireworksProvider(Provider):
         if not isinstance(response, Response | Stream):
             msg = f"Responses API returned an unexpected type: {type(response)}"
             raise ValueError(msg)
+        if isinstance(response, ResponseOutputMessage) and not isinstance(response, Stream):
+            # See https://fireworks.ai/blog/response-api for details about Fireworks Responses API support
+            reasoning = response.output[-1].content[0].text.split("</think>")[-1]
+            if reasoning:
+                reasoning = reasoning.strip()
+                response.output[-1].content[0].text = response.output[-1].content[0].text.split("</think>")[0]
+            response.reasoning = Reasoning(content=reasoning)
         return response

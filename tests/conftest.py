@@ -6,10 +6,13 @@ from any_llm.provider import ProviderName
 
 
 @pytest.fixture
-def provider_completion_reasoning_model_map() -> dict[ProviderName, str]:
+def provider_reasoning_model_map() -> dict[ProviderName, str]:
     return {
         ProviderName.MISTRAL: "magistral-small-latest",
         ProviderName.GROQ: "openai/gpt-oss-20b",
+        ProviderName.FIREWORKS: "accounts/fireworks/models/gpt-oss-20b",
+        ProviderName.OPENAI: "gpt-5-nano",
+        ProviderName.MISTRAL: "magistral-small-latest",
     }
 
 
