@@ -41,6 +41,7 @@ jobs:
         run: |
           ollama serve &
           ollama pull llama3.2:1b
+          ollama pull phi4-mini-reasoning
 
       - name: Run Integration tests (parallel with xdist)
         env:

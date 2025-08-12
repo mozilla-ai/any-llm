@@ -14,7 +14,7 @@ def provider_reasoning_model_map() -> dict[ProviderName, str]:
         ProviderName.OPENAI: "gpt-5-nano",
         ProviderName.MISTRAL: "magistral-small-latest",
         ProviderName.XAI: "grok-3-mini-latest",
-        ProviderName.OLLAMA: "gpt-oss:20b",
+        ProviderName.OLLAMA: "phi4-mini-reasoning",
         ProviderName.LMSTUDIO: "openai/gpt-oss-20b",  # You must have LM Studio running and the server enabled
     }
 
