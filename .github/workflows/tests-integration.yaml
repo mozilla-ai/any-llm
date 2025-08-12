@@ -40,7 +40,8 @@ jobs:
       - name: Run ollama
         run: |
           ollama serve &
-          ollama pull llama3.2:1b
+          ollama pull llama3.2:1b 
+          ollama pull gpt-oss:20b
 
       - name: Run Integration tests (parallel with xdist)
         env:
