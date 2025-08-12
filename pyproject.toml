@@ -49,7 +49,7 @@ cerebras = [
 ]
 
 fireworks = [
-  "fireworks-ai",
+  "fireworks-ai>=0.17.16",
   "instructor",
 ]
 

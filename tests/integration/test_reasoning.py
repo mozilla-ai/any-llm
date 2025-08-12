@@ -6,6 +6,7 @@ from openai import APIConnectionError
 
 from any_llm import ProviderName, completion
 from any_llm.exceptions import MissingApiKeyError
+from any_llm.provider import ProviderFactory
 from any_llm.types.completion import ChatCompletion
 
 
@@ -15,9 +16,11 @@ def test_reasoning_providers(
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    model_id = provider_reasoning_model_map.get(provider, None)
-    if not model_id:
-        pytest.skip(f"{provider.value} does not yet test reasoning, skipping")
+    providers_metadata = ProviderFactory.get_all_provider_metadata()
+    provider_metadata = next(metadata for metadata in providers_metadata if metadata["provider_key"] == provider.value)
+    if not provider_metadata["reasoning"]:
+        pytest.skip(f"{provider.value} does not support completion reasoning, skipping")
+    model_id = provider_reasoning_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
     try:
         result = completion(

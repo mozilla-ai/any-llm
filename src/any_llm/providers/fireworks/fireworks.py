@@ -20,7 +20,7 @@ from any_llm.types.completion import (
     CompletionUsage,
     Reasoning,
 )
-from any_llm.types.responses import Response, ResponseOutputMessage, ResponseStreamEvent
+from any_llm.types.responses import Response, ResponseStreamEvent
 
 
 class FireworksProvider(Provider):
@@ -117,13 +117,14 @@ class FireworksProvider(Provider):
             **kwargs,
         )
         if not isinstance(response, Response | Stream):
-            msg = f"Responses API returned an unexpected type: {type(response)}"
-            raise ValueError(msg)
-        if isinstance(response, ResponseOutputMessage) and not isinstance(response, Stream):
+            err_msg = f"Responses API returned an unexpected type: {type(response)}"
+            raise ValueError(err_msg)
+        if isinstance(response, Response) and not isinstance(response, Stream):
             # See https://fireworks.ai/blog/response-api for details about Fireworks Responses API support
-            reasoning = response.output[-1].content[0].text.split("</think>")[-1]
+            reasoning = response.output[-1].content[0].text.split("</think>")[-1]  # type: ignore[union-attr,index]
             if reasoning:
                 reasoning = reasoning.strip()
-                response.output[-1].content[0].text = response.output[-1].content[0].text.split("</think>")[0]
-            response.reasoning = Reasoning(content=reasoning)
+                response.output[-1].content[0].text = response.output[-1].content[0].text.split("</think>")[0]  # type: ignore[union-attr,index]
+            response.reasoning = Reasoning(content=reasoning) if reasoning else None  # type: ignore[assignment]
+
         return response
