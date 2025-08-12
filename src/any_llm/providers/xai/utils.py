@@ -1,5 +1,11 @@
 import uuid
-from typing import Literal
+from collections.abc import Sequence
+from typing import Any, Literal
+
+from xai_sdk.chat import Chunk as XaiChunk
+from xai_sdk.chat import Response as XaiResponse
+from xai_sdk.chat import tool as xai_make_tool
+from xai_sdk.proto import chat_pb2 as xai_chat_pb2
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -16,8 +22,6 @@ from any_llm.types.completion import (
     Function,
     Reasoning,
 )
-from xai_sdk.chat import Chunk as XaiChunk, Response as XaiResponse
-from xai_sdk.proto.v6 import chat_pb2 as xai_chat_pb2
 
 
 def _map_xai_role_to_openai(
@@ -126,3 +130,24 @@ def _convert_xai_completion_to_anyllm_response(response: XaiResponse) -> ChatCom
         choices=[choice],
         usage=usage,
     )
+
+
+def _convert_openai_tools_to_xai_tools(tools: Sequence[dict[str, Any]]) -> list[xai_chat_pb2.Tool]:
+    xai_tools: list[xai_chat_pb2.Tool] = []
+    for t in tools:
+        if not isinstance(t, dict):
+            continue
+        fn_spec = t.get("function") if t.get("type") == "function" else None
+        if not isinstance(fn_spec, dict):
+            msg = f"Invalid tool: {t}"
+            raise ValueError(msg)
+
+        name = str(fn_spec.get("name", ""))
+        description = str(fn_spec.get("description", ""))
+        parameters = fn_spec.get("parameters")
+        if not isinstance(parameters, dict):
+            msg = f"Invalid parameters: {parameters}"
+            raise ValueError(msg)
+
+        xai_tools.append(xai_make_tool(name=name, description=description, parameters=parameters))
+    return xai_tools
