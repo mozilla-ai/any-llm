@@ -53,6 +53,7 @@ jobs:
           LLAMA_API_KEY: ${{ secrets.LLAMA_API_KEY }}
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
           WATSONX_API_KEY: ${{ secrets.WATSONX_API_KEY }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: pytest tests/integration -v -n auto --cov --cov-report=xml
 
       - name: Upload coverage reports to Codecov

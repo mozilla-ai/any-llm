@@ -22,6 +22,7 @@ def provider_model_map() -> dict[ProviderName, str]:
     return {
         ProviderName.MISTRAL: "mistral-small-latest",
         ProviderName.ANTHROPIC: "claude-3-5-haiku-latest",
+        ProviderName.DATABRICKS: "databricks-meta-llama-3-1-8b-instruct",
         ProviderName.DEEPSEEK: "deepseek-chat",
         ProviderName.OPENAI: "gpt-5-nano",
         ProviderName.GOOGLE: "gemini-2.0-flash-001",
@@ -52,6 +53,7 @@ def provider_model_map() -> dict[ProviderName, str]:
 def embedding_provider_model_map() -> dict[ProviderName, str]:
     return {
         ProviderName.OPENAI: "text-embedding-ada-002",
+        ProviderName.DATABRICKS: "databricks-bge-large-en",
         ProviderName.NEBIUS: "Qwen/Qwen3-Embedding-8B",
         ProviderName.SAMBANOVA: "E5-Mistral-7B-Instruct",
         ProviderName.MISTRAL: "mistral-embed",
@@ -73,6 +75,7 @@ def provider_extra_kwargs_map() -> dict[ProviderName, dict[str, Any]]:
             "api_base": "https://us-south.ml.cloud.ibm.com",
             "project_id": "5b083ace-95a6-4f95-a0a0-d4c5d9e98ca0",
         },
+        ProviderName.DATABRICKS: {"api_base": "https://dbc-40d03128-ecae.cloud.databricks.com/serving-endpoints"},
     }
 
 

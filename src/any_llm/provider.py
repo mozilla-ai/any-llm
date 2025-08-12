@@ -67,6 +67,7 @@ class ProviderName(str, Enum):
     AZURE = "azure"
     CEREBRAS = "cerebras"
     COHERE = "cohere"
+    DATABRICKS = "databricks"
     DEEPSEEK = "deepseek"
     FIREWORKS = "fireworks"
     GOOGLE = "google"
