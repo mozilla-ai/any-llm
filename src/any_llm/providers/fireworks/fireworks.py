@@ -48,7 +48,7 @@ class FireworksProvider(Provider):
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         llm = LLM(
             model=model,
-            deployment_type="auto",
+            deployment_type="serverless",
             api_key=self.config.api_key,
         )
 
