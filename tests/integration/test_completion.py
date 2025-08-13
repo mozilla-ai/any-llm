@@ -7,6 +7,7 @@ from openai import APIConnectionError
 
 from any_llm import ProviderName, acompletion, completion
 from any_llm.exceptions import MissingApiKeyError
+from any_llm.provider import ProviderFactory
 from any_llm.types.completion import ChatCompletion
 
 
@@ -16,9 +17,9 @@ def test_sync_completion(
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    providers_metadata = ProviderFactory.get_all_provider_metadata()
-    provider_metadata = [metadata for metadata in providers_metadata if metadata["provider_key"] == provider.value][0]
-    if not provider_metadata["completion"]:
+    # first check if the provider supports embeddings
+    cls = ProviderFactory.get_provider_class(provider)
+    if not cls.SUPPORTS_COMPLETION:
         pytest.skip(f"{provider.value} does not support completion, skipping")
 
     model_id = provider_model_map[provider]
@@ -46,6 +47,11 @@ async def test_async_completion(
     provider_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
+    # first check if the provider supports embeddings
+    cls = ProviderFactory.get_provider_class(provider)
+    if not cls.SUPPORTS_COMPLETION:
+        pytest.skip(f"{provider.value} does not support completion, skipping")
+
     """Test that parallel completion works."""
     model_id = provider_model_map[provider]
     prompt_1 = "What's the capital of France?"

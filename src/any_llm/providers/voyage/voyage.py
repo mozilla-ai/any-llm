@@ -1,20 +1,19 @@
+from collections.abc import Iterator
 from typing import Any
 
 try:
     from voyageai.client import Client
-except ImportError:
-    msg = "voyageai is not installed. Please install it with `pip install any-llm-sdk[voyage]`"
-    raise ImportError(msg)
 
-from openai._streaming import Stream
-from openai.types.chat.chat_completion import ChatCompletion
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types.create_embedding_response import CreateEmbeddingResponse
+    from any_llm.providers.voyage.utils import (
+        _create_openai_embedding_response_from_voyage,
+    )
+
+    PACKAGES_INSTALLED = True
+except ImportError:
+    PACKAGES_INSTALLED = False
 
 from any_llm.provider import Provider
-from any_llm.providers.voyage.utils import (
-    _create_openai_embedding_response_from_voyage,
-)
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 
 
 class VoyageProvider(Provider):
@@ -27,20 +26,12 @@ class VoyageProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://docs.voyageai.com/"
 
     SUPPORTS_COMPLETION = False
-    SUPPORTS_STREAMING = False
+    SUPPORTS_COMPLETION_REASONING = False
+    SUPPORTS_COMPLETION_STREAMING = False
+    SUPPORTS_RESPONSES = False
     SUPPORTS_EMBEDDING = True
 
-    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
-        """Default is that all kwargs are supported."""
-        pass
-
-    def _make_api_call(
-        self,
-        model: str,
-        messages: list[dict[str, Any]],
-        **kwargs: Any,
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
-        raise NotImplementedError("voyage provider doesn't support completion.")
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
     def embedding(
         self,
@@ -48,9 +39,6 @@ class VoyageProvider(Provider):
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        if not self.SUPPORTS_EMBEDDING:
-            raise NotImplementedError("This provider does not support embeddings.")
-
         if isinstance(inputs, str):
             inputs = [inputs]
 
@@ -61,3 +49,12 @@ class VoyageProvider(Provider):
             **kwargs,
         )
         return _create_openai_embedding_response_from_voyage(model, result)
+
+    def completion(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+        msg = "voyage provider doesn't support completion."
+        raise NotImplementedError(msg)

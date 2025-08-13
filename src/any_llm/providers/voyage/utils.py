@@ -1,12 +1,7 @@
-try:
-    from voyageai.object.embeddings import EmbeddingsObject
-except ImportError:
-    msg = "voyageai is not installed. Please install it with `pip install any-llm-sdk[voyage]`"
-    raise ImportError(msg)
-
 from openai.types import CreateEmbeddingResponse
-from openai.types.embedding import Embedding
 from openai.types.create_embedding_response import Usage
+from openai.types.embedding import Embedding
+from voyageai.object.embeddings import EmbeddingsObject
 
 
 def _create_openai_embedding_response_from_voyage(model: str, result: EmbeddingsObject) -> CreateEmbeddingResponse:
