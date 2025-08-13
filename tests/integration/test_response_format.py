@@ -7,8 +7,9 @@ from pydantic import BaseModel
 
 from any_llm import ProviderName, completion
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.types.completion import ChatCompletion
 from any_llm.provider import ProviderFactory
+from any_llm.types.completion import ChatCompletion
+
 
 def test_response_format(
     provider: ProviderName,
