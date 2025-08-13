@@ -147,7 +147,9 @@ class Provider(ABC):
         msg = "This provider does not support the Responses API."
         raise NotImplementedError(msg)
 
-    async def aresponses(self, model: str, input_data: str | ResponseInputParam, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
+    async def aresponses(
+        self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
+    ) -> Response | Iterator[ResponseStreamEvent]:
         return await asyncio.to_thread(self.responses, model, input_data, **kwargs)
 
     def embedding(
