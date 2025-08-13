@@ -92,7 +92,7 @@ class Provider(ABC):
     """
 
     # === Internal Flag Checks ===
-    PACKAGES_INSTALLED: bool = False
+    PACKAGES_INSTALLED: bool
     """Some providers use SDKs that are not installed by default.
     This flag is used to check if the packages are installed before instantiating the provider.
     """

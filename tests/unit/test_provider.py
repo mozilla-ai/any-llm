@@ -107,6 +107,12 @@ def test_all_providers_have_required_attributes(provider: str) -> None:
 
     assert provider_instance.PROVIDER_NAME is not None
     assert provider_instance.PROVIDER_DOCUMENTATION_URL is not None
+    assert provider_instance.PACKAGES_INSTALLED is not None
+    assert provider_instance.SUPPORTS_COMPLETION is not None
+    assert provider_instance.SUPPORTS_COMPLETION_STREAMING is not None
+    assert provider_instance.SUPPORTS_COMPLETION_REASONING is not None
+    assert provider_instance.SUPPORTS_EMBEDDING is not None
+    assert provider_instance.SUPPORTS_RESPONSES is not None
 
 
 def test_providers_raise_MissingApiKeyError(provider: str) -> None:
