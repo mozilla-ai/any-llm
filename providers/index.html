@@ -541,16 +541,6 @@ discussion for more information.</li>
 </thead>
 <tbody>
 <tr>
-<td><a href="https://aws.amazon.com/bedrock/"><code>aws</code></a></td>
-<td>AWS_BEARER_TOKEN_BEDROCK</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/aws/">Source</a></td>
-<td>❌</td>
-<td>✅</td>
-<td>✅</td>
-<td>❌</td>
-<td>✅</td>
-</tr>
-<tr>
 <td><a href="https://docs.anthropic.com/en/home"><code>anthropic</code></a></td>
 <td>ANTHROPIC_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/anthropic/">Source</a></td>
@@ -559,6 +549,16 @@ discussion for more information.</li>
 <td>✅</td>
 <td>❌</td>
 <td>❌</td>
+</tr>
+<tr>
+<td><a href="https://aws.amazon.com/bedrock/"><code>aws</code></a></td>
+<td>AWS_BEARER_TOKEN_BEDROCK</td>
+<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/aws/">Source</a></td>
+<td>❌</td>
+<td>✅</td>
+<td>✅</td>
+<td>❌</td>
+<td>✅</td>
 </tr>
 <tr>
 <td><a href="https://azure.microsoft.com/en-us/products/ai-services/openai-service"><code>azure</code></a></td>
@@ -622,7 +622,7 @@ discussion for more information.</li>
 </tr>
 <tr>
 <td><a href="https://cloud.google.com/vertex-ai/docs"><code>google</code></a></td>
-<td>-</td>
+<td>GOOGLE_API_KEY/GEMINI_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/google/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
@@ -661,16 +661,6 @@ discussion for more information.</li>
 <td>❌</td>
 </tr>
 <tr>
-<td><a href="https://lmstudio.ai/"><code>lmstudio</code></a></td>
-<td>LM_STUDIO_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/lmstudio/">Source</a></td>
-<td>❌</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr>
 <td><a href="https://www.llama.com/products/llama-api/"><code>llama</code></a></td>
 <td>LLAMA_API_KEY</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/llama/">Source</a></td>
@@ -679,6 +669,16 @@ discussion for more information.</li>
 <td>✅</td>
 <td>❌</td>
 <td>❌</td>
+</tr>
+<tr>
+<td><a href="https://lmstudio.ai/"><code>lmstudio</code></a></td>
+<td>LM_STUDIO_API_KEY</td>
+<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/lmstudio/">Source</a></td>
+<td>❌</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
 </tr>
 <tr>
 <td><a href="https://docs.mistral.ai/"><code>mistral</code></a></td>
@@ -712,7 +712,7 @@ discussion for more information.</li>
 </tr>
 <tr>
 <td><a href="https://github.com/ollama/ollama"><code>ollama</code></a></td>
-<td>-</td>
+<td>None</td>
 <td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/ollama/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
