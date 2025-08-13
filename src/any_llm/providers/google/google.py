@@ -37,8 +37,9 @@ from any_llm.types.completion import (
 class GoogleProvider(Provider):
     """Google Provider using the new response conversion utilities."""
 
-    PROVIDER_NAME = "Google"
+    PROVIDER_NAME = "google"
     PROVIDER_DOCUMENTATION_URL = "https://cloud.google.com/vertex-ai/docs"
+    ENV_API_KEY_NAME = "GOOGLE_API_KEY/GEMINI_API_KEY"
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True

@@ -8,10 +8,10 @@ except ImportError as exc:
     msg = "together or instructor is not installed. Please install it with `pip install any-llm-sdk[together]`"
     raise ImportError(msg) from exc
 
-
-from any_llm.provider import Provider, convert_instructor_response
+from any_llm.provider import Provider
 from any_llm.providers.together.utils import _create_openai_chunk_from_together_chunk
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, Choice, CompletionUsage
+from any_llm.utils.instructor import _convert_instructor_response
 
 if TYPE_CHECKING:
     from together.types import (
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 
 class TogetherProvider(Provider):
-    PROVIDER_NAME = "Together"
+    PROVIDER_NAME = "together"
     ENV_API_KEY_NAME = "TOGETHER_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://together.ai/"
 
@@ -75,7 +75,7 @@ class TogetherProvider(Provider):
                 **kwargs,
             )
 
-            return convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
+            return _convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
 
         if kwargs.get("stream", False):
             return self._stream_completion(client, model, messages, **kwargs)

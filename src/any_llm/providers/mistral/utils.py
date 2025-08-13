@@ -187,6 +187,17 @@ def _create_mistral_completion_from_response(
             _convert_mistral_tool_calls_to_any_llm(message_data.tool_calls) if message_data.tool_calls else None
         )
 
+        # if the content is none, see if it accidentally ended up in the reasoning content (aka <response>).
+        # This is a bug in the mistral provider/model return
+        if (
+            content is None
+            and reasoning_content
+            and "<response>" in reasoning_content
+            and "</response>" in reasoning_content
+        ):
+            content = reasoning_content.split("<response>")[1].split("</response>")[0]
+            reasoning_content = reasoning_content.split("</response>")[0]
+
         message = ChatCompletionMessage(
             role="assistant",
             content=content,

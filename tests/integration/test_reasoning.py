@@ -10,15 +10,14 @@ from any_llm.provider import ProviderFactory
 from any_llm.types.completion import ChatCompletion
 
 
-def test_reasoning_providers(
+def test_completion_reasoning(
     provider: ProviderName,
     provider_reasoning_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    providers_metadata = ProviderFactory.get_all_provider_metadata()
-    provider_metadata = next(metadata for metadata in providers_metadata if metadata["provider_key"] == provider.value)
-    if not provider_metadata["reasoning"]:
+    cls = ProviderFactory.get_provider_class(provider)
+    if not cls.SUPPORTS_COMPLETION_REASONING:
         pytest.skip(f"{provider.value} does not support completion reasoning, skipping")
     model_id = provider_reasoning_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})

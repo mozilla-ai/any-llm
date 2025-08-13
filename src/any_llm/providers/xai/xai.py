@@ -23,7 +23,7 @@ except ImportError as exc:
 class XaiProvider(Provider):
     API_BASE = "https://api.x.ai/v1"
     ENV_API_KEY_NAME = "XAI_API_KEY"
-    PROVIDER_NAME = "xAI"
+    PROVIDER_NAME = "xai"
     PROVIDER_DOCUMENTATION_URL = "https://x.ai/"
 
     SUPPORTS_COMPLETION_STREAMING = True

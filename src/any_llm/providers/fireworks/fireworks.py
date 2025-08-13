@@ -24,7 +24,7 @@ from any_llm.types.responses import Response, ResponseStreamEvent
 
 
 class FireworksProvider(Provider):
-    PROVIDER_NAME = "Fireworks"
+    PROVIDER_NAME = "fireworks"
     ENV_API_KEY_NAME = "FIREWORKS_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://fireworks.ai/api"
 

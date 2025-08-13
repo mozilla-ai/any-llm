@@ -19,7 +19,7 @@ from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 class CohereProvider(Provider):
     """Cohere Provider using the new response conversion utilities."""
 
-    PROVIDER_NAME = "Cohere"
+    PROVIDER_NAME = "cohere"
     ENV_API_KEY_NAME = "CO_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://cohere.com/api"
 

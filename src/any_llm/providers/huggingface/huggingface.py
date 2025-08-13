@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 class HuggingfaceProvider(Provider):
     """HuggingFace Provider using the new response conversion utilities."""
 
-    PROVIDER_NAME = "HuggingFace"
+    PROVIDER_NAME = "huggingface"
     ENV_API_KEY_NAME = "HF_TOKEN"
     PROVIDER_DOCUMENTATION_URL = "https://huggingface.co/inference-endpoints"
 

@@ -17,9 +17,8 @@ def test_embedding_providers(
 ) -> None:
     """Test that all embedding-supported providers can generate embeddings successfully."""
     # first check if the provider supports embeddings
-    providers_metadata = ProviderFactory.get_all_provider_metadata()
-    provider_metadata = next(metadata for metadata in providers_metadata if metadata["provider_key"] == provider.value)
-    if not provider_metadata["embedding"]:
+    cls = ProviderFactory.get_provider_class(provider)
+    if not cls.SUPPORTS_EMBEDDING:
         pytest.skip(f"{provider.value} does not support embeddings, skipping")
 
     model_id = embedding_provider_model_map[provider]

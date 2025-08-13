@@ -1,7 +1,6 @@
 # Inspired by https://github.com/andrewyng/aisuite/tree/main/aisuite
 import asyncio
 import importlib
-import json
 import os
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
@@ -15,48 +14,10 @@ from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
-    ChatCompletionMessage,
-    Choice,
     CreateEmbeddingResponse,
 )
+from any_llm.types.provider import ProviderMetadata
 from any_llm.types.responses import Response, ResponseStreamEvent
-
-
-def convert_instructor_response(instructor_response: Any, model: str, provider_name: str) -> ChatCompletion:
-    """
-    Convert instructor response to ChatCompletion format.
-
-    Args:
-        instructor_response: The response from instructor
-        model: The model name used
-        provider_name: The provider name (used in the response ID)
-
-    Returns:
-        ChatCompletion object with the structured response as JSON content
-    """
-    if hasattr(instructor_response, "model_dump"):
-        content = json.dumps(instructor_response.model_dump())
-    else:
-        content = json.dumps(instructor_response)
-
-    message = ChatCompletionMessage(
-        role="assistant",
-        content=content,
-    )
-
-    choice = Choice(
-        finish_reason="stop",
-        index=0,
-        message=message,
-    )
-
-    return ChatCompletion(
-        id=f"{provider_name}-instructor-response",
-        choices=[choice],
-        created=0,
-        model=model,
-        object="chat.completion",
-    )
 
 
 class ProviderName(str, Enum):
@@ -100,9 +61,9 @@ class Provider(ABC):
     """Provider for the LLM."""
 
     # Provider-specific configuration (to be overridden by subclasses)
-    PROVIDER_NAME: str
-    ENV_API_KEY_NAME: str
+    PROVIDER_NAME: str  # Must match the name of the provider directory  (case sensitive)
     PROVIDER_DOCUMENTATION_URL: str
+    ENV_API_KEY_NAME: str
 
     # Feature support flags (to be set by subclasses)
     SUPPORTS_COMPLETION_STREAMING: bool
@@ -115,7 +76,6 @@ class Provider(ABC):
     API_BASE: str | None = None
 
     def __init__(self, config: ApiConfig) -> None:
-        self.config = config
         self.config = self._verify_and_set_api_key(config)
 
     def _verify_and_set_api_key(self, config: ApiConfig) -> ApiConfig:
@@ -129,24 +89,24 @@ class Provider(ABC):
         return config
 
     @classmethod
-    def get_provider_metadata(cls) -> dict[str, str | bool]:
+    def get_provider_metadata(cls) -> ProviderMetadata:
         """Get provider metadata without requiring instantiation.
 
         Returns:
             Dictionary containing provider metadata including name, environment variable,
             documentation URL, and class name.
         """
-        return {
-            "name": cls.PROVIDER_NAME,
-            "env_key": getattr(cls, "ENV_API_KEY_NAME", "-"),
-            "doc_url": cls.PROVIDER_DOCUMENTATION_URL,
-            "streaming": cls.SUPPORTS_COMPLETION_STREAMING,
-            "reasoning": cls.SUPPORTS_COMPLETION_REASONING,
-            "completion": cls.SUPPORTS_COMPLETION,
-            "embedding": cls.SUPPORTS_EMBEDDING,
-            "responses": cls.SUPPORTS_RESPONSES,
-            "class_name": cls.__name__,
-        }
+        return ProviderMetadata(
+            name=cls.PROVIDER_NAME,
+            env_key=cls.ENV_API_KEY_NAME,
+            doc_url=cls.PROVIDER_DOCUMENTATION_URL,
+            streaming=cls.SUPPORTS_COMPLETION_STREAMING,
+            reasoning=cls.SUPPORTS_COMPLETION_REASONING,
+            completion=cls.SUPPORTS_COMPLETION,
+            embedding=cls.SUPPORTS_EMBEDDING,
+            responses=cls.SUPPORTS_RESPONSES,
+            class_name=cls.__name__,
+        )
 
     @abstractmethod
     def completion(
@@ -264,21 +224,20 @@ class ProviderFactory:
         return [provider.value for provider in ProviderName]
 
     @classmethod
-    def get_all_provider_metadata(cls) -> list[dict[str, str | bool]]:
+    def get_all_provider_metadata(cls) -> list[ProviderMetadata]:
         """Get metadata for all supported providers.
 
         Returns:
             List of dictionaries containing provider metadata
         """
-        providers = []
+        providers: list[ProviderMetadata] = []
         for provider_key in cls.get_supported_providers():
             provider_class = cls.get_provider_class(provider_key)
             metadata = provider_class.get_provider_metadata()
-            metadata["provider_key"] = provider_key
             providers.append(metadata)
 
         # Sort providers by name
-        providers.sort(key=lambda x: x["name"])
+        providers.sort(key=lambda x: x.name)
         return providers
 
     @classmethod

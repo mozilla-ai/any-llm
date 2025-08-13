@@ -7,10 +7,12 @@ It was initially written in collaboration with Claude 4 Sonnet.
 import asyncio
 import os
 import re
-import sys
 from pathlib import Path
 
 import httpx
+
+from any_llm.provider import ProviderFactory
+from any_llm.types.provider import ProviderMetadata
 
 
 # Exceptions
@@ -38,19 +40,7 @@ async def validate_url(urls, http_timeout=10):
                 raise UrlValidationError(msg)
 
 
-def get_provider_metadata(provider_dir):
-    """Extract metadata from all provider implementations using ProviderFactory."""
-    # Add the src directory to Python path so we can import the provider module
-    src_path = provider_dir.parent.parent
-    if str(src_path) not in sys.path:
-        sys.path.insert(0, str(src_path))
-
-    from any_llm.provider import ProviderFactory
-
-    return ProviderFactory.get_all_provider_metadata()
-
-
-def generate_provider_table(providers):
+def generate_provider_table(providers: list[ProviderMetadata]):
     """Generate a markdown table from provider metadata."""
     if not providers:
         return "No providers found."
@@ -64,23 +54,23 @@ def generate_provider_table(providers):
     # Add rows for each provider
     source_urls = []
     for provider in providers:
-        env_key = provider["env_key"]
+        env_key = provider.env_key
 
         # Use the provider key (directory name) instead of display name
-        provider_key = provider["provider_key"]
+        provider_key = provider.name
         source_url = f"https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/{provider_key}/"
         source_urls.append(source_url)
 
         source_link = f"[Source]({source_url})"
 
         # Create provider ID as a hyperlink to the documentation URL
-        provider_id_link = f"[`{provider_key.lower()}`]({provider['doc_url']})"
+        provider_id_link = f"[`{provider_key}`]({provider.doc_url})"
 
-        stream_supported = "✅" if provider.get("streaming", False) else "❌"
-        embedding_supported = "✅" if provider.get("embedding", False) else "❌"
-        reasoning_supported = "✅" if provider.get("reasoning", False) else "❌"
-        responses_supported = "✅" if provider.get("responses", False) else "❌"
-        completion_supported = "✅" if provider.get("completion", False) else "❌"
+        stream_supported = "✅" if provider.streaming else "❌"
+        embedding_supported = "✅" if provider.embedding else "❌"
+        reasoning_supported = "✅" if provider.reasoning else "❌"
+        responses_supported = "✅" if provider.responses else "❌"
+        completion_supported = "✅" if provider.completion else "❌"
 
         row = (
             f"| {provider_id_link} | {env_key} | {source_link} | {responses_supported} | {completion_supported} | "
@@ -100,7 +90,7 @@ def inject_provider_table_in_markdown(markdown_content, provider_dir):
     if start_marker not in markdown_content or end_marker not in markdown_content:
         return markdown_content
 
-    provider_metadata = get_provider_metadata(provider_dir)
+    provider_metadata = ProviderFactory.get_all_provider_metadata()
     provider_table = generate_provider_table(provider_metadata)
 
     start_idx = markdown_content.find(start_marker)
