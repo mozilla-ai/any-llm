@@ -4,7 +4,7 @@ from typing import Any
 
 try:
     from ibm_watsonx_ai import Credentials
-    from ibm_watsonx_ai.foundation_models import ModelInference  # type: ignore[attr-defined]
+    from ibm_watsonx_ai.foundation_models import ModelInference
 
     PACKAGES_INSTALLED = True
 except ImportError:
