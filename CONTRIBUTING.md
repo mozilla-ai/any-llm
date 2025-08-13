@@ -21,7 +21,7 @@ uv sync --all-extras -U --python=3.13
 Ensure all the checks pass:
 
 ```bash
-pre-commit run --all-files
+uv run pre-commit run --all-files --verbose
 ```
 
 **Tests**
