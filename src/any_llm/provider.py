@@ -19,7 +19,7 @@ from any_llm.types.completion import (
     Choice,
     CreateEmbeddingResponse,
 )
-from any_llm.types.responses import Response, ResponseStreamEvent, ResponseInputParam
+from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
 
 
 def convert_instructor_response(instructor_response: Any, model: str, provider_name: str) -> ChatCompletion:

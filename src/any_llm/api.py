@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from any_llm.provider import ApiConfig, Provider, ProviderFactory
 from any_llm.tools import prepare_tools
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
-from any_llm.types.responses import Response, ResponseStreamEvent, ResponseInputParam
+from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
 
 
 def _prepare_completion_request(
