@@ -15,12 +15,13 @@ except ImportError as exc:
 
 
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import Provider, convert_instructor_response
+from any_llm.provider import Provider
 from any_llm.providers.groq.utils import (
     _create_openai_chunk_from_groq_chunk,
     to_chat_completion,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+from any_llm.utils.instructor import _convert_instructor_response
 
 if TYPE_CHECKING:
     from groq.types.chat import ChatCompletion as GroqChatCompletion
@@ -30,7 +31,7 @@ if TYPE_CHECKING:
 class GroqProvider(Provider):
     """Groq Provider using instructor for structured output."""
 
-    PROVIDER_NAME = "Groq"
+    PROVIDER_NAME = "groq"
     ENV_API_KEY_NAME = "GROQ_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://groq.com/api"
 
@@ -77,7 +78,7 @@ class GroqProvider(Provider):
                 response_model=response_format,
                 **kwargs,
             )
-            return convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
+            return _convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
 
         if kwargs.get("stream", False):
             return self._stream_completion(client, model, messages, **kwargs)

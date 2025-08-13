@@ -11,7 +11,7 @@ from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 class DeepseekProvider(BaseOpenAIProvider):
     API_BASE = "https://api.deepseek.com"
     ENV_API_KEY_NAME = "DEEPSEEK_API_KEY"
-    PROVIDER_NAME = "DeepSeek"
+    PROVIDER_NAME = "deepseek"
     PROVIDER_DOCUMENTATION_URL = "https://platform.deepseek.com/"
 
     SUPPORTS_EMBEDDING = False  # DeepSeek doesn't host an embedding model

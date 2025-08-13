@@ -41,6 +41,7 @@ jobs:
         run: |
           ollama serve &
           ollama pull llama3.2:1b
+          ollama pull qwen3:0.6b
 
       - name: Run Integration tests (parallel with xdist)
         env:

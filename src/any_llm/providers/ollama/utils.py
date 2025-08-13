@@ -8,7 +8,12 @@ from ollama import EmbedResponse
 from ollama import Message as OllamaMessage
 
 from any_llm.types.completion import (
+    ChatCompletion,
     ChatCompletionChunk,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageToolCall,
+    Choice,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
@@ -16,6 +21,7 @@ from any_llm.types.completion import (
     CompletionUsage,
     CreateEmbeddingResponse,
     Embedding,
+    Function,
     Reasoning,
     Usage,
 )
@@ -122,10 +128,8 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
     )
 
 
-def _create_response_dict_from_ollama_response(
-    response: OllamaChatResponse,
-) -> dict[str, Any]:
-    """Convert an Ollama completion response to OpenAI format."""
+def _create_chat_completion_from_ollama_response(response: OllamaChatResponse) -> ChatCompletion:
+    """Convert an Ollama completion response directly to an OpenAI-compatible ChatCompletion."""
 
     created_str = response.created_at
     if created_str is None:
@@ -140,60 +144,62 @@ def _create_response_dict_from_ollama_response(
 
     prompt_tokens = response.prompt_eval_count or 0
     completion_tokens = response.eval_count or 0
-    response_dict: dict[str, Any] = {
-        "id": "chatcmpl-" + str(uuid.uuid4()),
-        "model": response.model or "unknown",
-        "created": created,
-        "usage": {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": prompt_tokens + completion_tokens,
-        },
-    }
 
     response_message: OllamaMessage = response.message
     if not response_message or not isinstance(response_message, OllamaMessage):
         msg = "Unexpected output from ollama"
         raise ValueError(msg)
 
+    openai_tool_calls: list[ChatCompletionMessageToolCall] | None = None
     if response_message.tool_calls:
-        tool_calls = []
+        openai_tool_calls = []
         for tool_call in response_message.tool_calls:
-            tool_calls.append(
-                {
-                    "id": str(uuid.uuid4()),
-                    "function": {
-                        "name": tool_call.function.name,
-                        "arguments": json.dumps(tool_call.function.arguments),
-                    },
-                    "type": "function",
-                }
+            raw_arguments = tool_call.function.arguments
+            if isinstance(raw_arguments, dict):
+                arguments_str = json.dumps(raw_arguments)
+            elif isinstance(raw_arguments, str):
+                arguments_str = raw_arguments
+            else:
+                arguments_str = json.dumps(raw_arguments) if raw_arguments is not None else "{}"
+            openai_tool_calls.append(
+                ChatCompletionMessageFunctionToolCall(
+                    id=str(uuid.uuid4()),
+                    type="function",
+                    function=Function(
+                        name=tool_call.function.name,
+                        arguments=arguments_str,
+                    ),
+                )
             )
+    if not response_message.thinking and response_message.content:
+        # If it didn't come out right from ollama, also look for it in the content between <think> and </think>
+        if "<think>" in response_message.content and "</think>" in response_message.content:
+            response_message.thinking = response_message.content.split("<think>")[1].split("</think>")[0]
+            # remove it from the content
+            response_message.content = response_message.content.split("<think>")[0]
 
-        response_dict["choices"] = [
-            {
-                "message": {
-                    "role": response_message.role,
-                    "content": response_message.content,
-                    "reasoning_content": response_message.thinking,
-                    "tool_calls": tool_calls,
-                },
-                "finish_reason": "tool_calls",
-                "index": 0,
-            }
-        ]
-    else:
-        response_dict["choices"] = [
-            {
-                "message": {
-                    "role": response_message.role,
-                    "content": response_message.content,
-                    "reasoning_content": response_message.thinking,
-                    "tool_calls": None,
-                },
-                "finish_reason": response.done_reason,
-                "index": 0,
-            }
-        ]
+    message = ChatCompletionMessage(
+        role="assistant",
+        content=response_message.content,
+        tool_calls=openai_tool_calls,
+        reasoning=Reasoning(content=response_message.thinking) if response_message.thinking else None,
+    )
 
-    return response_dict
+    finish_reason: Any = "tool_calls" if openai_tool_calls else response.done_reason
+
+    choice = Choice(index=0, finish_reason=finish_reason, message=message)
+
+    usage = CompletionUsage(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=prompt_tokens + completion_tokens,
+    )
+
+    return ChatCompletion(
+        id=f"chatcmpl-{uuid.uuid4()}",
+        model=response.model or "unknown",
+        created=created,
+        object="chat.completion",
+        choices=[choice],
+        usage=usage,
+    )

@@ -10,18 +10,19 @@ except ImportError as exc:
     raise ImportError(msg) from exc
 
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ApiConfig, Provider, convert_instructor_response
+from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.cerebras.utils import (
     _convert_response,
     _create_openai_chunk_from_cerebras_chunk,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+from any_llm.utils.instructor import _convert_instructor_response
 
 
 class CerebrasProvider(Provider):
     """Cerebras Provider using the official Cerebras SDK with instructor support for structured outputs."""
 
-    PROVIDER_NAME = "Cerebras"
+    PROVIDER_NAME = "cerebras"
     ENV_API_KEY_NAME = "CEREBRAS_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://docs.cerebras.ai/"
 
@@ -77,7 +78,7 @@ class CerebrasProvider(Provider):
                 **kwargs,
             )
 
-            return convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
+            return _convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
 
         if kwargs.get("stream", False):
             kwargs.pop("stream")

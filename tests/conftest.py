@@ -6,10 +6,16 @@ from any_llm.provider import ProviderName
 
 
 @pytest.fixture
-def provider_completion_reasoning_model_map() -> dict[ProviderName, str]:
+def provider_reasoning_model_map() -> dict[ProviderName, str]:
     return {
         ProviderName.MISTRAL: "magistral-small-latest",
         ProviderName.GROQ: "openai/gpt-oss-20b",
+        ProviderName.FIREWORKS: "accounts/fireworks/models/deepseek-r1",
+        ProviderName.OPENAI: "gpt-5-nano",
+        ProviderName.MISTRAL: "magistral-small-latest",
+        ProviderName.XAI: "grok-3-mini-latest",
+        ProviderName.OLLAMA: "qwen3:0.6b",
+        ProviderName.LMSTUDIO: "openai/gpt-oss-20b",  # You must have LM Studio running and the server enabled
     }
 
 

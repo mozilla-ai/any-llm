@@ -10,15 +10,15 @@ except ImportError as exc:
 
 from openai import OpenAI
 
-from any_llm.provider import convert_instructor_response
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+from any_llm.utils.instructor import _convert_instructor_response
 
 
 class SambanovaProvider(BaseOpenAIProvider):
     API_BASE = "https://api.sambanova.ai/v1/"
     ENV_API_KEY_NAME = "SAMBANOVA_API_KEY"
-    PROVIDER_NAME = "SambaNova"
+    PROVIDER_NAME = "sambanova"
     PROVIDER_DOCUMENTATION_URL = "https://sambanova.ai/"
 
     def completion(
@@ -39,7 +39,7 @@ class SambanovaProvider(BaseOpenAIProvider):
                 response_model=response_format,
                 **kwargs,
             )
-            return convert_instructor_response(response, model, self.PROVIDER_NAME)
+            return _convert_instructor_response(response, model, self.PROVIDER_NAME)
         response = client.chat.completions.create(
             model=model,
             messages=messages,  # type: ignore[arg-type]

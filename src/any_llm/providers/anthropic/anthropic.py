@@ -9,7 +9,7 @@ except ImportError as exc:
     raise ImportError(msg) from exc
 
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import Provider, convert_instructor_response
+from any_llm.provider import Provider
 from any_llm.providers.anthropic.utils import (
     _convert_kwargs,
     _convert_messages_for_anthropic,
@@ -17,6 +17,7 @@ from any_llm.providers.anthropic.utils import (
     _create_openai_chunk_from_anthropic_chunk,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+from any_llm.utils.instructor import _convert_instructor_response
 
 
 class AnthropicProvider(Provider):
@@ -26,7 +27,7 @@ class AnthropicProvider(Provider):
     Handles conversion between OpenAI format and Anthropic's native format.
     """
 
-    PROVIDER_NAME = "Anthropic"
+    PROVIDER_NAME = "anthropic"
     ENV_API_KEY_NAME = "ANTHROPIC_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://docs.anthropic.com/en/home"
 
@@ -91,7 +92,7 @@ class AnthropicProvider(Provider):
                 **instructor_kwargs,
             )
 
-            return convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
+            return _convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
 
         if kwargs.get("stream", False):
             kwargs.pop("stream")

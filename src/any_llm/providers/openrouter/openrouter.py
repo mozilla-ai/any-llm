@@ -6,7 +6,7 @@ class OpenrouterProvider(BaseOpenAIProvider):
 
     API_BASE = "https://openrouter.ai/api/v1"
     ENV_API_KEY_NAME = "OPENROUTER_API_KEY"
-    PROVIDER_NAME = "OpenRouter"
+    PROVIDER_NAME = "openrouter"
     PROVIDER_DOCUMENTATION_URL = "https://openrouter.ai/docs"
 
     SUPPORTS_COMPLETION_STREAMING = True

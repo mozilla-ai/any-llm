@@ -10,7 +10,7 @@ from any_llm.exceptions import MissingApiKeyError
 from any_llm.types.completion import ChatCompletion
 
 
-def test_providers(
+def test_sync_completion(
     provider: ProviderName,
     provider_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
@@ -36,7 +36,7 @@ def test_providers(
 
 
 @pytest.mark.asyncio
-async def test_parallel_async_completion(
+async def test_async_completion(
     provider: ProviderName,
     provider_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],

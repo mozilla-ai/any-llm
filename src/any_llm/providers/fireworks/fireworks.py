@@ -7,21 +7,30 @@ except ImportError as exc:
     msg = "fireworks-ai is not installed. Please install it with `pip install any-llm-sdk[fireworks]`"
     raise ImportError(msg) from exc
 
+from openai import OpenAI, Stream
 from pydantic import BaseModel
 
 from any_llm.provider import Provider
 from any_llm.providers.fireworks.utils import _create_openai_chunk_from_fireworks_chunk
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, Choice, CompletionUsage
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    Choice,
+    CompletionUsage,
+    Reasoning,
+)
+from any_llm.types.responses import Response, ResponseStreamEvent
 
 
 class FireworksProvider(Provider):
-    PROVIDER_NAME = "Fireworks"
+    PROVIDER_NAME = "fireworks"
     ENV_API_KEY_NAME = "FIREWORKS_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://fireworks.ai/api"
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
-    SUPPORTS_RESPONSES = False
+    SUPPORTS_RESPONSES = True
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
 
@@ -95,3 +104,27 @@ class FireworksProvider(Provider):
             choices=choices_out,
             usage=usage,
         )
+
+    def responses(self, model: str, input_data: Any, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
+        """Call Fireworks Responses API and normalize into ChatCompletion/Chunks."""
+        client = OpenAI(
+            base_url="https://api.fireworks.ai/inference/v1",
+            api_key=self.config.api_key,
+        )
+        response = client.responses.create(
+            model=model,
+            input=input_data,
+            **kwargs,
+        )
+        if not isinstance(response, Response | Stream):
+            err_msg = f"Responses API returned an unexpected type: {type(response)}"
+            raise ValueError(err_msg)
+        if isinstance(response, Response) and not isinstance(response, Stream):
+            # See https://fireworks.ai/blog/response-api for details about Fireworks Responses API support
+            reasoning = response.output[-1].content[0].text.split("</think>")[-1]  # type: ignore[union-attr,index]
+            if reasoning:
+                reasoning = reasoning.strip()
+                response.output[-1].content[0].text = response.output[-1].content[0].text.split("</think>")[0]  # type: ignore[union-attr,index]
+            response.reasoning = Reasoning(content=reasoning) if reasoning else None  # type: ignore[assignment]
+
+        return response

@@ -12,7 +12,7 @@ except ImportError as exc:
     raise ImportError(msg) from exc
 
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.provider import ApiConfig, Provider, convert_instructor_response
+from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.aws.utils import (
     _convert_kwargs,
     _convert_messages,
@@ -21,12 +21,13 @@ from any_llm.providers.aws.utils import (
     _create_openai_embedding_response_from_aws,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
+from any_llm.utils.instructor import _convert_instructor_response
 
 
 class AwsProvider(Provider):
     """AWS Bedrock Provider using boto3 and instructor for structured output."""
 
-    PROVIDER_NAME = "AWS"
+    PROVIDER_NAME = "aws"
     ENV_API_KEY_NAME = "AWS_BEARER_TOKEN_BEDROCK"
     PROVIDER_DOCUMENTATION_URL = "https://aws.amazon.com/bedrock/"
 
@@ -74,7 +75,7 @@ class AwsProvider(Provider):
                 **kwargs,
             )
 
-            return convert_instructor_response(instructor_response, model, "aws")
+            return _convert_instructor_response(instructor_response, model, "aws")
 
         stream = kwargs.pop("stream", False)
 

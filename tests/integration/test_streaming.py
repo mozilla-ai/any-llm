@@ -6,6 +6,7 @@ from openai import APIConnectionError
 
 from any_llm import ProviderName, completion
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
+from any_llm.provider import ProviderFactory
 from any_llm.types.completion import ChatCompletionChunk
 
 
@@ -15,6 +16,9 @@ def test_streaming_completion(
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
     """Test that streaming completion works for supported providers."""
+    cls = ProviderFactory.get_provider_class(provider)
+    if not cls.SUPPORTS_COMPLETION_STREAMING:
+        pytest.skip(f"{provider.value} does not support streaming completion")
     model_id = provider_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
     try:

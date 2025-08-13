@@ -38,9 +38,8 @@ def test_embedding_with_api_config() -> None:
 
 def test_embedding_unsupported_provider_raises_not_implemented(provider: ProviderName) -> None:
     """Test that calling embedding on a provider that doesn't support it raises NotImplementedError."""
-    providers_metadata = ProviderFactory.get_all_provider_metadata()
-    provider_metadata = next(metadata for metadata in providers_metadata if metadata["provider_key"] == provider.value)
-    if bool(provider_metadata.get("embedding", False)) is False:
+    cls = ProviderFactory.get_provider_class(provider)
+    if not cls.SUPPORTS_EMBEDDING:
         with pytest.raises(NotImplementedError, match=None):
             embedding(f"{provider.value}/does-not-matter", inputs="Hello world", api_key="test_key")
     else:
