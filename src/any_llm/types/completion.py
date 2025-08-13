@@ -1,5 +1,3 @@
-from typing import TypeAlias
-
 from openai.types import CreateEmbeddingResponse as OpenAICreateEmbeddingResponse
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion import Choice as OpenAIChoice
@@ -53,14 +51,14 @@ class ChatCompletionChunk(OpenAIChatCompletionChunk):
     choices: list[ChunkChoice]  # type: ignore[assignment]
 
 
-ChatCompletionMessageFunctionToolCall: TypeAlias = OpenAIChatCompletionMessageFunctionToolCall
-ChatCompletionMessageToolCall: TypeAlias = (
+type ChatCompletionMessageFunctionToolCall = OpenAIChatCompletionMessageFunctionToolCall
+type ChatCompletionMessageToolCall = (
     OpenAIChatCompletionMessageFunctionToolCall | OpenAIChatCompletionMessageToolCall
 )
-Function: TypeAlias = OpenAIFunction
-CompletionUsage: TypeAlias = OpenAICompletionUsage
-CreateEmbeddingResponse: TypeAlias = OpenAICreateEmbeddingResponse
-Embedding: TypeAlias = OpenAIEmbedding
-Usage: TypeAlias = OpenAIUsage
-ChoiceDeltaToolCall: TypeAlias = OpenAIChoiceDeltaToolCall
-ChoiceDeltaToolCallFunction: TypeAlias = OpenAIChoiceDeltaToolCallFunction
+type Function = OpenAIFunction
+type CompletionUsage = OpenAICompletionUsage
+type CreateEmbeddingResponse = OpenAICreateEmbeddingResponse
+type Embedding = OpenAIEmbedding
+type Usage = OpenAIUsage
+type ChoiceDeltaToolCall = OpenAIChoiceDeltaToolCall
+type ChoiceDeltaToolCallFunction = OpenAIChoiceDeltaToolCallFunction
