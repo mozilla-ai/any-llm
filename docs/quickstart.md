@@ -48,16 +48,15 @@ The `model_id` portion is passed directly to the provider internals: to understa
 you will need to refer to the provider documentation.
 
 ```python
-from any_llm import completion
 import os
+
+from any_llm import completion
 
 # Make sure you have the appropriate environment variable set
 assert os.environ.get('MISTRAL_API_KEY')
 
-model = "mistral/mistral-small-latest" # <provider_id>/<model_id>
-# Basic completion
 response = completion(
-    model=model,
+    model="mistral/mistral-small-latest",  # <provider_id>/<model_id>,
     messages=[{"role": "user", "content": "Hello!"}]
 )
 print(response.choices[0].message.content)
@@ -79,7 +78,7 @@ For the [providers that support streaming](./providers.md), you can enable it by
 ```python
 output = ""
 for chunk in completion(
-    model=model,
+    model="mistral/mistral-small-latest",
     messages=[{"role": "user", "content": "Hello!"}],
     stream=True
 ):
@@ -96,9 +95,9 @@ Not all providers support embeddings - check the [providers documentation](./pro
 
 ```python
 from any_llm import embedding
-model = "openai/text-embedding-3-small"
+
 result = embedding(
-    model=model,
+    model="openai/text-embedding-3-small",
     inputs="Hello, world!" # can be either string or list of strings
 )
 

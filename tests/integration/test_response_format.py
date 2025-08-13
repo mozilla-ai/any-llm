@@ -1,11 +1,13 @@
 from typing import Any
+
 import httpx
-from pydantic import BaseModel
 import pytest
-from any_llm import completion, ProviderName
-from any_llm.exceptions import MissingApiKeyError
 from openai import APIConnectionError
-from openai.types.chat.chat_completion import ChatCompletion
+from pydantic import BaseModel
+
+from any_llm import ProviderName, completion
+from any_llm.exceptions import MissingApiKeyError
+from any_llm.types.completion import ChatCompletion
 
 
 def test_response_format(
@@ -29,7 +31,6 @@ def test_response_format(
             f"{provider.value}/{model_id}",
             **extra_kwargs,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
             response_format=ResponseFormat,
         )
         assert isinstance(result, ChatCompletion)

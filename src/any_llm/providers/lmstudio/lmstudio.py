@@ -1,6 +1,7 @@
+from typing_extensions import override
+
 from any_llm.provider import ApiConfig
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from typing_extensions import override
 
 # LM Studio has a python sdk, but per their docs they are compliant with OpenAI spec
 # https://lmstudio.ai/docs/app/api/endpoints/openai
@@ -10,8 +11,10 @@ from typing_extensions import override
 class LmstudioProvider(BaseOpenAIProvider):
     API_BASE = "http://localhost:1234/v1"
     ENV_API_KEY_NAME = "LM_STUDIO_API_KEY"
-    PROVIDER_NAME = "LM Studio"
+    PROVIDER_NAME = "lmstudio"
     PROVIDER_DOCUMENTATION_URL = "https://lmstudio.ai/"
+
+    SUPPORTS_COMPLETION_REASONING = True
 
     @override
     def _verify_and_set_api_key(self, config: ApiConfig) -> ApiConfig:

@@ -1,16 +1,16 @@
 import asyncio
 from typing import Any
+
 import httpx
 import pytest
 from openai import APIConnectionError
-from openai.types.chat.chat_completion import ChatCompletion
 
-from any_llm import completion, acompletion, ProviderName
+from any_llm import ProviderName, acompletion, completion
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.provider import ProviderFactory
+from any_llm.types.completion import ChatCompletion
 
 
-def test_providers(
+def test_sync_completion(
     provider: ProviderName,
     provider_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
@@ -35,10 +35,13 @@ def test_providers(
         raise
     assert isinstance(result, ChatCompletion)
     assert result.choices[0].message.content is not None
+    assert hasattr(
+        result.choices[0].message, "reasoning"
+    )  # If all the providers are properly implementing the reasoning, this should be true
 
 
 @pytest.mark.asyncio
-async def test_parallel_async_completion(
+async def test_async_completion(
     provider: ProviderName,
     provider_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],

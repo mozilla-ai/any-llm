@@ -1,44 +1,62 @@
 import os
-import json
+from collections.abc import Iterator
 from typing import Any
 
 try:
     from google import genai
     from google.genai import types
+
+    PACKAGES_INSTALLED = True
 except ImportError:
-    msg = "google-genai is not installed. Please install it with `pip install any-llm-sdk[google]`"
-    raise ImportError(msg)
+    PACKAGES_INSTALLED = False
 
 from pydantic import BaseModel
 
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types.chat.chat_completion import ChatCompletion
-from openai.types import CreateEmbeddingResponse
-from any_llm.provider import Provider, ApiConfig
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
-from any_llm.providers.helpers import (
-    create_completion_from_response,
-)
+from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.google.utils import (
-    _convert_tool_spec,
     _convert_messages,
+    _convert_response_to_response_dict,
+    _convert_tool_choice,
+    _convert_tool_spec,
     _create_openai_chunk_from_google_chunk,
     _create_openai_embedding_response_from_google,
+)
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageToolCall,
+    Choice,
+    CompletionUsage,
+    CreateEmbeddingResponse,
+    Function,
 )
 
 
 class GoogleProvider(Provider):
     """Google Provider using the new response conversion utilities."""
 
-    PROVIDER_NAME = "Google"
+    PROVIDER_NAME = "google"
     PROVIDER_DOCUMENTATION_URL = "https://cloud.google.com/vertex-ai/docs"
+    ENV_API_KEY_NAME = "GOOGLE_API_KEY/GEMINI_API_KEY"
 
-    SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION_STREAMING = True
+    SUPPORTS_COMPLETION = True
+    SUPPORTS_RESPONSES = False
+    SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = True
+
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Google GenAI provider."""
+
+        if not self.PACKAGES_INSTALLED:
+            msg = "google required packages are not installed"
+            raise ImportError(msg)
+
         self.use_vertex_ai = os.getenv("GOOGLE_USE_VERTEX_AI", "false").lower() == "true"
 
         if self.use_vertex_ai:
@@ -46,14 +64,16 @@ class GoogleProvider(Provider):
             self.location = os.getenv("GOOGLE_REGION", "us-central1")
 
             if not self.project_id:
-                raise MissingApiKeyError("Google Vertex AI", "GOOGLE_PROJECT_ID")
+                msg = "Google Vertex AI"
+                raise MissingApiKeyError(msg, "GOOGLE_PROJECT_ID")
 
             self.client = genai.Client(vertexai=True, project=self.project_id, location=self.location)
         else:
             api_key = getattr(config, "api_key", None) or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
             if not api_key:
-                raise MissingApiKeyError("Google Gemini Developer API", "GEMINI_API_KEY/GOOGLE_API_KEY")
+                msg = "Google Gemini Developer API"
+                raise MissingApiKeyError(msg, "GEMINI_API_KEY/GOOGLE_API_KEY")
 
             self.client = genai.Client(api_key=api_key)
 
@@ -71,24 +91,26 @@ class GoogleProvider(Provider):
 
         return _create_openai_embedding_response_from_google(model, result)
 
-    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
-        """Verify the kwargs for the Google provider."""
-        if kwargs.get("stream", False) and kwargs.get("response_format", None) is not None:
-            raise UnsupportedParameterError("stream and response_format", self.PROVIDER_NAME)
-
-        if kwargs.get("parallel_tool_calls", None) is not None:
-            raise UnsupportedParameterError("parallel_tool_calls", self.PROVIDER_NAME)
-
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+        if kwargs.get("stream", False) and kwargs.get("response_format", None) is not None:
+            error_message = "stream and response_format"
+            raise UnsupportedParameterError(error_message, self.PROVIDER_NAME)
+
+        if kwargs.get("parallel_tool_calls", None) is not None:
+            error_message = "parallel_tool_calls"
+            raise UnsupportedParameterError(error_message, self.PROVIDER_NAME)
         tools = None
         if "tools" in kwargs:
             tools = _convert_tool_spec(kwargs["tools"])
             kwargs["tools"] = tools
+
+        if tool_choice := kwargs.pop("tool_choice", None):
+            kwargs["tool_config"] = _convert_tool_choice(tool_choice)
 
         stream = kwargs.pop("stream", False)
         response_format = kwargs.pop("response_format", None)
@@ -110,10 +132,10 @@ class GoogleProvider(Provider):
         else:
             # Multiple messages - concatenate user messages for simplicity
             content_parts = []
-            for msg in formatted_messages:
-                if msg.role == "user" and msg.parts:
-                    if hasattr(msg.parts[0], "text") and msg.parts[0].text:
-                        content_parts.append(msg.parts[0].text)
+            for content_item in formatted_messages:
+                if content_item.role == "user" and content_item.parts:
+                    if hasattr(content_item.parts[0], "text") and content_item.parts[0].text:
+                        content_parts.append(content_item.parts[0].text)
 
             content_text = "\n".join(content_parts)
 
@@ -121,92 +143,62 @@ class GoogleProvider(Provider):
             response_stream = self.client.models.generate_content_stream(
                 model=model, contents=content_text, config=generation_config
             )
-            return map(_create_openai_chunk_from_google_chunk, response_stream)  # type: ignore[return-value]
-        else:
-            response: types.GenerateContentResponse = self.client.models.generate_content(
-                model=model, contents=content_text, config=generation_config
+            return map(_create_openai_chunk_from_google_chunk, response_stream)
+        response: types.GenerateContentResponse = self.client.models.generate_content(
+            model=model, contents=content_text, config=generation_config
+        )
+
+        response_dict = _convert_response_to_response_dict(response)
+
+        # Directly construct ChatCompletion
+        choices_out: list[Choice] = []
+        for i, choice_item in enumerate(response_dict.get("choices", [])):
+            message_dict: dict[str, Any] = choice_item.get("message", {})
+            tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] | None = None
+            if message_dict.get("tool_calls"):
+                tool_calls_list: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
+                for tc in message_dict["tool_calls"]:
+                    tool_calls_list.append(
+                        ChatCompletionMessageFunctionToolCall(
+                            id=tc.get("id"),
+                            type="function",
+                            function=Function(
+                                name=tc["function"]["name"],
+                                arguments=tc["function"]["arguments"],
+                            ),
+                        )
+                    )
+                tool_calls = tool_calls_list
+            message = ChatCompletionMessage(
+                role="assistant",
+                content=message_dict.get("content"),
+                tool_calls=tool_calls,
+            )
+            from typing import Literal, cast
+
+            choices_out.append(
+                Choice(
+                    index=i,
+                    finish_reason=cast(
+                        "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']",
+                        choice_item.get("finish_reason", "stop"),
+                    ),
+                    message=message,
+                )
             )
 
-            # Convert response to dict-like structure for the utility
-            response_dict = {
-                "id": "google_genai_response",
-                "model": "google/genai",
-                "created": 0,
-                "usage": {
-                    "prompt_tokens": getattr(response.usage_metadata, "prompt_token_count", 0)
-                    if hasattr(response, "usage_metadata")
-                    else 0,
-                    "completion_tokens": getattr(response.usage_metadata, "candidates_token_count", 0)
-                    if hasattr(response, "usage_metadata")
-                    else 0,
-                    "total_tokens": getattr(response.usage_metadata, "total_token_count", 0)
-                    if hasattr(response, "usage_metadata")
-                    else 0,
-                },
-            }
+        usage_dict = response_dict.get("usage", {})
+        usage = CompletionUsage(
+            prompt_tokens=usage_dict.get("prompt_tokens", 0),
+            completion_tokens=usage_dict.get("completion_tokens", 0),
+            total_tokens=usage_dict.get("total_tokens", 0),
+        )
 
-            if (
-                response.candidates
-                and len(response.candidates) > 0
-                and response.candidates[0].content
-                and response.candidates[0].content.parts
-                and len(response.candidates[0].content.parts) > 0
-                and hasattr(response.candidates[0].content.parts[0], "function_call")
-                and response.candidates[0].content.parts[0].function_call
-            ):
-                function_call = response.candidates[0].content.parts[0].function_call
-
-                args_dict = {}
-                if hasattr(function_call, "args") and function_call.args:
-                    for key, value in function_call.args.items():
-                        args_dict[key] = value
-
-                response_dict["choices"] = [
-                    {
-                        "message": {
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": [
-                                {
-                                    "id": f"call_{hash(function_call.name)}",
-                                    "function": {
-                                        "name": function_call.name,
-                                        "arguments": json.dumps(args_dict),
-                                    },
-                                    "type": "function",
-                                }
-                            ],
-                        },
-                        "finish_reason": "tool_calls",
-                        "index": 0,
-                    }
-                ]
-            else:
-                content = ""
-                if (
-                    response.candidates
-                    and len(response.candidates) > 0
-                    and response.candidates[0].content
-                    and response.candidates[0].content.parts
-                    and len(response.candidates[0].content.parts) > 0
-                    and hasattr(response.candidates[0].content.parts[0], "text")
-                ):
-                    content = response.candidates[0].content.parts[0].text or ""
-
-                response_dict["choices"] = [
-                    {
-                        "message": {
-                            "role": "assistant",
-                            "content": content,
-                            "tool_calls": None,
-                        },
-                        "finish_reason": "stop",
-                        "index": 0,
-                    }
-                ]
-
-            return create_completion_from_response(
-                response_data=response_dict,
-                model=model,
-                provider_name=self.PROVIDER_NAME,
-            )
+        return ChatCompletion(
+            id=response_dict.get("id", ""),
+            model=model,
+            created=response_dict.get("created", 0),
+            object="chat.completion",
+            choices=choices_out,
+            usage=usage,
+        )

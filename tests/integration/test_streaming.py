@@ -1,11 +1,13 @@
 from typing import Any
+
 import httpx
 import pytest
-from any_llm import completion, ProviderName
+from openai import APIConnectionError
+
+from any_llm import ProviderName, completion
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.provider import ProviderFactory
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai import APIConnectionError
+from any_llm.types.completion import ChatCompletionChunk
 
 
 def test_streaming_completion(
@@ -14,15 +16,14 @@ def test_streaming_completion(
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
     """Test that streaming completion works for supported providers."""
-    providers_metadata = ProviderFactory.get_all_provider_metadata()
-    provider_metadata = [metadata for metadata in providers_metadata if metadata["provider_key"] == provider.value][0]
-    if not provider_metadata["streaming"]:
-        pytest.skip(f"{provider.value} does not support streaming, skipping")
-
+    cls = ProviderFactory.get_provider_class(provider)
+    if not cls.SUPPORTS_COMPLETION_STREAMING:
+        pytest.skip(f"{provider.value} does not support streaming completion")
     model_id = provider_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
     try:
         output = ""
+        reasoning = ""
         num_chunks = 0
         for result in completion(
             f"{provider.value}/{model_id}",
@@ -32,13 +33,14 @@ def test_streaming_completion(
                 {"role": "user", "content": "Say the exact phrase:'Hello World'"},
             ],
             stream=True,
-            temperature=0.1,
         ):
             num_chunks += 1
             # Verify the response is still a valid ChatCompletion object
             assert isinstance(result, ChatCompletionChunk)
             if len(result.choices) > 0:
                 output += result.choices[0].delta.content or ""
+                if result.choices[0].delta.reasoning:
+                    reasoning += result.choices[0].delta.reasoning.content or ""
         assert num_chunks >= 2, f"Expected at least 2 chunks, got {num_chunks}"
         assert "hello world" in output.lower()
     except MissingApiKeyError:

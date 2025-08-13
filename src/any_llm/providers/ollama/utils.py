@@ -1,23 +1,30 @@
 import json
-from typing import Any
+import uuid
+from datetime import UTC, datetime
+from typing import Any, Literal, cast
 
-from openai.types import CreateEmbeddingResponse
-from openai.types.embedding import Embedding
-from openai.types.create_embedding_response import Usage
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 from ollama import ChatResponse as OllamaChatResponse
+from ollama import EmbedResponse
 from ollama import Message as OllamaMessage
-from typing import Literal, cast
-from openai.types.chat.chat_completion_chunk import (
+
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageToolCall,
     Choice,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
+    ChunkChoice,
+    CompletionUsage,
+    CreateEmbeddingResponse,
+    Embedding,
+    Function,
+    Reasoning,
+    Usage,
 )
-from datetime import datetime
-from openai.types.completion_usage import CompletionUsage
-from ollama import EmbedResponse
-import uuid
 
 
 def _create_openai_embedding_response_from_ollama(
@@ -52,26 +59,21 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
     created_str = ollama_chunk.created_at
     created = 0
     if created_str:
-        # Handle both microseconds (6 digits) and nanoseconds (9 digits)
         if "." in created_str and len(created_str.split(".")[1].rstrip("Z")) > 6:
-            # Truncate nanoseconds to microseconds
             parts = created_str.split(".")
             microseconds = parts[1][:6]
             created_str = f"{parts[0]}.{microseconds}Z"
-        created = int(datetime.strptime(created_str, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp())
+        created = int(datetime.strptime(created_str, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC).timestamp())
 
     content = message.content
-    reasoning = message.thinking
 
     role = None
     message_role = message.role
     if message_role:
-        role = cast(Literal["developer", "system", "user", "assistant", "tool"], message_role)
+        role = cast("Literal['developer', 'system', 'user', 'assistant', 'tool']", message_role)
 
-    delta = (
-        ChoiceDelta(content=content, role=role, reasoning=reasoning)  # type: ignore[call-arg]
-        if reasoning
-        else ChoiceDelta(content=content, role=role)
+    delta = ChoiceDelta(
+        content=content, role=role, reasoning=Reasoning(content=message.thinking) if message.thinking else None
     )
 
     tool_calls = message.tool_calls
@@ -97,11 +99,12 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
             openai_tool_calls.append(openai_tool_call)
         delta.tool_calls = openai_tool_calls
 
-    choice = Choice(
+    choice = ChunkChoice(
         index=0,
         delta=delta,
         finish_reason=cast(
-            Literal["stop", "length", "tool_calls", "content_filter", "function_call"] | None, ollama_chunk.done_reason
+            "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call'] | None",
+            ollama_chunk.done_reason,
         ),
     )
 
@@ -125,80 +128,78 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
     )
 
 
-def _create_response_dict_from_ollama_response(
-    response: OllamaChatResponse,
-) -> dict[str, Any]:
-    """Convert an Ollama completion response to OpenAI format."""
+def _create_chat_completion_from_ollama_response(response: OllamaChatResponse) -> ChatCompletion:
+    """Convert an Ollama completion response directly to an OpenAI-compatible ChatCompletion."""
 
-    # Convert Ollama's timestamp format to int
     created_str = response.created_at
     if created_str is None:
-        raise ValueError("Expected Ollama to provide a created_at timestamp")
+        msg = "Expected Ollama to provide a created_at timestamp"
+        raise ValueError(msg)
 
-    # Handle both microseconds (6 digits) and nanoseconds (9 digits)
     if "." in created_str and len(created_str.split(".")[1].rstrip("Z")) > 6:
-        # Truncate nanoseconds to microseconds
         parts = created_str.split(".")
         microseconds = parts[1][:6]
         created_str = f"{parts[0]}.{microseconds}Z"
-    created = int(datetime.strptime(created_str, "%Y-%m-%dT%H:%M:%S.%fZ").timestamp())
+    created = int(datetime.strptime(created_str, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC).timestamp())
 
     prompt_tokens = response.prompt_eval_count or 0
     completion_tokens = response.eval_count or 0
-    response_dict: dict[str, Any] = {
-        "id": "chatcmpl-" + str(uuid.uuid4()),
-        "model": response.model or "unknown",
-        "created": created,
-        "usage": {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": prompt_tokens + completion_tokens,
-        },
-    }
 
-    # Handle tool calls vs regular responses
     response_message: OllamaMessage = response.message
     if not response_message or not isinstance(response_message, OllamaMessage):
-        raise ValueError("Unexpected output from ollama")
+        msg = "Unexpected output from ollama"
+        raise ValueError(msg)
 
+    openai_tool_calls: list[ChatCompletionMessageToolCall] | None = None
     if response_message.tool_calls:
-        tool_calls = []
+        openai_tool_calls = []
         for tool_call in response_message.tool_calls:
-            tool_calls.append(
-                {
-                    "id": str(uuid.uuid4()),
-                    "function": {
-                        "name": tool_call.function.name,
-                        "arguments": json.dumps(tool_call.function.arguments),
-                    },
-                    "type": "function",
-                }
+            raw_arguments = tool_call.function.arguments
+            if isinstance(raw_arguments, dict):
+                arguments_str = json.dumps(raw_arguments)
+            elif isinstance(raw_arguments, str):
+                arguments_str = raw_arguments
+            else:
+                arguments_str = json.dumps(raw_arguments) if raw_arguments is not None else "{}"
+            openai_tool_calls.append(
+                ChatCompletionMessageFunctionToolCall(
+                    id=str(uuid.uuid4()),
+                    type="function",
+                    function=Function(
+                        name=tool_call.function.name,
+                        arguments=arguments_str,
+                    ),
+                )
             )
+    if not response_message.thinking and response_message.content:
+        # If it didn't come out right from ollama, also look for it in the content between <think> and </think>
+        if "<think>" in response_message.content and "</think>" in response_message.content:
+            response_message.thinking = response_message.content.split("<think>")[1].split("</think>")[0]
+            # remove it from the content
+            response_message.content = response_message.content.split("<think>")[0]
 
-        response_dict["choices"] = [
-            {
-                "message": {
-                    "role": response_message.role,
-                    "content": response_message.content,
-                    "reasoning": response_message.thinking,
-                    "tool_calls": tool_calls,
-                },
-                "finish_reason": "tool_calls",
-                "index": 0,
-            }
-        ]
-    else:
-        response_dict["choices"] = [
-            {
-                "message": {
-                    "role": response_message.role,
-                    "content": response_message.content,
-                    "reasoning": response_message.thinking,
-                    "tool_calls": None,
-                },
-                "finish_reason": response.done_reason,
-                "index": 0,
-            }
-        ]
+    message = ChatCompletionMessage(
+        role="assistant",
+        content=response_message.content,
+        tool_calls=openai_tool_calls,
+        reasoning=Reasoning(content=response_message.thinking) if response_message.thinking else None,
+    )
 
-    return response_dict
+    finish_reason: Any = "tool_calls" if openai_tool_calls else response.done_reason
+
+    choice = Choice(index=0, finish_reason=finish_reason, message=message)
+
+    usage = CompletionUsage(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=prompt_tokens + completion_tokens,
+    )
+
+    return ChatCompletion(
+        id=f"chatcmpl-{uuid.uuid4()}",
+        model=response.model or "unknown",
+        created=created,
+        object="chat.completion",
+        choices=[choice],
+        usage=usage,
+    )

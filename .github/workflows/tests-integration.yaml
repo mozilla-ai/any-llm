@@ -41,6 +41,7 @@ jobs:
         run: |
           ollama serve &
           ollama pull llama3.2:1b
+          ollama pull qwen3:0.6b
 
       - name: Run Integration tests (parallel with xdist)
         env:
@@ -52,6 +53,9 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+          WATSONX_API_KEY: ${{ secrets.WATSONX_API_KEY }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: pytest tests/integration -v -n auto --cov --cov-report=xml
 
       - name: Upload coverage reports to Codecov

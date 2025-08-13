@@ -5,14 +5,29 @@ import pytest
 from any_llm.provider import ProviderName
 
 
+@pytest.fixture
+def provider_reasoning_model_map() -> dict[ProviderName, str]:
+    return {
+        ProviderName.MISTRAL: "magistral-small-latest",
+        ProviderName.GROQ: "openai/gpt-oss-20b",
+        ProviderName.FIREWORKS: "accounts/fireworks/models/deepseek-r1",
+        ProviderName.OPENAI: "gpt-5-nano",
+        ProviderName.MISTRAL: "magistral-small-latest",
+        ProviderName.XAI: "grok-3-mini-latest",
+        ProviderName.OLLAMA: "qwen3:0.6b",
+        ProviderName.LMSTUDIO: "openai/gpt-oss-20b",  # You must have LM Studio running and the server enabled
+    }
+
+
 # Use small models for testing to make sure they work
 @pytest.fixture
 def provider_model_map() -> dict[ProviderName, str]:
     return {
         ProviderName.MISTRAL: "mistral-small-latest",
         ProviderName.ANTHROPIC: "claude-3-5-haiku-latest",
+        ProviderName.DATABRICKS: "databricks-meta-llama-3-1-8b-instruct",
         ProviderName.DEEPSEEK: "deepseek-chat",
-        ProviderName.OPENAI: "gpt-4.1-mini",
+        ProviderName.OPENAI: "gpt-5-nano",
         ProviderName.GOOGLE: "gemini-2.0-flash-001",
         ProviderName.MOONSHOT: "moonshot-v1-8k",
         ProviderName.SAMBANOVA: "Meta-Llama-3.1-8B-Instruct",
@@ -26,7 +41,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.CEREBRAS: "llama-3.3-70b",
         ProviderName.HUGGINGFACE: "meta-llama/Llama-3.2-3B-Instruct",  # You must have novita enabled in your hf account to use this model
         ProviderName.AWS: "amazon.nova-lite-v1:0",
-        ProviderName.WATSONX: "google/gemini-2.0-flash-001",
+        ProviderName.WATSONX: "ibm/granite-3-8b-instruct",
         ProviderName.FIREWORKS: "accounts/fireworks/models/llama4-scout-instruct-basic",
         ProviderName.GROQ: "llama-3.1-8b-instant",
         ProviderName.OPENROUTER: "moonshotai/kimi-k2:free",
@@ -41,11 +56,12 @@ def provider_model_map() -> dict[ProviderName, str]:
 def embedding_provider_model_map() -> dict[ProviderName, str]:
     return {
         ProviderName.OPENAI: "text-embedding-ada-002",
+        ProviderName.DATABRICKS: "databricks-bge-large-en",
         ProviderName.NEBIUS: "Qwen/Qwen3-Embedding-8B",
         ProviderName.SAMBANOVA: "E5-Mistral-7B-Instruct",
         ProviderName.MISTRAL: "mistral-embed",
         ProviderName.AWS: "amazon.titan-embed-text-v2:0",
-        ProviderName.OLLAMA: "llama3.2:1b",
+        ProviderName.OLLAMA: "gpt-oss:20b",
         ProviderName.LMSTUDIO: "text-embedding-nomic-embed-text-v1.5",
         ProviderName.GOOGLE: "gemini-embedding-001",
         ProviderName.AZURE: "openai/text-embedding-3-small",
@@ -59,6 +75,11 @@ def provider_extra_kwargs_map() -> dict[ProviderName, dict[str, Any]]:
         ProviderName.AZURE: {
             "api_base": "https://models.github.ai/inference",
         },
+        ProviderName.WATSONX: {
+            "api_base": "https://us-south.ml.cloud.ibm.com",
+            "project_id": "5b083ace-95a6-4f95-a0a0-d4c5d9e98ca0",
+        },
+        ProviderName.DATABRICKS: {"api_base": "https://dbc-40d03128-ecae.cloud.databricks.com/serving-endpoints"},
     }
 
 
@@ -67,7 +88,7 @@ def provider(request: pytest.FixtureRequest) -> ProviderName:
     return request.param  # type: ignore[no-any-return]
 
 
-@pytest.fixture()
+@pytest.fixture
 def tools() -> list[dict[str, Any]]:
     return [
         {

@@ -1,17 +1,21 @@
 import json
 from time import time
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
-from openai.types.chat.chat_completion import ChatCompletion, Choice
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk, Choice as ChunkChoice
-from openai.types.chat.chat_completion_chunk import ChoiceDelta
-from openai.types.completion_usage import CompletionUsage
-from openai.types.chat.chat_completion_message import ChatCompletionMessage
-from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall, Function
-from openai.types import CreateEmbeddingResponse
-from openai.types.embedding import Embedding
-from openai.types.create_embedding_response import Usage
-
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    Choice,
+    ChoiceDelta,
+    ChunkChoice,
+    CompletionUsage,
+    CreateEmbeddingResponse,
+    Embedding,
+    Function,
+    Usage,
+)
 
 INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
 
@@ -20,11 +24,9 @@ def _convert_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     """Format the kwargs for AWS Bedrock."""
     kwargs = kwargs.copy()
 
-    # Convert tools and remove from kwargs
     tool_config = _convert_tool_spec(kwargs)
-    kwargs.pop("tools", None)  # Remove tools from kwargs if present
+    kwargs.pop("tools", None)
 
-    # Prepare inference config
     inference_config = {key: kwargs[key] for key in INFERENCE_PARAMETERS if key in kwargs}
 
     additional_fields = {key: value for key, value in kwargs.items() if key not in INFERENCE_PARAMETERS}
@@ -45,7 +47,7 @@ def _convert_tool_spec(kwargs: dict[str, Any]) -> dict[str, Any] | None:
     if "tools" not in kwargs:
         return None
 
-    tool_config = {
+    return {
         "tools": [
             {
                 "toolSpec": {
@@ -57,12 +59,10 @@ def _convert_tool_spec(kwargs: dict[str, Any]) -> dict[str, Any] | None:
             for tool in kwargs["tools"]
         ]
     }
-    return tool_config
 
 
 def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Convert messages to AWS Bedrock format."""
-    # Handle system message
     system_message = []
     if messages and messages[0]["role"] == "system":
         system_message = [{"text": messages[0]["content"]}]
@@ -70,7 +70,6 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, An
 
     formatted_messages = []
     for message in messages:
-        # Skip any additional system messages
         if message["role"] == "system":
             continue
 
@@ -100,7 +99,8 @@ def _convert_tool_result(message: dict[str, Any]) -> dict[str, Any] | None:
 
     tool_call_id = message.get("tool_call_id")
     if not tool_call_id:
-        raise RuntimeError("Tool result message must include tool_call_id")
+        msg = "Tool result message must include tool_call_id"
+        raise RuntimeError(msg)
 
     try:
         content_json = json.loads(message["content"])
@@ -146,38 +146,44 @@ def _convert_assistant(message: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _convert_response(response: dict[str, Any]) -> ChatCompletion:
-    """Convert AWS Bedrock response to OpenAI ChatCompletion format."""
-    # Check if the model is requesting tool use
+    """Convert AWS Bedrock response to OpenAI format directly."""
+    choices_out: list[Choice] = []
+    usage: CompletionUsage | None = None
+
     if response.get("stopReason") == "tool_use":
-        tool_calls = []
+        tool_calls_list: list[dict[str, Any]] = []
         for content in response["output"]["message"]["content"]:
             if "toolUse" in content:
                 tool = content["toolUse"]
-                tool_calls.append(
-                    ChatCompletionMessageToolCall(
-                        id=tool["toolUseId"],
-                        type="function",
-                        function=Function(
-                            name=tool["name"],
-                            arguments=json.dumps(tool["input"]),
-                        ),
-                    )
+                tool_calls_list.append(
+                    {
+                        "id": tool["toolUseId"],
+                        "type": "function",
+                        "function": {
+                            "name": tool["name"],
+                            "arguments": json.dumps(tool["input"]),
+                        },
+                    }
                 )
 
-        if tool_calls:
+        if tool_calls_list:
             message = ChatCompletionMessage(
-                content=None,
                 role="assistant",
-                tool_calls=tool_calls,
+                content=None,
+                tool_calls=[
+                    ChatCompletionMessageFunctionToolCall(
+                        id=tc["id"],
+                        type="function",
+                        function=Function(
+                            name=tc["function"]["name"],
+                            arguments=tc["function"]["arguments"],
+                        ),
+                    )
+                    for tc in tool_calls_list
+                ],
             )
+            choices_out.append(Choice(index=0, finish_reason="tool_calls", message=message))
 
-            choice = Choice(
-                finish_reason="tool_calls",
-                index=0,
-                message=message,
-            )
-
-            usage = None
             if "usage" in response:
                 usage_data = response["usage"]
                 usage = CompletionUsage(
@@ -189,34 +195,28 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
             return ChatCompletion(
                 id=response.get("id", ""),
                 model=response.get("model", ""),
-                object="chat.completion",
                 created=response.get("created", 0),
-                choices=[choice],
+                object="chat.completion",
+                choices=choices_out,
                 usage=usage,
             )
 
     content = response["output"]["message"]["content"][0]["text"]
-
     stop_reason = response.get("stopReason")
-    finish_reason: Literal["stop", "length"]
-    if stop_reason == "max_tokens":
-        finish_reason = "length"
-    else:
-        finish_reason = "stop"
+    finish_reason: Literal["stop", "length"] = "length" if stop_reason == "max_tokens" else "stop"
 
-    message = ChatCompletionMessage(
-        content=content,
-        role="assistant",
-        tool_calls=None,
+    message = ChatCompletionMessage(role="assistant", content=content, tool_calls=None)
+
+    choices_out.append(
+        Choice(
+            index=0,
+            finish_reason=cast(
+                "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']", finish_reason
+            ),
+            message=message,
+        )
     )
 
-    choice = Choice(
-        finish_reason=finish_reason,
-        index=0,
-        message=message,
-    )
-
-    usage = None
     if "usage" in response:
         usage_data = response["usage"]
         usage = CompletionUsage(
@@ -228,9 +228,9 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
     return ChatCompletion(
         id=response.get("id", ""),
         model=response.get("model", ""),
-        object="chat.completion",
         created=response.get("created", 0),
-        choices=[choice],
+        object="chat.completion",
+        choices=choices_out,
         usage=usage,
     )
 

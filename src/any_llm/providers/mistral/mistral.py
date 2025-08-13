@@ -1,32 +1,38 @@
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any
 
 try:
     from mistralai import Mistral
     from mistralai.extra import response_format_from_pydantic_model
-    from mistralai.models.embeddingresponse import EmbeddingResponse
+
+    PACKAGES_INSTALLED = True
 except ImportError:
-    msg = "mistralai is not installed. Please install it with `pip install any-llm-sdk[mistral]`"
-    raise ImportError(msg)
+    PACKAGES_INSTALLED = False
 
 from pydantic import BaseModel
 
-from openai.types.chat.chat_completion import ChatCompletion
 from any_llm.provider import Provider
-from any_llm.providers.helpers import create_completion_from_response
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types import CreateEmbeddingResponse
+from any_llm.providers.mistral.utils import _create_mistral_completion_from_response
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
+
+if TYPE_CHECKING:
+    from mistralai.models.embeddingresponse import EmbeddingResponse
 
 
 class MistralProvider(Provider):
     """Mistral Provider using the new response conversion utilities."""
 
-    PROVIDER_NAME = "Mistral"
+    PROVIDER_NAME = "mistral"
     ENV_API_KEY_NAME = "MISTRAL_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://docs.mistral.ai/"
 
-    SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION_STREAMING = True
+    SUPPORTS_COMPLETION = True
+    SUPPORTS_RESPONSES = False
+    SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = True
+
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
     def _stream_completion(
         self,
@@ -47,16 +53,12 @@ class MistralProvider(Provider):
 
             yield _create_openai_chunk_from_mistral_chunk(event)
 
-    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
-        """Verify the kwargs for the Mistral provider."""
-        pass
-
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Mistral."""
         client = Mistral(api_key=self.config.api_key, server_url=self.config.api_base)
 
@@ -70,13 +72,11 @@ class MistralProvider(Provider):
                 **kwargs,
             )
 
-            return create_completion_from_response(
-                response_data=response.model_dump(),
+            return _create_mistral_completion_from_response(
+                response_data=response,
                 model=model,
-                provider_name=self.PROVIDER_NAME,
             )
-        else:
-            return self._stream_completion(client, model, messages, **kwargs)  # type: ignore[return-value]
+        return self._stream_completion(client, model, messages, **kwargs)
 
     def embedding(
         self,

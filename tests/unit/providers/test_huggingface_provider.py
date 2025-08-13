@@ -1,8 +1,11 @@
+import sys
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import patch
 
-from any_llm.provider import ApiConfig
+import pytest
+
+from any_llm.provider import ApiConfig, ProviderFactory
 from any_llm.providers.huggingface.huggingface import HuggingfaceProvider
 
 
@@ -10,8 +13,18 @@ from any_llm.providers.huggingface.huggingface import HuggingfaceProvider
 def mock_huggingface_provider():  # type: ignore[no-untyped-def]
     with (
         patch("any_llm.providers.huggingface.huggingface.InferenceClient") as mock_huggingface,
-        patch("any_llm.providers.huggingface.huggingface.create_completion_from_response"),
     ):
+        mock_huggingface.return_value.chat_completion.return_value = {
+            "id": "hf-response-id",
+            "created": 0,
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": "ok", "tool_calls": None},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
         yield mock_huggingface
 
 
@@ -21,7 +34,7 @@ def test_huggingface_with_api_key() -> None:
 
     with mock_huggingface_provider() as mock_huggingface:
         provider = HuggingfaceProvider(ApiConfig(api_key=api_key))
-        provider._make_api_call("model-id", messages)
+        provider.completion("model-id", messages)
 
         mock_huggingface.assert_called_with(token=api_key, timeout=None)
 
@@ -34,7 +47,7 @@ def test_huggingface_with_tools(tools: list[dict[str, Any]]) -> None:
 
     with mock_huggingface_provider() as mock_huggingface:
         provider = HuggingfaceProvider(ApiConfig(api_key=api_key))
-        provider._make_api_call("model-id", messages, tools=tools)
+        provider.completion("model-id", messages, tools=tools)
 
         mock_huggingface.assert_called_with(token=api_key, timeout=None)
 
@@ -49,10 +62,29 @@ def test_huggingface_with_max_tokens() -> None:
 
     with mock_huggingface_provider() as mock_huggingface:
         provider = HuggingfaceProvider(ApiConfig(api_key=api_key))
-        provider._make_api_call("model-id", messages, max_tokens=100)
+        provider.completion("model-id", messages, max_tokens=100)
 
         mock_huggingface.assert_called_with(token=api_key, timeout=None)
 
         mock_huggingface.return_value.chat_completion.assert_called_with(
             model="model-id", messages=messages, max_new_tokens=100
         )
+
+
+def test_provider_with_no_packages_installed() -> None:
+    with patch.dict(sys.modules, dict.fromkeys(["huggingface_hub"])):
+        try:
+            import any_llm.providers.huggingface  # noqa: F401
+        except ImportError:
+            pytest.fail("Import raised an unexpected ImportError")
+
+
+def test_call_to_provider_with_no_packages_installed() -> None:
+    packages = ["huggingface_hub"]
+    with patch.dict(sys.modules, dict.fromkeys(packages)):
+        # Ensure a fresh import under the patched environment so PACKAGES_INSTALLED is recalculated
+        for mod in list(sys.modules):
+            if mod.startswith("any_llm.providers.huggingface"):
+                sys.modules.pop(mod)
+        with pytest.raises(ImportError, match="huggingface required packages are not installed"):
+            ProviderFactory.create_provider("huggingface", ApiConfig())

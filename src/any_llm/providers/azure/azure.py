@@ -1,37 +1,41 @@
 import os
-from typing import Any, Iterator, Union
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any
 
 try:
     from azure.ai.inference import ChatCompletionsClient, EmbeddingsClient
-    from azure.ai.inference.models import ChatCompletions, EmbeddingsResult, StreamingChatCompletionsUpdate
     from azure.core.credentials import AzureKeyCredential
-except ImportError as exc:
-    msg = "azure-ai-inference is not installed. Please install it with `pip install any-llm-sdk[azure]`"
-    raise ImportError(msg) from exc
 
-from openai.types.chat.chat_completion import ChatCompletion
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types import CreateEmbeddingResponse
+    PACKAGES_INSTALLED = True
+except ImportError:
+    PACKAGES_INSTALLED = False
 
-from any_llm.provider import Provider, ApiConfig
+from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.azure.utils import (
     _convert_response,
+    _convert_response_format,
     _create_openai_chunk_from_azure_chunk,
     _create_openai_embedding_response_from_azure,
-    _convert_response_format,
 )
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
+
+if TYPE_CHECKING:
+    from azure.ai.inference.models import ChatCompletions, EmbeddingsResult, StreamingChatCompletionsUpdate
 
 
 class AzureProvider(Provider):
     """Azure Provider using the official Azure AI Inference SDK."""
 
-    PROVIDER_NAME: str = "Azure"
-    ENV_API_KEY_NAME: str = "AZURE_API_KEY"
-    PROVIDER_DOCUMENTATION_URL: str = "https://azure.microsoft.com/en-us/products/ai-services/openai-service"
+    PROVIDER_NAME = "azure"
+    ENV_API_KEY_NAME = "AZURE_API_KEY"
+    PROVIDER_DOCUMENTATION_URL = "https://azure.microsoft.com/en-us/products/ai-services/openai-service"
+    SUPPORTS_COMPLETION_STREAMING = True
+    SUPPORTS_EMBEDDING = True
+    SUPPORTS_COMPLETION_REASONING = False
+    SUPPORTS_COMPLETION = True
+    SUPPORTS_RESPONSES = False
 
-    SUPPORTS_STREAMING: bool = True
-    SUPPORTS_EMBEDDING: bool = True
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Azure provider."""
@@ -43,10 +47,11 @@ class AzureProvider(Provider):
         if self.config.api_base:
             return self.config.api_base
 
-        raise ValueError(
+        msg = (
             "For Azure, api_base is required. Check your deployment page for a URL like this - "
             "https://<model-deployment-name>.<region>.models.ai.azure.com"
         )
+        raise ValueError(msg)
 
     def _create_chat_client(self) -> ChatCompletionsClient:
         """Create and configure a ChatCompletionsClient."""
@@ -81,39 +86,32 @@ class AzureProvider(Provider):
         for chunk in azure_stream:
             yield _create_openai_chunk_from_azure_chunk(chunk)
 
-    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
-        """Verify the kwargs for the Azure provider."""
-        # No specific validation needed for Azure provider currently
-
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> Union[ChatCompletion, Stream[ChatCompletionChunk]]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Azure AI Inference SDK."""
         client: ChatCompletionsClient = self._create_chat_client()
 
-        # Handle response_format conversion for Pydantic models
         if "response_format" in kwargs:
             kwargs["response_format"] = _convert_response_format(kwargs["response_format"])
 
-        # Handle streaming vs non-streaming
         if kwargs.get("stream", False):
-            return self._stream_completion(client, model, messages, **kwargs)  # type: ignore[return-value]
-        else:
-            response: ChatCompletions = client.complete(
-                model=model,
-                messages=messages,
-                **kwargs,
-            )
+            return self._stream_completion(client, model, messages, **kwargs)
+        response: ChatCompletions = client.complete(
+            model=model,
+            messages=messages,
+            **kwargs,
+        )
 
-            return _convert_response(response)
+        return _convert_response(response)
 
     def embedding(
         self,
         model: str,
-        inputs: Union[str, list[str]],
+        inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         """Create embeddings using Azure AI Inference SDK."""

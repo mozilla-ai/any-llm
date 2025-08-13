@@ -1,59 +1,66 @@
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any
 
 try:
+    import instructor
     import together
+
+    PACKAGES_INSTALLED = True
+except ImportError:
+    PACKAGES_INSTALLED = False
+
+from any_llm.provider import Provider
+from any_llm.providers.together.utils import _create_openai_chunk_from_together_chunk
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, Choice, CompletionUsage
+from any_llm.utils.instructor import _convert_instructor_response
+
+if TYPE_CHECKING:
     from together.types import (
         ChatCompletionResponse,
     )
-    import instructor
-except ImportError:
-    msg = "together or instructor is not installed. Please install it with `pip install any-llm-sdk[together]`"
-    raise ImportError(msg)
-
-
-from openai.types.chat.chat_completion import ChatCompletion
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from any_llm.provider import Provider, convert_instructor_response
-from any_llm.providers.helpers import create_completion_from_response
-from any_llm.providers.together.utils import _create_openai_chunk_from_together_chunk
-from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
+    from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
 
 
 class TogetherProvider(Provider):
-    PROVIDER_NAME = "Together"
+    PROVIDER_NAME = "together"
     ENV_API_KEY_NAME = "TOGETHER_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://together.ai/"
 
-    SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION_STREAMING = True
+    SUPPORTS_COMPLETION = True
+    SUPPORTS_RESPONSES = False
+    SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
 
-    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
-        """Verify the kwargs for the Together provider."""
-        pass
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
     def _stream_completion(
         self,
-        client: together.Together,
+        client: "together.Together",
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> Iterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
-        response: Iterator[TogetherChatCompletionChunk] = client.chat.completions.create(  # type: ignore[assignment]
-            model=model,
-            messages=messages,
-            **kwargs,
+        from typing import cast
+
+        response = cast(
+            "Iterator[TogetherChatCompletionChunk]",
+            client.chat.completions.create(
+                model=model,
+                messages=messages,
+                **kwargs,
+            ),
         )
         for chunk in response:
             yield _create_openai_chunk_from_together_chunk(chunk)
 
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Make the API call to Together AI with instructor support for structured outputs."""
         if self.config.api_base:
             client = together.Together(api_key=self.config.api_key, base_url=self.config.api_base)
@@ -71,30 +78,58 @@ class TogetherProvider(Provider):
                 **kwargs,
             )
 
-            return convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
+            return _convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
 
         if kwargs.get("stream", False):
-            return self._stream_completion(client, model, messages, **kwargs)  # type: ignore[return-value]
+            return self._stream_completion(client, model, messages, **kwargs)
 
-        response: ChatCompletionResponse = client.chat.completions.create(  # type: ignore[assignment]
-            model=model,
-            messages=messages,
-            **kwargs,
+        from typing import cast
+
+        response = cast(
+            "ChatCompletionResponse",
+            client.chat.completions.create(
+                model=model,
+                messages=messages,
+                **kwargs,
+            ),
         )
 
-        return create_completion_from_response(
-            response_data=response.model_dump(),
+        data = response.model_dump()
+        choices_out: list[Choice] = []
+        for i, ch in enumerate(data.get("choices", [])):
+            msg = ch.get("message", {})
+            from typing import Literal, cast
+
+            message = ChatCompletionMessage(
+                role=cast("Literal['assistant']", "assistant"),
+                content=msg.get("content"),
+                tool_calls=msg.get("tool_calls"),
+            )
+            choices_out.append(
+                Choice(
+                    index=i,
+                    finish_reason=cast(
+                        "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']",
+                        ch.get("finish_reason"),
+                    ),
+                    message=message,
+                )
+            )
+
+        usage = None
+        if data.get("usage"):
+            u = data["usage"]
+            usage = CompletionUsage(
+                prompt_tokens=u.get("prompt_tokens", 0),
+                completion_tokens=u.get("completion_tokens", 0),
+                total_tokens=u.get("total_tokens", 0),
+            )
+
+        return ChatCompletion(
+            id=data.get("id", ""),
             model=model,
-            provider_name=self.PROVIDER_NAME,
-            finish_reason_mapping={
-                "stop": "stop",
-                "length": "length",
-                "tool_calls": "tool_calls",
-                "content_filter": "content_filter",
-            },
-            token_field_mapping={
-                "prompt_tokens": "prompt_tokens",
-                "completion_tokens": "completion_tokens",
-                "total_tokens": "total_tokens",
-            },
+            created=data.get("created", 0),
+            object="chat.completion",
+            choices=choices_out,
+            usage=usage,
         )

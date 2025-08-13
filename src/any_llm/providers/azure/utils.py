@@ -1,38 +1,40 @@
-from typing import Any, Union, Optional, List, cast, Literal
 import json
+from typing import Any, Literal, cast
 
 from azure.ai.inference.models import (
-    JsonSchemaFormat,
     ChatCompletions,
     EmbeddingsResult,
+    JsonSchemaFormat,
     StreamingChatCompletionsUpdate,
 )
 from pydantic import BaseModel
 
-from openai.types.chat.chat_completion import ChatCompletion, Choice
-from openai.types.completion_usage import CompletionUsage
-from openai.types.chat.chat_completion_message import ChatCompletionMessage
-from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall, Function
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types import CreateEmbeddingResponse
-from openai.types.chat.chat_completion_chunk import (
-    Choice as ChunkChoice,
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageToolCall,
+    Choice,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
+    ChunkChoice,
+    CompletionUsage,
+    CreateEmbeddingResponse,
+    Embedding,
+    Function,
+    Usage,
 )
-from openai.types.embedding import Embedding
-from openai.types.create_embedding_response import Usage
 
 
 def _convert_response_format(
-    response_format: Union[type[BaseModel], str, JsonSchemaFormat, Any],
-) -> Union[JsonSchemaFormat, str, Any]:
+    response_format: type[BaseModel] | str | JsonSchemaFormat | Any,
+) -> JsonSchemaFormat | str | Any:
     """Convert Pydantic model to Azure JsonSchemaFormat."""
     if not isinstance(response_format, type) or not issubclass(response_format, BaseModel):
         return response_format
 
-    # Convert Pydantic model to Azure JsonSchemaFormat
     schema = response_format.model_json_schema()
     # Azure requires additionalProperties to be false for structured output
     schema["additionalProperties"] = False
@@ -59,60 +61,53 @@ def _convert_response_format(
 
 
 def _convert_response(response_data: ChatCompletions) -> ChatCompletion:
-    """Convert Azure response to OpenAI ChatCompletion format."""
-    choices_data = response_data.choices
-    response_id = response_data.id
-    model_name = response_data.model
-    created_time = response_data.created
-    usage_data = response_data.usage
-
-    choice_data = choices_data[0]
-
+    """Convert Azure response to OpenAI ChatCompletion format directly."""
+    choice_data = response_data.choices[0]
     message_data = choice_data.message
-    finish_reason = choice_data.finish_reason
-    index = choice_data.index
 
-    # Handle tool calls
-    tool_calls: Optional[List[ChatCompletionMessageToolCall]] = None
+    # Convert tool calls
+    tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] | None = None
     if message_data.tool_calls:
-        tool_calls = []
-        for tool_call in message_data.tool_calls:
-            tool_calls.append(
-                ChatCompletionMessageToolCall(
-                    id=tool_call.id,
-                    type=tool_call.type,
-                    function=Function(
-                        name=tool_call.function.name,
-                        arguments=tool_call.function.arguments,
-                    ),
+        tool_calls_list: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
+        for tc in message_data.tool_calls:
+            func = tc.function
+            tool_calls_list.append(
+                ChatCompletionMessageFunctionToolCall(
+                    id=tc.id,
+                    type="function",
+                    function=Function(name=func.name if func else "", arguments=func.arguments if func else ""),
                 )
             )
+        tool_calls = tool_calls_list
+
+    # Usage
+    usage = None
+    if response_data.usage:
+        usage = CompletionUsage(
+            prompt_tokens=response_data.usage.prompt_tokens,
+            completion_tokens=response_data.usage.completion_tokens,
+            total_tokens=response_data.usage.total_tokens,
+        )
 
     message = ChatCompletionMessage(
+        role=cast("Literal['assistant']", "assistant"),
         content=message_data.content,
-        role=cast(Literal["assistant"], message_data.role),
         tool_calls=tool_calls,
     )
 
     choice = Choice(
-        finish_reason=cast(Literal["stop", "length", "tool_calls", "content_filter", "function_call"], finish_reason),
-        index=index,
+        index=choice_data.index,
+        finish_reason=cast(
+            "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']", choice_data.finish_reason
+        ),
         message=message,
     )
 
-    usage: Optional[CompletionUsage] = None
-    if usage_data:
-        usage = CompletionUsage(
-            completion_tokens=usage_data.completion_tokens,
-            prompt_tokens=usage_data.prompt_tokens,
-            total_tokens=usage_data.total_tokens,
-        )
-
     return ChatCompletion(
-        id=response_id,
-        model=model_name,
+        id=response_data.id,
+        model=response_data.model,
+        created=int(response_data.created.timestamp()),
         object="chat.completion",
-        created=int(created_time.timestamp()),
         choices=[choice],
         usage=usage,
     )
@@ -133,9 +128,9 @@ def _create_openai_chunk_from_azure_chunk(azure_chunk: StreamingChatCompletionsU
         delta_role = None
 
         if role_value and role_value in ["developer", "system", "user", "assistant", "tool"]:
-            delta_role = cast(Literal["developer", "system", "user", "assistant", "tool"], role_value)
+            delta_role = cast("Literal['developer', 'system', 'user', 'assistant', 'tool']", role_value)
 
-        delta_tool_calls: Optional[List[ChoiceDeltaToolCall]] = None
+        delta_tool_calls: list[ChoiceDeltaToolCall] | None = None
         if delta.tool_calls:
             delta_tool_calls = []
             for tool_call in delta.tool_calls:
@@ -164,7 +159,7 @@ def _create_openai_chunk_from_azure_chunk(azure_chunk: StreamingChatCompletionsU
                 tool_calls=delta_tool_calls,
             ),
             finish_reason=cast(
-                Literal["stop", "length", "tool_calls", "content_filter", "function_call"], choice.finish_reason
+                "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']", choice.finish_reason
             )
             if choice.finish_reason
             else None,
@@ -198,9 +193,9 @@ def _create_openai_embedding_response_from_azure(
     model_name = azure_response.model
     usage_data = azure_response.usage
 
-    openai_embeddings: List[Embedding] = []
+    openai_embeddings: list[Embedding] = []
     if isinstance(data, list):
-        for i, embedding_data in enumerate(data):
+        for embedding_data in data:
             embedding_vector = embedding_data.embedding
             index = embedding_data.index
 

@@ -2,20 +2,20 @@ import json
 from time import time
 from typing import Any
 
-from openai.types import CreateEmbeddingResponse
-from openai.types.embedding import Embedding
-from openai.types.create_embedding_response import Usage
-from openai.types.chat.chat_completion_chunk import (
+from any_llm.types.completion import (
     ChatCompletionChunk,
-    Choice,
     ChoiceDelta,
+    ChunkChoice,
+    CreateEmbeddingResponse,
+    Embedding,
+    Usage,
 )
 
 try:
     from google.genai import types
-except ImportError:
+except ImportError as exc:
     msg = "google-genai is not installed. Please install it with `pip install any-llm-sdk[google]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
 
 def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[types.Tool]:
@@ -51,21 +51,28 @@ def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[types.Tool]:
     return [types.Tool(function_declarations=function_declarations)]
 
 
+def _convert_tool_choice(tool_choice: str) -> types.ToolConfig:
+    tool_choice_to_mode = {
+        "required": types.FunctionCallingConfigMode.ANY,
+        "auto": types.FunctionCallingConfigMode.AUTO,
+    }
+
+    return types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode=tool_choice_to_mode[tool_choice]))
+
+
 def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
     """Convert messages to Google GenAI format."""
     formatted_messages = []
 
     for message in messages:
         if message["role"] == "system":
-            # System messages are treated as user messages in GenAI
             parts = [types.Part.from_text(text=message["content"])]
             formatted_messages.append(types.Content(role="user", parts=parts))
         elif message["role"] == "user":
             parts = [types.Part.from_text(text=message["content"])]
             formatted_messages.append(types.Content(role="user", parts=parts))
         elif message["role"] == "assistant":
-            if "tool_calls" in message and message["tool_calls"]:
-                # Handle function calls
+            if message.get("tool_calls"):
                 tool_call = message["tool_calls"][0]  # Assuming single function call for now
                 function_call = tool_call["function"]
 
@@ -75,24 +82,102 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
                     )
                 ]
             else:
-                # Handle regular text messages
                 parts = [types.Part.from_text(text=message["content"])]
 
             formatted_messages.append(types.Content(role="model", parts=parts))
         elif message["role"] == "tool":
-            # Convert tool result to function response
             try:
                 content_json = json.loads(message["content"])
                 part = types.Part.from_function_response(name=message.get("name", "unknown"), response=content_json)
                 formatted_messages.append(types.Content(role="function", parts=[part]))
             except json.JSONDecodeError:
-                # If not JSON, treat as text
                 part = types.Part.from_function_response(
                     name=message.get("name", "unknown"), response={"result": message["content"]}
                 )
                 formatted_messages.append(types.Content(role="function", parts=[part]))
 
     return formatted_messages
+
+
+def _convert_response_to_response_dict(response: types.GenerateContentResponse) -> dict[str, Any]:
+    response_dict = {
+        "id": "google_genai_response",
+        "model": "google/genai",
+        "created": 0,
+        "usage": {
+            "prompt_tokens": getattr(response.usage_metadata, "prompt_token_count", 0)
+            if hasattr(response, "usage_metadata")
+            else 0,
+            "completion_tokens": getattr(response.usage_metadata, "candidates_token_count", 0)
+            if hasattr(response, "usage_metadata")
+            else 0,
+            "total_tokens": getattr(response.usage_metadata, "total_token_count", 0)
+            if hasattr(response, "usage_metadata")
+            else 0,
+        },
+    }
+
+    if (
+        response.candidates
+        and len(response.candidates) > 0
+        and response.candidates[0].content
+        and response.candidates[0].content.parts
+        and len(response.candidates[0].content.parts) > 0
+        and hasattr(response.candidates[0].content.parts[0], "function_call")
+        and response.candidates[0].content.parts[0].function_call
+    ):
+        function_call = response.candidates[0].content.parts[0].function_call
+
+        args_dict = {}
+        if hasattr(function_call, "args") and function_call.args:
+            for key, value in function_call.args.items():
+                args_dict[key] = value
+
+        response_dict["choices"] = [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": f"call_{hash(function_call.name)}",
+                            "function": {
+                                "name": function_call.name,
+                                "arguments": json.dumps(args_dict),
+                            },
+                            "type": "function",
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+                "index": 0,
+            }
+        ]
+    else:
+        content = ""
+        if (
+            response.candidates
+            and len(response.candidates) > 0
+            and response.candidates[0].content
+            and response.candidates[0].content.parts
+            and len(response.candidates[0].content.parts) > 0
+            and hasattr(response.candidates[0].content.parts[0], "text")
+        ):
+            content = response.candidates[0].content.parts[0].text or ""
+
+        response_dict["choices"] = [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": content,
+                    "tool_calls": None,
+                },
+                "finish_reason": "stop",
+                "index": 0,
+            }
+        ]
+
+    return response_dict
 
 
 def _create_openai_embedding_response_from_google(
@@ -134,7 +219,7 @@ def _create_openai_chunk_from_google_chunk(
 
     delta = ChoiceDelta(content=part.text, role="assistant")
 
-    choice = Choice(
+    choice = ChunkChoice(
         index=0,
         delta=delta,
         finish_reason="stop" if getattr(candidate.finish_reason, "value", None) == "STOP" else None,

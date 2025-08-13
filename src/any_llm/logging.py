@@ -26,7 +26,6 @@ def setup_logger(
     logger.setLevel(level)
     logger.propagate = propagate
 
-    # Remove any existing handlers
     for handler in logger.handlers[:]:
         logger.removeHandler(handler)
 
@@ -39,5 +38,4 @@ def setup_logger(
     logger.addHandler(handler)
 
 
-# Set default configuration
 setup_logger()

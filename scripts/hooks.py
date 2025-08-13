@@ -7,9 +7,18 @@ It was initially written in collaboration with Claude 4 Sonnet.
 import asyncio
 import os
 import re
-import sys
 from pathlib import Path
+
 import httpx
+
+from any_llm.provider import ProviderFactory
+from any_llm.types.provider import ProviderMetadata
+
+
+# Exceptions
+class UrlValidationError(Exception):
+    """Exception raised when a URL is invalid."""
+
 
 # Constants
 MARKDOWN_EXTENSION = ".md"
@@ -21,57 +30,52 @@ MARKDOWN_LINK_PATTERN = r"\[([^\]]+)\]\(([^)]+\.md)\)"
 MARKDOWN_LINK_REPLACEMENT = r"[\1](#\2)"
 
 
-async def validate_url(urls, timeout=10):
-    async with httpx.AsyncClient(timeout=timeout) as client:
+async def validate_url(urls, http_timeout=10):
+    """Validate that all URLs are valid."""
+    async with httpx.AsyncClient(timeout=http_timeout) as client:
         responses = await asyncio.gather(*[client.head(url, follow_redirects=True) for url in urls])
         for response in responses:
             if response.status_code != 200:
-                raise Exception(f"URL {response.url} returned status code {response.status_code}")
+                msg = f"URL {response.url} returned status code {response.status_code}"
+                raise UrlValidationError(msg)
 
 
-def get_provider_metadata(provider_dir):
-    """Extract metadata from all provider implementations using ProviderFactory."""
-    # Add the src directory to Python path so we can import the provider module
-    src_path = provider_dir.parent.parent
-    if str(src_path) not in sys.path:
-        sys.path.insert(0, str(src_path))
-
-    from any_llm.provider import ProviderFactory
-
-    return ProviderFactory.get_all_provider_metadata()
-
-
-def generate_provider_table(providers):
+def generate_provider_table(providers: list[ProviderMetadata]):
     """Generate a markdown table from provider metadata."""
     if not providers:
         return "No providers found."
 
     # Create table header
     table_lines = [
-        "| Provider ID | Environment Variable | Source Code | Completion | Stream | Embedding |",
-        "|-------------|----------------------|-------------|------------|--------|-----------|",
+        "| ID | Env Var | Source Code | Responses | Completion | Streaming<br>(Completions) | Reasoning<br>(Completions) | Embedding |",
+        "|----|---------|-------------|-----------|------------|--------------------------|--------------------------|-----------|",
     ]
 
     # Add rows for each provider
     source_urls = []
     for provider in providers:
-        env_key = provider["env_key"]
+        env_key = provider.env_key
 
         # Use the provider key (directory name) instead of display name
-        provider_key = provider["provider_key"]
+        provider_key = provider.name
         source_url = f"https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/{provider_key}/"
         source_urls.append(source_url)
 
         source_link = f"[Source]({source_url})"
 
         # Create provider ID as a hyperlink to the documentation URL
-        provider_id_link = f"[`{provider_key.lower()}`]({provider['doc_url']})"
+        provider_id_link = f"[`{provider_key}`]({provider.doc_url})"
 
-        completion_supported = "✅" if provider.get("completion", False) else "❌"
-        stream_supported = "✅" if provider.get("streaming", False) else "❌"
-        embedding_supported = "✅" if provider.get("embedding", False) else "❌"
+        stream_supported = "✅" if provider.streaming else "❌"
+        embedding_supported = "✅" if provider.embedding else "❌"
+        reasoning_supported = "✅" if provider.reasoning else "❌"
+        responses_supported = "✅" if provider.responses else "❌"
+        completion_supported = "✅" if provider.completion else "❌"
 
-        row = f"| {provider_id_link} | {env_key} | {source_link} | {completion_supported} | {stream_supported} | {embedding_supported} |"
+        row = (
+            f"| {provider_id_link} | {env_key} | {source_link} | {responses_supported} | {completion_supported} | "
+            f"{stream_supported} | {reasoning_supported} | {embedding_supported} |"
+        )
         table_lines.append(row)
 
     asyncio.run(validate_url(source_urls))
@@ -80,27 +84,19 @@ def generate_provider_table(providers):
 
 def inject_provider_table_in_markdown(markdown_content, provider_dir):
     """Inject the provider table into markdown content during build."""
-    # Check if this page needs the provider table
     start_marker = "<!-- AUTO-GENERATED TABLE START -->"
     end_marker = "<!-- AUTO-GENERATED TABLE END -->"
 
     if start_marker not in markdown_content or end_marker not in markdown_content:
         return markdown_content
 
-    # Generate the table
-    provider_metadata = get_provider_metadata(provider_dir)
+    provider_metadata = ProviderFactory.get_all_provider_metadata()
     provider_table = generate_provider_table(provider_metadata)
 
-    # Find the markers and replace content between them
     start_idx = markdown_content.find(start_marker)
     end_idx = markdown_content.find(end_marker)
 
-    # Replace only the content between the markers
-    new_content = (
-        markdown_content[: start_idx + len(start_marker)] + "\n" + provider_table + "\n" + markdown_content[end_idx:]
-    )
-
-    return new_content
+    return markdown_content[: start_idx + len(start_marker)] + "\n" + provider_table + "\n" + markdown_content[end_idx:]
 
 
 def get_nav_files(nav_config):
@@ -366,4 +362,3 @@ def on_page_markdown(markdown, page, config, files):
 
 def on_pre_build(config, **kwargs):
     """Pre-build hook - currently unused but kept for potential future use."""
-    pass

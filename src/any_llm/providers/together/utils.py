@@ -1,33 +1,36 @@
 import uuid
-from typing import Literal, cast
 from datetime import datetime
+from typing import Literal, cast
 
-from openai.types.chat.chat_completion_chunk import (
+from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
+
+from any_llm.types.completion import (
     ChatCompletionChunk,
-    Choice,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
+    ChunkChoice,
+    CompletionUsage,
 )
-from openai.types.completion_usage import CompletionUsage
-from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
 
 
 def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatCompletionChunk) -> ChatCompletionChunk:
     """Convert a Together streaming chunk to OpenAI ChatCompletionChunk format."""
 
     if not together_chunk.choices:
-        raise ValueError("Together chunk has no choices")
+        msg = "Together chunk has no choices"
+        raise ValueError(msg)
 
     together_choice = together_chunk.choices[0]
     delta_content = together_choice.delta
     if not delta_content:
-        raise ValueError("Together chunk has no delta")
+        msg = "Together chunk has no delta"
+        raise ValueError(msg)
 
     content = delta_content.content
     role = None
     if delta_content.role:  # type: ignore[attr-defined]
-        role = cast(Literal["assistant", "user", "system"], delta_content.role)  # type: ignore[attr-defined]
+        role = cast("Literal['assistant', 'user', 'system']", delta_content.role)  # type: ignore[attr-defined]
 
     delta = ChoiceDelta(content=content, role=role)
 
@@ -46,11 +49,11 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
             openai_tool_calls.append(openai_tool_call)
         delta.tool_calls = openai_tool_calls
 
-    choice = Choice(
+    choice = ChunkChoice(
         index=0,
         delta=delta,
         finish_reason=cast(
-            Literal["stop", "length", "tool_calls", "content_filter", "function_call"] | None,
+            "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call'] | None",
             together_choice.finish_reason,
         ),
     )

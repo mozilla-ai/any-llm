@@ -1,14 +1,19 @@
-from typing import Any, Dict
+from typing import Any
 
-from openai.types.chat.chat_completion import ChatCompletion
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from any_llm.providers.helpers import create_completion_from_response
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    Choice,
+    CompletionUsage,
+    Function,
+)
 
 
 def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
     """Convert Cohere streaming chunk to OpenAI ChatCompletionChunk format."""
-    # Default chunk structure
-    chunk_dict: Dict[str, Any] = {
+    chunk_dict: dict[str, Any] = {
         "id": f"chatcmpl-{hash(str(chunk))}",
         "object": "chat.completion.chunk",
         "created": 0,
@@ -17,13 +22,12 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
         "usage": None,
     }
 
-    delta: Dict[str, Any] = {}
+    delta: dict[str, Any] = {}
     finish_reason = None
 
     chunk_type = getattr(chunk, "type", None)
 
     if chunk_type == "content-delta":
-        # Handle content delta
         if (
             hasattr(chunk, "delta")
             and chunk.delta
@@ -36,7 +40,6 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
             delta["content"] = chunk.delta.message.content.text
 
     elif chunk_type == "tool-call-start":
-        # Handle tool call start
         if (
             hasattr(chunk, "delta")
             and chunk.delta
@@ -61,7 +64,6 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
             ]
 
     elif chunk_type == "tool-call-delta":
-        # Handle tool call arguments delta
         if (
             hasattr(chunk, "delta")
             and chunk.delta
@@ -82,14 +84,11 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
             ]
 
     elif chunk_type == "tool-call-end":
-        # End of tool call
         finish_reason = "tool_calls"
 
     elif chunk_type == "message-end":
-        # End of message
         finish_reason = "stop"
 
-        # Add usage info if available
         if (
             hasattr(chunk, "delta")
             and chunk.delta
@@ -120,8 +119,7 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
 
 
 def _convert_response(response: Any, model: str) -> ChatCompletion:
-    """Convert Cohere response to OpenAI ChatCompletion format."""
-    # Convert response to dict-like structure for the utility
+    """Convert Cohere response to OpenAI ChatCompletion format directly."""
     prompt_tokens = 0
     completion_tokens = 0
 
@@ -129,61 +127,54 @@ def _convert_response(response: Any, model: str) -> ChatCompletion:
         prompt_tokens = int(response.usage.tokens.input_tokens or 0)
         completion_tokens = int(response.usage.tokens.output_tokens or 0)
 
-    response_dict = {
-        "id": getattr(response, "id", ""),
-        "model": getattr(response, "model", ""),
-        "created": getattr(response, "created", 0),
-        "usage": {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": prompt_tokens + completion_tokens,
-        },
-    }
+    usage = CompletionUsage(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=prompt_tokens + completion_tokens,
+    )
 
-    # Handle tool calls vs regular responses
     if response.finish_reason == "TOOL_CALL" and response.message.tool_calls:
         tool_call = response.message.tool_calls[0]
-        response_dict["choices"] = [
-            {
-                "message": {
-                    "role": "assistant",
-                    "content": response.message.tool_plan,  # Use tool_plan as content
-                    "tool_calls": [
-                        {
-                            "id": tool_call.id,
-                            "function": {
-                                "name": tool_call.function.name if tool_call.function else "",
-                                "arguments": tool_call.function.arguments if tool_call.function else "",
-                            },
-                            "type": "function",
-                        }
-                    ],
-                },
-                "finish_reason": "tool_calls",
-                "index": 0,
-            }
-        ]
-    else:
-        # Regular text response
-        content = ""
-        if response.message.content and len(response.message.content) > 0:
-            content = response.message.content[0].text
+        message = ChatCompletionMessage(
+            role="assistant",
+            content=response.message.tool_plan,
+            tool_calls=[
+                ChatCompletionMessageFunctionToolCall(
+                    id=tool_call.id,
+                    type="function",
+                    function=Function(
+                        name=tool_call.function.name if tool_call.function else "",
+                        arguments=tool_call.function.arguments if tool_call.function else "",
+                    ),
+                )
+            ],
+        )
+        choice = Choice(index=0, finish_reason="tool_calls", message=message)
+        return ChatCompletion(
+            id=getattr(response, "id", ""),
+            model=model,
+            created=getattr(response, "created", 0),
+            object="chat.completion",
+            choices=[choice],
+            usage=usage,
+        )
+    content = ""
+    if response.message.content and len(response.message.content) > 0:
+        content = response.message.content[0].text
 
-        response_dict["choices"] = [
-            {
-                "message": {
-                    "role": "assistant",
-                    "content": content,
-                    "tool_calls": None,
-                },
-                "finish_reason": "stop",
-                "index": 0,
-            }
-        ]
+    from typing import Literal, cast
 
-    # Convert to OpenAI format using the new utility
-    return create_completion_from_response(
-        response_data=response_dict,
+    message = ChatCompletionMessage(role=cast("Literal['assistant']", "assistant"), content=content, tool_calls=None)
+    choice = Choice(
+        index=0,
+        finish_reason=cast("Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']", "stop"),
+        message=message,
+    )
+    return ChatCompletion(
+        id=getattr(response, "id", ""),
         model=model,
-        provider_name="cohere",
+        created=getattr(response, "created", 0),
+        object="chat.completion",
+        choices=[choice],
+        usage=usage,
     )

@@ -1,9 +1,11 @@
 from typing import Any
+
 import httpx
 import pytest
-from any_llm import completion, ProviderName
-from any_llm.exceptions import MissingApiKeyError
 from openai import APIConnectionError
+
+from any_llm import ProviderName, completion
+from any_llm.exceptions import MissingApiKeyError
 
 
 def test_tool(
@@ -25,7 +27,6 @@ def test_tool(
             f"{provider.value}/{model_id}",
             **extra_kwargs,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
             tools=[capital_city],
         )
         assert any(choice.message.tool_calls is not None for choice in result.choices)  # type: ignore[union-attr]

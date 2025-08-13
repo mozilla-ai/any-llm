@@ -1,7 +1,7 @@
-import os
 import json
+import os
 from contextlib import contextmanager
-from unittest.mock import patch, Mock
+from unittest.mock import Mock, patch
 
 from any_llm.provider import ApiConfig
 from any_llm.providers.aws.aws import AwsProvider
@@ -30,7 +30,7 @@ def test_boto3_client_created_with_api_base() -> None:
 
     with mock_aws_provider(region) as mock_boto3_client:
         provider = AwsProvider(ApiConfig(api_base=custom_endpoint, api_key="test_key"))
-        provider._make_api_call("model-id", [{"role": "user", "content": "Hello"}])
+        provider.completion("model-id", [{"role": "user", "content": "Hello"}])
 
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=custom_endpoint, region_name=region)
 
@@ -41,7 +41,7 @@ def test_boto3_client_created_without_api_base() -> None:
 
     with mock_aws_provider(region) as mock_boto3_client:
         provider = AwsProvider(ApiConfig(api_key="test_key"))
-        provider._make_api_call("model-id", [{"role": "user", "content": "Hello"}])
+        provider.completion("model-id", [{"role": "user", "content": "Hello"}])
 
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None, region_name=region)
 

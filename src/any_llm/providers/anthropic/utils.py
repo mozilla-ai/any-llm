@@ -1,41 +1,79 @@
 import json
-from typing import Any, Dict, List
+from typing import Any
 
 from any_llm.logging import logger
 
 try:
-    from anthropic.types import Message
     from anthropic.types import (
-        ContentBlockStartEvent,
         ContentBlockDeltaEvent,
+        ContentBlockStartEvent,
         ContentBlockStopEvent,
+        Message,
         MessageStopEvent,
     )
-except ImportError:
+except ImportError as exc:
     msg = "anthropic is not installed. Please install it with `pip install any-llm-sdk[anthropic]`"
-    raise ImportError(msg)
+    raise ImportError(msg) from exc
 
-from openai.types.chat.chat_completion import ChatCompletion
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-
-from any_llm.providers.helpers import create_completion_from_response
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageToolCall,
+    Choice,
+    CompletionUsage,
+    Function,
+)
 
 DEFAULT_MAX_TOKENS = 4096
 
 
+def _is_tool_call(message: dict[str, Any]) -> bool:
+    """Check if the message is a tool call message."""
+    return message["role"] == "assistant" and message.get("tool_calls") is not None
+
+
 def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str | None, list[dict[str, Any]]]:
-    """Convert messages to Anthropic format, extracting system message."""
+    """Convert messages to Anthropic format.
+
+    - Extract messages with `role=system`.
+    - Replace `role=tool` with `role=user`, according to examples in https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/.
+    """
     system_message = None
     filtered_messages = []
 
-    for message in messages:
+    for n, message in enumerate(messages):
         if message["role"] == "system":
             if system_message is None:
                 system_message = message["content"]
             else:
-                # If multiple system messages, concatenate them
                 system_message += "\n" + message["content"]
         else:
+            # Handle messages inside agent loop.
+            # See https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview#tool-use-examples
+            if _is_tool_call(message):
+                tool_call = message["tool_calls"][0]
+                message = {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": tool_call["id"],
+                            "name": tool_call["function"]["name"],
+                            "input": json.loads(tool_call["function"]["arguments"]),
+                        }
+                    ],
+                }
+            elif message["role"] == "tool":
+                previous_message = messages[n - 1] if n > 0 else None
+                tool_use_id = ""
+                if previous_message and _is_tool_call(previous_message):
+                    tool_use_id = previous_message["tool_calls"][0]["id"]
+                message = {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": tool_use_id, "content": message["content"]}],
+                }
             filtered_messages.append(message)
 
     return system_message, filtered_messages
@@ -43,7 +81,6 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
 
 def _create_openai_chunk_from_anthropic_chunk(chunk: Any) -> ChatCompletionChunk:
     """Convert Anthropic streaming chunk to OpenAI ChatCompletionChunk format."""
-    # Default chunk structure
     chunk_dict = {
         "id": f"chatcmpl-{hash(str(chunk))}",
         "object": "chat.completion.chunk",
@@ -53,7 +90,7 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any) -> ChatCompletionChunk
         "usage": None,
     }
 
-    delta: Dict[str, Any] = {}
+    delta: dict[str, Any] = {}
     finish_reason = None
 
     if isinstance(chunk, ContentBlockStartEvent):
@@ -118,74 +155,67 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any) -> ChatCompletionChunk
 
 
 def _convert_response(response: Message) -> ChatCompletion:
-    """Convert Anthropic response to OpenAI format using base_framework utility."""
-    finish_reason_mapping = {
-        "end_turn": "stop",
-        "max_tokens": "length",
-        "tool_use": "tool_calls",
-    }
+    """Convert Anthropic Message to OpenAI ChatCompletion format."""
+    finish_reason_raw = response.stop_reason or "end_turn"
+    finish_reason_map = {"end_turn": "stop", "max_tokens": "length", "tool_use": "tool_calls"}
+    finish_reason = finish_reason_map.get(finish_reason_raw, "stop")
 
-    # Process content blocks into structured format
-    choices = []
+    content_parts: list[str] = []
+    tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
 
     for content_block in response.content:
-        tool_calls = []
-        content = ""
         if content_block.type == "text":
-            content = content_block.text
+            content_parts.append(content_block.text)
         elif content_block.type == "tool_use":
             tool_calls.append(
-                {
-                    "id": content_block.id,
-                    "function": {
-                        "name": content_block.name,
-                        "arguments": json.dumps(content_block.input),
-                    },
-                    "type": "function",
-                }
+                ChatCompletionMessageFunctionToolCall(
+                    id=content_block.id,
+                    type="function",
+                    function=Function(
+                        name=content_block.name,
+                        arguments=json.dumps(content_block.input),
+                    ),
+                )
             )
         elif content_block.type == "thinking":
-            content = content_block.thinking
+            # Provider does not advertise reasoning support; include in content for completeness
+            content_parts.append(content_block.thinking)
         else:
-            raise ValueError(f"Unsupported content block type: {content_block.type}")
+            msg = f"Unsupported content block type: {content_block.type}"
+            raise ValueError(msg)
 
-        choices.append(
-            {
-                "message": {
-                    "role": "assistant",
-                    "content": content,
-                    "tool_calls": tool_calls,
-                },
-                "finish_reason": response.stop_reason or "end_turn",
-                "index": 0,
-            }
-        )
+    message = ChatCompletionMessage(role="assistant", content="".join(content_parts), tool_calls=tool_calls or None)
 
-    # Structure response data for the utility
-    response_dict = {
-        "id": response.id,
-        "model": response.model,
-        "created": int(response.created_at.timestamp()) if hasattr(response, "created_at") else 0,
-        "choices": choices,
-        "usage": {
-            "completion_tokens": response.usage.output_tokens,
-            "prompt_tokens": response.usage.input_tokens,
-            "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
-        },
-    }
+    usage = CompletionUsage(
+        completion_tokens=response.usage.output_tokens,
+        prompt_tokens=response.usage.input_tokens,
+        total_tokens=response.usage.input_tokens + response.usage.output_tokens,
+    )
 
-    # Use base_framework utility for conversion
-    return create_completion_from_response(
-        response_data=response_dict,
+    from typing import Literal, cast
+
+    choice = Choice(
+        index=0,
+        finish_reason=cast(
+            "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']", finish_reason or "stop"
+        ),
+        message=message,
+    )
+
+    created_ts = int(response.created_at.timestamp()) if hasattr(response, "created_at") else 0
+
+    return ChatCompletion(
+        id=response.id,
         model=response.model,
-        provider_name="anthropic",
-        finish_reason_mapping=finish_reason_mapping,
+        created=created_ts,
+        object="chat.completion",
+        choices=[choice],
+        usage=usage,
     )
 
 
-def _convert_tool_spec(openai_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Convert OpenAI tool specification to Anthropic format."""
-    # Use the generic utility first
     generic_tools = []
 
     for tool in openai_tools:
@@ -200,7 +230,6 @@ def _convert_tool_spec(openai_tools: List[Dict[str, Any]]) -> List[Dict[str, Any
         }
         generic_tools.append(generic_tool)
 
-    # Convert to Anthropic-specific format
     anthropic_tools = []
     for tool in generic_tools:
         anthropic_tool = {
@@ -217,7 +246,15 @@ def _convert_tool_spec(openai_tools: List[Dict[str, Any]]) -> List[Dict[str, Any
     return anthropic_tools
 
 
-def _convert_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+def _convert_tool_choice(kwargs: dict[str, Any]) -> dict[str, Any]:
+    parallel_tool_calls = kwargs.pop("parallel_tool_calls", True)
+    tool_choice = kwargs.pop("tool_choice", "any")
+    if tool_choice == "required":
+        tool_choice = "any"
+    return {"type": tool_choice, "disable_parallel_tool_use": not parallel_tool_calls}
+
+
+def _convert_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     """Convert kwargs to Anthropic format."""
     kwargs = kwargs.copy()
 
@@ -225,15 +262,10 @@ def _convert_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
         logger.warning(f"max_tokens is required for Anthropic, setting to {DEFAULT_MAX_TOKENS}")
         kwargs["max_tokens"] = DEFAULT_MAX_TOKENS
 
-    # Convert tools if present
     if "tools" in kwargs:
         kwargs["tools"] = _convert_tool_spec(kwargs["tools"])
 
-    # Handle parallel_tool_calls
-    if "parallel_tool_calls" in kwargs:
-        parallel_tool_calls = kwargs.pop("parallel_tool_calls")
-        if parallel_tool_calls is False:
-            tool_choice = {"type": kwargs.get("tool_choice", "any"), "disable_parallel_tool_use": True}
-            kwargs["tool_choice"] = tool_choice
+    if "tool_choice" in kwargs or "parallel_tool_calls" in kwargs:
+        kwargs["tool_choice"] = _convert_tool_choice(kwargs)
 
     return kwargs

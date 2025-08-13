@@ -1,39 +1,43 @@
-import os
 import json
+import os
+from collections.abc import Iterator
 from typing import Any
 
 try:
     import boto3
     import instructor
 
+    PACKAGES_INSTALLED = True
 except ImportError:
-    msg = "boto3 or instructor is not installed. Please install it with `pip install any-llm-sdk[aws]`"
-    raise ImportError(msg)
+    PACKAGES_INSTALLED = False
 
-from openai.types.chat.chat_completion import ChatCompletion
-from any_llm.provider import Provider, ApiConfig, convert_instructor_response
 from any_llm.exceptions import MissingApiKeyError
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types import CreateEmbeddingResponse
+from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.aws.utils import (
-    _convert_response,
     _convert_kwargs,
     _convert_messages,
+    _convert_response,
     _create_openai_chunk_from_aws_chunk,
     _create_openai_embedding_response_from_aws,
 )
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
+from any_llm.utils.instructor import _convert_instructor_response
 
 
 class AwsProvider(Provider):
     """AWS Bedrock Provider using boto3 and instructor for structured output."""
 
-    PROVIDER_NAME = "AWS"
+    PROVIDER_NAME = "aws"
     ENV_API_KEY_NAME = "AWS_BEARER_TOKEN_BEDROCK"
     PROVIDER_DOCUMENTATION_URL = "https://aws.amazon.com/bedrock/"
 
-    SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION_STREAMING = True
+    SUPPORTS_COMPLETION = True
+    SUPPORTS_RESPONSES = False
+    SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = True
+
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize AWS Bedrock provider."""
@@ -51,16 +55,12 @@ class AwsProvider(Provider):
         if credentials is None and bedrock_api_key is None:
             raise MissingApiKeyError(provider_name=self.PROVIDER_NAME, env_var_name=self.ENV_API_KEY_NAME)
 
-    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
-        """Verify the kwargs for the AWS Bedrock provider."""
-        pass
-
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using AWS Bedrock with instructor support."""
         self._check_aws_credentials()
 
@@ -70,7 +70,6 @@ class AwsProvider(Provider):
             instructor_client = instructor.from_bedrock(client)
             response_format = kwargs.pop("response_format")
 
-            # Use instructor for structured output
             instructor_response = instructor_client.chat.completions.create(
                 model=model,
                 messages=messages,  # type: ignore[arg-type]
@@ -78,8 +77,7 @@ class AwsProvider(Provider):
                 **kwargs,
             )
 
-            # Convert instructor response to ChatCompletion format
-            return convert_instructor_response(instructor_response, model, "aws")
+            return _convert_instructor_response(instructor_response, model, "aws")
 
         stream = kwargs.pop("stream", False)
 
@@ -99,16 +97,15 @@ class AwsProvider(Provider):
                 chunk
                 for chunk in (_create_openai_chunk_from_aws_chunk(item, model=model) for item in stream_generator)
                 if chunk is not None
-            )  # type: ignore[return-value]
-        else:
-            response = client.converse(
-                modelId=model,
-                messages=formatted_messages,
-                system=system_message,
-                **request_config,
             )
+        response = client.converse(
+            modelId=model,
+            messages=formatted_messages,
+            system=system_message,
+            **request_config,
+        )
 
-            return _convert_response(response)
+        return _convert_response(response)
 
     def embedding(
         self,
@@ -134,15 +131,12 @@ class AwsProvider(Provider):
             if "normalize" in kwargs:
                 request_body["normalize"] = kwargs["normalize"]
 
-            # Make the API call
             response = client.invoke_model(modelId=model, body=json.dumps(request_body))
 
-            # Parse the response
             response_body = json.loads(response["body"].read())
 
             embedding_data.append({"embedding": response_body["embedding"], "index": index})
 
             total_tokens += response_body.get("inputTextTokenCount", 0)
 
-        # Convert to OpenAI format
         return _create_openai_embedding_response_from_aws(embedding_data, model, total_tokens)

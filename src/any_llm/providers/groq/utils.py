@@ -1,15 +1,88 @@
-from typing import cast, Literal
+from typing import Literal, cast
 
-from openai.types.chat.chat_completion_chunk import (
+from groq.types.chat import ChatCompletion as GroqChatCompletion
+from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
+
+from any_llm.types.completion import (
+    ChatCompletion,
     ChatCompletionChunk,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageToolCall,
     Choice,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
+    ChunkChoice,
+    CompletionUsage,
+    Function,
+    Reasoning,
 )
-from openai.types.completion_usage import CompletionUsage
 
-from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
+
+def to_chat_completion(response: GroqChatCompletion) -> ChatCompletion:
+    """Convert Groq ChatCompletion into our ChatCompletion type directly."""
+
+    usage = None
+    if response.usage:
+        usage = CompletionUsage(
+            prompt_tokens=response.usage.prompt_tokens,
+            completion_tokens=response.usage.completion_tokens,
+            total_tokens=response.usage.total_tokens,
+        )
+
+    choices: list[Choice] = []
+    for choice in response.choices:
+        message = choice.message
+
+        tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] | None = None
+        if message.tool_calls:
+            tool_calls_list: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
+            for tool_call in message.tool_calls:
+                arguments = tool_call.function.arguments
+                if not isinstance(arguments, str):
+                    # Ensure arguments is a string
+                    arguments = str(arguments)
+                tool_calls_list.append(
+                    ChatCompletionMessageFunctionToolCall(
+                        id=tool_call.id,
+                        type="function",
+                        function=Function(
+                            name=tool_call.function.name,
+                            arguments=arguments,
+                        ),
+                    )
+                )
+            tool_calls = tool_calls_list
+
+        msg = ChatCompletionMessage(
+            role=cast("Literal['assistant']", "assistant"),
+            content=message.content,
+            tool_calls=tool_calls,
+            reasoning=Reasoning(content=cast("str", message.reasoning))
+            if getattr(message, "reasoning", None)
+            else None,
+        )
+
+        choices.append(
+            Choice(
+                index=choice.index,
+                finish_reason=cast(
+                    "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']",
+                    choice.finish_reason or "stop",
+                ),
+                message=msg,
+            )
+        )
+
+    return ChatCompletion(
+        id=response.id,
+        model=response.model,
+        created=response.created,
+        object="chat.completion",
+        choices=choices,
+        usage=usage,
+    )
 
 
 def _create_openai_chunk_from_groq_chunk(groq_chunk: GroqChatCompletionChunk) -> ChatCompletionChunk:
@@ -20,7 +93,8 @@ def _create_openai_chunk_from_groq_chunk(groq_chunk: GroqChatCompletionChunk) ->
 
     delta = ChoiceDelta(
         content=delta_data.content,
-        role=cast(Literal["developer", "system", "user", "assistant", "tool"] | None, delta_data.role),
+        reasoning=Reasoning(content=delta_data.reasoning) if delta_data.reasoning else None,
+        role=cast("Literal['developer', 'system', 'user', 'assistant', 'tool'] | None", delta_data.role),
     )
 
     if delta_data.tool_calls:
@@ -42,7 +116,7 @@ def _create_openai_chunk_from_groq_chunk(groq_chunk: GroqChatCompletionChunk) ->
     else:
         delta.tool_calls = None
 
-    choice = Choice(
+    choice = ChunkChoice(
         index=choice_data.index,
         delta=delta,
         finish_reason=choice_data.finish_reason,

@@ -1,28 +1,25 @@
-import os
-from typing import Any, Iterator
 import json
+import os
+from collections.abc import Iterator
+from typing import Any
 
 try:
     from ollama import ChatResponse as OllamaChatResponse
     from ollama import Client
+
+    PACKAGES_INSTALLED = True
 except ImportError:
-    msg = "ollama is not installed. Please install it with `pip install any-llm-sdk[ollama]`"
-    raise ImportError(msg)
+    PACKAGES_INSTALLED = False
 
 from pydantic import BaseModel
-from openai.types.chat.chat_completion import ChatCompletion
-from openai._streaming import Stream
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
-from openai.types import CreateEmbeddingResponse
+
 from any_llm.provider import ApiConfig, Provider
-from any_llm.providers.helpers import create_completion_from_response
-
-
 from any_llm.providers.ollama.utils import (
-    _create_openai_embedding_response_from_ollama,
+    _create_chat_completion_from_ollama_response,
     _create_openai_chunk_from_ollama_chunk,
-    _create_response_dict_from_ollama_response,
+    _create_openai_embedding_response_from_ollama,
 )
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 
 
 class OllamaProvider(Provider):
@@ -33,20 +30,22 @@ class OllamaProvider(Provider):
     Read more here - https://github.com/ollama/ollama-python
     """
 
-    PROVIDER_NAME = "Ollama"
+    PROVIDER_NAME = "ollama"
     PROVIDER_DOCUMENTATION_URL = "https://github.com/ollama/ollama"
+    ENV_API_KEY_NAME = "None"
 
-    SUPPORTS_STREAMING = True
+    SUPPORTS_COMPLETION_STREAMING = True
+    SUPPORTS_COMPLETION = True
+    SUPPORTS_RESPONSES = False
+    SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = True
+
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
     def __init__(self, config: ApiConfig) -> None:
         """We don't use the Provider init because by default we don't require an API key."""
 
         self.url = config.api_base or os.getenv("OLLAMA_API_URL")
-
-    def verify_kwargs(self, kwargs: dict[str, Any]) -> None:
-        """Verify the kwargs for the Ollama provider."""
-        pass
 
     def _stream_completion(
         self,
@@ -67,42 +66,41 @@ class OllamaProvider(Provider):
         for chunk in response:
             yield _create_openai_chunk_from_ollama_chunk(chunk)
 
-    def _make_api_call(
+    def completion(
         self,
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Ollama."""
 
         if "response_format" in kwargs:
             response_format = kwargs.pop("response_format")
             if isinstance(response_format, type) and issubclass(response_format, BaseModel):
                 # response_format is a Pydantic model class
-                format = response_format.model_json_schema()
+                output_format = response_format.model_json_schema()
             else:
                 # response_format is already a dict/schema
-                format = response_format
+                output_format = response_format
         else:
-            format = None
+            output_format = None
 
-        # Convert tool messages to user messages and remove tool_calls from assistant messages
         # (https://www.reddit.com/r/ollama/comments/1ked8x2/feeding_tool_output_back_to_llm/)
         cleaned_messages = []
-        for message in messages:
-            if message["role"] == "tool":
+        for input_message in messages:
+            if input_message["role"] == "tool":
                 cleaned_message = {
                     "role": "user",
-                    "content": json.dumps(message["content"]),
+                    "content": json.dumps(input_message["content"]),
                 }
-            elif message["role"] == "assistant" and "tool_calls" in message:
-                content = message["content"] + "\n" + json.dumps(message["tool_calls"])
+            elif input_message["role"] == "assistant" and "tool_calls" in input_message:
+                content = input_message["content"] + "\n" + json.dumps(input_message["tool_calls"])
                 cleaned_message = {
                     "role": "assistant",
                     "content": content,
                 }
             else:
-                cleaned_message = message.copy()
+                cleaned_message = input_message.copy()
 
             cleaned_messages.append(cleaned_message)
 
@@ -111,23 +109,17 @@ class OllamaProvider(Provider):
         client = Client(host=self.url, timeout=kwargs.pop("timeout", None))
 
         if kwargs.get("stream", False):
-            return self._stream_completion(client, model, cleaned_messages, **kwargs)  # type: ignore[return-value]
+            return self._stream_completion(client, model, cleaned_messages, **kwargs)
 
         response: OllamaChatResponse = client.chat(
             model=model,
             tools=kwargs.pop("tools", None),
             think=kwargs.pop("think", None),
             messages=cleaned_messages,
-            format=format,
+            format=output_format,
             options=kwargs,
         )
-
-        response_dict = _create_response_dict_from_ollama_response(response)
-        return create_completion_from_response(
-            response_data=response_dict,
-            model=model,
-            provider_name=self.PROVIDER_NAME,
-        )
+        return _create_chat_completion_from_ollama_response(response)
 
     def embedding(
         self,
