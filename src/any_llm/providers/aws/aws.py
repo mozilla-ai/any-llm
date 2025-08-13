@@ -65,8 +65,13 @@ class AwsProvider(Provider):
         self._check_aws_credentials()
 
         client = boto3.client("bedrock-runtime", endpoint_url=self.config.api_base, region_name=self.region_name)  # type: ignore[no-untyped-call]
+        stream = kwargs.pop("stream", False)
 
         if "response_format" in kwargs:
+            if stream:
+                msg = "stream is not supported for response_format"
+                raise ValueError(msg)
+
             instructor_client = instructor.from_bedrock(client)
             response_format = kwargs.pop("response_format")
 
@@ -78,8 +83,6 @@ class AwsProvider(Provider):
             )
 
             return _convert_instructor_response(instructor_response, model, "aws")
-
-        stream = kwargs.pop("stream", False)
 
         request_config = _convert_kwargs(kwargs)
 
