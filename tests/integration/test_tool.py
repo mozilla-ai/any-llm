@@ -6,6 +6,7 @@ from openai import APIConnectionError
 
 from any_llm import ProviderName, completion
 from any_llm.exceptions import MissingApiKeyError
+from any_llm.provider import ProviderFactory
 
 
 def test_tool(
@@ -14,6 +15,10 @@ def test_tool(
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
+    # first check if the provider supports tools
+    cls = ProviderFactory.get_provider_class(provider)
+    if not cls.SUPPORTS_COMPLETION:
+        pytest.skip(f"{provider.value} does not support tools, skipping")
     model_id = provider_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
 
