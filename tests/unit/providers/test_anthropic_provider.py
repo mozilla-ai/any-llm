@@ -163,3 +163,38 @@ def test_stream_with_response_format_raises() -> None:
                 response_format={"type": "json_object"},
             )
         )
+
+
+def test_make_api_call_inside_agent_loop() -> None:
+    api_key = "test-api-key"
+    model = "model-id"
+    messages = [
+        {"role": "user", "content": "What is the weather like in Salvaterra?"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "foo", "function": {"name": "get_weather", "arguments": '{"location": "Salvaterra"}'}}
+            ],
+        },
+        {"role": "tool", "tool_call_id": "foo", "content": "sunny"},
+    ]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(ApiConfig(api_key=api_key))
+        provider._make_api_call(model, messages)
+
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
+            model=model,
+            messages=[
+                {"role": "user", "content": "What is the weather like in Salvaterra?"},
+                {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "id": "foo", "name": "get_weather", "input": {"location": "Salvaterra"}}
+                    ],
+                },
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "foo", "content": "sunny"}]},
+            ],
+            max_tokens=4096,
+        )
