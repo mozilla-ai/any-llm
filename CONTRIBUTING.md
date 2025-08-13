@@ -29,8 +29,8 @@ pre-commit run --all-files
 Test changes locally to ensure functionality.
 
 ```bash
-pytest -v tests
-```
+pytest -v tests/unit
+pytest -v tests/integration -n auto
 
 **Docs**
 
