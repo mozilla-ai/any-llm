@@ -19,7 +19,7 @@ from any_llm.types.completion import (
     Choice,
     CreateEmbeddingResponse,
 )
-from any_llm.types.responses import Response, ResponseStreamEvent
+from any_llm.types.responses import Response, ResponseStreamEvent, ResponseInputParam
 
 
 def convert_instructor_response(instructor_response: Any, model: str, provider_name: str) -> ChatCompletion:
@@ -176,7 +176,7 @@ class Provider(ABC):
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         return await asyncio.to_thread(self.completion, model, messages, **kwargs)
 
-    def responses(self, model: str, input_data: Any, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
+    def responses(self, model: str, input_data: str | ResponseInputParam, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
         """Create a response using the provider's Responses API if supported.
 
         Default implementation raises NotImplementedError. Providers that set

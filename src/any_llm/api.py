@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from any_llm.provider import ApiConfig, Provider, ProviderFactory
 from any_llm.tools import prepare_tools
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
-from any_llm.types.responses import Response, ResponseStreamEvent
+from any_llm.types.responses import Response, ResponseStreamEvent, ResponseInputParam
 
 
 def _prepare_completion_request(
@@ -240,7 +240,7 @@ async def acompletion(
 
 def responses(
     model: str,
-    input_data: Any,
+    input_data: str | ResponseInputParam,
     *,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
@@ -319,7 +319,7 @@ def responses(
 
 async def aresponses(
     model: str,
-    input_data: Any,
+    input_data: str | ResponseInputParam,
     *,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
