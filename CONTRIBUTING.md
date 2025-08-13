@@ -13,7 +13,7 @@ We recommend to use [uv](https://docs.astral.sh/uv/getting-started/installation/
 ```
 uv venv
 source .venv/bin/activate
-uv sync --dev --extra all
+uv sync --all-extras -U --python=3.13
 ```
 
 **Lint**
