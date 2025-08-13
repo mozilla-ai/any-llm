@@ -29,18 +29,51 @@ from any_llm.types.completion import (
 DEFAULT_MAX_TOKENS = 4096
 
 
+def _is_tool_call(message: dict[str, Any]) -> bool:
+    """Check if the message is a tool call message."""
+    return message["role"] == "assistant" and message.get("tool_calls") is not None
+
+
 def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str | None, list[dict[str, Any]]]:
-    """Convert messages to Anthropic format, extracting system message."""
+    """Convert messages to Anthropic format.
+
+    - Extract messages with `role=system`.
+    - Replace `role=tool` with `role=user`, according to examples in https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/.
+    """
     system_message = None
     filtered_messages = []
 
-    for message in messages:
+    for n, message in enumerate(messages):
         if message["role"] == "system":
             if system_message is None:
                 system_message = message["content"]
             else:
                 system_message += "\n" + message["content"]
         else:
+            # Handle messages inside agent loop.
+            # See https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview#tool-use-examples
+            if _is_tool_call(message):
+                tool_call = message["tool_calls"][0]
+                message = {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": tool_call["id"],
+                            "name": tool_call["function"]["name"],
+                            "input": json.loads(tool_call["function"]["arguments"]),
+                        }
+                    ],
+                }
+            elif message["role"] == "tool":
+                previous_message = messages[n - 1] if n > 0 else None
+                tool_use_id = ""
+                if previous_message and _is_tool_call(previous_message):
+                    tool_use_id = previous_message["tool_calls"][0]["id"]
+                message = {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": tool_use_id, "content": message["content"]}],
+                }
             filtered_messages.append(message)
 
     return system_message, filtered_messages
