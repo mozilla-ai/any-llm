@@ -3,9 +3,10 @@ from typing import Any
 
 try:
     import cohere
-except ImportError as exc:
-    msg = "cohere is not installed. Please install it with `pip install any-llm-sdk[cohere]`"
-    raise ImportError(msg) from exc
+
+    PACKAGES_INSTALLED = True
+except ImportError:
+    PACKAGES_INSTALLED = False
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ApiConfig, Provider
@@ -28,6 +29,8 @@ class CohereProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
+
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Cohere provider."""

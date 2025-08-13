@@ -9,9 +9,10 @@ try:
     import groq
     import instructor
     from groq import Stream as GroqStream
-except ImportError as exc:
-    msg = "groq or instructor is not installed. Please install it with `pip install any-llm-sdk[groq]`"
-    raise ImportError(msg) from exc
+
+    PACKAGES_INSTALLED = True
+except ImportError:
+    PACKAGES_INSTALLED = False
 
 
 from any_llm.exceptions import UnsupportedParameterError
@@ -40,6 +41,8 @@ class GroqProvider(Provider):
     SUPPORTS_RESPONSES = True
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = False
+
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
     def _stream_completion(
         self,

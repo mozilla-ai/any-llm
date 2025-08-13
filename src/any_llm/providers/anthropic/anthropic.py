@@ -4,9 +4,10 @@ from typing import Any
 try:
     import instructor
     from anthropic import Anthropic
-except ImportError as exc:
-    msg = "anthropic or instructor is not installed. Please install it with `pip install any-llm-sdk[anthropic]`"
-    raise ImportError(msg) from exc
+
+    PACKAGES_INSTALLED = True
+except ImportError:
+    PACKAGES_INSTALLED = False
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import Provider
@@ -37,9 +38,11 @@ class AnthropicProvider(Provider):
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
 
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+
     def _stream_completion(
         self,
-        client: Anthropic,
+        client: "Anthropic",
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,

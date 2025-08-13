@@ -60,22 +60,47 @@ class ApiConfig(BaseModel):
 class Provider(ABC):
     """Provider for the LLM."""
 
-    # Provider-specific configuration (to be overridden by subclasses)
-    PROVIDER_NAME: str  # Must match the name of the provider directory  (case sensitive)
+    # === Provider-specific configuration (to be overridden by subclasses) ===
+    PROVIDER_NAME: str
+    """Must match the name of the provider directory  (case sensitive)"""
+
     PROVIDER_DOCUMENTATION_URL: str
+    """Link to the provider's documentation"""
+
     ENV_API_KEY_NAME: str
+    """Environment variable name for the API key"""
 
-    # Feature support flags (to be set by subclasses)
+    # === Feature support flags (to be set by subclasses) ===
     SUPPORTS_COMPLETION_STREAMING: bool
-    SUPPORTS_COMPLETION: bool
-    SUPPORTS_COMPLETION_REASONING: bool
-    SUPPORTS_EMBEDDING: bool
-    SUPPORTS_RESPONSES: bool
+    """OpenAI Streaming Completion API"""
 
-    # This value isn't required but may prove useful for providers that have overridable api bases.
+    SUPPORTS_COMPLETION: bool
+    """OpenAI Completion API"""
+
+    SUPPORTS_COMPLETION_REASONING: bool
+    """Reasoning Content attached to Completion API Response"""
+
+    SUPPORTS_EMBEDDING: bool
+    """OpenAI Embedding API"""
+
+    SUPPORTS_RESPONSES: bool
+    """OpenAI Responses API"""
+
     API_BASE: str | None = None
+    """This is used to set the API base for the provider.
+    It is not required but may prove useful for providers that have overridable api bases.
+    """
+
+    # === Internal Flag Checks ===
+    PACKAGES_INSTALLED: bool = False
+    """Some providers use SDKs that are not installed by default.
+    This flag is used to check if the packages are installed before instantiating the provider.
+    """
 
     def __init__(self, config: ApiConfig) -> None:
+        if not self.PACKAGES_INSTALLED:
+            msg = f"{self.PROVIDER_NAME} required packages are not installed. Please install them with `pip install any-llm-sdk[{self.PROVIDER_NAME}]`"
+            raise ImportError(msg)
         self.config = self._verify_and_set_api_key(config)
 
     def _verify_and_set_api_key(self, config: ApiConfig) -> ApiConfig:

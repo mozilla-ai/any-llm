@@ -1,3 +1,4 @@
+import sys
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -5,7 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ApiConfig
+from any_llm.provider import ApiConfig, ProviderFactory
 from any_llm.providers.google.google import GoogleProvider
 
 
@@ -102,3 +103,22 @@ def testcompletion_with_parallel_tool_calls_raises() -> None:
                 messages,
                 parallel_tool_calls=True,
             )
+
+
+def test_provider_with_no_packages_installed() -> None:
+    with patch.dict(sys.modules, dict.fromkeys(["google"])):
+        try:
+            import any_llm.providers.google  # noqa: F401
+        except ImportError:
+            pytest.fail("Import raised an unexpected ImportError")
+
+
+def test_call_to_provider_with_no_packages_installed() -> None:
+    packages = ["google"]
+    with patch.dict(sys.modules, dict.fromkeys(packages)):
+        # Ensure a fresh import under the patched environment so PACKAGES_INSTALLED is recalculated
+        for mod in list(sys.modules):
+            if mod.startswith("any_llm.providers.google"):
+                sys.modules.pop(mod)
+        with pytest.raises(ImportError, match="google required packages are not installed"):
+            ProviderFactory.create_provider("google", ApiConfig())

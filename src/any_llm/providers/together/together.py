@@ -4,9 +4,10 @@ from typing import TYPE_CHECKING, Any
 try:
     import instructor
     import together
-except ImportError as exc:
-    msg = "together or instructor is not installed. Please install it with `pip install any-llm-sdk[together]`"
-    raise ImportError(msg) from exc
+
+    PACKAGES_INSTALLED = True
+except ImportError:
+    PACKAGES_INSTALLED = False
 
 from any_llm.provider import Provider
 from any_llm.providers.together.utils import _create_openai_chunk_from_together_chunk
@@ -31,9 +32,11 @@ class TogetherProvider(Provider):
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
 
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+
     def _stream_completion(
         self,
-        client: together.Together,
+        client: "together.Together",
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,

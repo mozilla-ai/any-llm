@@ -7,9 +7,9 @@ try:
     import boto3
     import instructor
 
-except ImportError as exc:
-    msg = "boto3 or instructor is not installed. Please install it with `pip install any-llm-sdk[aws]`"
-    raise ImportError(msg) from exc
+    PACKAGES_INSTALLED = True
+except ImportError:
+    PACKAGES_INSTALLED = False
 
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ApiConfig, Provider
@@ -36,6 +36,8 @@ class AwsProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = True
+
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize AWS Bedrock provider."""

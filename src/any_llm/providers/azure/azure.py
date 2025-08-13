@@ -5,9 +5,10 @@ from typing import TYPE_CHECKING, Any
 try:
     from azure.ai.inference import ChatCompletionsClient, EmbeddingsClient
     from azure.core.credentials import AzureKeyCredential
-except ImportError as exc:
-    msg = "azure-ai-inference is not installed. Please install it with `pip install any-llm-sdk[azure]`"
-    raise ImportError(msg) from exc
+
+    PACKAGES_INSTALLED = True
+except ImportError:
+    PACKAGES_INSTALLED = False
 
 from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.azure.utils import (
@@ -28,12 +29,13 @@ class AzureProvider(Provider):
     PROVIDER_NAME = "azure"
     ENV_API_KEY_NAME = "AZURE_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://azure.microsoft.com/en-us/products/ai-services/openai-service"
-
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_EMBEDDING = True
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
+
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Azure provider."""

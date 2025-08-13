@@ -5,9 +5,10 @@ from typing import Any
 try:
     from google import genai
     from google.genai import types
-except ImportError as exc:
-    msg = "google-genai is not installed. Please install it with `pip install any-llm-sdk[google]`"
-    raise ImportError(msg) from exc
+
+    PACKAGES_INSTALLED = True
+except ImportError:
+    PACKAGES_INSTALLED = False
 
 from pydantic import BaseModel
 
@@ -47,8 +48,15 @@ class GoogleProvider(Provider):
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = True
 
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Google GenAI provider."""
+
+        if not self.PACKAGES_INSTALLED:
+            msg = "google required packages are not installed"
+            raise ImportError(msg)
+
         self.use_vertex_ai = os.getenv("GOOGLE_USE_VERTEX_AI", "false").lower() == "true"
 
         if self.use_vertex_ai:

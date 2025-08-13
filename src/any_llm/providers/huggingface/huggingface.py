@@ -3,9 +3,10 @@ from typing import TYPE_CHECKING, Any
 
 try:
     from huggingface_hub import InferenceClient
-except ImportError as exc:
-    msg = "huggingface-hub is not installed. Please install it with `pip install any-llm-sdk[huggingface]`"
-    raise ImportError(msg) from exc
+
+    PACKAGES_INSTALLED = True
+except ImportError:
+    PACKAGES_INSTALLED = False
 
 from pydantic import BaseModel
 
@@ -35,9 +36,11 @@ class HuggingfaceProvider(Provider):
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
 
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+
     def _stream_completion(
         self,
-        client: InferenceClient,
+        client: "InferenceClient",
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,

@@ -1,7 +1,10 @@
+import sys
+from unittest.mock import patch
+
 import pytest
 
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ApiConfig
+from any_llm.provider import ApiConfig, ProviderFactory
 
 
 def test_stream_with_response_format_raises() -> None:
@@ -22,3 +25,18 @@ def test_stream_with_response_format_raises() -> None:
                 response_format={"type": "json_object"},
             )
         )
+
+
+def test_provider_with_no_packages_installed() -> None:
+    with patch.dict(sys.modules, dict.fromkeys(["cerebras"])):
+        try:
+            import any_llm.providers.cerebras  # noqa: F401
+        except ImportError:
+            pytest.fail("Import raised an unexpected ImportError")
+
+
+def test_call_to_provider_with_no_packages_installed() -> None:
+    packages = ["cerebras", "instructor"]
+    with patch.dict(sys.modules, dict.fromkeys(packages)):
+        with pytest.raises(ImportError, match="cerebras required packages are not installed"):
+            ProviderFactory.create_provider("cerebras", ApiConfig())

@@ -15,9 +15,10 @@ try:
         _convert_xai_chunk_to_anyllm_chunk,
         _convert_xai_completion_to_anyllm_response,
     )
-except ImportError as exc:
-    msg = "xai is not installed. Please install it with `pip install any-llm-sdk[xai]`"
-    raise ImportError(msg) from exc
+
+    PACKAGES_INSTALLED = True
+except ImportError:
+    PACKAGES_INSTALLED = False
 
 
 class XaiProvider(Provider):
@@ -31,6 +32,8 @@ class XaiProvider(Provider):
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_RESPONSES = False
     SUPPORTS_EMBEDDING = False
+
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
     def completion(
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any

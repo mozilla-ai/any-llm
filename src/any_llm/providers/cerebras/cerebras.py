@@ -5,9 +5,10 @@ try:
     import cerebras.cloud.sdk as cerebras
     import instructor
     from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponse
-except ImportError as exc:
-    msg = "cerebras or instructor is not installed. Please install it with `pip install any-llm-sdk[cerebras]`"
-    raise ImportError(msg) from exc
+
+    PACKAGES_INSTALLED = True
+except ImportError:
+    PACKAGES_INSTALLED = False
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ApiConfig, Provider
@@ -31,6 +32,8 @@ class CerebrasProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
+
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Cerebras provider."""

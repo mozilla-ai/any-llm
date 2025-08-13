@@ -4,9 +4,10 @@ from typing import TYPE_CHECKING, Any
 try:
     from mistralai import Mistral
     from mistralai.extra import response_format_from_pydantic_model
-except ImportError as exc:
-    msg = "mistralai is not installed. Please install it with `pip install any-llm-sdk[mistral]`"
-    raise ImportError(msg) from exc
+
+    PACKAGES_INSTALLED = True
+except ImportError:
+    PACKAGES_INSTALLED = False
 
 from pydantic import BaseModel
 
@@ -30,6 +31,8 @@ class MistralProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = True
+
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
     def _stream_completion(
         self,

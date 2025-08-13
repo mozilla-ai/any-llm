@@ -4,9 +4,10 @@ from typing import Any
 
 try:
     import instructor
-except ImportError as exc:
-    msg = "instructor is not installed. Please install it with `pip install any-llm-sdk[sambanova]`"
-    raise ImportError(msg) from exc
+
+    PACKAGES_INSTALLED = True
+except ImportError:
+    PACKAGES_INSTALLED = False
 
 from openai import OpenAI
 
@@ -20,6 +21,8 @@ class SambanovaProvider(BaseOpenAIProvider):
     ENV_API_KEY_NAME = "SAMBANOVA_API_KEY"
     PROVIDER_NAME = "sambanova"
     PROVIDER_DOCUMENTATION_URL = "https://sambanova.ai/"
+
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
     def completion(
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any

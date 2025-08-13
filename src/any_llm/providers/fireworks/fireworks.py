@@ -3,9 +3,10 @@ from typing import Any
 
 try:
     from fireworks import LLM
-except ImportError as exc:
-    msg = "fireworks-ai is not installed. Please install it with `pip install any-llm-sdk[fireworks]`"
-    raise ImportError(msg) from exc
+
+    PACKAGES_INSTALLED = True
+except ImportError:
+    PACKAGES_INSTALLED = False
 
 from openai import OpenAI, Stream
 from pydantic import BaseModel
@@ -34,9 +35,11 @@ class FireworksProvider(Provider):
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
 
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+
     def _stream_completion(
         self,
-        llm: LLM,
+        llm: "LLM",
         messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> Iterator[ChatCompletionChunk]:

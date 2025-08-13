@@ -5,9 +5,10 @@ from typing import Any
 try:
     from ibm_watsonx_ai import Credentials
     from ibm_watsonx_ai.foundation_models import ModelInference  # type: ignore[attr-defined]
-except ImportError as exc:
-    msg = "ibm-watsonx-ai is not installed. Please install it with `pip install any-llm-sdk[watsonx]`"
-    raise ImportError(msg) from exc
+
+    PACKAGES_INSTALLED = True
+except ImportError:
+    PACKAGES_INSTALLED = False
 
 from pydantic import BaseModel
 
@@ -32,6 +33,8 @@ class WatsonxProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
+
+    PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
     def _stream_completion(
         self,

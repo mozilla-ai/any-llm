@@ -1,10 +1,11 @@
+import sys
 from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
 import pytest
 
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ApiConfig
+from any_llm.provider import ApiConfig, ProviderFactory
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 
 
@@ -163,3 +164,22 @@ def test_stream_with_response_format_raises() -> None:
                 response_format={"type": "json_object"},
             )
         )
+
+
+def test_provider_with_no_packages_installed() -> None:
+    with patch.dict(sys.modules, dict.fromkeys(["anthropic"])):
+        try:
+            import any_llm.providers.anthropic  # noqa: F401
+        except ImportError:
+            pytest.fail("Import raised an unexpected ImportError")
+
+
+def test_call_to_provider_with_no_packages_installed() -> None:
+    packages = ["instructor", "anthropic"]
+    with patch.dict(sys.modules, dict.fromkeys(packages)):
+        # Ensure a fresh import under the patched environment so PACKAGES_INSTALLED is recalculated
+        for mod in list(sys.modules):
+            if mod.startswith("any_llm.providers.anthropic"):
+                sys.modules.pop(mod)
+        with pytest.raises(ImportError, match="anthropic required packages are not installed"):
+            ProviderFactory.create_provider("anthropic", ApiConfig())
