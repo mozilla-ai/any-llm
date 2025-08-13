@@ -54,7 +54,9 @@ class ChatCompletionChunk(OpenAIChatCompletionChunk):
 
 
 ChatCompletionMessageFunctionToolCall: TypeAlias = OpenAIChatCompletionMessageFunctionToolCall
-ChatCompletionMessageToolCall: TypeAlias = OpenAIChatCompletionMessageFunctionToolCall | OpenAIChatCompletionMessageToolCall
+ChatCompletionMessageToolCall: TypeAlias = (
+    OpenAIChatCompletionMessageFunctionToolCall | OpenAIChatCompletionMessageToolCall
+)
 Function: TypeAlias = OpenAIFunction
 CompletionUsage: TypeAlias = OpenAICompletionUsage
 CreateEmbeddingResponse: TypeAlias = OpenAICreateEmbeddingResponse
