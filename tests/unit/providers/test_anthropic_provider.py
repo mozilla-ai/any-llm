@@ -182,7 +182,7 @@ def test_make_api_call_inside_agent_loop() -> None:
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
-        provider.completion(model, messages)
+        provider.completion(model, messages)  # type: ignore[arg-type]
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
