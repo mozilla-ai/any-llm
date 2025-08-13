@@ -119,6 +119,11 @@ class BaseOpenAIProvider(Provider, ABC):
         )
 
         if "response_format" in kwargs:
+            stream = kwargs.pop("stream", False)
+            if stream:
+                msg = "stream is not supported for response_format"
+                raise ValueError(msg)
+
             response = client.chat.completions.parse(
                 model=model,
                 messages=messages,  # type: ignore[arg-type]

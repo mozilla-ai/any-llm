@@ -27,6 +27,9 @@ def test_response_format(
     model_id = provider_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
 
+    # From https://github.com/mozilla-ai/any-llm/issues/150, should be ok to set stream=False
+    extra_kwargs["stream"] = False
+
     class ResponseFormat(BaseModel):
         city_name: str
 
