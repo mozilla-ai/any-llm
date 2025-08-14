@@ -105,7 +105,7 @@ def test_all_providers_have_required_attributes(provider: str) -> None:
 
 
 def test_providers_raise_MissingApiKeyError(provider: str) -> None:
-    if provider in ("aws", "ollama", "lmstudio"):
+    if provider in ("aws", "ollama", "lmstudio", "llamafile"):
         pytest.skip("This provider handles `api_key` differently.")
     with patch.dict(os.environ, {}, clear=True):
         with pytest.raises(MissingApiKeyError):
