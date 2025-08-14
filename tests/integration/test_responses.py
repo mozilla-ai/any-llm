@@ -4,7 +4,7 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import ProviderName, responses, aresponses
+from any_llm import ProviderName, responses
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
 from any_llm.types.responses import Response

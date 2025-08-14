@@ -1,8 +1,8 @@
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from any_llm import responses, aresponses
+from any_llm import aresponses, responses
 from any_llm.provider import ProviderName
 
 INPUT_DATA = [{"role": "user", "content": "Hello"}]
@@ -49,6 +49,7 @@ def test_responses_invalid_model_format_multiple_slashes() -> None:
         responses("provider/model/extra", input_data=INPUT_DATA, **INPUT_KWARGS)
 
         mock_provider.responses.assert_called_once_with("model/extra", INPUT_DATA, **INPUT_KWARGS)
+
 
 @pytest.mark.asyncio
 async def test_aresponses_invalid_model_format_multiple_slashes() -> None:
