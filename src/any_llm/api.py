@@ -5,8 +5,9 @@ from pydantic import BaseModel
 
 from any_llm.provider import ApiConfig, ProviderFactory
 from any_llm.tools import prepare_tools
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
+from any_llm.utils.api import _process_completion_params
 
 
 def completion(
@@ -58,38 +59,26 @@ def completion(
         The completion response from the provider
 
     """
-    provider_key, model_name = ProviderFactory.split_model_provider(model)
-
-    config: dict[str, str] = {}
-    if api_key:
-        config["api_key"] = str(api_key)
-    if api_base:
-        config["api_base"] = str(api_base)
-    api_config = ApiConfig(**config)
-
-    provider = ProviderFactory.create_provider(provider_key, api_config)
-
-    prepared_tools: list[dict[str, Any]] | None = None
-    if tools:
-        prepared_tools = prepare_tools(tools)
-
-    completion_params = CompletionParams(
-        model_id=model_name,
+    provider, completion_params = _process_completion_params(
+        model=model,
         messages=messages,
-        tools=prepared_tools,
+        tools=tools,
         tool_choice=tool_choice,
         temperature=temperature,
         top_p=top_p,
         max_tokens=max_tokens,
         response_format=response_format,
-        stream=stream or False,
+        stream=stream,
         n=n,
         stop=stop,
         presence_penalty=presence_penalty,
         frequency_penalty=frequency_penalty,
         seed=seed,
+        api_key=api_key,
+        api_base=api_base,
+        api_timeout=api_timeout,
         user=user,
-        timeout=api_timeout or kwargs.get("timeout", None),
+        **kwargs,
     )
 
     return provider.completion(completion_params, **kwargs)
@@ -144,38 +133,26 @@ async def acompletion(
         The completion response from the provider
 
     """
-    provider_key, model_name = ProviderFactory.split_model_provider(model)
-
-    config: dict[str, str] = {}
-    if api_key:
-        config["api_key"] = str(api_key)
-    if api_base:
-        config["api_base"] = str(api_base)
-    api_config = ApiConfig(**config)
-
-    provider = ProviderFactory.create_provider(provider_key, api_config)
-
-    prepared_tools: list[dict[str, Any]] | None = None
-    if tools:
-        prepared_tools = prepare_tools(tools)
-
-    completion_params = CompletionParams(
-        model_id=model_name,
+    provider, completion_params = _process_completion_params(
+        model=model,
         messages=messages,
-        tools=prepared_tools,
+        tools=tools,
         tool_choice=tool_choice,
         temperature=temperature,
         top_p=top_p,
         max_tokens=max_tokens,
         response_format=response_format,
-        stream=stream or False,
+        stream=stream,
         n=n,
         stop=stop,
         presence_penalty=presence_penalty,
         frequency_penalty=frequency_penalty,
         seed=seed,
+        api_key=api_key,
+        api_base=api_base,
+        api_timeout=api_timeout,
         user=user,
-        timeout=api_timeout or kwargs.get("timeout", None),
+        **kwargs,
     )
 
     return await provider.acompletion(completion_params, **kwargs)

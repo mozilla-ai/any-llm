@@ -30,7 +30,7 @@ def test_completion_invalid_model_format_multiple_slashes() -> None:
     mock_provider = Mock()
     mock_provider.completion.return_value = Mock()
 
-    with patch("any_llm.api.ProviderFactory") as mock_factory:
+    with patch("any_llm.utils.api.ProviderFactory") as mock_factory:
         mock_factory.get_supported_providers.return_value = ["provider"]
         mock_factory.get_provider_enum.return_value = ProviderName.OPENAI  # Using a valid provider
         mock_factory.split_model_provider.return_value = (ProviderName.OPENAI, "model/extra")
