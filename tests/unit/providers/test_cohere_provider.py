@@ -1,6 +1,7 @@
 from typing import Any
 
 import pytest
+from pydantic import BaseModel
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ApiConfig
@@ -13,15 +14,27 @@ def _mk_provider() -> Any:
     return CohereProvider(ApiConfig(api_key="test-api-key"))
 
 
-def test_response_format_raises_for_non_streaming() -> None:
+def test_preprocess_response_format() -> None:
     provider = _mk_provider()
 
-    with pytest.raises(UnsupportedParameterError):
-        provider.completion(
-            model="model-id",
-            messages=[{"role": "user", "content": "Hello"}],
-            response_format={"type": "json_object"},
-        )
+    class StructuredOutput(BaseModel):
+        foo: str
+        bar: int
+
+    json_schema = {"type": "json_object", "schema": StructuredOutput.model_json_schema()}
+
+    # input BaseModel should output a dict
+    outp_basemodel = provider._preprocess_response_format(StructuredOutput)
+
+    # input dict should output a dict
+    outp_dict = provider._preprocess_response_format(json_schema)
+
+    # both should output a dict
+    assert isinstance(outp_basemodel, dict)
+    assert isinstance(outp_dict, dict)
+
+    # should equal each other
+    assert outp_basemodel == outp_dict
 
 
 def test_stream_and_response_format_combination_raises() -> None:

@@ -1,6 +1,8 @@
 from collections.abc import Iterator
 from typing import Any
 
+from pydantic import BaseModel
+
 try:
     import cohere
 
@@ -53,6 +55,22 @@ class CohereProvider(Provider):
         for chunk in cohere_stream:
             yield _create_openai_chunk_from_cohere_chunk(chunk)
 
+    @staticmethod
+    def _preprocess_response_format(response_format: type[BaseModel] | dict[str, Any]) -> dict[str, Any]:
+        # if response format is a BaseModel, generate model json schema
+        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+            return {"type": "json_object", "schema": response_format.model_json_schema()}
+        # can either be json schema already in dict
+        # or {"type": "json_object"} to just generate *a* JSON (JSON mode)
+        # see docs here: https://docs.cohere.com/docs/structured-outputs#json-mode
+        if isinstance(response_format, dict):
+            return response_format
+        # For now, let Cohere API handle invalid schemas.
+        # Note that Cohere has a bunch of limitations on JSON schemas (e.g., no oneOf, numeric/str ranges, weird regex limitations)
+        # see docs here: https://docs.cohere.com/docs/structured-outputs#unsupported-schema-features
+        # Validation logic could/would eventually go here
+        return response_format
+
     def completion(
         self,
         model: str,
@@ -61,8 +79,8 @@ class CohereProvider(Provider):
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Cohere."""
         if kwargs.get("response_format", None) is not None:
-            msg = "response_format"
-            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
+            response_format = kwargs.pop("response_format")
+            kwargs["response_format"] = self._preprocess_response_format(response_format)
         if kwargs.get("stream", False) and kwargs.get("response_format", None) is not None:
             msg = "stream and response_format"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
@@ -70,9 +88,12 @@ class CohereProvider(Provider):
             msg = "parallel_tool_calls"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
 
-        if kwargs.get("stream", False):
-            kwargs.pop("stream")
+        stream = kwargs.pop("stream", False)
+
+        if stream:
             return self._stream_completion(model, messages, **kwargs)
+
+        # note: ClientV2.chat does not have a `stream` parameter
         response = self.client.chat(
             model=model,
             messages=messages,  # type: ignore[arg-type]
