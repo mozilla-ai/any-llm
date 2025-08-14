@@ -7,7 +7,20 @@ from any_llm.provider import ProviderName
 
 INPUT_DATA = [{"role": "user", "content": "Hello"}]
 INPUT_KWARGS = {
-    "instructions": "Talk like a pirate.",
+    "tools": [
+        {
+            "type": "function",
+            "function": {
+                "name": "existing_tool",
+                "description": "An existing tool",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+        }
+    ],
+    "tool_choice": "auto",
+    "max_output_tokens": 512,
+    "temperature": 0.5,
+    "top_p": 0.5,
     "max_tool_calls": 3,
     "parallel_tool_calls": True,
     "reasoning": {"effort": "medium"},
