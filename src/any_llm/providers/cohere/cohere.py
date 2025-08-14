@@ -56,7 +56,7 @@ class CohereProvider(Provider):
             yield _create_openai_chunk_from_cohere_chunk(chunk)
 
     @staticmethod
-    def _preprocess_response_format(response_format: type[BaseModel] | dict) -> dict:
+    def _preprocess_response_format(response_format: type[BaseModel] | dict[str, Any]) -> dict[str, Any]:
         # if response format is a BaseModel, generate model json schema
         if isinstance(response_format, type) and issubclass(response_format, BaseModel):
             return {"type": "json_object", "schema": response_format.model_json_schema()}
