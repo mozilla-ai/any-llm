@@ -8,7 +8,7 @@ from openai import APIConnectionError
 from any_llm import ProviderName, acompletion, completion
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
-from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, Reasoning
+from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
 
 
 def test_sync_completion(

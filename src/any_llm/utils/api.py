@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel
 
@@ -51,21 +51,13 @@ def _process_completion_params(
     if tools:
         prepared_tools = prepare_tools(tools)
 
-    processed_messages = []
-    for message in messages:
+    for i, message in enumerate(messages):
         if isinstance(message, ChatCompletionMessage):
-            processed_messages.append(
-                {
-                    "role": message.role,
-                    "content": message.content,
-                }
-            )
-        else:
-            processed_messages.append(message)
+            messages[i] = {"role": message.role, "content": message.content}
 
     completion_params = CompletionParams(
         model_id=model_name,
-        messages=processed_messages,
+        messages=cast("list[dict[str, Any]]", messages),
         tools=prepared_tools,
         tool_choice=tool_choice,
         temperature=temperature,
