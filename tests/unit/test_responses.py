@@ -64,4 +64,4 @@ async def test_aresponses_invalid_model_format_multiple_slashes() -> None:
 
         await aresponses("provider/model/extra", input_data=INPUT_DATA, **INPUT_KWARGS)
 
-        mock_provider.responses.assert_called_once_with("model/extra", INPUT_DATA, **INPUT_KWARGS)
+        mock_provider.aresponses.assert_called_once_with("model/extra", INPUT_DATA, **INPUT_KWARGS)
