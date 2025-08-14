@@ -351,11 +351,11 @@ async def aresponses(
     api_key: str | None = None,
     api_base: str | None = None,
     api_timeout: float | None = None,
+    user: str | None = None,
     instructions: str | None = None,
     max_tool_calls: int | None = None,
     parallel_tool_calls: int | None = None,
     reasoning: Any | None = None,
-    user: str | None = None,
     text: Any | None = None,
     **kwargs: Any,
 ) -> Response | Iterator[ResponseStreamEvent]:
@@ -385,6 +385,7 @@ async def aresponses(
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
         reasoning: Configuration options for reasoning models.
         text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
+
         **kwargs: Additional provider-specific parameters
 
     Returns:
