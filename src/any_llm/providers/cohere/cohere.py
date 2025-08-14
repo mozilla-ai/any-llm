@@ -66,10 +66,7 @@ class CohereProvider(Provider):
             response_format = kwargs.pop("response_format")
             # if response format is a BaseModel, generate model json schema
             if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-                kwargs["response_format"] = {
-                    "type": "json_object",
-                    "schema": response_format.model_json_schema()
-                }
+                kwargs["response_format"] = {"type": "json_object", "schema": response_format.model_json_schema()}
             # can either be json schema already in dict
             # or {"type": "json_object"} to just generate *a* JSON (JSON mode)
             # see docs here: https://docs.cohere.com/docs/structured-outputs#json-mode
