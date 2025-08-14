@@ -130,7 +130,7 @@ def test_callable_to_tool() -> None:
         enum_color: Color = Color.RED,
         annotated_int: Annotated[int, "meta"] = 1,
         opt_int: int | None = None,
-        union_three: str | float = 1,
+        union_three: str | float | bool = 1,
     ) -> None:
         """This is a docstring"""
         return
@@ -233,4 +233,4 @@ def test_callable_to_tool() -> None:
 
     assert "oneOf" in props["union_three"]
     assert len(props["union_three"]["oneOf"]) == 3
-    assert {s["type"] for s in props["union_three"]["oneOf"]} == {"integer", "string", "number"}
+    assert {s["type"] for s in props["union_three"]["oneOf"]} == {"string", "number", "boolean"}
