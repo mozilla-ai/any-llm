@@ -60,14 +60,17 @@ def _convert_tool_choice(tool_choice: str) -> types.ToolConfig:
     return types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode=tool_choice_to_mode[tool_choice]))
 
 
-def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
+def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[types.Content], str | None]:
     """Convert messages to Google GenAI format."""
     formatted_messages = []
+    system_instruction = None
 
     for message in messages:
         if message["role"] == "system":
-            parts = [types.Part.from_text(text=message["content"])]
-            formatted_messages.append(types.Content(role="user", parts=parts))
+            if system_instruction is None:
+                system_instruction = message["content"]
+            else:
+                system_instruction += f"\n{message['content']}"
         elif message["role"] == "user":
             parts = [types.Part.from_text(text=message["content"])]
             formatted_messages.append(types.Content(role="user", parts=parts))
@@ -96,7 +99,7 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
                 )
                 formatted_messages.append(types.Content(role="function", parts=[part]))
 
-    return formatted_messages
+    return formatted_messages, system_instruction
 
 
 def _convert_response_to_response_dict(response: types.GenerateContentResponse) -> dict[str, Any]:

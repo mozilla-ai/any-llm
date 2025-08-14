@@ -31,6 +31,24 @@ def mock_google_provider():  # type: ignore[no-untyped-def]
         yield mock_genai
 
 
+def test_completion_with_system_instruction() -> None:
+    """Test that completion works correctly with system_instruction."""
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "system", "content": "You are a helpful assistant"}, {"role": "user", "content": "Hello"}]
+
+    with mock_google_provider() as mock_genai:
+        provider = GoogleProvider(ApiConfig(api_key=api_key))
+        provider.completion(model, messages)
+
+        _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+        contents = call_kwargs["contents"]
+
+        assert len(contents) == 1
+        assert generation_config.system_instruction == "You are a helpful assistant"
+
+
 @pytest.mark.parametrize(
     ("tool_choice", "expected_mode"),
     [
