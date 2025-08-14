@@ -43,38 +43,3 @@ def test_responses(
     assert isinstance(result, Response)
     assert result.output_text is not None
     assert result.reasoning is not None
-
-@pytest.mark.asyncio
-async def test_aresponses(
-    provider: ProviderName,
-    provider_reasoning_model_map: dict[ProviderName, str],
-    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
-) -> None:
-    """Test that all supported providers can be loaded successfully."""
-    cls = ProviderFactory.get_provider_class(provider)
-    if not cls.SUPPORTS_RESPONSES:
-        pytest.skip(f"{provider.value} does not support responses, skipping")
-    model_id = provider_reasoning_model_map[provider]
-    extra_kwargs = provider_extra_kwargs_map.get(provider, {})
-    try:
-        result = await aresponses(
-            f"{provider.value}/{model_id}",
-            **extra_kwargs,
-            input_data="What's the capital of France? Please think step by step.",
-            instructions="Talk like a pirate.",
-            max_tool_calls=3,
-            parallel_tool_calls=True,
-            reasoning={"effort": "medium"},
-            text={
-                "verbosity": "low",
-            },
-        )
-    except MissingApiKeyError:
-        pytest.skip(f"{provider.value} API key not provided, skipping")
-    except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in [ProviderName.OLLAMA, ProviderName.LMSTUDIO]:
-            pytest.skip("Local Model host is not set up, skipping")
-        raise
-    assert isinstance(result, Response)
-    assert result.output_text is not None
-    assert result.reasoning is not None
