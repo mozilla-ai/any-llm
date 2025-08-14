@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import Mock, patch
 
 from any_llm import completion
@@ -16,7 +17,7 @@ def test_completion_extracts_all_config_from_kwargs() -> None:
         mock_factory.get_provider_enum.return_value = ProviderName.MISTRAL
         mock_factory.split_model_provider.return_value = (ProviderName.MISTRAL, "mistral-small")
         mock_factory.create_provider.return_value = mock_provider
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "other_param": "value",
         }
         # Test with all config parameters
@@ -85,7 +86,7 @@ def test_completion_no_config_extraction() -> None:
         mock_factory.create_provider.return_value = mock_provider
 
         # Test with no config parameters
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "other_param": "value",
         }
         completion(model="mistral/mistral-small", messages=[{"role": "user", "content": "Hello"}], **kwargs)
