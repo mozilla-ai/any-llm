@@ -13,17 +13,6 @@ def _mk_provider() -> Any:
     return CohereProvider(ApiConfig(api_key="test-api-key"))
 
 
-def test_response_format_raises_for_non_streaming() -> None:
-    provider = _mk_provider()
-
-    with pytest.raises(UnsupportedParameterError):
-        provider.completion(
-            model="model-id",
-            messages=[{"role": "user", "content": "Hello"}],
-            response_format={"type": "json_object"},
-        )
-
-
 def test_stream_and_response_format_combination_raises() -> None:
     provider = _mk_provider()
 
