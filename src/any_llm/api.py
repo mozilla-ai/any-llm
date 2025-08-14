@@ -5,14 +5,14 @@ from pydantic import BaseModel
 
 from any_llm.provider import ApiConfig, ProviderFactory
 from any_llm.tools import prepare_tools
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, CreateEmbeddingResponse
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
 from any_llm.utils.api import _process_completion_params
 
 
 def completion(
     model: str,
-    messages: list[dict[str, Any]],
+    messages: list[dict[str, Any] | ChatCompletionMessage],
     *,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
@@ -107,7 +107,7 @@ def completion(
 
 async def acompletion(
     model: str,
-    messages: list[dict[str, Any]],
+    messages: list[dict[str, Any] | ChatCompletionMessage],
     *,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,

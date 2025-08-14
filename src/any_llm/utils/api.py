@@ -5,12 +5,12 @@ from pydantic import BaseModel
 
 from any_llm.provider import ApiConfig, Provider, ProviderFactory
 from any_llm.tools import prepare_tools
-from any_llm.types.completion import CompletionParams
+from any_llm.types.completion import ChatCompletionMessage, CompletionParams
 
 
 def _process_completion_params(
     model: str,
-    messages: list[dict[str, Any]],
+    messages: list[dict[str, Any] | ChatCompletionMessage],
     tools: list[dict[str, Any] | Callable[..., Any]] | None,
     tool_choice: str | dict[str, Any] | None,
     temperature: float | None,
@@ -51,9 +51,21 @@ def _process_completion_params(
     if tools:
         prepared_tools = prepare_tools(tools)
 
+    processed_messages = []
+    for message in messages:
+        if isinstance(message, ChatCompletionMessage):
+            processed_messages.append(
+                {
+                    "role": message.role,
+                    "content": message.content,
+                }
+            )
+        else:
+            processed_messages.append(message)
+
     completion_params = CompletionParams(
         model_id=model_name,
-        messages=messages,
+        messages=processed_messages,
         tools=prepared_tools,
         tool_choice=tool_choice,
         temperature=temperature,

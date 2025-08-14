@@ -8,7 +8,7 @@ from openai import APIConnectionError
 from any_llm import ProviderName, acompletion, completion
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
-from any_llm.types.completion import ChatCompletion
+from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, Reasoning
 
 
 def test_sync_completion(
@@ -69,6 +69,38 @@ async def test_async_completion(
         assert results[1].choices[0].message.content is not None
         assert "paris" in results[0].choices[0].message.content.lower()
         assert "berlin" in results[1].choices[0].message.content.lower()
+    except MissingApiKeyError:
+        pytest.skip(f"{provider.value} API key not provided, skipping")
+    except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
+        if provider in [ProviderName.OLLAMA, ProviderName.LMSTUDIO, ProviderName.LLAMAFILE]:
+            pytest.skip("Local model host is not set up, skipping")
+        raise
+
+
+def test_chat_completion_message(
+    provider: ProviderName,
+    provider_model_map: dict[ProviderName, str],
+    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+) -> None:
+    cls = ProviderFactory.get_provider_class(provider)
+    if not cls.SUPPORTS_COMPLETION:
+        pytest.skip(f"{provider.value} does not support completion, skipping")
+
+    model_id = provider_model_map[provider]
+    extra_kwargs = provider_extra_kwargs_map.get(provider, {})
+    try:
+        result = completion(
+            f"{provider.value}/{model_id}",
+            **extra_kwargs,
+            messages=[
+                {"role": "user", "content": "My name is John Doe."},
+                ChatCompletionMessage(role="assistant", content="Hi!", reasoning=Reasoning(content="Thinking...")),
+                {"role": "user", "content": "What is my name?"},
+            ],
+        )
+        assert isinstance(result, ChatCompletion)
+        assert result.choices[0].message.content is not None
+        assert "john" in result.choices[0].message.content.lower()
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
