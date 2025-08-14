@@ -54,6 +54,23 @@ class CohereProvider(Provider):
 
         for chunk in cohere_stream:
             yield _create_openai_chunk_from_cohere_chunk(chunk)
+    
+    @staticmethod
+    def _preprocess_response_format(response_format: type[BaseModel] | dict) -> dict:
+        # if response format is a BaseModel, generate model json schema
+        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+            return {"type": "json_object", "schema": response_format.model_json_schema()}
+        # can either be json schema already in dict
+        # or {"type": "json_object"} to just generate *a* JSON (JSON mode)
+        # see docs here: https://docs.cohere.com/docs/structured-outputs#json-mode
+        elif isinstance(response_format, dict):
+            return response_format
+        # For now, let Cohere API handle invalid schemas.
+        # Note that Cohere has a bunch of limitations on JSON schemas (e.g., no oneOf, numeric/str ranges, weird regex limitations)
+        # see docs here: https://docs.cohere.com/docs/structured-outputs#unsupported-schema-features
+        else:
+            # Validation logic could/would eventually go here
+            return response_format
 
     def completion(
         self,
@@ -64,20 +81,7 @@ class CohereProvider(Provider):
         """Create a chat completion using Cohere."""
         if kwargs.get("response_format", None) is not None:
             response_format = kwargs.pop("response_format")
-            # if response format is a BaseModel, generate model json schema
-            if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-                kwargs["response_format"] = {"type": "json_object", "schema": response_format.model_json_schema()}
-            # can either be json schema already in dict
-            # or {"type": "json_object"} to just generate *a* JSON (JSON mode)
-            # see docs here: https://docs.cohere.com/docs/structured-outputs#json-mode
-            elif isinstance(response_format, dict):
-                kwargs["response_format"] = response_format
-            # For now, let Cohere API handle invalid schemas.
-            # Note that Cohere has a bunch of limitations on JSON schemas (e.g., no oneOf, numeric/str ranges, weird regex limitations)
-            # see docs here: https://docs.cohere.com/docs/structured-outputs#unsupported-schema-features
-            else:
-                # Validation logic could/would eventually go here
-                kwargs["response_format"] = response_format
+            kwargs["response_format"] = self._preprocess_response_format(response_format)
         if kwargs.get("stream", False) and kwargs.get("response_format", None) is not None:
             msg = "stream and response_format"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
