@@ -256,6 +256,7 @@ def responses(
     max_tool_calls: int | None = None,
     parallel_tool_calls: int | None = None,
     reasoning: Any | None = None,
+    text: Any | None = None,
     **kwargs: Any,
 ) -> Response | Iterator[ResponseStreamEvent]:
     """Create a response using the OpenAI-style Responses API.
@@ -283,6 +284,7 @@ def responses(
         max_tool_calls: The maximum number of total calls to built-in tools that can be processed in a response. This maximum number applies across all built-in tool calls, not per individual tool. Any further attempts to call a tool by the model will be ignored.
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
         reasoning: Configuration options for reasoning models.
+        text: Configuration options for a text response from the model. Can be plain text or structured JSON data. 
 
         **kwargs: Additional provider-specific parameters
 
@@ -330,6 +332,8 @@ def responses(
         responses_kwargs["parallel_tool_calls"] = parallel_tool_calls
     if reasoning is not None:
         responses_kwargs["reasoning"] = reasoning
+    if text is not None:
+        responses_kwargs["text"] = text
 
     return provider.responses(model_name, input_data, **responses_kwargs)
 
@@ -352,6 +356,7 @@ async def aresponses(
     parallel_tool_calls: int | None = None,
     reasoning: Any | None = None,
     user: str | None = None,
+    text: Any | None = None,
     **kwargs: Any,
 ) -> Response | Iterator[ResponseStreamEvent]:
     """Create a response using the OpenAI-style Responses API.
@@ -379,6 +384,7 @@ async def aresponses(
         max_tool_calls: The maximum number of total calls to built-in tools that can be processed in a response. This maximum number applies across all built-in tool calls, not per individual tool. Any further attempts to call a tool by the model will be ignored.
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
         reasoning: Configuration options for reasoning models.
+        text: Configuration options for a text response from the model. Can be plain text or structured JSON data. 
         **kwargs: Additional provider-specific parameters
 
     Returns:
@@ -425,6 +431,8 @@ async def aresponses(
         responses_kwargs["parallel_tool_calls"] = parallel_tool_calls
     if reasoning is not None:
         responses_kwargs["reasoning"] = reasoning
+    if text is not None:
+        responses_kwargs["text"] = text
 
     return await provider.aresponses(model_name, input_data, **responses_kwargs)
 

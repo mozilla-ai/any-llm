@@ -30,6 +30,9 @@ def test_responses(
             max_tool_calls=3,
             parallel_tool_calls=True,
             reasoning={"effort": "medium"},
+            text={
+                "verbosity": "low",
+            }
         )
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} API key not provided, skipping")
