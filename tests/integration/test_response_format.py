@@ -21,9 +21,6 @@ def test_response_format(
     if not cls.SUPPORTS_COMPLETION:
         pytest.skip(f"{provider.value} does not support response_format, skipping")
     """Test that all supported providers can be loaded successfully."""
-    if provider in [ProviderName.COHERE]:
-        pytest.skip(f"{provider.value} does not support response_format")
-        return
     model_id = provider_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
 

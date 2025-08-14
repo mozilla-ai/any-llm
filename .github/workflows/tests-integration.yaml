@@ -51,6 +51,7 @@ jobs:
           LLAMA_API_KEY: ${{ secrets.LLAMA_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CO_API_KEY: ${{ secrets.CO_API_KEY }}
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
