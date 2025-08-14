@@ -54,7 +54,7 @@ class CohereProvider(Provider):
 
         for chunk in cohere_stream:
             yield _create_openai_chunk_from_cohere_chunk(chunk)
-    
+
     @staticmethod
     def _preprocess_response_format(response_format: type[BaseModel] | dict) -> dict:
         # if response format is a BaseModel, generate model json schema
@@ -63,14 +63,13 @@ class CohereProvider(Provider):
         # can either be json schema already in dict
         # or {"type": "json_object"} to just generate *a* JSON (JSON mode)
         # see docs here: https://docs.cohere.com/docs/structured-outputs#json-mode
-        elif isinstance(response_format, dict):
+        if isinstance(response_format, dict):
             return response_format
         # For now, let Cohere API handle invalid schemas.
         # Note that Cohere has a bunch of limitations on JSON schemas (e.g., no oneOf, numeric/str ranges, weird regex limitations)
         # see docs here: https://docs.cohere.com/docs/structured-outputs#unsupported-schema-features
-        else:
-            # Validation logic could/would eventually go here
-            return response_format
+        # Validation logic could/would eventually go here
+        return response_format
 
     def completion(
         self,

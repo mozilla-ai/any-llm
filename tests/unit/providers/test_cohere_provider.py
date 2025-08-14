@@ -1,7 +1,6 @@
 from typing import Any
 
 import pytest
-
 from pydantic import BaseModel
 
 from any_llm.exceptions import UnsupportedParameterError
@@ -14,17 +13,15 @@ def _mk_provider() -> Any:
 
     return CohereProvider(ApiConfig(api_key="test-api-key"))
 
+
 def test_preprocess_response_format() -> None:
     provider = _mk_provider()
 
     class StructuredOutput(BaseModel):
         foo: str
         bar: int
-    
-    json_schema = {
-        "type": "json_object",
-        "schema":StructuredOutput.model_json_schema()
-    }
+
+    json_schema = {"type": "json_object", "schema": StructuredOutput.model_json_schema()}
 
     # input BaseModel should output a dict
     outp_basemodel = provider._preprocess_response_format(StructuredOutput)
@@ -38,6 +35,7 @@ def test_preprocess_response_format() -> None:
 
     # should equal each other
     assert outp_basemodel == outp_dict
+
 
 def test_stream_and_response_format_combination_raises() -> None:
     provider = _mk_provider()
