@@ -32,7 +32,7 @@ def test_responses(
             reasoning={"effort": "medium"},
             text={
                 "verbosity": "low",
-            }
+            },
         )
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} API key not provided, skipping")

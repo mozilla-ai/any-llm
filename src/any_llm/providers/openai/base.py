@@ -137,12 +137,7 @@ class BaseOpenAIProvider(Provider, ABC):
             )
         return self._convert_completion_response(response)
 
-    def responses(
-            self,
-            model: str,
-            input_data: Any,
-            **kwargs: Any
-            ) -> Response | Iterator[ResponseStreamEvent]:
+    def responses(self, model: str, input_data: Any, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
         """Call OpenAI Responses API and normalize into ChatCompletion/Chunks.
 
         For now we only return a non-streaming ChatCompletion, or streaming chunks

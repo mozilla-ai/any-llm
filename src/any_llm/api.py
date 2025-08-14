@@ -284,7 +284,7 @@ def responses(
         max_tool_calls: The maximum number of total calls to built-in tools that can be processed in a response. This maximum number applies across all built-in tool calls, not per individual tool. Any further attempts to call a tool by the model will be ignored.
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
         reasoning: Configuration options for reasoning models.
-        text: Configuration options for a text response from the model. Can be plain text or structured JSON data. 
+        text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
 
         **kwargs: Additional provider-specific parameters
 
@@ -384,7 +384,7 @@ async def aresponses(
         max_tool_calls: The maximum number of total calls to built-in tools that can be processed in a response. This maximum number applies across all built-in tool calls, not per individual tool. Any further attempts to call a tool by the model will be ignored.
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
         reasoning: Configuration options for reasoning models.
-        text: Configuration options for a text response from the model. Can be plain text or structured JSON data. 
+        text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
         **kwargs: Additional provider-specific parameters
 
     Returns:
