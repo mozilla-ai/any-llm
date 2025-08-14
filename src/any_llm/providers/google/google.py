@@ -124,31 +124,21 @@ class GoogleProvider(Provider):
             generation_config.response_mime_type = "application/json"
             generation_config.response_schema = response_format
 
-        formatted_messages = _convert_messages(params.messages)
-
-        content_text = ""
-        if len(formatted_messages) == 1 and formatted_messages[0].role == "user":
-            # Single user message
-            parts = formatted_messages[0].parts
-            if parts and hasattr(parts[0], "text"):
-                content_text = parts[0].text or ""
-        else:
-            # Multiple messages - concatenate user messages for simplicity
-            content_parts = []
-            for content_item in formatted_messages:
-                if content_item.role == "user" and content_item.parts:
-                    if hasattr(content_item.parts[0], "text") and content_item.parts[0].text:
-                        content_parts.append(content_item.parts[0].text)
-
-            content_text = "\n".join(content_parts)
+        formatted_messages, system_instruction = _convert_messages(params.messages)
+        if system_instruction:
+            generation_config.system_instruction = system_instruction
 
         if stream:
             response_stream = self.client.models.generate_content_stream(
-                model=params.model_id, contents=content_text, config=generation_config
+                model=params.model_id,
+                contents=formatted_messages,  # type: ignore[arg-type]
+                config=generation_config,
             )
             return map(_create_openai_chunk_from_google_chunk, response_stream)
         response: types.GenerateContentResponse = self.client.models.generate_content(
-            model=params.model_id, contents=content_text, config=generation_config
+            model=params.model_id,
+            contents=formatted_messages,  # type: ignore[arg-type]
+            config=generation_config,
         )
 
         response_dict = _convert_response_to_response_dict(response)
