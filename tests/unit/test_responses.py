@@ -1,8 +1,8 @@
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, AsyncMock
 
 import pytest
 
-from any_llm import responses
+from any_llm import responses, aresponses
 from any_llm.provider import ProviderName
 
 INPUT_DATA = [{"role": "user", "content": "Hello"}]
@@ -47,5 +47,21 @@ def test_responses_invalid_model_format_multiple_slashes() -> None:
         mock_factory.create_provider.return_value = mock_provider
 
         responses("provider/model/extra", input_data=INPUT_DATA, **INPUT_KWARGS)
+
+        mock_provider.responses.assert_called_once_with("model/extra", INPUT_DATA, **INPUT_KWARGS)
+
+@pytest.mark.asyncio
+async def test_aresponses_invalid_model_format_multiple_slashes() -> None:
+    """Test responses handles multiple slashes correctly (should work - takes first split)."""
+    mock_provider = AsyncMock()
+    mock_provider.responses.return_value = AsyncMock()
+
+    with patch("any_llm.api.ProviderFactory") as mock_factory:
+        mock_factory.get_supported_providers.return_value = ["provider"]
+        mock_factory.get_provider_enum.return_value = ProviderName.OPENAI  # Using a valid provider
+        mock_factory.split_model_provider.return_value = (ProviderName.OPENAI, "model/extra")
+        mock_factory.create_provider.return_value = mock_provider
+
+        await responses("provider/model/extra", input_data=INPUT_DATA, **INPUT_KWARGS)
 
         mock_provider.responses.assert_called_once_with("model/extra", INPUT_DATA, **INPUT_KWARGS)
