@@ -15,7 +15,6 @@ def mock_azure_provider():  # type: ignore[no-untyped-def]
         mock_client_instance = MagicMock()
         mock_chat_client.return_value = mock_client_instance
 
-        # Mock the complete method
         mock_response = MagicMock()
         mock_client_instance.complete.return_value = mock_response
 
@@ -31,7 +30,6 @@ def mock_azure_streaming_provider():  # type: ignore[no-untyped-def]
         mock_client_instance = MagicMock()
         mock_chat_client.return_value = mock_client_instance
 
-        # Mock the streaming response
         mock_openai_chunk1 = MagicMock()
         mock_openai_chunk2 = MagicMock()
         mock_stream_completion.return_value = [mock_openai_chunk1, mock_openai_chunk2]
@@ -48,16 +46,13 @@ def test_azure_with_api_key_and_api_base() -> None:
         provider = AzureProvider(ApiConfig(api_key=api_key, api_base=custom_endpoint))
         provider.completion(CompletionParams(model_id="model-id", messages=messages))
 
-        # Verify ChatCompletionsClient was created with correct parameters
         mock_chat_client.assert_called_once()
 
-        # Verify the complete method was called with correct parameters
         mock_client.complete.assert_called_once_with(
             model="model-id",
             messages=messages,
         )
 
-        # Verify response conversion was called
         mock_convert_response.assert_called_once_with(mock_client.complete.return_value)
 
 
@@ -79,7 +74,6 @@ def test_azure_with_tools() -> None:
             )
         )
 
-        # Verify the complete method was called with correct parameters including tools
         mock_client.complete.assert_called_once_with(
             model="model-id",
             messages=messages,
@@ -87,7 +81,6 @@ def test_azure_with_tools() -> None:
             tool_choice=tool_choice,
         )
 
-        # Verify response conversion was called
         mock_convert_response.assert_called_once_with(mock_client.complete.return_value)
 
 
@@ -97,22 +90,17 @@ def test_azure_streaming() -> None:
 
     messages = [{"role": "user", "content": "Hello"}]
 
-    # Create the provider first
     provider = AzureProvider(ApiConfig(api_key=api_key, api_base=custom_endpoint))
 
-    # Mock the _stream_completion method on the provider instance
     with patch.object(provider, "_stream_completion") as mock_stream_completion:
-        # Mock the streaming response
         mock_openai_chunk1 = MagicMock()
         mock_openai_chunk2 = MagicMock()
         mock_stream_completion.return_value = [mock_openai_chunk1, mock_openai_chunk2]
 
         result = provider.completion(CompletionParams(model_id="model-id", messages=messages, stream=True))
 
-        # Verify _stream_completion was called
         assert mock_stream_completion.call_count == 1
 
-        # Verify the call arguments (excluding the client object which may be different)
         call_args = mock_stream_completion.call_args
         assert call_args is not None
         args, kwargs = call_args
@@ -121,6 +109,5 @@ def test_azure_streaming() -> None:
         assert args[2] == messages  # messages
         assert kwargs.get("stream") is True
 
-        # Verify the result is a list (since we mocked it to return a list)
         assert isinstance(result, list)
         assert len(result) == 2

@@ -33,7 +33,6 @@ def mock_watsonx_streaming_provider():  # type: ignore[no-untyped-def]
         mock_model_instance = MagicMock()
         mock_model_inference.return_value = mock_model_instance
 
-        # Mock the streaming response
         mock_watsonx_chunk1 = {"choices": [{"delta": {"content": "Hello"}}]}
         mock_watsonx_chunk2 = {"choices": [{"delta": {"content": " World"}}]}
         mock_model_instance.chat_stream.return_value = [mock_watsonx_chunk1, mock_watsonx_chunk2]
@@ -53,15 +52,12 @@ def test_watsonx_non_streaming() -> None:
         provider = WatsonxProvider(ApiConfig(api_key=api_key))
         result = provider.completion(CompletionParams(model_id="test-model", messages=messages))
 
-        # Verify ModelInference was created with correct parameters
         mock_model_inference.assert_called_once()
         call_kwargs = mock_model_inference.call_args[1]
         assert call_kwargs["model_id"] == "test-model"
 
-        # Verify chat was called with correct parameters
         mock_model_instance.chat.assert_called_once_with(messages=messages, params={})
 
-        # Verify response conversion was called
         mock_convert_response.assert_called_once()
 
         assert result == mock_convert_response.return_value

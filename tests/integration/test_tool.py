@@ -15,7 +15,6 @@ def test_tool(
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    # first check if the provider supports tools
     cls = ProviderFactory.get_provider_class(provider)
     if not cls.SUPPORTS_COMPLETION:
         pytest.skip(f"{provider.value} does not support tools, skipping")

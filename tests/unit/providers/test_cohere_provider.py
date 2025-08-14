@@ -24,17 +24,13 @@ def test_preprocess_response_format() -> None:
 
     json_schema = {"type": "json_object", "schema": StructuredOutput.model_json_schema()}
 
-    # input BaseModel should output a dict
     outp_basemodel = provider._preprocess_response_format(StructuredOutput)
 
-    # input dict should output a dict
     outp_dict = provider._preprocess_response_format(json_schema)
 
-    # both should output a dict
     assert isinstance(outp_basemodel, dict)
     assert isinstance(outp_dict, dict)
 
-    # should equal each other
     assert outp_basemodel == outp_dict
 
 

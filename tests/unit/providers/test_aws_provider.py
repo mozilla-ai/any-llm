@@ -66,24 +66,19 @@ def test_embedding_single_string() -> None:
     model_id = "amazon.titan-embed-text-v1"
     input_text = "Hello world"
 
-    # Mock the AWS response
     mock_response_body = {"embedding": [0.1, 0.2, 0.3], "inputTextTokenCount": 5}
 
     with mock_aws_embedding_provider(region) as (mock_boto3_client, mock_client):
-        # Setup mock response
         mock_client.invoke_model.return_value = {"body": Mock(read=Mock(return_value=json.dumps(mock_response_body)))}
 
         provider = AwsProvider(ApiConfig(api_key="test_key"))
         response = provider.embedding(model_id, input_text)
 
-        # Verify the client was created correctly
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None, region_name=region)
 
-        # Verify the invoke_model call
         expected_request_body = {"inputText": input_text}
         mock_client.invoke_model.assert_called_once_with(modelId=model_id, body=json.dumps(expected_request_body))
 
-        # Verify the response format
         assert response.model == model_id
         assert response.object == "list"
         assert len(response.data) == 1
@@ -115,7 +110,6 @@ def test_embedding_list_of_strings() -> None:
 
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None, region_name=region)
 
-        # Verify both invoke_model calls
         assert mock_client.invoke_model.call_count == 2
         expected_calls = [({"inputText": "Hello world"}, model_id), ({"inputText": "Goodbye world"}, model_id)]
         for i, (expected_body, expected_model) in enumerate(expected_calls):
@@ -123,7 +117,6 @@ def test_embedding_list_of_strings() -> None:
             assert actual_call[1]["modelId"] == expected_model
             assert json.loads(actual_call[1]["body"]) == expected_body
 
-        # Verify the response format
         assert response.model == model_id
         assert response.object == "list"
         assert len(response.data) == 2
@@ -131,5 +124,5 @@ def test_embedding_list_of_strings() -> None:
         assert response.data[0].index == 0
         assert response.data[1].embedding == [0.4, 0.5, 0.6]
         assert response.data[1].index == 1
-        assert response.usage.prompt_tokens == 11  # 5 + 6
+        assert response.usage.prompt_tokens == 11
         assert response.usage.total_tokens == 11

@@ -16,7 +16,6 @@ def test_response_format(
     provider_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
-    # first check if the provider supports response_format
     cls = ProviderFactory.get_provider_class(provider)
     if not cls.SUPPORTS_COMPLETION:
         pytest.skip(f"{provider.value} does not support response_format, skipping")

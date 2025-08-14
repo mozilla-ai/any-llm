@@ -63,7 +63,6 @@ def test_completion_with_tool_choice_auto(tool_choice: str, expected_mode: str) 
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
-    # pass tool_choice explicitly to avoid ambiguous **kwargs typing issues
 
     with mock_google_provider() as mock_genai:
         provider = GoogleProvider(ApiConfig(api_key=api_key))

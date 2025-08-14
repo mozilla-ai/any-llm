@@ -35,7 +35,6 @@ def test_streaming_completion(
             stream=True,
         ):
             num_chunks += 1
-            # Verify the response is still a valid ChatCompletion object
             assert isinstance(result, ChatCompletionChunk)
             if len(result.choices) > 0:
                 output += result.choices[0].delta.content or ""
