@@ -29,6 +29,7 @@ from any_llm.types.completion import (
     ChatCompletionMessageFunctionToolCall,
     ChatCompletionMessageToolCall,
     Choice,
+    CompletionParams,
     CompletionUsage,
     CreateEmbeddingResponse,
     Function,
@@ -93,47 +94,49 @@ class GoogleProvider(Provider):
 
     def completion(
         self,
-        model: str,
-        messages: list[dict[str, Any]],
+        params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        if kwargs.get("stream", False) and kwargs.get("response_format", None) is not None:
+        if params.stream and params.response_format is not None:
             error_message = "stream and response_format"
             raise UnsupportedParameterError(error_message, self.PROVIDER_NAME)
 
-        if kwargs.get("parallel_tool_calls", None) is not None:
+        if params.parallel_tool_calls is not None:
             error_message = "parallel_tool_calls"
             raise UnsupportedParameterError(error_message, self.PROVIDER_NAME)
         tools = None
-        if "tools" in kwargs:
-            tools = _convert_tool_spec(kwargs["tools"])
+        if params.tools is not None:
+            tools = _convert_tool_spec(params.tools)
             kwargs["tools"] = tools
 
-        if tool_choice := kwargs.pop("tool_choice", None):
-            kwargs["tool_config"] = _convert_tool_choice(tool_choice)
+        if isinstance(params.tool_choice, str):
+            kwargs["tool_config"] = _convert_tool_choice(params.tool_choice)
 
-        stream = kwargs.pop("stream", False)
-        response_format = kwargs.pop("response_format", None)
-        generation_config = types.GenerateContentConfig(
-            **kwargs,
+        stream = bool(params.stream)
+        response_format = params.response_format
+        # Build generation config without duplicating keys (e.g., tools)
+        base_kwargs = params.model_dump(
+            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream", "tools", "tool_choice"}
         )
+        base_kwargs.update(kwargs)
+        generation_config = types.GenerateContentConfig(**base_kwargs)
         if isinstance(response_format, type) and issubclass(response_format, BaseModel):
             generation_config.response_mime_type = "application/json"
             generation_config.response_schema = response_format
 
-        formatted_messages, system_instruction = _convert_messages(messages)
+        formatted_messages, system_instruction = _convert_messages(params.messages)
         if system_instruction:
             generation_config.system_instruction = system_instruction
 
         if stream:
             response_stream = self.client.models.generate_content_stream(
-                model=model,
+                model=params.model_id,
                 contents=formatted_messages,  # type: ignore[arg-type]
                 config=generation_config,
             )
             return map(_create_openai_chunk_from_google_chunk, response_stream)
         response: types.GenerateContentResponse = self.client.models.generate_content(
-            model=model,
+            model=params.model_id,
             contents=formatted_messages,  # type: ignore[arg-type]
             config=generation_config,
         )
@@ -186,7 +189,7 @@ class GoogleProvider(Provider):
 
         return ChatCompletion(
             id=response_dict.get("id", ""),
-            model=model,
+            model=params.model_id,
             created=response_dict.get("created", 0),
             object="chat.completion",
             choices=choices_out,

@@ -1,3 +1,5 @@
+from typing import Any
+
 from openai.types import CreateEmbeddingResponse as OpenAICreateEmbeddingResponse
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion import Choice as OpenAIChoice
@@ -17,7 +19,7 @@ from openai.types.chat.chat_completion_message_function_tool_call import Functio
 from openai.types.completion_usage import CompletionUsage as OpenAICompletionUsage
 from openai.types.create_embedding_response import Usage as OpenAIUsage
 from openai.types.embedding import Embedding as OpenAIEmbedding
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 # See https://github.com/mozilla-ai/any-llm/issues/95:
 # OpenAI Completion API doesn't include reasoning information, so we need to extend the openai type
@@ -60,3 +62,65 @@ Embedding = OpenAIEmbedding
 Usage = OpenAIUsage
 ChoiceDeltaToolCall = OpenAIChoiceDeltaToolCall
 ChoiceDeltaToolCallFunction = OpenAIChoiceDeltaToolCallFunction
+
+
+class CompletionParams(BaseModel):
+    """Normalized parameters for chat completions.
+
+    This model is used internally to pass structured parameters from the public
+    API layer to provider implementations, avoiding very long function
+    signatures while keeping type safety.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    model_id: str
+    """Model identifier in format 'provider/model' (e.g., 'mistral/mistral-small')"""
+
+    messages: list[dict[str, Any]]
+    """List of messages for the conversation"""
+
+    tools: list[dict[str, Any]] | None = None
+    """List of tools for tool calling. Should be converted to OpenAI tool format dicts"""
+
+    tool_choice: str | dict[str, Any] | None = None
+    """Controls which tools the model can call"""
+
+    temperature: float | None = None
+    """Controls randomness in the response (0.0 to 2.0)"""
+
+    top_p: float | None = None
+    """Controls diversity via nucleus sampling (0.0 to 1.0)"""
+
+    max_tokens: int | None = None
+    """Maximum number of tokens to generate"""
+
+    response_format: dict[str, Any] | type[BaseModel] | None = None
+    """Format specification for the response"""
+
+    stream: bool | None = None
+    """Whether to stream the response"""
+
+    n: int | None = None
+    """Number of completions to generate"""
+
+    stop: str | list[str] | None = None
+    """Stop sequences for generation"""
+
+    presence_penalty: float | None = None
+    """Penalize new tokens based on presence in text"""
+
+    frequency_penalty: float | None = None
+    """Penalize new tokens based on frequency in text"""
+
+    seed: int | None = None
+    """Random seed for reproducible results"""
+
+    user: str | None = None
+    """Unique identifier for the end user"""
+
+    timeout: float | None = None
+    """Request timeout in seconds"""
+
+    parallel_tool_calls: bool | None = None
+    """Whether to allow parallel tool calls"""

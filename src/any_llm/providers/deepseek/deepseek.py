@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from any_llm.providers.deepseek.utils import _convert_pydantic_to_deepseek_json
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 
 
 class DeepseekProvider(BaseOpenAIProvider):
@@ -18,15 +18,13 @@ class DeepseekProvider(BaseOpenAIProvider):
 
     def completion(
         self,
-        model: str,
-        messages: list[dict[str, Any]],
+        params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        if "response_format" in kwargs:
-            response_format = kwargs["response_format"]
-            if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-                modified_messages = _convert_pydantic_to_deepseek_json(response_format, messages)
-                kwargs["response_format"] = {"type": "json_object"}
-                messages = modified_messages
+        if params.response_format:
+            if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
+                modified_messages = _convert_pydantic_to_deepseek_json(params.response_format, params.messages)
+                params.response_format = {"type": "json_object"}
+                params.messages = modified_messages
 
-        return super().completion(model, messages, **kwargs)
+        return super().completion(params, **kwargs)

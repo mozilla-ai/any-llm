@@ -7,6 +7,7 @@ import pytest
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ApiConfig, ProviderFactory
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
+from any_llm.types.completion import CompletionParams
 
 
 @contextmanager
@@ -28,7 +29,7 @@ def test_anthropic_client_created_with_api_key_and_api_base() -> None:
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key, api_base=custom_endpoint))
-        provider.completion("model-id", [{"role": "user", "content": "Hello"}])
+        provider.completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
 
         mock_anthropic.assert_called_once_with(api_key=api_key, base_url=custom_endpoint)
 
@@ -39,7 +40,7 @@ def test_anthropic_client_created_without_api_base() -> None:
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
-        provider.completion("model-id", [{"role": "user", "content": "Hello"}])
+        provider.completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
 
         mock_anthropic.assert_called_once_with(api_key=api_key, base_url=None)
 
@@ -55,7 +56,7 @@ def test_completion_with_system_message() -> None:
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
-        provider.completion(model, messages)
+        provider.completion(CompletionParams(model_id=model, messages=messages))
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
@@ -77,7 +78,7 @@ def test_completion_with_multiple_system_messages() -> None:
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
-        provider.completion(model, messages)
+        provider.completion(CompletionParams(model_id=model, messages=messages))
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
@@ -92,15 +93,19 @@ def test_completion_with_kwargs() -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
-    kwargs = {"temperature": 0.5, "max_tokens": 100}
+    kwargs: dict[str, object] = {}
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
-        provider.completion(model, messages, **kwargs)
+        provider.completion(
+            CompletionParams(model_id=model, messages=messages, max_tokens=100, temperature=0.5), **kwargs
+        )
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
             messages=messages,
+            max_tokens=100,
+            temperature=0.5,
             **kwargs,
         )
 
@@ -110,11 +115,11 @@ def test_completion_with_tool_choice_required() -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
-    kwargs = {"tool_choice": "required"}
+    kwargs: dict[str, object] = {}
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
-        provider.completion(model, messages, **kwargs)
+        provider.completion(CompletionParams(model_id=model, messages=messages, tool_choice="required"), **kwargs)
 
         expected_kwargs = {"tool_choice": {"type": "any", "disable_parallel_tool_use": False}}
 
@@ -132,19 +137,24 @@ def test_completion_with_tool_choice_and_parallel_tool_calls(parallel_tool_calls
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
-    kwargs = {"tool_choice": "auto", "parallel_tool_calls": parallel_tool_calls}
+    kwargs: dict[str, object] = {}
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
-        provider.completion(model, messages, **kwargs)
+        provider.completion(
+            CompletionParams(
+                model_id=model, messages=messages, tool_choice="auto", parallel_tool_calls=parallel_tool_calls
+            ),
+            **kwargs,
+        )
 
         expected_kwargs = {"tool_choice": {"type": "auto", "disable_parallel_tool_use": not parallel_tool_calls}}
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
             messages=[{"role": "user", "content": "Hello"}],
-            max_tokens=4096,
             **expected_kwargs,
+            max_tokens=4096,
         )
 
 
@@ -202,7 +212,7 @@ def test_completion_inside_agent_loop() -> None:
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
-        provider.completion(model, messages)  # type: ignore[arg-type]
+        provider.completion(CompletionParams(model_id=model, messages=messages))  # type: ignore[arg-type]
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,

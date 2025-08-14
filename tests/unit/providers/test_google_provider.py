@@ -1,5 +1,6 @@
 import sys
 from contextlib import contextmanager
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -7,6 +8,7 @@ import pytest
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ApiConfig, ProviderFactory
 from any_llm.providers.google.google import GoogleProvider
+from any_llm.types.completion import CompletionParams
 
 
 @contextmanager
@@ -39,7 +41,7 @@ def test_completion_with_system_instruction() -> None:
 
     with mock_google_provider() as mock_genai:
         provider = GoogleProvider(ApiConfig(api_key=api_key))
-        provider.completion(model, messages)
+        provider.completion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
         generation_config = call_kwargs["config"]
@@ -61,11 +63,11 @@ def test_completion_with_tool_choice_auto(tool_choice: str, expected_mode: str) 
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
-    kwargs = {"tool_choice": tool_choice}
+    # pass tool_choice explicitly to avoid ambiguous **kwargs typing issues
 
     with mock_google_provider() as mock_genai:
         provider = GoogleProvider(ApiConfig(api_key=api_key))
-        provider.completion(model, messages, **kwargs)
+        provider.completion(CompletionParams(model_id=model, messages=messages, tool_choice=tool_choice))
 
         _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
         generation_config = call_kwargs["config"]
@@ -81,7 +83,7 @@ def test_completion_without_tool_choice() -> None:
 
     with mock_google_provider() as mock_genai:
         provider = GoogleProvider(ApiConfig(api_key=api_key))
-        provider.completion(model, messages)
+        provider.completion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
         generation_config = call_kwargs["config"]
@@ -98,10 +100,12 @@ def test_completion_with_stream_and_response_format_raises() -> None:
         provider = GoogleProvider(ApiConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
             provider.completion(
-                model,
-                messages,
-                stream=True,
-                response_format={"type": "json_object"},
+                CompletionParams(
+                    model_id=model,
+                    messages=messages,
+                    stream=True,
+                    response_format={"type": "json_object"},
+                )
             )
 
 
@@ -114,16 +118,18 @@ def test_completion_with_parallel_tool_calls_raises() -> None:
         provider = GoogleProvider(ApiConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
             provider.completion(
-                model,
-                messages,
-                parallel_tool_calls=True,
+                CompletionParams(
+                    model_id=model,
+                    messages=messages,
+                    parallel_tool_calls=True,
+                )
             )
 
 
 def test_completion_inside_agent_loop() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
-    messages = [
+    messages: list[dict[str, Any]] = [
         {"role": "user", "content": "What is the weather like in Salvaterra?"},
         {
             "role": "assistant",
@@ -137,7 +143,7 @@ def test_completion_inside_agent_loop() -> None:
 
     with mock_google_provider() as mock_genai:
         provider = GoogleProvider(ApiConfig(api_key=api_key))
-        provider.completion(model, messages)  # type: ignore[arg-type]
+        provider.completion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
 

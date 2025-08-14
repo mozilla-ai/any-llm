@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from any_llm.provider import ApiConfig
 from any_llm.providers.watsonx.watsonx import WatsonxProvider
+from any_llm.types.completion import CompletionParams
 
 
 @contextmanager
@@ -50,7 +51,7 @@ def test_watsonx_non_streaming() -> None:
 
     with mock_watsonx_provider() as (mock_model_instance, mock_convert_response, mock_model_inference):
         provider = WatsonxProvider(ApiConfig(api_key=api_key))
-        result = provider.completion("test-model", messages)
+        result = provider.completion(CompletionParams(model_id="test-model", messages=messages))
 
         # Verify ModelInference was created with correct parameters
         mock_model_inference.assert_called_once()
@@ -72,7 +73,7 @@ def test_watsonx_streaming() -> None:
 
     with mock_watsonx_streaming_provider() as (mock_model_instance, mock_convert_streaming_chunk, mock_model_inference):
         provider = WatsonxProvider(ApiConfig(api_key=api_key))
-        result = provider.completion("test-model", messages, stream=True)
+        result = provider.completion(CompletionParams(model_id="test-model", messages=messages, stream=True))
 
         mock_model_inference.assert_called_once()
         call_kwargs = mock_model_inference.call_args[1]

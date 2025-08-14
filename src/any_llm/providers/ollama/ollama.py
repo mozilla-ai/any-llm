@@ -19,7 +19,7 @@ from any_llm.providers.ollama.utils import (
     _create_openai_chunk_from_ollama_chunk,
     _create_openai_embedding_response_from_ollama,
 )
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 
 
 class OllamaProvider(Provider):
@@ -68,14 +68,13 @@ class OllamaProvider(Provider):
 
     def completion(
         self,
-        model: str,
-        messages: list[dict[str, Any]],
+        params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Ollama."""
 
-        if "response_format" in kwargs:
-            response_format = kwargs.pop("response_format")
+        if params.response_format is not None:
+            response_format = params.response_format
             if isinstance(response_format, type) and issubclass(response_format, BaseModel):
                 # response_format is a Pydantic model class
                 output_format = response_format.model_json_schema()
@@ -87,7 +86,7 @@ class OllamaProvider(Provider):
 
         # (https://www.reddit.com/r/ollama/comments/1ked8x2/feeding_tool_output_back_to_llm/)
         cleaned_messages = []
-        for input_message in messages:
+        for input_message in params.messages:
             if input_message["role"] == "tool":
                 cleaned_message = {
                     "role": "user",
@@ -104,15 +103,20 @@ class OllamaProvider(Provider):
 
             cleaned_messages.append(cleaned_message)
 
+        kwargs = {
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+            **kwargs,
+        }
+
         kwargs["num_ctx"] = kwargs.get("num_ctx", 32000)
 
         client = Client(host=self.url, timeout=kwargs.pop("timeout", None))
 
-        if kwargs.get("stream", False):
-            return self._stream_completion(client, model, cleaned_messages, **kwargs)
+        if params.stream:
+            return self._stream_completion(client, params.model_id, cleaned_messages, **kwargs)
 
         response: OllamaChatResponse = client.chat(
-            model=model,
+            model=params.model_id,
             tools=kwargs.pop("tools", None),
             think=kwargs.pop("think", None),
             messages=cleaned_messages,
