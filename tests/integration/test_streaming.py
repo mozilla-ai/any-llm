@@ -30,7 +30,7 @@ def test_streaming_completion(
             **extra_kwargs,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that exactly follows the user request."},
-                {"role": "user", "content": "Say the exact phrase:'Hello World'"},
+                {"role": "user", "content": "Say the exact phrase:'Hello World' with no fancy formatting"},
             ],
             stream=True,
         ):

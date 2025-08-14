@@ -1,7 +1,8 @@
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from openai import OpenAI, Stream
+from pydantic import BaseModel
 
 from any_llm.types.responses import Response, ResponseStreamEvent
 
@@ -21,7 +22,7 @@ from any_llm.providers.groq.utils import (
     _create_openai_chunk_from_groq_chunk,
     to_chat_completion,
 )
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 from any_llm.utils.instructor import _convert_instructor_response
 
 if TYPE_CHECKING:
@@ -47,17 +48,17 @@ class GroqProvider(Provider):
     def _stream_completion(
         self,
         client: groq.Groq,
-        model: str,
-        messages: list[dict[str, Any]],
+        params: CompletionParams,
         **kwargs: Any,
     ) -> Iterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
-        if kwargs.get("stream", False) and kwargs.get("response_format", None):
+        if params.stream and params.response_format:
             msg = "stream and response_format"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
-        stream: GroqStream[GroqChatCompletionChunk] = client.chat.completions.create(  # type: ignore[assignment]
-            model=model,
-            messages=messages,  # type: ignore[arg-type]
+        stream: GroqStream[GroqChatCompletionChunk] = client.chat.completions.create(
+            model=params.model_id,
+            messages=cast("Any", params.messages),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages"}),
             **kwargs,
         )
         for chunk in stream:
@@ -65,30 +66,36 @@ class GroqProvider(Provider):
 
     def completion(
         self,
-        model: str,
-        messages: list[dict[str, Any]],
+        params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Groq."""
         client = groq.Groq(api_key=self.config.api_key)
 
-        if "response_format" in kwargs:
+        if params.response_format:
             instructor_client = instructor.from_groq(client, mode=instructor.Mode.JSON)
-            response_format = kwargs.pop("response_format")
+            if not isinstance(params.response_format, type) or not issubclass(params.response_format, BaseModel):
+                msg = "response_format must be a pydantic model"
+                raise ValueError(msg)
             instructor_response = instructor_client.chat.completions.create(
-                model=model,
-                messages=messages,  # type: ignore[arg-type]
-                response_model=response_format,
+                model=params.model_id,
+                messages=params.messages,  # type: ignore[arg-type]
+                response_model=params.response_format,
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
                 **kwargs,
             )
-            return _convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
+            return _convert_instructor_response(instructor_response, params.model_id, self.PROVIDER_NAME)
 
-        if kwargs.get("stream", False):
-            return self._stream_completion(client, model, messages, **kwargs)
-
+        if params.stream:
+            return self._stream_completion(
+                client,
+                params,
+                **kwargs,
+            )
         response: GroqChatCompletion = client.chat.completions.create(
-            model=model,
-            messages=messages,  # type: ignore[arg-type]
+            model=params.model_id,
+            messages=cast("Any", params.messages),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
             **kwargs,
         )
 

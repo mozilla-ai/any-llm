@@ -94,21 +94,28 @@ class AzureProvider(Provider):
         """Create a chat completion using Azure AI Inference SDK."""
         client: ChatCompletionsClient = self._create_chat_client()
 
+        azure_response_format = None
         if params.response_format:
-            params.response_format = _convert_response_format(params.response_format)
+            azure_response_format = _convert_response_format(params.response_format)
 
+        call_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
         if params.stream:
+            if azure_response_format:
+                call_kwargs["response_format"] = azure_response_format
             return self._stream_completion(
                 client,
                 params.model_id,
                 params.messages,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages"}),
+                **call_kwargs,
                 **kwargs,
             )
+        if azure_response_format:
+            call_kwargs["response_format"] = azure_response_format
+
         response: ChatCompletions = client.complete(
             model=params.model_id,
             messages=params.messages,
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages"}),
+            **call_kwargs,
             **kwargs,
         )
 

@@ -68,13 +68,14 @@ def completion(
 
     provider = ProviderFactory.create_provider(provider_key, api_config)
 
+    prepared_tools: list[dict[str, Any]] | None = None
     if tools:
-        tools = prepare_tools(tools)
+        prepared_tools = prepare_tools(tools)
 
     completion_params = CompletionParams(
         model_id=model_name,
         messages=messages,
-        tools=tools,
+        tools=prepared_tools,
         tool_choice=tool_choice,
         temperature=temperature,
         top_p=top_p,
@@ -153,13 +154,14 @@ async def acompletion(
 
     provider = ProviderFactory.create_provider(provider_key, api_config)
 
+    prepared_tools: list[dict[str, Any]] | None = None
     if tools:
-        tools = prepare_tools(tools)
+        prepared_tools = prepare_tools(tools)
 
     completion_params = CompletionParams(
         model_id=model_name,
         messages=messages,
-        tools=tools,
+        tools=prepared_tools,
         tool_choice=tool_choice,
         temperature=temperature,
         top_p=top_p,

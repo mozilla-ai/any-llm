@@ -14,7 +14,7 @@ from any_llm.providers.cohere.utils import (
     _convert_response,
     _create_openai_chunk_from_cohere_chunk,
 )
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 
 
 class CohereProvider(Provider):
@@ -55,28 +55,32 @@ class CohereProvider(Provider):
 
     def completion(
         self,
-        model: str,
-        messages: list[dict[str, Any]],
+        params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Cohere."""
-        if kwargs.get("response_format", None) is not None:
+        if params.response_format is not None:
             msg = "response_format"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
-        if kwargs.get("stream", False) and kwargs.get("response_format", None) is not None:
+        if params.stream and params.response_format is not None:
             msg = "stream and response_format"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
-        if kwargs.get("parallel_tool_calls", None) is not None:
+        if params.parallel_tool_calls is not None:
             msg = "parallel_tool_calls"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
 
-        if kwargs.get("stream", False):
-            kwargs.pop("stream")
-            return self._stream_completion(model, messages, **kwargs)
+        if params.stream:
+            return self._stream_completion(
+                params.model_id,
+                params.messages,
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+                **kwargs,
+            )
         response = self.client.chat(
-            model=model,
-            messages=messages,  # type: ignore[arg-type]
+            model=params.model_id,
+            messages=params.messages,  # type: ignore[arg-type]
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
             **kwargs,
         )
 
-        return _convert_response(response, model)
+        return _convert_response(response, params.model_id)

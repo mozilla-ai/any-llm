@@ -1,7 +1,7 @@
 import os
 from abc import ABC
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 from openai import OpenAI
 from openai._streaming import Stream
@@ -11,7 +11,7 @@ from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenA
 
 from any_llm.logging import logger
 from any_llm.provider import Provider
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.responses import Response, ResponseStreamEvent
 
 
@@ -109,30 +109,29 @@ class BaseOpenAIProvider(Provider, ABC):
 
         return (_convert_chunk(chunk) for chunk in response)
 
-    def completion(
-        self, model: str, messages: list[dict[str, Any]], **kwargs: Any
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+    def completion(self, params: CompletionParams, **kwargs: Any) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Make the API call to OpenAI-compatible service."""
         client = OpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,
         )
 
-        if "response_format" in kwargs:
-            stream = kwargs.pop("stream", False)
-            if stream:
+        if params.response_format:
+            if params.stream:
                 msg = "stream is not supported for response_format"
                 raise ValueError(msg)
 
             response = client.chat.completions.parse(
-                model=model,
-                messages=messages,  # type: ignore[arg-type]
+                model=params.model_id,
+                messages=cast("Any", params.messages),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
                 **kwargs,
             )
         else:
-            response = client.chat.completions.create(  # type: ignore[assignment]
-                model=model,
-                messages=messages,  # type: ignore[arg-type]
+            response = client.chat.completions.create(
+                model=params.model_id,
+                messages=cast("Any", params.messages),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages"}),
                 **kwargs,
             )
         return self._convert_completion_response(response)

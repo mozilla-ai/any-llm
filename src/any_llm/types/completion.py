@@ -98,7 +98,7 @@ class CompletionParams(BaseModel):
     response_format: dict[str, Any] | type[BaseModel] | None = None
     """Format specification for the response"""
 
-    stream: bool = False
+    stream: bool | None = None
     """Whether to stream the response"""
 
     n: int | None = None

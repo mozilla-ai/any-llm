@@ -18,6 +18,7 @@ from any_llm.types.completion import (
     ChatCompletionChunk,
     ChatCompletionMessage,
     Choice,
+    CompletionParams,
     CompletionUsage,
     Reasoning,
 )
@@ -41,11 +42,13 @@ class FireworksProvider(Provider):
         self,
         llm: "LLM",
         messages: list[dict[str, Any]],
+        params: CompletionParams,
         **kwargs: Any,
     ) -> Iterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
         response_generator = llm.chat.completions.create(
             messages=messages,  # type: ignore[arg-type]
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages"}),
             **kwargs,
         )
 
@@ -54,18 +57,17 @@ class FireworksProvider(Provider):
 
     def completion(
         self,
-        model: str,
-        messages: list[dict[str, Any]],
+        params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         llm = LLM(
-            model=model,
+            model=params.model_id,
             deployment_type="serverless",
             api_key=self.config.api_key,
         )
 
-        if "response_format" in kwargs:
-            response_format = kwargs.pop("response_format")
+        if params.response_format is not None:
+            response_format = params.response_format
             if isinstance(response_format, type) and issubclass(response_format, BaseModel):
                 kwargs["response_format"] = {
                     "type": "json_schema",
@@ -74,11 +76,12 @@ class FireworksProvider(Provider):
             else:
                 kwargs["response_format"] = response_format
 
-        if kwargs.get("stream", False):
-            return self._stream_completion(llm, messages, **kwargs)
+        if params.stream:
+            return self._stream_completion(llm, params.messages, params, **kwargs)
 
         response = llm.chat.completions.create(
-            messages=messages,  # type: ignore[arg-type]
+            messages=params.messages,  # type: ignore[arg-type]
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
             **kwargs,
         )
         response_data = response.model_dump()
@@ -101,7 +104,7 @@ class FireworksProvider(Provider):
             )
         return ChatCompletion(
             id=response_data.get("id", ""),
-            model=model,
+            model=params.model_id,
             created=response_data.get("created", 0),
             object="chat.completion",
             choices=choices_out,
