@@ -106,3 +106,18 @@ def tools() -> list[dict[str, Any]]:
             },
         }
     ]
+
+
+@pytest.fixture
+def agent_loop_messages() -> list[dict[str, Any]]:
+    return [
+        {"role": "user", "content": "What is the weather like in Salvaterra?"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "foo", "function": {"name": "get_weather", "arguments": '{"location": "Salvaterra"}'}}
+            ],
+        },
+        {"role": "tool", "tool_call_id": "foo", "content": "sunny"},
+    ]

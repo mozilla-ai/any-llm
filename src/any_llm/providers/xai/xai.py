@@ -8,7 +8,7 @@ try:
     from xai_sdk import Client as XaiClient
     from xai_sdk.chat import Chunk as XaiChunk
     from xai_sdk.chat import Response as XaiResponse
-    from xai_sdk.chat import assistant, required_tool, system, user
+    from xai_sdk.chat import assistant, required_tool, system, tool_result, user
 
     from any_llm.providers.xai.utils import (
         _convert_openai_tools_to_xai_tools,
@@ -44,9 +44,15 @@ class XaiProvider(Provider):
             if message["role"] == "user":
                 xai_messages.append(user(message["content"]))
             elif message["role"] == "assistant":
-                xai_messages.append(assistant(message["content"]))
+                args: list[str] = []
+                if message["tool_calls"]:
+                    # No idea how to pass tool calls reconstructed in the original protobuf format.
+                    args.extend(str(tool_call) for tool_call in message["tool_calls"])
+                xai_messages.append(assistant(*args, message["content"]))
             elif message["role"] == "system":
                 xai_messages.append(system(message["content"]))
+            elif message["role"] == "tool":
+                xai_messages.append(tool_result(message["content"]))
         if params.tools is not None:
             kwargs["tools"] = _convert_openai_tools_to_xai_tools(params.tools)
 

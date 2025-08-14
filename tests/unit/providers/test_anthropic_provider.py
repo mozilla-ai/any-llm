@@ -1,5 +1,6 @@
 import sys
 from contextlib import contextmanager
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
@@ -195,24 +196,13 @@ def test_call_to_provider_with_no_packages_installed() -> None:
             ProviderFactory.create_provider("anthropic", ApiConfig())
 
 
-def test_completion_inside_agent_loop() -> None:
+def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, Any]]) -> None:
     api_key = "test-api-key"
     model = "model-id"
-    messages = [
-        {"role": "user", "content": "What is the weather like in Salvaterra?"},
-        {
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [
-                {"id": "foo", "function": {"name": "get_weather", "arguments": '{"location": "Salvaterra"}'}}
-            ],
-        },
-        {"role": "tool", "tool_call_id": "foo", "content": "sunny"},
-    ]
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
-        provider.completion(CompletionParams(model_id=model, messages=messages))  # type: ignore[arg-type]
+        provider.completion(CompletionParams(model_id=model, messages=agent_loop_messages))
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
