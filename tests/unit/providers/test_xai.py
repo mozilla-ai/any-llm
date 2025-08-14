@@ -5,7 +5,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from any_llm.provider import ApiConfig, ProviderFactory
-from any_llm.providers.xai.xai import XaiProvider
 from any_llm.types.completion import ChatCompletion, CompletionParams
 
 
@@ -36,6 +35,8 @@ def test_call_to_provider_with_no_packages_installed() -> None:
 
 
 def test_response_function_call_id_is_preserved() -> None:
+    from any_llm.providers.xai.xai import XaiProvider
+
     with mock_xai_client() as (_, mock_response):
         tool_call = MagicMock()
         tool_call.id = "expected_function_call_id"
