@@ -76,6 +76,7 @@ class CohereProvider(Provider):
             # Note that Cohere has a bunch of limitations on JSON schemas (e.g., no oneOf, numeric/str ranges, weird regex limitations)
             # see docs here: https://docs.cohere.com/docs/structured-outputs#unsupported-schema-features
             else:
+                # Validation logic could/would eventually go here
                 kwargs["response_format"] = response_format
         if kwargs.get("stream", False) and kwargs.get("response_format", None) is not None:
             msg = "stream and response_format"
