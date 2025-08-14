@@ -185,7 +185,7 @@ def test_call_to_provider_with_no_packages_installed() -> None:
             ProviderFactory.create_provider("anthropic", ApiConfig())
 
 
-def test_make_api_call_inside_agent_loop() -> None:
+def test_completion_inside_agent_loop() -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [

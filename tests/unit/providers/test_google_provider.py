@@ -1,6 +1,5 @@
 import sys
 from contextlib import contextmanager
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -14,10 +13,8 @@ from any_llm.providers.google.google import GoogleProvider
 def mock_google_provider():  # type: ignore[no-untyped-def]
     with (
         patch("any_llm.providers.google.google.genai.Client") as mock_genai,
-        patch("any_llm.providers.google.google._convert_messages") as mock_convert_messages,
         patch("any_llm.providers.google.google._convert_response_to_response_dict") as mock_convert_response,
     ):
-        mock_convert_messages.return_value = [SimpleNamespace(role="user", parts=[SimpleNamespace(text="Hello")])]
         mock_convert_response.return_value = {
             "id": "google_genai_response",
             "model": "google/genai",
@@ -41,7 +38,7 @@ def mock_google_provider():  # type: ignore[no-untyped-def]
         ("required", "ANY"),
     ],
 )
-def testcompletion_with_tool_choice_auto(tool_choice: str, expected_mode: str) -> None:
+def test_completion_with_tool_choice_auto(tool_choice: str, expected_mode: str) -> None:
     """Test that completion correctly processes tool_choice='auto'."""
     api_key = "test-api-key"
     model = "gemini-pro"
@@ -58,7 +55,7 @@ def testcompletion_with_tool_choice_auto(tool_choice: str, expected_mode: str) -
         assert generation_config.tool_config.function_calling_config.mode.value == expected_mode
 
 
-def testcompletion_without_tool_choice() -> None:
+def test_completion_without_tool_choice() -> None:
     """Test that completion works correctly without tool_choice."""
     api_key = "test-api-key"
     model = "gemini-pro"
@@ -74,7 +71,7 @@ def testcompletion_without_tool_choice() -> None:
         assert generation_config.tool_config is None
 
 
-def testcompletion_with_stream_and_response_format_raises() -> None:
+def test_completion_with_stream_and_response_format_raises() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
@@ -90,7 +87,7 @@ def testcompletion_with_stream_and_response_format_raises() -> None:
             )
 
 
-def testcompletion_with_parallel_tool_calls_raises() -> None:
+def test_completion_with_parallel_tool_calls_raises() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
@@ -103,6 +100,34 @@ def testcompletion_with_parallel_tool_calls_raises() -> None:
                 messages,
                 parallel_tool_calls=True,
             )
+
+
+def test_completion_inside_agent_loop() -> None:
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [
+        {"role": "user", "content": "What is the weather like in Salvaterra?"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "foo", "function": {"name": "get_weather", "arguments": '{"location": "Salvaterra"}'}}
+            ],
+        },
+        {"role": "tool", "tool_call_id": "foo", "content": "sunny"},
+    ]
+
+    with mock_google_provider() as mock_genai:
+        provider = GoogleProvider(ApiConfig(api_key=api_key))
+        provider.completion(model, messages)  # type: ignore[arg-type]
+
+        _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
+
+        contents = call_kwargs["contents"]
+        assert len(contents) == 3
+        assert contents[0].role == "user"
+        assert contents[1].role == "model"
+        assert contents[2].role == "function"
 
 
 def test_provider_with_no_packages_installed() -> None:
