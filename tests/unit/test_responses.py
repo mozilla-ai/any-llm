@@ -36,6 +36,7 @@ INPUT_KWARGS = {
 # These disappear in responses call
 OMIT_MOCK_FIELDS = ["api_key", "api_base"]
 
+
 def test_responses_invalid_model_format_no_slash() -> None:
     """Test responses raises ValueError for model without slash."""
     with pytest.raises(ValueError, match="Invalid model format. Expected 'provider/model', got 'gpt-5-nano'"):
@@ -67,7 +68,9 @@ def test_responses_invalid_model_format_multiple_slashes() -> None:
 
         responses("provider/model/extra", input_data=INPUT_DATA, **INPUT_KWARGS)
 
-        mock_provider.responses.assert_called_once_with("model/extra", INPUT_DATA, **{i: j for i, j in INPUT_KWARGS.items() if i not in OMIT_MOCK_FIELDS})
+        mock_provider.responses.assert_called_once_with(
+            "model/extra", INPUT_DATA, **{i: j for i, j in INPUT_KWARGS.items() if i not in OMIT_MOCK_FIELDS}
+        )
 
 
 @pytest.mark.asyncio
@@ -84,4 +87,6 @@ async def test_aresponses_invalid_model_format_multiple_slashes() -> None:
 
         await aresponses("provider/model/extra", input_data=INPUT_DATA, **INPUT_KWARGS)
 
-        mock_provider.aresponses.assert_called_once_with("model/extra", INPUT_DATA, **{i: j for i, j in INPUT_KWARGS.items() if i not in OMIT_MOCK_FIELDS})
+        mock_provider.aresponses.assert_called_once_with(
+            "model/extra", INPUT_DATA, **{i: j for i, j in INPUT_KWARGS.items() if i not in OMIT_MOCK_FIELDS}
+        )
