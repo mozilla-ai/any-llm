@@ -30,6 +30,7 @@ def test_calls_completion() -> None:
         assert result is sentinel
         mock_super.assert_called_once_with(provider, params, temperature=0.1)
 
+
 def test_tools_raises() -> None:
     provider = LlamafileProvider(ApiConfig())
     tools = [
