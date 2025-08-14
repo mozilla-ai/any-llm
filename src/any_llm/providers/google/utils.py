@@ -27,16 +27,26 @@ def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[types.Tool]:
             continue
 
         function = tool["function"]
+        # Preserve nested schema details such as items/additionalProperties for arrays/objects
+        properties: dict[str, dict[str, Any]] = {}
+        for param_name, param_info in function["parameters"]["properties"].items():
+            prop: dict[str, Any] = {
+                "type": param_info.get("type", "string"),
+                "description": param_info.get("description", ""),
+            }
+            if "enum" in param_info:
+                prop["enum"] = param_info["enum"]
+            # Google requires explicit items for arrays
+            if "items" in param_info:
+                prop["items"] = param_info["items"]
+            if prop.get("type") == "array" and "items" not in prop:
+                prop["items"] = {"type": "string"}
+            # Google tool schema does not accept additionalProperties; drop it
+            properties[param_name] = prop
+
         parameters_dict = {
             "type": "object",
-            "properties": {
-                param_name: {
-                    "type": param_info.get("type", "string"),
-                    "description": param_info.get("description", ""),
-                    **({"enum": param_info["enum"]} if "enum" in param_info else {}),
-                }
-                for param_name, param_info in function["parameters"]["properties"].items()
-            },
+            "properties": properties,
             "required": function["parameters"].get("required", []),
         }
 

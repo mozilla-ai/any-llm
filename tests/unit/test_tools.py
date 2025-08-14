@@ -1,4 +1,7 @@
+from typing import Any
+
 import pytest
+from pydantic import BaseModel
 
 from any_llm.tools import callable_to_tool, prepare_tools
 
@@ -70,3 +73,57 @@ def test_prepare_tools_mixed() -> None:
     assert len(tools) == 2
     assert tools[0]["function"]["name"] == "my_function"
     assert tools[1]["function"]["name"] == "existing_tool"
+
+
+def test_callable_to_tool_with_list_and_dict_types() -> None:
+    """Ensure list/dict annotations produce items/additionalProperties."""
+
+    class AnArg(BaseModel):
+        thing: str
+
+    def another_tool(
+        country: str,
+        listing: list,  # type: ignore[type-arg]
+        dicting: dict,  # type: ignore[type-arg]
+        pydantic_arg: AnArg,
+        list_specified: list[float],
+        dict_specified: dict[str, int],
+        union_specified: str | int,
+        maybe_text: str | None = None,
+        maybe_anything: Any = None,
+    ) -> None:
+        """This is a docstring"""
+        return
+
+    tool = callable_to_tool(another_tool)
+
+    params = tool["function"]["parameters"]
+    props = params["properties"]
+
+    assert props["listing"]["type"] == "array"
+    assert "items" in props["listing"]
+
+    assert props["dicting"]["type"] == "object"
+    assert "additionalProperties" in props["dicting"]
+    assert props["dicting"]["additionalProperties"]["type"] == "string"
+
+    assert props["list_specified"]["type"] == "array"
+    assert props["list_specified"]["items"]["type"] == "number"
+
+    assert props["dict_specified"]["type"] == "object"
+    assert props["dict_specified"]["additionalProperties"]["type"] == "integer"
+
+    assert "oneOf" in props["union_specified"]
+    assert len(props["union_specified"]["oneOf"]) == 2
+    assert props["union_specified"]["oneOf"][0]["type"] == "string"
+    assert props["union_specified"]["oneOf"][1]["type"] == "integer"
+
+    assert props["maybe_text"]["type"] == "string"
+    assert "maybe_text" not in params["required"]
+
+    # Any type defaults to string and is not required when default provided
+    assert props["maybe_anything"]["type"] == "string"
+    assert "maybe_anything" not in params["required"]
+
+    assert props["pydantic_arg"]["type"] == "object"
+    assert props["pydantic_arg"]["properties"]["thing"]["type"] == "string"
