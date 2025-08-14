@@ -5,23 +5,34 @@ import pytest
 from any_llm import responses
 from any_llm.provider import ProviderName
 
+INPUT_DATA = [{"role": "user", "content": "Hello"}]
+INPUT_KWARGS = {
+    "instructions": "Talk like a pirate.",
+    "max_tool_calls": 3,
+    "parallel_tool_calls": True,
+    "reasoning": {"effort": "medium"},
+    "text": {
+        "verbosity": "low",
+    },
+}
+
 
 def test_responses_invalid_model_format_no_slash() -> None:
     """Test responses raises ValueError for model without slash."""
     with pytest.raises(ValueError, match="Invalid model format. Expected 'provider/model', got 'gpt-5-nano'"):
-        responses("gpt-5-nano", input_data=[{"role": "user", "content": "Hello"}])
+        responses("gpt-5-nano", INPUT_DATA, **INPUT_KWARGS)
 
 
 def test_responses_invalid_model_format_empty_provider() -> None:
     """Test responses raises ValueError for model with empty provider."""
     with pytest.raises(ValueError, match="Invalid model format"):
-        responses("/model", input_data=[{"role": "user", "content": "Hello"}])
+        responses("/model", INPUT_DATA, **INPUT_KWARGS)
 
 
 def test_responses_invalid_model_format_empty_model() -> None:
     """Test responses raises ValueError for model with empty model name."""
     with pytest.raises(ValueError, match="Invalid model format"):
-        responses("provider/", input_data=[{"role": "user", "content": "Hello"}])
+        responses("provider/", INPUT_DATA, **INPUT_KWARGS)
 
 
 def test_responses_invalid_model_format_multiple_slashes() -> None:
@@ -35,6 +46,6 @@ def test_responses_invalid_model_format_multiple_slashes() -> None:
         mock_factory.split_model_provider.return_value = (ProviderName.OPENAI, "model/extra")
         mock_factory.create_provider.return_value = mock_provider
 
-        responses("provider/model/extra", input_data=[{"role": "user", "content": "Hello"}])
+        responses("provider/model/extra", input_data=INPUT_DATA, **INPUT_KWARGS)
 
-        mock_provider.responses.assert_called_once_with("model/extra", [{"role": "user", "content": "Hello"}])
+        mock_provider.responses.assert_called_once_with("model/extra", INPUT_DATA, **INPUT_KWARGS)
