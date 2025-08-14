@@ -121,7 +121,9 @@ class GoogleProvider(Provider):
             generation_config.response_mime_type = "application/json"
             generation_config.response_schema = response_format
 
-        formatted_messages = _convert_messages(messages)
+        formatted_messages, system_instruction = _convert_messages(messages)
+        if system_instruction:
+            generation_config.system_instruction = system_instruction
 
         if stream:
             response_stream = self.client.models.generate_content_stream(
