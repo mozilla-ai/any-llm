@@ -87,8 +87,8 @@ class AnthropicProvider(Provider):
         if params.tools:
             params.tools = _convert_tool_spec(params.tools)
 
-        if params.tool_choice or "parallel_tool_calls" in kwargs:
-            params.tool_choice = _convert_tool_choice(params, kwargs)
+        if params.tool_choice or params.parallel_tool_calls:
+            params.tool_choice = _convert_tool_choice(params)
 
         params_kwargs = params.model_dump(
             exclude_none=True, exclude={"model_id", "messages", "response_format", "parallel_tool_calls"}

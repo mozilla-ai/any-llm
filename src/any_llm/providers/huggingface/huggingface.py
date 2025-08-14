@@ -86,7 +86,9 @@ class HuggingfaceProvider(Provider):
         response = client.chat_completion(
             model=params.model_id,
             messages=params.messages,
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+            **params.model_dump(
+                exclude_none=True, exclude={"model_id", "messages", "response_format", "stream", "max_tokens"}
+            ),
             **kwargs,
         )
         data = response

@@ -7,6 +7,7 @@ import pytest
 
 from any_llm.provider import ApiConfig, ProviderFactory
 from any_llm.providers.huggingface.huggingface import HuggingfaceProvider
+from any_llm.types.completion import CompletionParams
 
 
 @contextmanager
@@ -34,7 +35,7 @@ def test_huggingface_with_api_key() -> None:
 
     with mock_huggingface_provider() as mock_huggingface:
         provider = HuggingfaceProvider(ApiConfig(api_key=api_key))
-        provider.completion("model-id", messages)
+        provider.completion(CompletionParams(model_id="model-id", messages=messages))
 
         mock_huggingface.assert_called_with(token=api_key, timeout=None)
 
@@ -47,7 +48,7 @@ def test_huggingface_with_tools(tools: list[dict[str, Any]]) -> None:
 
     with mock_huggingface_provider() as mock_huggingface:
         provider = HuggingfaceProvider(ApiConfig(api_key=api_key))
-        provider.completion("model-id", messages, tools=tools)
+        provider.completion(CompletionParams(model_id="model-id", messages=messages, tools=tools))
 
         mock_huggingface.assert_called_with(token=api_key, timeout=None)
 
@@ -62,7 +63,7 @@ def test_huggingface_with_max_tokens() -> None:
 
     with mock_huggingface_provider() as mock_huggingface:
         provider = HuggingfaceProvider(ApiConfig(api_key=api_key))
-        provider.completion("model-id", messages, max_tokens=100)
+        provider.completion(CompletionParams(model_id="model-id", messages=messages, max_tokens=100))
 
         mock_huggingface.assert_called_with(token=api_key, timeout=None)
 

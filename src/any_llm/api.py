@@ -12,6 +12,7 @@ from any_llm.types.responses import Response, ResponseInputParam, ResponseStream
 def completion(
     model: str,
     messages: list[dict[str, Any]],
+    *,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     temperature: float | None = None,

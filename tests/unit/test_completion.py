@@ -4,6 +4,7 @@ import pytest
 
 from any_llm import completion
 from any_llm.provider import ApiConfig, Provider, ProviderFactory, ProviderName
+from any_llm.types.completion import CompletionParams
 
 
 def test_completion_invalid_model_format_no_slash() -> None:
@@ -39,7 +40,12 @@ def test_completion_invalid_model_format_multiple_slashes() -> None:
         completion("provider/model/extra", messages=[{"role": "user", "content": "Hello"}])
 
         # Verify the model name includes everything after first slash
-        mock_provider.completion.assert_called_once_with("model/extra", [{"role": "user", "content": "Hello"}])
+        mock_provider.completion.assert_called_once()
+        args, kwargs = mock_provider.completion.call_args
+        assert isinstance(args[0], CompletionParams)
+        assert args[0].model_id == "model/extra"
+        assert args[0].messages == [{"role": "user", "content": "Hello"}]
+        assert kwargs == {}
 
 
 def test_all_providers_can_be_loaded(provider: str) -> None:

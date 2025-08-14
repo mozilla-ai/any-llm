@@ -2,6 +2,7 @@ from unittest.mock import Mock, patch
 
 from any_llm import completion
 from any_llm.provider import ApiConfig, ProviderName
+from any_llm.types.completion import CompletionParams
 
 
 def test_completion_extracts_all_config_from_kwargs() -> None:
@@ -30,10 +31,13 @@ def test_completion_extracts_all_config_from_kwargs() -> None:
             ProviderName.MISTRAL, ApiConfig(api_key="test_key", api_base="https://test.com")
         )
 
-        # Verify that provider.completion was called with remaining kwargs (config keys removed)
-        mock_provider.completion.assert_called_once_with(
-            "mistral-small", [{"role": "user", "content": "Hello"}], other_param="value"
-        )
+        # Verify that provider.completion was called with normalized params (config keys removed)
+        mock_provider.completion.assert_called_once()
+        args, kwargs = mock_provider.completion.call_args
+        assert isinstance(args[0], CompletionParams)
+        assert args[0].model_id == "mistral-small"
+        assert args[0].messages == [{"role": "user", "content": "Hello"}]
+        assert kwargs == {"other_param": "value"}
 
 
 def test_completion_extracts_partial_config_from_kwargs() -> None:
@@ -58,10 +62,13 @@ def test_completion_extracts_partial_config_from_kwargs() -> None:
         # Verify that create_provider was called with only api_key in config
         mock_factory.create_provider.assert_called_once_with(ProviderName.MISTRAL, ApiConfig(api_key="test_key"))
 
-        # Verify that provider.completion was called with remaining kwargs
-        mock_provider.completion.assert_called_once_with(
-            "mistral-small", [{"role": "user", "content": "Hello"}], other_param="value"
-        )
+        # Verify that provider.completion was called with normalized params
+        mock_provider.completion.assert_called_once()
+        args, kwargs = mock_provider.completion.call_args
+        assert isinstance(args[0], CompletionParams)
+        assert args[0].model_id == "mistral-small"
+        assert args[0].messages == [{"role": "user", "content": "Hello"}]
+        assert kwargs == {"other_param": "value"}
 
 
 def test_completion_no_config_extraction() -> None:
@@ -81,10 +88,13 @@ def test_completion_no_config_extraction() -> None:
         # Verify that create_provider was called with empty config
         mock_factory.create_provider.assert_called_once_with(ProviderName.MISTRAL, ApiConfig())
 
-        # Verify that provider.completion was called with all kwargs
-        mock_provider.completion.assert_called_once_with(
-            "mistral-small", [{"role": "user", "content": "Hello"}], other_param="value"
-        )
+        # Verify that provider.completion was called with normalized params
+        mock_provider.completion.assert_called_once()
+        args, kwargs = mock_provider.completion.call_args
+        assert isinstance(args[0], CompletionParams)
+        assert args[0].model_id == "mistral-small"
+        assert args[0].messages == [{"role": "user", "content": "Hello"}]
+        assert kwargs == {"other_param": "value"}
 
 
 def test_completion_extracts_api_base_only() -> None:
@@ -110,5 +120,10 @@ def test_completion_extracts_api_base_only() -> None:
             ProviderName.OLLAMA, ApiConfig(api_base="https://custom-endpoint.com")
         )
 
-        # Verify that provider.completion was called with remaining kwargs
-        mock_provider.completion.assert_called_once_with("llama2", [{"role": "user", "content": "Test"}])
+        # Verify that provider.completion was called with normalized params
+        mock_provider.completion.assert_called_once()
+        args, kwargs = mock_provider.completion.call_args
+        assert isinstance(args[0], CompletionParams)
+        assert args[0].model_id == "llama2"
+        assert args[0].messages == [{"role": "user", "content": "Test"}]
+        assert kwargs == {}

@@ -245,8 +245,10 @@ def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[dict[str, Any
     return anthropic_tools
 
 
-def _convert_tool_choice(params: CompletionParams, kwargs: dict[str, Any]) -> dict[str, Any]:
-    parallel_tool_calls = kwargs.get("parallel_tool_calls", True)
+def _convert_tool_choice(params: CompletionParams) -> dict[str, Any]:
+    parallel_tool_calls = params.parallel_tool_calls
+    if parallel_tool_calls is None:
+        parallel_tool_calls = True
     tool_choice = params.tool_choice or "any"
     if tool_choice == "required":
         tool_choice = "any"

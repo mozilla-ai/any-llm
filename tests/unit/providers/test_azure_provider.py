@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from any_llm.provider import ApiConfig
 from any_llm.providers.azure.azure import AzureProvider
+from any_llm.types.completion import CompletionParams
 
 
 @contextmanager
@@ -45,7 +46,7 @@ def test_azure_with_api_key_and_api_base() -> None:
     messages = [{"role": "user", "content": "Hello"}]
     with mock_azure_provider() as (mock_client, mock_convert_response, mock_chat_client):
         provider = AzureProvider(ApiConfig(api_key=api_key, api_base=custom_endpoint))
-        provider.completion("model-id", messages)
+        provider.completion(CompletionParams(model_id="model-id", messages=messages))
 
         # Verify ChatCompletionsClient was created with correct parameters
         mock_chat_client.assert_called_once()
@@ -69,13 +70,20 @@ def test_azure_with_tools() -> None:
     tool_choice = "auto"
     with mock_azure_provider() as (mock_client, mock_convert_response, mock_chat_client):
         provider = AzureProvider(ApiConfig(api_key=api_key, api_base=custom_endpoint))
-        provider.completion("model-id", messages, tools=tools, tool_choice=tool_choice)
+        provider.completion(
+            CompletionParams(
+                model_id="model-id",
+                messages=messages,
+                tools=[tools] if isinstance(tools, dict) else tools,
+                tool_choice=tool_choice,
+            )
+        )
 
         # Verify the complete method was called with correct parameters including tools
         mock_client.complete.assert_called_once_with(
             model="model-id",
             messages=messages,
-            tools=tools,
+            tools=[tools],
             tool_choice=tool_choice,
         )
 
@@ -99,7 +107,7 @@ def test_azure_streaming() -> None:
         mock_openai_chunk2 = MagicMock()
         mock_stream_completion.return_value = [mock_openai_chunk1, mock_openai_chunk2]
 
-        result = provider.completion("model-id", messages, stream=True)
+        result = provider.completion(CompletionParams(model_id="model-id", messages=messages, stream=True))
 
         # Verify _stream_completion was called
         assert mock_stream_completion.call_count == 1
