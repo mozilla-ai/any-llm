@@ -49,7 +49,6 @@ class ProviderName(str, Enum):
     VOYAGE = "voyage"
     WATSONX = "watsonx"
     XAI = "xai"
-    PERPLEXITY = "perplexity"
 
 
 class ApiConfig(BaseModel):
@@ -203,9 +202,7 @@ class ProviderFactory:
     PROVIDERS_DIR = Path(__file__).parent / "providers"
 
     @classmethod
-    def create_provider(
-        cls, provider_key: str | ProviderName, config: ApiConfig
-    ) -> Provider:
+    def create_provider(cls, provider_key: str | ProviderName, config: ApiConfig) -> Provider:
         """Dynamically load and create an instance of a provider based on the naming convention."""
         if isinstance(provider_key, ProviderName):
             provider_key = provider_key.value
