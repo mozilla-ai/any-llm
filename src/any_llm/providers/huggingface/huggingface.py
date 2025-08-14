@@ -67,7 +67,7 @@ class HuggingfaceProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using HuggingFace."""
-        client = InferenceClient(token=self.config.api_key, timeout=params.timeout)
+        client = InferenceClient(token=self.config.api_key, timeout=kwargs.get("timeout"))
 
         if params.max_tokens is not None:
             kwargs["max_new_tokens"] = params.max_tokens

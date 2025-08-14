@@ -1,5 +1,5 @@
 from collections.abc import Callable, Iterator
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -30,6 +30,13 @@ def completion(
     api_base: str | None = None,
     api_timeout: float | None = None,
     user: str | None = None,
+    parallel_tool_calls: bool | None = None,
+    logprobs: bool | None = None,
+    top_logprobs: int | None = None,
+    logit_bias: dict[str, float] | None = None,
+    stream_options: dict[str, Any] | None = None,
+    max_completion_tokens: int | None = None,
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
     """Create a chat completion.
@@ -53,6 +60,13 @@ def completion(
         api_base: Base URL for the provider API
         api_timeout: Request timeout in seconds
         user: Unique identifier for the end user
+        parallel_tool_calls: Whether to allow parallel tool calls
+        logprobs: Include token-level log probabilities in the response
+        top_logprobs: Number of alternatives to return when logprobs are requested
+        logit_bias: Bias the likelihood of specified tokens during generation
+        stream_options: Additional options controlling streaming behavior
+        max_completion_tokens: Maximum number of tokens for the completion
+        reasoning_effort: Reasoning effort level for models that support it
         **kwargs: Additional provider-specific parameters
 
     Returns:
@@ -78,6 +92,13 @@ def completion(
         api_base=api_base,
         api_timeout=api_timeout,
         user=user,
+        parallel_tool_calls=parallel_tool_calls,
+        logprobs=logprobs,
+        top_logprobs=top_logprobs,
+        logit_bias=logit_bias,
+        stream_options=stream_options,
+        max_completion_tokens=max_completion_tokens,
+        reasoning_effort=reasoning_effort,
         **kwargs,
     )
 
@@ -104,6 +125,13 @@ async def acompletion(
     api_base: str | None = None,
     api_timeout: float | None = None,
     user: str | None = None,
+    parallel_tool_calls: bool | None = None,
+    logprobs: bool | None = None,
+    top_logprobs: int | None = None,
+    logit_bias: dict[str, float] | None = None,
+    stream_options: dict[str, Any] | None = None,
+    max_completion_tokens: int | None = None,
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
     """Create a chat completion asynchronously.
@@ -127,6 +155,13 @@ async def acompletion(
         api_base: Base URL for the provider API
         api_timeout: Request timeout in seconds
         user: Unique identifier for the end user
+        parallel_tool_calls: Whether to allow parallel tool calls
+        logprobs: Include token-level log probabilities in the response
+        top_logprobs: Number of alternatives to return when logprobs are requested
+        logit_bias: Bias the likelihood of specified tokens during generation
+        stream_options: Additional options controlling streaming behavior
+        max_completion_tokens: Maximum number of tokens for the completion
+        reasoning_effort: Reasoning effort level for models that support it
         **kwargs: Additional provider-specific parameters
 
     Returns:
@@ -152,6 +187,13 @@ async def acompletion(
         api_base=api_base,
         api_timeout=api_timeout,
         user=user,
+        parallel_tool_calls=parallel_tool_calls,
+        logprobs=logprobs,
+        top_logprobs=top_logprobs,
+        logit_bias=logit_bias,
+        stream_options=stream_options,
+        max_completion_tokens=max_completion_tokens,
+        reasoning_effort=reasoning_effort,
         **kwargs,
     )
 

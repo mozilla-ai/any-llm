@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -27,6 +27,13 @@ def _process_completion_params(
     api_base: str | None,
     api_timeout: float | None,
     user: str | None,
+    parallel_tool_calls: bool | None,
+    logprobs: bool | None,
+    top_logprobs: int | None,
+    logit_bias: dict[str, float] | None,
+    stream_options: dict[str, Any] | None,
+    max_completion_tokens: int | None,
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None,
     **kwargs: Any,
 ) -> tuple[Provider, CompletionParams]:
     provider_key, model_name = ProviderFactory.split_model_provider(model)
@@ -60,6 +67,12 @@ def _process_completion_params(
         frequency_penalty=frequency_penalty,
         seed=seed,
         user=user,
-        timeout=api_timeout or kwargs.get("timeout", None),
+        parallel_tool_calls=parallel_tool_calls,
+        logprobs=logprobs,
+        top_logprobs=top_logprobs,
+        logit_bias=logit_bias,
+        stream_options=stream_options,
+        max_completion_tokens=max_completion_tokens,
+        reasoning_effort=reasoning_effort,
     )
     return provider, completion_params

@@ -16,14 +16,16 @@ def test_completion_extracts_all_config_from_kwargs() -> None:
         mock_factory.get_provider_enum.return_value = ProviderName.MISTRAL
         mock_factory.split_model_provider.return_value = (ProviderName.MISTRAL, "mistral-small")
         mock_factory.create_provider.return_value = mock_provider
-
+        kwargs = {
+            "other_param": "value",
+        }
         # Test with all config parameters
         completion(
             model="mistral/mistral-small",
             messages=[{"role": "user", "content": "Hello"}],
             api_key="test_key",
             api_base="https://test.com",
-            other_param="value",
+            **kwargs,
         )
 
         # Verify that create_provider was called with extracted config
@@ -83,7 +85,10 @@ def test_completion_no_config_extraction() -> None:
         mock_factory.create_provider.return_value = mock_provider
 
         # Test with no config parameters
-        completion(model="mistral/mistral-small", messages=[{"role": "user", "content": "Hello"}], other_param="value")
+        kwargs = {
+            "other_param": "value",
+        }
+        completion(model="mistral/mistral-small", messages=[{"role": "user", "content": "Hello"}], **kwargs)
 
         # Verify that create_provider was called with empty config
         mock_factory.create_provider.assert_called_once_with(ProviderName.MISTRAL, ApiConfig())

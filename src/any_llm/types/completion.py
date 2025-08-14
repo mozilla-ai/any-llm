@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from openai.types import CreateEmbeddingResponse as OpenAICreateEmbeddingResponse
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
@@ -119,8 +119,23 @@ class CompletionParams(BaseModel):
     user: str | None = None
     """Unique identifier for the end user"""
 
-    timeout: float | None = None
-    """Request timeout in seconds"""
-
     parallel_tool_calls: bool | None = None
     """Whether to allow parallel tool calls"""
+
+    logprobs: bool | None = None
+    """Include token-level log probabilities in the response"""
+
+    top_logprobs: int | None = None
+    """Number of top alternatives to return when logprobs are requested"""
+
+    logit_bias: dict[str, float] | None = None
+    """Bias the likelihood of specified tokens during generation"""
+
+    stream_options: dict[str, Any] | None = None
+    """Additional options controlling streaming behavior"""
+
+    max_completion_tokens: int | None = None
+    """Maximum number of tokens for the completion (provider-dependent)"""
+
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None
+    """Reasoning effort level for models that support it"""
