@@ -47,16 +47,17 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
+          CO_API_KEY: ${{ secrets.CO_API_KEY }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           LLAMA_API_KEY: ${{ secrets.LLAMA_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          CO_API_KEY: ${{ secrets.CO_API_KEY }}
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
-          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
-          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
           WATSONX_API_KEY: ${{ secrets.WATSONX_API_KEY }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
         run: pytest tests/integration -v -n auto --cov --cov-report=xml
 
       - name: Upload coverage reports to Codecov
