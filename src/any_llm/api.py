@@ -1,4 +1,4 @@
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any, Literal
 
 from pydantic import BaseModel
@@ -133,7 +133,7 @@ async def acompletion(
     max_completion_tokens: int | None = None,
     reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None,
     **kwargs: Any,
-) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
     """Create a chat completion asynchronously.
 
     Args:
@@ -320,7 +320,7 @@ async def aresponses(
     reasoning: Any | None = None,
     text: Any | None = None,
     **kwargs: Any,
-) -> Response | Iterator[ResponseStreamEvent]:
+) -> Response | AsyncIterator[ResponseStreamEvent]:
     """Create a response using the OpenAI-style Responses API.
 
     This follows the OpenAI Responses API shape and returns the aliased

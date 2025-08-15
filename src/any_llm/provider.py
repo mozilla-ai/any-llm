@@ -1,9 +1,10 @@
 # Inspired by https://github.com/andrewyng/aisuite/tree/main/aisuite
 import asyncio
 import importlib
+import logging
 import os
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,8 @@ from any_llm.types.completion import (
 )
 from any_llm.types.provider import ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
+
+logger = logging.getLogger(__name__)
 
 
 class ProviderName(str, Enum):
@@ -159,12 +162,29 @@ class Provider(ABC):
         self,
         params: CompletionParams,
         **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        return await asyncio.to_thread(
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        logger.warning(
+            "%s does not have a native async method and may block your event loop. Proceed with caution",
+            self.PROVIDER_NAME,
+        )
+
+        response = await asyncio.to_thread(
             self.completion,
             params,
             **kwargs,
         )
+
+        # NOTE: This is temporary until all async-first providers are implemented
+        if isinstance(response, ChatCompletion):
+            return response
+
+        async def _inner() -> AsyncIterator[ChatCompletionChunk]:
+            for chunk in response:
+                yield chunk
+
+        return _inner()
+
+        # return response
 
     def responses(
         self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
@@ -179,8 +199,25 @@ class Provider(ABC):
 
     async def aresponses(
         self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
-    ) -> Response | Iterator[ResponseStreamEvent]:
-        return await asyncio.to_thread(self.responses, model, input_data, **kwargs)
+    ) -> Response | AsyncIterator[ResponseStreamEvent]:
+        logger.warning(
+            "%s does not have a native async method and may block your event loop. Proceed with caution",
+            self.PROVIDER_NAME,
+        )
+
+        response = await asyncio.to_thread(self.responses, model, input_data, **kwargs)
+
+        # NOTE: This is temporary until all async-first providers are implemented
+        if isinstance(response, Response):
+            return response
+
+        async def _inner() -> AsyncIterator[ResponseStreamEvent]:
+            for chunk in response:
+                yield chunk
+
+        return _inner()
+
+        # return response
 
     def embedding(
         self,
