@@ -5,11 +5,12 @@ import pytest
 from openai import APIConnectionError
 
 from any_llm import ProviderName, acompletion, completion
-from any_llm.providers.openai.openai import OpenaiProvider
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.provider import ProviderFactory
+from any_llm.providers.openai.openai import OpenaiProvider
 from any_llm.types.completion import ChatCompletionChunk
 from tests.constants import LOCAL_PROVIDERS
+
 
 def test_streaming_completion(
     provider: ProviderName,
@@ -52,6 +53,7 @@ def test_streaming_completion(
         if provider in LOCAL_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise
+
 
 @pytest.mark.asyncio
 async def test_streaming_acompletion(

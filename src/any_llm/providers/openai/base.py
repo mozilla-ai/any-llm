@@ -1,10 +1,10 @@
 import os
 from abc import ABC
-from collections.abc import Iterator
-from typing import Any, cast, AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from typing import Any, cast
 
-from openai import OpenAI, AsyncOpenAI
-from openai._streaming import Stream, AsyncStream
+from openai import AsyncOpenAI, OpenAI
+from openai._streaming import AsyncStream, Stream
 from openai._types import NOT_GIVEN
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
@@ -13,6 +13,7 @@ from any_llm.logging import logger
 from any_llm.provider import Provider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.responses import Response, ResponseStreamEvent
+
 
 class BaseOpenAIProvider(Provider, ABC):
     """
@@ -73,7 +74,7 @@ class BaseOpenAIProvider(Provider, ABC):
         return response_dict
 
     async def _convert_completion_response_async(
-            self, response: OpenAIChatCompletion | AsyncStream[OpenAIChatCompletionChunk]
+        self, response: OpenAIChatCompletion | AsyncStream[OpenAIChatCompletionChunk]
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Convert an OpenAI completion response to an AnyLLM completion response."""
         if isinstance(response, OpenAIChatCompletion):
@@ -109,7 +110,7 @@ class BaseOpenAIProvider(Provider, ABC):
         async def async_iterator():
             async for chunk in response:
                 yield _convert_chunk(chunk)
-            
+
         return async_iterator()
 
     def _convert_completion_response(
@@ -220,7 +221,7 @@ class BaseOpenAIProvider(Provider, ABC):
             msg = f"Responses API returned an unexpected type: {type(response)}"
             raise ValueError(msg)
         return response
-    
+
     async def aresponses(self, model: str, input_data: Any, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
         """Call OpenAI Responses API and normalize into ChatCompletion/Chunks.
 
@@ -262,7 +263,7 @@ class BaseOpenAIProvider(Provider, ABC):
             dimensions=kwargs.get("dimensions", NOT_GIVEN),
             **kwargs,
         )
-    
+
     async def aembedding(
         self,
         model: str,
