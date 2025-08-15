@@ -3,16 +3,14 @@ from typing import TYPE_CHECKING, Any
 
 try:
     from huggingface_hub import InferenceClient
+    from openai.lib._parsing import type_to_response_format_param
 
     PACKAGES_INSTALLED = True
 except ImportError:
     PACKAGES_INSTALLED = False
 
-from pydantic import BaseModel
-
 from any_llm.provider import Provider
 from any_llm.providers.huggingface.utils import (
-    _convert_pydantic_to_huggingface_json,
     _create_openai_chunk_from_huggingface_chunk,
 )
 from any_llm.types.completion import (
@@ -75,9 +73,7 @@ class HuggingfaceProvider(Provider):
             kwargs["max_new_tokens"] = params.max_tokens
 
         if params.response_format is not None:
-            response_format = params.response_format
-            if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-                params.messages = _convert_pydantic_to_huggingface_json(response_format, params.messages)
+            kwargs["response_format"] = type_to_response_format_param(response_format=params.response_format)  # type: ignore[arg-type]
 
         if params.stream:
             stream_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "max_tokens"})

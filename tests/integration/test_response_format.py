@@ -16,8 +16,6 @@ def test_response_format(
     provider_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
-    if provider == ProviderName.HUGGINGFACE:
-        pytest.xfail("response_format is not currently working for HuggingFace")
     if provider == ProviderName.LLAMAFILE:
         pytest.skip("Llamafile does not support response_format, skipping")
     cls = ProviderFactory.get_provider_class(provider)
