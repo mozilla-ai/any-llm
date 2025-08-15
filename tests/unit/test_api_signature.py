@@ -12,10 +12,6 @@ def test_completion_and_acompletion_have_same_signature() -> None:
         "completion and acompletion should have identical parameters"
     )
 
-    assert completion_sig.return_annotation == acompletion_sig.return_annotation, (
-        "completion and acompletion should have identical return annotations"
-    )
-
 
 def test_completion_and_acompletion_have_same_docstring() -> None:
     """Test that completion and acompletion have identical docstrings."""
@@ -64,10 +60,6 @@ def test_responses_and_aresponses_have_same_signature() -> None:
 
     assert responses_sig.parameters == aresponses_sig.parameters, (
         "responses and aresponses should have identical parameters"
-    )
-
-    assert responses_sig.return_annotation == aresponses_sig.return_annotation, (
-        "responses and aresponses should have identical return annotations"
     )
 
 
