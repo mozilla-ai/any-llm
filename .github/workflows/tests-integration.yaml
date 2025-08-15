@@ -23,6 +23,22 @@ jobs:
           python-version: 3.13
           activate-environment: true
 
+      - name: Wake Up HuggingFace Endpoint
+        run: |
+          curl "https://y0okp71n85ezo5nr.us-east-1.aws.endpoints.huggingface.cloud/v1/chat/completions" \
+          -X POST \
+          -H "Authorization: Bearer ${{ secrets.HF_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          -d '{
+              "model": "tgi",
+              "messages": [
+                  {
+                      "role": "user",
+                      "content": "Wake up!"
+                  }
+              ]
+          }'
+
       - name: Install dependencies
         run: |
           uv sync --group tests --extra all
