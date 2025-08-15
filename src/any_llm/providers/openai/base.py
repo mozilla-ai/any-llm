@@ -241,7 +241,7 @@ class BaseOpenAIProvider(Provider, ABC):
             input=input_data,
             **kwargs,
         )
-        if not isinstance(response, Response | Stream):
+        if not isinstance(response, Response | AsyncStream):
             msg = f"Responses API returned an unexpected type: {type(response)}"
             raise ValueError(msg)
         return response
