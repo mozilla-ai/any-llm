@@ -107,7 +107,7 @@ class BaseOpenAIProvider(Provider, ABC):
             normalized_chunk = self._normalize_openai_dict_response(chunk.model_dump())
             return ChatCompletionChunk.model_validate(normalized_chunk)
 
-        async def async_iterator():
+        async def async_iterator() -> AsyncIterator[ChatCompletionChunk]:
             async for chunk in response:
                 yield _convert_chunk(chunk)
 
