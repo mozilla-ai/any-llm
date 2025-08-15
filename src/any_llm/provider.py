@@ -3,7 +3,7 @@ import asyncio
 import importlib
 import os
 from abc import ABC, abstractmethod
-from collections.abc import Iterator, AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -160,7 +160,7 @@ class Provider(ABC):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        response = await asyncio.to_thread(
+        response: Iterator[ChatCompletionChunk] = await asyncio.to_thread(
             self.completion,
             params,
             **kwargs,
@@ -168,9 +168,10 @@ class Provider(ABC):
 
         if isinstance(response, ChatCompletion):
             return response
-        
+
+        # TEMP: convert into async generator for consistency
         async def async_generator() -> AsyncIterator[ChatCompletionChunk]:
-            async for chunk in response:
+            for chunk in response:
                 yield chunk
 
         return async_generator()
@@ -189,13 +190,14 @@ class Provider(ABC):
     async def aresponses(
         self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
-        response = await asyncio.to_thread(self.responses, model, input_data, **kwargs)
+        response: Iterator[ResponseStreamEvent] = await asyncio.to_thread(self.responses, model, input_data, **kwargs)
 
         if isinstance(response, Response):
             return response
-        
+
+        # TEMP: convert into async generator for consistency
         async def async_generator() -> AsyncIterator[ResponseStreamEvent]:
-            async for chunk in response:
+            for chunk in response:
                 yield chunk
 
         return async_generator()

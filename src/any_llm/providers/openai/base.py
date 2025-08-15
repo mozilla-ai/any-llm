@@ -149,7 +149,9 @@ class BaseOpenAIProvider(Provider, ABC):
 
         return (_convert_chunk(chunk) for chunk in response)
 
-    async def acompletion(self, params: CompletionParams, **kwargs: Any) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+    async def acompletion(
+        self, params: CompletionParams, **kwargs: Any
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         client = AsyncOpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,
@@ -222,7 +224,9 @@ class BaseOpenAIProvider(Provider, ABC):
             raise ValueError(msg)
         return response
 
-    async def aresponses(self, model: str, input_data: Any, **kwargs: Any) -> Response | AsyncIterator[ResponseStreamEvent]:
+    async def aresponses(
+        self, model: str, input_data: Any, **kwargs: Any
+    ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call OpenAI Responses API and normalize into ChatCompletion/Chunks.
 
         For now we only return a non-streaming ChatCompletion, or streaming chunks
