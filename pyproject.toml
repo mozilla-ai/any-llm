@@ -19,7 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 
 all = [
-  "any-llm-sdk[mistral,anthropic,huggingface,google,cohere,cerebras,fireworks,groq,aws,azure,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,llamafile]"
+  "any-llm-sdk[mistral,anthropic,huggingface,google,cohere,cerebras,fireworks,groq,aws,azure,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,llamafile,llamacpp]"
 ]
 
 mistral = [
@@ -104,6 +104,7 @@ openrouter = []
 lmstudio = []
 llama = []
 llamafile = []
+llamacpp = []
 
 [project.urls]
 Documentation = "https://mozilla-ai.github.io/any-llm/"

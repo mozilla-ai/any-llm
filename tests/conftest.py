@@ -16,6 +16,7 @@ def provider_reasoning_model_map() -> dict[ProviderName, str]:
         ProviderName.XAI: "grok-3-mini-latest",
         ProviderName.OLLAMA: "qwen3:0.6b",
         ProviderName.LLAMAFILE: "N/A",
+        ProviderName.LLAMACPP: "N/A",
         ProviderName.LMSTUDIO: "openai/gpt-oss-20b",  # You must have LM Studio running and the server enabled
     }
 
@@ -50,6 +51,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.PORTKEY: "@first-integrati-d8a10f/gpt-4.1-mini",  # Owned by njbrake in portkey UI
         ProviderName.LLAMA: "Llama-4-Maverick-17B-128E-Instruct-FP8",
         ProviderName.AZURE: "openai/gpt-4.1-nano",
+        ProviderName.LLAMACPP: "N/A",
     }
 
 
@@ -69,6 +71,7 @@ def embedding_provider_model_map() -> dict[ProviderName, str]:
         ProviderName.GOOGLE: "gemini-embedding-001",
         ProviderName.AZURE: "openai/text-embedding-3-small",
         ProviderName.VOYAGE: "voyage-3.5-lite",
+        ProviderName.LLAMACPP: "N/A",
     }
 
 

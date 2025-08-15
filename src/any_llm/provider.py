@@ -39,6 +39,7 @@ class ProviderName(str, Enum):
     LLAMA = "llama"
     LMSTUDIO = "lmstudio"
     LLAMAFILE = "llamafile"
+    LLAMACPP = "llamacpp"
     MISTRAL = "mistral"
     MOONSHOT = "moonshot"
     NEBIUS = "nebius"

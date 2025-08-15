@@ -8,6 +8,7 @@ from any_llm import ProviderName, completion
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
 from any_llm.types.completion import ChatCompletion
+from tests.constants import LOCAL_PROVIDERS
 
 
 def test_completion_reasoning(
@@ -30,7 +31,7 @@ def test_completion_reasoning(
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in [ProviderName.OLLAMA, ProviderName.LMSTUDIO]:
+        if provider in LOCAL_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise
     assert isinstance(result, ChatCompletion)
