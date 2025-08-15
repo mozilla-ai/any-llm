@@ -3,7 +3,7 @@ import asyncio
 import importlib
 import os
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Iterator, AsyncIterator
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -159,7 +159,7 @@ class Provider(ABC):
         self,
         params: CompletionParams,
         **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         return await asyncio.to_thread(
             self.completion,
             params,
@@ -179,7 +179,7 @@ class Provider(ABC):
 
     async def aresponses(
         self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
-    ) -> Response | Iterator[ResponseStreamEvent]:
+    ) -> Response | AsyncIterator[ResponseStreamEvent]:
         return await asyncio.to_thread(self.responses, model, input_data, **kwargs)
 
     def embedding(
