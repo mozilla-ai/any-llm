@@ -96,13 +96,12 @@ def _convert_xai_completion_to_anyllm_response(response: XaiResponse) -> ChatCom
         calls: list[ChatCompletionMessageToolCall] = []
         for tc in tool_calls_resp:
             func = tc.function
-            arguments = func.arguments
 
             calls.append(
                 ChatCompletionMessageFunctionToolCall(
-                    id=str(uuid.uuid4()),
+                    id=tc.id,
                     type="function",
-                    function=Function(name=func.name, arguments=arguments),
+                    function=Function(name=func.name, arguments=func.arguments),
                 )
             )
         tool_calls = calls or None

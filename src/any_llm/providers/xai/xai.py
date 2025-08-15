@@ -2,13 +2,13 @@ from collections.abc import Iterator
 from typing import Any
 
 from any_llm.provider import Provider
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 
 try:
     from xai_sdk import Client as XaiClient
     from xai_sdk.chat import Chunk as XaiChunk
     from xai_sdk.chat import Response as XaiResponse
-    from xai_sdk.chat import assistant, required_tool, system, user
+    from xai_sdk.chat import assistant, required_tool, system, tool_result, user
 
     from any_llm.providers.xai.utils import (
         _convert_openai_tools_to_xai_tools,
@@ -35,27 +35,28 @@ class XaiProvider(Provider):
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
-    def completion(
-        self, model: str, messages: list[dict[str, Any]], **kwargs: Any
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+    def completion(self, params: CompletionParams, **kwargs: Any) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Call the XAI Python SDK Chat Completions API and convert to AnyLLM types."""
         client = XaiClient(api_key=self.config.api_key)
 
         xai_messages = []
-        for message in messages:
+        for message in params.messages:
             if message["role"] == "user":
                 xai_messages.append(user(message["content"]))
             elif message["role"] == "assistant":
-                xai_messages.append(assistant(message["content"]))
+                args: list[str] = []
+                if message["tool_calls"]:
+                    # No idea how to pass tool calls reconstructed in the original protobuf format.
+                    args.extend(str(tool_call) for tool_call in message["tool_calls"])
+                xai_messages.append(assistant(*args, message["content"]))
             elif message["role"] == "system":
                 xai_messages.append(system(message["content"]))
-        response_format = kwargs.pop("response_format", None)
-        stream = kwargs.pop("stream", False)
-        tools = kwargs.pop("tools", None)
-        if tools is not None:
-            kwargs["tools"] = _convert_openai_tools_to_xai_tools(tools)
+            elif message["role"] == "tool":
+                xai_messages.append(tool_result(message["content"]))
+        if params.tools is not None:
+            kwargs["tools"] = _convert_openai_tools_to_xai_tools(params.tools)
 
-        tool_choice = kwargs.pop("tool_choice", None)
+        tool_choice = params.tool_choice
         if isinstance(tool_choice, dict):
             fn = tool_choice.get("function") if tool_choice.get("type") == "function" else None
             name = fn.get("name") if isinstance(fn, dict) else None
@@ -65,19 +66,22 @@ class XaiProvider(Provider):
             kwargs["tool_choice"] = tool_choice
 
         chat = client.chat.create(
-            model=model,
+            model=params.model_id,
             messages=xai_messages,
+            **params.model_dump(
+                exclude_none=True, exclude={"model_id", "messages", "stream", "response_format", "tools", "tool_choice"}
+            ),
             **kwargs,
         )
-        if stream:
-            if response_format:
+        if params.stream:
+            if params.response_format:
                 err_msg = "Response format is not supported for streaming"
                 raise ValueError(err_msg)
             stream_iter: Iterator[tuple[XaiResponse, XaiChunk]] = chat.stream()
             return (_convert_xai_chunk_to_anyllm_chunk(chunk) for _, chunk in stream_iter)
 
-        if response_format:
-            response, _ = chat.parse(shape=response_format)
+        if params.response_format:
+            response, _ = chat.parse(shape=params.response_format)  # type: ignore[arg-type]
         else:
             response = chat.sample()
 

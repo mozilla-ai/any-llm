@@ -1,4 +1,9 @@
+from collections.abc import Iterator
+from typing import Any
+
+from any_llm.providers.llama.utils import _patch_json_schema
 from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 
 
 class LlamaProvider(BaseOpenAIProvider):
@@ -14,3 +19,8 @@ class LlamaProvider(BaseOpenAIProvider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
+
+    def completion(self, params: CompletionParams, **kwargs: Any) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+        if params.tools:
+            params.tools = [_patch_json_schema(tool) for tool in params.tools]
+        return super().completion(params, **kwargs)

@@ -17,7 +17,7 @@ from any_llm.providers.azure.utils import (
     _create_openai_chunk_from_azure_chunk,
     _create_openai_embedding_response_from_azure,
 )
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 
 if TYPE_CHECKING:
     from azure.ai.inference.models import ChatCompletions, EmbeddingsResult, StreamingChatCompletionsUpdate
@@ -88,21 +88,34 @@ class AzureProvider(Provider):
 
     def completion(
         self,
-        model: str,
-        messages: list[dict[str, Any]],
+        params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Azure AI Inference SDK."""
         client: ChatCompletionsClient = self._create_chat_client()
 
-        if "response_format" in kwargs:
-            kwargs["response_format"] = _convert_response_format(kwargs["response_format"])
+        azure_response_format = None
+        if params.response_format:
+            azure_response_format = _convert_response_format(params.response_format)
 
-        if kwargs.get("stream", False):
-            return self._stream_completion(client, model, messages, **kwargs)
+        call_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
+        if params.stream:
+            if azure_response_format:
+                call_kwargs["response_format"] = azure_response_format
+            return self._stream_completion(
+                client,
+                params.model_id,
+                params.messages,
+                **call_kwargs,
+                **kwargs,
+            )
+        if azure_response_format:
+            call_kwargs["response_format"] = azure_response_format
+
         response: ChatCompletions = client.complete(
-            model=model,
-            messages=messages,
+            model=params.model_id,
+            messages=params.messages,
+            **call_kwargs,
             **kwargs,
         )
 

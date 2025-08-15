@@ -27,16 +27,26 @@ def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[types.Tool]:
             continue
 
         function = tool["function"]
+        # Preserve nested schema details such as items/additionalProperties for arrays/objects
+        properties: dict[str, dict[str, Any]] = {}
+        for param_name, param_info in function["parameters"]["properties"].items():
+            prop: dict[str, Any] = {
+                "type": param_info.get("type", "string"),
+                "description": param_info.get("description", ""),
+            }
+            if "enum" in param_info:
+                prop["enum"] = param_info["enum"]
+            # Google requires explicit items for arrays
+            if "items" in param_info:
+                prop["items"] = param_info["items"]
+            if prop.get("type") == "array" and "items" not in prop:
+                prop["items"] = {"type": "string"}
+            # Google tool schema does not accept additionalProperties; drop it
+            properties[param_name] = prop
+
         parameters_dict = {
             "type": "object",
-            "properties": {
-                param_name: {
-                    "type": param_info.get("type", "string"),
-                    "description": param_info.get("description", ""),
-                    **({"enum": param_info["enum"]} if "enum" in param_info else {}),
-                }
-                for param_name, param_info in function["parameters"]["properties"].items()
-            },
+            "properties": properties,
             "required": function["parameters"].get("required", []),
         }
 
@@ -60,14 +70,17 @@ def _convert_tool_choice(tool_choice: str) -> types.ToolConfig:
     return types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode=tool_choice_to_mode[tool_choice]))
 
 
-def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
+def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[types.Content], str | None]:
     """Convert messages to Google GenAI format."""
     formatted_messages = []
+    system_instruction = None
 
     for message in messages:
         if message["role"] == "system":
-            parts = [types.Part.from_text(text=message["content"])]
-            formatted_messages.append(types.Content(role="user", parts=parts))
+            if system_instruction is None:
+                system_instruction = message["content"]
+            else:
+                system_instruction += f"\n{message['content']}"
         elif message["role"] == "user":
             parts = [types.Part.from_text(text=message["content"])]
             formatted_messages.append(types.Content(role="user", parts=parts))
@@ -96,7 +109,7 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[types.Content]:
                 )
                 formatted_messages.append(types.Content(role="function", parts=[part]))
 
-    return formatted_messages
+    return formatted_messages, system_instruction
 
 
 def _convert_response_to_response_dict(response: types.GenerateContentResponse) -> dict[str, Any]:

@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from any_llm.provider import Provider
 from any_llm.providers.mistral.utils import _create_mistral_completion_from_response
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 
 if TYPE_CHECKING:
     from mistralai.models.embeddingresponse import EmbeddingResponse
@@ -55,28 +55,32 @@ class MistralProvider(Provider):
 
     def completion(
         self,
-        model: str,
-        messages: list[dict[str, Any]],
+        params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Mistral."""
         client = Mistral(api_key=self.config.api_key, server_url=self.config.api_base)
 
-        if "response_format" in kwargs and issubclass(kwargs["response_format"], BaseModel):
-            kwargs["response_format"] = response_format_from_pydantic_model(kwargs["response_format"])
+        if (
+            params.response_format is not None
+            and isinstance(params.response_format, type)
+            and issubclass(params.response_format, BaseModel)
+        ):
+            kwargs["response_format"] = response_format_from_pydantic_model(params.response_format)
 
-        if not kwargs.get("stream", False):
+        if not params.stream:
             response = client.chat.complete(
-                model=model,
-                messages=messages,  # type: ignore[arg-type]
+                model=params.model_id,
+                messages=params.messages,  # type: ignore[arg-type]
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
                 **kwargs,
             )
 
             return _create_mistral_completion_from_response(
                 response_data=response,
-                model=model,
+                model=params.model_id,
             )
-        return self._stream_completion(client, model, messages, **kwargs)
+        return self._stream_completion(client, params.model_id, params.messages, **kwargs)
 
     def embedding(
         self,

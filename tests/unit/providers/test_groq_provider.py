@@ -4,6 +4,7 @@ import pytest
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ApiConfig
+from any_llm.types.completion import CompletionParams
 
 
 def test_stream_with_response_format_raises() -> None:
@@ -16,9 +17,11 @@ def test_stream_with_response_format_raises() -> None:
         next(
             provider._stream_completion(
                 client=Mock(),
-                model="model-id",
-                messages=[{"role": "user", "content": "Hello"}],
-                stream=True,
-                response_format={"type": "json_object"},
+                params=CompletionParams(
+                    model_id="model-id",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    stream=True,
+                    response_format={"type": "json_object"},
+                ),
             )
         )

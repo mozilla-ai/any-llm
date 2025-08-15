@@ -13,7 +13,7 @@ except ImportError:
     PACKAGES_INSTALLED = False
 
 from any_llm.provider import Provider
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 
 
 class VoyageProvider(Provider):
@@ -50,11 +50,6 @@ class VoyageProvider(Provider):
         )
         return _create_openai_embedding_response_from_voyage(model, result)
 
-    def completion(
-        self,
-        model: str,
-        messages: list[dict[str, Any]],
-        **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+    def completion(self, params: CompletionParams, **kwargs: Any) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         msg = "voyage provider doesn't support completion."
         raise NotImplementedError(msg)

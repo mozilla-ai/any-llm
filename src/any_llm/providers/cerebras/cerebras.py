@@ -1,6 +1,8 @@
 from collections.abc import Iterator
 from typing import Any, cast
 
+from pydantic import BaseModel
+
 try:
     import cerebras.cloud.sdk as cerebras
     import instructor
@@ -16,7 +18,7 @@ from any_llm.providers.cerebras.utils import (
     _convert_response,
     _create_openai_chunk_from_cerebras_chunk,
 )
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 from any_llm.utils.instructor import _convert_instructor_response
 
 
@@ -67,28 +69,36 @@ class CerebrasProvider(Provider):
 
     def completion(
         self,
-        model: str,
-        messages: list[dict[str, Any]],
+        params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Cerebras with instructor support for structured outputs."""
-        if "response_format" in kwargs:
-            response_format = kwargs.pop("response_format")
+        if params.response_format:
+            if not isinstance(params.response_format, type) or not issubclass(params.response_format, BaseModel):
+                msg = "response_format must be a pydantic model"
+                raise ValueError(msg)
+
             instructor_response = self.instructor_client.chat.completions.create(
-                model=model,
-                messages=cast("Any", messages),
-                response_model=response_format,
+                model=params.model_id,
+                messages=cast("Any", params.messages),
+                response_model=params.response_format,
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
                 **kwargs,
             )
 
-            return _convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
+            return _convert_instructor_response(instructor_response, params.model_id, self.PROVIDER_NAME)
 
-        if kwargs.get("stream", False):
-            kwargs.pop("stream")
-            return self._stream_completion(model, messages, **kwargs)
+        if params.stream:
+            return self._stream_completion(
+                params.model_id,
+                params.messages,
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
+                **kwargs,
+            )
         response = self.client.chat.completions.create(
-            model=model,
-            messages=messages,
+            model=params.model_id,
+            messages=params.messages,
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
             **kwargs,
         )
 

@@ -26,6 +26,13 @@ def test_responses(
             f"{provider.value}/{model_id}",
             **extra_kwargs,
             input_data="What's the capital of France? Please think step by step.",
+            instructions="Talk like a pirate.",
+            max_tool_calls=3,
+            parallel_tool_calls=True,
+            reasoning={"effort": "medium"},
+            text={
+                "verbosity": "low",
+            },
         )
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} API key not provided, skipping")
