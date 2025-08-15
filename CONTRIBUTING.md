@@ -46,10 +46,10 @@ mkdocs serve
 Providers should go in the `any_llm/providers` folder. It should have the following directory structure:
 
 ```
-/<your_provider>
-	__init__.py
-	your_provider.py
-	<...any other files you may need>
+📂 <your_provider>/
+ ├── 📄 __init__.py        # Re-exports your provider class
+ ├── 📄 your_provider.py   # Main provider implementation
+ └── 📁 ...                # Any extra files (utils, configs, etc.)
 ```
 
 At minimum, the `__init__.py` file should contain this:
