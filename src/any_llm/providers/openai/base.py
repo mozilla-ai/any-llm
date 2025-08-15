@@ -149,7 +149,7 @@ class BaseOpenAIProvider(Provider, ABC):
 
         return (_convert_chunk(chunk) for chunk in response)
 
-    async def acompletion(self, params: CompletionParams, **kwargs) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+    async def acompletion(self, params: CompletionParams, **kwargs: Any) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         client = AsyncOpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,
