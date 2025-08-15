@@ -24,6 +24,7 @@ from any_llm.types.responses import Response, ResponseInputParam, ResponseStream
 
 logger = logging.getLogger(__name__)
 
+
 class ProviderName(str, Enum):
     """String enum for supported providers."""
 
@@ -165,8 +166,8 @@ class Provider(ABC):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         logger.warning(
             "%s does not have a native async method and may block your event loop. Proceed with caution",
-            self.PROVIDER_NAME
-            )
+            self.PROVIDER_NAME,
+        )
 
         response = await asyncio.to_thread(
             self.completion,
@@ -202,8 +203,8 @@ class Provider(ABC):
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         logger.warning(
             "%s does not have a native async method and may block your event loop. Proceed with caution",
-            self.PROVIDER_NAME
-            )
+            self.PROVIDER_NAME,
+        )
 
         response = await asyncio.to_thread(self.responses, model, input_data, **kwargs)
 
