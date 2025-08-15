@@ -160,7 +160,7 @@ class Provider(ABC):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        response: Iterator[ChatCompletionChunk] = await asyncio.to_thread(
+        response = await asyncio.to_thread(
             self.completion,
             params,
             **kwargs,
@@ -190,7 +190,7 @@ class Provider(ABC):
     async def aresponses(
         self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
-        response: Iterator[ResponseStreamEvent] = await asyncio.to_thread(self.responses, model, input_data, **kwargs)
+        response = await asyncio.to_thread(self.responses, model, input_data, **kwargs)
 
         if isinstance(response, Response):
             return response
