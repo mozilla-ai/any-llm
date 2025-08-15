@@ -8,6 +8,7 @@ from openai import APIConnectionError
 from any_llm import ProviderName, completion
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
+from tests.constants import LOCAL_PROVIDERS
 
 if TYPE_CHECKING:
     from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
@@ -69,6 +70,6 @@ def test_tool(
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in [ProviderName.OLLAMA, ProviderName.LMSTUDIO, ProviderName.LLAMAFILE]:
+        if provider in LOCAL_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise

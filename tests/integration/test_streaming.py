@@ -8,6 +8,7 @@ from any_llm import ProviderName, completion
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.provider import ProviderFactory
 from any_llm.types.completion import ChatCompletionChunk
+from tests.constants import LOCAL_PROVIDERS
 
 
 def test_streaming_completion(
@@ -47,6 +48,6 @@ def test_streaming_completion(
     except UnsupportedParameterError:
         pytest.skip(f"Streaming is not supported for {provider.value}")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in [ProviderName.OLLAMA, ProviderName.LMSTUDIO]:
+        if provider in LOCAL_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise
