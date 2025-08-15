@@ -75,7 +75,7 @@ async def test_streaming_acompletion(
         output = ""
         reasoning = ""
         num_chunks = 0
-        async for result in await acompletion(
+        for result in await acompletion(
             f"{provider.value}/{model_id}",
             **extra_kwargs,
             messages=[
