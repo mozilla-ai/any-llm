@@ -71,6 +71,7 @@ def embedding_provider_model_map() -> dict[ProviderName, str]:
         ProviderName.GOOGLE: "gemini-embedding-001",
         ProviderName.AZURE: "openai/text-embedding-3-small",
         ProviderName.VOYAGE: "voyage-3.5-lite",
+        ProviderName.LLAMACPP: "N/A",
     }
 
 
