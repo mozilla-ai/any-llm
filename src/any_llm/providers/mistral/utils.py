@@ -330,3 +330,16 @@ def _create_openai_embedding_response_from_mistral(
         object="list",
         usage=usage,
     )
+
+
+def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Similar to github.com/pydantic/pydantic-ai/blob/851df07566a339cd0318e933464b971b0fc79d53/pydantic_ai_slim/pydantic_ai/models/mistral.py#L524,
+    we work around mistral requiring an non-user message after a tool message"""
+    processed_msg = []
+    for i, msg in enumerate(messages):
+        processed_msg.append(msg)
+        if msg.get("role") == "tool" and i + 1 < len(messages) and messages[i + 1].get("role") == "user":
+            # Mistral expects an assistant message after a tool message
+            processed_msg.append({"role": "assistant", "content": "OK"})
+
+    return processed_msg

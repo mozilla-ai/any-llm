@@ -53,7 +53,8 @@ def _process_completion_params(
 
     for i, message in enumerate(messages):
         if isinstance(message, ChatCompletionMessage):
-            messages[i] = {"role": message.role, "content": message.content}
+            # Dump the message but exclude the extra field that we extend from OpenAI Spec
+            messages[i] = message.model_dump(exclude_none=True, exclude={"reasoning"})
 
     completion_params = CompletionParams(
         model_id=model_name,
