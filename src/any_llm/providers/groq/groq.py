@@ -5,6 +5,7 @@ from openai import OpenAI, Stream
 from pydantic import BaseModel
 
 from any_llm.types.responses import Response, ResponseStreamEvent
+from any_llm.exceptions import UnsupportedParameterError
 
 try:
     import groq
@@ -104,6 +105,10 @@ class GroqProvider(Provider):
     def responses(self, model: str, input_data: Any, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
         """Call Groq Responses API and normalize into ChatCompletion/Chunks."""
         # Python SDK doesn't yet support it: https://community.groq.com/feature-requests-6/groq-python-sdk-support-for-responses-api-262
+
+        if 'max_tool_calls' in kwargs:
+            raise UnsupportedParameterError("max_tool_calls", "Groq")
+
         client = OpenAI(
             base_url="https://api.groq.com/openai/v1",
             api_key=self.config.api_key,
