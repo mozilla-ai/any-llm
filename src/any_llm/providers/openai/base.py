@@ -109,12 +109,15 @@ class BaseOpenAIProvider(Provider, ABC):
 
         return (_convert_chunk(chunk) for chunk in response)
 
-    def completion(self, params: CompletionParams, **kwargs: Any) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        """Make the API call to OpenAI-compatible service."""
-        client = OpenAI(
+    def _get_client(self) -> OpenAI:
+        return OpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,
         )
+
+    def completion(self, params: CompletionParams, **kwargs: Any) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+        """Make the API call to OpenAI-compatible service."""
+        client = self._get_client()
 
         if params.response_format:
             if params.stream:
@@ -142,10 +145,8 @@ class BaseOpenAIProvider(Provider, ABC):
         For now we only return a non-streaming ChatCompletion, or streaming chunks
         mapped to ChatCompletionChunk using the same converter.
         """
-        client = OpenAI(
-            base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
-            api_key=self.config.api_key,
-        )
+        client = self.get_client()
+
         response = client.responses.create(
             model=model,
             input=input_data,
@@ -167,10 +168,8 @@ class BaseOpenAIProvider(Provider, ABC):
             msg = "This provider does not support embeddings."
             raise NotImplementedError(msg)
 
-        client = OpenAI(
-            base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
-            api_key=self.config.api_key,
-        )
+        client = self._get_client()
+
         return client.embeddings.create(
             model=model,
             input=inputs,
