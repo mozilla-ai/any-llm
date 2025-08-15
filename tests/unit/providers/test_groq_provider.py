@@ -26,6 +26,7 @@ def test_stream_with_response_format_raises() -> None:
             )
         )
 
+
 def test_unsupported_max_tool_calls_parameter() -> None:
     pytest.importorskip("groq")
     from any_llm.providers.groq.groq import GroqProvider

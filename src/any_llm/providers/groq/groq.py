@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING, Any, cast
 from openai import OpenAI, Stream
 from pydantic import BaseModel
 
-from any_llm.types.responses import Response, ResponseStreamEvent
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.types.responses import Response, ResponseStreamEvent
 
 try:
     import groq
@@ -17,7 +17,6 @@ except ImportError:
     PACKAGES_INSTALLED = False
 
 
-from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import Provider
 from any_llm.providers.groq.utils import (
     _create_openai_chunk_from_groq_chunk,
@@ -106,8 +105,9 @@ class GroqProvider(Provider):
         """Call Groq Responses API and normalize into ChatCompletion/Chunks."""
         # Python SDK doesn't yet support it: https://community.groq.com/feature-requests-6/groq-python-sdk-support-for-responses-api-262
 
-        if 'max_tool_calls' in kwargs:
-            raise UnsupportedParameterError("max_tool_calls", "Groq")
+        if "max_tool_calls" in kwargs:
+            parameter = "max_tool_calls"
+            raise UnsupportedParameterError(parameter, self.PROVIDER_NAME)
 
         client = OpenAI(
             base_url="https://api.groq.com/openai/v1",
