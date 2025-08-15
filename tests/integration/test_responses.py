@@ -8,6 +8,7 @@ from any_llm import ProviderName, responses
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
 from any_llm.types.responses import Response
+from tests.constants import LOCAL_PROVIDERS
 
 
 def test_responses(
@@ -27,17 +28,11 @@ def test_responses(
             **extra_kwargs,
             input_data="What's the capital of France? Please think step by step.",
             instructions="Talk like a pirate.",
-            max_tool_calls=3,
-            parallel_tool_calls=True,
-            reasoning={"effort": "medium"},
-            text={
-                "verbosity": "low",
-            },
         )
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in [ProviderName.OLLAMA, ProviderName.LMSTUDIO]:
+        if provider in LOCAL_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise
     assert isinstance(result, Response)

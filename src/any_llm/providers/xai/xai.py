@@ -45,7 +45,7 @@ class XaiProvider(Provider):
                 xai_messages.append(user(message["content"]))
             elif message["role"] == "assistant":
                 args: list[str] = []
-                if message["tool_calls"]:
+                if message.get("tool_calls"):
                     # No idea how to pass tool calls reconstructed in the original protobuf format.
                     args.extend(str(tool_call) for tool_call in message["tool_calls"])
                 xai_messages.append(assistant(*args, message["content"]))

@@ -15,6 +15,7 @@ from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.cohere.utils import (
     _convert_response,
     _create_openai_chunk_from_cohere_chunk,
+    _patch_messages,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 
@@ -86,10 +87,12 @@ class CohereProvider(Provider):
             msg = "parallel_tool_calls"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
 
+        patched_messages = _patch_messages(params.messages)
+
         if params.stream:
             return self._stream_completion(
                 params.model_id,
-                params.messages,
+                patched_messages,
                 **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
                 **kwargs,
             )
@@ -97,7 +100,7 @@ class CohereProvider(Provider):
         # note: ClientV2.chat does not have a `stream` parameter
         response = self.client.chat(
             model=params.model_id,
-            messages=params.messages,  # type: ignore[arg-type]
+            messages=patched_messages,  # type: ignore[arg-type]
             **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream", "response_format"}),
             **kwargs,
         )

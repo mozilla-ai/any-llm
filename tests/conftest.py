@@ -16,6 +16,7 @@ def provider_reasoning_model_map() -> dict[ProviderName, str]:
         ProviderName.XAI: "grok-3-mini-latest",
         ProviderName.OLLAMA: "qwen3:0.6b",
         ProviderName.LLAMAFILE: "N/A",
+        ProviderName.LLAMACPP: "N/A",
         ProviderName.LMSTUDIO: "openai/gpt-oss-20b",  # You must have LM Studio running and the server enabled
     }
 
@@ -41,7 +42,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.LMSTUDIO: "google/gemma-3n-e4b",  # You must have LM Studio running and the server enabled
         ProviderName.COHERE: "command-a-03-2025",
         ProviderName.CEREBRAS: "llama-3.3-70b",
-        ProviderName.HUGGINGFACE: "meta-llama/Llama-3.2-3B-Instruct",  # You must have novita enabled in your hf account to use this model
+        ProviderName.HUGGINGFACE: "huggingface/tgi",  # This is the syntax used in `litellm` when using HF Inference Endpoints (https://docs.litellm.ai/docs/providers/huggingface#dedicated-inference-endpoints)
         ProviderName.AWS: "amazon.nova-lite-v1:0",
         ProviderName.WATSONX: "ibm/granite-3-8b-instruct",
         ProviderName.FIREWORKS: "accounts/fireworks/models/llama4-scout-instruct-basic",
@@ -50,6 +51,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.PORTKEY: "@first-integrati-d8a10f/gpt-4.1-mini",  # Owned by njbrake in portkey UI
         ProviderName.LLAMA: "Llama-4-Maverick-17B-128E-Instruct-FP8",
         ProviderName.AZURE: "openai/gpt-4.1-nano",
+        ProviderName.LLAMACPP: "N/A",
     }
 
 
@@ -69,6 +71,7 @@ def embedding_provider_model_map() -> dict[ProviderName, str]:
         ProviderName.GOOGLE: "gemini-embedding-001",
         ProviderName.AZURE: "openai/text-embedding-3-small",
         ProviderName.VOYAGE: "voyage-3.5-lite",
+        ProviderName.LLAMACPP: "N/A",
     }
 
 
@@ -78,11 +81,14 @@ def provider_extra_kwargs_map() -> dict[ProviderName, dict[str, Any]]:
         ProviderName.AZURE: {
             "api_base": "https://models.github.ai/inference",
         },
+        ProviderName.DATABRICKS: {"api_base": "https://dbc-40d03128-ecae.cloud.databricks.com/serving-endpoints"},
+        ProviderName.HUGGINGFACE: {
+            "api_base": "https://y0okp71n85ezo5nr.us-east-1.aws.endpoints.huggingface.cloud/v1/"
+        },
         ProviderName.WATSONX: {
             "api_base": "https://us-south.ml.cloud.ibm.com",
             "project_id": "5b083ace-95a6-4f95-a0a0-d4c5d9e98ca0",
         },
-        ProviderName.DATABRICKS: {"api_base": "https://dbc-40d03128-ecae.cloud.databricks.com/serving-endpoints"},
     }
 
 

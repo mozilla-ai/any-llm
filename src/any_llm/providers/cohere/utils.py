@@ -11,6 +11,19 @@ from any_llm.types.completion import (
 )
 
 
+def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Patch messages to remove the 'name' field from any tool messages."""
+    # See https://docs.cohere.com/docs/tool-use-overview
+    # In the response from cohere we place the tool plan in the 'content' field of the assistant message.
+    # We have to turn it back into a tool_plan field before sending it to the model.
+    for message in messages:
+        if message["role"] == "tool":
+            message.pop("name", None)
+        if message["role"] == "assistant" and message.get("tool_calls"):
+            message["tool_plan"] = message.pop("content")
+    return messages
+
+
 def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
     """Convert Cohere streaming chunk to OpenAI ChatCompletionChunk format."""
     chunk_dict: dict[str, Any] = {

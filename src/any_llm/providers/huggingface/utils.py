@@ -1,11 +1,9 @@
-import json
 import uuid
-from typing import Any, Literal, cast
+from typing import Literal, cast
 
 from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
     ChatCompletionStreamOutput as HuggingFaceChatCompletionStreamOutput,
 )
-from pydantic import BaseModel
 
 from any_llm.types.completion import (
     ChatCompletionChunk,
@@ -13,41 +11,6 @@ from any_llm.types.completion import (
     ChunkChoice,
     CompletionUsage,
 )
-
-
-def _convert_pydantic_to_huggingface_json(
-    pydantic_model: type[BaseModel], messages: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
-    """
-    Convert Pydantic model to HuggingFace-compatible JSON instructions.
-
-    Following a similar pattern to the DeepSeek provider but adapted for HuggingFace.
-
-    Returns:
-        modified_messages
-    """
-    schema = pydantic_model.model_json_schema()
-
-    modified_messages = messages.copy()
-    if modified_messages and modified_messages[-1]["role"] == "user":
-        original_content = modified_messages[-1]["content"]
-        json_instruction = f"""Answer the following question and format your response as a JSON object matching this schema:
-
-Schema: {json.dumps(schema, indent=2)}
-
-DO NOT return the schema itself. Instead, answer the question and put your answer in the correct JSON format.
-
-For example, if the question asks for a name and you want to answer "Paris", return: {{"name": "Paris"}}
-
-Question: {original_content}
-
-Answer (as JSON):"""
-        modified_messages[-1]["content"] = json_instruction
-    else:
-        msg = "Last message is not a user message"
-        raise ValueError(msg)
-
-    return modified_messages
 
 
 def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletionStreamOutput) -> ChatCompletionChunk:

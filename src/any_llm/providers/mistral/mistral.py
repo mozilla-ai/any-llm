@@ -12,7 +12,7 @@ except ImportError:
 from pydantic import BaseModel
 
 from any_llm.provider import Provider
-from any_llm.providers.mistral.utils import _create_mistral_completion_from_response
+from any_llm.providers.mistral.utils import _create_mistral_completion_from_response, _patch_messages
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 
 if TYPE_CHECKING:
@@ -61,6 +61,8 @@ class MistralProvider(Provider):
         """Create a chat completion using Mistral."""
         client = Mistral(api_key=self.config.api_key, server_url=self.config.api_base)
 
+        patched_messages = _patch_messages(params.messages)
+
         if (
             params.response_format is not None
             and isinstance(params.response_format, type)
@@ -71,7 +73,7 @@ class MistralProvider(Provider):
         if not params.stream:
             response = client.chat.complete(
                 model=params.model_id,
-                messages=params.messages,  # type: ignore[arg-type]
+                messages=patched_messages,  # type: ignore[arg-type]
                 **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
                 **kwargs,
             )
@@ -80,7 +82,7 @@ class MistralProvider(Provider):
                 response_data=response,
                 model=params.model_id,
             )
-        return self._stream_completion(client, params.model_id, params.messages, **kwargs)
+        return self._stream_completion(client, params.model_id, patched_messages, **kwargs)
 
     def embedding(
         self,

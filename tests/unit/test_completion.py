@@ -4,7 +4,7 @@ import pytest
 
 from any_llm import completion
 from any_llm.provider import ApiConfig, Provider, ProviderFactory, ProviderName
-from any_llm.types.completion import CompletionParams
+from any_llm.types.completion import ChatCompletionMessage, CompletionParams, Reasoning
 
 
 def test_completion_invalid_model_format_no_slash() -> None:
@@ -44,6 +44,26 @@ def test_completion_invalid_model_format_multiple_slashes() -> None:
         assert args[0].model_id == "model/extra"
         assert args[0].messages == [{"role": "user", "content": "Hello"}]
         assert kwargs == {}
+
+
+def test_completion_converts_chat_message_to_dict() -> None:
+    mock_provider = Mock()
+    mock_provider.completion.return_value = Mock()
+
+    with patch("any_llm.utils.api.ProviderFactory") as mock_factory:
+        mock_factory.get_supported_providers.return_value = ["provider"]
+        mock_factory.get_provider_enum.return_value = ProviderName.OPENAI
+        mock_factory.split_model_provider.return_value = (ProviderName.OPENAI, "gpt-4o")
+        mock_factory.create_provider.return_value = mock_provider
+
+        msg = ChatCompletionMessage(role="assistant", content="Hello", reasoning=Reasoning(content="Thinking..."))
+        completion("provider/gpt-4o", messages=[msg])
+
+        mock_provider.completion.assert_called_once()
+        args, _ = mock_provider.completion.call_args
+        assert isinstance(args[0], CompletionParams)
+        # reasoning shouldn't show up because it gets stripped out and only role and content are sent
+        assert args[0].messages == [{"role": "assistant", "content": "Hello"}]
 
 
 def test_all_providers_can_be_loaded(provider: str) -> None:

@@ -1,16 +1,16 @@
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel
 
 from any_llm.provider import ApiConfig, Provider, ProviderFactory
 from any_llm.tools import prepare_tools
-from any_llm.types.completion import CompletionParams
+from any_llm.types.completion import ChatCompletionMessage, CompletionParams
 
 
 def _process_completion_params(
     model: str,
-    messages: list[dict[str, Any]],
+    messages: list[dict[str, Any] | ChatCompletionMessage],
     tools: list[dict[str, Any] | Callable[..., Any]] | None,
     tool_choice: str | dict[str, Any] | None,
     temperature: float | None,
@@ -51,9 +51,14 @@ def _process_completion_params(
     if tools:
         prepared_tools = prepare_tools(tools)
 
+    for i, message in enumerate(messages):
+        if isinstance(message, ChatCompletionMessage):
+            # Dump the message but exclude the extra field that we extend from OpenAI Spec
+            messages[i] = message.model_dump(exclude_none=True, exclude={"reasoning"})
+
     completion_params = CompletionParams(
         model_id=model_name,
-        messages=messages,
+        messages=cast("list[dict[str, Any]]", messages),
         tools=prepared_tools,
         tool_choice=tool_choice,
         temperature=temperature,
