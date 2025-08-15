@@ -160,11 +160,20 @@ class Provider(ABC):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        return await asyncio.to_thread(
+        response = await asyncio.to_thread(
             self.completion,
             params,
             **kwargs,
         )
+
+        if isinstance(response, ChatCompletion):
+            return response
+        
+        async def async_generator() -> AsyncIterator[ChatCompletionChunk]:
+            async for chunk in response:
+                yield chunk
+
+        return async_generator()
 
     def responses(
         self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
@@ -180,7 +189,16 @@ class Provider(ABC):
     async def aresponses(
         self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
-        return await asyncio.to_thread(self.responses, model, input_data, **kwargs)
+        response = await asyncio.to_thread(self.responses, model, input_data, **kwargs)
+
+        if isinstance(response, Response):
+            return response
+        
+        async def async_generator() -> AsyncIterator[ResponseStreamEvent]:
+            async for chunk in response:
+                yield chunk
+
+        return async_generator()
 
     def embedding(
         self,
