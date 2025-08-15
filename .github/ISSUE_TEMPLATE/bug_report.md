@@ -13,6 +13,6 @@ Thanks for taking the time to report a bug! Please fill out the following fields
 **OS & Runtime**:
 
 ### Describe the bug
-A clear and concise description of what the bug is.
+A clear and concise description of what the bug is. Please include the error message and stack trace if available.
 
 ### Example w/ Code
