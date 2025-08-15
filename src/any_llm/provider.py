@@ -52,6 +52,7 @@ class ProviderName(str, Enum):
     VOYAGE = "voyage"
     WATSONX = "watsonx"
     XAI = "xai"
+    PERPLEXITY = "perplexity"
 
 
 class ApiConfig(BaseModel):
