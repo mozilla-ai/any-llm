@@ -35,7 +35,7 @@ class HuggingfaceProvider(Provider):
 
     PROVIDER_NAME = "huggingface"
     ENV_API_KEY_NAME = "HF_TOKEN"
-    PROVIDER_DOCUMENTATION_URL = "https://huggingface.co/inference-endpoints"
+    PROVIDER_DOCUMENTATION_URL = "https://huggingface.co/docs/huggingface_hub/package_reference/inference_client"
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
@@ -67,7 +67,9 @@ class HuggingfaceProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using HuggingFace."""
-        client = InferenceClient(token=self.config.api_key, timeout=kwargs.get("timeout"))
+        client = InferenceClient(
+            base_url=self.config.api_base, token=self.config.api_key, timeout=kwargs.get("timeout")
+        )
 
         if params.max_tokens is not None:
             kwargs["max_new_tokens"] = params.max_tokens
