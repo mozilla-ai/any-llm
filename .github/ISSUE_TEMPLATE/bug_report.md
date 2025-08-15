@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-Thanks for taking the time to report a bug! Please fill out the following fields so we can triage it quickly.
+<!-- Thanks for taking the time to report a bug! Please fill out the following fields so we can triage it quickly. -->
 
 **`any-llm` version:**
 **Python Version**:
