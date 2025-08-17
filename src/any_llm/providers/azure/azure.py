@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 class AzureProvider(Provider):
     """Azure Provider using the official Azure AI Inference SDK."""
 
+    PROVIDER_LABEL = "Azure"
     PROVIDER_NAME = "azure"
     ENV_API_KEY_NAME = "AZURE_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://azure.microsoft.com/en-us/products/ai-services/openai-service"
@@ -34,6 +35,7 @@ class AzureProvider(Provider):
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
+    SUPPORTS_LIST_MODELS = False
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 

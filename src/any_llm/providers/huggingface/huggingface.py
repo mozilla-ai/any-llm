@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 class HuggingfaceProvider(Provider):
     """HuggingFace Provider using the new response conversion utilities."""
 
+    PROVIDER_LABEL = "Hugging Face"
     PROVIDER_NAME = "huggingface"
     ENV_API_KEY_NAME = "HF_TOKEN"
     PROVIDER_DOCUMENTATION_URL = "https://huggingface.co/docs/huggingface_hub/package_reference/inference_client"
@@ -40,6 +41,7 @@ class HuggingfaceProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
+    SUPPORTS_LIST_MODELS = False
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 

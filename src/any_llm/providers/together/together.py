@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
 
 class TogetherProvider(Provider):
+    PROVIDER_LABEL = "Together"
     PROVIDER_NAME = "together"
     ENV_API_KEY_NAME = "TOGETHER_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://together.ai/"
@@ -38,6 +39,7 @@ class TogetherProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
+    SUPPORTS_LIST_MODELS = False
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 

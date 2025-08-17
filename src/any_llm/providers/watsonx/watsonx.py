@@ -24,6 +24,7 @@ from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, Comple
 class WatsonxProvider(Provider):
     """IBM Watsonx Provider using the official IBM Watsonx AI SDK."""
 
+    PROVIDER_LABEL = "IBM Watsonx"
     PROVIDER_NAME = "watsonx"
     ENV_API_KEY_NAME = "WATSONX_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://www.ibm.com/watsonx"
@@ -33,6 +34,7 @@ class WatsonxProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
+    SUPPORTS_LIST_MODELS = False
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 

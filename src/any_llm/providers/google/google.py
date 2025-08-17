@@ -39,6 +39,7 @@ from any_llm.types.completion import (
 class GoogleProvider(Provider):
     """Google Provider using the new response conversion utilities."""
 
+    PROVIDER_LABEL = "Google Vertex AI / Gemini"
     PROVIDER_NAME = "google"
     PROVIDER_DOCUMENTATION_URL = "https://cloud.google.com/vertex-ai/docs"
     ENV_API_KEY_NAME = "GOOGLE_API_KEY/GEMINI_API_KEY"
@@ -48,6 +49,7 @@ class GoogleProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = True
+    SUPPORTS_LIST_MODELS = False
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 

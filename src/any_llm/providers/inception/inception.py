@@ -2,6 +2,7 @@ from any_llm.providers.openai.base import BaseOpenAIProvider
 
 
 class InceptionProvider(BaseOpenAIProvider):
+    PROVIDER_LABEL = "Inception"
     API_BASE = "https://api.inceptionlabs.ai/v1"
     ENV_API_KEY_NAME = "INCEPTION_API_KEY"
     PROVIDER_NAME = "inception"

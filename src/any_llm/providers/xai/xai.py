@@ -22,6 +22,7 @@ except ImportError:
 
 
 class XaiProvider(Provider):
+    PROVIDER_LABEL = "xAI (Grok)"
     API_BASE = "https://api.x.ai/v1"
     ENV_API_KEY_NAME = "XAI_API_KEY"
     PROVIDER_NAME = "xai"
@@ -32,6 +33,7 @@ class XaiProvider(Provider):
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_RESPONSES = False
     SUPPORTS_EMBEDDING = False
+    SUPPORTS_LIST_MODELS = False
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 

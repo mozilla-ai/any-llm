@@ -1,6 +1,6 @@
 import os
 from abc import ABC
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any, cast
 
 from openai import OpenAI
@@ -12,6 +12,7 @@ from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenA
 from any_llm.logging import logger
 from any_llm.provider import Provider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+from any_llm.types.model import ModelMetadata
 from any_llm.types.responses import Response, ResponseStreamEvent
 
 
@@ -29,6 +30,7 @@ class BaseOpenAIProvider(Provider, ABC):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = True
+    SUPPORTS_LIST_MODELS = False
 
     PACKAGES_INSTALLED = True
 
@@ -177,3 +179,17 @@ class BaseOpenAIProvider(Provider, ABC):
             dimensions=kwargs.get("dimensions", NOT_GIVEN),
             **kwargs,
         )
+
+    def models(self, **kwargs: Any) -> Sequence[ModelMetadata]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        if not self.SUPPORTS_LIST_MODELS:
+            message = f"{self.PROVIDER_NAME} does not support listing models."
+            raise NotImplementedError(message)
+        client = OpenAI(
+            base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
+            api_key=self.config.api_key,
+        )
+        openai_models = client.models.list(**kwargs).data
+        return [ModelMetadata.model_validate(m.model_dump()) for m in openai_models]

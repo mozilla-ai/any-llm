@@ -23,6 +23,7 @@ from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, Comple
 class CohereProvider(Provider):
     """Cohere Provider using the new response conversion utilities."""
 
+    PROVIDER_LABEL = "Cohere"
     PROVIDER_NAME = "cohere"
     ENV_API_KEY_NAME = "CO_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://cohere.com/api"
@@ -32,6 +33,7 @@ class CohereProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
+    SUPPORTS_LIST_MODELS = False
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 

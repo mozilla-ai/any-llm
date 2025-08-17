@@ -3,7 +3,7 @@ import asyncio
 import importlib
 import os
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -17,6 +17,7 @@ from any_llm.types.completion import (
     CompletionParams,
     CreateEmbeddingResponse,
 )
+from any_llm.types.model import ModelMetadata
 from any_llm.types.provider import ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
 
@@ -68,6 +69,9 @@ class Provider(ABC):
     PROVIDER_NAME: str
     """Must match the name of the provider directory  (case sensitive)"""
 
+    PROVIDER_LABEL: str
+    """Human-readable label for the provider"""
+
     PROVIDER_DOCUMENTATION_URL: str
     """Link to the provider's documentation"""
 
@@ -89,6 +93,9 @@ class Provider(ABC):
 
     SUPPORTS_RESPONSES: bool
     """OpenAI Responses API"""
+
+    SUPPORTS_LIST_MODELS: bool
+    """OpenAI Models API"""
 
     API_BASE: str | None = None
     """This is used to set the API base for the provider.
@@ -127,6 +134,7 @@ class Provider(ABC):
         """
         return ProviderMetadata(
             name=cls.PROVIDER_NAME,
+            label=cls.PROVIDER_LABEL,
             env_key=cls.ENV_API_KEY_NAME,
             doc_url=cls.PROVIDER_DOCUMENTATION_URL,
             streaming=cls.SUPPORTS_COMPLETION_STREAMING,
@@ -134,6 +142,7 @@ class Provider(ABC):
             completion=cls.SUPPORTS_COMPLETION,
             embedding=cls.SUPPORTS_EMBEDDING,
             responses=cls.SUPPORTS_RESPONSES,
+            list_models=cls.SUPPORTS_LIST_MODELS,
             class_name=cls.__name__,
         )
 
@@ -198,6 +207,19 @@ class Provider(ABC):
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         return await asyncio.to_thread(self.embedding, model, inputs, **kwargs)
+
+    def models(self, **kwargs: Any) -> Sequence[ModelMetadata]:
+        """
+        Return a list of ModelMetadata if the provider supports listing models.
+        Should be overridden by subclasses.
+        """
+        msg = "Subclasses must implement models method"
+        if not self.SUPPORTS_LIST_MODELS:
+            raise NotImplementedError(msg)
+        raise NotImplementedError(msg)
+
+    async def amodels(self, **kwargs: Any) -> Sequence[ModelMetadata]:
+        return await asyncio.to_thread(self.models, **kwargs)
 
 
 class ProviderFactory:
