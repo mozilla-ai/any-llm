@@ -4,7 +4,7 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import ProviderName, embedding, aembedding
+from any_llm import ProviderName, aembedding, embedding
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
 from any_llm.types.completion import CreateEmbeddingResponse
@@ -40,6 +40,7 @@ def test_embedding_providers(
     if provider not in (ProviderName.GOOGLE, ProviderName.LMSTUDIO):
         assert result.usage.prompt_tokens > 0
         assert result.usage.total_tokens > 0
+
 
 @pytest.mark.asyncio
 async def test_embedding_providers_async(

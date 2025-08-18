@@ -4,7 +4,7 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import ProviderName, responses, aresponses
+from any_llm import ProviderName, aresponses, responses
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
 from any_llm.types.responses import Response
@@ -38,6 +38,7 @@ def test_responses(
     assert isinstance(result, Response)
     assert result.output_text is not None
     assert result.reasoning is not None
+
 
 @pytest.mark.asyncio
 async def test_responses_async(
