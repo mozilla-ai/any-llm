@@ -68,9 +68,12 @@ class AwsProvider(Provider):
 
         client = boto3.client("bedrock-runtime", endpoint_url=self.config.api_base, region_name=self.region_name)  # type: ignore[no-untyped-call]
 
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         completion_kwargs = params.model_dump(
             exclude_none=True,
-            exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream", "parallel_tool_calls"},
+            exclude={"model_id", "messages", "response_format", "stream", "parallel_tool_calls"},
         )
         if params.response_format:
             if params.stream:

@@ -57,7 +57,7 @@ class GroqProvider(Provider):
         stream: GroqAsyncStream[GroqChatCompletionChunk] = await client.chat.completions.create(
             model=params.model_id,
             messages=cast("Any", params.messages),
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "reasoning_effort"}),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages"}),
             **kwargs,
         )
 
@@ -80,7 +80,7 @@ class GroqProvider(Provider):
         stream: GroqStream[GroqChatCompletionChunk] = client.chat.completions.create(
             model=params.model_id,
             messages=cast("Any", params.messages),
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "reasoning_effort"}),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages"}),
             **kwargs,
         )
         for chunk in stream:
@@ -92,6 +92,9 @@ class GroqProvider(Provider):
         """Create a chat completion using Groq."""
         client = groq.AsyncGroq(api_key=self.config.api_key)
 
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         if params.response_format:
             instructor_client = instructor.from_groq(client, mode=instructor.Mode.JSON)
             if not isinstance(params.response_format, type) or not issubclass(params.response_format, BaseModel):
@@ -101,7 +104,7 @@ class GroqProvider(Provider):
                 model=params.model_id,
                 messages=params.messages,  # type: ignore[arg-type]
                 response_model=params.response_format,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream", "reasoning_effort"}),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
                 **kwargs,
             )
             return _convert_instructor_response(instructor_response, params.model_id, self.PROVIDER_NAME)
@@ -115,7 +118,7 @@ class GroqProvider(Provider):
         response: GroqChatCompletion = await client.chat.completions.create(
             model=params.model_id,
             messages=cast("Any", params.messages),
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream", "reasoning_effort"}),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
             **kwargs,
         )
 
@@ -129,6 +132,9 @@ class GroqProvider(Provider):
         """Create a chat completion using Groq."""
         client = groq.Groq(api_key=self.config.api_key)
 
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         if params.response_format:
             instructor_client = instructor.from_groq(client, mode=instructor.Mode.JSON)
             if not isinstance(params.response_format, type) or not issubclass(params.response_format, BaseModel):
@@ -138,7 +144,7 @@ class GroqProvider(Provider):
                 model=params.model_id,
                 messages=params.messages,  # type: ignore[arg-type]
                 response_model=params.response_format,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream", "reasoning_effort"}),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
                 **kwargs,
             )
             return _convert_instructor_response(instructor_response, params.model_id, self.PROVIDER_NAME)
@@ -152,7 +158,7 @@ class GroqProvider(Provider):
         response: GroqChatCompletion = client.chat.completions.create(
             model=params.model_id,
             messages=cast("Any", params.messages),
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "stream"}),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
             **kwargs,
         )
 

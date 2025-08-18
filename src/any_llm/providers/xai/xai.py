@@ -66,6 +66,9 @@ class XaiProvider(Provider):
         elif tool_choice is not None:
             kwargs["tool_choice"] = tool_choice
 
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         chat = client.chat.create(
             model=params.model_id,
             messages=xai_messages,
@@ -75,7 +78,6 @@ class XaiProvider(Provider):
                     "model_id",
                     "messages",
                     "stream",
-                    "reasoning_effort",
                     "response_format",
                     "tools",
                     "tool_choice",

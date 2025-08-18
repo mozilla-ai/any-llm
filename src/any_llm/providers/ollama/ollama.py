@@ -123,10 +123,11 @@ class OllamaProvider(Provider):
 
             cleaned_messages.append(cleaned_message)
 
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         kwargs = {
-            **params.model_dump(
-                exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
-            ),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
             **kwargs,
         }
 
@@ -184,10 +185,11 @@ class OllamaProvider(Provider):
 
             cleaned_messages.append(cleaned_message)
 
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         kwargs = {
-            **params.model_dump(
-                exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
-            ),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
             **kwargs,
         }
 

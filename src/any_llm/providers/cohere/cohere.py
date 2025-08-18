@@ -90,6 +90,9 @@ class CohereProvider(Provider):
     async def acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         if params.response_format is not None:
             kwargs["response_format"] = self._preprocess_response_format(params.response_format)
         if params.stream and params.response_format is not None:
@@ -105,9 +108,7 @@ class CohereProvider(Provider):
             return self._stream_completion_async(
                 params.model_id,
                 patched_messages,
-                **params.model_dump(
-                    exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
-                ),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
                 **kwargs,
             )
 
@@ -117,9 +118,7 @@ class CohereProvider(Provider):
         response = await client.chat(
             model=params.model_id,
             messages=patched_messages,  # type: ignore[arg-type]
-            **params.model_dump(
-                exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "stream", "response_format"}
-            ),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "", "stream", "response_format"}),
             **kwargs,
         )
 
@@ -131,6 +130,9 @@ class CohereProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Cohere."""
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         if params.response_format is not None:
             kwargs["response_format"] = self._preprocess_response_format(params.response_format)
         if params.stream and params.response_format is not None:
@@ -146,9 +148,7 @@ class CohereProvider(Provider):
             return self._stream_completion(
                 params.model_id,
                 patched_messages,
-                **params.model_dump(
-                    exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
-                ),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
                 **kwargs,
             )
 
@@ -156,9 +156,7 @@ class CohereProvider(Provider):
         response = self.client.chat(
             model=params.model_id,
             messages=patched_messages,  # type: ignore[arg-type]
-            **params.model_dump(
-                exclude_none=True, exclude={"model_id", "messages", "stream", "reasoning_effort", "response_format"}
-            ),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream", "response_format"}),
             **kwargs,
         )
 
