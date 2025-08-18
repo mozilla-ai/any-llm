@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -69,7 +70,7 @@ async def test_streaming_completion_async(
         output = ""
         reasoning = ""
         num_chunks = 0
-        async for result in await acompletion(
+        stream = await acompletion(
             f"{provider.value}/{model_id}",
             **extra_kwargs,
             messages=[
@@ -77,15 +78,21 @@ async def test_streaming_completion_async(
                 {"role": "user", "content": "Say the exact phrase:'Hello World' with no fancy formatting"},
             ],
             stream=True,
-        ):
-            num_chunks += 1
-            assert isinstance(result, ChatCompletionChunk)
-            if len(result.choices) > 0:
-                output += result.choices[0].delta.content or ""
-                if result.choices[0].delta.reasoning:
-                    reasoning += result.choices[0].delta.reasoning.content or ""
-        assert num_chunks >= 2, f"Expected at least 2 chunks, got {num_chunks}"
-        assert "hello world" in output.lower()
+        )
+
+        if isinstance(stream, AsyncIterator):
+            async for result in stream:
+                num_chunks += 1
+                assert isinstance(result, ChatCompletionChunk)
+                if len(result.choices) > 0:
+                    output += result.choices[0].delta.content or ""
+                    if result.choices[0].delta.reasoning:
+                        reasoning += result.choices[0].delta.reasoning.content or ""
+            assert num_chunks >= 2, f"Expected at least 2 chunks, got {num_chunks}"
+            assert "hello world" in output.lower()
+        else:
+            msg = f"Expected AsyncIterator[ChatCompletionChunk], not {type(stream)}"
+            raise TypeError(msg)
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except UnsupportedParameterError:
