@@ -56,6 +56,14 @@ class MistralProvider(Provider):
         for event in mistral_stream:
             yield _create_openai_chunk_from_mistral_chunk(event)
 
+    async def _stream_completion_async(
+        self, client: Mistral, model: str, messages: list[dict[str, Any]], **kwargs: Any
+    ) -> AsyncIterator[ChatCompletionChunk]:
+        mistral_stream = await client.chat.stream_async(model=model, messages=messages, **kwargs)  # type: ignore[arg-type]
+
+        async for event in mistral_stream:
+            yield _create_openai_chunk_from_mistral_chunk(event)
+
     async def acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
@@ -68,31 +76,28 @@ class MistralProvider(Provider):
         ):
             kwargs["response_format"] = response_format_from_pydantic_model(params.response_format)
 
-        async with Mistral(api_key=self.config.api_key, server_url=self.config.api_base) as client:
-            if params.stream:
-                mistral_stream = client.chat.stream(
-                    model=params.model_id,
-                    messages=patched_messages,
-                    **kwargs,
-                )
+        client = Mistral(api_key=self.config.api_key, server_url=self.config.api_base)
 
-                async def _stream() -> AsyncIterator[ChatCompletionChunk]:
-                    async for chunk in mistral_stream:
-                        yield _create_openai_chunk_from_mistral_chunk(chunk)
-
-                return _stream()
-
-            response = await client.chat.complete_async(
-                model=params.model_id,
-                messages=patched_messages,
+        if params.stream:
+            return self._stream_completion_async(
+                client,
+                params.model_id,
+                patched_messages,
                 **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
                 **kwargs,
             )
 
-            return _create_mistral_completion_from_response(
-                response_data=response,
-                model=params.model_id,
-            )
+        response = await client.chat.complete_async(
+            model=params.model_id,
+            messages=patched_messages,  # type: ignore[arg-type]
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+            **kwargs,
+        )
+
+        return _create_mistral_completion_from_response(
+            response_data=response,
+            model=params.model_id,
+        )
 
     def completion(
         self,
@@ -123,7 +128,14 @@ class MistralProvider(Provider):
                 response_data=response,
                 model=params.model_id,
             )
-        return self._stream_completion(client, params.model_id, patched_messages, **kwargs)
+
+        return self._stream_completion(
+            client,
+            params.model_id,
+            patched_messages,
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+            **kwargs,
+        )
 
     def embedding(
         self,
