@@ -59,17 +59,8 @@ def test_completion_with_slash_syntax_shows_warning() -> None:
 
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        with patch("any_llm.utils.api.ProviderFactory") as mock_factory:
-            mock_factory.split_model_provider.side_effect = lambda model: (
-                warnings.warn(
-                    f"Model format 'provider/model' is deprecated and will be removed in version 1.0. "
-                    f"Please use 'provider:model' format instead. Got: '{model}'",
-                    DeprecationWarning,
-                    stacklevel=3,
-                ),
-                (ProviderName.OPENAI, "gpt-4"),
-            )[1]
-            mock_factory.create_provider.return_value = mock_provider
+        with patch("any_llm.utils.api.ProviderFactory.create_provider") as mock_create:
+            mock_create.return_value = mock_provider
 
             completion("openai/gpt-4", messages=[{"role": "user", "content": "Hello"}])
             assert len(w) == 1
