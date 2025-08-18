@@ -46,7 +46,7 @@ class AnthropicProvider(Provider):
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
     async def _stream_completion_async(
-        self, client: AsyncAnthropic, model: str, messages: list[dict[str, Any]], **kwargs: Any
+        self, client: "AsyncAnthropic", model: str, messages: list[dict[str, Any]], **kwargs: Any
     ) -> AsyncIterator[ChatCompletionChunk]:
         if kwargs.get("response_format", None):
             msg = "stream and response_format"
