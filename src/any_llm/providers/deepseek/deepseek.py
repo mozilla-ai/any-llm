@@ -1,7 +1,5 @@
-from collections.abc import Iterator, AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
-
-from pydantic import BaseModel
 
 from any_llm.providers.deepseek.utils import _preprocess_messages
 from any_llm.providers.openai.base import BaseOpenAIProvider
