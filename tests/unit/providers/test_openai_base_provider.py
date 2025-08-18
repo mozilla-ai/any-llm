@@ -4,6 +4,7 @@ from any_llm.provider import ApiConfig
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.model import Model
 
+
 @patch("any_llm.providers.openai.base.OpenAI")
 def test_list_models_returns_model_list_when_supported(mock_openai_class: MagicMock) -> None:
     class ListModelsProvider(BaseOpenAIProvider):
