@@ -15,6 +15,7 @@ def completion(
     model: str,
     messages: list[dict[str, Any] | ChatCompletionMessage],
     *,
+    provider: str | ProviderName | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     temperature: float | None = None,
@@ -43,7 +44,11 @@ def completion(
     """Create a chat completion.
 
     Args:
-        model: Model identifier in format 'provider/model' (e.g., 'mistral/mistral-small')
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='gpt-4', provider='openai').
+            **Alternative**: Combined format 'provider:model' (e.g., 'openai:gpt-4').
+            Legacy format 'provider/model' is also supported but deprecated.
+        provider: **Recommended**: Provider name to use for the request (e.g., 'openai', 'mistral').
+            When provided, the model parameter should contain only the model name.
         messages: List of messages for the conversation
         tools: List of tools for tool calling. Can be Python callables or OpenAI tool format dicts
         tool_choice: Controls which tools the model can call
@@ -74,8 +79,9 @@ def completion(
         The completion response from the provider
 
     """
-    provider, completion_params = _process_completion_params(
+    provider_instance, completion_params = _process_completion_params(
         model=model,
+        provider=provider,
         messages=messages,
         tools=tools,
         tool_choice=tool_choice,
@@ -103,13 +109,14 @@ def completion(
         **kwargs,
     )
 
-    return provider.completion(completion_params, **kwargs)
+    return provider_instance.completion(completion_params, **kwargs)
 
 
 async def acompletion(
     model: str,
     messages: list[dict[str, Any] | ChatCompletionMessage],
     *,
+    provider: str | ProviderName | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     temperature: float | None = None,
@@ -138,7 +145,11 @@ async def acompletion(
     """Create a chat completion asynchronously.
 
     Args:
-        model: Model identifier in format 'provider/model' (e.g., 'mistral/mistral-small')
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='gpt-4', provider='openai').
+            **Alternative**: Combined format 'provider:model' (e.g., 'openai:gpt-4').
+            Legacy format 'provider/model' is also supported but deprecated.
+        provider: **Recommended**: Provider name to use for the request (e.g., 'openai', 'mistral').
+            When provided, the model parameter should contain only the model name.
         messages: List of messages for the conversation
         tools: List of tools for tool calling. Can be Python callables or OpenAI tool format dicts
         tool_choice: Controls which tools the model can call
@@ -169,8 +180,9 @@ async def acompletion(
         The completion response from the provider
 
     """
-    provider, completion_params = _process_completion_params(
+    provider_instance, completion_params = _process_completion_params(
         model=model,
+        provider=provider,
         messages=messages,
         tools=tools,
         tool_choice=tool_choice,
@@ -198,13 +210,14 @@ async def acompletion(
         **kwargs,
     )
 
-    return await provider.acompletion(completion_params, **kwargs)
+    return await provider_instance.acompletion(completion_params, **kwargs)
 
 
 def responses(
     model: str,
     input_data: str | ResponseInputParam,
     *,
+    provider: str | ProviderName | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     max_output_tokens: int | None = None,
@@ -229,7 +242,8 @@ def responses(
     `any_llm.types.responses.ResponseStreamEvent` items is returned.
 
     Args:
-        model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o')
+        model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
+        provider: Provider name to use for the request. If provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai:gpt-4o'.
         input_data: The input payload accepted by provider's Responses API.
             For OpenAI-compatible providers, this is typically a list mixing
             text, images, and tool instructions, or a dict per OpenAI spec.
@@ -259,7 +273,11 @@ def responses(
         NotImplementedError: If the selected provider does not support the Responses API.
 
     """
-    provider_key, model_name = ProviderFactory.split_model_provider(model)
+    if provider is None:
+        provider_key, model_name = ProviderFactory.split_model_provider(model)
+    else:
+        provider_key = ProviderName.from_string(provider)
+        model_name = model
 
     config: dict[str, str] = {}
     if api_key:
@@ -268,7 +286,7 @@ def responses(
         config["api_base"] = str(api_base)
     api_config = ApiConfig(**config)
 
-    provider = ProviderFactory.create_provider(provider_key, api_config)
+    provider_instance = ProviderFactory.create_provider(provider_key, api_config)
 
     responses_kwargs = kwargs.copy()
     if tools is not None:
@@ -298,13 +316,14 @@ def responses(
     if text is not None:
         responses_kwargs["text"] = text
 
-    return provider.responses(model_name, input_data, **responses_kwargs)
+    return provider_instance.responses(model_name, input_data, **responses_kwargs)
 
 
 async def aresponses(
     model: str,
     input_data: str | ResponseInputParam,
     *,
+    provider: str | ProviderName | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     max_output_tokens: int | None = None,
@@ -329,7 +348,8 @@ async def aresponses(
     `any_llm.types.responses.ResponseStreamEvent` items is returned.
 
     Args:
-        model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o')
+        model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
+        provider: Provider name to use for the request. If provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai:gpt-4o'.
         input_data: The input payload accepted by provider's Responses API.
             For OpenAI-compatible providers, this is typically a list mixing
             text, images, and tool instructions, or a dict per OpenAI spec.
@@ -359,7 +379,11 @@ async def aresponses(
         NotImplementedError: If the selected provider does not support the Responses API.
 
     """
-    provider_key, model_name = ProviderFactory.split_model_provider(model)
+    if provider is None:
+        provider_key, model_name = ProviderFactory.split_model_provider(model)
+    else:
+        provider_key = ProviderName.from_string(provider)
+        model_name = model
 
     config: dict[str, str] = {}
     if api_key:
@@ -368,7 +392,7 @@ async def aresponses(
         config["api_base"] = str(api_base)
     api_config = ApiConfig(**config)
 
-    provider = ProviderFactory.create_provider(provider_key, api_config)
+    provider_instance = ProviderFactory.create_provider(provider_key, api_config)
 
     responses_kwargs = kwargs.copy()
     if tools is not None:
@@ -398,13 +422,14 @@ async def aresponses(
     if text is not None:
         responses_kwargs["text"] = text
 
-    return await provider.aresponses(model_name, input_data, **responses_kwargs)
+    return await provider_instance.aresponses(model_name, input_data, **responses_kwargs)
 
 
 def embedding(
     model: str,
     inputs: str | list[str],
     *,
+    provider: str | ProviderName | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     **kwargs: Any,
@@ -412,7 +437,11 @@ def embedding(
     """Create an embedding.
 
     Args:
-        model: Model identifier in format 'provider/model' (e.g., 'mistral/mistral-small')
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='gpt-4', provider='openai').
+            **Alternative**: Combined format 'provider:model' (e.g., 'openai:gpt-4').
+            Legacy format 'provider/model' is also supported but deprecated.
+        provider: **Recommended**: Provider name to use for the request (e.g., 'openai', 'mistral').
+            When provided, the model parameter should contain only the model name.
         inputs: The input text to embed
         api_key: API key for the provider
         api_base: Base URL for the provider API
@@ -422,7 +451,11 @@ def embedding(
         The embedding of the input text
 
     """
-    provider_key, model_name = ProviderFactory.split_model_provider(model)
+    if provider is None:
+        provider_key, model_name = ProviderFactory.split_model_provider(model)
+    else:
+        provider_key = ProviderName.from_string(provider)
+        model_name = model
 
     config: dict[str, str] = {}
     if api_key:
@@ -431,15 +464,16 @@ def embedding(
         config["api_base"] = str(api_base)
     api_config = ApiConfig(**config)
 
-    provider = ProviderFactory.create_provider(provider_key, api_config)
+    provider_instance = ProviderFactory.create_provider(provider_key, api_config)
 
-    return provider.embedding(model_name, inputs, **kwargs)
+    return provider_instance.embedding(model_name, inputs, **kwargs)
 
 
 async def aembedding(
     model: str,
     inputs: str | list[str],
     *,
+    provider: str | ProviderName | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     **kwargs: Any,
@@ -447,7 +481,8 @@ async def aembedding(
     """Create an embedding asynchronously.
 
     Args:
-        model: Model identifier in format 'provider/model' (e.g., 'openai/text-embedding-3-small')
+        model: Model identifier in format 'provider/model' (e.g., 'openai/text-embedding-3-small'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
+        provider: Provider name to use for the request. If provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai:gpt-4o'.
         inputs: The input text to embed
         api_key: API key for the provider
         api_base: Base URL for the provider API
@@ -457,7 +492,11 @@ async def aembedding(
         The embedding of the input text
 
     """
-    provider_key, model_name = ProviderFactory.split_model_provider(model)
+    if provider is None:
+        provider_key, model_name = ProviderFactory.split_model_provider(model)
+    else:
+        provider_key = ProviderName.from_string(provider)
+        model_name = model
 
     config: dict[str, str] = {}
     if api_key:
@@ -466,18 +505,20 @@ async def aembedding(
         config["api_base"] = str(api_base)
     api_config = ApiConfig(**config)
 
-    provider = ProviderFactory.create_provider(provider_key, api_config)
+    provider_instance = ProviderFactory.create_provider(provider_key, api_config)
 
-    return await provider.aembedding(model_name, inputs, **kwargs)
+    return await provider_instance.aembedding(model_name, inputs, **kwargs)
 
 
-def list_models(provider: ProviderName) -> Sequence[Model]:
+def list_models(provider: str | ProviderName) -> Sequence[Model]:
     """List available models for a provider."""
-    prov_instance = ProviderFactory.create_provider(provider, ApiConfig())
+    provider_key = ProviderName.from_string(provider)
+    prov_instance = ProviderFactory.create_provider(provider_key, ApiConfig())
     return prov_instance.list_models()
 
 
-async def list_models_async(provider: ProviderName) -> Sequence[Model]:
+async def list_models_async(provider: str | ProviderName) -> Sequence[Model]:
     """List available models for a provider asynchronously."""
-    prov_instance = ProviderFactory.create_provider(provider, ApiConfig())
+    provider_key = ProviderName.from_string(provider)
+    prov_instance = ProviderFactory.create_provider(provider_key, ApiConfig())
     return await prov_instance.list_models_async()

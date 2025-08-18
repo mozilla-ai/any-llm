@@ -13,6 +13,7 @@ except ImportError as exc:
     msg = "anthropic is not installed. Please install it with `pip install any-llm-sdk[anthropic]`"
     raise ImportError(msg) from exc
 
+from any_llm.logging import logger
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -253,3 +254,33 @@ def _convert_tool_choice(params: CompletionParams) -> dict[str, Any]:
     if tool_choice == "required":
         tool_choice = "any"
     return {"type": tool_choice, "disable_parallel_tool_use": not parallel_tool_calls}
+
+
+def _convert_params(params: CompletionParams, **kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Convert CompletionParams to kwargs for Anthropic API."""
+    result_kwargs: dict[str, Any] = kwargs.copy()
+
+    if params.max_tokens is None:
+        logger.warning(f"max_tokens is required for Anthropic, setting to {DEFAULT_MAX_TOKENS}")
+        params.max_tokens = DEFAULT_MAX_TOKENS
+
+    if params.tools:
+        params.tools = _convert_tool_spec(params.tools)
+
+    if params.tool_choice or params.parallel_tool_calls:
+        params.tool_choice = _convert_tool_choice(params)
+
+    result_kwargs.update(
+        params.model_dump(
+            exclude_none=True,
+            exclude={"model_id", "messages", "reasoning_effort", "response_format", "parallel_tool_calls"},
+        )
+    )
+    result_kwargs["model"] = params.model_id
+
+    system_message, filtered_messages = _convert_messages_for_anthropic(params.messages)
+    if system_message:
+        result_kwargs["system"] = system_message
+    result_kwargs["messages"] = filtered_messages
+
+    return result_kwargs
