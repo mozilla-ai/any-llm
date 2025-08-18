@@ -50,7 +50,7 @@ class VoyageProvider(Provider):
             **kwargs,
         )
         return _create_openai_embedding_response_from_voyage(model, result)
-    
+
     async def aembedding(
         self,
         model: str,
@@ -68,7 +68,9 @@ class VoyageProvider(Provider):
         )
         return _create_openai_embedding_response_from_voyage(model, result)
 
-    async def acompletion(self, params: CompletionParams, **kwargs: Any) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+    async def acompletion(
+        self, params: CompletionParams, **kwargs: Any
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         msg = "voyage provider doesn't support completion."
         raise NotImplementedError(msg)
 
