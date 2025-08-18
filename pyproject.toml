@@ -23,7 +23,7 @@ all = [
 ]
 
 mistral = [
-  "mistralai",
+  "mistralai>=1.9.3",
 ]
 
 anthropic = [
