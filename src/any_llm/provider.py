@@ -4,7 +4,7 @@ import importlib
 import logging
 import os
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -18,6 +18,7 @@ from any_llm.types.completion import (
     CompletionParams,
     CreateEmbeddingResponse,
 )
+from any_llm.types.model import Model
 from any_llm.types.provider import ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
 
@@ -93,6 +94,9 @@ class Provider(ABC):
     SUPPORTS_RESPONSES: bool
     """OpenAI Responses API"""
 
+    SUPPORTS_LIST_MODELS: bool
+    """OpenAI Models API"""
+
     API_BASE: str | None = None
     """This is used to set the API base for the provider.
     It is not required but may prove useful for providers that have overridable api bases.
@@ -137,6 +141,7 @@ class Provider(ABC):
             completion=cls.SUPPORTS_COMPLETION,
             embedding=cls.SUPPORTS_EMBEDDING,
             responses=cls.SUPPORTS_RESPONSES,
+            list_models=cls.SUPPORTS_LIST_MODELS,
             class_name=cls.__name__,
         )
 
@@ -235,6 +240,19 @@ class Provider(ABC):
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         return await asyncio.to_thread(self.embedding, model, inputs, **kwargs)
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Return a list of Model if the provider supports listing models.
+        Should be overridden by subclasses.
+        """
+        msg = "Subclasses must implement list_models method"
+        if not self.SUPPORTS_LIST_MODELS:
+            raise NotImplementedError(msg)
+        raise NotImplementedError(msg)
+
+    async def list_models_async(self, **kwargs: Any) -> Sequence[Model]:
+        return await asyncio.to_thread(self.list_models, **kwargs)
 
 
 class ProviderFactory:

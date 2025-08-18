@@ -1,11 +1,12 @@
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from any_llm.provider import ApiConfig, ProviderFactory
+from any_llm.provider import ApiConfig, ProviderFactory, ProviderName
 from any_llm.tools import prepare_tools
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, CreateEmbeddingResponse
+from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
 from any_llm.utils.api import _process_completion_params
 
@@ -468,3 +469,15 @@ async def aembedding(
     provider = ProviderFactory.create_provider(provider_key, api_config)
 
     return await provider.aembedding(model_name, inputs, **kwargs)
+
+
+def list_models(provider: ProviderName) -> Sequence[Model]:
+    """List available models for a provider."""
+    prov_instance = ProviderFactory.create_provider(provider, ApiConfig())
+    return prov_instance.list_models()
+
+
+async def list_models_async(provider: ProviderName) -> Sequence[Model]:
+    """List available models for a provider asynchronously."""
+    prov_instance = ProviderFactory.create_provider(provider, ApiConfig())
+    return await prov_instance.list_models_async()
