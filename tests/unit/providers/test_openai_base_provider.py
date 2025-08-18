@@ -1,56 +1,88 @@
-from collections.abc import Sequence
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from any_llm.provider import ApiConfig
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.types.model import ModelMetadata
+from any_llm.types.model import Model
 
 
-class DummyConfig(ApiConfig):
-    api_key: str | None = "test-key"
-    api_base: str | None = "https://api.openai.com/v1"
+def test_models_raises_not_implemented_if_not_supported() -> None:
+    class NoListModelsProvider(BaseOpenAIProvider):
+        SUPPORTS_LIST_MODELS = False
+        PROVIDER_NAME = "NoListModelsProvider"
+        ENV_API_KEY_NAME = "TEST_API_KEY"
+        PROVIDER_DOCUMENTATION_URL = "https://example.com"
+
+    provider = NoListModelsProvider(config=ApiConfig(api_key="test-key"))
+    with pytest.raises(NotImplementedError):
+        provider.models()
 
 
-class TestBaseOpenAIProvider:
-    @patch("any_llm.providers.openai.base.OpenAI")
-    def test_models_returns_model_list(self, mock_openai: MagicMock) -> None:
-        # Arrange
-        class FakeProvider(BaseOpenAIProvider):
-            SUPPORTS_LIST_MODELS = True
-            PROVIDER_NAME = "FakeProvider"
+@patch("any_llm.providers.openai.base.OpenAI")
+def test_models_returns_model_list_when_supported(mock_openai_class: MagicMock) -> None:
+    class ListModelsProvider(BaseOpenAIProvider):
+        SUPPORTS_LIST_MODELS = True
+        PROVIDER_NAME = "ListModelsProvider"
+        ENV_API_KEY_NAME = "TEST_API_KEY"
+        PROVIDER_DOCUMENTATION_URL = "https://example.com"
+        API_BASE = "https://api.example.com/v1"
 
-        provider = FakeProvider(config=DummyConfig())
-        mock_openai_model_data = []
-        for d in [
-            {"id": "model-id-0", "object": "model", "created": 1686935002},
-            {"id": "model-id-1", "object": "model", "created": 1686935002},
-        ]:
-            m = MagicMock()
-            m.model_dump.return_value = d
-            mock_openai_model_data.append(m)
-        mock_openai_list_response = MagicMock()
-        mock_openai_list_response.data = mock_openai_model_data
-        mock_client = MagicMock()
-        mock_client.models.list.return_value = mock_openai_list_response
-        mock_openai.return_value = mock_client
+    mock_model_data = [
+        Model(id="gpt-3.5-turbo", object="model", created=1677610602, owned_by="openai"),
+        Model(id="gpt-4", object="model", created=1687882411, owned_by="openai"),
+    ]
 
-        # Act
-        result = provider.models()
+    mock_client = MagicMock()
+    mock_client.models.list.return_value.data = mock_model_data
+    mock_openai_class.return_value = mock_client
 
-        # Assert
-        assert isinstance(result, Sequence)
-        assert len(result) == 2
-        assert all(isinstance(m, ModelMetadata) for m in result)
-        assert result[0].id == "model-id-0"
-        assert result[1].id == "model-id-1"
+    config = ApiConfig(api_key="test-key", api_base="https://custom.api.com/v1")
+    provider = ListModelsProvider(config=config)
 
-    def test_models_raises_not_implemented_if_not_supported(self) -> None:
-        class NoListModelsProvider(BaseOpenAIProvider):
-            SUPPORTS_LIST_MODELS = False
-            PROVIDER_NAME = "NoListModelsProvider"
+    result = provider.models()
 
-        provider = NoListModelsProvider(config=DummyConfig())
-        with pytest.raises(NotImplementedError):
-            provider.models()
+    assert result == mock_model_data
+    mock_openai_class.assert_called_once_with(base_url="https://custom.api.com/v1", api_key="test-key")
+    mock_client.models.list.assert_called_once_with()
+
+
+@patch("any_llm.providers.openai.base.OpenAI")
+def test_models_uses_default_api_base_when_not_configured(mock_openai_class: MagicMock) -> None:
+    class ListModelsProvider(BaseOpenAIProvider):
+        SUPPORTS_LIST_MODELS = True
+        PROVIDER_NAME = "ListModelsProvider"
+        ENV_API_KEY_NAME = "TEST_API_KEY"
+        PROVIDER_DOCUMENTATION_URL = "https://example.com"
+        API_BASE = "https://api.default.com/v1"
+
+    mock_client = MagicMock()
+    mock_client.models.list.return_value.data = []
+    mock_openai_class.return_value = mock_client
+
+    config = ApiConfig(api_key="test-key")
+    provider = ListModelsProvider(config=config)
+
+    provider.models()
+
+    mock_openai_class.assert_called_once_with(base_url="https://api.default.com/v1", api_key="test-key")
+
+
+@patch("any_llm.providers.openai.base.OpenAI")
+def test_models_passes_kwargs_to_client(mock_openai_class: MagicMock) -> None:
+    class ListModelsProvider(BaseOpenAIProvider):
+        SUPPORTS_LIST_MODELS = True
+        PROVIDER_NAME = "ListModelsProvider"
+        ENV_API_KEY_NAME = "TEST_API_KEY"
+        PROVIDER_DOCUMENTATION_URL = "https://example.com"
+
+    mock_client = MagicMock()
+    mock_client.models.list.return_value.data = []
+    mock_openai_class.return_value = mock_client
+
+    config = ApiConfig(api_key="test-key")
+    provider = ListModelsProvider(config=config)
+
+    provider.models(limit=10, after="model-123")
+
+    mock_client.models.list.assert_called_once_with(limit=10, after="model-123")

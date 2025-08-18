@@ -13,7 +13,7 @@ from any_llm.logging import logger
 from any_llm.provider import Provider
 from any_llm.providers.openai.utils import _convert_chat_completion, _normalize_openai_dict_response
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
-from any_llm.types.model import ModelMetadata
+from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponseStreamEvent
 
 
@@ -212,7 +212,7 @@ class BaseOpenAIProvider(Provider, ABC):
             **kwargs,
         )
 
-    def models(self, **kwargs: Any) -> Sequence[ModelMetadata]:
+    def models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
@@ -223,5 +223,4 @@ class BaseOpenAIProvider(Provider, ABC):
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,
         )
-        openai_models = client.models.list(**kwargs).data
-        return [ModelMetadata.model_validate(m.model_dump()) for m in openai_models]
+        return client.models.list(**kwargs).data

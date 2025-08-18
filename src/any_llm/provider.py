@@ -18,7 +18,7 @@ from any_llm.types.completion import (
     CompletionParams,
     CreateEmbeddingResponse,
 )
-from any_llm.types.model import ModelMetadata
+from any_llm.types.model import Model
 from any_llm.types.provider import ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
 
@@ -241,9 +241,9 @@ class Provider(ABC):
     ) -> CreateEmbeddingResponse:
         return await asyncio.to_thread(self.embedding, model, inputs, **kwargs)
 
-    def models(self, **kwargs: Any) -> Sequence[ModelMetadata]:
+    def models(self, **kwargs: Any) -> Sequence[Model]:
         """
-        Return a list of ModelMetadata if the provider supports listing models.
+        Return a list of Model if the provider supports listing models.
         Should be overridden by subclasses.
         """
         msg = "Subclasses must implement models method"
@@ -251,7 +251,7 @@ class Provider(ABC):
             raise NotImplementedError(msg)
         raise NotImplementedError(msg)
 
-    async def amodels(self, **kwargs: Any) -> Sequence[ModelMetadata]:
+    async def amodels(self, **kwargs: Any) -> Sequence[Model]:
         return await asyncio.to_thread(self.models, **kwargs)
 
 

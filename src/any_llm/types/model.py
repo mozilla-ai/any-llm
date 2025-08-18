@@ -1,7 +1,3 @@
-from pydantic import BaseModel
+from openai.types.model import Model as OpenAIModel
 
-
-class ModelMetadata(BaseModel):
-    id: str
-    created: int | None = None
-    object: str | None = None
+Model = OpenAIModel
