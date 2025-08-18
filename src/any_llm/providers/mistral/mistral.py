@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import TYPE_CHECKING, Any
 
 try:
@@ -12,7 +12,12 @@ except ImportError:
 from pydantic import BaseModel
 
 from any_llm.provider import Provider
-from any_llm.providers.mistral.utils import _create_mistral_completion_from_response, _patch_messages
+from any_llm.providers.mistral.utils import (
+    _create_mistral_completion_from_response,
+    _create_openai_chunk_from_mistral_chunk,
+    _create_openai_embedding_response_from_mistral,
+    _patch_messages,
+)
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 
 if TYPE_CHECKING:
@@ -49,9 +54,45 @@ class MistralProvider(Provider):
             **kwargs,
         )
         for event in mistral_stream:
-            from any_llm.providers.mistral.utils import _create_openai_chunk_from_mistral_chunk
-
             yield _create_openai_chunk_from_mistral_chunk(event)
+
+    async def acompletion(
+        self, params: CompletionParams, **kwargs: Any
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        patched_messages = _patch_messages(params.messages)
+
+        if (
+            params.response_format is not None
+            and isinstance(params.response_format, type)
+            and issubclass(params.response_format, BaseModel)
+        ):
+            kwargs["response_format"] = response_format_from_pydantic_model(params.response_format)
+
+        async with Mistral(api_key=self.config.api_key, server_url=self.config.api_base) as client:
+            if params.stream:
+                mistral_stream = client.chat.stream(
+                    model=params.model_id,
+                    messages=patched_messages,
+                    **kwargs,
+                )
+
+                async def _stream() -> AsyncIterator[ChatCompletionChunk]:
+                    async for chunk in mistral_stream:
+                        yield _create_openai_chunk_from_mistral_chunk(chunk)
+
+                return _stream()
+
+            response = await client.chat.complete_async(
+                model=params.model_id,
+                messages=patched_messages,
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+                **kwargs,
+            )
+
+            return _create_mistral_completion_from_response(
+                response_data=response,
+                model=params.model_id,
+            )
 
     def completion(
         self,
@@ -98,6 +139,19 @@ class MistralProvider(Provider):
             **kwargs,
         )
 
-        from any_llm.providers.mistral.utils import _create_openai_embedding_response_from_mistral
-
         return _create_openai_embedding_response_from_mistral(result)
+
+    async def aembedding(
+        self,
+        model: str,
+        inputs: str | list[str],
+        **kwargs: Any,
+    ) -> CreateEmbeddingResponse:
+        async with Mistral(api_key=self.config.api_key, server_url=self.config.api_base) as client:
+            result: EmbeddingResponse = await client.embeddings.create_async(
+                model=model,
+                inputs=inputs,
+                **kwargs,
+            )
+
+            return _create_openai_embedding_response_from_mistral(result)
