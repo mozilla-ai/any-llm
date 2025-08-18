@@ -191,10 +191,7 @@ class BaseOpenAIProvider(Provider, ABC):
     async def aresponses(
         self, model: str, input_data: Any, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
-        """Call OpenAI Responses API and normalize into ChatCompletion/Chunks.
-
-        For now we only return a non-streaming ChatCompletion, or streaming chunks
-        mapped to ChatCompletionChunk using the same converter.
+        """Call OpenAI Responses API
         """
         client = AsyncOpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
