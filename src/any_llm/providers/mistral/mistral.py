@@ -159,11 +159,11 @@ class MistralProvider(Provider):
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        async with Mistral(api_key=self.config.api_key, server_url=self.config.api_base) as client:
-            result: EmbeddingResponse = await client.embeddings.create_async(
-                model=model,
-                inputs=inputs,
-                **kwargs,
-            )
+        client = Mistral(api_key=self.config.api_key, server_url=self.config.api_base)
+        result: EmbeddingResponse = await client.embeddings.create_async(
+            model=model,
+            inputs=inputs,
+            **kwargs,
+        )
 
-            return _create_openai_embedding_response_from_mistral(result)
+        return _create_openai_embedding_response_from_mistral(result)
