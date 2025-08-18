@@ -33,7 +33,11 @@ from any_llm.types.completion import (
     CompletionUsage,
     CreateEmbeddingResponse,
     Function,
+    Reasoning,
 )
+
+# From https://ai.google.dev/gemini-api/docs/openai#thinking
+REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 256, "low": 1024, "medium": 8192, "high": 24576}
 
 
 class GoogleProvider(Provider):
@@ -46,7 +50,7 @@ class GoogleProvider(Provider):
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
-    SUPPORTS_COMPLETION_REASONING = False
+    SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = False
 
@@ -113,6 +117,11 @@ class GoogleProvider(Provider):
         if isinstance(params.tool_choice, str):
             kwargs["tool_config"] = _convert_tool_choice(params.tool_choice)
 
+        if params.reasoning_effort is not None:
+            kwargs["thinking_config"] = types.ThinkingConfig(
+                include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort]
+            )
+
         stream = bool(params.stream)
         response_format = params.response_format
         # Build generation config without duplicating keys (e.g., tools)
@@ -164,10 +173,13 @@ class GoogleProvider(Provider):
                         )
                     )
                 tool_calls = tool_calls_list
+
+            reasoning_content = message_dict.get("reasoning")
             message = ChatCompletionMessage(
                 role="assistant",
                 content=message_dict.get("content"),
                 tool_calls=tool_calls,
+                reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
             )
             from typing import Literal, cast
 
