@@ -177,7 +177,8 @@ class AnthropicProvider(Provider):
             params.tool_choice = _convert_tool_choice(params)
 
         params_kwargs = params.model_dump(
-            exclude_none=True, exclude={"model_id", "messages", "response_format", "parallel_tool_calls"}
+            exclude_none=True,
+            exclude={"model_id", "messages", "reasoning_effort", "response_format", "parallel_tool_calls"},
         )
         if params.response_format:
             instructor_client = instructor.from_anthropic(client)

@@ -76,7 +76,9 @@ class HuggingfaceProvider(Provider):
             kwargs["response_format"] = type_to_response_format_param(response_format=params.response_format)  # type: ignore[arg-type]
 
         if params.stream:
-            stream_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "max_tokens"})
+            stream_kwargs = params.model_dump(
+                exclude_none=True, exclude={"model_id", "messages", "max_tokens", "reasoning_effort"}
+            )
             stream_kwargs.update(kwargs)
             stream_kwargs["stream"] = True
             return self._stream_completion(client, params.model_id, params.messages, **stream_kwargs)
@@ -85,7 +87,8 @@ class HuggingfaceProvider(Provider):
             model=params.model_id,
             messages=params.messages,
             **params.model_dump(
-                exclude_none=True, exclude={"model_id", "messages", "response_format", "stream", "max_tokens"}
+                exclude_none=True,
+                exclude={"model_id", "messages", "response_format", "reasoning_effort", "stream", "max_tokens"},
             ),
             **kwargs,
         )

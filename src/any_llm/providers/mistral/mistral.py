@@ -120,7 +120,9 @@ class MistralProvider(Provider):
             response = client.chat.complete(
                 model=params.model_id,
                 messages=patched_messages,  # type: ignore[arg-type]
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+                **params.model_dump(
+                    exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
+                ),
                 **kwargs,
             )
 

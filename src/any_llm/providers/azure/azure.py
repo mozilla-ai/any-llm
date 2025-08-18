@@ -98,7 +98,9 @@ class AzureProvider(Provider):
         if params.response_format:
             azure_response_format = _convert_response_format(params.response_format)
 
-        call_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
+        call_kwargs = params.model_dump(
+            exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format"}
+        )
         if params.stream:
             if azure_response_format:
                 call_kwargs["response_format"] = azure_response_format

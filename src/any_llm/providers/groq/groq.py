@@ -79,7 +79,7 @@ class GroqProvider(Provider):
         stream: GroqStream[GroqChatCompletionChunk] = client.chat.completions.create(
             model=params.model_id,
             messages=cast("Any", params.messages),
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages"}),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "reasoning_effort"}),
             **kwargs,
         )
         for chunk in stream:
@@ -151,7 +151,7 @@ class GroqProvider(Provider):
         response: GroqChatCompletion = client.chat.completions.create(
             model=params.model_id,
             messages=cast("Any", params.messages),
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "stream"}),
             **kwargs,
         )
 

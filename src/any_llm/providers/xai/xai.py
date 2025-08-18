@@ -69,7 +69,16 @@ class XaiProvider(Provider):
             model=params.model_id,
             messages=xai_messages,
             **params.model_dump(
-                exclude_none=True, exclude={"model_id", "messages", "stream", "response_format", "tools", "tool_choice"}
+                exclude_none=True,
+                exclude={
+                    "model_id",
+                    "messages",
+                    "stream",
+                    "reasoning_effort",
+                    "response_format",
+                    "tools",
+                    "tool_choice",
+                },
             ),
             **kwargs,
         )
