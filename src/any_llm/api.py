@@ -36,7 +36,7 @@ def completion(
     logit_bias: dict[str, float] | None = None,
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
-    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None,
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = "medium",
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
     """Create a chat completion.
@@ -131,7 +131,7 @@ async def acompletion(
     logit_bias: dict[str, float] | None = None,
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
-    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None,
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = "medium",
     **kwargs: Any,
 ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
     """Create a chat completion asynchronously.
