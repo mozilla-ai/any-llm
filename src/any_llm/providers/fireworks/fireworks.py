@@ -49,7 +49,7 @@ class FireworksProvider(Provider):
         """Handle streaming completion - extracted to avoid generator issues."""
         response_generator = llm.chat.completions.create(
             messages=messages,  # type: ignore[arg-type]
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages"}),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "reasoning_effort"}),
             **kwargs,
         )
 
@@ -82,7 +82,9 @@ class FireworksProvider(Provider):
 
         response = llm.chat.completions.create(
             messages=params.messages,  # type: ignore[arg-type]
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+            **params.model_dump(
+                exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
+            ),
             **kwargs,
         )
         response_data = response.model_dump()
