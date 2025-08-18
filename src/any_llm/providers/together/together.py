@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 try:
@@ -40,6 +40,27 @@ class TogetherProvider(Provider):
     SUPPORTS_EMBEDDING = False
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
+
+    async def _stream_completion_async(
+        self,
+        client: "together.AsyncTogether",
+        model: str,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatCompletionChunk]:
+        """Handle streaming completion - extracted to avoid generator issues."""
+        from typing import cast
+
+        response = cast(
+            "AsyncIterator[TogetherChatCompletionChunk]",
+            await client.chat.completions.create(
+                model=model,
+                messages=messages,
+                **kwargs,
+            ),
+        )
+        async for chunk in response:
+            yield _create_openai_chunk_from_together_chunk(chunk)
 
     def _stream_completion(
         self,
@@ -100,6 +121,90 @@ class TogetherProvider(Provider):
         response = cast(
             "ChatCompletionResponse",
             client.chat.completions.create(
+                model=params.model_id,
+                messages=cast("Any", params.messages),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
+                **kwargs,
+            ),
+        )
+
+        data = response.model_dump()
+        choices_out: list[Choice] = []
+        for i, ch in enumerate(data.get("choices", [])):
+            msg = ch.get("message", {})
+
+            message = ChatCompletionMessage(
+                role=cast("Literal['assistant']", msg.get("role")),
+                content=msg.get("content"),
+                tool_calls=msg.get("tool_calls"),
+            )
+            choices_out.append(
+                Choice(
+                    index=i,
+                    finish_reason=cast(
+                        "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']",
+                        ch.get("finish_reason"),
+                    ),
+                    message=message,
+                )
+            )
+
+        usage = None
+        if data.get("usage"):
+            u = data["usage"]
+            usage = CompletionUsage(
+                prompt_tokens=u.get("prompt_tokens", 0),
+                completion_tokens=u.get("completion_tokens", 0),
+                total_tokens=u.get("total_tokens", 0),
+            )
+
+        return ChatCompletion(
+            id=data.get("id", ""),
+            model=params.model_id,
+            created=data.get("created", 0),
+            object="chat.completion",
+            choices=choices_out,
+            usage=usage,
+        )
+
+    async def acompletion(
+        self,
+        params: CompletionParams,
+        **kwargs: Any,
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        """Make the API call to Together AI with instructor support for structured outputs."""
+        if self.config.api_base:
+            client = together.AsyncTogether(api_key=self.config.api_key, base_url=self.config.api_base)
+        else:
+            client = together.AsyncTogether(api_key=self.config.api_key)
+
+        if params.response_format:
+            instructor_client = instructor.patch(client, mode=instructor.Mode.JSON)  # type: ignore [call-overload]
+
+            instructor_response = await instructor_client.chat.completions.create(
+                model=params.model_id,
+                messages=cast("Any", params.messages),
+                response_model=params.response_format,
+                **params.model_dump(
+                    exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format"}
+                ),
+                **kwargs,
+            )
+
+            return _convert_instructor_response(instructor_response, params.model_id, self.PROVIDER_NAME)
+
+        if params.stream:
+            return self._stream_completion_async(
+                client,
+                params.model_id,
+                params.messages,
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "stream"}),
+                **kwargs,
+            )
+
+        response = cast(
+            "ChatCompletionResponse",
+            await client.chat.completions.create(
                 model=params.model_id,
                 messages=cast("Any", params.messages),
                 **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
