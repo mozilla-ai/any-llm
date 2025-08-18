@@ -48,7 +48,7 @@ export MISTRAL_API_KEY="YOUR_KEY_HERE"  # or OPENAI_API_KEY, etc
 ```python
 import os
 
-from any_llm import completion
+from any_llm import completion, ProviderName
 
 # Make sure you have the appropriate environment variable set
 assert os.environ.get('MISTRAL_API_KEY')
@@ -56,7 +56,7 @@ assert os.environ.get('MISTRAL_API_KEY')
 # Recommended: separate provider and model parameters
 response = completion(
     model="mistral-small-latest",
-    provider="mistral",
+    provider="mistral", # or ProviderName.MISTRAL
     messages=[{"role": "user", "content": "Hello!"}]
 )
 print(response.choices[0].message.content)
@@ -73,7 +73,7 @@ response = completion(
 
 The provider_id should be specified according to the [provider ids supported by any-llm](./providers.md).
 The `model_id` portion is passed directly to the provider internals: to understand what model ids are available for a provider,
-you will need to refer to the provider documentation or use our `list_models` API if the provider supports that API.
+you will need to refer to the provider documentation or use our [`list_models`](./api/list_models.md)  API if the provider supports that API.
 
 ### Streaming
 
