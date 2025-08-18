@@ -14,3 +14,4 @@ class PortkeyProvider(BaseOpenAIProvider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
+    SUPPORTS_LIST_MODELS = False

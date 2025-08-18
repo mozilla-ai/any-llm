@@ -9,7 +9,7 @@ from any_llm.types.model import Model
 
 def test_models_raises_not_implemented_if_not_supported() -> None:
     class NoListModelsProvider(BaseOpenAIProvider):
-        SUPPORTS_LIST_MODELS = False
+        SUPPORTS_LIST_MODELS = True
         PROVIDER_NAME = "NoListModelsProvider"
         ENV_API_KEY_NAME = "TEST_API_KEY"
         PROVIDER_DOCUMENTATION_URL = "https://example.com"
