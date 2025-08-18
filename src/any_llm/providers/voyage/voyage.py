@@ -21,7 +21,6 @@ class VoyageProvider(Provider):
     Provider for Voyage AI services.
     """
 
-    PROVIDER_LABEL = "Voyage"
     PROVIDER_NAME = "voyage"
     ENV_API_KEY_NAME = "VOYAGE_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://docs.voyageai.com/"

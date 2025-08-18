@@ -33,7 +33,6 @@ class AnthropicProvider(Provider):
     Handles conversion between OpenAI format and Anthropic's native format.
     """
 
-    PROVIDER_LABEL = "Anthropic"
     PROVIDER_NAME = "anthropic"
     ENV_API_KEY_NAME = "ANTHROPIC_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://docs.anthropic.com/en/home"

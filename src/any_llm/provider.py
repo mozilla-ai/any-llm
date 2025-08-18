@@ -72,9 +72,6 @@ class Provider(ABC):
     PROVIDER_NAME: str
     """Must match the name of the provider directory  (case sensitive)"""
 
-    PROVIDER_LABEL: str
-    """Human-readable label for the provider"""
-
     PROVIDER_DOCUMENTATION_URL: str
     """Link to the provider's documentation"""
 
@@ -137,7 +134,6 @@ class Provider(ABC):
         """
         return ProviderMetadata(
             name=cls.PROVIDER_NAME,
-            label=cls.PROVIDER_LABEL,
             env_key=cls.ENV_API_KEY_NAME,
             doc_url=cls.PROVIDER_DOCUMENTATION_URL,
             streaming=cls.SUPPORTS_COMPLETION_STREAMING,

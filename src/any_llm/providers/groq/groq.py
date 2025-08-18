@@ -33,7 +33,6 @@ if TYPE_CHECKING:
 class GroqProvider(Provider):
     """Groq Provider using instructor for structured output."""
 
-    PROVIDER_LABEL = "Groq"
     PROVIDER_NAME = "groq"
     ENV_API_KEY_NAME = "GROQ_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://groq.com/api"

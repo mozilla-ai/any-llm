@@ -29,7 +29,6 @@ from any_llm.utils.instructor import _convert_instructor_response
 class AwsProvider(Provider):
     """AWS Bedrock Provider using boto3 and instructor for structured output."""
 
-    PROVIDER_LABEL = "AWS Bedrock"
     PROVIDER_NAME = "aws"
     ENV_API_KEY_NAME = "AWS_BEARER_TOKEN_BEDROCK"
     PROVIDER_DOCUMENTATION_URL = "https://aws.amazon.com/bedrock/"

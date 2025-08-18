@@ -9,7 +9,6 @@ from any_llm.providers.openai.base import BaseOpenAIProvider
 
 
 class LmstudioProvider(BaseOpenAIProvider):
-    PROVIDER_LABEL = "LM Studio"
     API_BASE = "http://localhost:1234/v1"
     ENV_API_KEY_NAME = "LM_STUDIO_API_KEY"
     PROVIDER_NAME = "lmstudio"
