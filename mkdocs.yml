@@ -12,6 +12,7 @@ nav:
     - Embedding: api/embedding.md
     - Responses: api/responses.md
     - Exceptions: api/exceptions.md
+    - Models: api/models.md
 theme:
   name: material
   font:
