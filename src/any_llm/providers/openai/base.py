@@ -212,7 +212,7 @@ class BaseOpenAIProvider(Provider, ABC):
             **kwargs,
         )
 
-    def models(self, **kwargs: Any) -> Sequence[Model]:
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """

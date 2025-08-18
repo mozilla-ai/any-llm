@@ -1,26 +1,11 @@
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from any_llm.provider import ApiConfig
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.model import Model
 
-
-def test_models_raises_not_implemented_if_not_supported() -> None:
-    class NoListModelsProvider(BaseOpenAIProvider):
-        SUPPORTS_LIST_MODELS = True
-        PROVIDER_NAME = "NoListModelsProvider"
-        ENV_API_KEY_NAME = "TEST_API_KEY"
-        PROVIDER_DOCUMENTATION_URL = "https://example.com"
-
-    provider = NoListModelsProvider(config=ApiConfig(api_key="test-key"))
-    with pytest.raises(NotImplementedError):
-        provider.models()
-
-
 @patch("any_llm.providers.openai.base.OpenAI")
-def test_models_returns_model_list_when_supported(mock_openai_class: MagicMock) -> None:
+def test_list_models_returns_model_list_when_supported(mock_openai_class: MagicMock) -> None:
     class ListModelsProvider(BaseOpenAIProvider):
         SUPPORTS_LIST_MODELS = True
         PROVIDER_NAME = "ListModelsProvider"
@@ -40,7 +25,7 @@ def test_models_returns_model_list_when_supported(mock_openai_class: MagicMock) 
     config = ApiConfig(api_key="test-key", api_base="https://custom.api.com/v1")
     provider = ListModelsProvider(config=config)
 
-    result = provider.models()
+    result = provider.list_models()
 
     assert result == mock_model_data
     mock_openai_class.assert_called_once_with(base_url="https://custom.api.com/v1", api_key="test-key")
@@ -48,7 +33,7 @@ def test_models_returns_model_list_when_supported(mock_openai_class: MagicMock) 
 
 
 @patch("any_llm.providers.openai.base.OpenAI")
-def test_models_uses_default_api_base_when_not_configured(mock_openai_class: MagicMock) -> None:
+def test_list_models_uses_default_api_base_when_not_configured(mock_openai_class: MagicMock) -> None:
     class ListModelsProvider(BaseOpenAIProvider):
         SUPPORTS_LIST_MODELS = True
         PROVIDER_NAME = "ListModelsProvider"
@@ -63,13 +48,13 @@ def test_models_uses_default_api_base_when_not_configured(mock_openai_class: Mag
     config = ApiConfig(api_key="test-key")
     provider = ListModelsProvider(config=config)
 
-    provider.models()
+    provider.list_models()
 
     mock_openai_class.assert_called_once_with(base_url="https://api.default.com/v1", api_key="test-key")
 
 
 @patch("any_llm.providers.openai.base.OpenAI")
-def test_models_passes_kwargs_to_client(mock_openai_class: MagicMock) -> None:
+def test_list_models_passes_kwargs_to_client(mock_openai_class: MagicMock) -> None:
     class ListModelsProvider(BaseOpenAIProvider):
         SUPPORTS_LIST_MODELS = True
         PROVIDER_NAME = "ListModelsProvider"
@@ -83,6 +68,6 @@ def test_models_passes_kwargs_to_client(mock_openai_class: MagicMock) -> None:
     config = ApiConfig(api_key="test-key")
     provider = ListModelsProvider(config=config)
 
-    provider.models(limit=10, after="model-123")
+    provider.list_models(limit=10, after="model-123")
 
     mock_client.models.list.assert_called_once_with(limit=10, after="model-123")

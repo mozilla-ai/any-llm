@@ -471,13 +471,13 @@ async def aembedding(
     return await provider.aembedding(model_name, inputs, **kwargs)
 
 
-def models(provider: ProviderName) -> Sequence[Model]:
+def list_models(provider: ProviderName) -> Sequence[Model]:
     """List available models for a provider."""
     prov_instance = ProviderFactory.create_provider(provider, ApiConfig())
-    return prov_instance.models()
+    return prov_instance.list_models()
 
 
-async def amodels(provider: ProviderName) -> Sequence[Model]:
+async def list_models_async(provider: ProviderName) -> Sequence[Model]:
     """List available models for a provider asynchronously."""
     prov_instance = ProviderFactory.create_provider(provider, ApiConfig())
-    return await prov_instance.amodels()
+    return await prov_instance.list_models_async()

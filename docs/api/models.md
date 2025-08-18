@@ -1,4 +1,4 @@
 ## Models
 
-::: any_llm.models
-::: any_llm.amodels
+::: any_llm.list_models
+::: any_llm.list_models_async

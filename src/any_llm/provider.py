@@ -241,18 +241,18 @@ class Provider(ABC):
     ) -> CreateEmbeddingResponse:
         return await asyncio.to_thread(self.embedding, model, inputs, **kwargs)
 
-    def models(self, **kwargs: Any) -> Sequence[Model]:
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Return a list of Model if the provider supports listing models.
         Should be overridden by subclasses.
         """
-        msg = "Subclasses must implement models method"
+        msg = "Subclasses must implement list_models method"
         if not self.SUPPORTS_LIST_MODELS:
             raise NotImplementedError(msg)
         raise NotImplementedError(msg)
 
-    async def amodels(self, **kwargs: Any) -> Sequence[Model]:
-        return await asyncio.to_thread(self.models, **kwargs)
+    async def list_models_async(self, **kwargs: Any) -> Sequence[Model]:
+        return await asyncio.to_thread(self.list_models, **kwargs)
 
 
 class ProviderFactory:
