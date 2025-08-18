@@ -24,7 +24,8 @@ def test_completion_reasoning(
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
     try:
         result = completion(
-            f"{provider.value}/{model_id}",
+            model=model_id,
+            provider=provider,
             **extra_kwargs,
             messages=[{"role": "user", "content": "Please say hello! Think very briefly before you respond."}],
         )

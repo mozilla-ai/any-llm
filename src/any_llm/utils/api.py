@@ -3,13 +3,14 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel
 
-from any_llm.provider import ApiConfig, Provider, ProviderFactory
+from any_llm.provider import ApiConfig, Provider, ProviderFactory, ProviderName
 from any_llm.tools import prepare_tools
 from any_llm.types.completion import ChatCompletionMessage, CompletionParams
 
 
 def _process_completion_params(
     model: str,
+    provider: str | ProviderName | None,
     messages: list[dict[str, Any] | ChatCompletionMessage],
     tools: list[dict[str, Any] | Callable[..., Any]] | None,
     tool_choice: str | dict[str, Any] | None,
@@ -36,7 +37,11 @@ def _process_completion_params(
     reasoning_effort: Literal["minimal", "low", "medium", "high"] | None,
     **kwargs: Any,
 ) -> tuple[Provider, CompletionParams]:
-    provider_key, model_name = ProviderFactory.split_model_provider(model)
+    if provider is None:
+        provider_key, model_name = ProviderFactory.split_model_provider(model)
+    else:
+        provider_key = ProviderName.from_string(provider)
+        model_name = model
 
     config: dict[str, str] = {}
     if api_key:
@@ -45,7 +50,7 @@ def _process_completion_params(
         config["api_base"] = str(api_base)
     api_config = ApiConfig(**config)
 
-    provider = ProviderFactory.create_provider(provider_key, api_config)
+    provider_instance = ProviderFactory.create_provider(provider_key, api_config)
 
     prepared_tools: list[dict[str, Any]] | None = None
     if tools:
@@ -80,4 +85,4 @@ def _process_completion_params(
         max_completion_tokens=max_completion_tokens,
         reasoning_effort=reasoning_effort,
     )
-    return provider, completion_params
+    return provider_instance, completion_params

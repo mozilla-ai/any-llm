@@ -28,7 +28,8 @@ def test_streaming_completion(
         reasoning = ""
         num_chunks = 0
         for result in completion(
-            f"{provider.value}/{model_id}",
+            model=model_id,
+            provider=provider,
             **extra_kwargs,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that exactly follows the user request."},
@@ -71,7 +72,8 @@ async def test_streaming_completion_async(
         reasoning = ""
         num_chunks = 0
         stream = await acompletion(
-            f"{provider.value}/{model_id}",
+            model=model_id,
+            provider=provider,
             **extra_kwargs,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that exactly follows the user request."},
