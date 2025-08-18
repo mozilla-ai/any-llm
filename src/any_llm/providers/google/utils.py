@@ -130,7 +130,7 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
         },
     }
 
-    response_dict["choices"] = []
+    choices: list[dict[str, Any]] = []
     if (
         response.candidates
         and len(response.candidates) > 0
@@ -142,15 +142,13 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
         for part in response.candidates[0].content.parts:
             if getattr(part, "thought", None):
                 reasoning = part.text
-            elif getattr(part, "function_call", None):
-                function_call = part.function_call
-
+            elif function_call := getattr(part, "function_call", None):
                 args_dict = {}
-                if getattr(function_call, "args", None):
-                    for key, value in function_call.args.items():
+                if args := getattr(function_call, "args", None):
+                    for key, value in args.items():
                         args_dict[key] = value
 
-                response_dict["choices"].append(
+                choices.append(
                     {
                         "message": {
                             "role": "assistant",
@@ -172,7 +170,7 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                     }
                 )
             elif getattr(part, "text", None):
-                response_dict["choices"].append(
+                choices.append(
                     {
                         "message": {
                             "role": "assistant",
@@ -184,6 +182,8 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                         "index": 0,
                     }
                 )
+
+    response_dict["choices"] = choices
 
     return response_dict
 
