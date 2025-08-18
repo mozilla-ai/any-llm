@@ -80,7 +80,14 @@ class MistralProvider(Provider):
         ):
             kwargs["response_format"] = response_format_from_pydantic_model(params.response_format)
 
-        client = Mistral(api_key=self.config.api_key, server_url=self.config.api_base)
+        # Extract http_client from kwargs to pass to Mistral client
+        http_client = kwargs.pop("http_client", None)
+
+        client = Mistral(
+            api_key=self.config.api_key,
+            server_url=self.config.api_base,
+            client=http_client,  # Mistral uses 'client' parameter
+        )
 
         if params.stream:
             return self._stream_completion_async(
@@ -109,7 +116,14 @@ class MistralProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Mistral."""
-        client = Mistral(api_key=self.config.api_key, server_url=self.config.api_base)
+        # Extract http_client from kwargs to pass to Mistral client
+        http_client = kwargs.pop("http_client", None)
+
+        client = Mistral(
+            api_key=self.config.api_key,
+            server_url=self.config.api_base,
+            client=http_client,  # Mistral uses 'client' parameter
+        )
 
         patched_messages = _patch_messages(params.messages)
 

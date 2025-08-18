@@ -39,12 +39,19 @@ class CohereProvider(Provider):
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Cohere provider."""
         super().__init__(config)
-        self.client = cohere.ClientV2(api_key=config.api_key)
+        # Note: httpx_client must be passed at method call time for Cohere
+        self.client = None
 
     async def _stream_completion_async(
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any
     ) -> AsyncIterator[ChatCompletionChunk]:
-        client = cohere.AsyncClientV2(api_key=self.config.api_key)
+        # Extract httpx_client from kwargs
+        httpx_client = kwargs.pop("httpx_client", None)
+
+        client = cohere.AsyncClientV2(
+            api_key=self.config.api_key,
+            httpx_client=httpx_client,
+        )
 
         cohere_stream = client.chat_stream(
             model=model,
@@ -59,10 +66,11 @@ class CohereProvider(Provider):
         self,
         model: str,
         messages: list[dict[str, Any]],
+        client: "cohere.ClientV2",
         **kwargs: Any,
     ) -> Iterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
-        cohere_stream = self.client.chat_stream(
+        cohere_stream = client.chat_stream(
             model=model,
             messages=messages,  # type: ignore[arg-type]
             **kwargs,
@@ -112,7 +120,13 @@ class CohereProvider(Provider):
                 **kwargs,
             )
 
-        client = cohere.AsyncClientV2(api_key=self.config.api_key)
+        # Extract http_client from kwargs for non-streaming
+        http_client = kwargs.pop("http_client", None)
+
+        client = cohere.AsyncClientV2(
+            api_key=self.config.api_key,
+            httpx_client=http_client,
+        )
 
         # note: ClientV2.chat does not have a `stream` parameter
         response = await client.chat(
@@ -144,16 +158,25 @@ class CohereProvider(Provider):
 
         patched_messages = _patch_messages(params.messages)
 
+        # Extract http_client from kwargs
+        http_client = kwargs.pop("http_client", None)
+
+        client = cohere.ClientV2(
+            api_key=self.config.api_key,
+            httpx_client=http_client,
+        )
+
         if params.stream:
             return self._stream_completion(
                 params.model_id,
                 patched_messages,
+                client,
                 **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
                 **kwargs,
             )
 
         # note: ClientV2.chat does not have a `stream` parameter
-        response = self.client.chat(
+        response = client.chat(
             model=params.model_id,
             messages=patched_messages,  # type: ignore[arg-type]
             **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream", "response_format"}),

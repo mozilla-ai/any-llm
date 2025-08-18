@@ -78,7 +78,14 @@ class AnthropicProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using Anthropic with instructor support."""
-        client = AsyncAnthropic(api_key=self.config.api_key, base_url=self.config.api_base)
+        # Extract http_client from kwargs to pass to Anthropic client
+        http_client = kwargs.pop("http_client", None)
+
+        client = AsyncAnthropic(
+            api_key=self.config.api_key,
+            base_url=self.config.api_base,
+            http_client=http_client,
+        )
 
         converted_kwargs = _convert_params(params, **kwargs)
 
@@ -111,8 +118,14 @@ class AnthropicProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Anthropic with instructor support."""
+        # Extract http_client from kwargs to pass to Anthropic client
+        http_client = kwargs.pop("http_client", None)
 
-        client = Anthropic(api_key=self.config.api_key, base_url=self.config.api_base)
+        client = Anthropic(
+            api_key=self.config.api_key,
+            base_url=self.config.api_base,
+            http_client=http_client,
+        )
 
         converted_kwargs = _convert_params(params, **kwargs)
 

@@ -90,7 +90,13 @@ class GroqProvider(Provider):
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using Groq."""
-        client = groq.AsyncGroq(api_key=self.config.api_key)
+        # Extract http_client from kwargs to pass to Groq client
+        http_client = kwargs.pop("http_client", None)
+
+        client = groq.AsyncGroq(
+            api_key=self.config.api_key,
+            http_client=http_client,
+        )
 
         if params.reasoning_effort == "auto":
             params.reasoning_effort = None
@@ -130,7 +136,13 @@ class GroqProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Groq."""
-        client = groq.Groq(api_key=self.config.api_key)
+        # Extract http_client from kwargs to pass to Groq client
+        http_client = kwargs.pop("http_client", None)
+
+        client = groq.Groq(
+            api_key=self.config.api_key,
+            http_client=http_client,
+        )
 
         if params.reasoning_effort == "auto":
             params.reasoning_effort = None
