@@ -11,3 +11,4 @@ class ProviderMetadata(BaseModel):
     embedding: bool
     responses: bool
     class_name: str
+    list_models: bool

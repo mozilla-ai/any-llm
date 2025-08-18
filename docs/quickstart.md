@@ -43,33 +43,37 @@ export MISTRAL_API_KEY="YOUR_KEY_HERE"  # or OPENAI_API_KEY, etc
 
 [`completion`][any_llm.completion] and [`acompletion`][any_llm.acompletion] use a unified interface across all providers.
 
-The provider_id key of the model should be specified according the [provider ids supported by any-llm](./providers.md).
-The `model_id` portion is passed directly to the provider internals: to understand what model ids are available for a provider,
-you will need to refer to the provider documentation.
+**Recommended approach:** Use separate `provider` and `model` parameters:
 
 ```python
 import os
 
-from any_llm import completion
+from any_llm import completion, ProviderName
 
 # Make sure you have the appropriate environment variable set
 assert os.environ.get('MISTRAL_API_KEY')
 
+# Recommended: separate provider and model parameters
 response = completion(
-    model="mistral/mistral-small-latest",  # <provider_id>/<model_id>,
+    model="mistral-small-latest",
+    provider="mistral", # or ProviderName.MISTRAL
     messages=[{"role": "user", "content": "Hello!"}]
 )
 print(response.choices[0].message.content)
 ```
 
-In that above script,
-updating to use an ollama hosted mistral model (assuming that you have ollama installed and running)
-is as easy as updating the model to specify the ollama provider and using
-[ollama model syntax for mistral](https://ollama.com/library/mistral-small3.2)!
+**Alternative syntax:** You can also use the combined `provider:model` format:
 
 ```python
-model="ollama/mistral-small3.2:latest"
+response = completion(
+    model="mistral:mistral-small-latest",  # <provider_id>:<model_id>
+    messages=[{"role": "user", "content": "Hello!"}]
+)
 ```
+
+The provider_id should be specified according to the [provider ids supported by any-llm](./providers.md).
+The `model_id` portion is passed directly to the provider internals: to understand what model ids are available for a provider,
+you will need to refer to the provider documentation or use our [`list_models`](./api/list_models.md)  API if the provider supports that API.
 
 ### Streaming
 
@@ -78,7 +82,8 @@ For the [providers that support streaming](./providers.md), you can enable it by
 ```python
 output = ""
 for chunk in completion(
-    model="mistral/mistral-small-latest",
+    model="mistral-small-latest",
+    provider="mistral",
     messages=[{"role": "user", "content": "Hello!"}],
     stream=True
 ):
@@ -97,7 +102,8 @@ Not all providers support embeddings - check the [providers documentation](./pro
 from any_llm import embedding
 
 result = embedding(
-    model="openai/text-embedding-3-small",
+    model="text-embedding-3-small",
+    provider="openai",
     inputs="Hello, world!" # can be either string or list of strings
 )
 
@@ -127,7 +133,8 @@ def get_weather(location: str, unit: str = "F") -> str:
     return f"Weather in {location} is sunny and 75{unit}!"
 
 response = completion(
-    model="mistral/mistral-small-latest",
+    model="mistral-small-latest",
+    provider="mistral",
     messages=[{"role": "user", "content": "What's the weather in Pittsburgh PA?"}],
     tools=[get_weather]
 )

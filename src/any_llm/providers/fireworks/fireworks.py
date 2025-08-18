@@ -35,6 +35,7 @@ class FireworksProvider(Provider):
     SUPPORTS_RESPONSES = True
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
+    SUPPORTS_LIST_MODELS = False
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -46,9 +47,10 @@ class FireworksProvider(Provider):
         **kwargs: Any,
     ) -> Iterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
+
         response_generator = llm.chat.completions.create(
             messages=messages,  # type: ignore[arg-type]
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "reasoning_effort"}),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages"}),
             **kwargs,
         )
 
@@ -66,6 +68,9 @@ class FireworksProvider(Provider):
             api_key=self.config.api_key,
         )
 
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         if params.response_format is not None:
             response_format = params.response_format
             if isinstance(response_format, type) and issubclass(response_format, BaseModel):
@@ -81,9 +86,7 @@ class FireworksProvider(Provider):
 
         response = llm.chat.completions.create(
             messages=params.messages,  # type: ignore[arg-type]
-            **params.model_dump(
-                exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
-            ),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
             **kwargs,
         )
         response_data = response.model_dump()

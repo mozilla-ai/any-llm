@@ -34,6 +34,7 @@ class CerebrasProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
+    SUPPORTS_LIST_MODELS = False
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -73,6 +74,11 @@ class CerebrasProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Cerebras with instructor support for structured outputs."""
+
+        # Cerebras does not support providing reasoning effort
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         if params.response_format:
             if not isinstance(params.response_format, type) or not issubclass(params.response_format, BaseModel):
                 msg = "response_format must be a pydantic model"
@@ -82,9 +88,7 @@ class CerebrasProvider(Provider):
                 model=params.model_id,
                 messages=cast("Any", params.messages),
                 response_model=params.response_format,
-                **params.model_dump(
-                    exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format"}
-                ),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
                 **kwargs,
             )
 

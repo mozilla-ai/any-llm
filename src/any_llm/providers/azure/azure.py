@@ -34,6 +34,7 @@ class AzureProvider(Provider):
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
+    SUPPORTS_LIST_MODELS = False
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -94,13 +95,14 @@ class AzureProvider(Provider):
         """Create a chat completion using Azure AI Inference SDK."""
         client: ChatCompletionsClient = self._create_chat_client()
 
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         azure_response_format = None
         if params.response_format:
             azure_response_format = _convert_response_format(params.response_format)
 
-        call_kwargs = params.model_dump(
-            exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format"}
-        )
+        call_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
         if params.stream:
             if azure_response_format:
                 call_kwargs["response_format"] = azure_response_format

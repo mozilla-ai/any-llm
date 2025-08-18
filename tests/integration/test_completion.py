@@ -26,7 +26,8 @@ def test_sync_completion(
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
     try:
         result = completion(
-            f"{provider.value}/{model_id}",
+            model=model_id,
+            provider=provider,
             **extra_kwargs,
             messages=[
                 {"role": "user", "content": "Hello"},
@@ -64,10 +65,10 @@ async def test_async_completion(
     try:
         results = await asyncio.gather(
             acompletion(
-                f"{provider.value}/{model_id}", **extra_kwargs, messages=[{"role": "user", "content": prompt_1}]
+                model=model_id, provider=provider, **extra_kwargs, messages=[{"role": "user", "content": prompt_1}]
             ),
             acompletion(
-                f"{provider.value}/{model_id}", **extra_kwargs, messages=[{"role": "user", "content": prompt_2}]
+                model=model_id, provider=provider, **extra_kwargs, messages=[{"role": "user", "content": prompt_2}]
             ),
         )
         assert isinstance(results[0], ChatCompletion)

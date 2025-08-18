@@ -24,7 +24,8 @@ def test_responses(
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
     try:
         result = responses(
-            f"{provider.value}/{model_id}",
+            model=model_id,
+            provider=provider,
             **extra_kwargs,
             input_data="What's the capital of France? Please think step by step.",
             instructions="Talk like a pirate.",

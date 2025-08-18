@@ -38,6 +38,7 @@ class TogetherProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -94,6 +95,9 @@ class TogetherProvider(Provider):
         else:
             client = together.Together(api_key=self.config.api_key)
 
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         if params.response_format:
             instructor_client = instructor.patch(client, mode=instructor.Mode.JSON)  # type: ignore [call-overload]
 
@@ -101,9 +105,7 @@ class TogetherProvider(Provider):
                 model=params.model_id,
                 messages=cast("Any", params.messages),
                 response_model=params.response_format,
-                **params.model_dump(
-                    exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format"}
-                ),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
                 **kwargs,
             )
 
@@ -114,7 +116,7 @@ class TogetherProvider(Provider):
                 client,
                 params.model_id,
                 params.messages,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "stream"}),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
                 **kwargs,
             )
 
