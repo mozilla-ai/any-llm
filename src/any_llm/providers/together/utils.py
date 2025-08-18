@@ -1,11 +1,12 @@
 import uuid
 from datetime import datetime
-from typing import Literal, cast
-
-from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
+from typing import TYPE_CHECKING, Literal, cast
 
 from any_llm.types.completion import (
+    ChatCompletion,
     ChatCompletionChunk,
+    ChatCompletionMessage,
+    Choice,
     ChoiceDelta,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
@@ -13,8 +14,12 @@ from any_llm.types.completion import (
     CompletionUsage,
 )
 
+if TYPE_CHECKING:
+    from together.types import ChatCompletionResponse
+    from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
 
-def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatCompletionChunk) -> ChatCompletionChunk:
+
+def _create_openai_chunk_from_together_chunk(together_chunk: "TogetherChatCompletionChunk") -> ChatCompletionChunk:
     """Convert a Together streaming chunk to OpenAI ChatCompletionChunk format."""
 
     if not together_chunk.choices:
@@ -72,5 +77,48 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
         created=together_chunk.created or int(datetime.now().timestamp()),
         model=together_chunk.model or "unknown",
         object="chat.completion.chunk",
+        usage=usage,
+    )
+
+
+def to_chat_completion(response: "ChatCompletionResponse", model_id: str) -> ChatCompletion:
+    """Convert Together response to OpenAI ChatCompletion format."""
+    data = response.model_dump()
+
+    choices: list[Choice] = []
+    for i, ch in enumerate(data.get("choices", [])):
+        msg = ch.get("message", {})
+
+        message = ChatCompletionMessage(
+            role=cast("Literal['assistant']", msg.get("role")),
+            content=msg.get("content"),
+            tool_calls=msg.get("tool_calls"),
+        )
+        choices.append(
+            Choice(
+                index=i,
+                finish_reason=cast(
+                    "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']",
+                    ch.get("finish_reason"),
+                ),
+                message=message,
+            )
+        )
+
+    usage = None
+    if data.get("usage"):
+        u = data["usage"]
+        usage = CompletionUsage(
+            prompt_tokens=u.get("prompt_tokens", 0),
+            completion_tokens=u.get("completion_tokens", 0),
+            total_tokens=u.get("total_tokens", 0),
+        )
+
+    return ChatCompletion(
+        id=data.get("id", ""),
+        model=model_id,
+        created=data.get("created", 0),
+        object="chat.completion",
+        choices=choices,
         usage=usage,
     )
