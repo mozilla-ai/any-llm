@@ -83,14 +83,18 @@ class MistralProvider(Provider):
                 client,
                 params.model_id,
                 patched_messages,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+                **params.model_dump(
+                    exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
+                ),
                 **kwargs,
             )
 
         response = await client.chat.complete_async(
             model=params.model_id,
             messages=patched_messages,  # type: ignore[arg-type]
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+            **params.model_dump(
+                exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
+            ),
             **kwargs,
         )
 
@@ -135,7 +139,9 @@ class MistralProvider(Provider):
             client,
             params.model_id,
             patched_messages,
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+            **params.model_dump(
+                exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
+            ),
             **kwargs,
         )
 

@@ -104,7 +104,9 @@ class CohereProvider(Provider):
             return self._stream_completion_async(
                 params.model_id,
                 patched_messages,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+                **params.model_dump(
+                    exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
+                ),
                 **kwargs,
             )
 
@@ -114,7 +116,9 @@ class CohereProvider(Provider):
         response = await client.chat(
             model=params.model_id,
             messages=patched_messages,  # type: ignore[arg-type]
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream", "response_format"}),
+            **params.model_dump(
+                exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "stream", "response_format"}
+            ),
             **kwargs,
         )
 
