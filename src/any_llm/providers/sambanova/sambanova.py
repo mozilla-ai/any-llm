@@ -41,7 +41,9 @@ class SambanovaProvider(BaseOpenAIProvider):
                 model=params.model_id,
                 messages=cast("Any", params.messages),
                 response_model=params.response_format,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
+                **params.model_dump(
+                    exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format"}
+                ),
                 **kwargs,
             )
             return _convert_instructor_response(response, params.model_id, self.PROVIDER_NAME)
