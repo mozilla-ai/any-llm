@@ -1,7 +1,7 @@
 import os
 from abc import ABC
 from collections.abc import AsyncIterator, Iterator, Sequence
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from openai import AsyncOpenAI, OpenAI
 from openai._streaming import AsyncStream, Stream
@@ -34,6 +34,8 @@ class BaseOpenAIProvider(Provider, ABC):
     SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = True
+
+    _DEFAULT_REASONING_EFFORT: Literal["minimal", "low", "medium", "high", "auto"] | None = "medium"
 
     def _convert_completion_response_async(
         self, response: OpenAIChatCompletion | AsyncStream[OpenAIChatCompletionChunk]
@@ -83,6 +85,9 @@ class BaseOpenAIProvider(Provider, ABC):
             api_key=self.config.api_key,
         )
 
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = self._DEFAULT_REASONING_EFFORT
+
         if params.response_format:
             if params.stream:
                 msg = "stream is not supported for response_format"
@@ -109,6 +114,9 @@ class BaseOpenAIProvider(Provider, ABC):
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,
         )
+
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = self._DEFAULT_REASONING_EFFORT
 
         if params.response_format:
             if params.stream:

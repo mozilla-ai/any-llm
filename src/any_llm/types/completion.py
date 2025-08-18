@@ -137,5 +137,5 @@ class CompletionParams(BaseModel):
     max_completion_tokens: int | None = None
     """Maximum number of tokens for the completion (provider-dependent)"""
 
-    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None
-    """Reasoning effort level for models that support it"""
+    reasoning_effort: Literal["minimal", "low", "medium", "high", "auto"] | None = "auto"
+    """Reasoning effort level for models that support it. "auto" will map to each provider's default."""

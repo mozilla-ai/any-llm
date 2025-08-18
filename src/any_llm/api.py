@@ -37,7 +37,7 @@ def completion(
     logit_bias: dict[str, float] | None = None,
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
-    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = "medium",
+    reasoning_effort: Literal["minimal", "low", "medium", "high", "auto"] | None = "auto",
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
     """Create a chat completion.
@@ -67,7 +67,7 @@ def completion(
         logit_bias: Bias the likelihood of specified tokens during generation
         stream_options: Additional options controlling streaming behavior
         max_completion_tokens: Maximum number of tokens for the completion
-        reasoning_effort: Reasoning effort level for models that support it
+        reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
         **kwargs: Additional provider-specific parameters
 
     Returns:
@@ -132,7 +132,7 @@ async def acompletion(
     logit_bias: dict[str, float] | None = None,
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
-    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = "medium",
+    reasoning_effort: Literal["minimal", "low", "medium", "high", "auto"] | None = "auto",
     **kwargs: Any,
 ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
     """Create a chat completion asynchronously.
@@ -162,7 +162,7 @@ async def acompletion(
         logit_bias: Bias the likelihood of specified tokens during generation
         stream_options: Additional options controlling streaming behavior
         max_completion_tokens: Maximum number of tokens for the completion
-        reasoning_effort: Reasoning effort level for models that support it
+        reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
         **kwargs: Additional provider-specific parameters
 
     Returns:

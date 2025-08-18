@@ -74,6 +74,11 @@ class CerebrasProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Cerebras with instructor support for structured outputs."""
+
+        # Cerebras does not support providing reasoning effort
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         if params.response_format:
             if not isinstance(params.response_format, type) or not issubclass(params.response_format, BaseModel):
                 msg = "response_format must be a pydantic model"
