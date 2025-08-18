@@ -131,8 +131,7 @@ class BaseOpenAIProvider(Provider, ABC):
     async def aresponses(
         self, model: str, input_data: Any, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
-        """Call OpenAI Responses API
-        """
+        """Call OpenAI Responses API"""
         client = AsyncOpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,
