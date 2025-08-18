@@ -73,43 +73,44 @@ class BaseOpenAIProvider(Provider, ABC):
 
         return response_dict
 
+    def _convert_chat_completion(self, response: OpenAIChatCompletion) -> ChatCompletion:
+        if response.object != "chat.completion":
+            # Force setting this here because it's a requirement Literal in the OpenAI API, but the Llama API has
+            # a typo where they set it to "chat.completions". I filed a ticket with them to fix it. No harm in setting it here
+            # Because this is the only accepted value anyways.
+            logger.warning(
+                "API returned an unexpected object type: %s. Setting to 'chat.completion'.",
+                response.object,
+            )
+            response.object = "chat.completion"
+        if not isinstance(response.created, int):
+            # Sambanova returns a float instead of an int.
+            logger.warning(
+                "API returned an unexpected created type: %s. Setting to int.",
+                type(response.created),
+            )
+            response.created = int(response.created)
+        normalized = self._normalize_openai_dict_response(response.model_dump())
+        return ChatCompletion.model_validate(normalized)
+
     def _convert_completion_response_async(
         self, response: OpenAIChatCompletion | AsyncStream[OpenAIChatCompletionChunk]
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Convert an OpenAI completion response to an AnyLLM completion response."""
         if isinstance(response, OpenAIChatCompletion):
-            if response.object != "chat.completion":
-                # Force setting this here because it's a requirement Literal in the OpenAI API, but the Llama API has
-                # a typo where they set it to "chat.completions". I filed a ticket with them to fix it. No harm in setting it here
-                # Because this is the only accepted value anyways.
-                logger.warning(
-                    "API returned an unexpected object type: %s. Setting to 'chat.completion'.",
-                    response.object,
-                )
-                response.object = "chat.completion"
-            if not isinstance(response.created, int):
-                # Sambanova returns a float instead of an int.
-                logger.warning(
-                    "API returned an unexpected created type: %s. Setting to int.",
-                    type(response.created),
-                )
-                response.created = int(response.created)
-            normalized = self._normalize_openai_dict_response(response.model_dump())
-            return ChatCompletion.model_validate(normalized)
-
-        def _convert_chunk(chunk: OpenAIChatCompletionChunk) -> ChatCompletionChunk:
-            if not isinstance(chunk.created, int):
-                logger.warning(
-                    "API returned an unexpected created type: %s. Setting to int.",
-                    type(chunk.created),
-                )
-                chunk.created = int(chunk.created)
-            normalized_chunk = self._normalize_openai_dict_response(chunk.model_dump())
-            return ChatCompletionChunk.model_validate(normalized_chunk)
+            return self._convert_chat_completion(response)
 
         async def chunk_iterator() -> AsyncIterator[ChatCompletionChunk]:
             async for chunk in response:
-                yield _convert_chunk(chunk)
+                if not isinstance(chunk.created, int):
+                    logger.warning(
+                        "API returned an unexpected created type: %s. Setting to int.",
+                        type(chunk.created),
+                    )
+                    chunk.created = int(chunk.created)
+
+                normalized_chunk = self._normalize_openai_dict_response(chunk.model_dump())
+                yield ChatCompletionChunk.model_validate(normalized_chunk)
 
         return chunk_iterator()
 
@@ -118,24 +119,7 @@ class BaseOpenAIProvider(Provider, ABC):
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Convert an OpenAI completion response to an AnyLLM completion response."""
         if isinstance(response, OpenAIChatCompletion):
-            if response.object != "chat.completion":
-                # Force setting this here because it's a requirement Literal in the OpenAI API, but the Llama API has
-                # a typo where they set it to "chat.completions". I filed a ticket with them to fix it. No harm in setting it here
-                # Because this is the only accepted value anyways.
-                logger.warning(
-                    "API returned an unexpected object type: %s. Setting to 'chat.completion'.",
-                    response.object,
-                )
-                response.object = "chat.completion"
-            if not isinstance(response.created, int):
-                # Sambanova returns a float instead of an int.
-                logger.warning(
-                    "API returned an unexpected created type: %s. Setting to int.",
-                    type(response.created),
-                )
-                response.created = int(response.created)
-            normalized = self._normalize_openai_dict_response(response.model_dump())
-            return ChatCompletion.model_validate(normalized)
+            return self._convert_chat_completion(response)
 
         def _convert_chunk(chunk: OpenAIChatCompletionChunk) -> ChatCompletionChunk:
             if not isinstance(chunk.created, int):
