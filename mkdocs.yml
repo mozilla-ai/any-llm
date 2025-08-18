@@ -12,7 +12,7 @@ nav:
     - Completion: api/completion.md
     - Embedding: api/embedding.md
     - Exceptions: api/exceptions.md
-    - List Models: api/models.md
+    - List Models: api/list_models.md
 theme:
   name: material
   font:
