@@ -103,7 +103,9 @@ class CohereProvider(Provider):
         response = self.client.chat(
             model=params.model_id,
             messages=patched_messages,  # type: ignore[arg-type]
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream", "reasoning_effort", "response_format"}),
+            **params.model_dump(
+                exclude_none=True, exclude={"model_id", "messages", "stream", "reasoning_effort", "response_format"}
+            ),
             **kwargs,
         )
 
