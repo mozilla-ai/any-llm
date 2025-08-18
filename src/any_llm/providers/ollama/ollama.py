@@ -4,8 +4,8 @@ from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 try:
-    from ollama import ChatResponse as OllamaChatResponse
     from ollama import AsyncClient, Client
+    from ollama import ChatResponse as OllamaChatResponse
 
     PACKAGES_INSTALLED = True
 except ImportError:
@@ -65,7 +65,7 @@ class OllamaProvider(Provider):
         )
         for chunk in response:
             yield _create_openai_chunk_from_ollama_chunk(chunk)
-    
+
     async def _stream_completion_async(
         self,
         client: AsyncClient,
