@@ -130,65 +130,60 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
         },
     }
 
+    response_dict["choices"] = []
     if (
         response.candidates
         and len(response.candidates) > 0
         and response.candidates[0].content
         and response.candidates[0].content.parts
         and len(response.candidates[0].content.parts) > 0
-        and hasattr(response.candidates[0].content.parts[0], "function_call")
-        and response.candidates[0].content.parts[0].function_call
     ):
-        function_call = response.candidates[0].content.parts[0].function_call
+        reasoning = None
+        for part in response.candidates[0].content.parts:
+            if getattr(part, "thought", None):
+                reasoning = part.text
+            elif getattr(part, "function_call", None):
+                function_call = part.function_call
 
-        args_dict = {}
-        if hasattr(function_call, "args") and function_call.args:
-            for key, value in function_call.args.items():
-                args_dict[key] = value
+                args_dict = {}
+                if getattr(function_call, "args", None):
+                    for key, value in function_call.args.items():
+                        args_dict[key] = value
 
-        response_dict["choices"] = [
-            {
-                "message": {
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [
-                        {
-                            "id": f"call_{hash(function_call.name)}",
-                            "function": {
-                                "name": function_call.name,
-                                "arguments": json.dumps(args_dict),
-                            },
-                            "type": "function",
-                        }
-                    ],
-                },
-                "finish_reason": "tool_calls",
-                "index": 0,
-            }
-        ]
-    else:
-        content = ""
-        if (
-            response.candidates
-            and len(response.candidates) > 0
-            and response.candidates[0].content
-            and response.candidates[0].content.parts
-            and len(response.candidates[0].content.parts) > 0
-            and hasattr(response.candidates[0].content.parts[0], "text")
-        ):
-            content = response.candidates[0].content.parts[0].text or ""
-
-        response_dict["choices"] = [
-            {
-                "message": {
-                    "role": "assistant",
-                    "content": content,
-                    "tool_calls": None,
-                },
-                "finish_reason": "stop",
-                "index": 0,
-            }
-        ]
+                response_dict["choices"].append(
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "reasoning": reasoning,
+                            "tool_calls": [
+                                {
+                                    "id": f"call_{hash(function_call.name)}",
+                                    "function": {
+                                        "name": function_call.name,
+                                        "arguments": json.dumps(args_dict),
+                                    },
+                                    "type": "function",
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                        "index": 0,
+                    }
+                )
+            elif getattr(part, "text", None):
+                response_dict["choices"].append(
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": part.text,
+                            "reasoning": reasoning,
+                            "tool_calls": None,
+                        },
+                        "finish_reason": "stop",
+                        "index": 0,
+                    }
+                )
 
     return response_dict
 

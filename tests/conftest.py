@@ -9,6 +9,7 @@ from any_llm.provider import ProviderName
 def provider_reasoning_model_map() -> dict[ProviderName, str]:
     return {
         ProviderName.MISTRAL: "magistral-small-latest",
+        ProviderName.GOOGLE: "gemini-2.5-flash",
         ProviderName.GROQ: "openai/gpt-oss-20b",
         ProviderName.FIREWORKS: "accounts/fireworks/models/deepseek-r1",
         ProviderName.OPENAI: "gpt-5-nano",
@@ -30,7 +31,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.DATABRICKS: "databricks-meta-llama-3-1-8b-instruct",
         ProviderName.DEEPSEEK: "deepseek-chat",
         ProviderName.OPENAI: "gpt-5-nano",
-        ProviderName.GOOGLE: "gemini-2.0-flash-001",
+        ProviderName.GOOGLE: "gemini-2.5-flash",
         ProviderName.MOONSHOT: "moonshot-v1-8k",
         ProviderName.SAMBANOVA: "Meta-Llama-3.1-8B-Instruct",
         ProviderName.TOGETHER: "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
