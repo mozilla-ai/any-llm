@@ -104,7 +104,9 @@ class OllamaProvider(Provider):
             cleaned_messages.append(cleaned_message)
 
         kwargs = {
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+            **params.model_dump(
+                exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
+            ),
             **kwargs,
         }
 

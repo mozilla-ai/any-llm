@@ -116,7 +116,8 @@ class GoogleProvider(Provider):
         response_format = params.response_format
         # Build generation config without duplicating keys (e.g., tools)
         base_kwargs = params.model_dump(
-            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream", "tools", "tool_choice"}
+            exclude_none=True,
+            exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream", "tools", "tool_choice"},
         )
         base_kwargs.update(kwargs)
         generation_config = types.GenerateContentConfig(**base_kwargs)

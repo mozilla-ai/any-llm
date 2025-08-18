@@ -80,7 +80,9 @@ class TogetherProvider(Provider):
                 model=params.model_id,
                 messages=cast("Any", params.messages),
                 response_model=params.response_format,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
+                **params.model_dump(
+                    exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format"}
+                ),
                 **kwargs,
             )
 
@@ -91,7 +93,7 @@ class TogetherProvider(Provider):
                 client,
                 params.model_id,
                 params.messages,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "stream"}),
                 **kwargs,
             )
 

@@ -93,7 +93,9 @@ class CohereProvider(Provider):
             return self._stream_completion(
                 params.model_id,
                 patched_messages,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+                **params.model_dump(
+                    exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
+                ),
                 **kwargs,
             )
 

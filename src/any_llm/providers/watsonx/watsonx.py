@@ -73,14 +73,18 @@ class WatsonxProvider(Provider):
 
         if params.stream:
             kwargs = {
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+                **params.model_dump(
+                    exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
+                ),
                 **kwargs,
             }
             return self._stream_completion(model_inference, params.messages, **kwargs)
 
         response = model_inference.chat(
             messages=params.messages,
-            params=params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+            params=params.model_dump(
+                exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
+            ),
         )
 
         return _convert_response(response)
