@@ -56,7 +56,7 @@ class GroqProvider(Provider):
         stream: GroqAsyncStream[GroqChatCompletionChunk] = await client.chat.completions.create(
             model=params.model_id,
             messages=cast("Any", params.messages),
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages"}),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "reasoning_effort"}),
             **kwargs,
         )
 
@@ -100,7 +100,7 @@ class GroqProvider(Provider):
                 model=params.model_id,
                 messages=params.messages,  # type: ignore[arg-type]
                 response_model=params.response_format,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream", "reasoning_effort"}),
                 **kwargs,
             )
             return _convert_instructor_response(instructor_response, params.model_id, self.PROVIDER_NAME)
@@ -114,7 +114,7 @@ class GroqProvider(Provider):
         response: GroqChatCompletion = await client.chat.completions.create(
             model=params.model_id,
             messages=cast("Any", params.messages),
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream", "reasoning_effort"}),
             **kwargs,
         )
 
@@ -137,7 +137,7 @@ class GroqProvider(Provider):
                 model=params.model_id,
                 messages=params.messages,  # type: ignore[arg-type]
                 response_model=params.response_format,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream", "reasoning_effort"}),
                 **kwargs,
             )
             return _convert_instructor_response(instructor_response, params.model_id, self.PROVIDER_NAME)
