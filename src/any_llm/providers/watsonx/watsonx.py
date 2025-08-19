@@ -1,5 +1,5 @@
 import os
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 try:
@@ -37,6 +37,20 @@ class WatsonxProvider(Provider):
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
+    async def _stream_completion_async(
+        self,
+        model_inference: ModelInference,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatCompletionChunk]:
+        """Handle streaming completion - extracted to avoid generator issues."""
+        response_stream = await model_inference.achat_stream(
+            messages=messages,
+            params=kwargs,
+        )
+        async for chunk in response_stream:
+            yield _convert_streaming_chunk(chunk)
+
     def _stream_completion(
         self,
         model_inference: ModelInference,
@@ -50,6 +64,44 @@ class WatsonxProvider(Provider):
         )
         for chunk in response_stream:
             yield _convert_streaming_chunk(chunk)
+
+    async def acompletion(
+        self,
+        params: CompletionParams,
+        **kwargs: Any,
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        """Create a chat completion using Watsonx."""
+
+        model_inference = ModelInference(
+            model_id=params.model_id,
+            credentials=Credentials(
+                api_key=self.config.api_key,
+                url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL"),
+            ),
+            project_id=kwargs.get("project_id") or os.getenv("WATSONX_PROJECT_ID"),
+        )
+
+        # Handle response_format by inlining schema guidance into the prompt
+        response_format = params.response_format
+        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+            params.messages = _convert_pydantic_to_watsonx_json(response_format, params.messages)
+
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
+        if params.stream:
+            kwargs = {
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+                **kwargs,
+            }
+            return self._stream_completion_async(model_inference, params.messages, **kwargs)
+
+        response = await model_inference.achat(
+            messages=params.messages,
+            params=params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+        )
+
+        return _convert_response(response)
 
     def completion(
         self,
