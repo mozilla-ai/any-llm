@@ -3,7 +3,6 @@ from typing import TYPE_CHECKING, Any
 
 try:
     from huggingface_hub import AsyncInferenceClient, InferenceClient
-    from openai.lib._parsing import type_to_response_format_param
 
     PACKAGES_INSTALLED = True
 except ImportError:
@@ -11,6 +10,7 @@ except ImportError:
 
 from any_llm.provider import Provider
 from any_llm.providers.huggingface.utils import (
+    _convert_params,
     _create_openai_chunk_from_huggingface_chunk,
 )
 from any_llm.types.completion import (
@@ -47,16 +47,10 @@ class HuggingfaceProvider(Provider):
     async def _stream_completion_async(
         self,
         client: "AsyncInferenceClient",
-        model: str,
-        messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> AsyncIterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
-        response: AsyncIterator[HuggingFaceChatCompletionStreamOutput] = await client.chat_completion(
-            model=model,
-            messages=messages,
-            **kwargs,
-        )
+        response: AsyncIterator[HuggingFaceChatCompletionStreamOutput] = await client.chat_completion(**kwargs)
 
         async for chunk in response:
             yield _create_openai_chunk_from_huggingface_chunk(chunk)
@@ -64,14 +58,10 @@ class HuggingfaceProvider(Provider):
     def _stream_completion(
         self,
         client: "InferenceClient",
-        model: str,
-        messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> Iterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
         response: Iterator[HuggingFaceChatCompletionStreamOutput] = client.chat_completion(
-            model=model,
-            messages=messages,
             **kwargs,
         )
         for chunk in response:
@@ -87,30 +77,14 @@ class HuggingfaceProvider(Provider):
             base_url=self.config.api_base, token=self.config.api_key, timeout=kwargs.get("timeout")
         )
 
-        if params.max_tokens is not None:
-            kwargs["max_new_tokens"] = params.max_tokens
-
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
-
-        if params.response_format is not None:
-            kwargs["response_format"] = type_to_response_format_param(response_format=params.response_format)  # type: ignore[arg-type]
+        converted_kwargs = _convert_params(params, **kwargs)
 
         if params.stream:
-            stream_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "max_tokens"})
-            stream_kwargs.update(kwargs)
-            stream_kwargs["stream"] = True
-            return self._stream_completion_async(client, params.model_id, params.messages, **stream_kwargs)
+            converted_kwargs["stream"] = True
+            return self._stream_completion_async(client, **converted_kwargs)
 
-        response = await client.chat_completion(
-            model=params.model_id,
-            messages=params.messages,
-            **params.model_dump(
-                exclude_none=True,
-                exclude={"model_id", "messages", "response_format", "stream", "max_tokens"},
-            ),
-            **kwargs,
-        )
+        response = await client.chat_completion(**converted_kwargs)
+
         data = response
         choices_out: list[Choice] = []
         for i, ch in enumerate(data.get("choices", [])):
@@ -150,30 +124,14 @@ class HuggingfaceProvider(Provider):
             base_url=self.config.api_base, token=self.config.api_key, timeout=kwargs.get("timeout")
         )
 
-        if params.max_tokens is not None:
-            kwargs["max_new_tokens"] = params.max_tokens
-
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
-
-        if params.response_format is not None:
-            kwargs["response_format"] = type_to_response_format_param(response_format=params.response_format)  # type: ignore[arg-type]
+        converted_kwargs = _convert_params(params, **kwargs)
 
         if params.stream:
-            stream_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "max_tokens"})
-            stream_kwargs.update(kwargs)
-            stream_kwargs["stream"] = True
-            return self._stream_completion(client, params.model_id, params.messages, **stream_kwargs)
+            converted_kwargs["stream"] = True
+            return self._stream_completion(client, **converted_kwargs)
 
-        response = client.chat_completion(
-            model=params.model_id,
-            messages=params.messages,
-            **params.model_dump(
-                exclude_none=True,
-                exclude={"model_id", "messages", "response_format", "stream", "max_tokens"},
-            ),
-            **kwargs,
-        )
+        response = client.chat_completion(**converted_kwargs)
+
         data = response
         choices_out: list[Choice] = []
         for i, ch in enumerate(data.get("choices", [])):
