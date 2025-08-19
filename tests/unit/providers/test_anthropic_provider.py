@@ -8,6 +8,7 @@ import pytest
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ApiConfig, ProviderFactory
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
+from any_llm.providers.anthropic.utils import DEFAULT_MAX_TOKENS
 from any_llm.types.completion import CompletionParams
 
 
@@ -63,7 +64,7 @@ def test_completion_with_system_message() -> None:
             model=model,
             messages=[{"role": "user", "content": "Hello"}],
             system="You are a helpful assistant.",
-            max_tokens=4096,
+            max_tokens=DEFAULT_MAX_TOKENS,
         )
 
 
@@ -85,7 +86,7 @@ def test_completion_with_multiple_system_messages() -> None:
             model=model,
             messages=[{"role": "user", "content": "Hello"}],
             system="First part.\nSecond part.",
-            max_tokens=4096,
+            max_tokens=DEFAULT_MAX_TOKENS,
         )
 
 
@@ -127,7 +128,7 @@ def test_completion_with_tool_choice_required() -> None:
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
             messages=messages,
-            max_tokens=4096,
+            max_tokens=DEFAULT_MAX_TOKENS,
             **expected_kwargs,
         )
 
@@ -155,7 +156,7 @@ def test_completion_with_tool_choice_and_parallel_tool_calls(parallel_tool_calls
             model=model,
             messages=[{"role": "user", "content": "Hello"}],
             **expected_kwargs,
-            max_tokens=4096,
+            max_tokens=DEFAULT_MAX_TOKENS,
         )
 
 
@@ -216,5 +217,5 @@ def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, Any]])
                 },
                 {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "foo", "content": "sunny"}]},
             ],
-            max_tokens=4096,
+            max_tokens=DEFAULT_MAX_TOKENS,
         )
