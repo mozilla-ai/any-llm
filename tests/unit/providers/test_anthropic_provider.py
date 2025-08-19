@@ -8,7 +8,7 @@ import pytest
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ApiConfig, ProviderFactory
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
-from any_llm.providers.anthropic.utils import DEFAULT_MAX_TOKENS
+from any_llm.providers.anthropic.utils import DEFAULT_MAX_TOKENS, REASONING_EFFORT_TO_THINKING_BUDGETS
 from any_llm.types.completion import CompletionParams
 
 
@@ -95,20 +95,13 @@ def test_completion_with_kwargs() -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
-    kwargs: dict[str, object] = {}
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
-        provider.completion(
-            CompletionParams(model_id=model, messages=messages, max_tokens=100, temperature=0.5), **kwargs
-        )
+        provider.completion(CompletionParams(model_id=model, messages=messages, max_tokens=100, temperature=0.5))
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
-            model=model,
-            messages=messages,
-            max_tokens=100,
-            temperature=0.5,
-            **kwargs,
+            model=model, messages=messages, max_tokens=100, temperature=0.5
         )
 
 
@@ -117,11 +110,10 @@ def test_completion_with_tool_choice_required() -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
-    kwargs: dict[str, object] = {}
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
-        provider.completion(CompletionParams(model_id=model, messages=messages, tool_choice="required"), **kwargs)
+        provider.completion(CompletionParams(model_id=model, messages=messages, tool_choice="required"))
 
         expected_kwargs = {"tool_choice": {"type": "any", "disable_parallel_tool_use": False}}
 
@@ -139,7 +131,6 @@ def test_completion_with_tool_choice_and_parallel_tool_calls(parallel_tool_calls
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
-    kwargs: dict[str, object] = {}
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ApiConfig(api_key=api_key))
@@ -147,7 +138,6 @@ def test_completion_with_tool_choice_and_parallel_tool_calls(parallel_tool_calls
             CompletionParams(
                 model_id=model, messages=messages, tool_choice="auto", parallel_tool_calls=parallel_tool_calls
             ),
-            **kwargs,
         )
 
         expected_kwargs = {"tool_choice": {"type": "auto", "disable_parallel_tool_use": not parallel_tool_calls}}
@@ -218,4 +208,35 @@ def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, Any]])
                 {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "foo", "content": "sunny"}]},
             ],
             max_tokens=DEFAULT_MAX_TOKENS,
+        )
+
+
+@pytest.mark.parametrize(
+    "reasoning_effort",
+    [
+        None,
+        "low",
+        "medium",
+        "high",
+    ],
+)
+def test_completion_with_custom_reasoning_effort(reasoning_effort: str) -> None:
+    api_key = "test-api-key"
+    model = "model-id"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(ApiConfig(api_key=api_key))
+        provider.completion(CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort))  # type: ignore[arg-type]
+
+        if reasoning_effort is not None:
+            expected_thinking = {
+                "type": "enabled",
+                "budget_tokens": REASONING_EFFORT_TO_THINKING_BUDGETS[reasoning_effort],
+            }
+        else:
+            expected_thinking = {"type": "disabled"}
+
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
+            model=model, messages=messages, max_tokens=DEFAULT_MAX_TOKENS, thinking=expected_thinking
         )
