@@ -7,6 +7,12 @@ try:
     from ollama import AsyncClient, Client
     from ollama import ChatResponse as OllamaChatResponse
 
+    from any_llm.providers.ollama.utils import (
+        _create_chat_completion_from_ollama_response,
+        _create_openai_chunk_from_ollama_chunk,
+        _create_openai_embedding_response_from_ollama,
+    )
+
     PACKAGES_INSTALLED = True
 except ImportError:
     PACKAGES_INSTALLED = False
@@ -14,11 +20,6 @@ except ImportError:
 from pydantic import BaseModel
 
 from any_llm.provider import ApiConfig, Provider
-from any_llm.providers.ollama.utils import (
-    _create_chat_completion_from_ollama_response,
-    _create_openai_chunk_from_ollama_chunk,
-    _create_openai_embedding_response_from_ollama,
-)
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 
 
