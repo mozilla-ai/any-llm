@@ -15,3 +15,5 @@ class PortkeyProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = False
+
+    _DEFAULT_REASONING_EFFORT = None

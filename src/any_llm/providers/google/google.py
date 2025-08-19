@@ -117,6 +117,9 @@ class GoogleProvider(Provider):
         if isinstance(params.tool_choice, str):
             kwargs["tool_config"] = _convert_tool_choice(params.tool_choice)
 
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         if params.reasoning_effort is not None:
             kwargs["thinking_config"] = types.ThinkingConfig(
                 include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort]
@@ -127,7 +130,7 @@ class GoogleProvider(Provider):
         # Build generation config without duplicating keys (e.g., tools)
         base_kwargs = params.model_dump(
             exclude_none=True,
-            exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream", "tools", "tool_choice"},
+            exclude={"model_id", "messages", "response_format", "stream", "tools", "tool_choice", "reasoning_effort"},
         )
         base_kwargs.update(kwargs)
         generation_config = types.GenerateContentConfig(**base_kwargs)

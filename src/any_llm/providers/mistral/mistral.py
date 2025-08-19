@@ -70,6 +70,9 @@ class MistralProvider(Provider):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         patched_messages = _patch_messages(params.messages)
 
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         if (
             params.response_format is not None
             and isinstance(params.response_format, type)
@@ -84,18 +87,14 @@ class MistralProvider(Provider):
                 client,
                 params.model_id,
                 patched_messages,
-                **params.model_dump(
-                    exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
-                ),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
                 **kwargs,
             )
 
         response = await client.chat.complete_async(
             model=params.model_id,
             messages=patched_messages,  # type: ignore[arg-type]
-            **params.model_dump(
-                exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
-            ),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "", "response_format", "stream"}),
             **kwargs,
         )
 
@@ -114,6 +113,9 @@ class MistralProvider(Provider):
 
         patched_messages = _patch_messages(params.messages)
 
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         if (
             params.response_format is not None
             and isinstance(params.response_format, type)
@@ -125,9 +127,7 @@ class MistralProvider(Provider):
             response = client.chat.complete(
                 model=params.model_id,
                 messages=patched_messages,  # type: ignore[arg-type]
-                **params.model_dump(
-                    exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
-                ),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
                 **kwargs,
             )
 
@@ -140,9 +140,7 @@ class MistralProvider(Provider):
             client,
             params.model_id,
             patched_messages,
-            **params.model_dump(
-                exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
-            ),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "", "response_format", "stream"}),
             **kwargs,
         )
 

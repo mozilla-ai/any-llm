@@ -34,7 +34,7 @@ def _process_completion_params(
     logit_bias: dict[str, float] | None,
     stream_options: dict[str, Any] | None,
     max_completion_tokens: int | None,
-    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None,
+    reasoning_effort: Literal["minimal", "low", "medium", "high", "auto"] | None,
     **kwargs: Any,
 ) -> tuple[Provider, CompletionParams]:
     if provider is None:

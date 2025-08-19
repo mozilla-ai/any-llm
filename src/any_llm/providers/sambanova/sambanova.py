@@ -32,6 +32,9 @@ class SambanovaProvider(BaseOpenAIProvider):
             api_key=self.config.api_key,
         )
 
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         if params.response_format:
             instructor_client = instructor.from_openai(client)
             if not isinstance(params.response_format, type) or not issubclass(params.response_format, BaseModel):
@@ -41,9 +44,7 @@ class SambanovaProvider(BaseOpenAIProvider):
                 model=params.model_id,
                 messages=cast("Any", params.messages),
                 response_model=params.response_format,
-                **params.model_dump(
-                    exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format"}
-                ),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
                 **kwargs,
             )
             return _convert_instructor_response(response, params.model_id, self.PROVIDER_NAME)
