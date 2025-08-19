@@ -24,9 +24,11 @@ from any_llm.types.completion import (
     CompletionParams,
     CompletionUsage,
     Function,
+    Reasoning,
 )
 
 DEFAULT_MAX_TOKENS = 8192
+REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 1024, "low": 2048, "medium": 8192, "high": 24576}
 
 
 def _is_tool_call(message: dict[str, Any]) -> bool:
@@ -162,7 +164,7 @@ def _convert_response(response: Message) -> ChatCompletion:
 
     content_parts: list[str] = []
     tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
-
+    reasoning_content: str | None = None
     for content_block in response.content:
         if content_block.type == "text":
             content_parts.append(content_block.text)
@@ -178,13 +180,20 @@ def _convert_response(response: Message) -> ChatCompletion:
                 )
             )
         elif content_block.type == "thinking":
-            # Provider does not advertise reasoning support; include in content for completeness
-            content_parts.append(content_block.thinking)
+            if reasoning_content is None:
+                reasoning_content = content_block.thinking
+            else:
+                reasoning_content += content_block.thinking
         else:
             msg = f"Unsupported content block type: {content_block.type}"
             raise ValueError(msg)
 
-    message = ChatCompletionMessage(role="assistant", content="".join(content_parts), tool_calls=tool_calls or None)
+    message = ChatCompletionMessage(
+        role="assistant",
+        content="".join(content_parts),
+        reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
+        tool_calls=tool_calls or None,
+    )
 
     usage = CompletionUsage(
         completion_tokens=response.usage.output_tokens,
@@ -264,19 +273,25 @@ def _convert_params(params: CompletionParams, **kwargs: dict[str, Any]) -> dict[
         logger.warning(f"max_tokens is required for Anthropic, setting to {DEFAULT_MAX_TOKENS}")
         params.max_tokens = DEFAULT_MAX_TOKENS
 
-    if params.reasoning_effort == "auto":
-        params.reasoning_effort = None
-
     if params.tools:
         params.tools = _convert_tool_spec(params.tools)
 
     if params.tool_choice or params.parallel_tool_calls:
         params.tool_choice = _convert_tool_choice(params)
 
+    if params.reasoning_effort is None:
+        result_kwargs["thinking"] = {"type": "disabled"}
+    # in "auto" mode, we just don't pass `thinking`
+    elif params.reasoning_effort != "auto":
+        result_kwargs["thinking"] = {
+            "type": "enabled",
+            "budget_tokens": REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort],
+        }
+
     result_kwargs.update(
         params.model_dump(
             exclude_none=True,
-            exclude={"model_id", "messages", "response_format", "parallel_tool_calls"},
+            exclude={"model_id", "messages", "reasoning_effort", "response_format", "parallel_tool_calls"},
         )
     )
     result_kwargs["model"] = params.model_id
