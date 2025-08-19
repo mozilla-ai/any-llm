@@ -1,8 +1,8 @@
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import TYPE_CHECKING, Any
 
 try:
-    from huggingface_hub import InferenceClient
+    from huggingface_hub import AsyncInferenceClient, InferenceClient
     from openai.lib._parsing import type_to_response_format_param
 
     PACKAGES_INSTALLED = True
@@ -44,6 +44,23 @@ class HuggingfaceProvider(Provider):
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
+    async def _stream_completion_async(
+        self,
+        client: "AsyncInferenceClient",
+        model: str,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatCompletionChunk]:
+        """Handle streaming completion - extracted to avoid generator issues."""
+        response: AsyncIterator[HuggingFaceChatCompletionStreamOutput] = await client.chat_completion(
+            model=model,
+            messages=messages,
+            **kwargs,
+        )
+
+        async for chunk in response:
+            yield _create_openai_chunk_from_huggingface_chunk(chunk)
+
     def _stream_completion(
         self,
         client: "InferenceClient",
@@ -59,6 +76,69 @@ class HuggingfaceProvider(Provider):
         )
         for chunk in response:
             yield _create_openai_chunk_from_huggingface_chunk(chunk)
+
+    async def acompletion(
+        self,
+        params: CompletionParams,
+        **kwargs: Any,
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        """Create a chat completion using HuggingFace."""
+        client = AsyncInferenceClient(
+            base_url=self.config.api_base, token=self.config.api_key, timeout=kwargs.get("timeout")
+        )
+
+        if params.max_tokens is not None:
+            kwargs["max_new_tokens"] = params.max_tokens
+
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
+        if params.response_format is not None:
+            kwargs["response_format"] = type_to_response_format_param(response_format=params.response_format)  # type: ignore[arg-type]
+
+        if params.stream:
+            stream_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "max_tokens"})
+            stream_kwargs.update(kwargs)
+            stream_kwargs["stream"] = True
+            return self._stream_completion_async(client, params.model_id, params.messages, **stream_kwargs)
+
+        response = await client.chat_completion(
+            model=params.model_id,
+            messages=params.messages,
+            **params.model_dump(
+                exclude_none=True,
+                exclude={"model_id", "messages", "response_format", "stream", "max_tokens"},
+            ),
+            **kwargs,
+        )
+        data = response
+        choices_out: list[Choice] = []
+        for i, ch in enumerate(data.get("choices", [])):
+            msg = ch.get("message", {})
+            message = ChatCompletionMessage(
+                role="assistant",
+                content=msg.get("content"),
+                tool_calls=msg.get("tool_calls"),
+            )
+            choices_out.append(Choice(index=i, finish_reason=ch.get("finish_reason"), message=message))
+
+        usage = None
+        if data.get("usage"):
+            u = data["usage"]
+            usage = CompletionUsage(
+                prompt_tokens=u.get("prompt_tokens", 0),
+                completion_tokens=u.get("completion_tokens", 0),
+                total_tokens=u.get("total_tokens", 0),
+            )
+
+        return ChatCompletion(
+            id=data.get("id", ""),
+            model=params.model_id,
+            created=data.get("created", 0),
+            object="chat.completion",
+            choices=choices_out,
+            usage=usage,
+        )
 
     def completion(
         self,
