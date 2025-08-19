@@ -26,7 +26,7 @@ from any_llm.types.completion import (
     Function,
 )
 
-DEFAULT_MAX_TOKENS = 4096
+DEFAULT_MAX_TOKENS = 8192
 
 
 def _is_tool_call(message: dict[str, Any]) -> bool:
