@@ -23,7 +23,7 @@ def test_completion_reasoning(
 
     model_id = provider_reasoning_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
-    if provider == ProviderName.GOOGLE:
+    if provider in (ProviderName.ANTHROPIC, ProviderName.GOOGLE):
         extra_kwargs["reasoning_effort"] = "low"
 
     try:
