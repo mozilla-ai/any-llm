@@ -4,10 +4,11 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from google.genai import types
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ApiConfig, ProviderFactory
-from any_llm.providers.google.google import GoogleProvider
+from any_llm.providers.google.google import REASONING_EFFORT_TO_THINKING_BUDGETS, GoogleProvider
 from any_llm.types.completion import CompletionParams
 
 
@@ -159,3 +160,31 @@ def test_call_to_provider_with_no_packages_installed() -> None:
                 sys.modules.pop(mod)
         with pytest.raises(ImportError, match="google required packages are not installed"):
             ProviderFactory.create_provider("google", ApiConfig())
+
+
+@pytest.mark.parametrize(
+    "reasoning_effort",
+    [
+        None,
+        "low",
+        "medium",
+        "high",
+    ],
+)
+def test_completion_with_custom_reasoning_effort(reasoning_effort: str) -> None:
+    api_key = "test-api-key"
+    model = "model-id"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_google_provider() as mock_genai:
+        provider = GoogleProvider(ApiConfig(api_key=api_key))
+        provider.completion(CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort))  # type: ignore[arg-type]
+
+        if reasoning_effort is None:
+            expected_thinking = types.ThinkingConfig(include_thoughts=False)
+        else:
+            expected_thinking = types.ThinkingConfig(
+                include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[reasoning_effort]
+            )
+        _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
+        assert call_kwargs["config"].thinking_config == expected_thinking
