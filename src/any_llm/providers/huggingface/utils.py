@@ -74,6 +74,9 @@ def _convert_params(params: CompletionParams, **kwargs: dict[str, Any]) -> dict[
 
     result_kwargs: dict[str, Any] = kwargs.copy()
 
+    # timeout is passed to the client instantiation, should not reach the `client.chat_completion` call.
+    result_kwargs.pop("timeout", None)
+
     if params.max_tokens is not None:
         result_kwargs["max_new_tokens"] = params.max_tokens
 
