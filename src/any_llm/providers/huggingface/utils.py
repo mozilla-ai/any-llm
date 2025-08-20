@@ -1,5 +1,7 @@
 import uuid
-from typing import Any, Iterable, cast
+from collections.abc import Iterable
+from typing import Any, Literal, cast
+
 from huggingface_hub.hf_api import ModelInfo as HfModelInfo
 from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
     ChatCompletionStreamOutput as HuggingFaceChatCompletionStreamOutput,

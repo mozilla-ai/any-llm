@@ -1,8 +1,8 @@
-from collections.abc import AsyncIterator, Iterator
-from typing import TYPE_CHECKING, Any, Sequence
+from collections.abc import AsyncIterator, Iterator, Sequence
+from typing import TYPE_CHECKING, Any
 
 try:
-    from huggingface_hub import AsyncInferenceClient, InferenceClient, HfApi
+    from huggingface_hub import AsyncInferenceClient, HfApi, InferenceClient
 
     PACKAGES_INSTALLED = True
 except ImportError:
@@ -162,7 +162,6 @@ class HuggingfaceProvider(Provider):
             choices=choices_out,
             usage=usage,
         )
-
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
