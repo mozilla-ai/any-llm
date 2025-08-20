@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any
 
 from pydantic import BaseModel
@@ -13,11 +13,13 @@ except ImportError:
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.cohere.utils import (
+    _convert_models_list,
     _convert_response,
     _create_openai_chunk_from_cohere_chunk,
     _patch_messages,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.model import Model
 
 
 class CohereProvider(Provider):
@@ -32,7 +34,7 @@ class CohereProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -161,3 +163,10 @@ class CohereProvider(Provider):
         )
 
         return _convert_response(response, params.model_id)
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        model_list = self.client.models.list(**kwargs)
+        return _convert_models_list(model_list)
