@@ -154,5 +154,17 @@ class WatsonxProvider(Provider):
                 api_key=self.config.api_key, url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL")
             ),
         )
-        models_list = client.foundation_models.get_model_specs()
-        return _convert_models_list(models_list)
+        models_response = client.foundation_models.get_model_specs(**kwargs)
+
+        models_data: dict[str, Any]
+        if models_response is None:
+            models_data = {"resources": []}
+        elif hasattr(models_response, "__iter__") and not isinstance(models_response, dict):
+            models_list = list(models_response)
+            models_data = {"resources": models_list}
+        elif isinstance(models_response, dict):
+            models_data = models_response
+        else:
+            models_data = {"resources": [models_response]}
+
+        return _convert_models_list(models_data)
