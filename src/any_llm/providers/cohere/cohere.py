@@ -120,12 +120,13 @@ class CohereProvider(Provider):
                 **kwargs,
             )
 
-        # Extract http_client from kwargs for non-streaming
-        http_client = kwargs.pop("http_client", None)
+        # Extract httpx_client from kwargs for non-streaming
+        # Note: Cohere SDK uses 'httpx_client' parameter
+        httpx_client = kwargs.pop("httpx_client", None)
 
         client = cohere.AsyncClientV2(
             api_key=self.config.api_key,
-            httpx_client=http_client,
+            httpx_client=httpx_client,
         )
 
         # note: ClientV2.chat does not have a `stream` parameter
@@ -158,12 +159,13 @@ class CohereProvider(Provider):
 
         patched_messages = _patch_messages(params.messages)
 
-        # Extract http_client from kwargs
-        http_client = kwargs.pop("http_client", None)
+        # Extract httpx_client from kwargs
+        # Note: Cohere SDK uses 'httpx_client' parameter
+        httpx_client = kwargs.pop("httpx_client", None)
 
         client = cohere.ClientV2(
             api_key=self.config.api_key,
-            httpx_client=http_client,
+            httpx_client=httpx_client,
         )
 
         if params.stream:

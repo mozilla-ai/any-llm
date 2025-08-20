@@ -1,5 +1,7 @@
 from typing import Any
+from unittest.mock import Mock, patch
 
+import httpx
 import pytest
 from pydantic import BaseModel
 
@@ -126,3 +128,58 @@ def test_patch_messages_leaves_regular_assistant_messages_unchanged() -> None:
     assistant_message = next(msg for msg in result if msg["role"] == "assistant")
     assert assistant_message["content"] == "Hello! How can I help you?"
     assert "tool_plan" not in assistant_message
+
+
+def test_cohere_accepts_httpx_client() -> None:
+    """Test that Cohere client accepts and passes through httpx_client parameter."""
+    pytest.importorskip("cohere")
+    from any_llm.providers.cohere.cohere import CohereProvider
+
+    api_key = "test-api-key"
+    mock_http_client = Mock(spec=httpx.Client)
+
+    with (
+        patch("cohere.ClientV2") as mock_cohere,
+        patch("any_llm.providers.cohere.utils._convert_response"),
+        patch("any_llm.providers.cohere.utils._patch_messages", return_value=[]),
+    ):
+        mock_client = Mock()
+        mock_cohere.return_value = mock_client
+        mock_client.chat.return_value = Mock()
+
+        provider = CohereProvider(ApiConfig(api_key=api_key))
+        provider.completion(
+            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]),
+            httpx_client=mock_http_client,  # Note: Cohere uses 'httpx_client'
+        )
+
+        # Verify Cohere client was instantiated with httpx_client
+        mock_cohere.assert_called_once_with(api_key=api_key, httpx_client=mock_http_client)
+
+
+@pytest.mark.asyncio
+async def test_cohere_accepts_httpx_client_async() -> None:
+    """Test that AsyncClientV2 accepts and passes through httpx_client parameter."""
+    pytest.importorskip("cohere")
+    from any_llm.providers.cohere.cohere import CohereProvider
+
+    api_key = "test-api-key"
+    mock_http_client = Mock(spec=httpx.AsyncClient)
+
+    with (
+        patch("cohere.AsyncClientV2") as mock_async_cohere,
+        patch("any_llm.providers.cohere.utils._convert_response"),
+        patch("any_llm.providers.cohere.utils._patch_messages", return_value=[]),
+    ):
+        mock_client = Mock()
+        mock_async_cohere.return_value = mock_client
+        mock_client.chat = Mock(return_value=Mock())
+
+        provider = CohereProvider(ApiConfig(api_key=api_key))
+        await provider.acompletion(
+            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]),
+            httpx_client=mock_http_client,  # Note: Cohere uses 'httpx_client'
+        )
+
+        # Verify AsyncClientV2 was instantiated with httpx_client
+        mock_async_cohere.assert_called_once_with(api_key=api_key, httpx_client=mock_http_client)

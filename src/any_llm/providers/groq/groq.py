@@ -95,6 +95,7 @@ class GroqProvider(Provider):
 
         client = groq.AsyncGroq(
             api_key=self.config.api_key,
+            base_url=self.config.api_base,
             http_client=http_client,
         )
 
@@ -141,6 +142,7 @@ class GroqProvider(Provider):
 
         client = groq.Groq(
             api_key=self.config.api_key,
+            base_url=self.config.api_base,
             http_client=http_client,
         )
 
