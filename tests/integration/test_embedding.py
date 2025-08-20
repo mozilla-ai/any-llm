@@ -23,7 +23,7 @@ def test_embedding_providers(
     model_id = embedding_provider_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
     try:
-        result = embedding(f"{provider.value}/{model_id}", **extra_kwargs, inputs="Hello world")
+        result = embedding(model=model_id, provider=provider, **extra_kwargs, inputs="Hello world")
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
@@ -56,7 +56,7 @@ async def test_embedding_providers_async(
     model_id = embedding_provider_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
     try:
-        result = await aembedding(f"{provider.value}/{model_id}", **extra_kwargs, inputs="Hello world")
+        result = await aembedding(model=model_id, provider=provider, **extra_kwargs, inputs="Hello world")
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):

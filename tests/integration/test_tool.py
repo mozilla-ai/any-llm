@@ -41,7 +41,11 @@ def test_tool(
 
     try:
         result: ChatCompletion = completion(  # type: ignore[assignment]
-            f"{provider.value}/{model_id}", messages=messages, tools=[echo], **extra_kwargs
+            model=model_id,
+            provider=provider,
+            messages=messages,
+            tools=[echo],
+            **extra_kwargs,
         )
 
         messages.append(result.choices[0].message)
@@ -64,7 +68,11 @@ def test_tool(
         )
         messages.append({"role": "user", "content": "Did the tool call work?"})
         second_result: ChatCompletion = completion(  # type: ignore[assignment]
-            f"{provider.value}/{model_id}", messages=messages, tools=[echo], **extra_kwargs
+            model=model_id,
+            provider=provider,
+            messages=messages,
+            tools=[echo],
+            **extra_kwargs,
         )
         assert second_result.choices[0].message
     except MissingApiKeyError:

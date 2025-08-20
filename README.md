@@ -78,9 +78,7 @@ export MISTRAL_API_KEY="YOUR_KEY_HERE"  # or OPENAI_API_KEY, etc
 
 ### Basic Usage
 
-The provider_id key of the model should be specified according the [provider ids supported by any-llm](https://mozilla-ai.github.io/any-llm/providers/).
-The `model_id` portion is passed directly to the provider internals: to understand what model ids are available for a provider,
-you will need to refer to the provider documentation.
+**Recommended approach:** Use separate `provider` and `model` parameters:
 
 ```python
 from any_llm import completion
@@ -88,13 +86,28 @@ import os
 
 # Make sure you have the appropriate environment variable set
 assert os.environ.get('MISTRAL_API_KEY')
-# Basic completion
+
 response = completion(
-    model="mistral/mistral-small-latest", # <provider_id>/<model_id>
+    model="mistral-small-latest",
+    provider="mistral",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 print(response.choices[0].message.content)
 ```
+
+**Alternative syntax:** You can also use the combined `provider:model` format:
+
+```python
+response = completion(
+    model="mistral:mistral-small-latest", # <provider_id>:<model_id>
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+```
+
+The provider_id should be specified according to the [provider ids supported by any-llm](https://mozilla-ai.github.io/any-llm/providers/).
+The `model_id` portion is passed directly to the provider internals: to understand what model ids are available for a provider,
+you will need to refer to the provider documentation or use our `list_models` API if the provider supports that API.
+
 
 ### Responses API
 
@@ -104,7 +117,8 @@ For providers that implement the OpenAI-style Responses API, use [`responses`](h
 from any_llm import responses
 
 result = responses(
-    model="openai/gpt-4o-mini",
+    model="gpt-4o-mini",
+    provider="openai",
     input_data=[
         {"role": "user", "content": [
             {"type": "text", "text": "Summarize this in one sentence."}

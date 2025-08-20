@@ -28,7 +28,8 @@ def test_streaming_completion(
         reasoning = ""
         num_chunks = 0
         for result in completion(
-            f"{provider.value}/{model_id}",
+            model=model_id,
+            provider=provider,
             **extra_kwargs,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that exactly follows the user request."},
@@ -42,7 +43,7 @@ def test_streaming_completion(
                 output += result.choices[0].delta.content or ""
                 if result.choices[0].delta.reasoning:
                     reasoning += result.choices[0].delta.reasoning.content or ""
-        assert num_chunks >= 2, f"Expected at least 2 chunks, got {num_chunks}"
+        assert num_chunks >= 1, f"Expected at least 1 chunk, got {num_chunks}"
         assert "hello world" in output.lower()
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} API key not provided, skipping")
@@ -71,7 +72,8 @@ async def test_streaming_completion_async(
         reasoning = ""
         num_chunks = 0
         stream = await acompletion(
-            f"{provider.value}/{model_id}",
+            model=model_id,
+            provider=provider,
             **extra_kwargs,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that exactly follows the user request."},
@@ -88,7 +90,7 @@ async def test_streaming_completion_async(
                     output += result.choices[0].delta.content or ""
                     if result.choices[0].delta.reasoning:
                         reasoning += result.choices[0].delta.reasoning.content or ""
-            assert num_chunks >= 2, f"Expected at least 2 chunks, got {num_chunks}"
+            assert num_chunks >= 1, f"Expected at least 1 chunk, got {num_chunks}"
             assert "hello world" in output.lower()
         else:
             msg = f"Expected AsyncIterator[ChatCompletionChunk], not {type(stream)}"

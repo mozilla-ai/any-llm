@@ -8,8 +8,10 @@ from any_llm.types.completion import ChatCompletionMessage, CompletionParams, Re
 
 
 def test_completion_invalid_model_format_no_slash() -> None:
-    """Test completion raises ValueError for model without slash."""
-    with pytest.raises(ValueError, match="Invalid model format. Expected 'provider/model', got 'gpt-4'"):
+    """Test completion raises ValueError for model without separator."""
+    with pytest.raises(
+        ValueError, match="Invalid model format. Expected 'provider:model' or 'provider/model', got 'gpt-4'"
+    ):
         completion("gpt-4", messages=[{"role": "user", "content": "Hello"}])
 
 

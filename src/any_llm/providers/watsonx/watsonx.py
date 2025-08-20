@@ -33,6 +33,7 @@ class WatsonxProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
+    SUPPORTS_LIST_MODELS = False
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -71,20 +72,19 @@ class WatsonxProvider(Provider):
         if isinstance(response_format, type) and issubclass(response_format, BaseModel):
             params.messages = _convert_pydantic_to_watsonx_json(response_format, params.messages)
 
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
         if params.stream:
             kwargs = {
-                **params.model_dump(
-                    exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
-                ),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
                 **kwargs,
             }
             return self._stream_completion(model_inference, params.messages, **kwargs)
 
         response = model_inference.chat(
             messages=params.messages,
-            params=params.model_dump(
-                exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream"}
-            ),
+            params=params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
         )
 
         return _convert_response(response)

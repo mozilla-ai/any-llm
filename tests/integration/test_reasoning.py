@@ -20,11 +20,16 @@ def test_completion_reasoning(
     cls = ProviderFactory.get_provider_class(provider)
     if not cls.SUPPORTS_COMPLETION_REASONING:
         pytest.skip(f"{provider.value} does not support completion reasoning, skipping")
+
     model_id = provider_reasoning_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
+    if provider == ProviderName.GOOGLE:
+        extra_kwargs["reasoning_effort"] = "low"
+
     try:
         result = completion(
-            f"{provider.value}/{model_id}",
+            model=model_id,
+            provider=provider,
             **extra_kwargs,
             messages=[{"role": "user", "content": "Please say hello! Think very briefly before you respond."}],
         )
