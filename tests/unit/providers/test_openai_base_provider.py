@@ -29,7 +29,9 @@ def test_list_models_returns_model_list_when_supported(mock_openai_class: MagicM
     result = provider.list_models()
 
     assert result == mock_model_data
-    mock_openai_class.assert_called_once_with(base_url="https://custom.api.com/v1", api_key="test-key")
+    mock_openai_class.assert_called_once_with(
+        base_url="https://custom.api.com/v1", api_key="test-key", http_client=None
+    )
     mock_client.models.list.assert_called_once_with()
 
 
@@ -51,7 +53,9 @@ def test_list_models_uses_default_api_base_when_not_configured(mock_openai_class
 
     provider.list_models()
 
-    mock_openai_class.assert_called_once_with(base_url="https://api.default.com/v1", api_key="test-key")
+    mock_openai_class.assert_called_once_with(
+        base_url="https://api.default.com/v1", api_key="test-key", http_client=None
+    )
 
 
 @patch("any_llm.providers.openai.base.OpenAI")
