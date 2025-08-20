@@ -1,6 +1,8 @@
 import uuid
+from collections.abc import Iterable
 from typing import Any, Literal, cast
 
+from huggingface_hub.hf_api import ModelInfo as HfModelInfo
 from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
     ChatCompletionStreamOutput as HuggingFaceChatCompletionStreamOutput,
 )
@@ -13,6 +15,7 @@ from any_llm.types.completion import (
     CompletionParams,
     CompletionUsage,
 )
+from any_llm.types.model import Model
 
 
 def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletionStreamOutput) -> ChatCompletionChunk:
@@ -97,3 +100,15 @@ def _convert_params(params: CompletionParams, **kwargs: dict[str, Any]) -> dict[
     result_kwargs["messages"] = params.messages
 
     return result_kwargs
+
+
+def _convert_models_list(models_list: Iterable[HfModelInfo]) -> list[Model]:
+    return [
+        Model(
+            id=model.id,
+            object="model",
+            created=int(model.created_at.timestamp()) if model.created_at else 0,
+            owned_by="huggingface",
+        )
+        for model in models_list
+    ]
