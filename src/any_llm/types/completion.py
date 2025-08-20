@@ -75,7 +75,7 @@ class CompletionParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model_id: str
-    """Model identifier in format 'provider/model' (e.g., 'mistral/mistral-small')"""
+    """Model identifier (e.g., 'mistral-small-latest')"""
 
     messages: list[dict[str, Any]]
     """List of messages for the conversation"""
