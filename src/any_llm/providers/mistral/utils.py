@@ -3,6 +3,7 @@ import json
 try:
     from mistralai.models import AssistantMessageContent as MistralAssistantMessageContent
     from mistralai.models import CompletionEvent
+    from mistralai.models import ModelList as MistralModelList
     from mistralai.models import ReferenceChunk as MistralReferenceChunk
     from mistralai.models import TextChunk as MistralTextChunk
     from mistralai.models import ThinkChunk as MistralThinkChunk
@@ -33,6 +34,7 @@ from any_llm.types.completion import (
     Reasoning,
     Usage,
 )
+from any_llm.types.model import Model
 
 if TYPE_CHECKING:
     from mistralai.models.embeddingresponse import EmbeddingResponse
@@ -342,3 +344,15 @@ def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             processed_msg.append({"role": "assistant", "content": "OK"})
 
     return processed_msg
+
+
+def _convert_models_list(models_list: MistralModelList) -> list[Model]:
+    return [
+        Model(
+            id=model.id,
+            object="model",
+            created=model.created or 0,
+            owned_by="mistral",
+        )
+        for model in models_list.data or []
+    ]
