@@ -35,7 +35,7 @@ class BaseOpenAIProvider(Provider, ABC):
 
     PACKAGES_INSTALLED = True
 
-    _DEFAULT_REASONING_EFFORT: Literal["minimal", "low", "medium", "high", "auto"] | None = "medium"
+    _DEFAULT_REASONING_EFFORT: Literal["minimal", "low", "medium", "high", "auto"] | None = None
 
     def _convert_completion_response_async(
         self, response: OpenAIChatCompletion | AsyncStream[OpenAIChatCompletionChunk]
