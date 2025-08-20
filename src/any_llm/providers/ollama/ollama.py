@@ -1,6 +1,6 @@
 import json
 import os
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any
 
 try:
@@ -8,6 +8,7 @@ try:
     from ollama import ChatResponse as OllamaChatResponse
 
     from any_llm.providers.ollama.utils import (
+        _convert_models_list,
         _create_chat_completion_from_ollama_response,
         _create_openai_chunk_from_ollama_chunk,
         _create_openai_embedding_response_from_ollama,
@@ -21,6 +22,7 @@ from pydantic import BaseModel
 
 from any_llm.provider import ApiConfig, Provider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+from any_llm.types.model import Model
 
 
 class OllamaProvider(Provider):
@@ -40,7 +42,7 @@ class OllamaProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = True
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -248,3 +250,11 @@ class OllamaProvider(Provider):
             **kwargs,
         )
         return _create_openai_embedding_response_from_ollama(response)
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        client = Client(host=self.url, timeout=kwargs.pop("timeout", None))
+        models_list = client.list(**kwargs)
+        return _convert_models_list(models_list)
