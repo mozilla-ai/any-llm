@@ -79,6 +79,9 @@ def completion(
         The completion response from the provider
 
     """
+    if not messages:
+        msg = "The `messages` list cannot be empty."
+        raise ValueError(msg)
     provider_instance, completion_params = _process_completion_params(
         model=model,
         provider=provider,
@@ -180,6 +183,9 @@ async def acompletion(
         The completion response from the provider
 
     """
+    if not messages:
+        msg = "The `messages` list cannot be empty."
+        raise ValueError(msg)
     provider_instance, completion_params = _process_completion_params(
         model=model,
         provider=provider,
