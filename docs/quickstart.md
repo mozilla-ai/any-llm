@@ -144,3 +144,65 @@ any-llm automatically converts your Python functions to OpenAI tools format. Fun
 - A docstring describing what the function does
 - Type annotations for all parameters
 - A return type annotation
+
+### Connection Pooling with httpx
+
+For better performance when making multiple API calls, you can use a shared httpx client to reuse connections. This is especially useful for:
+- Reducing TCP/TLS handshake overhead
+- Managing connection limits
+- Customizing timeouts and retry behavior
+- Enabling HTTP/2 support where available
+
+```python
+import httpx
+from any_llm import completion, acompletion
+
+# Sync example with connection pooling
+with httpx.Client(
+    timeout=httpx.Timeout(30.0),
+    limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+    http2=True,  # Enable HTTP/2
+) as http_client:
+    # Multiple requests will reuse the same connection pool
+    for i in range(5):
+        response = completion(
+            model="gpt-3.5-turbo",
+            provider="openai",
+            messages=[{"role": "user", "content": f"Say hello {i}"}],
+            http_client=http_client,  # Pass the shared client
+        )
+        print(response.choices[0].message.content)
+```
+
+For async operations:
+
+```python
+import asyncio
+import httpx
+from any_llm import acompletion
+
+async def make_concurrent_requests():
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(30.0),
+        limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+        http2=True,
+    ) as http_client:
+        # Make multiple concurrent requests
+        tasks = []
+        for i in range(5):
+            task = acompletion(
+                model="gpt-3.5-turbo",
+                provider="openai",
+                messages=[{"role": "user", "content": f"Say hello {i}"}],
+                http_client=http_client,
+            )
+            tasks.append(task)
+
+        responses = await asyncio.gather(*tasks)
+        for response in responses:
+            print(response.choices[0].message.content)
+
+asyncio.run(make_concurrent_requests())
+```
+
+This feature is supported by all OpenAI-compatible providers (OpenAI, Databricks, DeepSeek, Inception, Llama, LlamaCPP, LlamaFile, LMStudio, Moonshot, Nebius, OpenRouter, Portkey).
