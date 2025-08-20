@@ -1,9 +1,11 @@
 import json
 import os
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any
 
 from pydantic import BaseModel
+
+from any_llm.types.model import Model
 
 try:
     import boto3
@@ -38,7 +40,7 @@ class AwsProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = True
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -156,3 +158,14 @@ class AwsProvider(Provider):
             total_tokens += response_body.get("inputTextTokenCount", 0)
 
         return _create_openai_embedding_response_from_aws(embedding_data, model, total_tokens)
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        client = boto3.client("bedrock", endpoint_url=self.config.api_base, region_name=self.region_name)  # type: ignore[no-untyped-call]
+        models_list = client.list_foundation_models(**kwargs).get("modelSummaries", [])
+        # AWS doesn't provide a creation date for models
+        # AWS doesn't provide typing, but per https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/bedrock/client/list_foundation_models.html
+        # the modelId is a string and will not be None
+        return [Model(id=model["modelId"], object="model", created=0, owned_by="aws") for model in models_list]
