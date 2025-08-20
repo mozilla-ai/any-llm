@@ -1,6 +1,6 @@
 <p align="center">
   <picture>
-    <img src="docs/images/any-llm-logo-mark.png" width="20%" alt="Project logo"/>
+    <img src="https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/images/any-llm-logo-mark.png" width="20%" alt="Project logo"/>
   </picture>
 </p>
 
