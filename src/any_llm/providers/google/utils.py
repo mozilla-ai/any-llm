@@ -11,6 +11,7 @@ from any_llm.types.completion import (
     Reasoning,
     Usage,
 )
+from any_llm.types.model import Model
 
 try:
     from google.genai import types
@@ -255,3 +256,8 @@ def _create_openai_chunk_from_google_chunk(
         model=str(response.model_version),
         object="chat.completion.chunk",
     )
+
+
+def _convert_models_list(models_list: list[types.Model]) -> list[Model]:
+    # Google doesn't provide a creation date for models
+    return [Model(id=model.name, object="model", created=0, owned_by="google") for model in models_list]

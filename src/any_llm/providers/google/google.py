@@ -1,6 +1,6 @@
 import os
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, Sequence
 
 try:
     from google import genai
@@ -21,6 +21,7 @@ from any_llm.providers.google.utils import (
     _convert_tool_spec,
     _create_openai_chunk_from_google_chunk,
     _create_openai_embedding_response_from_google,
+    _convert_models_list,
 )
 from any_llm.types.completion import (
     ChatCompletion,
@@ -35,6 +36,7 @@ from any_llm.types.completion import (
     Function,
     Reasoning,
 )
+from any_llm.types.model import Model
 
 # From https://ai.google.dev/gemini-api/docs/openai#thinking
 REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 256, "low": 1024, "medium": 8192, "high": 24576}
@@ -52,7 +54,7 @@ class GoogleProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = True
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -212,3 +214,11 @@ class GoogleProvider(Provider):
             choices=choices_out,
             usage=usage,
         )
+
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        models_list = self.client.models.list(**kwargs)
+        return _convert_models_list(models_list)
