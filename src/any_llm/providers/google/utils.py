@@ -15,6 +15,7 @@ from any_llm.types.model import Model
 
 try:
     from google.genai import types
+    from google.genai.pagers import Pager
 except ImportError as exc:
     msg = "google-genai is not installed. Please install it with `pip install any-llm-sdk[google]`"
     raise ImportError(msg) from exc
@@ -258,6 +259,6 @@ def _create_openai_chunk_from_google_chunk(
     )
 
 
-def _convert_models_list(models_list: list[types.Model]) -> list[Model]:
+def _convert_models_list(models_list: Pager[types.Model]) -> list[Model]:
     # Google doesn't provide a creation date for models
-    return [Model(id=model.name, object="model", created=0, owned_by="google") for model in models_list]
+    return [Model(id=model.name or "Unknown", object="model", created=0, owned_by="google") for model in models_list]

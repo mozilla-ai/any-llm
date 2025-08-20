@@ -1,6 +1,6 @@
 import os
-from collections.abc import Iterator
-from typing import Any, Sequence
+from collections.abc import Iterator, Sequence
+from typing import Any
 
 try:
     from google import genai
@@ -16,12 +16,12 @@ from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.google.utils import (
     _convert_messages,
+    _convert_models_list,
     _convert_response_to_response_dict,
     _convert_tool_choice,
     _convert_tool_spec,
     _create_openai_chunk_from_google_chunk,
     _create_openai_embedding_response_from_google,
-    _convert_models_list,
 )
 from any_llm.types.completion import (
     ChatCompletion,
@@ -214,7 +214,6 @@ class GoogleProvider(Provider):
             choices=choices_out,
             usage=usage,
         )
-
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
