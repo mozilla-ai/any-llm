@@ -2,6 +2,7 @@ import json
 from typing import Any
 
 try:
+    from anthropic.pagination import SyncPage
     from anthropic.types import (
         ContentBlockDeltaEvent,
         ContentBlockStartEvent,
@@ -9,6 +10,7 @@ try:
         Message,
         MessageStopEvent,
     )
+    from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
 except ImportError as exc:
     msg = "anthropic is not installed. Please install it with `pip install any-llm-sdk[anthropic]`"
     raise ImportError(msg) from exc
@@ -26,6 +28,7 @@ from any_llm.types.completion import (
     Function,
     Reasoning,
 )
+from any_llm.types.model import Model
 
 DEFAULT_MAX_TOKENS = 8192
 REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 1024, "low": 2048, "medium": 8192, "high": 24576}
@@ -302,3 +305,11 @@ def _convert_params(params: CompletionParams, **kwargs: dict[str, Any]) -> dict[
     result_kwargs["messages"] = filtered_messages
 
     return result_kwargs
+
+
+def _convert_models_list(models_list: SyncPage[AnthropicModelInfo]) -> list[Model]:
+    """Convert Anthropic models list to OpenAI format."""
+    return [
+        Model(id=model.id, object="model", created=int(model.created_at.timestamp()), owned_by="anthropic")
+        for model in models_list
+    ]
