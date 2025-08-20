@@ -24,7 +24,9 @@ class LlamafileProvider(BaseOpenAIProvider):
         self.url = config.api_base or os.getenv("LLAMAFILE_API_URL")
         self.config = config
 
-    async def acompletion(self, params: CompletionParams, **kwargs: Any) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+    async def acompletion(
+        self, params: CompletionParams, **kwargs: Any
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Handle completion - extracted to avoid generator issues."""
         if params.response_format:
             msg = "response_format"
