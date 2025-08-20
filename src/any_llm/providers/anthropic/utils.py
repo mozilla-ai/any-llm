@@ -111,6 +111,9 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any) -> ChatCompletionChunk
                     }
                 ]
             }
+        elif chunk.content_block.type == "thinking":
+            # Start of reasoning content
+            delta = {"reasoning": {"content": ""}}
 
     elif isinstance(chunk, ContentBlockDeltaEvent):
         # Delta content
@@ -126,6 +129,9 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any) -> ChatCompletionChunk
                     }
                 ]
             }
+        elif chunk.delta.type == "thinking_delta":
+            # Reasoning content delta
+            delta = {"reasoning": {"content": chunk.delta.thinking}}
 
     elif isinstance(chunk, ContentBlockStopEvent):
         # End of content block

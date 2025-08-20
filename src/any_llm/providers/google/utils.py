@@ -8,6 +8,7 @@ from any_llm.types.completion import (
     ChunkChoice,
     CreateEmbeddingResponse,
     Embedding,
+    Reasoning,
     Usage,
 )
 
@@ -223,9 +224,23 @@ def _create_openai_chunk_from_google_chunk(
     candidate = response.candidates[0]
     assert candidate.content
     assert candidate.content.parts
-    part = candidate.content.parts[0]
 
-    delta = ChoiceDelta(content=part.text, role="assistant")
+    content = ""
+    reasoning_content = ""
+
+    for part in candidate.content.parts:
+        if part.thought:
+            # This is a thinking/reasoning part
+            reasoning_content += part.text or ""
+        else:
+            # Regular content part
+            content += part.text or ""
+
+    delta = ChoiceDelta(
+        content=content or None,
+        role="assistant",
+        reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
+    )
 
     choice = ChunkChoice(
         index=0,
