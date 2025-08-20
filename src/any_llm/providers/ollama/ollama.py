@@ -134,6 +134,9 @@ class OllamaProvider(Provider):
 
         kwargs["num_ctx"] = kwargs.get("num_ctx", 32000)
 
+        if params.reasoning_effort is not None:
+            kwargs["think"] = True
+
         client = AsyncClient(host=self.url, timeout=kwargs.pop("timeout", None))
 
         if params.stream:
@@ -195,6 +198,9 @@ class OllamaProvider(Provider):
         }
 
         kwargs["num_ctx"] = kwargs.get("num_ctx", 32000)
+
+        if params.reasoning_effort is not None:
+            kwargs["think"] = True
 
         client = Client(host=self.url, timeout=kwargs.pop("timeout", None))
 

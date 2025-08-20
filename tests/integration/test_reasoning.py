@@ -23,7 +23,7 @@ def test_completion_reasoning(
 
     model_id = provider_reasoning_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
-    if provider in (ProviderName.ANTHROPIC, ProviderName.GOOGLE):
+    if provider in (ProviderName.ANTHROPIC, ProviderName.GOOGLE, ProviderName.OLLAMA):
         extra_kwargs["reasoning_effort"] = "low"
 
     try:
@@ -59,7 +59,7 @@ def test_completion_reasoning_streaming(
 
     model_id = provider_reasoning_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
-    if provider in (ProviderName.ANTHROPIC, ProviderName.GOOGLE):
+    if provider in (ProviderName.ANTHROPIC, ProviderName.GOOGLE, ProviderName.OLLAMA):
         extra_kwargs["reasoning_effort"] = "low"
 
     try:
