@@ -83,7 +83,7 @@ class CompletionParams(BaseModel):
     """List of messages for the conversation"""
 
     @field_validator("messages")
-    def check_messages_not_empty(self, v: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def check_messages_not_empty(cls, v: list[dict[str, Any]]) -> list[dict[str, Any]]:  # noqa: N805
         if not v:
             msg = "The `messages` list cannot be empty."
             raise ValueError(msg)
