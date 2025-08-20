@@ -117,10 +117,10 @@ class GoogleProvider(Provider):
         if isinstance(params.tool_choice, str):
             kwargs["tool_config"] = _convert_tool_choice(params.tool_choice)
 
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
-
-        if params.reasoning_effort is not None:
+        if params.reasoning_effort is None:
+            kwargs["thinking_config"] = types.ThinkingConfig(include_thoughts=False)
+        # in "auto" mode, we just don't pass a `thinking_config`
+        elif params.reasoning_effort != "auto":
             kwargs["thinking_config"] = types.ThinkingConfig(
                 include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort]
             )
