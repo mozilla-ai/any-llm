@@ -63,7 +63,7 @@ async def async_example():
 
 
 def different_providers_example():
-    """Show httpx client compatibility with different OpenAI-compatible providers."""
+    """Show httpx client compatibility with BaseOpenAI providers."""
     print("\n=== Different Providers Example ===")
 
     providers_to_test = [

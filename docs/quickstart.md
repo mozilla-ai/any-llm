@@ -205,4 +205,4 @@ async def make_concurrent_requests():
 asyncio.run(make_concurrent_requests())
 ```
 
-This feature is supported by all OpenAI-compatible providers (OpenAI, Databricks, DeepSeek, Inception, Llama, LlamaCPP, LlamaFile, LMStudio, Moonshot, Nebius, OpenRouter, Portkey).
+This feature is supported by OpenAI-compatible providers that use BaseOpenAIProvider's client methods: OpenAI, Databricks, DeepSeek, Inception, Llama, LlamaCPP, LlamaFile, LMStudio, Moonshot, Nebius, OpenRouter, Portkey.
