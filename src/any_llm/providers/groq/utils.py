@@ -1,5 +1,6 @@
 from typing import Literal, cast
 
+from groq.types import ModelListResponse as GroqModelListResponse
 from groq.types.chat import ChatCompletion as GroqChatCompletion
 from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
 
@@ -18,6 +19,7 @@ from any_llm.types.completion import (
     Function,
     Reasoning,
 )
+from any_llm.types.model import Model
 
 
 def to_chat_completion(response: GroqChatCompletion) -> ChatCompletion:
@@ -139,3 +141,7 @@ def _create_openai_chunk_from_groq_chunk(groq_chunk: GroqChatCompletionChunk) ->
         object="chat.completion.chunk",
         usage=usage,
     )
+
+
+def _convert_models_list(models_list: GroqModelListResponse) -> list[Model]:
+    return [Model(id=model.id, object="model", created=model.created, owned_by="groq") for model in models_list.data]
