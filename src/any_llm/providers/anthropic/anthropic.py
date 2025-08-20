@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any
 
 from pydantic import BaseModel
@@ -14,11 +14,13 @@ except ImportError:
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import Provider
 from any_llm.providers.anthropic.utils import (
+    _convert_models_list,
     _convert_params,
     _convert_response,
     _create_openai_chunk_from_anthropic_chunk,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.model import Model
 from any_llm.utils.instructor import _convert_instructor_response
 
 
@@ -38,7 +40,7 @@ class AnthropicProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = False
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -138,3 +140,9 @@ class AnthropicProvider(Provider):
         message = client.messages.create(**converted_kwargs)
 
         return _convert_response(message)
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """List available models from Anthropic."""
+        client = Anthropic(api_key=self.config.api_key, base_url=self.config.api_base)
+        models_list = client.models.list(**kwargs)
+        return _convert_models_list(models_list)

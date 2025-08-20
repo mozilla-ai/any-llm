@@ -7,7 +7,9 @@ from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenA
 from openai.types.chat.chat_completion_chunk import Choice as OpenAIChunkChoice
 from openai.types.chat.chat_completion_chunk import ChoiceDelta as OpenAIChoiceDelta
 from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall as OpenAIChoiceDeltaToolCall
-from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCallFunction as OpenAIChoiceDeltaToolCallFunction
+from openai.types.chat.chat_completion_chunk import (
+    ChoiceDeltaToolCallFunction as OpenAIChoiceDeltaToolCallFunction,
+)
 from openai.types.chat.chat_completion_message import ChatCompletionMessage as OpenAIChatCompletionMessage
 from openai.types.chat.chat_completion_message_custom_tool_call import (
     ChatCompletionMessageCustomToolCall as OpenAIChatCompletionMessageToolCall,
@@ -19,7 +21,7 @@ from openai.types.chat.chat_completion_message_function_tool_call import Functio
 from openai.types.completion_usage import CompletionUsage as OpenAICompletionUsage
 from openai.types.create_embedding_response import Usage as OpenAIUsage
 from openai.types.embedding import Embedding as OpenAIEmbedding
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 # See https://github.com/mozilla-ai/any-llm/issues/95:
 # OpenAI Completion API doesn't include reasoning information, so we need to extend the openai type
@@ -79,6 +81,13 @@ class CompletionParams(BaseModel):
 
     messages: list[dict[str, Any]]
     """List of messages for the conversation"""
+
+    @field_validator("messages")
+    def check_messages_not_empty(cls, v: list[dict[str, Any]]) -> list[dict[str, Any]]:  # noqa: N805
+        if not v:
+            msg = "The `messages` list cannot be empty."
+            raise ValueError(msg)
+        return v
 
     tools: list[dict[str, Any]] | None = None
     """List of tools for tool calling. Should be converted to OpenAI tool format dicts"""
