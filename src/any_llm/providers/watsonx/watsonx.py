@@ -1,8 +1,9 @@
 import os
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any
 
 try:
+    from ibm_watsonx_ai import APIClient as WatsonxClient
     from ibm_watsonx_ai import Credentials
     from ibm_watsonx_ai.foundation_models import ModelInference
 
@@ -14,11 +15,13 @@ from pydantic import BaseModel
 
 from any_llm.provider import Provider
 from any_llm.providers.watsonx.utils import (
+    _convert_models_list,
     _convert_pydantic_to_watsonx_json,
     _convert_response,
     _convert_streaming_chunk,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.model import Model
 
 
 class WatsonxProvider(Provider):
@@ -33,7 +36,7 @@ class WatsonxProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -140,3 +143,16 @@ class WatsonxProvider(Provider):
         )
 
         return _convert_response(response)
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        client = WatsonxClient(
+            url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL"),
+            credentials=Credentials(
+                api_key=self.config.api_key, url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL")
+            ),
+        )
+        models_list = client.foundation_models.get_model_specs()
+        return _convert_models_list(models_list)
