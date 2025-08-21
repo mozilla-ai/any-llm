@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from any_llm.types.completion import CompletionParams
+
 
 def _convert_pydantic_to_deepseek_json(
     pydantic_model: type[BaseModel], messages: list[dict[str, Any]]
@@ -43,3 +45,14 @@ Return the JSON object only, no other text, do not wrap it in ```json or ```.
         raise ValueError(msg)
 
     return modified_messages
+
+
+def _preprocess_messages(params: CompletionParams) -> CompletionParams:
+    """Preprocess messages"""
+    if params.response_format:
+        if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
+            modified_messages = _convert_pydantic_to_deepseek_json(params.response_format, params.messages)
+            params.response_format = {"type": "json_object"}
+            params.messages = modified_messages
+
+    return params

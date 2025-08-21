@@ -8,10 +8,11 @@ nav:
   - Quickstart: quickstart.md
   - Providers: providers.md
   - API Reference:
+    - Responses: api/responses.md
     - Completion: api/completion.md
     - Embedding: api/embedding.md
-    - Responses: api/responses.md
     - Exceptions: api/exceptions.md
+    - List Models: api/list_models.md
 theme:
   name: material
   font:

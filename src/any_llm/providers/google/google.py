@@ -1,5 +1,5 @@
 import os
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any
 
 try:
@@ -16,6 +16,7 @@ from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.google.utils import (
     _convert_messages,
+    _convert_models_list,
     _convert_response_to_response_dict,
     _convert_tool_choice,
     _convert_tool_spec,
@@ -33,7 +34,12 @@ from any_llm.types.completion import (
     CompletionUsage,
     CreateEmbeddingResponse,
     Function,
+    Reasoning,
 )
+from any_llm.types.model import Model
+
+# From https://ai.google.dev/gemini-api/docs/openai#thinking
+REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 256, "low": 1024, "medium": 8192, "high": 24576}
 
 
 class GoogleProvider(Provider):
@@ -46,8 +52,9 @@ class GoogleProvider(Provider):
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
-    SUPPORTS_COMPLETION_REASONING = False
+    SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = True
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -112,11 +119,20 @@ class GoogleProvider(Provider):
         if isinstance(params.tool_choice, str):
             kwargs["tool_config"] = _convert_tool_choice(params.tool_choice)
 
+        if params.reasoning_effort is None:
+            kwargs["thinking_config"] = types.ThinkingConfig(include_thoughts=False)
+        # in "auto" mode, we just don't pass a `thinking_config`
+        elif params.reasoning_effort != "auto":
+            kwargs["thinking_config"] = types.ThinkingConfig(
+                include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort]
+            )
+
         stream = bool(params.stream)
         response_format = params.response_format
         # Build generation config without duplicating keys (e.g., tools)
         base_kwargs = params.model_dump(
-            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream", "tools", "tool_choice"}
+            exclude_none=True,
+            exclude={"model_id", "messages", "response_format", "stream", "tools", "tool_choice", "reasoning_effort"},
         )
         base_kwargs.update(kwargs)
         generation_config = types.GenerateContentConfig(**base_kwargs)
@@ -162,10 +178,13 @@ class GoogleProvider(Provider):
                         )
                     )
                 tool_calls = tool_calls_list
+
+            reasoning_content = message_dict.get("reasoning")
             message = ChatCompletionMessage(
                 role="assistant",
                 content=message_dict.get("content"),
                 tool_calls=tool_calls,
+                reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
             )
             from typing import Literal, cast
 
@@ -195,3 +214,10 @@ class GoogleProvider(Provider):
             choices=choices_out,
             usage=usage,
         )
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        models_list = self.client.models.list(**kwargs)
+        return _convert_models_list(models_list)

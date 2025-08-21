@@ -1,10 +1,12 @@
 # Inspired by https://github.com/andrewyng/aisuite/tree/main/aisuite
 import asyncio
 import importlib
+import logging
 import os
+import warnings
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
-from enum import Enum
+from collections.abc import AsyncIterator, Iterator, Sequence
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -17,11 +19,14 @@ from any_llm.types.completion import (
     CompletionParams,
     CreateEmbeddingResponse,
 )
+from any_llm.types.model import Model
 from any_llm.types.provider import ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
 
+logger = logging.getLogger(__name__)
 
-class ProviderName(str, Enum):
+
+class ProviderName(StrEnum):
     """String enum for supported providers."""
 
     ANTHROPIC = "anthropic"
@@ -53,6 +58,18 @@ class ProviderName(str, Enum):
     WATSONX = "watsonx"
     XAI = "xai"
     PERPLEXITY = "perplexity"
+
+    @classmethod
+    def from_string(cls, value: "str | ProviderName") -> "ProviderName":
+        if isinstance(value, cls):
+            return value
+
+        formatted_value = value.strip().lower()
+        try:
+            return cls(formatted_value)
+        except ValueError as exc:
+            supported = [provider.value for provider in cls]
+            raise UnsupportedProviderError(value, supported) from exc
 
 
 class ApiConfig(BaseModel):
@@ -90,6 +107,9 @@ class Provider(ABC):
 
     SUPPORTS_RESPONSES: bool
     """OpenAI Responses API"""
+
+    SUPPORTS_LIST_MODELS: bool
+    """OpenAI Models API"""
 
     API_BASE: str | None = None
     """This is used to set the API base for the provider.
@@ -135,6 +155,7 @@ class Provider(ABC):
             completion=cls.SUPPORTS_COMPLETION,
             embedding=cls.SUPPORTS_EMBEDDING,
             responses=cls.SUPPORTS_RESPONSES,
+            list_models=cls.SUPPORTS_LIST_MODELS,
             class_name=cls.__name__,
         )
 
@@ -160,12 +181,29 @@ class Provider(ABC):
         self,
         params: CompletionParams,
         **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        return await asyncio.to_thread(
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        logger.warning(
+            "%s does not have a native async method and may block your event loop. Proceed with caution",
+            self.PROVIDER_NAME,
+        )
+
+        response = await asyncio.to_thread(
             self.completion,
             params,
             **kwargs,
         )
+
+        # NOTE: This is temporary until all async-first providers are implemented
+        if isinstance(response, ChatCompletion):
+            return response
+
+        async def _inner() -> AsyncIterator[ChatCompletionChunk]:
+            for chunk in response:
+                yield chunk
+
+        return _inner()
+
+        # return response
 
     def responses(
         self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
@@ -180,8 +218,25 @@ class Provider(ABC):
 
     async def aresponses(
         self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
-    ) -> Response | Iterator[ResponseStreamEvent]:
-        return await asyncio.to_thread(self.responses, model, input_data, **kwargs)
+    ) -> Response | AsyncIterator[ResponseStreamEvent]:
+        logger.warning(
+            "%s does not have a native async method and may block your event loop. Proceed with caution",
+            self.PROVIDER_NAME,
+        )
+
+        response = await asyncio.to_thread(self.responses, model, input_data, **kwargs)
+
+        # NOTE: This is temporary until all async-first providers are implemented
+        if isinstance(response, Response):
+            return response
+
+        async def _inner() -> AsyncIterator[ResponseStreamEvent]:
+            for chunk in response:
+                yield chunk
+
+        return _inner()
+
+        # return response
 
     def embedding(
         self,
@@ -200,6 +255,19 @@ class Provider(ABC):
     ) -> CreateEmbeddingResponse:
         return await asyncio.to_thread(self.embedding, model, inputs, **kwargs)
 
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Return a list of Model if the provider supports listing models.
+        Should be overridden by subclasses.
+        """
+        msg = "Subclasses must implement list_models method"
+        if not self.SUPPORTS_LIST_MODELS:
+            raise NotImplementedError(msg)
+        raise NotImplementedError(msg)
+
+    async def list_models_async(self, **kwargs: Any) -> Sequence[Model]:
+        return await asyncio.to_thread(self.list_models, **kwargs)
+
 
 class ProviderFactory:
     """Factory to dynamically load provider instances based on the naming conventions."""
@@ -209,8 +277,7 @@ class ProviderFactory:
     @classmethod
     def create_provider(cls, provider_key: str | ProviderName, config: ApiConfig) -> Provider:
         """Dynamically load and create an instance of a provider based on the naming convention."""
-        if isinstance(provider_key, ProviderName):
-            provider_key = provider_key.value
+        provider_key = ProviderName.from_string(provider_key).value
 
         provider_class_name = f"{provider_key.capitalize()}Provider"
         provider_module_name = f"{provider_key}"
@@ -236,8 +303,7 @@ class ProviderFactory:
         Returns:
             The provider class
         """
-        if isinstance(provider_key, ProviderName):
-            provider_key = provider_key.value
+        provider_key = ProviderName.from_string(provider_key).value
 
         provider_class_name = f"{provider_key.capitalize()}Provider"
         provider_module_name = f"{provider_key}"
@@ -286,13 +352,30 @@ class ProviderFactory:
 
     @classmethod
     def split_model_provider(cls, model: str) -> tuple[ProviderName, str]:
-        """Extract the provider key from the model identifier, e.g., "mistral/mistral-small"""
-        if "/" not in model:
-            msg = f"Invalid model format. Expected 'provider/model', got '{model}'"
-            raise ValueError(msg)
-        provider, model = model.split("/", 1)
+        """Extract the provider key from the model identifier.
 
-        if not provider or not model:
-            msg = f"Invalid model format. Expected 'provider/model', got '{model}'"
+        Supports both new format 'provider:model' (e.g., 'mistral:mistral-small')
+        and legacy format 'provider/model' (e.g., 'mistral/mistral-small').
+
+        The legacy format will be deprecated in version 1.0.
+        """
+        # Check for new colon syntax first
+        if ":" in model:
+            provider, model_name = model.split(":", 1)
+        elif "/" in model:
+            # Legacy slash syntax with deprecation warning
+            warnings.warn(
+                f"Model format 'provider/model' is deprecated and will be removed in version 1.0. "
+                f"Please use 'provider:model' format instead. Got: '{model}'",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            provider, model_name = model.split("/", 1)
+        else:
+            msg = f"Invalid model format. Expected 'provider:model' or 'provider/model', got '{model}'"
             raise ValueError(msg)
-        return cls.get_provider_enum(provider), model
+
+        if not provider or not model_name:
+            msg = f"Invalid model format. Expected 'provider:model' or 'provider/model', got '{model}'"
+            raise ValueError(msg)
+        return cls.get_provider_enum(provider), model_name

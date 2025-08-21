@@ -1,5 +1,7 @@
 from typing import Any
 
+from cohere.types import ListModelsResponse as CohereListModelsResponse
+
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -9,6 +11,7 @@ from any_llm.types.completion import (
     CompletionUsage,
     Function,
 )
+from any_llm.types.model import Model
 
 
 def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -191,3 +194,10 @@ def _convert_response(response: Any, model: str) -> ChatCompletion:
         choices=[choice],
         usage=usage,
     )
+
+
+def _convert_models_list(models_list: CohereListModelsResponse) -> list[Model]:
+    # Cohere doesn't provide a creation date for models
+    return [
+        Model(id=model.name or "Unknown", object="model", created=0, owned_by="cohere") for model in models_list.models
+    ]

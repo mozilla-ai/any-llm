@@ -1,6 +1,7 @@
 from typing import Any
 
 try:
+    from cerebras.cloud.sdk.types import ModelListResponse as CerebrasModelListResponse
     from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponse
 except ImportError as exc:
     msg = "cerebras is not installed. Please install it with `pip install any-llm-sdk[cerebras]`"
@@ -16,6 +17,7 @@ from any_llm.types.completion import (
     CompletionUsage,
     Function,
 )
+from any_llm.types.model import Model
 
 
 def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCompletionChunk:
@@ -154,3 +156,10 @@ def _convert_response(response_data: dict[str, Any]) -> ChatCompletion:
         choices=choices_out,
         usage=usage,
     )
+
+
+def _convert_models_list(models_list: CerebrasModelListResponse) -> list[Model]:
+    return [
+        Model(id=model.id, object="model", created=model.created or 0, owned_by="cerebras")
+        for model in models_list.data
+    ]

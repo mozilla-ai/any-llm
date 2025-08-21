@@ -35,7 +35,8 @@ def test_response_format(
     prompt = "What is the capital of France?"
     try:
         result = completion(
-            f"{provider.value}/{model_id}",
+            model=model_id,
+            provider=provider,
             **extra_kwargs,
             messages=[{"role": "user", "content": prompt}],
             response_format=ResponseFormat,
