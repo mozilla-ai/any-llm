@@ -9,7 +9,7 @@ interface ThinkingBoxProps {
 }
 
 function ThinkingBox({ thinking }: ThinkingBoxProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
 
   return (
     <div className="thinking-box">
@@ -95,7 +95,7 @@ function App() {
     setLoading(true);
     setError('');
 
-    const assistantMessage: Message = { role: 'assistant', content: '', thinking: '' };
+    const assistantMessage: Message = { role: 'assistant', content: '', thinking: '', model: selectedModel };
     const messagesWithAssistant = [...newMessages, assistantMessage];
     setMessages(messagesWithAssistant);
 
@@ -270,7 +270,12 @@ function App() {
             ) : (
               messages.map((message, index) => (
                 <div key={index} className={`message ${message.role}`}>
-                  <div className="message-role">{message.role}</div>
+                  <div className="message-role">
+                    {message.role}
+                    {message.role === 'assistant' && message.model && (
+                      <span className="model-name">({message.model})</span>
+                    )}
+                  </div>
                   {message.thinking && (
                     <ThinkingBox thinking={message.thinking} />
                   )}

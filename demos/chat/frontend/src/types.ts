@@ -14,6 +14,7 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   thinking?: string;
+  model?: string;
 }
 
 export interface StreamChunk {
