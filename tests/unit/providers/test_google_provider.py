@@ -188,3 +188,20 @@ def test_completion_with_custom_reasoning_effort(reasoning_effort: str) -> None:
             )
         _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
         assert call_kwargs["config"].thinking_config == expected_thinking
+
+
+def test_completion_with_max_tokens_conversion() -> None:
+    """Test that max_tokens parameter gets converted to max_output_tokens."""
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Hello"}]
+    max_tokens = 100
+
+    with mock_google_provider() as mock_genai:
+        provider = GoogleProvider(ApiConfig(api_key=api_key))
+        provider.completion(CompletionParams(model_id=model, messages=messages, max_tokens=max_tokens))
+
+        _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+
+        assert generation_config.max_output_tokens == max_tokens

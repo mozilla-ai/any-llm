@@ -52,7 +52,6 @@ cerebras = [
 
 fireworks = [
   "fireworks-ai>=0.17.16",
-  "instructor",
 ]
 
 groq = [
@@ -173,6 +172,7 @@ extend-select = ["ALL"]
 "src/any_llm/providers/**" = ["D"]
 "src/any_llm/provider.py" = ["D"]
 "src/any_llm/types/**" = ["A005", "D"]
+"demos/**" = ["T201", "S104"]
 
 [tool.mypy]
 strict = true

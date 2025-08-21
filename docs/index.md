@@ -6,6 +6,14 @@
 
 `any-llm` is a Python library providing a single interface to different llm providers.
 
+### Demo
+
+Try `any-llm` in action with our interactive chat demo that showcases streaming completions and provider switching:
+
+**[📂 Run the Demo](https://github.com/mozilla-ai/any-llm/tree/main/demos/chat#readme)**
+
+The demo features real-time streaming responses, multiple provider support, and collapsible "thinking" content display.
+
 ### Getting Started
 
 Refer to the [Quickstart](./quickstart.md) for instructions on installation and usage.
