@@ -3,6 +3,7 @@ import json
 try:
     from mistralai.models import AssistantMessageContent as MistralAssistantMessageContent
     from mistralai.models import CompletionEvent
+    from mistralai.models import ModelList as MistralModelList
     from mistralai.models import ReferenceChunk as MistralReferenceChunk
     from mistralai.models import TextChunk as MistralTextChunk
     from mistralai.models import ThinkChunk as MistralThinkChunk
@@ -33,6 +34,7 @@ from any_llm.types.completion import (
     Reasoning,
     Usage,
 )
+from any_llm.types.model import Model
 
 if TYPE_CHECKING:
     from mistralai.models.embeddingresponse import EmbeddingResponse
@@ -248,22 +250,21 @@ def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompl
             elif isinstance(choice.delta.content, list):
                 text_parts = []
                 for part in choice.delta.content:
-                    if hasattr(part, "text") and part.text:
-                        text_parts.append(str(part.text))
-                    elif isinstance(part, dict):
-                        if part.type == "thinking":
-                            thinking_data = part.thinking
-                            if isinstance(thinking_data, list):
-                                thinking_texts = []
-                                for thinking_item in thinking_data:
-                                    if isinstance(thinking_item, dict) and thinking_item.type == "text":
-                                        thinking_texts.append(thinking_item.text)
-                                if thinking_texts:
-                                    reasoning_content = "\n".join(thinking_texts)
-                            elif isinstance(thinking_data, str):
-                                reasoning_content = thinking_data
-                        elif part.type == "text":
-                            text_parts.append(part.text)
+                    if isinstance(part, MistralThinkChunk):
+                        thinking_data = part.thinking
+                        thinking_texts = []
+                        for thinking_item in thinking_data:
+                            if isinstance(thinking_item, MistralTextChunk):
+                                thinking_texts.append(thinking_item.text)
+                            elif isinstance(thinking_item, MistralReferenceChunk):
+                                pass
+                            else:
+                                msg = f"Unsupported thinking item type: {type(thinking_item)}"
+                                raise ValueError(msg)
+                        if thinking_texts:
+                            reasoning_content = "\n".join(thinking_texts)
+                    elif isinstance(part, MistralTextChunk):
+                        text_parts.append(part.text)
                 content = "".join(text_parts) if text_parts else None
             else:
                 content = str(choice.delta.content)
@@ -343,3 +344,15 @@ def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             processed_msg.append({"role": "assistant", "content": "OK"})
 
     return processed_msg
+
+
+def _convert_models_list(models_list: MistralModelList) -> list[Model]:
+    return [
+        Model(
+            id=model.id,
+            object="model",
+            created=model.created or 0,
+            owned_by="mistral",
+        )
+        for model in models_list.data or []
+    ]

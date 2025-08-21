@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import TYPE_CHECKING, Any
 
 try:
@@ -13,12 +13,14 @@ from pydantic import BaseModel
 
 from any_llm.provider import Provider
 from any_llm.providers.mistral.utils import (
+    _convert_models_list,
     _create_mistral_completion_from_response,
     _create_openai_chunk_from_mistral_chunk,
     _create_openai_embedding_response_from_mistral,
     _patch_messages,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+from any_llm.types.model import Model
 
 if TYPE_CHECKING:
     from mistralai.models.embeddingresponse import EmbeddingResponse
@@ -36,7 +38,7 @@ class MistralProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = True
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -94,7 +96,7 @@ class MistralProvider(Provider):
         response = await client.chat.complete_async(
             model=params.model_id,
             messages=patched_messages,  # type: ignore[arg-type]
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "", "response_format", "stream"}),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
             **kwargs,
         )
 
@@ -140,7 +142,7 @@ class MistralProvider(Provider):
             client,
             params.model_id,
             patched_messages,
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "", "response_format", "stream"}),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
             **kwargs,
         )
 
@@ -174,3 +176,11 @@ class MistralProvider(Provider):
         )
 
         return _create_openai_embedding_response_from_mistral(result)
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        client = Mistral(api_key=self.config.api_key, server_url=self.config.api_base)
+        models_list = client.models.list(**kwargs)
+        return _convert_models_list(models_list)

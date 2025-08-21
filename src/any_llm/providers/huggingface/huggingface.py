@@ -1,8 +1,8 @@
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import TYPE_CHECKING, Any
 
 try:
-    from huggingface_hub import AsyncInferenceClient, InferenceClient
+    from huggingface_hub import AsyncInferenceClient, HfApi, InferenceClient
 
     PACKAGES_INSTALLED = True
 except ImportError:
@@ -10,6 +10,7 @@ except ImportError:
 
 from any_llm.provider import Provider
 from any_llm.providers.huggingface.utils import (
+    _convert_models_list,
     _convert_params,
     _create_openai_chunk_from_huggingface_chunk,
 )
@@ -21,6 +22,7 @@ from any_llm.types.completion import (
     CompletionParams,
     CompletionUsage,
 )
+from any_llm.types.model import Model
 
 if TYPE_CHECKING:
     from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
@@ -40,7 +42,7 @@ class HuggingfaceProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -160,3 +162,18 @@ class HuggingfaceProvider(Provider):
             choices=choices_out,
             usage=usage,
         )
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        if not self.SUPPORTS_LIST_MODELS:
+            message = f"{self.PROVIDER_NAME} does not support listing models."
+            raise NotImplementedError(message)
+        client = HfApi(token=self.config.api_key)
+        if kwargs.get("inference") is None and kwargs.get("inference_provider") is None:
+            kwargs["inference"] = "warm"
+        if kwargs.get("limit") is None:
+            kwargs["limit"] = 20
+        models_list = client.list_models(**kwargs)
+        return _convert_models_list(models_list)
