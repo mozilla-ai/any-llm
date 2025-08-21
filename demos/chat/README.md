@@ -2,6 +2,8 @@
 
 This demo showcases the ability of any-llm to discover and use models across a variety of providers
 
+![any-llm Demo](./assets/any_llm_demo.gif)
+
 ## Features
 
 - **Provider Discovery**: View all providers that support the `list_models` API
