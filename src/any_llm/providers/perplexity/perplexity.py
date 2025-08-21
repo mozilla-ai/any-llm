@@ -22,6 +22,7 @@ class PerplexityProvider(BaseOpenAIProvider):
 
     def __init__(self, config: ApiConfig) -> None:
         super().__init__(config)
-        self.API_BASE = config.api_base or os.getenv(
-            "PERPLEXITY_API_BASE", self.API_BASE
-        )
+        # Override API_BASE if provided in config or environment
+        base = config.api_base or os.getenv("PERPLEXITY_API_BASE")
+        if base:
+            self.API_BASE = base

@@ -34,9 +34,7 @@ def test_factory_integration():
 
 def test_model_provider_split():
     """Test that model string parsing works correctly."""
-    provider_enum, model_name = ProviderFactory.split_model_provider(
-        "perplexity/llama-3.1-sonar-small-128k-chat"
-    )
+    provider_enum, model_name = ProviderFactory.split_model_provider("perplexity/llama-3.1-sonar-small-128k-chat")
     assert provider_enum.value == "perplexity"
     assert model_name == "llama-3.1-sonar-small-128k-chat"
 
