@@ -32,8 +32,8 @@ This demo showcases the ability of any-llm to discover and use models across a v
    # ... add other provider API keys as needed
    ```
 
-   All providers supported by any-llm will be displayed in the frontend, but the requests to that provider will fail 
-   unless you have the correct environment variables set. See https://mozilla-ai.github.io/any-llm/providers/ to understand what 
+   All providers supported by any-llm will be displayed in the frontend, but the requests to that provider will fail
+   unless you have the correct environment variables set. See https://mozilla-ai.github.io/any-llm/providers/ to understand what
    env vars are expected.
 
 
