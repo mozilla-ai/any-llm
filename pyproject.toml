@@ -28,7 +28,6 @@ mistral = [
 
 anthropic = [
   "anthropic",
-  "instructor",
 ]
 
 google = [

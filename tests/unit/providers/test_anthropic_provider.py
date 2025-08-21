@@ -150,24 +150,6 @@ def test_completion_with_tool_choice_and_parallel_tool_calls(parallel_tool_calls
         )
 
 
-def test_stream_with_response_format_raises() -> None:
-    api_key = "test-api-key"
-    model = "model-id"
-    messages = [{"role": "user", "content": "Hello"}]
-
-    provider = AnthropicProvider(ApiConfig(api_key=api_key))
-
-    with pytest.raises(UnsupportedParameterError):
-        next(
-            provider._stream_completion(
-                client=Mock(),
-                model=model,
-                messages=messages,
-                response_format={"type": "json_object"},
-            )
-        )
-
-
 def test_provider_with_no_packages_installed() -> None:
     with patch.dict(sys.modules, dict.fromkeys(["anthropic"])):
         try:
@@ -239,4 +221,21 @@ def test_completion_with_custom_reasoning_effort(reasoning_effort: str) -> None:
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model, messages=messages, max_tokens=DEFAULT_MAX_TOKENS, thinking=expected_thinking
+        )
+
+
+def test_response_format_raises_error() -> None:
+    api_key = "test-api-key"
+    model = "model-id"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    provider = AnthropicProvider(ApiConfig(api_key=api_key))
+
+    with pytest.raises(UnsupportedParameterError, match="Check the following links:"):
+        provider.completion(
+            CompletionParams(
+                model_id=model,
+                messages=messages,
+                response_format={"type": "json_object"},
+            )
         )
