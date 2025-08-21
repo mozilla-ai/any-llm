@@ -9,7 +9,6 @@ from any_llm.types.responses import Response, ResponseStreamEvent
 
 try:
     import groq
-    import instructor
     from groq import AsyncStream as GroqAsyncStream
     from groq import Stream as GroqStream
 
@@ -26,7 +25,6 @@ from any_llm.providers.groq.utils import (
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 from any_llm.types.model import Model
-from any_llm.utils.instructor import _convert_instructor_response
 
 if TYPE_CHECKING:
     from groq.types.chat import ChatCompletion as GroqChatCompletion
@@ -98,18 +96,16 @@ class GroqProvider(Provider):
             params.reasoning_effort = None
 
         if params.response_format:
-            instructor_client = instructor.from_groq(client, mode=instructor.Mode.JSON)
-            if not isinstance(params.response_format, type) or not issubclass(params.response_format, BaseModel):
-                msg = "response_format must be a pydantic model"
-                raise ValueError(msg)
-            instructor_response = await instructor_client.chat.completions.create(
-                model=params.model_id,
-                messages=params.messages,  # type: ignore[arg-type]
-                response_model=params.response_format,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
-                **kwargs,
-            )
-            return _convert_instructor_response(instructor_response, params.model_id, self.PROVIDER_NAME)
+            if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
+                kwargs["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": params.response_format.__name__,
+                        "schema": params.response_format.model_json_schema(),
+                    },
+                }
+            else:
+                kwargs["response_format"] = params.response_format
 
         if params.stream:
             return await self._stream_async_completion(
@@ -120,7 +116,7 @@ class GroqProvider(Provider):
         response: GroqChatCompletion = await client.chat.completions.create(
             model=params.model_id,
             messages=cast("Any", params.messages),
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
             **kwargs,
         )
 
@@ -138,18 +134,16 @@ class GroqProvider(Provider):
             params.reasoning_effort = None
 
         if params.response_format:
-            instructor_client = instructor.from_groq(client, mode=instructor.Mode.JSON)
-            if not isinstance(params.response_format, type) or not issubclass(params.response_format, BaseModel):
-                msg = "response_format must be a pydantic model"
-                raise ValueError(msg)
-            instructor_response = instructor_client.chat.completions.create(
-                model=params.model_id,
-                messages=params.messages,  # type: ignore[arg-type]
-                response_model=params.response_format,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
-                **kwargs,
-            )
-            return _convert_instructor_response(instructor_response, params.model_id, self.PROVIDER_NAME)
+            if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
+                kwargs["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": params.response_format.__name__,
+                        "schema": params.response_format.model_json_schema(),
+                    },
+                }
+            else:
+                kwargs["response_format"] = params.response_format
 
         if params.stream:
             return self._stream_completion(
