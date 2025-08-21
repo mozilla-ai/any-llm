@@ -354,11 +354,11 @@
     grid-template-columns: 1fr;
     gap: 20px;
   }
-  
+
   .app {
     padding: 10px;
   }
-  
+
   .header h1 {
     font-size: 2rem;
   }

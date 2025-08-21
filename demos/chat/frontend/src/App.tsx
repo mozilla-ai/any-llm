@@ -58,7 +58,7 @@ function App() {
         setSelectedModel('');
         return;
       }
-      
+
       setLoading(true);
       setError('');
       try {
@@ -122,7 +122,7 @@ function App() {
                   return updated;
                 });
               });
-              
+
               // Force DOM update by directly manipulating the last message element
               setTimeout(() => {
                 const messageElements = document.querySelectorAll('.message.assistant');
@@ -167,7 +167,7 @@ function App() {
     setError('');
   };
 
-  const filteredModels = models.filter(model => 
+  const filteredModels = models.filter(model =>
     model.id.toLowerCase().includes(modelFilter.toLowerCase())
   );
 

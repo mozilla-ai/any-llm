@@ -1,15 +1,13 @@
 import json
 from typing import Any
 
+from any_llm import completion, list_models
+from any_llm.exceptions import MissingApiKeyError
+from any_llm.provider import ProviderFactory, ProviderName
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-
-from any_llm import completion, list_models
-from any_llm.exceptions import MissingApiKeyError
-from any_llm.provider import ProviderFactory, ProviderName
-
 
 app = FastAPI(title="any-llm Demo", description="Demo showcasing list_models and completions")
 
@@ -70,13 +68,13 @@ async def get_models(request: ListModelsRequest):
                 for model in models
             ]
         }
-    except MissingApiKeyError:
+    except MissingApiKeyError as e:
         raise HTTPException(
             status_code=400,
             detail="API key is required for this provider, please set the env var and restart the backend server",
-        )
+        ) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 async def stream_completion(request: CompletionRequest):
@@ -153,13 +151,13 @@ async def create_completion(request: CompletionRequest):
                 "Access-Control-Allow-Headers": "*",
             },
         )
-    except MissingApiKeyError:
+    except MissingApiKeyError as e:
         raise HTTPException(
             status_code=400,
             detail="API key is required for this provider, please set the env var and restart the backend server",
-        )
+        ) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 if __name__ == "__main__":

@@ -21,12 +21,12 @@ export async function fetchModels(provider: string): Promise<Model[]> {
       provider,
     }),
   });
-  
+
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Failed to fetch models');
   }
-  
+
   const data = await response.json();
   return data.models;
 }
@@ -74,22 +74,22 @@ export async function createStreamingCompletion(
 
         const chunk = decoder.decode(value, { stream: true });
         buffer += chunk;
-        
+
         // Process complete lines
         const lines = buffer.split('\n');
         buffer = lines.pop() || ''; // Keep the last incomplete line in buffer
 
         for (const line of lines) {
           if (line.trim() === '') continue; // Skip empty lines
-          
+
           if (line.startsWith('data: ')) {
             const data = line.slice(6).trim();
-            
+
             if (data === '[DONE]') {
               onComplete();
               return;
             }
-            
+
             if (data) {
               try {
                 const parsedChunk = JSON.parse(data);
