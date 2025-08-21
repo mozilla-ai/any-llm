@@ -38,6 +38,7 @@ class TogetherProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -72,6 +73,9 @@ class TogetherProvider(Provider):
             client = together.Together(api_key=self.config.api_key, base_url=self.config.api_base)
         else:
             client = together.Together(api_key=self.config.api_key)
+
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
 
         if params.response_format:
             instructor_client = instructor.patch(client, mode=instructor.Mode.JSON)  # type: ignore [call-overload]

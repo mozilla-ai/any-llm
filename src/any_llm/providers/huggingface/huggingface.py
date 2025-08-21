@@ -1,9 +1,8 @@
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import TYPE_CHECKING, Any
 
 try:
-    from huggingface_hub import InferenceClient
-    from openai.lib._parsing import type_to_response_format_param
+    from huggingface_hub import AsyncInferenceClient, HfApi, InferenceClient
 
     PACKAGES_INSTALLED = True
 except ImportError:
@@ -11,6 +10,8 @@ except ImportError:
 
 from any_llm.provider import Provider
 from any_llm.providers.huggingface.utils import (
+    _convert_models_list,
+    _convert_params,
     _create_openai_chunk_from_huggingface_chunk,
 )
 from any_llm.types.completion import (
@@ -21,6 +22,7 @@ from any_llm.types.completion import (
     CompletionParams,
     CompletionUsage,
 )
+from any_llm.types.model import Model
 
 if TYPE_CHECKING:
     from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
@@ -40,55 +42,51 @@ class HuggingfaceProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
+
+    async def _stream_completion_async(
+        self,
+        client: "AsyncInferenceClient",
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatCompletionChunk]:
+        """Handle streaming completion - extracted to avoid generator issues."""
+        response: AsyncIterator[HuggingFaceChatCompletionStreamOutput] = await client.chat_completion(**kwargs)
+
+        async for chunk in response:
+            yield _create_openai_chunk_from_huggingface_chunk(chunk)
 
     def _stream_completion(
         self,
         client: "InferenceClient",
-        model: str,
-        messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> Iterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
         response: Iterator[HuggingFaceChatCompletionStreamOutput] = client.chat_completion(
-            model=model,
-            messages=messages,
             **kwargs,
         )
         for chunk in response:
             yield _create_openai_chunk_from_huggingface_chunk(chunk)
 
-    def completion(
+    async def acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using HuggingFace."""
-        client = InferenceClient(
+        client = AsyncInferenceClient(
             base_url=self.config.api_base, token=self.config.api_key, timeout=kwargs.get("timeout")
         )
 
-        if params.max_tokens is not None:
-            kwargs["max_new_tokens"] = params.max_tokens
-
-        if params.response_format is not None:
-            kwargs["response_format"] = type_to_response_format_param(response_format=params.response_format)  # type: ignore[arg-type]
+        converted_kwargs = _convert_params(params, **kwargs)
 
         if params.stream:
-            stream_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "max_tokens"})
-            stream_kwargs.update(kwargs)
-            stream_kwargs["stream"] = True
-            return self._stream_completion(client, params.model_id, params.messages, **stream_kwargs)
+            converted_kwargs["stream"] = True
+            return self._stream_completion_async(client, **converted_kwargs)
 
-        response = client.chat_completion(
-            model=params.model_id,
-            messages=params.messages,
-            **params.model_dump(
-                exclude_none=True, exclude={"model_id", "messages", "response_format", "stream", "max_tokens"}
-            ),
-            **kwargs,
-        )
+        response = await client.chat_completion(**converted_kwargs)
+
         data = response
         choices_out: list[Choice] = []
         for i, ch in enumerate(data.get("choices", [])):
@@ -117,3 +115,65 @@ class HuggingfaceProvider(Provider):
             choices=choices_out,
             usage=usage,
         )
+
+    def completion(
+        self,
+        params: CompletionParams,
+        **kwargs: Any,
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+        """Create a chat completion using HuggingFace."""
+        client = InferenceClient(
+            base_url=self.config.api_base, token=self.config.api_key, timeout=kwargs.get("timeout")
+        )
+
+        converted_kwargs = _convert_params(params, **kwargs)
+
+        if params.stream:
+            converted_kwargs["stream"] = True
+            return self._stream_completion(client, **converted_kwargs)
+
+        response = client.chat_completion(**converted_kwargs)
+
+        data = response
+        choices_out: list[Choice] = []
+        for i, ch in enumerate(data.get("choices", [])):
+            msg = ch.get("message", {})
+            message = ChatCompletionMessage(
+                role="assistant",
+                content=msg.get("content"),
+                tool_calls=msg.get("tool_calls"),
+            )
+            choices_out.append(Choice(index=i, finish_reason=ch.get("finish_reason"), message=message))
+
+        usage = None
+        if data.get("usage"):
+            u = data["usage"]
+            usage = CompletionUsage(
+                prompt_tokens=u.get("prompt_tokens", 0),
+                completion_tokens=u.get("completion_tokens", 0),
+                total_tokens=u.get("total_tokens", 0),
+            )
+
+        return ChatCompletion(
+            id=data.get("id", ""),
+            model=params.model_id,
+            created=data.get("created", 0),
+            object="chat.completion",
+            choices=choices_out,
+            usage=usage,
+        )
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        if not self.SUPPORTS_LIST_MODELS:
+            message = f"{self.PROVIDER_NAME} does not support listing models."
+            raise NotImplementedError(message)
+        client = HfApi(token=self.config.api_key)
+        if kwargs.get("inference") is None and kwargs.get("inference_provider") is None:
+            kwargs["inference"] = "warm"
+        if kwargs.get("limit") is None:
+            kwargs["limit"] = 20
+        models_list = client.list_models(**kwargs)
+        return _convert_models_list(models_list)

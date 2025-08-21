@@ -8,11 +8,14 @@ from any_llm.types.completion import (
     ChunkChoice,
     CreateEmbeddingResponse,
     Embedding,
+    Reasoning,
     Usage,
 )
+from any_llm.types.model import Model
 
 try:
     from google.genai import types
+    from google.genai.pagers import Pager
 except ImportError as exc:
     msg = "google-genai is not installed. Please install it with `pip install any-llm-sdk[google]`"
     raise ImportError(msg) from exc
@@ -130,65 +133,60 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
         },
     }
 
+    choices: list[dict[str, Any]] = []
     if (
         response.candidates
         and len(response.candidates) > 0
         and response.candidates[0].content
         and response.candidates[0].content.parts
         and len(response.candidates[0].content.parts) > 0
-        and hasattr(response.candidates[0].content.parts[0], "function_call")
-        and response.candidates[0].content.parts[0].function_call
     ):
-        function_call = response.candidates[0].content.parts[0].function_call
+        reasoning = None
+        for part in response.candidates[0].content.parts:
+            if getattr(part, "thought", None):
+                reasoning = part.text
+            elif function_call := getattr(part, "function_call", None):
+                args_dict = {}
+                if args := getattr(function_call, "args", None):
+                    for key, value in args.items():
+                        args_dict[key] = value
 
-        args_dict = {}
-        if hasattr(function_call, "args") and function_call.args:
-            for key, value in function_call.args.items():
-                args_dict[key] = value
+                choices.append(
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "reasoning": reasoning,
+                            "tool_calls": [
+                                {
+                                    "id": f"call_{hash(function_call.name)}",
+                                    "function": {
+                                        "name": function_call.name,
+                                        "arguments": json.dumps(args_dict),
+                                    },
+                                    "type": "function",
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                        "index": 0,
+                    }
+                )
+            elif getattr(part, "text", None):
+                choices.append(
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": part.text,
+                            "reasoning": reasoning,
+                            "tool_calls": None,
+                        },
+                        "finish_reason": "stop",
+                        "index": 0,
+                    }
+                )
 
-        response_dict["choices"] = [
-            {
-                "message": {
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [
-                        {
-                            "id": f"call_{hash(function_call.name)}",
-                            "function": {
-                                "name": function_call.name,
-                                "arguments": json.dumps(args_dict),
-                            },
-                            "type": "function",
-                        }
-                    ],
-                },
-                "finish_reason": "tool_calls",
-                "index": 0,
-            }
-        ]
-    else:
-        content = ""
-        if (
-            response.candidates
-            and len(response.candidates) > 0
-            and response.candidates[0].content
-            and response.candidates[0].content.parts
-            and len(response.candidates[0].content.parts) > 0
-            and hasattr(response.candidates[0].content.parts[0], "text")
-        ):
-            content = response.candidates[0].content.parts[0].text or ""
-
-        response_dict["choices"] = [
-            {
-                "message": {
-                    "role": "assistant",
-                    "content": content,
-                    "tool_calls": None,
-                },
-                "finish_reason": "stop",
-                "index": 0,
-            }
-        ]
+    response_dict["choices"] = choices
 
     return response_dict
 
@@ -228,9 +226,23 @@ def _create_openai_chunk_from_google_chunk(
     candidate = response.candidates[0]
     assert candidate.content
     assert candidate.content.parts
-    part = candidate.content.parts[0]
 
-    delta = ChoiceDelta(content=part.text, role="assistant")
+    content = ""
+    reasoning_content = ""
+
+    for part in candidate.content.parts:
+        if part.thought:
+            # This is a thinking/reasoning part
+            reasoning_content += part.text or ""
+        else:
+            # Regular content part
+            content += part.text or ""
+
+    delta = ChoiceDelta(
+        content=content or None,
+        role="assistant",
+        reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
+    )
 
     choice = ChunkChoice(
         index=0,
@@ -245,3 +257,8 @@ def _create_openai_chunk_from_google_chunk(
         model=str(response.model_version),
         object="chat.completion.chunk",
     )
+
+
+def _convert_models_list(models_list: Pager[types.Model]) -> list[Model]:
+    # Google doesn't provide a creation date for models
+    return [Model(id=model.name or "Unknown", object="model", created=0, owned_by="google") for model in models_list]

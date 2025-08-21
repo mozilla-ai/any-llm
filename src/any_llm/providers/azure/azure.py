@@ -34,6 +34,7 @@ class AzureProvider(Provider):
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
+    SUPPORTS_LIST_MODELS = False
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -93,6 +94,9 @@ class AzureProvider(Provider):
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Azure AI Inference SDK."""
         client: ChatCompletionsClient = self._create_chat_client()
+
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
 
         azure_response_format = None
         if params.response_format:
