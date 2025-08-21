@@ -6,7 +6,7 @@ from openai import APIConnectionError
 from pydantic import BaseModel
 
 from any_llm import ProviderName, completion
-from any_llm.exceptions import MissingApiKeyError
+from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.provider import ProviderFactory
 from any_llm.types.completion import ChatCompletion
 from tests.constants import LOCAL_PROVIDERS
@@ -17,12 +17,13 @@ def test_response_format(
     provider_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
+    """Test that all supported providers can be loaded successfully."""
+
     if provider == ProviderName.LLAMAFILE:
         pytest.skip("Llamafile does not support response_format, skipping")
     cls = ProviderFactory.get_provider_class(provider)
     if not cls.SUPPORTS_COMPLETION:
         pytest.skip(f"{provider.value} does not support response_format, skipping")
-    """Test that all supported providers can be loaded successfully."""
     model_id = provider_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
 
@@ -47,6 +48,8 @@ def test_response_format(
         assert "paris" in output.city_name.lower()
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} API key not provided, skipping")
+    except UnsupportedParameterError:
+        pytest.skip(f"{provider.value} does not support response_format, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
         if provider in LOCAL_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
