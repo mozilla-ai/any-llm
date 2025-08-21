@@ -39,6 +39,7 @@ function App() {
   const [inputMessage, setInputMessage] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
+  const [modelFilter, setModelFilter] = useState<string>('');
   const chatInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -144,8 +145,7 @@ function App() {
           setError(error);
           setLoading(false);
         },
-        0.7,
-        500
+        0.7
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send message');
@@ -166,6 +166,10 @@ function App() {
     setMessages([]);
     setError('');
   };
+
+  const filteredModels = models.filter(model => 
+    model.id.toLowerCase().includes(modelFilter.toLowerCase())
+  );
 
   return (
     <div className="app">
@@ -205,23 +209,41 @@ function App() {
           )}
 
           {models.length > 0 && (
-            <div className="section">
-              <label>Available Models:</label>
-              <div className="model-grid">
-                {models.map((model) => (
-                  <div
-                    key={model.id}
-                    className={`model-card ${selectedModel === model.id ? 'selected' : ''}`}
-                    onClick={() => selectModel(model.id)}
-                  >
-                    <div className="model-name">{model.id}</div>
-                    {selectedModel === model.id && (
-                      <div className="model-selected-indicator">✓</div>
-                    )}
-                  </div>
-                ))}
+            <>
+              <div className="section">
+                <div className="model-filter-container">
+                  <input
+                    type="text"
+                    placeholder="Filter models..."
+                    value={modelFilter}
+                    onChange={(e) => setModelFilter(e.target.value)}
+                    className="model-filter-input"
+                  />
+                </div>
               </div>
-            </div>
+              <div className="section">
+                <label>Available Models:</label>
+                <div className="model-grid">
+                  {filteredModels.map((model) => (
+                    <div
+                      key={model.id}
+                      className={`model-card ${selectedModel === model.id ? 'selected' : ''}`}
+                      onClick={() => selectModel(model.id)}
+                    >
+                      <div className="model-name">{model.id}</div>
+                      {selectedModel === model.id && (
+                        <div className="model-selected-indicator">✓</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {filteredModels.length === 0 && modelFilter && (
+                  <div className="no-models-message">
+                    No models match "{modelFilter}"
+                  </div>
+                )}
+              </div>
+            </>
           )}
 
           {selectedModel && (

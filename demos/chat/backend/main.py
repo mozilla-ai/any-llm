@@ -31,8 +31,6 @@ class CompletionRequest(BaseModel):
     model: str
     messages: list[dict[str, Any]]
     temperature: float | None = None
-    max_tokens: int | None = None
-    stream: bool = False
 
 
 @app.get("/")
@@ -44,15 +42,14 @@ async def root():
 async def get_providers():
     """Get all providers that support list_models."""
     supported_providers = []
-    
+
     for provider_name in ProviderName:
         provider_class = ProviderFactory.get_provider_class(provider_name)
         if provider_class.SUPPORTS_LIST_MODELS:
-            supported_providers.append({
-                "name": provider_name.value,
-                "display_name": provider_name.value.replace("_", " ").title()
-            })
-    
+            supported_providers.append(
+                {"name": provider_name.value, "display_name": provider_name.value.replace("_", " ").title()}
+            )
+
     return {"providers": supported_providers}
 
 
@@ -61,20 +58,23 @@ async def get_models(request: ListModelsRequest):
     """List available models for a provider."""
     try:
         models = list_models(provider=request.provider)
-        
+
         return {
             "models": [
                 {
                     "id": model.id,
                     "object": model.object,
                     "created": getattr(model, "created", None),
-                    "owned_by": getattr(model, "owned_by", None)
+                    "owned_by": getattr(model, "owned_by", None),
                 }
                 for model in models
             ]
         }
     except MissingApiKeyError:
-        raise HTTPException(status_code=400, detail="API key is required for this provider")
+        raise HTTPException(
+            status_code=400,
+            detail="API key is required for this provider, please set the env var and restart the backend server",
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -83,34 +83,28 @@ async def stream_completion(request: CompletionRequest):
     """Stream completion chunks as Server-Sent Events."""
     try:
         import asyncio
-        
+
         stream = completion(
             model=request.model,
             messages=request.messages,
             provider=request.provider,
             temperature=request.temperature,
-            max_tokens=request.max_tokens,
-            stream=True
+            stream=True,
         )
-        
-        chunk_count = 0
+
         for chunk in stream:
-            chunk_count += 1
-            print(f"Backend received chunk #{chunk_count}: {chunk}")
             if chunk.choices and len(chunk.choices) > 0:
                 choice = chunk.choices[0]
                 delta_data = {}
-                
+
                 # Handle content
                 if choice.delta and hasattr(choice.delta, "content") and choice.delta.content:
                     delta_data["content"] = choice.delta.content
-                    print(f"Content chunk: '{choice.delta.content}'")
-                
+
                 # Handle thinking/reasoning
                 if choice.delta and hasattr(choice.delta, "reasoning") and choice.delta.reasoning:
                     delta_data["thinking"] = choice.delta.reasoning.content
-                    print(f"Thinking chunk: '{choice.delta.reasoning.content}'")
-                
+
                 # Send chunk if we have any delta data
                 if delta_data:
                     chunk_data = {
@@ -119,17 +113,12 @@ async def stream_completion(request: CompletionRequest):
                         "created": chunk.created,
                         "model": chunk.model,
                         "choices": [
-                            {
-                                "index": choice.index,
-                                "delta": delta_data,
-                                "finish_reason": choice.finish_reason
-                            }
-                        ]
+                            {"index": choice.index, "delta": delta_data, "finish_reason": choice.finish_reason}
+                        ],
                     }
-                    print(f"Sending chunk data: {delta_data}")
                     chunk_json = json.dumps(chunk_data)
                     yield f"data: {chunk_json}\n\n"
-                    
+
                     # Add a small delay to help with browser rendering
                     await asyncio.sleep(0.01)
                 elif choice.finish_reason:
@@ -138,16 +127,10 @@ async def stream_completion(request: CompletionRequest):
                         "object": chunk.object,
                         "created": chunk.created,
                         "model": chunk.model,
-                        "choices": [
-                            {
-                                "index": choice.index,
-                                "delta": {},
-                                "finish_reason": choice.finish_reason
-                            }
-                        ]
+                        "choices": [{"index": choice.index, "delta": {}, "finish_reason": choice.finish_reason}],
                     }
                     yield f"data: {json.dumps(final_data)}\n\n"
-        
+
         yield "data: [DONE]\n\n"
     except Exception as e:
         error_data = {"error": str(e)}
@@ -156,61 +139,32 @@ async def stream_completion(request: CompletionRequest):
 
 @app.post("/completion")
 async def create_completion(request: CompletionRequest):
-    """Create a completion using the specified model and provider."""
+    """Create a streaming completion using the specified model and provider."""
     try:
-        if request.stream:
-            return StreamingResponse(
-                stream_completion(request),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "X-Accel-Buffering": "no",  # Disable nginx buffering
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                    "Access-Control-Allow-Headers": "*"
-                }
-            )
-        
-        response = completion(
-            model=request.model,
-            messages=request.messages,
-            provider=request.provider,
-            temperature=request.temperature,
-            max_tokens=request.max_tokens,
-            stream=False
+        return StreamingResponse(
+            stream_completion(request),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",  # Disable nginx buffering
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "*",
+            },
         )
-        
-        return {
-            "id": response.id,
-            "object": response.object,
-            "created": response.created,
-            "model": response.model,
-            "choices": [
-                {
-                    "index": choice.index,
-                    "message": {
-                        "role": choice.message.role,
-                        "content": choice.message.content
-                    },
-                    "finish_reason": choice.finish_reason
-                }
-                for choice in response.choices
-            ],
-            "usage": {
-                "prompt_tokens": response.usage.prompt_tokens if response.usage else None,
-                "completion_tokens": response.usage.completion_tokens if response.usage else None,
-                "total_tokens": response.usage.total_tokens if response.usage else None
-            }
-        }
     except MissingApiKeyError:
-        raise HTTPException(status_code=400, detail="API key is required for this provider")
+        raise HTTPException(
+            status_code=400,
+            detail="API key is required for this provider, please set the env var and restart the backend server",
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
     import uvicorn
+
     print("Starting any-llm demo server...")
     print("API will be available at: http://localhost:8000")
     print("API docs available at: http://localhost:8000/docs")

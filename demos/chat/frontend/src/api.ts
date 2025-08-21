@@ -1,4 +1,4 @@
-import { Provider, Model, Message, CompletionResponse, StreamChunk } from './types';
+import { Provider, Model, Message, StreamChunk } from './types';
 
 const API_BASE = 'http://localhost:8000';
 
@@ -31,36 +31,6 @@ export async function fetchModels(provider: string): Promise<Model[]> {
   return data.models;
 }
 
-export async function createCompletion(
-  provider: string,
-  model: string,
-  messages: Message[],
-  temperature?: number,
-  maxTokens?: number
-): Promise<CompletionResponse> {
-  const response = await fetch(`${API_BASE}/completion`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      provider,
-      model,
-      messages,
-      temperature,
-      max_tokens: maxTokens,
-      stream: false,
-    }),
-  });
-  
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || 'Failed to create completion');
-  }
-  
-  return response.json();
-}
-
 export async function createStreamingCompletion(
   provider: string,
   model: string,
@@ -68,8 +38,7 @@ export async function createStreamingCompletion(
   onChunk: (chunk: StreamChunk) => void,
   onComplete: () => void,
   onError: (error: string) => void,
-  temperature?: number,
-  maxTokens?: number
+  temperature?: number
 ): Promise<void> {
   try {
     const response = await fetch(`${API_BASE}/completion`, {
@@ -82,8 +51,6 @@ export async function createStreamingCompletion(
         model,
         messages,
         temperature,
-        max_tokens: maxTokens,
-        stream: true,
       }),
     });
 

@@ -107,6 +107,36 @@
   padding: 10px;
 }
 
+.model-filter-container {
+  margin: 8px 0;
+}
+
+.model-filter-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.model-filter-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.no-models-message {
+  padding: 12px;
+  text-align: center;
+  color: #6b7280;
+  font-style: italic;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  margin-top: 8px;
+}
+
 .model-grid {
   display: grid;
   grid-template-columns: 1fr;

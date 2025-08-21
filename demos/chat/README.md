@@ -6,7 +6,10 @@ This demo showcases the `list_models` feature of any-llm, allowing you to discov
 
 - **Provider Discovery**: View all providers that support the `list_models` API
 - **Model Listing**: Dynamically fetch available models from any supported provider
-- **Interactive Chat**: Test completions with selected models
+- **Model Filtering**: Search and filter through available models with real-time filtering
+- **Streaming Chat**: Real-time streaming responses with character-by-character display
+- **Thinking Content**: Collapsible display of model reasoning for supported providers
+- **Auto-scrolling**: Chat automatically scrolls to follow the conversation
 - **Clean UI**: Simple, responsive interface for easy exploration
 
 ## Setup
@@ -23,7 +26,17 @@ This demo showcases the `list_models` feature of any-llm, allowing you to discov
    uv sync
    ```
 
-3. Run the server:
+3. Set up provider environment variables:
+   ```bash
+   # Set API keys for the providers you want to use
+   export OPENAI_API_KEY="your-openai-api-key"
+   export ANTHROPIC_API_KEY="your-anthropic-api-key"
+   export GOOGLE_API_KEY="your-google-api-key"
+   export MISTRAL_API_KEY="your-mistral-api-key"
+   # ... add other provider API keys as needed
+   ```
+
+4. Run the server:
    ```bash
    uv run python main.py
    ```
@@ -51,11 +64,12 @@ The frontend will be available at `http://localhost:3000`
 
 ## Usage
 
-1. **Select a Provider**: Choose from the list of providers that support `list_models`
-2. **Configure API Access**: Enter API key and/or base URL if required by the provider
-3. **Load Models**: Click "Load Models" to fetch available models from the provider
-4. **Select a Model**: Choose a model from the loaded list
-5. **Start Chatting**: Send messages to test the completion functionality
+1. **Set API Keys**: Ensure you have set the appropriate environment variables for the providers you want to use (see Backend setup step 3)
+2. **Select a Provider**: Choose from the list of providers that support `list_models`
+3. **Load Models**: Models will automatically load when you select a provider
+4. **Filter Models**: Use the filter box to search through available models
+5. **Select a Model**: Click on a model from the filtered list
+6. **Start Chatting**: Send messages to test the completion functionality with real-time streaming responses
 
 ## Supported Providers
 
