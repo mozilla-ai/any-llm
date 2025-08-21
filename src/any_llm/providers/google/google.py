@@ -132,8 +132,22 @@ class GoogleProvider(Provider):
         # Build generation config without duplicating keys (e.g., tools)
         base_kwargs = params.model_dump(
             exclude_none=True,
-            exclude={"model_id", "messages", "response_format", "stream", "tools", "tool_choice", "reasoning_effort"},
+            exclude={
+                "model_id",
+                "messages",
+                "response_format",
+                "stream",
+                "tools",
+                "tool_choice",
+                "reasoning_effort",
+                "max_tokens",
+            },
         )
+
+        # Convert max_tokens to max_output_tokens for Google
+        if params.max_tokens is not None:
+            base_kwargs["max_output_tokens"] = params.max_tokens
+
         base_kwargs.update(kwargs)
         generation_config = types.GenerateContentConfig(**base_kwargs)
         if isinstance(response_format, type) and issubclass(response_format, BaseModel):
