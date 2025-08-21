@@ -4,6 +4,7 @@ import pytest
 
 from any_llm import completion
 from any_llm.provider import ApiConfig, Provider, ProviderFactory, ProviderName
+from any_llm.types.completion import ChatCompletionMessage, CompletionParams, Reasoning
 
 
 def test_completion_invalid_model_format_no_slash() -> None:
@@ -29,17 +30,40 @@ def test_completion_invalid_model_format_multiple_slashes() -> None:
     mock_provider = Mock()
     mock_provider.completion.return_value = Mock()
 
-    with patch("any_llm.api.ProviderFactory") as mock_factory:
+    with patch("any_llm.utils.api.ProviderFactory") as mock_factory:
         mock_factory.get_supported_providers.return_value = ["provider"]
         mock_factory.get_provider_enum.return_value = ProviderName.OPENAI  # Using a valid provider
         mock_factory.split_model_provider.return_value = (ProviderName.OPENAI, "model/extra")
         mock_factory.create_provider.return_value = mock_provider
 
-        # This should work - splits on first slash only
         completion("provider/model/extra", messages=[{"role": "user", "content": "Hello"}])
 
-        # Verify the model name includes everything after first slash
-        mock_provider.completion.assert_called_once_with("model/extra", [{"role": "user", "content": "Hello"}])
+        mock_provider.completion.assert_called_once()
+        args, kwargs = mock_provider.completion.call_args
+        assert isinstance(args[0], CompletionParams)
+        assert args[0].model_id == "model/extra"
+        assert args[0].messages == [{"role": "user", "content": "Hello"}]
+        assert kwargs == {}
+
+
+def test_completion_converts_chat_message_to_dict() -> None:
+    mock_provider = Mock()
+    mock_provider.completion.return_value = Mock()
+
+    with patch("any_llm.utils.api.ProviderFactory") as mock_factory:
+        mock_factory.get_supported_providers.return_value = ["provider"]
+        mock_factory.get_provider_enum.return_value = ProviderName.OPENAI
+        mock_factory.split_model_provider.return_value = (ProviderName.OPENAI, "gpt-4o")
+        mock_factory.create_provider.return_value = mock_provider
+
+        msg = ChatCompletionMessage(role="assistant", content="Hello", reasoning=Reasoning(content="Thinking..."))
+        completion("provider/gpt-4o", messages=[msg])
+
+        mock_provider.completion.assert_called_once()
+        args, _ = mock_provider.completion.call_args
+        assert isinstance(args[0], CompletionParams)
+        # reasoning shouldn't show up because it gets stripped out and only role and content are sent
+        assert args[0].messages == [{"role": "assistant", "content": "Hello"}]
 
 
 def test_all_providers_can_be_loaded(provider: str) -> None:
@@ -54,14 +78,10 @@ def test_all_providers_can_be_loaded(provider: str) -> None:
     This test will automatically include new providers when they're added
     without requiring any code changes.
     """
-    # Try to create the provider with empty config
-    # This should not raise any ImportError or other loading exceptions
     provider_instance = ProviderFactory.create_provider(provider, ApiConfig(api_key="test_key"))
 
-    # Verify that the created instance is actually a Provider
     assert isinstance(provider_instance, Provider), f"Provider {provider} did not create a valid Provider instance"
 
-    # Verify the provider has the required completion method
     assert hasattr(provider_instance, "completion"), f"Provider {provider} does not have a completion method"
     assert callable(provider_instance.completion), f"Provider {provider} completion is not callable"
 
@@ -72,14 +92,10 @@ def test_all_providers_can_be_loaded_with_config(provider: str) -> None:
     This test verifies that providers can handle common configuration parameters
     like api_key and api_base without throwing errors during instantiation.
     """
-    # Sample config that might be passed to any provider
     sample_config = ApiConfig(api_key="test_key", api_base="https://test.example.com")
 
-    # Try to create the provider with sample config
-    # Providers should handle unknown config parameters gracefully
     provider_instance = ProviderFactory.create_provider(provider, sample_config)
 
-    # Verify that the created instance is actually a Provider
     assert isinstance(provider_instance, Provider), (
         f"Provider {provider} did not create a valid Provider instance with config"
     )
@@ -90,8 +106,6 @@ def test_provider_factory_can_create_all_supported_providers() -> None:
     supported_providers = ProviderFactory.get_supported_providers()
 
     for provider_name in supported_providers:
-        # Should be able to create each supported provider
         provider_instance = ProviderFactory.create_provider(provider_name, ApiConfig(api_key="test_key"))
 
-        # Each should be a valid Provider instance
         assert isinstance(provider_instance, Provider), f"Failed to create valid Provider instance for {provider_name}"

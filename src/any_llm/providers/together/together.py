@@ -1,5 +1,5 @@
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 try:
     import instructor
@@ -11,7 +11,14 @@ except ImportError:
 
 from any_llm.provider import Provider
 from any_llm.providers.together.utils import _create_openai_chunk_from_together_chunk
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, Choice, CompletionUsage
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    Choice,
+    CompletionParams,
+    CompletionUsage,
+)
 from any_llm.utils.instructor import _convert_instructor_response
 
 if TYPE_CHECKING:
@@ -57,8 +64,7 @@ class TogetherProvider(Provider):
 
     def completion(
         self,
-        model: str,
-        messages: list[dict[str, Any]],
+        params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Make the API call to Together AI with instructor support for structured outputs."""
@@ -67,29 +73,34 @@ class TogetherProvider(Provider):
         else:
             client = together.Together(api_key=self.config.api_key)
 
-        if "response_format" in kwargs:
-            response_format = kwargs.pop("response_format")
+        if params.response_format:
             instructor_client = instructor.patch(client, mode=instructor.Mode.JSON)  # type: ignore [call-overload]
 
             instructor_response = instructor_client.chat.completions.create(
-                model=model,
-                messages=messages,
-                response_model=response_format,
+                model=params.model_id,
+                messages=cast("Any", params.messages),
+                response_model=params.response_format,
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
                 **kwargs,
             )
 
-            return _convert_instructor_response(instructor_response, model, self.PROVIDER_NAME)
+            return _convert_instructor_response(instructor_response, params.model_id, self.PROVIDER_NAME)
 
-        if kwargs.get("stream", False):
-            return self._stream_completion(client, model, messages, **kwargs)
-
-        from typing import cast
+        if params.stream:
+            return self._stream_completion(
+                client,
+                params.model_id,
+                params.messages,
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
+                **kwargs,
+            )
 
         response = cast(
             "ChatCompletionResponse",
             client.chat.completions.create(
-                model=model,
-                messages=messages,
+                model=params.model_id,
+                messages=cast("Any", params.messages),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
                 **kwargs,
             ),
         )
@@ -98,10 +109,9 @@ class TogetherProvider(Provider):
         choices_out: list[Choice] = []
         for i, ch in enumerate(data.get("choices", [])):
             msg = ch.get("message", {})
-            from typing import Literal, cast
 
             message = ChatCompletionMessage(
-                role=cast("Literal['assistant']", "assistant"),
+                role=cast("Literal['assistant']", msg.get("role")),
                 content=msg.get("content"),
                 tool_calls=msg.get("tool_calls"),
             )
@@ -127,7 +137,7 @@ class TogetherProvider(Provider):
 
         return ChatCompletion(
             id=data.get("id", ""),
-            model=model,
+            model=params.model_id,
             created=data.get("created", 0),
             object="chat.completion",
             choices=choices_out,

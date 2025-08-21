@@ -1,96 +1,21 @@
 from collections.abc import Callable, Iterator
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from any_llm.provider import ApiConfig, Provider, ProviderFactory
+from any_llm.provider import ApiConfig, ProviderFactory
 from any_llm.tools import prepare_tools
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CreateEmbeddingResponse
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, CreateEmbeddingResponse
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
-
-
-def _prepare_completion_request(
-    model: str,
-    messages: list[dict[str, Any]],
-    *,
-    tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
-    tool_choice: str | dict[str, Any] | None = None,
-    max_turns: int | None = None,
-    temperature: float | None = None,
-    top_p: float | None = None,
-    max_tokens: int | None = None,
-    response_format: dict[str, Any] | type[BaseModel] | None = None,
-    stream: bool | None = None,
-    n: int | None = None,
-    stop: str | list[str] | None = None,
-    presence_penalty: float | None = None,
-    frequency_penalty: float | None = None,
-    seed: int | None = None,
-    api_key: str | None = None,
-    api_base: str | None = None,
-    api_timeout: float | None = None,
-    user: str | None = None,
-    **kwargs: Any,
-) -> tuple[Provider, str, dict[str, Any]]:
-    """Prepare a completion request by validating inputs and creating provider instance.
-
-    Returns:
-        tuple: (provider_instance, model_name, completion_kwargs)
-
-    """
-    provider_key, model_name = ProviderFactory.split_model_provider(model)
-
-    config: dict[str, str] = {}
-    if api_key:
-        config["api_key"] = str(api_key)
-    if api_base:
-        config["api_base"] = str(api_base)
-    api_config = ApiConfig(**config)
-
-    provider = ProviderFactory.create_provider(provider_key, api_config)
-
-    completion_kwargs = kwargs.copy()
-    if tools is not None:
-        completion_kwargs["tools"] = prepare_tools(tools)
-    if tool_choice is not None:
-        completion_kwargs["tool_choice"] = tool_choice
-    if max_turns is not None:
-        completion_kwargs["max_turns"] = max_turns
-    if temperature is not None:
-        completion_kwargs["temperature"] = temperature
-    if top_p is not None:
-        completion_kwargs["top_p"] = top_p
-    if max_tokens is not None:
-        completion_kwargs["max_tokens"] = max_tokens
-    if response_format is not None:
-        completion_kwargs["response_format"] = response_format
-    if stream is not None:
-        completion_kwargs["stream"] = stream
-    if n is not None:
-        completion_kwargs["n"] = n
-    if stop is not None:
-        completion_kwargs["stop"] = stop
-    if presence_penalty is not None:
-        completion_kwargs["presence_penalty"] = presence_penalty
-    if frequency_penalty is not None:
-        completion_kwargs["frequency_penalty"] = frequency_penalty
-    if seed is not None:
-        completion_kwargs["seed"] = seed
-    if api_timeout is not None:
-        completion_kwargs["timeout"] = api_timeout
-    if user is not None:
-        completion_kwargs["user"] = user
-
-    return provider, model_name, completion_kwargs
+from any_llm.utils.api import _process_completion_params
 
 
 def completion(
     model: str,
-    messages: list[dict[str, Any]],
+    messages: list[dict[str, Any] | ChatCompletionMessage],
     *,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
-    max_turns: int | None = None,
     temperature: float | None = None,
     top_p: float | None = None,
     max_tokens: int | None = None,
@@ -105,6 +30,13 @@ def completion(
     api_base: str | None = None,
     api_timeout: float | None = None,
     user: str | None = None,
+    parallel_tool_calls: bool | None = None,
+    logprobs: bool | None = None,
+    top_logprobs: int | None = None,
+    logit_bias: dict[str, float] | None = None,
+    stream_options: dict[str, Any] | None = None,
+    max_completion_tokens: int | None = None,
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
     """Create a chat completion.
@@ -114,7 +46,6 @@ def completion(
         messages: List of messages for the conversation
         tools: List of tools for tool calling. Can be Python callables or OpenAI tool format dicts
         tool_choice: Controls which tools the model can call
-        max_turns: Maximum number of tool execution turns
         temperature: Controls randomness in the response (0.0 to 2.0)
         top_p: Controls diversity via nucleus sampling (0.0 to 1.0)
         max_tokens: Maximum number of tokens to generate
@@ -129,18 +60,24 @@ def completion(
         api_base: Base URL for the provider API
         api_timeout: Request timeout in seconds
         user: Unique identifier for the end user
+        parallel_tool_calls: Whether to allow parallel tool calls
+        logprobs: Include token-level log probabilities in the response
+        top_logprobs: Number of alternatives to return when logprobs are requested
+        logit_bias: Bias the likelihood of specified tokens during generation
+        stream_options: Additional options controlling streaming behavior
+        max_completion_tokens: Maximum number of tokens for the completion
+        reasoning_effort: Reasoning effort level for models that support it
         **kwargs: Additional provider-specific parameters
 
     Returns:
         The completion response from the provider
 
     """
-    provider, model_name, completion_kwargs = _prepare_completion_request(
-        model,
-        messages,
+    provider, completion_params = _process_completion_params(
+        model=model,
+        messages=messages,
         tools=tools,
         tool_choice=tool_choice,
-        max_turns=max_turns,
         temperature=temperature,
         top_p=top_p,
         max_tokens=max_tokens,
@@ -155,19 +92,25 @@ def completion(
         api_base=api_base,
         api_timeout=api_timeout,
         user=user,
+        parallel_tool_calls=parallel_tool_calls,
+        logprobs=logprobs,
+        top_logprobs=top_logprobs,
+        logit_bias=logit_bias,
+        stream_options=stream_options,
+        max_completion_tokens=max_completion_tokens,
+        reasoning_effort=reasoning_effort,
         **kwargs,
     )
 
-    return provider.completion(model_name, messages, **completion_kwargs)
+    return provider.completion(completion_params, **kwargs)
 
 
 async def acompletion(
     model: str,
-    messages: list[dict[str, Any]],
+    messages: list[dict[str, Any] | ChatCompletionMessage],
     *,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
-    max_turns: int | None = None,
     temperature: float | None = None,
     top_p: float | None = None,
     max_tokens: int | None = None,
@@ -182,6 +125,13 @@ async def acompletion(
     api_base: str | None = None,
     api_timeout: float | None = None,
     user: str | None = None,
+    parallel_tool_calls: bool | None = None,
+    logprobs: bool | None = None,
+    top_logprobs: int | None = None,
+    logit_bias: dict[str, float] | None = None,
+    stream_options: dict[str, Any] | None = None,
+    max_completion_tokens: int | None = None,
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
     """Create a chat completion asynchronously.
@@ -191,7 +141,6 @@ async def acompletion(
         messages: List of messages for the conversation
         tools: List of tools for tool calling. Can be Python callables or OpenAI tool format dicts
         tool_choice: Controls which tools the model can call
-        max_turns: Maximum number of tool execution turns
         temperature: Controls randomness in the response (0.0 to 2.0)
         top_p: Controls diversity via nucleus sampling (0.0 to 1.0)
         max_tokens: Maximum number of tokens to generate
@@ -206,18 +155,24 @@ async def acompletion(
         api_base: Base URL for the provider API
         api_timeout: Request timeout in seconds
         user: Unique identifier for the end user
+        parallel_tool_calls: Whether to allow parallel tool calls
+        logprobs: Include token-level log probabilities in the response
+        top_logprobs: Number of alternatives to return when logprobs are requested
+        logit_bias: Bias the likelihood of specified tokens during generation
+        stream_options: Additional options controlling streaming behavior
+        max_completion_tokens: Maximum number of tokens for the completion
+        reasoning_effort: Reasoning effort level for models that support it
         **kwargs: Additional provider-specific parameters
 
     Returns:
         The completion response from the provider
 
     """
-    provider, model_name, completion_kwargs = _prepare_completion_request(
-        model,
-        messages,
+    provider, completion_params = _process_completion_params(
+        model=model,
+        messages=messages,
         tools=tools,
         tool_choice=tool_choice,
-        max_turns=max_turns,
         temperature=temperature,
         top_p=top_p,
         max_tokens=max_tokens,
@@ -232,10 +187,17 @@ async def acompletion(
         api_base=api_base,
         api_timeout=api_timeout,
         user=user,
+        parallel_tool_calls=parallel_tool_calls,
+        logprobs=logprobs,
+        top_logprobs=top_logprobs,
+        logit_bias=logit_bias,
+        stream_options=stream_options,
+        max_completion_tokens=max_completion_tokens,
+        reasoning_effort=reasoning_effort,
         **kwargs,
     )
 
-    return await provider.acompletion(model_name, messages, **completion_kwargs)
+    return await provider.acompletion(completion_params, **kwargs)
 
 
 def responses(
@@ -252,6 +214,11 @@ def responses(
     api_base: str | None = None,
     api_timeout: float | None = None,
     user: str | None = None,
+    instructions: str | None = None,
+    max_tool_calls: int | None = None,
+    parallel_tool_calls: int | None = None,
+    reasoning: Any | None = None,
+    text: Any | None = None,
     **kwargs: Any,
 ) -> Response | Iterator[ResponseStreamEvent]:
     """Create a response using the OpenAI-style Responses API.
@@ -275,6 +242,12 @@ def responses(
         api_base: Base URL for the provider API
         api_timeout: Request timeout in seconds
         user: Unique identifier for the end user
+        instructions: A system (or developer) message inserted into the model's context.
+        max_tool_calls: The maximum number of total calls to built-in tools that can be processed in a response. This maximum number applies across all built-in tool calls, not per individual tool. Any further attempts to call a tool by the model will be ignored.
+        parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
+        reasoning: Configuration options for reasoning models.
+        text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
+
         **kwargs: Additional provider-specific parameters
 
     Returns:
@@ -313,6 +286,16 @@ def responses(
         responses_kwargs["timeout"] = api_timeout
     if user is not None:
         responses_kwargs["user"] = user
+    if instructions is not None:
+        responses_kwargs["instructions"] = instructions
+    if max_tool_calls is not None:
+        responses_kwargs["max_tool_calls"] = max_tool_calls
+    if parallel_tool_calls is not None:
+        responses_kwargs["parallel_tool_calls"] = parallel_tool_calls
+    if reasoning is not None:
+        responses_kwargs["reasoning"] = reasoning
+    if text is not None:
+        responses_kwargs["text"] = text
 
     return provider.responses(model_name, input_data, **responses_kwargs)
 
@@ -331,6 +314,11 @@ async def aresponses(
     api_base: str | None = None,
     api_timeout: float | None = None,
     user: str | None = None,
+    instructions: str | None = None,
+    max_tool_calls: int | None = None,
+    parallel_tool_calls: int | None = None,
+    reasoning: Any | None = None,
+    text: Any | None = None,
     **kwargs: Any,
 ) -> Response | Iterator[ResponseStreamEvent]:
     """Create a response using the OpenAI-style Responses API.
@@ -354,6 +342,12 @@ async def aresponses(
         api_base: Base URL for the provider API
         api_timeout: Request timeout in seconds
         user: Unique identifier for the end user
+        instructions: A system (or developer) message inserted into the model's context.
+        max_tool_calls: The maximum number of total calls to built-in tools that can be processed in a response. This maximum number applies across all built-in tool calls, not per individual tool. Any further attempts to call a tool by the model will be ignored.
+        parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
+        reasoning: Configuration options for reasoning models.
+        text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
+
         **kwargs: Additional provider-specific parameters
 
     Returns:
@@ -392,6 +386,16 @@ async def aresponses(
         responses_kwargs["timeout"] = api_timeout
     if user is not None:
         responses_kwargs["user"] = user
+    if instructions is not None:
+        responses_kwargs["instructions"] = instructions
+    if max_tool_calls is not None:
+        responses_kwargs["max_tool_calls"] = max_tool_calls
+    if parallel_tool_calls is not None:
+        responses_kwargs["parallel_tool_calls"] = parallel_tool_calls
+    if reasoning is not None:
+        responses_kwargs["reasoning"] = reasoning
+    if text is not None:
+        responses_kwargs["text"] = text
 
     return await provider.aresponses(model_name, input_data, **responses_kwargs)
 

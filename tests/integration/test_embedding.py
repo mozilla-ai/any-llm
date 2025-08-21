@@ -16,7 +16,6 @@ def test_embedding_providers(
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
     """Test that all embedding-supported providers can generate embeddings successfully."""
-    # first check if the provider supports embeddings
     cls = ProviderFactory.get_provider_class(provider)
     if not cls.SUPPORTS_EMBEDDING:
         pytest.skip(f"{provider.value} does not support embeddings, skipping")
@@ -38,7 +37,6 @@ def test_embedding_providers(
     assert len(result.data) > 0
     for entry in result.data:
         assert all(isinstance(v, float) for v in entry.embedding)
-    # These providers don't output token use
     if provider not in (ProviderName.GOOGLE, ProviderName.LMSTUDIO):
         assert result.usage.prompt_tokens > 0
         assert result.usage.total_tokens > 0

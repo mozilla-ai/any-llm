@@ -18,7 +18,7 @@ from any_llm.providers.watsonx.utils import (
     _convert_response,
     _convert_streaming_chunk,
 )
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 
 
 class WatsonxProvider(Provider):
@@ -52,14 +52,13 @@ class WatsonxProvider(Provider):
 
     def completion(
         self,
-        model: str,
-        messages: list[dict[str, Any]],
+        params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using Watsonx."""
 
         model_inference = ModelInference(
-            model_id=model,
+            model_id=params.model_id,
             credentials=Credentials(
                 api_key=self.config.api_key,
                 url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL"),
@@ -68,17 +67,20 @@ class WatsonxProvider(Provider):
         )
 
         # Handle response_format by inlining schema guidance into the prompt
-        response_format = kwargs.pop("response_format", None)
+        response_format = params.response_format
         if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-            messages = _convert_pydantic_to_watsonx_json(response_format, messages)
+            params.messages = _convert_pydantic_to_watsonx_json(response_format, params.messages)
 
-        if kwargs.get("stream", False):
-            kwargs.pop("stream")
-            return self._stream_completion(model_inference, messages, **kwargs)
+        if params.stream:
+            kwargs = {
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+                **kwargs,
+            }
+            return self._stream_completion(model_inference, params.messages, **kwargs)
 
         response = model_inference.chat(
-            messages=messages,
-            params=kwargs,
+            messages=params.messages,
+            params=params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
         )
 
         return _convert_response(response)

@@ -3,19 +3,24 @@ from typing import TYPE_CHECKING, Any
 
 try:
     from huggingface_hub import InferenceClient
+    from openai.lib._parsing import type_to_response_format_param
 
     PACKAGES_INSTALLED = True
 except ImportError:
     PACKAGES_INSTALLED = False
 
-from pydantic import BaseModel
-
 from any_llm.provider import Provider
 from any_llm.providers.huggingface.utils import (
-    _convert_pydantic_to_huggingface_json,
     _create_openai_chunk_from_huggingface_chunk,
 )
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, Choice, CompletionUsage
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    Choice,
+    CompletionParams,
+    CompletionUsage,
+)
 
 if TYPE_CHECKING:
     from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
@@ -28,7 +33,7 @@ class HuggingfaceProvider(Provider):
 
     PROVIDER_NAME = "huggingface"
     ENV_API_KEY_NAME = "HF_TOKEN"
-    PROVIDER_DOCUMENTATION_URL = "https://huggingface.co/inference-endpoints"
+    PROVIDER_DOCUMENTATION_URL = "https://huggingface.co/docs/huggingface_hub/package_reference/inference_client"
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
@@ -56,27 +61,32 @@ class HuggingfaceProvider(Provider):
 
     def completion(
         self,
-        model: str,
-        messages: list[dict[str, Any]],
+        params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using HuggingFace."""
-        client = InferenceClient(token=self.config.api_key, timeout=kwargs.get("timeout", None))
+        client = InferenceClient(
+            base_url=self.config.api_base, token=self.config.api_key, timeout=kwargs.get("timeout")
+        )
 
-        if "max_tokens" in kwargs:
-            kwargs["max_new_tokens"] = kwargs.pop("max_tokens")
+        if params.max_tokens is not None:
+            kwargs["max_new_tokens"] = params.max_tokens
 
-        if "response_format" in kwargs:
-            response_format = kwargs.pop("response_format")
-            if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-                messages = _convert_pydantic_to_huggingface_json(response_format, messages)
+        if params.response_format is not None:
+            kwargs["response_format"] = type_to_response_format_param(response_format=params.response_format)  # type: ignore[arg-type]
 
-        if kwargs.get("stream", False):
-            return self._stream_completion(client, model, messages, **kwargs)
+        if params.stream:
+            stream_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "max_tokens"})
+            stream_kwargs.update(kwargs)
+            stream_kwargs["stream"] = True
+            return self._stream_completion(client, params.model_id, params.messages, **stream_kwargs)
 
         response = client.chat_completion(
-            model=model,
-            messages=messages,
+            model=params.model_id,
+            messages=params.messages,
+            **params.model_dump(
+                exclude_none=True, exclude={"model_id", "messages", "response_format", "stream", "max_tokens"}
+            ),
             **kwargs,
         )
         data = response
@@ -101,7 +111,7 @@ class HuggingfaceProvider(Provider):
 
         return ChatCompletion(
             id=data.get("id", ""),
-            model=model,
+            model=params.model_id,
             created=data.get("created", 0),
             object="chat.completion",
             choices=choices_out,

@@ -29,7 +29,7 @@ from any_llm.types.completion import (
 
 
 def _convert_response_format(
-    response_format: type[BaseModel] | str | JsonSchemaFormat | Any,
+    response_format: type[BaseModel] | dict[str, Any],
 ) -> JsonSchemaFormat | str | Any:
     """Convert Pydantic model to Azure JsonSchemaFormat."""
     if not isinstance(response_format, type) or not issubclass(response_format, BaseModel):

@@ -8,6 +8,7 @@ from any_llm import ProviderName, completion
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.provider import ProviderFactory
 from any_llm.types.completion import ChatCompletionChunk
+from tests.constants import LOCAL_PROVIDERS
 
 
 def test_streaming_completion(
@@ -30,12 +31,11 @@ def test_streaming_completion(
             **extra_kwargs,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that exactly follows the user request."},
-                {"role": "user", "content": "Say the exact phrase:'Hello World'"},
+                {"role": "user", "content": "Say the exact phrase:'Hello World' with no fancy formatting"},
             ],
             stream=True,
         ):
             num_chunks += 1
-            # Verify the response is still a valid ChatCompletion object
             assert isinstance(result, ChatCompletionChunk)
             if len(result.choices) > 0:
                 output += result.choices[0].delta.content or ""
@@ -48,6 +48,6 @@ def test_streaming_completion(
     except UnsupportedParameterError:
         pytest.skip(f"Streaming is not supported for {provider.value}")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in [ProviderName.OLLAMA, ProviderName.LMSTUDIO]:
+        if provider in LOCAL_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise

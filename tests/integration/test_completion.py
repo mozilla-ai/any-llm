@@ -8,7 +8,8 @@ from openai import APIConnectionError
 from any_llm import ProviderName, acompletion, completion
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
-from any_llm.types.completion import ChatCompletion
+from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
+from tests.constants import LOCAL_PROVIDERS
 
 
 def test_sync_completion(
@@ -17,7 +18,6 @@ def test_sync_completion(
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    # first check if the provider supports embeddings
     cls = ProviderFactory.get_provider_class(provider)
     if not cls.SUPPORTS_COMPLETION:
         pytest.skip(f"{provider.value} does not support completion, skipping")
@@ -26,12 +26,18 @@ def test_sync_completion(
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
     try:
         result = completion(
-            f"{provider.value}/{model_id}", **extra_kwargs, messages=[{"role": "user", "content": "Hello"}]
+            f"{provider.value}/{model_id}",
+            **extra_kwargs,
+            messages=[
+                {"role": "user", "content": "Hello"},
+                ChatCompletionMessage(role="assistant", content="Hi!"),
+                {"role": "user", "content": "What is my name?"},
+            ],
         )
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in [ProviderName.OLLAMA, ProviderName.LMSTUDIO]:
+        if provider in LOCAL_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise
     assert isinstance(result, ChatCompletion)
@@ -47,12 +53,10 @@ async def test_async_completion(
     provider_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
-    # first check if the provider supports embeddings
     cls = ProviderFactory.get_provider_class(provider)
     if not cls.SUPPORTS_COMPLETION:
         pytest.skip(f"{provider.value} does not support completion, skipping")
 
-    """Test that parallel completion works."""
     model_id = provider_model_map[provider]
     prompt_1 = "What's the capital of France?"
     prompt_2 = "What's the capital of Germany?"
@@ -75,6 +79,6 @@ async def test_async_completion(
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in [ProviderName.OLLAMA, ProviderName.LMSTUDIO]:
+        if provider in LOCAL_PROVIDERS:
             pytest.skip("Local model host is not set up, skipping")
         raise

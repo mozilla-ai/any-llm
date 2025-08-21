@@ -1,8 +1,6 @@
 import json
 from typing import Any
 
-from any_llm.logging import logger
-
 try:
     from anthropic.types import (
         ContentBlockDeltaEvent,
@@ -22,6 +20,7 @@ from any_llm.types.completion import (
     ChatCompletionMessageFunctionToolCall,
     ChatCompletionMessageToolCall,
     Choice,
+    CompletionParams,
     CompletionUsage,
     Function,
 )
@@ -246,26 +245,11 @@ def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[dict[str, Any
     return anthropic_tools
 
 
-def _convert_tool_choice(kwargs: dict[str, Any]) -> dict[str, Any]:
-    parallel_tool_calls = kwargs.pop("parallel_tool_calls", True)
-    tool_choice = kwargs.pop("tool_choice", "any")
+def _convert_tool_choice(params: CompletionParams) -> dict[str, Any]:
+    parallel_tool_calls = params.parallel_tool_calls
+    if parallel_tool_calls is None:
+        parallel_tool_calls = True
+    tool_choice = params.tool_choice or "any"
     if tool_choice == "required":
         tool_choice = "any"
     return {"type": tool_choice, "disable_parallel_tool_use": not parallel_tool_calls}
-
-
-def _convert_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
-    """Convert kwargs to Anthropic format."""
-    kwargs = kwargs.copy()
-
-    if "max_tokens" not in kwargs:
-        logger.warning(f"max_tokens is required for Anthropic, setting to {DEFAULT_MAX_TOKENS}")
-        kwargs["max_tokens"] = DEFAULT_MAX_TOKENS
-
-    if "tools" in kwargs:
-        kwargs["tools"] = _convert_tool_spec(kwargs["tools"])
-
-    if "tool_choice" in kwargs or "parallel_tool_calls" in kwargs:
-        kwargs["tool_choice"] = _convert_tool_choice(kwargs)
-
-    return kwargs

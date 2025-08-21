@@ -26,7 +26,6 @@ def test_embedding_with_api_config() -> None:
             "openai/test-model", inputs="Hello world", api_key="test_key", api_base="https://test.example.com"
         )
 
-        # Verify provider was created with correct config
         call_args = mock_factory.create_provider.call_args
         assert call_args[0][0] == ProviderName.OPENAI
         assert call_args[0][1].api_key == "test_key"

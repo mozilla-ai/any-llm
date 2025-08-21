@@ -14,6 +14,7 @@ from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
+    CompletionParams,
     CreateEmbeddingResponse,
 )
 from any_llm.types.provider import ProviderMetadata
@@ -37,6 +38,8 @@ class ProviderName(str, Enum):
     INCEPTION = "inception"
     LLAMA = "llama"
     LMSTUDIO = "lmstudio"
+    LLAMAFILE = "llamafile"
+    LLAMACPP = "llamacpp"
     MISTRAL = "mistral"
     MOONSHOT = "moonshot"
     NEBIUS = "nebius"
@@ -138,16 +141,14 @@ class Provider(ABC):
     @abstractmethod
     def completion(
         self,
-        model: str,
-        messages: list[dict[str, Any]],
+        params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """This method is designed to make the API call to the provider.
 
         Args:
-            model: The model to use
-            messages: The messages to send
-            kwargs: The kwargs to pass to the API call
+            params: The completion parameters
+            kwargs: Extra kwargs to pass to the API call
 
         Returns:
             The response from the API call
@@ -157,11 +158,14 @@ class Provider(ABC):
 
     async def acompletion(
         self,
-        model: str,
-        messages: list[dict[str, Any]],
+        params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        return await asyncio.to_thread(self.completion, model, messages, **kwargs)
+        return await asyncio.to_thread(
+            self.completion,
+            params,
+            **kwargs,
+        )
 
     def responses(
         self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
@@ -203,9 +207,7 @@ class ProviderFactory:
     PROVIDERS_DIR = Path(__file__).parent / "providers"
 
     @classmethod
-    def create_provider(
-        cls, provider_key: str | ProviderName, config: ApiConfig
-    ) -> Provider:
+    def create_provider(cls, provider_key: str | ProviderName, config: ApiConfig) -> Provider:
         """Dynamically load and create an instance of a provider based on the naming convention."""
         if isinstance(provider_key, ProviderName):
             provider_key = provider_key.value
