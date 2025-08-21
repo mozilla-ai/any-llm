@@ -1,3 +1,4 @@
+# ruff: noqa: T201, S104
 import json
 from typing import Any
 
