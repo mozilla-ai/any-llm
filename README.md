@@ -54,6 +54,18 @@ While the OpenAI API has become the de facto standard for LLM provider interface
 - **[Framework-specific solutions](https://github.com/agno-agi/agno/tree/main/libs/agno/agno/models)**: Some agent frameworks either depend on LiteLLM or implement their own provider integrations, creating fragmentation
 - **[Proxy Only Solutions](https://openrouter.ai/)**: solutions like [OpenRouter](https://openrouter.ai/) and [Portkey](https://github.com/Portkey-AI/portkey-python-sdk) require a hosted proxy to serve as the interface between your code and the LLM provider.
 
+## Demo
+
+Try `any-llm` in action with our interactive chat demo that showcases streaming completions and provider switching:
+
+**[📂 Run the Demo](./demos/chat/README.md)**
+
+The demo features:
+- Real-time streaming responses with character-by-character display
+- Support for multiple LLM providers with easy switching
+- Collapsible "thinking" content display for supported models
+- Clean chat interface with auto-scrolling
+
 ## Quickstart
 
 ### Requirements
