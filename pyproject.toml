@@ -50,7 +50,6 @@ cerebras = [
 
 fireworks = [
   "fireworks-ai>=0.17.16",
-  "instructor",
 ]
 
 groq = [
