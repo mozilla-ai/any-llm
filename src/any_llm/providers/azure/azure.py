@@ -139,9 +139,10 @@ class AzureProvider(Provider):
             azure_response_format = _convert_response_format(params.response_format)
 
         call_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
+        if azure_response_format:
+            call_kwargs["response_format"] = azure_response_format
+
         if params.stream:
-            if azure_response_format:
-                call_kwargs["response_format"] = azure_response_format
             return self._stream_completion_async(
                 client,
                 params.model_id,
@@ -149,8 +150,6 @@ class AzureProvider(Provider):
                 **call_kwargs,
                 **kwargs,
             )
-        if azure_response_format:
-            call_kwargs["response_format"] = azure_response_format
 
         response: ChatCompletions = cast(
             "ChatCompletions",
