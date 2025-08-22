@@ -211,15 +211,9 @@ class AzureProvider(Provider):
         """Create embeddings using Azure AI Inference SDK."""
         client: aio.EmbeddingsClient = self._create_embeddings_client_async()
 
-        input_list: list[str]
-        if isinstance(inputs, str):
-            input_list = [inputs]
-        else:
-            input_list = inputs
-
         response: EmbeddingsResult = await client.embed(
             model=model,
-            input=input_list,
+            input=inputs if isinstance(inputs, list) else [inputs],
             **kwargs,
         )
 
