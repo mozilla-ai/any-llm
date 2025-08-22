@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 class MistralProvider(Provider):
     """Mistral Provider using the new response conversion utilities."""
 
+    PROVIDER_LABEL = "Mistral"
     PROVIDER_NAME = "mistral"
     ENV_API_KEY_NAME = "MISTRAL_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://docs.mistral.ai/"

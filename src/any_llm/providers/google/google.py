@@ -45,6 +45,7 @@ REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 256, "low": 1024, "medium": 8
 class GoogleProvider(Provider):
     """Google Provider using the new response conversion utilities."""
 
+    PROVIDER_LABEL = "Google Vertex AI / Gemini"
     PROVIDER_NAME = "google"
     PROVIDER_DOCUMENTATION_URL = "https://cloud.google.com/vertex-ai/docs"
     ENV_API_KEY_NAME = "GOOGLE_API_KEY/GEMINI_API_KEY"

@@ -16,6 +16,7 @@ from any_llm.types.completion import (
     Function,
     Usage,
 )
+from any_llm.types.model import Model
 
 INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
 
@@ -281,3 +282,24 @@ def _create_openai_embedding_response_from_aws(
         object="list",
         usage=usage,
     )
+
+
+def _convert_models_list(aws_models: dict[str, Any], provider_name: str) -> list[Model]:
+    """
+    Convert AWS Bedrock modelSummaries dicts to a list of Model instances.
+    """
+    model_summaries = aws_models.get("modelSummaries", [])
+    result = []
+    for aws_model in model_summaries:
+        result.append(
+            Model(
+                id=aws_model.get("modelId", ""),
+                object=aws_model.get("object", "model"),
+                created=0,  # creationTime is not directly available in the provided schema
+                owned_by=aws_model.get("providerName", provider_name),
+                label=aws_model.get("modelName", None),
+                provider=aws_model.get("providerName", provider_name),
+                attributes=aws_model,
+            )
+        )
+    return result

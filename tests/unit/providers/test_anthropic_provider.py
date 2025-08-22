@@ -1,9 +1,11 @@
+import datetime
 import sys
 from contextlib import contextmanager
 from typing import Any, Literal
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from pydantic import BaseModel
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ApiConfig, ProviderFactory
@@ -13,7 +15,7 @@ from any_llm.types.completion import CompletionParams
 
 
 @contextmanager
-def mock_anthropic_provider():  # type: ignore[no-untyped-def]
+def mock_anthropic_provider() -> Any:
     with (
         patch("any_llm.providers.anthropic.anthropic.AsyncAnthropic") as mock_anthropic,
         patch("any_llm.providers.anthropic.anthropic._convert_response"),
@@ -257,3 +259,60 @@ async def test_response_format_raises_error() -> None:
                 response_format={"type": "json_object"},
             )
         )
+
+def test_models_returns_expected_metadata() -> None:
+    """Test that list_models() returns Model from mocked Anthropic response."""
+    api_key = "test-api-key"
+
+    class MockAnthropicModel(BaseModel):
+        created_at: datetime.datetime
+        display_name: str
+        id: str
+        type: str
+
+    class MockModelsResponse:
+        def __init__(self) -> None:
+            model = MockAnthropicModel(
+                created_at=datetime.datetime.strptime("2025-02-19T00:00:00Z", "%Y-%m-%dT%H:%M:%SZ").replace(
+                    tzinfo=datetime.UTC
+                ),
+                display_name="Claude Sonnet 4",
+                id="claude-sonnet-4-20250514",
+                type="model",
+            )
+            self.data = [model]
+            self.first_id = "<string>"
+            self.has_more = True
+            self.last_id = "<string>"
+
+        def __iter__(self) -> Any:
+            return iter(self.data)
+
+    with patch("any_llm.providers.anthropic.anthropic.Anthropic") as mock_anthropic:
+        provider = AnthropicProvider(ApiConfig(api_key=api_key))
+        mock_client = Mock()
+        mock_anthropic.return_value = mock_client
+        mock_client.models.list.return_value = MockModelsResponse()
+
+        models = provider.list_models()
+
+        assert len(models) == 1
+        model = models[0]
+        assert model.id == "claude-sonnet-4-20250514"
+        assert model.object == "model"
+        assert model.created == 1739923200
+
+
+def test_models_raises_unsupported_model_response_error() -> None:
+    """Test that list_models() raises UnsupportedModelResponseError on invalid response."""
+    api_key = "test-api-key"
+    with mock_anthropic_provider() as mock_anthropic:
+        mock_client = Mock()
+        mock_anthropic.return_value = mock_client
+        # Simulate an exception in models.list
+        mock_client.models.list.side_effect = Exception("API error")
+        provider = AnthropicProvider(ApiConfig(api_key=api_key))
+        import any_llm.exceptions
+
+        with pytest.raises(any_llm.exceptions.UnsupportedModelResponseError):
+            provider.list_models()

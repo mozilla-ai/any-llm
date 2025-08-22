@@ -9,6 +9,7 @@ from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, Comple
 
 
 class LlamafileProvider(BaseOpenAIProvider):
+    PROVIDER_LABEL = "Llamafile"
     API_BASE = "http://127.0.0.1:8080/v1"
     ENV_API_KEY_NAME = "None"
     PROVIDER_NAME = "llamafile"

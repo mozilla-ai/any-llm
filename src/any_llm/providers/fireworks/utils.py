@@ -1,6 +1,10 @@
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
+
+from openai.pagination import SyncPage
+from openai.types.model import Model as OpenAIModel
 
 from any_llm.types.completion import (
     ChatCompletionChunk,
@@ -8,6 +12,7 @@ from any_llm.types.completion import (
     ChunkChoice,
     CompletionUsage,
 )
+from any_llm.types.model import Model
 
 
 def _create_openai_chunk_from_fireworks_chunk(fireworks_chunk: Any) -> ChatCompletionChunk:
@@ -54,3 +59,26 @@ def _create_openai_chunk_from_fireworks_chunk(fireworks_chunk: Any) -> ChatCompl
         object="chat.completion.chunk",
         usage=usage,
     )
+
+
+def _convert_models_list(
+    fireworksai_models: SyncPage[OpenAIModel],
+    provider_name: str,
+) -> Sequence[Model]:
+    """
+    Convert OpenAI models list to OpenAI Model format.
+    Each openai_model can be a dict or a pydantic BaseModel.
+    """
+    results = []
+    for fireworksai_model in fireworksai_models:
+        model = Model(
+            id=fireworksai_model.id,
+            label=fireworksai_model.id,
+            created=fireworksai_model.created,
+            object=fireworksai_model.object or "model",
+            provider=provider_name,
+            owned_by=fireworksai_model.owned_by or provider_name,
+            attributes=fireworksai_model.model_dump(),
+        )
+        results.append(model)
+    return results

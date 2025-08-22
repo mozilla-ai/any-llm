@@ -25,6 +25,7 @@ except ImportError:
 
 
 class XaiProvider(Provider):
+    PROVIDER_LABEL = "xAI (Grok)"
     API_BASE = "https://api.x.ai/v1"
     ENV_API_KEY_NAME = "XAI_API_KEY"
     PROVIDER_NAME = "xai"

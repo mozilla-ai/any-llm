@@ -1,4 +1,5 @@
 import json
+from collections.abc import Sequence
 from typing import Any, Literal, cast
 
 from azure.ai.inference.models import (
@@ -7,6 +8,8 @@ from azure.ai.inference.models import (
     JsonSchemaFormat,
     StreamingChatCompletionsUpdate,
 )
+from openai.pagination import SyncPage
+from openai.types.model import Model as OpenAIModel
 from pydantic import BaseModel
 
 from any_llm.types.completion import (
@@ -26,6 +29,7 @@ from any_llm.types.completion import (
     Function,
     Usage,
 )
+from any_llm.types.model import Model
 
 
 def _convert_response_format(
@@ -225,3 +229,26 @@ def _create_openai_embedding_response_from_azure(
         object="list",
         usage=usage,
     )
+
+
+def _convert_models_list(
+    azure_models: SyncPage[OpenAIModel],
+    provider_name: str,
+) -> Sequence[Model]:
+    """
+    Convert Azure models list to OpenAI Model format.
+    Each azure_model can be a dict or a pydantic BaseModel.
+    """
+    results = []
+    for azure_model in azure_models:
+        model = Model(
+            id=azure_model.id,
+            label=azure_model.id,
+            created=azure_model.created,
+            object=azure_model.object or "model",
+            provider=provider_name,
+            owned_by=azure_model.owned_by or provider_name,
+            attributes=azure_model.model_dump(),
+        )
+        results.append(model)
+    return results

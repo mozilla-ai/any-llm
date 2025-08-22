@@ -9,9 +9,14 @@ from openai._types import NOT_GIVEN
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 
+from any_llm.exceptions import UnsupportedModelResponseError
 from any_llm.logging import logger
 from any_llm.provider import Provider
-from any_llm.providers.openai.utils import _convert_chat_completion, _normalize_openai_dict_response
+from any_llm.providers.openai.utils import (
+    _convert_chat_completion,
+    _convert_models_list,
+    _normalize_openai_dict_response,
+)
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponseStreamEvent
@@ -31,7 +36,7 @@ class BaseOpenAIProvider(Provider, ABC):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = True
-    SUPPORTS_LIST_MODELS = True
+    SUPPORTS_LIST_MODELS = False
 
     PACKAGES_INSTALLED = True
 
@@ -140,4 +145,10 @@ class BaseOpenAIProvider(Provider, ABC):
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,
         )
-        return client.models.list(**kwargs).data
+        try:
+            openai_models = client.models.list(**kwargs)
+            return _convert_models_list(openai_models, self.PROVIDER_NAME)
+        except Exception as e:
+            raise UnsupportedModelResponseError(
+                message="Failed to parse OpenAI model response.", original_exception=e
+            ) from e

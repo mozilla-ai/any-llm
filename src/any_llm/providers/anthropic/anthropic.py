@@ -26,6 +26,7 @@ class AnthropicProvider(Provider):
     Handles conversion between OpenAI format and Anthropic's native format.
     """
 
+    PROVIDER_LABEL = "Anthropic"
     PROVIDER_NAME = "anthropic"
     ENV_API_KEY_NAME = "ANTHROPIC_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://docs.anthropic.com/en/home"
@@ -68,7 +69,23 @@ class AnthropicProvider(Provider):
         return _convert_response(message)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
-        """List available models from Anthropic."""
+        """Return a list of Model for Anthropic models.
+        Supports query params: before_id, after_id, limit.
+        """
         client = Anthropic(api_key=self.config.api_key, base_url=self.config.api_base)
-        models_list = client.models.list(**kwargs)
-        return _convert_models_list(models_list)
+        query_params = {
+            "limit": kwargs.get("limit", 100),
+            **{k: v for k in ["before_id", "after_id"] if (v := kwargs.get(k)) is not None},
+        }
+        # documentation - https://docs.anthropic.com/en/api/models-list
+        try:
+            anthropic_models = client.models.list(**query_params)
+            results = _convert_models_list(anthropic_models, provider_name=self.PROVIDER_NAME)
+        except Exception as e:
+            from any_llm.exceptions import UnsupportedModelResponseError
+
+            raise UnsupportedModelResponseError(
+                message="Failed to parse Anthropic model response.", original_exception=e
+            ) from e
+        else:
+            return results

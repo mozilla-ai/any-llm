@@ -33,6 +33,7 @@ class OllamaProvider(Provider):
     Read more here - https://github.com/ollama/ollama-python
     """
 
+    PROVIDER_LABEL = "Ollama"
     PROVIDER_NAME = "ollama"
     PROVIDER_DOCUMENTATION_URL = "https://github.com/ollama/ollama"
     ENV_API_KEY_NAME = "None"

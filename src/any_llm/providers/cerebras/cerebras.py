@@ -27,6 +27,7 @@ from any_llm.utils.instructor import _convert_instructor_response
 class CerebrasProvider(Provider):
     """Cerebras Provider using the official Cerebras SDK with instructor support for structured outputs."""
 
+    PROVIDER_LABEL = "Cerebras"
     PROVIDER_NAME = "cerebras"
     ENV_API_KEY_NAME = "CEREBRAS_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://docs.cerebras.ai/"

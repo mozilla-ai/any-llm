@@ -1,15 +1,20 @@
 from contextlib import contextmanager
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import pytest
+
+from any_llm.exceptions import UnsupportedModelResponseError
 from any_llm.provider import ApiConfig
 from any_llm.providers.azure.azure import AzureProvider
 from any_llm.types.completion import CompletionParams
+from any_llm.types.model import Model
 
 
 @contextmanager
-def mock_azure_provider():  # type: ignore[no-untyped-def]
+def mock_azure_provider() -> Any:
     with (
         patch("any_llm.providers.azure.azure.aio.ChatCompletionsClient") as mock_chat_client,
         patch("any_llm.providers.azure.azure._convert_response") as mock_convert_response,
@@ -24,7 +29,7 @@ def mock_azure_provider():  # type: ignore[no-untyped-def]
 
 
 @contextmanager
-def mock_azure_streaming_provider():  # type: ignore[no-untyped-def]
+def mock_azure_streaming_provider() -> Any:
     with (
         patch("any_llm.providers.azure.azure.aio.ChatCompletionsClient") as mock_chat_client,
         patch("any_llm.providers.azure.azure._stream_completion_async") as mock_stream_completion,
@@ -116,3 +121,42 @@ async def test_azure_streaming() -> None:
 
         assert isinstance(result, list)
         assert len(result) == 2
+
+
+def test_azure_models_raises_unsupported_model_response_error() -> None:
+    """Test that list_models raises UnsupportedModelResponseError on client failure."""
+    api_key = "test-api-key"
+    custom_endpoint = "https://test.eu.models.ai.azure.com"
+    provider = AzureProvider(ApiConfig(api_key=api_key, api_base=custom_endpoint))
+
+    with patch("any_llm.providers.azure.azure.AIProjectClient") as mock_project_client:
+        mock_project_client.side_effect = Exception("mocked error")
+        with pytest.raises(UnsupportedModelResponseError) as exc_info:
+            provider.list_models()
+        exc = exc_info.value
+        assert "Failed to parse Azure model response." in str(exc)
+
+
+def test_azure_models_returns_model_metadata(monkeypatch: Any) -> None:
+    api_key = "test-api-key"
+    api_version = "2024-08-01-preview"
+    custom_endpoint = "https://test.eu.models.ai.azure.com"
+    provider = AzureProvider(ApiConfig(api_key=api_key, api_base=custom_endpoint))
+
+    with patch("any_llm.providers.azure.azure.AIProjectClient") as mock_project_client:
+        mock_model_data = [
+            Model(id="gpt-3.5-turbo", object="model", created=1677610602, owned_by="openai"),
+            Model(id="gpt-4", object="model", created=1687882411, owned_by="openai"),
+        ]
+
+        mock_project_instance = MagicMock()
+        mock_project_client.return_value = mock_project_instance
+        mock_project_instance.get_openai_client(api_version=api_version).models.list.return_value = mock_model_data
+
+        result = provider.list_models()
+
+        for actual, expected in zip(result, mock_model_data, strict=False):
+            assert actual.id == expected.id
+            assert actual.object == expected.object
+            assert actual.created == expected.created
+            assert actual.owned_by == expected.owned_by

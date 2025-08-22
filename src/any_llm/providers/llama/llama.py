@@ -9,6 +9,7 @@ from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, Comple
 class LlamaProvider(BaseOpenAIProvider):
     """Llama provider for accessing multiple LLMs through Llama's API."""
 
+    PROVIDER_LABEL = "llama"
     API_BASE = "https://api.llama.com/compat/v1/"
     ENV_API_KEY_NAME = "LLAMA_API_KEY"
     PROVIDER_NAME = "llama"
@@ -18,7 +19,7 @@ class LlamaProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
-    SUPPORTS_EMBEDDING = False
+    SUPPORTS_EMBEDDING = True
 
     async def acompletion(
         self, params: CompletionParams, **kwargs: Any

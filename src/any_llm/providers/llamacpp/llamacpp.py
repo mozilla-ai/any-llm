@@ -2,6 +2,7 @@ from any_llm.providers.openai.base import BaseOpenAIProvider
 
 
 class LlamacppProvider(BaseOpenAIProvider):
+    PROVIDER_LABEL = "Llama.cpp"
     API_BASE = "http://127.0.0.1:8080/v1"
     ENV_API_KEY_NAME = "LLAMA_API_KEY"
     PROVIDER_NAME = "llamacpp"
