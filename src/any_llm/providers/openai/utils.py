@@ -1,11 +1,15 @@
 """OpenAI Provider Utilities."""
 
+from collections.abc import Sequence
 from typing import Any
 
+from openai.pagination import SyncPage
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
+from openai.types.model import Model as OpenAIModel
 
 from any_llm.logging import logger
 from any_llm.types.completion import ChatCompletion
+from any_llm.types.model import Model
 
 
 def _normalize_reasoning_on_message(message_dict: dict[str, Any]) -> None:
@@ -70,3 +74,26 @@ def _convert_chat_completion(response: OpenAIChatCompletion) -> ChatCompletion:
         response.created = int(response.created)
     normalized = _normalize_openai_dict_response(response.model_dump())
     return ChatCompletion.model_validate(normalized)
+
+
+def _convert_models_list(
+    openai_models: SyncPage[OpenAIModel],
+    provider_name: str,
+) -> Sequence[Model]:
+    """
+    Convert OpenAI models list to OpenAI Model format.
+    Each openai_model can be a dict or a pydantic BaseModel.
+    """
+    results = []
+    for openai_model in openai_models:
+        model = Model(
+            id=openai_model.id,
+            label=openai_model.id,
+            created=openai_model.created,
+            object=openai_model.object or "model",
+            provider=provider_name,
+            owned_by=openai_model.owned_by or provider_name,
+            attributes=openai_model.model_dump(),
+        )
+        results.append(model)
+    return results

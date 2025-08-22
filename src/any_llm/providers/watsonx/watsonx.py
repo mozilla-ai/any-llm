@@ -27,6 +27,7 @@ from any_llm.types.model import Model
 class WatsonxProvider(Provider):
     """IBM Watsonx Provider using the official IBM Watsonx AI SDK."""
 
+    PROVIDER_LABEL = "IBM Watsonx"
     PROVIDER_NAME = "watsonx"
     ENV_API_KEY_NAME = "WATSONX_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://www.ibm.com/watsonx"

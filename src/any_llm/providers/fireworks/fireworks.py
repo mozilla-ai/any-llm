@@ -11,8 +11,9 @@ except ImportError:
 from openai import AsyncOpenAI, AsyncStream, OpenAI
 from pydantic import BaseModel
 
+from any_llm.exceptions import UnsupportedModelResponseError
 from any_llm.provider import Provider
-from any_llm.providers.fireworks.utils import _create_openai_chunk_from_fireworks_chunk
+from any_llm.providers.fireworks.utils import _convert_models_list, _create_openai_chunk_from_fireworks_chunk
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -27,6 +28,7 @@ from any_llm.types.responses import Response, ResponseStreamEvent
 
 
 class FireworksProvider(Provider):
+    PROVIDER_LABEL = "Fireworks AI"
     PROVIDER_NAME = "fireworks"
     ENV_API_KEY_NAME = "FIREWORKS_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://fireworks.ai/api"
@@ -148,4 +150,10 @@ class FireworksProvider(Provider):
             base_url=self.BASE_URL,
             api_key=self.config.api_key,
         )
-        return client.models.list(**kwargs).data
+        try:
+            fireworksai_models = client.models.list(**kwargs)
+            return _convert_models_list(fireworksai_models, self.PROVIDER_NAME)
+        except Exception as e:
+            raise UnsupportedModelResponseError(
+                message="Failed to parse FireworksAI model response.", original_exception=e
+            ) from e

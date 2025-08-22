@@ -314,9 +314,21 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
     return result_kwargs
 
 
-def _convert_models_list(models_list: SyncPage[AnthropicModelInfo]) -> list[Model]:
-    """Convert Anthropic models list to OpenAI format."""
-    return [
-        Model(id=model.id, object="model", created=int(model.created_at.timestamp()), owned_by="anthropic")
-        for model in models_list
-    ]
+def _convert_models_list(
+    anthropic_models: SyncPage[AnthropicModelInfo],
+    provider_name: str,
+) -> list[Model]:
+    """Convert Anthropic models list to OpenAI format, including extra attributes."""
+    results = []
+    for anthropic_model in anthropic_models:
+        model = Model(
+            id=anthropic_model.id,
+            label=anthropic_model.display_name,
+            created=int(anthropic_model.created_at.timestamp()),
+            object=anthropic_model.type,
+            provider=provider_name,
+            owned_by=provider_name,
+            attributes=anthropic_model.model_dump(),
+        )
+        results.append(model)
+    return results

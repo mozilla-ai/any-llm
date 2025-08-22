@@ -1,8 +1,14 @@
+import contextlib
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
 from any_llm.provider import ProviderName
+from any_llm.providers.anthropic.anthropic import AnthropicProvider
+from any_llm.providers.groq.groq import GroqProvider
+from any_llm.providers.sambanova.sambanova import SambanovaProvider
+from any_llm.providers.together.together import TogetherProvider
 
 
 @pytest.fixture
@@ -133,3 +139,23 @@ def agent_loop_messages() -> list[dict[str, Any]]:
         },
         {"role": "tool", "tool_call_id": "foo", "content": "sunny"},
     ]
+
+
+@pytest.fixture(autouse=True)
+def patch_all_packages_installed() -> Any:
+    patches = [
+        patch.object(AnthropicProvider, "PACKAGES_INSTALLED", True),
+        patch.object(SambanovaProvider, "PACKAGES_INSTALLED", True),
+        patch.object(GroqProvider, "PACKAGES_INSTALLED", True),
+        patch.object(TogetherProvider, "PACKAGES_INSTALLED", True),
+    ]
+    cerebras = globals().get("CerebrasProvider")
+    if cerebras is not None:
+        patches.append(patch.object(cerebras, "PACKAGES_INSTALLED", True))
+    cohere = globals().get("CohereProvider")
+    if cohere is not None:
+        patches.append(patch.object(cohere, "PACKAGES_INSTALLED", True))
+    with contextlib.ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
+        yield

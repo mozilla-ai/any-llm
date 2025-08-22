@@ -1,23 +1,28 @@
 import os
-from collections.abc import AsyncIterable, AsyncIterator
+from collections.abc import AsyncIterable, AsyncIterator, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
 try:
-    from azure.ai.inference import aio
+    from azure.ai.inference import ChatCompletionsClient, EmbeddingsClient, aio
+    from azure.ai.projects import AIProjectClient
     from azure.core.credentials import AzureKeyCredential
+    from azure.identity import DefaultAzureCredential
 
     PACKAGES_INSTALLED = True
 except ImportError:
     PACKAGES_INSTALLED = False
 
+from any_llm.exceptions import UnsupportedModelResponseError
 from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.azure.utils import (
+    _convert_models_list,
     _convert_response,
     _convert_response_format,
     _create_openai_chunk_from_azure_chunk,
     _create_openai_embedding_response_from_azure,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+from any_llm.types.model import Model
 
 if TYPE_CHECKING:
     from azure.ai.inference.models import ChatCompletions, EmbeddingsResult, StreamingChatCompletionsUpdate
@@ -26,6 +31,7 @@ if TYPE_CHECKING:
 class AzureProvider(Provider):
     """Azure Provider using the official Azure AI Inference SDK."""
 
+    PROVIDER_LABEL = "Azure"
     PROVIDER_NAME = "azure"
     ENV_API_KEY_NAME = "AZURE_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://azure.microsoft.com/en-us/products/ai-services/openai-service"
@@ -34,7 +40,7 @@ class AzureProvider(Provider):
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -146,3 +152,22 @@ class AzureProvider(Provider):
         )
 
         return _create_openai_embedding_response_from_azure(response)
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Return a list of Model for Azure OpenAI models.
+        Handles all errors and raises ProviderError on failure.
+        """
+        try:
+            project_client = AIProjectClient(
+                endpoint=self._get_endpoint(),
+                credential=DefaultAzureCredential(),
+            )
+            # documentation - https://learn.microsoft.com/en-us/azure/ai-foundry/quickstarts/get-started-code?source=recommendations&tabs=python&pivots=fdp-project
+            azure_openai_client = project_client.get_openai_client(api_version=self.api_version)
+            azure_models = azure_openai_client.models.list(**kwargs)
+            return _convert_models_list(azure_models, self.PROVIDER_NAME)
+        except Exception as e:
+            raise UnsupportedModelResponseError(
+                message="Failed to parse Azure model response.", original_exception=e
+            ) from e

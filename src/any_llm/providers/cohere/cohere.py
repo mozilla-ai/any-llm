@@ -25,6 +25,7 @@ from any_llm.types.model import Model
 class CohereProvider(Provider):
     """Cohere Provider using the new response conversion utilities."""
 
+    PROVIDER_LABEL = "Cohere"
     PROVIDER_NAME = "cohere"
     ENV_API_KEY_NAME = "CO_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://cohere.com/api"

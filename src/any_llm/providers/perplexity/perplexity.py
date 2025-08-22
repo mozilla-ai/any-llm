@@ -11,6 +11,7 @@ class PerplexityProvider(BaseOpenAIProvider):
 
     API_BASE = "https://api.perplexity.ai"
     ENV_API_KEY_NAME = "PERPLEXITY_API_KEY"
+    PROVIDER_LABEL = "Perplexity"
     PROVIDER_NAME = "perplexity"
     PROVIDER_DOCUMENTATION_URL = "https://docs.perplexity.ai/"
 

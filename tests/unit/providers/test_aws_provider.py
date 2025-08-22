@@ -1,6 +1,7 @@
 import json
 import os
 from contextlib import contextmanager
+from typing import Any
 from unittest.mock import Mock, patch
 
 from any_llm.provider import ApiConfig
@@ -9,19 +10,19 @@ from any_llm.types.completion import CompletionParams
 
 
 @contextmanager
-def mock_aws_provider(region: str):  # type: ignore[no-untyped-def]
+def mock_aws_provider(region: str) -> Any:
     with (
         patch.dict(os.environ, {"AWS_REGION": region}),
         patch("any_llm.providers.aws.aws.AwsProvider._check_aws_credentials"),
         patch("any_llm.providers.aws.aws._convert_messages", return_value=("", [])),
         patch("any_llm.providers.aws.aws._convert_kwargs", return_value={}),
         patch("any_llm.providers.aws.aws._convert_response"),
-        patch("boto3.client") as mock_boto3_client,
+        patch("any_llm.providers.aws.aws.boto3") as mock_boto3,
     ):
         mock_client = Mock()
-        mock_boto3_client.return_value = mock_client
+        mock_boto3.client.return_value = mock_client
         mock_client.converse.return_value = {"output": {"message": {"content": [{"text": "response"}]}}}
-        yield mock_boto3_client
+        yield mock_boto3.client
 
 
 def test_boto3_client_created_with_api_base() -> None:
@@ -48,16 +49,16 @@ def test_boto3_client_created_without_api_base() -> None:
 
 
 @contextmanager
-def mock_aws_embedding_provider(region: str):  # type: ignore[no-untyped-def]
+def mock_aws_embedding_provider(region: str) -> Any:
     """Mock AWS provider specifically for embedding tests."""
     with (
         patch.dict(os.environ, {"AWS_REGION": region}),
         patch("any_llm.providers.aws.aws.AwsProvider._check_aws_credentials"),
-        patch("boto3.client") as mock_boto3_client,
+        patch("any_llm.providers.aws.aws.boto3") as mock_boto3,
     ):
         mock_client = Mock()
-        mock_boto3_client.return_value = mock_client
-        yield mock_boto3_client, mock_client
+        mock_boto3.client.return_value = mock_client
+        yield mock_boto3.client, mock_client
 
 
 def test_embedding_single_string() -> None:
@@ -68,13 +69,13 @@ def test_embedding_single_string() -> None:
 
     mock_response_body = {"embedding": [0.1, 0.2, 0.3], "inputTextTokenCount": 5}
 
-    with mock_aws_embedding_provider(region) as (mock_boto3_client, mock_client):
+    with mock_aws_embedding_provider(region) as (mock_boto3_client_func, mock_client):
         mock_client.invoke_model.return_value = {"body": Mock(read=Mock(return_value=json.dumps(mock_response_body)))}
 
         provider = AwsProvider(ApiConfig(api_key="test_key"))
         response = provider.embedding(model_id, input_text)
 
-        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None, region_name=region)
+        mock_boto3_client_func.assert_called_once_with("bedrock-runtime", endpoint_url=None, region_name=region)
 
         expected_request_body = {"inputText": input_text}
         mock_client.invoke_model.assert_called_once_with(modelId=model_id, body=json.dumps(expected_request_body))
@@ -99,7 +100,7 @@ def test_embedding_list_of_strings() -> None:
         {"embedding": [0.4, 0.5, 0.6], "inputTextTokenCount": 6},
     ]
 
-    with mock_aws_embedding_provider(region) as (mock_boto3_client, mock_client):
+    with mock_aws_embedding_provider(region) as (mock_boto3_client_func, mock_client):
         mock_client.invoke_model.side_effect = [
             {"body": Mock(read=Mock(return_value=json.dumps(mock_response_bodies[0])))},
             {"body": Mock(read=Mock(return_value=json.dumps(mock_response_bodies[1])))},
@@ -108,7 +109,7 @@ def test_embedding_list_of_strings() -> None:
         provider = AwsProvider(ApiConfig(api_key="test_key"))
         response = provider.embedding(model_id, input_texts)
 
-        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None, region_name=region)
+        mock_boto3_client_func.assert_called_once_with("bedrock-runtime", endpoint_url=None, region_name=region)
 
         assert mock_client.invoke_model.call_count == 2
         expected_calls = [({"inputText": "Hello world"}, model_id), ({"inputText": "Goodbye world"}, model_id)]
@@ -126,3 +127,107 @@ def test_embedding_list_of_strings() -> None:
         assert response.data[1].index == 1
         assert response.usage.prompt_tokens == 11
         assert response.usage.total_tokens == 11
+
+
+def test_models_method_with_filters() -> None:
+    """Test the models method with various filter parameters."""
+    region = "us-east-1"
+    custom_endpoint = "https://custom-bedrock-endpoint.amazonaws.com"
+
+    mock_model_summaries = {
+        "modelSummaries": [
+            {
+                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-text-express-v1",
+                "modelId": "amazon.titan-text-express-v1",
+                "modelName": "Titan Text Express",
+                "providerName": "Amazon",
+                "inputModalities": ["TEXT"],
+                "outputModalities": ["TEXT"],
+                "responseStreamingSupported": True,
+                "customizationsSupported": ["FINE_TUNING"],
+                "inferenceTypesSupported": ["ON_DEMAND"],
+                "modelLifecycle": {"status": "ACTIVE"},
+                "bedrockProvider": "aws",
+            },
+            {
+                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
+                "modelId": "anthropic.claude-3-sonnet-20240229-v1:0",
+                "modelName": "Claude 3 Sonnet",
+                "providerName": "Anthropic",
+                "inputModalities": ["TEXT", "IMAGE"],
+                "outputModalities": ["TEXT"],
+                "responseStreamingSupported": True,
+                "customizationsSupported": [],
+                "inferenceTypesSupported": ["ON_DEMAND", "PROVISIONED"],
+                "modelLifecycle": {"status": "ACTIVE"},
+                "bedrockProvider": "aws",
+            },
+        ]
+    }
+
+    with (
+        patch.dict(os.environ, {"AWS_REGION": region}),
+        patch("any_llm.providers.aws.aws.AwsProvider._check_aws_credentials"),
+        patch("any_llm.providers.aws.aws.boto3") as mock_boto3,
+    ):
+        mock_bedrock_client = Mock()
+        mock_boto3.client.return_value = mock_bedrock_client
+        mock_bedrock_client.list_foundation_models.return_value = mock_model_summaries
+
+        provider = AwsProvider(ApiConfig(api_base=custom_endpoint, api_key="test_key"))
+
+        # Test with no filters
+        models = provider.list_models()
+        mock_boto3.client.assert_called_with("bedrock", endpoint_url=custom_endpoint, region_name=region)
+        mock_bedrock_client.list_foundation_models.assert_called_with()
+        assert len(models) == 2
+        assert models[0].id == "amazon.titan-text-express-v1"
+        assert models[0].label == "Titan Text Express"
+        assert models[0].provider == "Amazon"
+        assert models[0].attributes["customizationsSupported"] == ["FINE_TUNING"]
+        assert models[0].attributes["inferenceTypesSupported"] == ["ON_DEMAND"]
+        assert models[0].attributes["inputModalities"] == ["TEXT"]
+        assert (
+            models[0].attributes["modelArn"]
+            == "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-text-express-v1"
+        )
+        assert models[0].attributes["modelLifecycle"] == {"status": "ACTIVE"}
+        assert models[0].attributes["outputModalities"] == ["TEXT"]
+        assert models[0].attributes["responseStreamingSupported"] is True
+        assert models[0].attributes["bedrockProvider"] == "aws"
+
+        # Test with filters
+        mock_bedrock_client.list_foundation_models.reset_mock()
+        provider.list_models(byProvider="Anthropic", byCustomizationType="FINE_TUNING")
+        mock_bedrock_client.list_foundation_models.assert_called_with(
+            byProvider="Anthropic", byCustomizationType="FINE_TUNING"
+        )
+        # The filtering logic is handled by the AWS API, so we just assert the call was made correctly
+        # and the returned models are still the full list from the mock.
+
+
+def test_models_raises_unsupported_model_response_error() -> None:
+    """Test that list_models() raises UnsupportedModelResponseError with error details on API failure."""
+    from any_llm.exceptions import UnsupportedModelResponseError
+
+    region = "us-east-1"
+    custom_endpoint = "https://custom-bedrock-endpoint.amazonaws.com"
+
+    with (
+        patch.dict(os.environ, {"AWS_REGION": region}),
+        patch("any_llm.providers.aws.aws.AwsProvider._check_aws_credentials"),
+        patch("any_llm.providers.aws.aws.boto3") as mock_boto3,
+    ):
+        mock_bedrock_client = Mock()
+        mock_boto3.client.return_value = mock_bedrock_client
+        # Simulate an API error
+        mock_bedrock_client.list_foundation_models.side_effect = RuntimeError("API failure")
+
+        provider = AwsProvider(ApiConfig(api_base=custom_endpoint, api_key="test_key"))
+        import pytest
+
+        with pytest.raises(UnsupportedModelResponseError) as exc_info:
+            provider.list_models()
+        exc = exc_info.value
+        assert "API failure" in str(exc)
+        assert isinstance(exc.original_exception, RuntimeError)

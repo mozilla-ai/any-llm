@@ -13,16 +13,19 @@ try:
     import boto3
     import instructor
 
+    __all__ = ["AwsProvider", "boto3", "instructor"]
+
     PACKAGES_INSTALLED = True
 except ImportError:
     PACKAGES_INSTALLED = False
 
-from any_llm.exceptions import MissingApiKeyError
+from any_llm.exceptions import MissingApiKeyError, UnsupportedModelResponseError
 from any_llm.logging import logger
 from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.aws.utils import (
     _convert_kwargs,
     _convert_messages,
+    _convert_models_list,
     _convert_response,
     _create_openai_chunk_from_aws_chunk,
     _create_openai_embedding_response_from_aws,
@@ -34,6 +37,7 @@ from any_llm.utils.instructor import _convert_instructor_response
 class AwsProvider(Provider):
     """AWS Bedrock Provider using boto3 and instructor for structured output."""
 
+    PROVIDER_LABEL = "AWS Bedrock"
     PROVIDER_NAME = "aws"
     ENV_API_KEY_NAME = "AWS_BEARER_TOKEN_BEDROCK"
     PROVIDER_DOCUMENTATION_URL = "https://aws.amazon.com/bedrock/"
@@ -207,11 +211,21 @@ class AwsProvider(Provider):
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
-        Fetch available models from the /v1/models endpoint.
+        Return a list of Model for AWS Bedrock models.
+
+        Supported filter parameters:
+            byProvider (string)
+            byCustomizationType ('FINE_TUNING'|'CONTINUED_PRE_TRAINING'|'DISTILLATION')
+            byOutputModality ('TEXT'|'IMAGE'|'EMBEDDING')
+            byInferenceType ('ON_DEMAND'|'PROVISIONED')
         """
-        client = boto3.client("bedrock", endpoint_url=self.config.api_base, region_name=self.region_name)  # type: ignore[no-untyped-call]
-        models_list = client.list_foundation_models(**kwargs).get("modelSummaries", [])
-        # AWS doesn't provide a creation date for models
-        # AWS doesn't provide typing, but per https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/bedrock/client/list_foundation_models.html
-        # the modelId is a string and will not be None
-        return [Model(id=model["modelId"], object="model", created=0, owned_by="aws") for model in models_list]
+        self._check_aws_credentials()
+        # documentation - https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/bedrock/client/list_foundation_models.html
+        client: Any = boto3.client("bedrock", endpoint_url=self.config.api_base, region_name=self.region_name)  # type: ignore[no-untyped-call]
+        try:
+            aws_models = client.list_foundation_models(**kwargs)
+            return _convert_models_list(aws_models, self.PROVIDER_NAME)
+        except Exception as e:
+            raise UnsupportedModelResponseError(
+                message="Failed to parse AWS Bedrock model response.", original_exception=e
+            ) from e

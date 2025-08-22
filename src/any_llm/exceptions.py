@@ -62,3 +62,21 @@ class UnsupportedParameterError(Exception):
             message = f"{message}.\n{additional_message}"
 
         super().__init__(message)
+
+
+class UnsupportedModelResponseError(Exception):
+    """Exception raised when a model response is invalid or unsupported."""
+
+    def __init__(self, message: str = "", original_exception: Exception | None = None) -> None:
+        """Initialize the exception.
+
+        Args:
+            message: Error message describing the unsupported model response.
+            original_exception: The original exception raised by the provider, if any.
+
+        """
+        details = f"{message}"
+        if original_exception is not None:
+            details += f" | Error from provider: {original_exception!s}"
+        super().__init__(details)
+        self.original_exception = original_exception

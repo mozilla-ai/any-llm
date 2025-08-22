@@ -64,6 +64,8 @@ aws = [
 
 azure = [
   "azure-ai-inference",
+  "azure-ai-projects",
+  "azure-identity",
 ]
 
 watsonx = [
