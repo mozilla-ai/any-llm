@@ -126,3 +126,13 @@ def test_patch_messages_leaves_regular_assistant_messages_unchanged() -> None:
     assistant_message = next(msg for msg in result if msg["role"] == "assistant")
     assert assistant_message["content"] == "Hello! How can I help you?"
     assert "tool_plan" not in assistant_message
+
+
+def test_patch_messages_with_invalid_tool_sequence_raises_error() -> None:
+    """Test that an invalid tool message sequence raises a ValueError."""
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "What's the weather?"},
+        {"role": "tool", "name": "get_weather", "content": "It's sunny", "tool_call_id": "call_123"},
+    ]
+    with pytest.raises(ValueError, match="A tool message must be preceded by an assistant message with tool_calls."):
+        _patch_messages(messages)
