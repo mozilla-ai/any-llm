@@ -1,4 +1,4 @@
-from collections.abc import AsyncGenerator, AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator, Sequence
 from typing import Any, cast
 
 try:
@@ -22,6 +22,7 @@ from any_llm.types.completion import (
     CompletionUsage,
     Reasoning,
 )
+from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponseStreamEvent
 
 
@@ -29,13 +30,14 @@ class FireworksProvider(Provider):
     PROVIDER_NAME = "fireworks"
     ENV_API_KEY_NAME = "FIREWORKS_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://fireworks.ai/api"
+    BASE_URL = "https://api.fireworks.ai/inference/v1"
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = True
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -194,7 +196,7 @@ class FireworksProvider(Provider):
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call Fireworks Responses API and normalize into ChatCompletion/Chunks."""
         client = AsyncOpenAI(
-            base_url="https://api.fireworks.ai/inference/v1",
+            base_url=self.BASE_URL,
             api_key=self.config.api_key,
         )
         response = await client.responses.create(
@@ -218,7 +220,7 @@ class FireworksProvider(Provider):
     def responses(self, model: str, input_data: Any, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
         """Call Fireworks Responses API and normalize into ChatCompletion/Chunks."""
         client = OpenAI(
-            base_url="https://api.fireworks.ai/inference/v1",
+            base_url=self.BASE_URL,
             api_key=self.config.api_key,
         )
         response = client.responses.create(
@@ -238,3 +240,13 @@ class FireworksProvider(Provider):
             response.reasoning = Reasoning(content=reasoning) if reasoning else None  # type: ignore[assignment]
 
         return response
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        client = OpenAI(
+            base_url=self.BASE_URL,
+            api_key=self.config.api_key,
+        )
+        return client.models.list(**kwargs).data

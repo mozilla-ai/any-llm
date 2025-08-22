@@ -57,6 +57,7 @@ class ProviderName(StrEnum):
     VOYAGE = "voyage"
     WATSONX = "watsonx"
     XAI = "xai"
+    PERPLEXITY = "perplexity"
 
     @classmethod
     def from_string(cls, value: "str | ProviderName") -> "ProviderName":

@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=48"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "any-llm-demo-backend"
+version = "0.1.0"
+description = "FastAPI backend demo for any-llm list_models feature"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.6",
+    "uvicorn[standard]>=0.32.1",
+    "python-multipart>=0.0.20",
+    "any-llm-sdk[all]>=0.15.0",
+]
+
+[project.urls]
+Documentation = "https://mozilla-ai.github.io/any-llm/"
+Issues = "https://github.com/mozilla-ai/any-llm/issues"
+Source = "https://github.com/mozilla-ai/any-llm"
+
+[tool.setuptools.packages.find]
+where = ["."]
+namespaces = false
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+ignore = [
+    "TD",
+    "FIX",
+    "D100",  # We don't use module docstrings
+    "D104",  # We don't use package docstrings
+    "D203",  # <- disable to resolve conflict with D211
+    "D213",  # <- disable to resolve conflict with D212
+    "FBT",
+    "COM",
+    "ANN",
+    "ARG",
+    "S101",
+    "E501",
+    "INP001",
+    "PERF",
+    "PLR",
+    "SIM",
+    "PTH",
+    "DTZ005",
+    "BLE001",
+    "TRY004",
+    "S113",
+    "PLW2901",
+    "C901",
+    "ERA001",
+    "SLF001",
+    "PD901",
+    "PLC0415",
+    "PLR0912",
+    "PLR0913",
+    "N999",
+    "B024",
+]
+extend-select = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"main.py" = ["D"]
+
+[tool.mypy]
+strict = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+follow_untyped_imports = true
+
+[[tool.mypy.overrides]]
+module = ["uvicorn", "fastapi.*"]
+ignore_missing_imports = true

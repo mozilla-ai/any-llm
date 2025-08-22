@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any, cast
 
 from pydantic import BaseModel
@@ -15,10 +15,12 @@ except ImportError:
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.cerebras.utils import (
+    _convert_models_list,
     _convert_response,
     _create_openai_chunk_from_cerebras_chunk,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.model import Model
 from any_llm.utils.instructor import _convert_instructor_response
 
 
@@ -34,7 +36,7 @@ class CerebrasProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -194,3 +196,10 @@ class CerebrasProvider(Provider):
             raise ValueError(msg)
 
         return _convert_response(response_data)
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        models_list = self.client.models.list(**kwargs)
+        return _convert_models_list(models_list)

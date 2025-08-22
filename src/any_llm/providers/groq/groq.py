@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
 from openai import AsyncOpenAI, AsyncStream, OpenAI, Stream
@@ -20,10 +20,12 @@ except ImportError:
 
 from any_llm.provider import Provider
 from any_llm.providers.groq.utils import (
+    _convert_models_list,
     _create_openai_chunk_from_groq_chunk,
     to_chat_completion,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.model import Model
 from any_llm.utils.instructor import _convert_instructor_response
 
 if TYPE_CHECKING:
@@ -43,7 +45,7 @@ class GroqProvider(Provider):
     SUPPORTS_RESPONSES = True
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = False
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -212,3 +214,11 @@ class GroqProvider(Provider):
             msg = f"Responses API returned an unexpected type: {type(response)}"
             raise ValueError(msg)
         return response
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        client = groq.Groq(api_key=self.config.api_key)
+        models_list = client.models.list(**kwargs)
+        return _convert_models_list(models_list)

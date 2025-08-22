@@ -1,5 +1,5 @@
 import os
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any
 
 try:
@@ -16,6 +16,7 @@ from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.google.utils import (
     _convert_messages,
+    _convert_models_list,
     _convert_response_to_response_dict,
     _convert_tool_choice,
     _convert_tool_spec,
@@ -35,6 +36,7 @@ from any_llm.types.completion import (
     Function,
     Reasoning,
 )
+from any_llm.types.model import Model
 
 # From https://ai.google.dev/gemini-api/docs/openai#thinking
 REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 256, "low": 1024, "medium": 8192, "high": 24576}
@@ -52,7 +54,7 @@ class GoogleProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = True
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -130,8 +132,22 @@ class GoogleProvider(Provider):
         # Build generation config without duplicating keys (e.g., tools)
         base_kwargs = params.model_dump(
             exclude_none=True,
-            exclude={"model_id", "messages", "response_format", "stream", "tools", "tool_choice", "reasoning_effort"},
+            exclude={
+                "model_id",
+                "messages",
+                "response_format",
+                "stream",
+                "tools",
+                "tool_choice",
+                "reasoning_effort",
+                "max_tokens",
+            },
         )
+
+        # Convert max_tokens to max_output_tokens for Google
+        if params.max_tokens is not None:
+            base_kwargs["max_output_tokens"] = params.max_tokens
+
         base_kwargs.update(kwargs)
         generation_config = types.GenerateContentConfig(**base_kwargs)
         if isinstance(response_format, type) and issubclass(response_format, BaseModel):
@@ -212,3 +228,10 @@ class GoogleProvider(Provider):
             choices=choices_out,
             usage=usage,
         )
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        models_list = self.client.models.list(**kwargs)
+        return _convert_models_list(models_list)
