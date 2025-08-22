@@ -135,7 +135,7 @@ class GroqProvider(Provider):
 
         if params.response_format:
             if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
-                kwargs["response_format"] = {
+                params.response_format = {
                     "type": "json_schema",
                     "json_schema": {
                         "name": params.response_format.__name__,
@@ -143,7 +143,7 @@ class GroqProvider(Provider):
                     },
                 }
             else:
-                kwargs["response_format"] = params.response_format
+                params.response_format = params.response_format
 
         if params.stream:
             return self._stream_completion(
