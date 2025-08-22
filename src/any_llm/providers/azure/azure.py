@@ -1,9 +1,9 @@
 import os
-from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any
+from collections.abc import AsyncIterable, AsyncIterator, Iterator
+from typing import TYPE_CHECKING, Any, cast
 
 try:
-    from azure.ai.inference import ChatCompletionsClient, EmbeddingsClient
+    from azure.ai.inference import ChatCompletionsClient, EmbeddingsClient, aio
     from azure.core.credentials import AzureKeyCredential
 
     PACKAGES_INSTALLED = True
@@ -54,9 +54,25 @@ class AzureProvider(Provider):
         )
         raise ValueError(msg)
 
+    def _create_chat_client_async(self) -> aio.ChatCompletionsClient:
+        """Create and configure a ChatCompletionsClient."""
+        return aio.ChatCompletionsClient(
+            endpoint=self._get_endpoint(),
+            credential=AzureKeyCredential(self.config.api_key or ""),
+            api_version=self.api_version,
+        )
+
     def _create_chat_client(self) -> ChatCompletionsClient:
         """Create and configure a ChatCompletionsClient."""
         return ChatCompletionsClient(
+            endpoint=self._get_endpoint(),
+            credential=AzureKeyCredential(self.config.api_key or ""),
+            api_version=self.api_version,
+        )
+
+    def _create_embeddings_client_async(self) -> aio.EmbeddingsClient:
+        """Create and configure an EmbeddingsClient."""
+        return aio.EmbeddingsClient(
             endpoint=self._get_endpoint(),
             credential=AzureKeyCredential(self.config.api_key or ""),
             api_version=self.api_version,
@@ -69,6 +85,26 @@ class AzureProvider(Provider):
             credential=AzureKeyCredential(self.config.api_key or ""),
             api_version=self.api_version,
         )
+
+    async def _stream_completion_async(
+        self,
+        client: aio.ChatCompletionsClient,
+        model: str,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatCompletionChunk]:
+        """Handle streaming completion - extracted to avoid generator issues."""
+        azure_stream = cast(
+            "AsyncIterable[StreamingChatCompletionsUpdate]",
+            await client.complete(
+                model=model,
+                messages=messages,
+                **kwargs,
+            ),
+        )
+
+        async for chunk in azure_stream:
+            yield _create_openai_chunk_from_azure_chunk(chunk)
 
     def _stream_completion(
         self,
@@ -86,6 +122,47 @@ class AzureProvider(Provider):
 
         for chunk in azure_stream:
             yield _create_openai_chunk_from_azure_chunk(chunk)
+
+    async def acompletion(
+        self,
+        params: CompletionParams,
+        **kwargs: Any,
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        """Create a chat completion using Azure AI Inference SDK."""
+        client: aio.ChatCompletionsClient = self._create_chat_client_async()
+
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
+        azure_response_format = None
+        if params.response_format:
+            azure_response_format = _convert_response_format(params.response_format)
+
+        call_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
+        if params.stream:
+            if azure_response_format:
+                call_kwargs["response_format"] = azure_response_format
+            return self._stream_completion_async(
+                client,
+                params.model_id,
+                params.messages,
+                **call_kwargs,
+                **kwargs,
+            )
+        if azure_response_format:
+            call_kwargs["response_format"] = azure_response_format
+
+        response: ChatCompletions = cast(
+            "ChatCompletions",
+            await client.complete(
+                model=params.model_id,
+                messages=params.messages,
+                **call_kwargs,
+                **kwargs,
+            ),
+        )
+
+        return _convert_response(response)
 
     def completion(
         self,
@@ -124,6 +201,29 @@ class AzureProvider(Provider):
         )
 
         return _convert_response(response)
+
+    async def aembedding(
+        self,
+        model: str,
+        inputs: str | list[str],
+        **kwargs: Any,
+    ) -> CreateEmbeddingResponse:
+        """Create embeddings using Azure AI Inference SDK."""
+        client: aio.EmbeddingsClient = self._create_embeddings_client_async()
+
+        input_list: list[str]
+        if isinstance(inputs, str):
+            input_list = [inputs]
+        else:
+            input_list = inputs
+
+        response: EmbeddingsResult = await client.embed(
+            model=model,
+            input=input_list,
+            **kwargs,
+        )
+
+        return _create_openai_embedding_response_from_azure(response)
 
     def embedding(
         self,
