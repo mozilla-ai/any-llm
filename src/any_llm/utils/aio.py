@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 T = TypeVar("T")
 
 if TYPE_CHECKING:
-    from collections.abc import Coroutine
+    from collections.abc import AsyncIterator, Coroutine, Iterator
 
 
 def run_async_in_sync(coro: Coroutine[Any, Any, T]) -> T:
@@ -46,3 +46,16 @@ def run_async_in_sync(coro: Coroutine[Any, Any, T]) -> T:
         except RuntimeError:
             # No event loop at all - create one
             return asyncio.run(coro)
+
+
+def async_iter_to_sync_iter(async_iter: AsyncIterator[T]) -> Iterator[T]:
+    """Convert async iterable to sync iterable using a generator approach."""
+    while True:
+        try:
+            awaitable = async_iter.__anext__()
+            if not asyncio.iscoroutine(awaitable):
+                msg = "awaitable is not a coroutine"
+                raise ValueError(msg)
+            yield run_async_in_sync(awaitable)
+        except StopAsyncIteration:
+            break

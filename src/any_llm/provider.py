@@ -22,6 +22,7 @@ from any_llm.types.completion import (
 from any_llm.types.model import Model
 from any_llm.types.provider import ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
+from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +160,6 @@ class Provider(ABC):
             class_name=cls.__name__,
         )
 
-    @abstractmethod
     def completion(
         self,
         params: CompletionParams,
@@ -174,36 +174,27 @@ class Provider(ABC):
         Returns:
             The response from the API call
         """
-        msg = "Subclasses must implement this method"
-        raise NotImplementedError(msg)
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            # No running event loop - this is what we want for sync execution
+            response = run_async_in_sync(self.acompletion(params, **kwargs))
+            if isinstance(response, ChatCompletion):
+                return response
 
+            return async_iter_to_sync_iter(response)
+        # If we get here, there IS a running loop
+        msg = "Cannot call 'completion()' from an async context. Use 'acompletion()' instead."
+        raise RuntimeError(msg)
+
+    @abstractmethod
     async def acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        logger.warning(
-            "%s does not have a native async method and may block your event loop. Proceed with caution",
-            self.PROVIDER_NAME,
-        )
-
-        response = await asyncio.to_thread(
-            self.completion,
-            params,
-            **kwargs,
-        )
-
-        # NOTE: This is temporary until all async-first providers are implemented
-        if isinstance(response, ChatCompletion):
-            return response
-
-        async def _inner() -> AsyncIterator[ChatCompletionChunk]:
-            for chunk in response:
-                yield chunk
-
-        return _inner()
-
-        # return response
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
 
     def responses(
         self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
@@ -213,30 +204,23 @@ class Provider(ABC):
         Default implementation raises NotImplementedError. Providers that set
         SUPPORTS_RESPONSES to True must override this method.
         """
-        msg = "This provider does not support the Responses API."
-        raise NotImplementedError(msg)
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            # No running event loop - this is what we want for sync execution
+            response = run_async_in_sync(self.aresponses(model, input_data, **kwargs))
+            if isinstance(response, Response):
+                return response
+            return async_iter_to_sync_iter(response)
+        # If we get here, there IS a running loop
+        msg = "Cannot call 'responses()' from an async context. Use 'aresponses()' instead."
+        raise RuntimeError(msg)
 
     async def aresponses(
         self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
-        logger.warning(
-            "%s does not have a native async method and may block your event loop. Proceed with caution",
-            self.PROVIDER_NAME,
-        )
-
-        response = await asyncio.to_thread(self.responses, model, input_data, **kwargs)
-
-        # NOTE: This is temporary until all async-first providers are implemented
-        if isinstance(response, Response):
-            return response
-
-        async def _inner() -> AsyncIterator[ResponseStreamEvent]:
-            for chunk in response:
-                yield chunk
-
-        return _inner()
-
-        # return response
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
 
     def embedding(
         self,
@@ -244,8 +228,7 @@ class Provider(ABC):
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        msg = "Subclasses must implement this method"
-        raise NotImplementedError(msg)
+        return run_async_in_sync(self.aembedding(model, inputs, **kwargs))
 
     async def aembedding(
         self,
@@ -253,7 +236,8 @@ class Provider(ABC):
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        return await asyncio.to_thread(self.embedding, model, inputs, **kwargs)
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """

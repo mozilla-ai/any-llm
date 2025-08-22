@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import TYPE_CHECKING, Any
 
 try:
@@ -41,23 +41,6 @@ class MistralProvider(Provider):
     SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
-
-    def _stream_completion(
-        self,
-        client: Mistral,
-        model: str,
-        messages: list[dict[str, Any]],
-        **kwargs: Any,
-    ) -> Iterator[ChatCompletionChunk]:
-        """Handle streaming completion - extracted to avoid generator issues."""
-        # Get the Mistral stream
-        mistral_stream = client.chat.stream(
-            model=model,
-            messages=messages,  # type: ignore[arg-type]
-            **kwargs,
-        )
-        for event in mistral_stream:
-            yield _create_openai_chunk_from_mistral_chunk(event)
 
     async def _stream_completion_async(
         self, client: Mistral, model: str, messages: list[dict[str, Any]], **kwargs: Any
@@ -104,63 +87,6 @@ class MistralProvider(Provider):
             response_data=response,
             model=params.model_id,
         )
-
-    def completion(
-        self,
-        params: CompletionParams,
-        **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        """Create a chat completion using Mistral."""
-        client = Mistral(api_key=self.config.api_key, server_url=self.config.api_base)
-
-        patched_messages = _patch_messages(params.messages)
-
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
-
-        if (
-            params.response_format is not None
-            and isinstance(params.response_format, type)
-            and issubclass(params.response_format, BaseModel)
-        ):
-            kwargs["response_format"] = response_format_from_pydantic_model(params.response_format)
-
-        if not params.stream:
-            response = client.chat.complete(
-                model=params.model_id,
-                messages=patched_messages,  # type: ignore[arg-type]
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
-                **kwargs,
-            )
-
-            return _create_mistral_completion_from_response(
-                response_data=response,
-                model=params.model_id,
-            )
-
-        return self._stream_completion(
-            client,
-            params.model_id,
-            patched_messages,
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
-            **kwargs,
-        )
-
-    def embedding(
-        self,
-        model: str,
-        inputs: str | list[str],
-        **kwargs: Any,
-    ) -> CreateEmbeddingResponse:
-        client = Mistral(api_key=self.config.api_key, server_url=self.config.api_base)
-
-        result: EmbeddingResponse = client.embeddings.create(
-            model=model,
-            inputs=inputs,
-            **kwargs,
-        )
-
-        return _create_openai_embedding_response_from_mistral(result)
 
     async def aembedding(
         self,

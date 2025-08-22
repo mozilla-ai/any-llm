@@ -5,14 +5,15 @@ import pytest
 from openai import APIConnectionError
 from pydantic import BaseModel
 
-from any_llm import ProviderName, completion
+from any_llm import ProviderName, acompletion
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
 from any_llm.types.completion import ChatCompletion
 from tests.constants import LOCAL_PROVIDERS
 
 
-def test_response_format(
+@pytest.mark.asyncio
+async def test_response_format(
     provider: ProviderName,
     provider_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
@@ -34,7 +35,7 @@ def test_response_format(
 
     prompt = "What is the capital of France?"
     try:
-        result = completion(
+        result = await acompletion(
             model=model_id,
             provider=provider,
             **extra_kwargs,

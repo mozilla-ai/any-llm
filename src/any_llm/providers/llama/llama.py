@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from typing import Any
 
 from any_llm.providers.llama.utils import _patch_json_schema
@@ -26,8 +26,3 @@ class LlamaProvider(BaseOpenAIProvider):
         if params.tools:
             params.tools = [_patch_json_schema(tool) for tool in params.tools]
         return await super().acompletion(params, **kwargs)
-
-    def completion(self, params: CompletionParams, **kwargs: Any) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        if params.tools:
-            params.tools = [_patch_json_schema(tool) for tool in params.tools]
-        return super().completion(params, **kwargs)

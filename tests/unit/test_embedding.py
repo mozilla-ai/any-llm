@@ -1,13 +1,14 @@
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from any_llm import embedding
+from any_llm import aembedding
 from any_llm.provider import ProviderFactory, ProviderName
 from any_llm.types.completion import CreateEmbeddingResponse, Embedding, Usage
 
 
-def test_embedding_with_api_config() -> None:
+@pytest.mark.asyncio
+async def test_embedding_with_api_config() -> None:
     """Test embedding works with API configuration parameters."""
     mock_provider = Mock()
     mock_embedding_response = CreateEmbeddingResponse(
@@ -16,13 +17,13 @@ def test_embedding_with_api_config() -> None:
         object="list",
         usage=Usage(prompt_tokens=2, total_tokens=2),
     )
-    mock_provider.embedding.return_value = mock_embedding_response
+    mock_provider.aembedding = AsyncMock(return_value=mock_embedding_response)
 
     with patch("any_llm.api.ProviderFactory") as mock_factory:
         mock_factory.split_model_provider.return_value = (ProviderName.OPENAI, "test-model")
         mock_factory.create_provider.return_value = mock_provider
 
-        result = embedding(
+        result = await aembedding(
             "openai/test-model", inputs="Hello world", api_key="test_key", api_base="https://test.example.com"
         )
 
@@ -31,15 +32,16 @@ def test_embedding_with_api_config() -> None:
         assert call_args[0][1].api_key == "test_key"
         assert call_args[0][1].api_base == "https://test.example.com"
 
-        mock_provider.embedding.assert_called_once_with("test-model", "Hello world")
+        mock_provider.aembedding.assert_called_once_with("test-model", "Hello world")
         assert result == mock_embedding_response
 
 
-def test_embedding_unsupported_provider_raises_not_implemented(provider: ProviderName) -> None:
+@pytest.mark.asyncio
+async def test_embedding_unsupported_provider_raises_not_implemented(provider: ProviderName) -> None:
     """Test that calling embedding on a provider that doesn't support it raises NotImplementedError."""
     cls = ProviderFactory.get_provider_class(provider)
     if not cls.SUPPORTS_EMBEDDING:
         with pytest.raises(NotImplementedError, match=None):
-            embedding(f"{provider.value}/does-not-matter", inputs="Hello world", api_key="test_key")
+            await aembedding(f"{provider.value}/does-not-matter", inputs="Hello world", api_key="test_key")
     else:
         pytest.skip(f"{provider.value} supports embeddings, skipping")

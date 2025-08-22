@@ -1,8 +1,9 @@
 # ruff: noqa: T201, S104
+import asyncio
 import json
 from typing import Any
 
-from any_llm import completion, list_models
+from any_llm import acompletion, list_models
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory, ProviderName
 from fastapi import FastAPI, HTTPException
@@ -81,9 +82,7 @@ async def get_models(request: ListModelsRequest):
 async def stream_completion(request: CompletionRequest):
     """Stream completion chunks as Server-Sent Events."""
     try:
-        import asyncio
-
-        stream = completion(
+        stream = await acompletion(
             model=request.model,
             messages=request.messages,
             provider=request.provider,
@@ -91,7 +90,7 @@ async def stream_completion(request: CompletionRequest):
             stream=True,
         )
 
-        for chunk in stream:
+        async for chunk in stream:
             if chunk.choices and len(chunk.choices) > 0:
                 choice = chunk.choices[0]
                 delta_data = {}

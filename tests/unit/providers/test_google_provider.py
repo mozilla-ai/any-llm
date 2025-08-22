@@ -1,7 +1,7 @@
 import sys
 from contextlib import contextmanager
-from typing import Any
-from unittest.mock import patch
+from typing import Any, Literal
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from google.genai import types
@@ -31,10 +31,16 @@ def mock_google_provider():  # type: ignore[no-untyped-def]
             ],
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
         }
+
+        # Set up the async method properly
+        mock_client = mock_genai.return_value
+        mock_client.aio.models.generate_content = AsyncMock()
+
         yield mock_genai
 
 
-def test_completion_with_system_instruction() -> None:
+@pytest.mark.asyncio
+async def test_completion_with_system_instruction() -> None:
     """Test that completion works correctly with system_instruction."""
     api_key = "test-api-key"
     model = "gemini-pro"
@@ -42,9 +48,9 @@ def test_completion_with_system_instruction() -> None:
 
     with mock_google_provider() as mock_genai:
         provider = GoogleProvider(ApiConfig(api_key=api_key))
-        provider.completion(CompletionParams(model_id=model, messages=messages))
+        await provider.acompletion(CompletionParams(model_id=model, messages=messages))
 
-        _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
         generation_config = call_kwargs["config"]
         contents = call_kwargs["contents"]
 
@@ -59,7 +65,8 @@ def test_completion_with_system_instruction() -> None:
         ("required", "ANY"),
     ],
 )
-def test_completion_with_tool_choice_auto(tool_choice: str, expected_mode: str) -> None:
+@pytest.mark.asyncio
+async def test_completion_with_tool_choice_auto(tool_choice: str, expected_mode: str) -> None:
     """Test that completion correctly processes tool_choice='auto'."""
     api_key = "test-api-key"
     model = "gemini-pro"
@@ -67,15 +74,16 @@ def test_completion_with_tool_choice_auto(tool_choice: str, expected_mode: str) 
 
     with mock_google_provider() as mock_genai:
         provider = GoogleProvider(ApiConfig(api_key=api_key))
-        provider.completion(CompletionParams(model_id=model, messages=messages, tool_choice=tool_choice))
+        await provider.acompletion(CompletionParams(model_id=model, messages=messages, tool_choice=tool_choice))
 
-        _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
         generation_config = call_kwargs["config"]
 
         assert generation_config.tool_config.function_calling_config.mode.value == expected_mode
 
 
-def test_completion_without_tool_choice() -> None:
+@pytest.mark.asyncio
+async def test_completion_without_tool_choice() -> None:
     """Test that completion works correctly without tool_choice."""
     api_key = "test-api-key"
     model = "gemini-pro"
@@ -83,15 +91,16 @@ def test_completion_without_tool_choice() -> None:
 
     with mock_google_provider() as mock_genai:
         provider = GoogleProvider(ApiConfig(api_key=api_key))
-        provider.completion(CompletionParams(model_id=model, messages=messages))
+        await provider.acompletion(CompletionParams(model_id=model, messages=messages))
 
-        _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
         generation_config = call_kwargs["config"]
 
         assert generation_config.tool_config is None
 
 
-def test_completion_with_stream_and_response_format_raises() -> None:
+@pytest.mark.asyncio
+async def test_completion_with_stream_and_response_format_raises() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
@@ -99,7 +108,7 @@ def test_completion_with_stream_and_response_format_raises() -> None:
     with mock_google_provider():
         provider = GoogleProvider(ApiConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
-            provider.completion(
+            await provider.acompletion(
                 CompletionParams(
                     model_id=model,
                     messages=messages,
@@ -109,7 +118,8 @@ def test_completion_with_stream_and_response_format_raises() -> None:
             )
 
 
-def test_completion_with_parallel_tool_calls_raises() -> None:
+@pytest.mark.asyncio
+async def test_completion_with_parallel_tool_calls_raises() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
@@ -117,7 +127,7 @@ def test_completion_with_parallel_tool_calls_raises() -> None:
     with mock_google_provider():
         provider = GoogleProvider(ApiConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
-            provider.completion(
+            await provider.acompletion(
                 CompletionParams(
                     model_id=model,
                     messages=messages,
@@ -126,15 +136,16 @@ def test_completion_with_parallel_tool_calls_raises() -> None:
             )
 
 
-def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, Any]]) -> None:
+@pytest.mark.asyncio
+async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, Any]]) -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
 
     with mock_google_provider() as mock_genai:
         provider = GoogleProvider(ApiConfig(api_key=api_key))
-        provider.completion(CompletionParams(model_id=model, messages=agent_loop_messages))
+        await provider.acompletion(CompletionParams(model_id=model, messages=agent_loop_messages))
 
-        _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
 
         contents = call_kwargs["contents"]
         assert len(contents) == 3
@@ -171,14 +182,19 @@ def test_call_to_provider_with_no_packages_installed() -> None:
         "high",
     ],
 )
-def test_completion_with_custom_reasoning_effort(reasoning_effort: str) -> None:
+@pytest.mark.asyncio
+async def test_completion_with_custom_reasoning_effort(
+    reasoning_effort: Literal["low", "medium", "high"] | None,
+) -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_google_provider() as mock_genai:
         provider = GoogleProvider(ApiConfig(api_key=api_key))
-        provider.completion(CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort))  # type: ignore[arg-type]
+        await provider.acompletion(
+            CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort)
+        )
 
         if reasoning_effort is None:
             expected_thinking = types.ThinkingConfig(include_thoughts=False)
@@ -186,11 +202,12 @@ def test_completion_with_custom_reasoning_effort(reasoning_effort: str) -> None:
             expected_thinking = types.ThinkingConfig(
                 include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[reasoning_effort]
             )
-        _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
         assert call_kwargs["config"].thinking_config == expected_thinking
 
 
-def test_completion_with_max_tokens_conversion() -> None:
+@pytest.mark.asyncio
+async def test_completion_with_max_tokens_conversion() -> None:
     """Test that max_tokens parameter gets converted to max_output_tokens."""
     api_key = "test-api-key"
     model = "gemini-pro"
@@ -199,9 +216,9 @@ def test_completion_with_max_tokens_conversion() -> None:
 
     with mock_google_provider() as mock_genai:
         provider = GoogleProvider(ApiConfig(api_key=api_key))
-        provider.completion(CompletionParams(model_id=model, messages=messages, max_tokens=max_tokens))
+        await provider.acompletion(CompletionParams(model_id=model, messages=messages, max_tokens=max_tokens))
 
-        _, call_kwargs = mock_genai.return_value.models.generate_content.call_args
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
         generation_config = call_kwargs["config"]
 
         assert generation_config.max_output_tokens == max_tokens

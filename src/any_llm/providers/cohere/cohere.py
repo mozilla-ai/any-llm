@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 from pydantic import BaseModel
@@ -57,22 +57,6 @@ class CohereProvider(Provider):
         async for chunk in cohere_stream:
             yield _create_openai_chunk_from_cohere_chunk(chunk)
 
-    def _stream_completion(
-        self,
-        model: str,
-        messages: list[dict[str, Any]],
-        **kwargs: Any,
-    ) -> Iterator[ChatCompletionChunk]:
-        """Handle streaming completion - extracted to avoid generator issues."""
-        cohere_stream = self.client.chat_stream(
-            model=model,
-            messages=messages,  # type: ignore[arg-type]
-            **kwargs,
-        )
-
-        for chunk in cohere_stream:
-            yield _create_openai_chunk_from_cohere_chunk(chunk)
-
     @staticmethod
     def _preprocess_response_format(response_format: type[BaseModel] | dict[str, Any]) -> dict[str, Any]:
         # if response format is a BaseModel, generate model json schema
@@ -121,44 +105,6 @@ class CohereProvider(Provider):
             model=params.model_id,
             messages=patched_messages,  # type: ignore[arg-type]
             **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "", "stream", "response_format"}),
-            **kwargs,
-        )
-
-        return _convert_response(response, params.model_id)
-
-    def completion(
-        self,
-        params: CompletionParams,
-        **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        """Create a chat completion using Cohere."""
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
-
-        if params.response_format is not None:
-            kwargs["response_format"] = self._preprocess_response_format(params.response_format)
-        if params.stream and params.response_format is not None:
-            msg = "stream and response_format"
-            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
-        if params.parallel_tool_calls is not None:
-            msg = "parallel_tool_calls"
-            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
-
-        patched_messages = _patch_messages(params.messages)
-
-        if params.stream:
-            return self._stream_completion(
-                params.model_id,
-                patched_messages,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
-                **kwargs,
-            )
-
-        # note: ClientV2.chat does not have a `stream` parameter
-        response = self.client.chat(
-            model=params.model_id,
-            messages=patched_messages,  # type: ignore[arg-type]
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream", "response_format"}),
             **kwargs,
         )
 

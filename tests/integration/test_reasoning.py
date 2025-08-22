@@ -1,17 +1,19 @@
+from collections.abc import AsyncIterable
 from typing import Any
 
 import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import ProviderName, completion
+from any_llm import ProviderName, acompletion
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 from tests.constants import LOCAL_PROVIDERS
 
 
-def test_completion_reasoning(
+@pytest.mark.asyncio
+async def test_completion_reasoning(
     provider: ProviderName,
     provider_reasoning_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
@@ -27,7 +29,7 @@ def test_completion_reasoning(
         extra_kwargs["reasoning_effort"] = "low"
 
     try:
-        result = completion(
+        result = await acompletion(
             model=model_id,
             provider=provider,
             **extra_kwargs,
@@ -45,7 +47,8 @@ def test_completion_reasoning(
     assert result.choices[0].message.reasoning.content is not None
 
 
-def test_completion_reasoning_streaming(
+@pytest.mark.asyncio
+async def test_completion_reasoning_streaming(
     provider: ProviderName,
     provider_reasoning_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
@@ -66,13 +69,15 @@ def test_completion_reasoning_streaming(
         output = ""
         reasoning = ""
         num_chunks = 0
-        for result in completion(
+        results = await acompletion(
             model=model_id,
             provider=provider,
             **extra_kwargs,
             messages=[{"role": "user", "content": "Please say hello! Think very briefly before you respond."}],
             stream=True,
-        ):
+        )
+        assert isinstance(results, AsyncIterable)
+        async for result in results:
             num_chunks += 1
             assert isinstance(result, ChatCompletionChunk)
             if len(result.choices) > 0:

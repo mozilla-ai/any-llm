@@ -5,7 +5,7 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import ProviderName, completion
+from any_llm import ProviderName, acompletion
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
 from tests.constants import LOCAL_PROVIDERS
@@ -14,7 +14,8 @@ if TYPE_CHECKING:
     from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
 
 
-def test_tool(
+@pytest.mark.asyncio
+async def test_tool(
     provider: ProviderName,
     provider_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
@@ -40,7 +41,7 @@ def test_tool(
     messages: list[dict[str, Any] | ChatCompletionMessage] = [{"role": "user", "content": prompt}]
 
     try:
-        result: ChatCompletion = completion(  # type: ignore[assignment]
+        result: ChatCompletion = await acompletion(  # type: ignore[assignment]
             model=model_id,
             provider=provider,
             messages=messages,
@@ -67,7 +68,7 @@ def test_tool(
             }
         )
         messages.append({"role": "user", "content": "Did the tool call work?"})
-        second_result: ChatCompletion = completion(  # type: ignore[assignment]
+        second_result: ChatCompletion = await acompletion(  # type: ignore[assignment]
             model=model_id,
             provider=provider,
             messages=messages,

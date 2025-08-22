@@ -35,11 +35,12 @@ def test_preprocess_response_format() -> None:
     assert outp_basemodel == outp_dict
 
 
-def test_stream_and_response_format_combination_raises() -> None:
+@pytest.mark.asyncio
+async def test_stream_and_response_format_combination_raises() -> None:
     provider = _mk_provider()
 
     with pytest.raises(UnsupportedParameterError):
-        provider.completion(
+        await provider.acompletion(
             CompletionParams(
                 model_id="model-id",
                 messages=[{"role": "user", "content": "Hello"}],
@@ -49,11 +50,12 @@ def test_stream_and_response_format_combination_raises() -> None:
         )
 
 
-def test_parallel_tool_calls_raises() -> None:
+@pytest.mark.asyncio
+async def test_parallel_tool_calls_raises() -> None:
     provider = _mk_provider()
 
     with pytest.raises(UnsupportedParameterError):
-        provider.completion(
+        await provider.acompletion(
             CompletionParams(
                 model_id="model-id",
                 messages=[{"role": "user", "content": "Hello"}],
