@@ -5,6 +5,7 @@ from typing import Any, Literal, cast
 
 from ollama import ChatResponse as OllamaChatResponse
 from ollama import EmbedResponse
+from ollama import ListResponse as OllamaListResponse
 from ollama import Message as OllamaMessage
 
 from any_llm.types.completion import (
@@ -25,6 +26,7 @@ from any_llm.types.completion import (
     Reasoning,
     Usage,
 )
+from any_llm.types.model import Model
 
 
 def _create_openai_embedding_response_from_ollama(
@@ -203,3 +205,16 @@ def _create_chat_completion_from_ollama_response(response: OllamaChatResponse) -
         choices=[choice],
         usage=usage,
     )
+
+
+def _convert_models_list(models_list: OllamaListResponse) -> list[Model]:
+    models = models_list.models
+    return [
+        Model(
+            id=model.model or "Unknown",
+            object="model",
+            created=int(model.modified_at.timestamp()) if model.modified_at else 0,
+            owned_by="ollama",
+        )
+        for model in models
+    ]

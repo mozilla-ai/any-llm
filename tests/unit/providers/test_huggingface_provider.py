@@ -101,3 +101,16 @@ def test_call_to_provider_with_no_packages_installed() -> None:
                 sys.modules.pop(mod)
         with pytest.raises(ImportError, match="huggingface required packages are not installed"):
             ProviderFactory.create_provider("huggingface", ApiConfig())
+
+
+def test_huggingface_with_timeout() -> None:
+    api_key = "test-api-key"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_huggingface_provider() as mock_huggingface:
+        provider = HuggingfaceProvider(ApiConfig(api_key=api_key))
+        provider.completion(CompletionParams(model_id="model-id", messages=messages), timeout=10)
+
+        mock_huggingface.assert_called_with(base_url=None, token=api_key, timeout=10)
+
+        mock_huggingface.return_value.chat_completion.assert_called_with(model="model-id", messages=messages)

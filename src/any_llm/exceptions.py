@@ -45,17 +45,20 @@ class UnsupportedProviderError(Exception):
 class UnsupportedParameterError(Exception):
     """Exception raised when an unsupported parameter is provided."""
 
-    def __init__(self, parameter_name: str, provider_name: str) -> None:
+    def __init__(self, parameter_name: str, provider_name: str, additional_message: str | None = None) -> None:
         """Initialize the exception.
 
         Args:
             parameter_name: Name of the parameter that was provided
             provider_name: Name of the provider that does not support the parameter
+            additional_message: Optional additional information about the error.
 
         """
         self.parameter_name = parameter_name
         self.provider_name = provider_name
 
         message = f"'{parameter_name}' is not supported for {provider_name}"
+        if additional_message is not None:
+            message = f"{message}.\n{additional_message}"
 
         super().__init__(message)

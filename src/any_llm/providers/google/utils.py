@@ -8,11 +8,14 @@ from any_llm.types.completion import (
     ChunkChoice,
     CreateEmbeddingResponse,
     Embedding,
+    Reasoning,
     Usage,
 )
+from any_llm.types.model import Model
 
 try:
     from google.genai import types
+    from google.genai.pagers import Pager
 except ImportError as exc:
     msg = "google-genai is not installed. Please install it with `pip install any-llm-sdk[google]`"
     raise ImportError(msg) from exc
@@ -223,9 +226,23 @@ def _create_openai_chunk_from_google_chunk(
     candidate = response.candidates[0]
     assert candidate.content
     assert candidate.content.parts
-    part = candidate.content.parts[0]
 
-    delta = ChoiceDelta(content=part.text, role="assistant")
+    content = ""
+    reasoning_content = ""
+
+    for part in candidate.content.parts:
+        if part.thought:
+            # This is a thinking/reasoning part
+            reasoning_content += part.text or ""
+        else:
+            # Regular content part
+            content += part.text or ""
+
+    delta = ChoiceDelta(
+        content=content or None,
+        role="assistant",
+        reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
+    )
 
     choice = ChunkChoice(
         index=0,
@@ -240,3 +257,8 @@ def _create_openai_chunk_from_google_chunk(
         model=str(response.model_version),
         object="chat.completion.chunk",
     )
+
+
+def _convert_models_list(models_list: Pager[types.Model]) -> list[Model]:
+    # Google doesn't provide a creation date for models
+    return [Model(id=model.name or "Unknown", object="model", created=0, owned_by="google") for model in models_list]

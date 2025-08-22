@@ -6,6 +6,7 @@ from xai_sdk.chat import Chunk as XaiChunk
 from xai_sdk.chat import Response as XaiResponse
 from xai_sdk.chat import tool as xai_make_tool
 from xai_sdk.proto import chat_pb2 as xai_chat_pb2
+from xai_sdk.proto import models_pb2 as xai_models_pb2
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -22,6 +23,7 @@ from any_llm.types.completion import (
     Function,
     Reasoning,
 )
+from any_llm.types.model import Model
 
 
 def _map_xai_role_to_openai(
@@ -150,3 +152,9 @@ def _convert_openai_tools_to_xai_tools(tools: Sequence[dict[str, Any]]) -> list[
 
         xai_tools.append(xai_make_tool(name=name, description=description, parameters=parameters))
     return xai_tools
+
+
+def _convert_models_list(models_list: Sequence[xai_models_pb2.LanguageModel]) -> list[Model]:
+    return [
+        Model(id=model.name, object="model", created=model.created.seconds, owned_by="xai") for model in models_list
+    ]

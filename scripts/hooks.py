@@ -47,8 +47,8 @@ def generate_provider_table(providers: list[ProviderMetadata]):
 
     # Create table header
     table_lines = [
-        "| ID | Env Var | Source Code | Responses | Completion | Streaming<br>(Completions) | Reasoning<br>(Completions) | Embedding | Models |",
-        "|----|---------|-------------|-----------|------------|--------------------------|--------------------------|-----------|-----------|",
+        "| ID | Env Var | Source Code | Responses | Completion | Streaming<br>(Completions) | Reasoning<br>(Completions) | Embedding | List Models |",
+        "|----|---------|-------------|-----------|------------|--------------------------|--------------------------|-----------|-------------|",
     ]
 
     # Add rows for each provider

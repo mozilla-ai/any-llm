@@ -510,15 +510,31 @@ async def aembedding(
     return await provider_instance.aembedding(model_name, inputs, **kwargs)
 
 
-def list_models(provider: str | ProviderName) -> Sequence[Model]:
+def list_models(
+    provider: str | ProviderName, api_key: str | None = None, api_base: str | None = None, **kwargs: Any
+) -> Sequence[Model]:
     """List available models for a provider."""
     provider_key = ProviderName.from_string(provider)
-    prov_instance = ProviderFactory.create_provider(provider_key, ApiConfig())
-    return prov_instance.list_models()
+    config: dict[str, str] = {}
+    if api_key:
+        config["api_key"] = str(api_key)
+    if api_base:
+        config["api_base"] = str(api_base)
+    api_config = ApiConfig(**config)
+    prov_instance = ProviderFactory.create_provider(provider_key, api_config)
+    return prov_instance.list_models(**kwargs)
 
 
-async def list_models_async(provider: str | ProviderName) -> Sequence[Model]:
+async def list_models_async(
+    provider: str | ProviderName, api_key: str | None = None, api_base: str | None = None, **kwargs: Any
+) -> Sequence[Model]:
     """List available models for a provider asynchronously."""
     provider_key = ProviderName.from_string(provider)
-    prov_instance = ProviderFactory.create_provider(provider_key, ApiConfig())
-    return await prov_instance.list_models_async()
+    config: dict[str, str] = {}
+    if api_key:
+        config["api_key"] = str(api_key)
+    if api_base:
+        config["api_base"] = str(api_base)
+    api_config = ApiConfig(**config)
+    prov_instance = ProviderFactory.create_provider(provider_key, api_config)
+    return await prov_instance.list_models_async(**kwargs)

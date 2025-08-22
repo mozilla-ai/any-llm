@@ -1,5 +1,5 @@
 import os
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 try:
@@ -16,6 +16,7 @@ from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.google.utils import (
     _convert_messages,
+    _convert_models_list,
     _convert_response_to_response_dict,
     _convert_tool_choice,
     _convert_tool_spec,
@@ -35,6 +36,7 @@ from any_llm.types.completion import (
     Function,
     Reasoning,
 )
+from any_llm.types.model import Model
 
 # From https://ai.google.dev/gemini-api/docs/openai#thinking
 REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 256, "low": 1024, "medium": 8192, "high": 24576}
@@ -52,7 +54,7 @@ class GoogleProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = True
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -83,13 +85,13 @@ class GoogleProvider(Provider):
 
             self.client = genai.Client(api_key=api_key)
 
-    def embedding(
+    async def aembedding(
         self,
         model: str,
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        result = self.client.models.embed_content(
+        result = await self.client.aio.models.embed_content(
             model=model,
             contents=inputs,  # type: ignore[arg-type]
             **kwargs,
@@ -97,11 +99,11 @@ class GoogleProvider(Provider):
 
         return _create_openai_embedding_response_from_google(model, result)
 
-    def completion(
+    async def acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         if params.stream and params.response_format is not None:
             error_message = "stream and response_format"
             raise UnsupportedParameterError(error_message, self.PROVIDER_NAME)
@@ -117,10 +119,10 @@ class GoogleProvider(Provider):
         if isinstance(params.tool_choice, str):
             kwargs["tool_config"] = _convert_tool_choice(params.tool_choice)
 
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
-
-        if params.reasoning_effort is not None:
+        if params.reasoning_effort is None:
+            kwargs["thinking_config"] = types.ThinkingConfig(include_thoughts=False)
+        # in "auto" mode, we just don't pass a `thinking_config`
+        elif params.reasoning_effort != "auto":
             kwargs["thinking_config"] = types.ThinkingConfig(
                 include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort]
             )
@@ -130,8 +132,22 @@ class GoogleProvider(Provider):
         # Build generation config without duplicating keys (e.g., tools)
         base_kwargs = params.model_dump(
             exclude_none=True,
-            exclude={"model_id", "messages", "response_format", "stream", "tools", "tool_choice", "reasoning_effort"},
+            exclude={
+                "model_id",
+                "messages",
+                "response_format",
+                "stream",
+                "tools",
+                "tool_choice",
+                "reasoning_effort",
+                "max_tokens",
+            },
         )
+
+        # Convert max_tokens to max_output_tokens for Google
+        if params.max_tokens is not None:
+            base_kwargs["max_output_tokens"] = params.max_tokens
+
         base_kwargs.update(kwargs)
         generation_config = types.GenerateContentConfig(**base_kwargs)
         if isinstance(response_format, type) and issubclass(response_format, BaseModel):
@@ -143,13 +159,19 @@ class GoogleProvider(Provider):
             generation_config.system_instruction = system_instruction
 
         if stream:
-            response_stream = self.client.models.generate_content_stream(
+            response_stream = await self.client.aio.models.generate_content_stream(
                 model=params.model_id,
                 contents=formatted_messages,  # type: ignore[arg-type]
                 config=generation_config,
             )
-            return map(_create_openai_chunk_from_google_chunk, response_stream)
-        response: types.GenerateContentResponse = self.client.models.generate_content(
+
+            async def _stream() -> AsyncIterator[ChatCompletionChunk]:
+                async for chunk in response_stream:
+                    yield _create_openai_chunk_from_google_chunk(chunk)
+
+            return _stream()
+
+        response: types.GenerateContentResponse = await self.client.aio.models.generate_content(
             model=params.model_id,
             contents=formatted_messages,  # type: ignore[arg-type]
             config=generation_config,
@@ -212,3 +234,10 @@ class GoogleProvider(Provider):
             choices=choices_out,
             usage=usage,
         )
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        models_list = self.client.models.list(**kwargs)
+        return _convert_models_list(models_list)

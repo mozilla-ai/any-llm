@@ -9,10 +9,11 @@ from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.completion import CompletionParams
 
 
-def test_response_format_dict_raises() -> None:
+@pytest.mark.asyncio
+async def test_response_format_dict_raises() -> None:
     provider = LlamafileProvider(ApiConfig())
     with pytest.raises(UnsupportedParameterError):
-        provider.completion(
+        await provider.acompletion(
             CompletionParams(
                 model_id="llama3.1",
                 messages=[{"role": "user", "content": "Hi"}],
@@ -21,17 +22,19 @@ def test_response_format_dict_raises() -> None:
         )
 
 
-def test_calls_completion() -> None:
+@pytest.mark.asyncio
+async def test_calls_completion() -> None:
     provider = LlamafileProvider(ApiConfig())
     params = CompletionParams(model_id="llama3.1", messages=[{"role": "user", "content": "Hi"}])
     sentinel = object()
-    with patch.object(BaseOpenAIProvider, "completion", autospec=True, return_value=sentinel) as mock_super:
-        result = provider.completion(params, temperature=0.1)
+    with patch.object(BaseOpenAIProvider, "acompletion", autospec=True, return_value=sentinel) as mock_super:
+        result = await provider.acompletion(params, temperature=0.1)
         assert result is sentinel
         mock_super.assert_called_once_with(provider, params, temperature=0.1)
 
 
-def test_tools_raises() -> None:
+@pytest.mark.asyncio
+async def test_tools_raises() -> None:
     provider = LlamafileProvider(ApiConfig())
     tools = [
         {
@@ -43,7 +46,7 @@ def test_tools_raises() -> None:
         }
     ]
     with pytest.raises(UnsupportedParameterError):
-        provider.completion(
+        await provider.acompletion(
             CompletionParams(
                 model_id="llama3.1",
                 messages=[{"role": "user", "content": "Hi"}],

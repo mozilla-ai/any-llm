@@ -19,8 +19,10 @@ dependencies = [
 [project.optional-dependencies]
 
 all = [
-  "any-llm-sdk[mistral,anthropic,huggingface,google,cohere,cerebras,fireworks,groq,aws,azure,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,llamafile,llamacpp]"
+  "any-llm-sdk[mistral,anthropic,huggingface,google,cohere,cerebras,fireworks,groq,aws,azure,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,perplexity,llamafile,llamacpp]"
 ]
+
+perplexity = []
 
 mistral = [
   "mistralai>=1.9.3",
@@ -28,7 +30,6 @@ mistral = [
 
 anthropic = [
   "anthropic",
-  "instructor",
 ]
 
 google = [
@@ -50,12 +51,10 @@ cerebras = [
 
 fireworks = [
   "fireworks-ai>=0.17.16",
-  "instructor",
 ]
 
 groq = [
-  "groq",
-  "instructor",
+  "groq"
 ]
 
 aws = [
@@ -171,6 +170,8 @@ extend-select = ["ALL"]
 "src/any_llm/providers/**" = ["D"]
 "src/any_llm/provider.py" = ["D"]
 "src/any_llm/types/**" = ["A005", "D"]
+"demos/**" = ["T201", "S104"]
+"scripts/**" = ["D", "T201"]
 
 [tool.mypy]
 strict = true

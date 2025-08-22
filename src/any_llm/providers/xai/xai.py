@@ -1,16 +1,19 @@
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 from any_llm.provider import Provider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.model import Model
 
 try:
+    from xai_sdk import AsyncClient as XaiAsyncClient
     from xai_sdk import Client as XaiClient
     from xai_sdk.chat import Chunk as XaiChunk
     from xai_sdk.chat import Response as XaiResponse
     from xai_sdk.chat import assistant, required_tool, system, tool_result, user
 
     from any_llm.providers.xai.utils import (
+        _convert_models_list,
         _convert_openai_tools_to_xai_tools,
         _convert_xai_chunk_to_anyllm_chunk,
         _convert_xai_completion_to_anyllm_response,
@@ -32,13 +35,15 @@ class XaiProvider(Provider):
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_RESPONSES = False
     SUPPORTS_EMBEDDING = False
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
-    def completion(self, params: CompletionParams, **kwargs: Any) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+    async def acompletion(
+        self, params: CompletionParams, **kwargs: Any
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Call the XAI Python SDK Chat Completions API and convert to AnyLLM types."""
-        client = XaiClient(api_key=self.config.api_key)
+        client = XaiAsyncClient(api_key=self.config.api_key)
 
         xai_messages = []
         for message in params.messages:
@@ -89,12 +94,25 @@ class XaiProvider(Provider):
             if params.response_format:
                 err_msg = "Response format is not supported for streaming"
                 raise ValueError(err_msg)
-            stream_iter: Iterator[tuple[XaiResponse, XaiChunk]] = chat.stream()
-            return (_convert_xai_chunk_to_anyllm_chunk(chunk) for _, chunk in stream_iter)
+            stream_iter: AsyncIterator[tuple[XaiResponse, XaiChunk]] = chat.stream()
+
+            async def _stream() -> AsyncIterator[ChatCompletionChunk]:
+                async for _, chunk in stream_iter:
+                    yield _convert_xai_chunk_to_anyllm_chunk(chunk)
+
+            return _stream()
 
         if params.response_format:
-            response, _ = chat.parse(shape=params.response_format)  # type: ignore[arg-type]
+            response, _ = await chat.parse(shape=params.response_format)  # type: ignore[arg-type]
         else:
-            response = chat.sample()
+            response = await chat.sample()
 
         return _convert_xai_completion_to_anyllm_response(response)
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        client = XaiClient(api_key=self.config.api_key)
+        models_list = client.models.list_language_models()
+        return _convert_models_list(models_list)

@@ -13,6 +13,7 @@ from any_llm.types.completion import (
     ChunkChoice,
     CompletionUsage,
 )
+from any_llm.types.model import Model
 
 
 def _convert_response(response: dict[str, Any]) -> ChatCompletion:
@@ -133,3 +134,9 @@ Return the JSON object only, no other text, do not wrap it in ```json or ```.
         raise ValueError(msg)
 
     return modified_messages
+
+
+def _convert_models_list(models: dict[str, Any]) -> list[Model]:
+    models_list = models.get("resources", [])
+    created = 0  # watsonx doesn't provide a created timestamp
+    return [Model(id=model["model_id"], object="model", created=created, owned_by="watsonx") for model in models_list]
