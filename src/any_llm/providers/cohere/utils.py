@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Any
 
 from cohere.types import ListModelsResponse as CohereListModelsResponse
@@ -15,16 +16,25 @@ from any_llm.types.model import Model
 
 
 def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Patch messages to remove the 'name' field from any tool messages."""
-    # See https://docs.cohere.com/docs/tool-use-overview
-    # In the response from cohere we place the tool plan in the 'content' field of the assistant message.
-    # We have to turn it back into a tool_plan field before sending it to the model.
-    for message in messages:
-        if message["role"] == "tool":
-            message.pop("name", None)
-        if message["role"] == "assistant" and message.get("tool_calls"):
-            message["tool_plan"] = message.pop("content")
-    return messages
+    """
+    Patches messages for Cohere API compatibility.
+
+    - Removes the 'name' field from tool messages.
+    - Converts 'content' to 'tool_plan' in assistant messages with tool_calls.
+    - Validates the message sequence.
+    """
+    patched_messages = []
+    for i, message in enumerate(messages):
+        patched_message = message.copy()
+        if patched_message.get("role") == "tool":
+            if i > 0 and messages[i - 1].get("role") != "assistant":
+                msg = "A tool message must be preceded by an assistant message with tool_calls."
+                raise ValueError(msg)
+            patched_message.pop("name", None)
+        if patched_message.get("role") == "assistant" and patched_message.get("tool_calls"):
+            patched_message["tool_plan"] = patched_message.pop("content")
+        patched_messages.append(patched_message)
+    return patched_messages
 
 
 def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
@@ -196,8 +206,17 @@ def _convert_response(response: Any, model: str) -> ChatCompletion:
     )
 
 
-def _convert_models_list(models_list: CohereListModelsResponse) -> list[Model]:
-    # Cohere doesn't provide a creation date for models
-    return [
-        Model(id=model.name or "Unknown", object="model", created=0, owned_by="cohere") for model in models_list.models
-    ]
+def _convert_models_list(response: CohereListModelsResponse) -> Sequence[Model]:
+    """Converts a Cohere ListModelsResponse to a list of Model objects."""
+    models = []
+    if response.models:
+        for model_data in response.models:
+            models.append(
+                Model(
+                    id=model_data.name or "unknown",
+                    created=0,  # Cohere doesn't provide this, so we use a default value
+                    object="model",
+                    owned_by="cohere",
+                )
+            )
+    return models
