@@ -1,4 +1,6 @@
 import json
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 try:
     from mistralai.models import AssistantMessageContent as MistralAssistantMessageContent
@@ -14,7 +16,6 @@ except ImportError as exc:
     msg = "mistralai is not installed. Please install it with `pip install any-llm-sdk[mistral]`"
     raise ImportError(msg) from exc
 
-from typing import TYPE_CHECKING, Any, Literal, cast
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -334,25 +335,38 @@ def _create_openai_embedding_response_from_mistral(
 
 
 def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Similar to github.com/pydantic/pydantic-ai/blob/851df07566a339cd0318e933464b971b0fc79d53/pydantic_ai_slim/pydantic_ai/models/mistral.py#L524,
-    we work around mistral requiring an non-user message after a tool message"""
-    processed_msg = []
+    """
+    Patches messages for Mistral API compatibility.
+
+    - Inserts an assistant message with "OK" content between a tool message and a user message.
+    - Validates the message sequence to ensure correctness.
+    """
+    processed_msg: list[dict[str, Any]] = []
     for i, msg in enumerate(messages):
         processed_msg.append(msg)
-        if msg.get("role") == "tool" and i + 1 < len(messages) and messages[i + 1].get("role") == "user":
-            # Mistral expects an assistant message after a tool message
-            processed_msg.append({"role": "assistant", "content": "OK"})
+        if msg.get("role") == "tool":
+            if i > 0 and messages[i - 1].get("role") != "assistant":
+                # Use a different variable name for the error message
+                error_msg = "A tool message must be preceded by an assistant message with tool_calls."
+                raise ValueError(error_msg)
+            if i + 1 < len(messages) and messages[i + 1].get("role") == "user":
+                # Mistral expects an assistant message after a tool message
+                processed_msg.append({"role": "assistant", "content": "OK"})
 
     return processed_msg
 
 
-def _convert_models_list(models_list: MistralModelList) -> list[Model]:
-    return [
-        Model(
-            id=model.id,
-            object="model",
-            created=model.created or 0,
-            owned_by="mistral",
-        )
-        for model in models_list.data or []
-    ]
+def _convert_models_list(response: MistralModelList) -> Sequence[Model]:
+    """Converts a Mistral ModelList to a list of Model objects."""
+    models = []
+    if response.data:
+        for model_data in response.data:
+            models.append(
+                Model(
+                    id=model_data.id,
+                    created=model_data.created or 0,
+                    object="model",
+                    owned_by=model_data.owned_by or "mistral",
+                )
+            )
+    return models
