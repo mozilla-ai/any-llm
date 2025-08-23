@@ -1,5 +1,5 @@
 import os
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from typing import Any, cast
 
 try:
@@ -9,7 +9,7 @@ try:
 except ImportError:
     PACKAGES_INSTALLED = False
 
-from openai import OpenAI
+from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
@@ -25,9 +25,11 @@ class SambanovaProvider(BaseOpenAIProvider):
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
-    def completion(self, params: CompletionParams, **kwargs: Any) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+    async def acompletion(
+        self, params: CompletionParams, **kwargs: Any
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Make the API call to SambaNova service with instructor for structured output."""
-        client = OpenAI(
+        client = AsyncOpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,
         )
@@ -40,7 +42,7 @@ class SambanovaProvider(BaseOpenAIProvider):
             if not isinstance(params.response_format, type) or not issubclass(params.response_format, BaseModel):
                 msg = "response_format must be a pydantic model"
                 raise ValueError(msg)
-            response = instructor_client.chat.completions.create(
+            response = await instructor_client.chat.completions.create(
                 model=params.model_id,
                 messages=cast("Any", params.messages),
                 response_model=params.response_format,
@@ -48,8 +50,8 @@ class SambanovaProvider(BaseOpenAIProvider):
                 **kwargs,
             )
             return _convert_instructor_response(response, params.model_id, self.PROVIDER_NAME)
-        return self._convert_completion_response(
-            client.chat.completions.create(
+        return self._convert_completion_response_async(
+            await client.chat.completions.create(
                 model=params.model_id,
                 messages=cast("Any", params.messages),
                 **params.model_dump(exclude_none=True, exclude={"model_id", "messages"}),

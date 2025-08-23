@@ -8,6 +8,7 @@ from any_llm.provider import ProviderName
 @pytest.fixture
 def provider_reasoning_model_map() -> dict[ProviderName, str]:
     return {
+        ProviderName.ANTHROPIC: "claude-sonnet-4-20250514",
         ProviderName.MISTRAL: "magistral-small-latest",
         ProviderName.GOOGLE: "gemini-2.5-flash",
         ProviderName.GROQ: "openai/gpt-oss-20b",
@@ -52,6 +53,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.PORTKEY: "@first-integrati-d8a10f/gpt-4.1-mini",  # Owned by njbrake in portkey UI
         ProviderName.LLAMA: "Llama-4-Maverick-17B-128E-Instruct-FP8",
         ProviderName.AZURE: "openai/gpt-4.1-nano",
+        ProviderName.PERPLEXITY: "llama-3.1-sonar-small-128k-chat",
         ProviderName.LLAMACPP: "N/A",
     }
 

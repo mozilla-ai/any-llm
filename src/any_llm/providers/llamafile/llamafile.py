@@ -1,5 +1,5 @@
 import os
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from typing import Any
 
 from any_llm.exceptions import UnsupportedParameterError
@@ -24,7 +24,9 @@ class LlamafileProvider(BaseOpenAIProvider):
         self.url = config.api_base or os.getenv("LLAMAFILE_API_URL")
         self.config = config
 
-    def completion(self, params: CompletionParams, **kwargs: Any) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+    async def acompletion(
+        self, params: CompletionParams, **kwargs: Any
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Handle completion - extracted to avoid generator issues."""
         if params.response_format:
             msg = "response_format"
@@ -38,4 +40,4 @@ class LlamafileProvider(BaseOpenAIProvider):
                 msg,
                 self.PROVIDER_NAME,
             )
-        return super().completion(params, **kwargs)
+        return await super().acompletion(params, **kwargs)

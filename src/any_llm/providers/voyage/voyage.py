@@ -1,8 +1,7 @@
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from typing import Any
 
 try:
-    from voyageai.client import Client
     from voyageai.client_async import AsyncClient
 
     from any_llm.providers.voyage.utils import (
@@ -35,23 +34,6 @@ class VoyageProvider(Provider):
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
-    def embedding(
-        self,
-        model: str,
-        inputs: str | list[str],
-        **kwargs: Any,
-    ) -> CreateEmbeddingResponse:
-        if isinstance(inputs, str):
-            inputs = [inputs]
-
-        client = Client(api_key=self.config.api_key)
-        result = client.embed(
-            texts=inputs,
-            model=model,
-            **kwargs,
-        )
-        return _create_openai_embedding_response_from_voyage(model, result)
-
     async def aembedding(
         self,
         model: str,
@@ -72,9 +54,5 @@ class VoyageProvider(Provider):
     async def acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        msg = "voyage provider doesn't support completion."
-        raise NotImplementedError(msg)
-
-    def completion(self, params: CompletionParams, **kwargs: Any) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         msg = "voyage provider doesn't support completion."
         raise NotImplementedError(msg)

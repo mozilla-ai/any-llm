@@ -1,9 +1,13 @@
+import asyncio
+import functools
 import json
 import os
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
 
 from pydantic import BaseModel
+
+from any_llm.types.model import Model
 
 try:
     import boto3
@@ -14,6 +18,7 @@ except ImportError:
     PACKAGES_INSTALLED = False
 
 from any_llm.exceptions import MissingApiKeyError
+from any_llm.logging import logger
 from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.aws.utils import (
     _convert_kwargs,
@@ -38,7 +43,7 @@ class AwsProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = True
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -57,6 +62,32 @@ class AwsProvider(Provider):
 
         if credentials is None and bedrock_api_key is None:
             raise MissingApiKeyError(provider_name=self.PROVIDER_NAME, env_var_name=self.ENV_API_KEY_NAME)
+
+    async def acompletion(
+        self,
+        params: CompletionParams,
+        **kwargs: Any,
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        """Create a chat completion using AWS Bedrock with instructor support."""
+        logger.warning("AWS Bedrock client does not support async. Calls made with this method will be blocking.")
+
+        loop = asyncio.get_event_loop()
+
+        # create partial function of sync call
+        call_sync_partial: Callable[[], ChatCompletion | Iterator[ChatCompletionChunk]] = functools.partial(
+            self.completion, params, **kwargs
+        )
+
+        result = await loop.run_in_executor(None, call_sync_partial)
+
+        if isinstance(result, ChatCompletion):
+            return result
+
+        async def _stream() -> AsyncIterator[ChatCompletionChunk]:
+            for chunk in result:
+                yield chunk
+
+        return _stream()
 
     def completion(
         self,
@@ -123,6 +154,23 @@ class AwsProvider(Provider):
 
         return _convert_response(response)
 
+    async def aembedding(
+        self,
+        model: str,
+        inputs: str | list[str],
+        **kwargs: Any,
+    ) -> CreateEmbeddingResponse:
+        logger.warning("AWS Bedrock client does not support async. Calls made with this method will be blocking.")
+
+        loop = asyncio.get_event_loop()
+
+        # create partial function of sync call
+        call_sync_partial: Callable[[], CreateEmbeddingResponse] = functools.partial(
+            self.embedding, model, inputs, **kwargs
+        )
+
+        return await loop.run_in_executor(None, call_sync_partial)
+
     def embedding(
         self,
         model: str,
@@ -156,3 +204,14 @@ class AwsProvider(Provider):
             total_tokens += response_body.get("inputTextTokenCount", 0)
 
         return _create_openai_embedding_response_from_aws(embedding_data, model, total_tokens)
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        client = boto3.client("bedrock", endpoint_url=self.config.api_base, region_name=self.region_name)  # type: ignore[no-untyped-call]
+        models_list = client.list_foundation_models(**kwargs).get("modelSummaries", [])
+        # AWS doesn't provide a creation date for models
+        # AWS doesn't provide typing, but per https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/bedrock/client/list_foundation_models.html
+        # the modelId is a string and will not be None
+        return [Model(id=model["modelId"], object="model", created=0, owned_by="aws") for model in models_list]

@@ -1,5 +1,5 @@
-from collections.abc import Iterator
-from typing import Any
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
+from typing import Any, cast
 
 try:
     from fireworks import LLM
@@ -8,7 +8,7 @@ try:
 except ImportError:
     PACKAGES_INSTALLED = False
 
-from openai import OpenAI, Stream
+from openai import AsyncOpenAI, AsyncStream, OpenAI
 from pydantic import BaseModel
 
 from any_llm.provider import Provider
@@ -22,6 +22,7 @@ from any_llm.types.completion import (
     CompletionUsage,
     Reasoning,
 )
+from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponseStreamEvent
 
 
@@ -29,39 +30,36 @@ class FireworksProvider(Provider):
     PROVIDER_NAME = "fireworks"
     ENV_API_KEY_NAME = "FIREWORKS_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://fireworks.ai/api"
+    BASE_URL = "https://api.fireworks.ai/inference/v1"
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = True
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
-    def _stream_completion(
-        self,
-        llm: "LLM",
-        messages: list[dict[str, Any]],
-        params: CompletionParams,
-        **kwargs: Any,
-    ) -> Iterator[ChatCompletionChunk]:
+    async def _stream_completion_async(
+        self, llm: "LLM", messages: list[dict[str, Any]], params: CompletionParams, **kwargs: Any
+    ) -> AsyncIterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
 
-        response_generator = llm.chat.completions.create(
+        response_generator = await llm.chat.completions.acreate(
             messages=messages,  # type: ignore[arg-type]
             **params.model_dump(exclude_none=True, exclude={"model_id", "messages"}),
             **kwargs,
         )
 
-        for chunk in response_generator:
+        async for chunk in cast("AsyncGenerator[ChatCompletionChunk, None]", response_generator):
             yield _create_openai_chunk_from_fireworks_chunk(chunk)
 
-    def completion(
+    async def acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         llm = LLM(
             model=params.model_id,
             deployment_type="serverless",
@@ -82,9 +80,9 @@ class FireworksProvider(Provider):
                 kwargs["response_format"] = response_format
 
         if params.stream:
-            return self._stream_completion(llm, params.messages, params, **kwargs)
+            return self._stream_completion_async(llm, params.messages, params, **kwargs)
 
-        response = llm.chat.completions.create(
+        response = await llm.chat.completions.acreate(
             messages=params.messages,  # type: ignore[arg-type]
             **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
             **kwargs,
@@ -116,21 +114,23 @@ class FireworksProvider(Provider):
             usage=usage,
         )
 
-    def responses(self, model: str, input_data: Any, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
+    async def aresponses(
+        self, model: str, input_data: Any, **kwargs: Any
+    ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call Fireworks Responses API and normalize into ChatCompletion/Chunks."""
-        client = OpenAI(
-            base_url="https://api.fireworks.ai/inference/v1",
+        client = AsyncOpenAI(
+            base_url=self.BASE_URL,
             api_key=self.config.api_key,
         )
-        response = client.responses.create(
+        response = await client.responses.create(
             model=model,
             input=input_data,
             **kwargs,
         )
-        if not isinstance(response, Response | Stream):
+        if not isinstance(response, Response | AsyncStream):
             err_msg = f"Responses API returned an unexpected type: {type(response)}"
             raise ValueError(err_msg)
-        if isinstance(response, Response) and not isinstance(response, Stream):
+        if isinstance(response, Response) and not isinstance(response, AsyncStream):
             # See https://fireworks.ai/blog/response-api for details about Fireworks Responses API support
             reasoning = response.output[-1].content[0].text.split("</think>")[-1]  # type: ignore[union-attr,index]
             if reasoning:
@@ -139,3 +139,13 @@ class FireworksProvider(Provider):
             response.reasoning = Reasoning(content=reasoning) if reasoning else None  # type: ignore[assignment]
 
         return response
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        client = OpenAI(
+            base_url=self.BASE_URL,
+            api_key=self.config.api_key,
+        )
+        return client.models.list(**kwargs).data

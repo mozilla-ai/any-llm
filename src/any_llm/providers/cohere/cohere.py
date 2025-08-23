@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 from pydantic import BaseModel
@@ -13,11 +13,13 @@ except ImportError:
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ApiConfig, Provider
 from any_llm.providers.cohere.utils import (
+    _convert_models_list,
     _convert_response,
     _create_openai_chunk_from_cohere_chunk,
     _patch_messages,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.model import Model
 
 
 class CohereProvider(Provider):
@@ -32,7 +34,7 @@ class CohereProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
 
@@ -60,23 +62,6 @@ class CohereProvider(Provider):
         )
 
         async for chunk in cohere_stream:
-            yield _create_openai_chunk_from_cohere_chunk(chunk)
-
-    def _stream_completion(
-        self,
-        model: str,
-        messages: list[dict[str, Any]],
-        client: "cohere.ClientV2",
-        **kwargs: Any,
-    ) -> Iterator[ChatCompletionChunk]:
-        """Handle streaming completion - extracted to avoid generator issues."""
-        cohere_stream = client.chat_stream(
-            model=model,
-            messages=messages,  # type: ignore[arg-type]
-            **kwargs,
-        )
-
-        for chunk in cohere_stream:
             yield _create_openai_chunk_from_cohere_chunk(chunk)
 
     @staticmethod
@@ -139,28 +124,11 @@ class CohereProvider(Provider):
 
         return _convert_response(response, params.model_id)
 
-    def completion(
-        self,
-        params: CompletionParams,
-        **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        """Create a chat completion using Cohere."""
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
-
-        if params.response_format is not None:
-            kwargs["response_format"] = self._preprocess_response_format(params.response_format)
-        if params.stream and params.response_format is not None:
-            msg = "stream and response_format"
-            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
-        if params.parallel_tool_calls is not None:
-            msg = "parallel_tool_calls"
-            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
-
-        patched_messages = _patch_messages(params.messages)
-
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
         # Extract httpx_client from kwargs
-        # Note: Cohere SDK uses 'httpx_client' parameter
         httpx_client = kwargs.pop("httpx_client", None)
 
         client = cohere.ClientV2(
@@ -168,21 +136,5 @@ class CohereProvider(Provider):
             httpx_client=httpx_client,
         )
 
-        if params.stream:
-            return self._stream_completion(
-                params.model_id,
-                patched_messages,
-                client,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
-                **kwargs,
-            )
-
-        # note: ClientV2.chat does not have a `stream` parameter
-        response = client.chat(
-            model=params.model_id,
-            messages=patched_messages,  # type: ignore[arg-type]
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream", "response_format"}),
-            **kwargs,
-        )
-
-        return _convert_response(response, params.model_id)
+        model_list = client.models.list(**kwargs)
+        return _convert_models_list(model_list)

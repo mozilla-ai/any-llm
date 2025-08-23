@@ -1,16 +1,21 @@
 import uuid
-from typing import Literal, cast
+from collections.abc import Iterable
+from typing import Any, Literal, cast
 
+from huggingface_hub.hf_api import ModelInfo as HfModelInfo
 from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
     ChatCompletionStreamOutput as HuggingFaceChatCompletionStreamOutput,
 )
+from openai.lib._parsing import type_to_response_format_param
 
 from any_llm.types.completion import (
     ChatCompletionChunk,
     ChoiceDelta,
     ChunkChoice,
+    CompletionParams,
     CompletionUsage,
 )
+from any_llm.types.model import Model
 
 
 def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletionStreamOutput) -> ChatCompletionChunk:
@@ -65,3 +70,45 @@ def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletion
         object="chat.completion.chunk",
         usage=usage,
     )
+
+
+def _convert_params(params: CompletionParams, **kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Convert CompletionParams to a dictionary of parameters for HuggingFace API."""
+
+    result_kwargs: dict[str, Any] = kwargs.copy()
+
+    # timeout is passed to the client instantiation, should not reach the `client.chat_completion` call.
+    result_kwargs.pop("timeout", None)
+
+    if params.max_tokens is not None:
+        result_kwargs["max_new_tokens"] = params.max_tokens
+
+    if params.reasoning_effort == "auto":
+        params.reasoning_effort = None
+
+    if params.response_format is not None:
+        result_kwargs["response_format"] = type_to_response_format_param(response_format=params.response_format)  # type: ignore[arg-type]
+
+    result_kwargs.update(
+        params.model_dump(
+            exclude_none=True,
+            exclude={"max_tokens", "model_id", "messages", "response_format", "parallel_tool_calls"},
+        )
+    )
+
+    result_kwargs["model"] = params.model_id
+    result_kwargs["messages"] = params.messages
+
+    return result_kwargs
+
+
+def _convert_models_list(models_list: Iterable[HfModelInfo]) -> list[Model]:
+    return [
+        Model(
+            id=model.id,
+            object="model",
+            created=int(model.created_at.timestamp()) if model.created_at else 0,
+            owned_by="huggingface",
+        )
+        for model in models_list
+    ]

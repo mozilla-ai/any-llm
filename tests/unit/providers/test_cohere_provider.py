@@ -37,11 +37,12 @@ def test_preprocess_response_format() -> None:
     assert outp_basemodel == outp_dict
 
 
-def test_stream_and_response_format_combination_raises() -> None:
+@pytest.mark.asyncio
+async def test_stream_and_response_format_combination_raises() -> None:
     provider = _mk_provider()
 
     with pytest.raises(UnsupportedParameterError):
-        provider.completion(
+        await provider.acompletion(
             CompletionParams(
                 model_id="model-id",
                 messages=[{"role": "user", "content": "Hello"}],
@@ -51,11 +52,12 @@ def test_stream_and_response_format_combination_raises() -> None:
         )
 
 
-def test_parallel_tool_calls_raises() -> None:
+@pytest.mark.asyncio
+async def test_parallel_tool_calls_raises() -> None:
     provider = _mk_provider()
 
     with pytest.raises(UnsupportedParameterError):
-        provider.completion(
+        await provider.acompletion(
             CompletionParams(
                 model_id="model-id",
                 messages=[{"role": "user", "content": "Hello"}],
@@ -130,33 +132,6 @@ def test_patch_messages_leaves_regular_assistant_messages_unchanged() -> None:
     assert "tool_plan" not in assistant_message
 
 
-def test_cohere_accepts_httpx_client() -> None:
-    """Test that Cohere client accepts and passes through httpx_client parameter."""
-    pytest.importorskip("cohere")
-    from any_llm.providers.cohere.cohere import CohereProvider
-
-    api_key = "test-api-key"
-    mock_http_client = Mock(spec=httpx.Client)
-
-    with (
-        patch("cohere.ClientV2") as mock_cohere,
-        patch("any_llm.providers.cohere.utils._convert_response"),
-        patch("any_llm.providers.cohere.utils._patch_messages", return_value=[]),
-    ):
-        mock_client = Mock()
-        mock_cohere.return_value = mock_client
-        mock_client.chat.return_value = Mock()
-
-        provider = CohereProvider(ApiConfig(api_key=api_key))
-        provider.completion(
-            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]),
-            httpx_client=mock_http_client,  # Note: Cohere uses 'httpx_client'
-        )
-
-        # Verify Cohere client was instantiated with httpx_client
-        mock_cohere.assert_called_once_with(api_key=api_key, httpx_client=mock_http_client)
-
-
 @pytest.mark.asyncio
 async def test_cohere_accepts_httpx_client_async() -> None:
     """Test that AsyncClientV2 accepts and passes through httpx_client parameter."""
@@ -183,3 +158,13 @@ async def test_cohere_accepts_httpx_client_async() -> None:
 
         # Verify AsyncClientV2 was instantiated with httpx_client
         mock_async_cohere.assert_called_once_with(api_key=api_key, httpx_client=mock_http_client)
+
+
+def test_patch_messages_with_invalid_tool_sequence_raises_error() -> None:
+    """Test that an invalid tool message sequence raises a ValueError."""
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "What's the weather?"},
+        {"role": "tool", "name": "get_weather", "content": "It's sunny", "tool_call_id": "call_123"},
+    ]
+    with pytest.raises(ValueError, match="A tool message must be preceded by an assistant message with tool_calls."):
+        _patch_messages(messages)

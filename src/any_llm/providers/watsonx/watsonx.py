@@ -1,8 +1,9 @@
 import os
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any
 
 try:
+    from ibm_watsonx_ai import APIClient as WatsonxClient
     from ibm_watsonx_ai import Credentials
     from ibm_watsonx_ai.foundation_models import ModelInference
 
@@ -14,11 +15,13 @@ from pydantic import BaseModel
 
 from any_llm.provider import Provider
 from any_llm.providers.watsonx.utils import (
+    _convert_models_list,
     _convert_pydantic_to_watsonx_json,
     _convert_response,
     _convert_streaming_chunk,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.model import Model
 
 
 class WatsonxProvider(Provider):
@@ -33,9 +36,23 @@ class WatsonxProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = PACKAGES_INSTALLED
+
+    async def _stream_completion_async(
+        self,
+        model_inference: ModelInference,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatCompletionChunk]:
+        """Handle streaming completion - extracted to avoid generator issues."""
+        response_stream = await model_inference.achat_stream(
+            messages=messages,
+            params=kwargs,
+        )
+        async for chunk in response_stream:
+            yield _convert_streaming_chunk(chunk)
 
     def _stream_completion(
         self,
@@ -50,6 +67,44 @@ class WatsonxProvider(Provider):
         )
         for chunk in response_stream:
             yield _convert_streaming_chunk(chunk)
+
+    async def acompletion(
+        self,
+        params: CompletionParams,
+        **kwargs: Any,
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        """Create a chat completion using Watsonx."""
+
+        model_inference = ModelInference(
+            model_id=params.model_id,
+            credentials=Credentials(
+                api_key=self.config.api_key,
+                url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL"),
+            ),
+            project_id=kwargs.get("project_id") or os.getenv("WATSONX_PROJECT_ID"),
+        )
+
+        # Handle response_format by inlining schema guidance into the prompt
+        response_format = params.response_format
+        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+            params.messages = _convert_pydantic_to_watsonx_json(response_format, params.messages)
+
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
+        if params.stream:
+            kwargs = {
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+                **kwargs,
+            }
+            return self._stream_completion_async(model_inference, params.messages, **kwargs)
+
+        response = await model_inference.achat(
+            messages=params.messages,
+            params=params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+        )
+
+        return _convert_response(response)
 
     def completion(
         self,
@@ -88,3 +143,28 @@ class WatsonxProvider(Provider):
         )
 
         return _convert_response(response)
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """
+        Fetch available models from the /v1/models endpoint.
+        """
+        client = WatsonxClient(
+            url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL"),
+            credentials=Credentials(
+                api_key=self.config.api_key, url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL")
+            ),
+        )
+        models_response = client.foundation_models.get_model_specs(**kwargs)
+
+        models_data: dict[str, Any]
+        if models_response is None:
+            models_data = {"resources": []}
+        elif hasattr(models_response, "__iter__") and not isinstance(models_response, dict):
+            models_list = list(models_response)
+            models_data = {"resources": models_list}
+        elif isinstance(models_response, dict):
+            models_data = models_response
+        else:
+            models_data = {"resources": [models_response]}
+
+        return _convert_models_list(models_data)
