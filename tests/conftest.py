@@ -19,7 +19,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.MISTRAL: "magistral-small-latest",
         LLMProvider.XAI: "grok-3-mini-latest",
         LLMProvider.OLLAMA: "qwen3:0.6b",
-        LLMProvider.OPENROUTER: "deepseek/deepseek-chat-v3.1:free",
+        LLMProvider.OPENROUTER: "deepseek/deepseek-r1:free",
         LLMProvider.LLAMAFILE: "N/A",
         LLMProvider.LLAMACPP: "N/A",
         LLMProvider.LMSTUDIO: "openai/gpt-oss-20b",  # You must have LM Studio running and the server enabled
