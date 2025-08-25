@@ -78,6 +78,7 @@ class ApiConfig(BaseModel):
 
     api_key: str | None = None
     api_base: str | None = None
+    default_query: dict[str, Any] | None = None
 
 
 class Provider(ABC):
