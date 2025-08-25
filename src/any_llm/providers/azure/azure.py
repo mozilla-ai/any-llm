@@ -46,7 +46,6 @@ class AzureProvider(Provider):
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Azure provider."""
         super().__init__(config)
-        self.api_version: str = os.getenv("AZURE_API_VERSION", "2024-08-01-preview")
 
     def _get_endpoint(self) -> str:
         """Get the Azure endpoint URL."""
@@ -59,20 +58,20 @@ class AzureProvider(Provider):
         )
         raise ValueError(msg)
 
-    def _create_chat_client_async(self) -> aio.ChatCompletionsClient:
+    def _create_chat_client_async(self, api_version: str) -> aio.ChatCompletionsClient:
         """Create and configure a ChatCompletionsClient."""
         return aio.ChatCompletionsClient(
             endpoint=self._get_endpoint(),
             credential=AzureKeyCredential(self.config.api_key or ""),
-            api_version=self.api_version,
+            api_version=api_version,
         )
 
-    def _create_embeddings_client_async(self) -> aio.EmbeddingsClient:
+    def _create_embeddings_client_async(self, api_version: str) -> aio.EmbeddingsClient:
         """Create and configure an EmbeddingsClient."""
         return aio.EmbeddingsClient(
             endpoint=self._get_endpoint(),
             credential=AzureKeyCredential(self.config.api_key or ""),
-            api_version=self.api_version,
+            api_version=api_version,
         )
 
     async def _stream_completion_async(
@@ -101,7 +100,8 @@ class AzureProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using Azure AI Inference SDK."""
-        client: aio.ChatCompletionsClient = self._create_chat_client_async()
+        api_version = os.getenv("AZURE_API_VERSION", kwargs.pop("api_version", "2024-02-15-preview"))
+        client: aio.ChatCompletionsClient = self._create_chat_client_async(api_version)
 
         if params.reasoning_effort == "auto":
             params.reasoning_effort = None
@@ -142,7 +142,8 @@ class AzureProvider(Provider):
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         """Create embeddings using Azure AI Inference SDK."""
-        client: aio.EmbeddingsClient = self._create_embeddings_client_async()
+        api_version = os.getenv("AZURE_API_VERSION", kwargs.pop("api_version", "2024-02-15-preview"))
+        client: aio.EmbeddingsClient = self._create_embeddings_client_async(api_version)
 
         response: EmbeddingsResult = await client.embed(
             model=model,

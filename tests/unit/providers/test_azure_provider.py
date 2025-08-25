@@ -60,6 +60,26 @@ async def test_azure_with_api_key_and_api_base() -> None:
 
 
 @pytest.mark.asyncio
+async def test_azure_with_api_version() -> None:
+    api_key = "test-api-key"
+    custom_endpoint = "https://test.eu.models.ai.azure.com"
+
+    messages = [{"role": "user", "content": "Hello"}]
+    with mock_azure_provider() as (_, _, mock_chat_client):
+        with patch("any_llm.providers.azure.azure.AzureKeyCredential") as mock_azure_key_credential:
+            provider = AzureProvider(ApiConfig(api_key=api_key, api_base=custom_endpoint))
+            await provider.acompletion(
+                CompletionParams(model_id="model-id", messages=messages), api_version="2025-04-01-preview"
+            )
+
+            mock_chat_client.assert_called_once_with(
+                endpoint=provider._get_endpoint(),
+                credential=mock_azure_key_credential(api_key),
+                api_version="2025-04-01-preview",
+            )
+
+
+@pytest.mark.asyncio
 async def test_azure_with_tools() -> None:
     api_key = "test-api-key"
     custom_endpoint = "https://aoairesource.openai.azure.com"
