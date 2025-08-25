@@ -49,6 +49,19 @@ def test_provider_enum_values_match_directory_names() -> None:
     )
 
 
+def test_provider_model_split() -> None:
+    """Test that model strings are split correctly into provider and model name."""
+    model_str = "ollama:model:tag"
+    provider, model_name = ProviderFactory.split_model_provider(model_str)
+    assert provider == ProviderName.OLLAMA
+    assert model_name == "model:tag"
+
+    model_str = "ollama/model:tag"
+    provider, model_name = ProviderFactory.split_model_provider(model_str)
+    assert provider == ProviderName.OLLAMA
+    assert model_name == "model:tag"
+
+
 def test_get_provider_enum_valid_provider() -> None:
     """Test get_provider_enum returns correct enum for valid provider."""
     provider_enum = ProviderFactory.get_provider_enum("openai")

@@ -344,9 +344,7 @@ class ProviderFactory:
         The legacy format will be deprecated in version 1.0.
         """
         # Check for new colon syntax first
-        if ":" in model:
-            provider, model_name = model.split(":", 1)
-        elif "/" in model:
+        if "/" in model:
             # Legacy slash syntax with deprecation warning
             warnings.warn(
                 f"Model format 'provider/model' is deprecated and will be removed in version 1.0. "
@@ -355,6 +353,8 @@ class ProviderFactory:
                 stacklevel=3,
             )
             provider, model_name = model.split("/", 1)
+        elif ":" in model:
+            provider, model_name = model.split(":", 1)
         else:
             msg = f"Invalid model format. Expected 'provider:model' or 'provider/model', got '{model}'"
             raise ValueError(msg)
