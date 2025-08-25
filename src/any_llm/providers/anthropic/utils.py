@@ -1,19 +1,15 @@
 import json
 from typing import Any
 
-try:
-    from anthropic.pagination import SyncPage
-    from anthropic.types import (
-        ContentBlockDeltaEvent,
-        ContentBlockStartEvent,
-        ContentBlockStopEvent,
-        Message,
-        MessageStopEvent,
-    )
-    from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
-except ImportError as exc:
-    msg = "anthropic is not installed. Please install it with `pip install any-llm-sdk[anthropic]`"
-    raise ImportError(msg) from exc
+from anthropic.pagination import SyncPage
+from anthropic.types import (
+    ContentBlockDeltaEvent,
+    ContentBlockStartEvent,
+    ContentBlockStopEvent,
+    Message,
+    MessageStopEvent,
+)
+from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.logging import logger

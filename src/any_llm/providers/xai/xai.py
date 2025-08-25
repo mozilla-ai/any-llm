@@ -5,6 +5,7 @@ from any_llm.provider import Provider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 from any_llm.types.model import Model
 
+MISSING_PACKAGES_ERROR = None
 try:
     from xai_sdk import AsyncClient as XaiAsyncClient
     from xai_sdk import Client as XaiClient
@@ -12,16 +13,15 @@ try:
     from xai_sdk.chat import Response as XaiResponse
     from xai_sdk.chat import assistant, required_tool, system, tool_result, user
 
-    from any_llm.providers.xai.utils import (
+    from .utils import (
         _convert_models_list,
         _convert_openai_tools_to_xai_tools,
         _convert_xai_chunk_to_anyllm_chunk,
         _convert_xai_completion_to_anyllm_response,
     )
 
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 
 class XaiProvider(Provider):
@@ -37,7 +37,7 @@ class XaiProvider(Provider):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     async def acompletion(
         self, params: CompletionParams, **kwargs: Any

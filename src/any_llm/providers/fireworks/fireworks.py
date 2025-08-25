@@ -1,18 +1,10 @@
 from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from typing import Any, cast
 
-try:
-    from fireworks import LLM
-
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
-
 from openai import AsyncOpenAI, AsyncStream, OpenAI
 from pydantic import BaseModel
 
 from any_llm.provider import Provider
-from any_llm.providers.fireworks.utils import _create_openai_chunk_from_fireworks_chunk
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -24,6 +16,14 @@ from any_llm.types.completion import (
 )
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponseStreamEvent
+
+MISSING_PACKAGES_ERROR = None
+try:
+    from fireworks import LLM
+
+    from .utils import _create_openai_chunk_from_fireworks_chunk
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 
 class FireworksProvider(Provider):
@@ -39,7 +39,7 @@ class FireworksProvider(Provider):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     async def _stream_completion_async(
         self, llm: "LLM", messages: list[dict[str, Any]], params: CompletionParams, **kwargs: Any

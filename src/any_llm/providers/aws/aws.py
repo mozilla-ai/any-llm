@@ -7,28 +7,27 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from any_llm.exceptions import MissingApiKeyError
+from any_llm.logging import logger
+from any_llm.provider import ApiConfig, Provider
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
+from any_llm.utils.instructor import _convert_instructor_response
 
+MISSING_PACKAGES_ERROR = None
 try:
     import boto3
     import instructor
 
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
-
-from any_llm.exceptions import MissingApiKeyError
-from any_llm.logging import logger
-from any_llm.provider import ApiConfig, Provider
-from any_llm.providers.aws.utils import (
-    _convert_kwargs,
-    _convert_messages,
-    _convert_response,
-    _create_openai_chunk_from_aws_chunk,
-    _create_openai_embedding_response_from_aws,
-)
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
-from any_llm.utils.instructor import _convert_instructor_response
+    from .utils import (
+        _convert_kwargs,
+        _convert_messages,
+        _convert_response,
+        _create_openai_chunk_from_aws_chunk,
+        _create_openai_embedding_response_from_aws,
+    )
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 
 class AwsProvider(Provider):
@@ -45,11 +44,12 @@ class AwsProvider(Provider):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize AWS Bedrock provider."""
         # This intentionally does not call super().__init__(config) because AWS has a different way of handling credentials
+        self._verify_no_missing_packages()
         self.config = config
         self.region_name = os.getenv("AWS_REGION", "us-east-1")
 

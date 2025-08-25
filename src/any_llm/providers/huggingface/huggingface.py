@@ -1,19 +1,7 @@
 from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import TYPE_CHECKING, Any
 
-try:
-    from huggingface_hub import AsyncInferenceClient, HfApi, InferenceClient
-
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
-
 from any_llm.provider import Provider
-from any_llm.providers.huggingface.utils import (
-    _convert_models_list,
-    _convert_params,
-    _create_openai_chunk_from_huggingface_chunk,
-)
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -23,6 +11,18 @@ from any_llm.types.completion import (
     CompletionUsage,
 )
 from any_llm.types.model import Model
+
+MISSING_PACKAGES_ERROR = None
+try:
+    from huggingface_hub import AsyncInferenceClient, HfApi, InferenceClient
+
+    from .utils import (
+        _convert_models_list,
+        _convert_params,
+        _create_openai_chunk_from_huggingface_chunk,
+    )
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
     from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
@@ -44,7 +44,7 @@ class HuggingfaceProvider(Provider):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     async def _stream_completion_async(
         self,

@@ -1,4 +1,3 @@
-import sys
 from contextlib import contextmanager
 from typing import Any, Literal
 from unittest.mock import AsyncMock, patch
@@ -7,7 +6,7 @@ import pytest
 from google.genai import types
 
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ApiConfig, ProviderFactory
+from any_llm.provider import ApiConfig
 from any_llm.providers.google.google import REASONING_EFFORT_TO_THINKING_BUDGETS, GoogleProvider
 from any_llm.types.completion import CompletionParams
 
@@ -152,25 +151,6 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
         assert contents[0].role == "user"
         assert contents[1].role == "model"
         assert contents[2].role == "function"
-
-
-def test_provider_with_no_packages_installed() -> None:
-    with patch.dict(sys.modules, dict.fromkeys(["google"])):
-        try:
-            import any_llm.providers.google  # noqa: F401
-        except ImportError:
-            pytest.fail("Import raised an unexpected ImportError")
-
-
-def test_call_to_provider_with_no_packages_installed() -> None:
-    packages = ["google"]
-    with patch.dict(sys.modules, dict.fromkeys(packages)):
-        # Ensure a fresh import under the patched environment so PACKAGES_INSTALLED is recalculated
-        for mod in list(sys.modules):
-            if mod.startswith("any_llm.providers.google"):
-                sys.modules.pop(mod)
-        with pytest.raises(ImportError, match="google required packages are not installed"):
-            ProviderFactory.create_provider("google", ApiConfig())
 
 
 @pytest.mark.parametrize(

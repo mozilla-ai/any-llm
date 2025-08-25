@@ -118,16 +118,19 @@ class Provider(ABC):
     """
 
     # === Internal Flag Checks ===
-    PACKAGES_INSTALLED: bool
+    MISSING_PACKAGES_ERROR: ImportError | None = None
     """Some providers use SDKs that are not installed by default.
     This flag is used to check if the packages are installed before instantiating the provider.
     """
 
     def __init__(self, config: ApiConfig) -> None:
-        if not self.PACKAGES_INSTALLED:
-            msg = f"{self.PROVIDER_NAME} required packages are not installed. Please install them with `pip install any-llm-sdk[{self.PROVIDER_NAME}]`"
-            raise ImportError(msg)
+        self._verify_no_missing_packages()
         self.config = self._verify_and_set_api_key(config)
+
+    def _verify_no_missing_packages(self) -> None:
+        if self.MISSING_PACKAGES_ERROR is not None:
+            msg = f"{self.PROVIDER_NAME} required packages are not installed. Please install them with `pip install any-llm-sdk[{self.PROVIDER_NAME}]`"
+            raise ImportError(msg) from self.MISSING_PACKAGES_ERROR
 
     def _verify_and_set_api_key(self, config: ApiConfig) -> ApiConfig:
         # Standardized API key handling. Splitting into its own function so that providers

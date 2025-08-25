@@ -1,11 +1,7 @@
 from typing import Any
 
-try:
-    from cerebras.cloud.sdk.types import ModelListResponse as CerebrasModelListResponse
-    from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponse
-except ImportError as exc:
-    msg = "cerebras is not installed. Please install it with `pip install any-llm-sdk[cerebras]`"
-    raise ImportError(msg) from exc
+from cerebras.cloud.sdk.types import ModelListResponse as CerebrasModelListResponse
+from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponse
 
 from any_llm.types.completion import (
     ChatCompletion,

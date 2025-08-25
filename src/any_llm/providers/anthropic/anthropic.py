@@ -1,22 +1,22 @@
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
+from any_llm.provider import Provider
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.model import Model
+
+MISSING_PACKAGES_ERROR = None
 try:
     from anthropic import Anthropic, AsyncAnthropic
 
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
-
-from any_llm.provider import Provider
-from any_llm.providers.anthropic.utils import (
-    _convert_models_list,
-    _convert_params,
-    _convert_response,
-    _create_openai_chunk_from_anthropic_chunk,
-)
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
-from any_llm.types.model import Model
+    from .utils import (
+        _convert_models_list,
+        _convert_params,
+        _convert_response,
+        _create_openai_chunk_from_anthropic_chunk,
+    )
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 
 class AnthropicProvider(Provider):
@@ -37,7 +37,7 @@ class AnthropicProvider(Provider):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     async def _stream_completion_async(
         self, client: "AsyncAnthropic", **kwargs: Any

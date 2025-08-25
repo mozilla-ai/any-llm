@@ -1,25 +1,25 @@
 from collections.abc import AsyncIterator, Iterator
 from typing import TYPE_CHECKING, Any, cast
 
-try:
-    import instructor
-    import together
-
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
-
 from any_llm.provider import Provider
-from any_llm.providers.together.utils import (
-    _convert_together_response_to_chat_completion,
-    _create_openai_chunk_from_together_chunk,
-)
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
     CompletionParams,
 )
 from any_llm.utils.instructor import _convert_instructor_response
+
+MISSING_PACKAGES_ERROR = None
+try:
+    import instructor
+    import together
+
+    from .utils import (
+        _convert_together_response_to_chat_completion,
+        _create_openai_chunk_from_together_chunk,
+    )
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
     from together.types import (
@@ -40,7 +40,7 @@ class TogetherProvider(Provider):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     async def _stream_completion_async(
         self,

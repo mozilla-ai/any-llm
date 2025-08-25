@@ -1,33 +1,36 @@
-from collections.abc import AsyncIterator, Sequence
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any, cast
 
 from openai import AsyncOpenAI, AsyncStream
 from pydantic import BaseModel
 
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.provider import Provider
 from any_llm.types.responses import Response, ResponseStreamEvent
 
+MISSING_PACKAGES_ERROR = None
 try:
     import groq
-    from groq import AsyncStream as GroqAsyncStream
 
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
-
-
-from any_llm.provider import Provider
-from any_llm.providers.groq.utils import (
-    _convert_models_list,
-    _create_openai_chunk_from_groq_chunk,
-    to_chat_completion,
-)
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
-from any_llm.types.model import Model
+    from .utils import (
+        _convert_models_list,
+        _create_openai_chunk_from_groq_chunk,
+        to_chat_completion,
+    )
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Sequence
+
+    import groq  # noqa: TC004
+    from groq import AsyncStream as GroqAsyncStream
     from groq.types.chat import ChatCompletion as GroqChatCompletion
     from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
+
+    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+    from any_llm.types.model import Model
 
 
 class GroqProvider(Provider):
@@ -44,7 +47,7 @@ class GroqProvider(Provider):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     async def _stream_async_completion(
         self, client: groq.AsyncGroq, params: CompletionParams, **kwargs: Any

@@ -1,28 +1,34 @@
+from __future__ import annotations
+
 import json
 import os
-from collections.abc import AsyncIterator, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from pydantic import BaseModel
+
+from any_llm.provider import ApiConfig, Provider
+
+MISSING_PACKAGES_ERROR = None
 try:
     from ollama import AsyncClient, Client
-    from ollama import ChatResponse as OllamaChatResponse
 
-    from any_llm.providers.ollama.utils import (
+    from .utils import (
         _convert_models_list,
         _create_chat_completion_from_ollama_response,
         _create_openai_chunk_from_ollama_chunk,
         _create_openai_embedding_response_from_ollama,
     )
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Sequence
 
-from pydantic import BaseModel
+    from ollama import AsyncClient, Client  # noqa: TC004
+    from ollama import ChatResponse as OllamaChatResponse
 
-from any_llm.provider import ApiConfig, Provider
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
-from any_llm.types.model import Model
+    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+    from any_llm.types.model import Model
 
 
 class OllamaProvider(Provider):
@@ -44,10 +50,11 @@ class OllamaProvider(Provider):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     def __init__(self, config: ApiConfig) -> None:
         """We don't use the Provider init because by default we don't require an API key."""
+        self._verify_no_missing_packages()
 
         self.url = config.api_base or os.getenv("OLLAMA_API_URL")
 

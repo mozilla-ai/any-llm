@@ -1,26 +1,31 @@
+from __future__ import annotations
+
 import os
-from collections.abc import AsyncIterable, AsyncIterator
 from typing import TYPE_CHECKING, Any, cast
 
+from any_llm.provider import ApiConfig, Provider
+
+MISSING_PACKAGES_ERROR = None
 try:
     from azure.ai.inference import aio
     from azure.core.credentials import AzureKeyCredential
 
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
-
-from any_llm.provider import ApiConfig, Provider
-from any_llm.providers.azure.utils import (
-    _convert_response,
-    _convert_response_format,
-    _create_openai_chunk_from_azure_chunk,
-    _create_openai_embedding_response_from_azure,
-)
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+    from .utils import (
+        _convert_response,
+        _convert_response_format,
+        _create_openai_chunk_from_azure_chunk,
+        _create_openai_embedding_response_from_azure,
+    )
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterable, AsyncIterator
+
+    from azure.ai.inference import aio  # noqa: TC004
     from azure.ai.inference.models import ChatCompletions, EmbeddingsResult, StreamingChatCompletionsUpdate
+
+    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 
 
 class AzureProvider(Provider):
@@ -36,7 +41,7 @@ class AzureProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_LIST_MODELS = False
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Azure provider."""

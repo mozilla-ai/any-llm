@@ -3,25 +3,25 @@ from typing import Any, cast
 
 from pydantic import BaseModel
 
+from any_llm.exceptions import UnsupportedParameterError
+from any_llm.provider import ApiConfig, Provider
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.model import Model
+from any_llm.utils.instructor import _convert_instructor_response
+
+MISSING_PACKAGES_ERROR = None
 try:
     import cerebras.cloud.sdk as cerebras
     import instructor
     from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponse
 
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
-
-from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ApiConfig, Provider
-from any_llm.providers.cerebras.utils import (
-    _convert_models_list,
-    _convert_response,
-    _create_openai_chunk_from_cerebras_chunk,
-)
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
-from any_llm.types.model import Model
-from any_llm.utils.instructor import _convert_instructor_response
+    from .utils import (
+        _convert_models_list,
+        _convert_response,
+        _create_openai_chunk_from_cerebras_chunk,
+    )
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 
 class CerebrasProvider(Provider):
@@ -38,7 +38,7 @@ class CerebrasProvider(Provider):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Cerebras provider."""

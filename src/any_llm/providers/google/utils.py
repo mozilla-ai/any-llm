@@ -2,6 +2,9 @@ import json
 from time import time
 from typing import Any
 
+from google.genai import types
+from google.genai.pagers import Pager
+
 from any_llm.types.completion import (
     ChatCompletionChunk,
     ChoiceDelta,
@@ -12,13 +15,6 @@ from any_llm.types.completion import (
     Usage,
 )
 from any_llm.types.model import Model
-
-try:
-    from google.genai import types
-    from google.genai.pagers import Pager
-except ImportError as exc:
-    msg = "google-genai is not installed. Please install it with `pip install any-llm-sdk[google]`"
-    raise ImportError(msg) from exc
 
 
 def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[types.Tool]:

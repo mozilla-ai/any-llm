@@ -1,11 +1,10 @@
-import sys
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from any_llm.provider import ApiConfig, ProviderFactory
+from any_llm.provider import ApiConfig
 from any_llm.types.completion import ChatCompletion, CompletionParams
 
 
@@ -24,21 +23,6 @@ def mock_xai_provider():  # type: ignore[no-untyped-def]
         mock_xai.return_value.chat.create = MagicMock(return_value=create_return)
 
         yield mock_xai, mock_response
-
-
-def test_provider_with_no_packages_installed() -> None:
-    with patch.dict(sys.modules, dict.fromkeys(["xai_sdk"])):
-        try:
-            import any_llm.providers.xai  # noqa: F401
-        except ImportError:
-            pytest.fail("Import raised an unexpected ImportError")
-
-
-def test_call_to_provider_with_no_packages_installed() -> None:
-    packages = ["xai_sdk"]
-    with patch.dict(sys.modules, dict.fromkeys(packages)):
-        with pytest.raises(ImportError, match="xai required packages are not installed"):
-            ProviderFactory.create_provider("xai", ApiConfig())
 
 
 @pytest.mark.asyncio

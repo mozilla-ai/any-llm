@@ -1,11 +1,8 @@
-import sys
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import patch
 
-import pytest
-
-from any_llm.provider import ApiConfig, ProviderFactory
+from any_llm.provider import ApiConfig
 from any_llm.providers.huggingface.huggingface import HuggingfaceProvider
 from any_llm.types.completion import CompletionParams
 
@@ -82,25 +79,6 @@ def test_huggingface_with_max_tokens() -> None:
         mock_huggingface.return_value.chat_completion.assert_called_with(
             model="model-id", messages=messages, max_new_tokens=100
         )
-
-
-def test_provider_with_no_packages_installed() -> None:
-    with patch.dict(sys.modules, dict.fromkeys(["huggingface_hub"])):
-        try:
-            import any_llm.providers.huggingface  # noqa: F401
-        except ImportError:
-            pytest.fail("Import raised an unexpected ImportError")
-
-
-def test_call_to_provider_with_no_packages_installed() -> None:
-    packages = ["huggingface_hub"]
-    with patch.dict(sys.modules, dict.fromkeys(packages)):
-        # Ensure a fresh import under the patched environment so PACKAGES_INSTALLED is recalculated
-        for mod in list(sys.modules):
-            if mod.startswith("any_llm.providers.huggingface"):
-                sys.modules.pop(mod)
-        with pytest.raises(ImportError, match="huggingface required packages are not installed"):
-            ProviderFactory.create_provider("huggingface", ApiConfig())
 
 
 def test_huggingface_with_timeout() -> None:

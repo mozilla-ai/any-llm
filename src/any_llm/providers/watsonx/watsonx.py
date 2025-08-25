@@ -1,27 +1,34 @@
-import os
-from collections.abc import AsyncIterator, Iterator, Sequence
-from typing import Any
+from __future__ import annotations
 
+import os
+from typing import TYPE_CHECKING, Any
+
+from pydantic import BaseModel
+
+from any_llm.provider import Provider
+
+MISSING_PACKAGES_ERROR = None
 try:
     from ibm_watsonx_ai import APIClient as WatsonxClient
     from ibm_watsonx_ai import Credentials
     from ibm_watsonx_ai.foundation_models import ModelInference
 
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
+    from .utils import (
+        _convert_models_list,
+        _convert_pydantic_to_watsonx_json,
+        _convert_response,
+        _convert_streaming_chunk,
+    )
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
-from pydantic import BaseModel
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterator, Sequence
 
-from any_llm.provider import Provider
-from any_llm.providers.watsonx.utils import (
-    _convert_models_list,
-    _convert_pydantic_to_watsonx_json,
-    _convert_response,
-    _convert_streaming_chunk,
-)
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
-from any_llm.types.model import Model
+    from ibm_watsonx_ai import APIClient as WatsonxClient  # noqa: TC004
+
+    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+    from any_llm.types.model import Model
 
 
 class WatsonxProvider(Provider):
@@ -38,7 +45,7 @@ class WatsonxProvider(Provider):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     async def _stream_completion_async(
         self,

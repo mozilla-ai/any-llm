@@ -2,19 +2,19 @@ import os
 from collections.abc import AsyncIterator
 from typing import Any, cast
 
-try:
-    import instructor
-
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
-
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 from any_llm.utils.instructor import _convert_instructor_response
+
+MISSING_PACKAGES_ERROR = None
+try:
+    import instructor
+
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 
 class SambanovaProvider(BaseOpenAIProvider):
@@ -23,7 +23,7 @@ class SambanovaProvider(BaseOpenAIProvider):
     PROVIDER_NAME = "sambanova"
     PROVIDER_DOCUMENTATION_URL = "https://sambanova.ai/"
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     async def acompletion(
         self, params: CompletionParams, **kwargs: Any

@@ -1,19 +1,18 @@
 from collections.abc import AsyncIterator
 from typing import Any
 
+from any_llm.provider import Provider
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+
+MISSING_PACKAGES_ERROR = None
 try:
     from voyageai.client_async import AsyncClient
 
-    from any_llm.providers.voyage.utils import (
+    from .utils import (
         _create_openai_embedding_response_from_voyage,
     )
-
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
-
-from any_llm.provider import Provider
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 
 class VoyageProvider(Provider):
@@ -32,7 +31,7 @@ class VoyageProvider(Provider):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = False
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     async def aembedding(
         self,

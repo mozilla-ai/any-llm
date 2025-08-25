@@ -1,29 +1,34 @@
-from collections.abc import AsyncIterator, Sequence
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
-
-try:
-    from mistralai import Mistral
-    from mistralai.extra import response_format_from_pydantic_model
-
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
 
 from pydantic import BaseModel
 
 from any_llm.provider import Provider
-from any_llm.providers.mistral.utils import (
-    _convert_models_list,
-    _create_mistral_completion_from_response,
-    _create_openai_chunk_from_mistral_chunk,
-    _create_openai_embedding_response_from_mistral,
-    _patch_messages,
-)
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
-from any_llm.types.model import Model
+
+MISSING_PACKAGES_ERROR = None
+try:
+    from mistralai import Mistral
+    from mistralai.extra import response_format_from_pydantic_model
+
+    from .utils import (
+        _convert_models_list,
+        _create_mistral_completion_from_response,
+        _create_openai_chunk_from_mistral_chunk,
+        _create_openai_embedding_response_from_mistral,
+        _patch_messages,
+    )
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Sequence
+
+    from mistralai import Mistral  # noqa: TC004
     from mistralai.models.embeddingresponse import EmbeddingResponse
+
+    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+    from any_llm.types.model import Model
 
 
 class MistralProvider(Provider):
@@ -40,7 +45,7 @@ class MistralProvider(Provider):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     async def _stream_completion_async(
         self, client: Mistral, model: str, messages: list[dict[str, Any]], **kwargs: Any

@@ -2,27 +2,10 @@ import os
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
-try:
-    from google import genai
-    from google.genai import types
-
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
-
 from pydantic import BaseModel
 
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.provider import ApiConfig, Provider
-from any_llm.providers.google.utils import (
-    _convert_messages,
-    _convert_models_list,
-    _convert_response_to_response_dict,
-    _convert_tool_choice,
-    _convert_tool_spec,
-    _create_openai_chunk_from_google_chunk,
-    _create_openai_embedding_response_from_google,
-)
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -37,6 +20,23 @@ from any_llm.types.completion import (
     Reasoning,
 )
 from any_llm.types.model import Model
+
+MISSING_PACKAGES_ERROR = None
+try:
+    from google import genai
+    from google.genai import types
+
+    from .utils import (
+        _convert_messages,
+        _convert_models_list,
+        _convert_response_to_response_dict,
+        _convert_tool_choice,
+        _convert_tool_spec,
+        _create_openai_chunk_from_google_chunk,
+        _create_openai_embedding_response_from_google,
+    )
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 # From https://ai.google.dev/gemini-api/docs/openai#thinking
 REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 256, "low": 1024, "medium": 8192, "high": 24576}
@@ -56,14 +56,12 @@ class GoogleProvider(Provider):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Google GenAI provider."""
 
-        if not self.PACKAGES_INSTALLED:
-            msg = "google required packages are not installed"
-            raise ImportError(msg)
+        self._verify_no_missing_packages()
 
         self.use_vertex_ai = os.getenv("GOOGLE_USE_VERTEX_AI", "false").lower() == "true"
 

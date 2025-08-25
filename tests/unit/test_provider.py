@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -96,7 +97,7 @@ def test_all_providers_have_required_attributes(provider: str) -> None:
 
     assert provider_instance.PROVIDER_NAME is not None
     assert provider_instance.PROVIDER_DOCUMENTATION_URL is not None
-    assert provider_instance.PACKAGES_INSTALLED is not None
+    assert provider_instance.MISSING_PACKAGES_ERROR is None
     assert provider_instance.SUPPORTS_COMPLETION is not None
     assert provider_instance.SUPPORTS_COMPLETION_STREAMING is not None
     assert provider_instance.SUPPORTS_COMPLETION_REASONING is not None
@@ -110,3 +111,38 @@ def test_providers_raise_MissingApiKeyError(provider: str) -> None:
     with patch.dict(os.environ, {}, clear=True):
         with pytest.raises(MissingApiKeyError):
             ProviderFactory.create_provider(provider, ApiConfig())
+
+
+@pytest.mark.parametrize(
+    ("provider_name", "module_name"),
+    [
+        ("anthropic", "anthropic"),
+        ("aws", "boto3"),
+        ("azure", "azure"),
+        ("cerebras", "cerebras"),
+        ("cohere", "cohere"),
+        ("fireworks", "fireworks"),
+        ("google", "google"),
+        ("groq", "groq"),
+        ("huggingface", "huggingface_hub"),
+        ("mistral", "mistralai"),
+        ("ollama", "ollama"),
+        ("sambanova", "instructor"),
+        ("together", "together"),
+        ("voyage", "voyageai"),
+        ("watsonx", "ibm_watsonx_ai"),
+        ("xai", "xai_sdk"),
+    ],
+)
+def test_providers_raise_ImportError_from_original(provider_name: str, module_name: str) -> None:
+    with patch.dict(sys.modules, {module_name: None}):
+        for mod in list(sys.modules):
+            if mod.startswith((f"any_llm.providers.{provider_name}", f"{module_name}.")):
+                sys.modules.pop(mod)
+        with pytest.raises(ImportError) as e:
+            ProviderFactory.create_provider(provider_name, ApiConfig(api_key="test_key"))
+        original_error = e.value.__cause__
+        assert any(
+            msg in str(original_error)
+            for msg in [f"import of {module_name} halted", f"'{module_name}' is not a package"]
+        )

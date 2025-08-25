@@ -1,4 +1,3 @@
-import sys
 from contextlib import contextmanager
 from typing import Any, Literal
 from unittest.mock import AsyncMock, Mock, patch
@@ -6,7 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ApiConfig, ProviderFactory
+from any_llm.provider import ApiConfig
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.utils import DEFAULT_MAX_TOKENS, REASONING_EFFORT_TO_THINKING_BUDGETS
 from any_llm.types.completion import CompletionParams
@@ -159,25 +158,6 @@ async def test_completion_with_tool_choice_and_parallel_tool_calls(parallel_tool
             **expected_kwargs,
             max_tokens=DEFAULT_MAX_TOKENS,
         )
-
-
-def test_provider_with_no_packages_installed() -> None:
-    with patch.dict(sys.modules, dict.fromkeys(["anthropic"])):
-        try:
-            import any_llm.providers.anthropic  # noqa: F401
-        except ImportError:
-            pytest.fail("Import raised an unexpected ImportError")
-
-
-def test_call_to_provider_with_no_packages_installed() -> None:
-    packages = ["instructor", "anthropic"]
-    with patch.dict(sys.modules, dict.fromkeys(packages)):
-        # Ensure a fresh import under the patched environment so PACKAGES_INSTALLED is recalculated
-        for mod in list(sys.modules):
-            if mod.startswith("any_llm.providers.anthropic"):
-                sys.modules.pop(mod)
-        with pytest.raises(ImportError, match="anthropic required packages are not installed"):
-            ProviderFactory.create_provider("anthropic", ApiConfig())
 
 
 @pytest.mark.asyncio

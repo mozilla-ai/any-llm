@@ -3,23 +3,23 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from any_llm.exceptions import UnsupportedParameterError
+from any_llm.provider import ApiConfig, Provider
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.model import Model
+
+MISSING_PACKAGES_ERROR = None
 try:
     import cohere
 
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
-
-from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ApiConfig, Provider
-from any_llm.providers.cohere.utils import (
-    _convert_models_list,
-    _convert_response,
-    _create_openai_chunk_from_cohere_chunk,
-    _patch_messages,
-)
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
-from any_llm.types.model import Model
+    from .utils import (
+        _convert_models_list,
+        _convert_response,
+        _create_openai_chunk_from_cohere_chunk,
+        _patch_messages,
+    )
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 
 class CohereProvider(Provider):
@@ -36,7 +36,7 @@ class CohereProvider(Provider):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Cohere provider."""
