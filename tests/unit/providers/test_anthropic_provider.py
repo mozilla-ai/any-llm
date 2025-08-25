@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from typing import Any, Literal
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 
 from any_llm.exceptions import UnsupportedParameterError
@@ -237,3 +238,47 @@ async def test_response_format_raises_error() -> None:
                 response_format={"type": "json_object"},
             )
         )
+
+
+def test_anthropic_accepts_http_client() -> None:
+    """Test that Anthropic client accepts and passes through http_client."""
+    api_key = "test-api-key"
+    mock_http_client = Mock(spec=httpx.Client)
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(ApiConfig(api_key=api_key))
+        provider.completion(
+            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]),
+            http_client=mock_http_client,
+        )
+
+        # Verify Anthropic client was instantiated with http_client
+        mock_anthropic.assert_called_once_with(api_key=api_key, base_url=None, http_client=mock_http_client)
+
+
+@pytest.mark.asyncio
+async def test_anthropic_accepts_http_client_async() -> None:
+    """Test that AsyncAnthropic client accepts and passes through http_client."""
+    api_key = "test-api-key"
+    mock_http_client = Mock(spec=httpx.AsyncClient)
+
+    with (
+        patch("any_llm.providers.anthropic.anthropic.AsyncAnthropic") as mock_async_anthropic,
+        patch("any_llm.providers.anthropic.anthropic._convert_response"),
+        patch(
+            "any_llm.providers.anthropic.anthropic._convert_params",
+            return_value={"model": "test", "messages": [], "max_tokens": 100},
+        ),
+    ):
+        mock_client = Mock()
+        mock_async_anthropic.return_value = mock_client
+        mock_client.messages.create = Mock(return_value=Mock())
+
+        provider = AnthropicProvider(ApiConfig(api_key=api_key))
+        await provider.acompletion(
+            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]),
+            http_client=mock_http_client,
+        )
+
+        # Verify AsyncAnthropic client was instantiated with http_client
+        mock_async_anthropic.assert_called_once_with(api_key=api_key, base_url=None, http_client=mock_http_client)

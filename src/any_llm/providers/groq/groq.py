@@ -73,7 +73,14 @@ class GroqProvider(Provider):
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using Groq."""
-        client = groq.AsyncGroq(api_key=self.config.api_key)
+        # Extract http_client from kwargs to pass to Groq client
+        http_client = kwargs.pop("http_client", None)
+
+        client = groq.AsyncGroq(
+            api_key=self.config.api_key,
+            base_url=self.config.api_base,
+            http_client=http_client,
+        )
 
         if params.reasoning_effort == "auto":
             params.reasoning_effort = None
@@ -115,9 +122,13 @@ class GroqProvider(Provider):
             parameter = "max_tool_calls"
             raise UnsupportedParameterError(parameter, self.PROVIDER_NAME)
 
+        # Extract http_client from kwargs
+        http_client = kwargs.pop("http_client", None)
+
         client = AsyncOpenAI(
             base_url="https://api.groq.com/openai/v1",
             api_key=self.config.api_key,
+            http_client=http_client,
         )
 
         response = await client.responses.create(
@@ -136,6 +147,13 @@ class GroqProvider(Provider):
         """
         Fetch available models from the /v1/models endpoint.
         """
-        client = groq.Groq(api_key=self.config.api_key)
+        # Extract http_client from kwargs to pass to Groq client
+        http_client = kwargs.pop("http_client", None)
+
+        client = groq.Groq(
+            api_key=self.config.api_key,
+            base_url=self.config.api_base,
+            http_client=http_client,
+        )
         models_list = client.models.list(**kwargs)
         return _convert_models_list(models_list)

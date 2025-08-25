@@ -41,12 +41,19 @@ class CohereProvider(Provider):
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Cohere provider."""
         super().__init__(config)
-        self.client = cohere.ClientV2(api_key=config.api_key)
+        # Note: httpx_client must be passed at method call time for Cohere
+        self.client = None
 
     async def _stream_completion_async(
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any
     ) -> AsyncIterator[ChatCompletionChunk]:
-        client = cohere.AsyncClientV2(api_key=self.config.api_key)
+        # Extract httpx_client from kwargs
+        httpx_client = kwargs.pop("httpx_client", None)
+
+        client = cohere.AsyncClientV2(
+            api_key=self.config.api_key,
+            httpx_client=httpx_client,
+        )
 
         cohere_stream = client.chat_stream(
             model=model,
@@ -98,7 +105,14 @@ class CohereProvider(Provider):
                 **kwargs,
             )
 
-        client = cohere.AsyncClientV2(api_key=self.config.api_key)
+        # Extract httpx_client from kwargs for non-streaming
+        # Note: Cohere SDK uses 'httpx_client' parameter
+        httpx_client = kwargs.pop("httpx_client", None)
+
+        client = cohere.AsyncClientV2(
+            api_key=self.config.api_key,
+            httpx_client=httpx_client,
+        )
 
         # note: ClientV2.chat does not have a `stream` parameter
         response = await client.chat(
@@ -114,5 +128,13 @@ class CohereProvider(Provider):
         """
         Fetch available models from the /v1/models endpoint.
         """
-        model_list = self.client.models.list(**kwargs)
+        # Extract httpx_client from kwargs
+        httpx_client = kwargs.pop("httpx_client", None)
+
+        client = cohere.ClientV2(
+            api_key=self.config.api_key,
+            httpx_client=httpx_client,
+        )
+
+        model_list = client.models.list(**kwargs)
         return _convert_models_list(model_list)

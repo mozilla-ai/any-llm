@@ -55,7 +55,14 @@ class AnthropicProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using Anthropic with instructor support."""
-        client = AsyncAnthropic(api_key=self.config.api_key, base_url=self.config.api_base)
+        # Extract http_client from kwargs to pass to Anthropic client
+        http_client = kwargs.pop("http_client", None)
+
+        client = AsyncAnthropic(
+            api_key=self.config.api_key,
+            base_url=self.config.api_base,
+            http_client=http_client,
+        )
 
         kwargs["provider_name"] = self.PROVIDER_NAME
         converted_kwargs = _convert_params(params, **kwargs)
@@ -69,6 +76,13 @@ class AnthropicProvider(Provider):
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """List available models from Anthropic."""
-        client = Anthropic(api_key=self.config.api_key, base_url=self.config.api_base)
+        # Extract http_client from kwargs to pass to Anthropic client
+        http_client = kwargs.pop("http_client", None)
+
+        client = Anthropic(
+            api_key=self.config.api_key,
+            base_url=self.config.api_base,
+            http_client=http_client,
+        )
         models_list = client.models.list(**kwargs)
         return _convert_models_list(models_list)
