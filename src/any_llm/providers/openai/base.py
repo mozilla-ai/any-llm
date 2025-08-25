@@ -37,6 +37,20 @@ class BaseOpenAIProvider(Provider, ABC):
 
     _DEFAULT_REASONING_EFFORT: Literal["minimal", "low", "medium", "high", "auto"] | None = None
 
+    @property
+    def openai_client(self) -> OpenAI:
+        return OpenAI(
+            base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
+            api_key=self.config.api_key,
+        )
+
+    @property
+    def async_openai_client(self) -> AsyncOpenAI:
+        return AsyncOpenAI(
+            base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
+            api_key=self.config.api_key,
+        )
+
     def _convert_completion_response_async(
         self, response: OpenAIChatCompletion | AsyncStream[OpenAIChatCompletionChunk]
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
@@ -61,10 +75,7 @@ class BaseOpenAIProvider(Provider, ABC):
     async def acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        client = AsyncOpenAI(
-            base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
-            api_key=self.config.api_key,
-        )
+        client = self.async_openai_client
 
         if params.reasoning_effort == "auto":
             params.reasoning_effort = self._DEFAULT_REASONING_EFFORT
@@ -93,10 +104,8 @@ class BaseOpenAIProvider(Provider, ABC):
         self, model: str, input_data: Any, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call OpenAI Responses API"""
-        client = AsyncOpenAI(
-            base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
-            api_key=self.config.api_key,
-        )
+        client = self.async_openai_client
+
         response = await client.responses.create(
             model=model,
             input=input_data,
@@ -118,10 +127,8 @@ class BaseOpenAIProvider(Provider, ABC):
             msg = "This provider does not support embeddings."
             raise NotImplementedError(msg)
 
-        client = AsyncOpenAI(
-            base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
-            api_key=self.config.api_key,
-        )
+        client = self.async_openai_client
+
         return await client.embeddings.create(
             model=model,
             input=inputs,
@@ -136,8 +143,6 @@ class BaseOpenAIProvider(Provider, ABC):
         if not self.SUPPORTS_LIST_MODELS:
             message = f"{self.PROVIDER_NAME} does not support listing models."
             raise NotImplementedError(message)
-        client = OpenAI(
-            base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
-            api_key=self.config.api_key,
-        )
+        client = self.openai_client
+
         return client.models.list(**kwargs).data
