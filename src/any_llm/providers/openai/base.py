@@ -64,6 +64,7 @@ class BaseOpenAIProvider(Provider, ABC):
         client = AsyncOpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,
+            http_client=kwargs.pop("http_client", None),
         )
 
         if params.reasoning_effort == "auto":
@@ -96,6 +97,7 @@ class BaseOpenAIProvider(Provider, ABC):
         client = AsyncOpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,
+            http_client=kwargs.pop("http_client", None),
         )
         response = await client.responses.create(
             model=model,
@@ -121,6 +123,7 @@ class BaseOpenAIProvider(Provider, ABC):
         client = AsyncOpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,
+            http_client=kwargs.pop("http_client", None),
         )
         return await client.embeddings.create(
             model=model,
@@ -136,8 +139,10 @@ class BaseOpenAIProvider(Provider, ABC):
         if not self.SUPPORTS_LIST_MODELS:
             message = f"{self.PROVIDER_NAME} does not support listing models."
             raise NotImplementedError(message)
+
         client = OpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,
+            http_client=kwargs.pop("http_client", None),
         )
         return client.models.list(**kwargs).data
