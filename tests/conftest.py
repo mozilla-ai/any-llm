@@ -20,6 +20,7 @@ def provider_reasoning_model_map() -> dict[ProviderName, str]:
         ProviderName.LLAMAFILE: "N/A",
         ProviderName.LLAMACPP: "N/A",
         ProviderName.LMSTUDIO: "openai/gpt-oss-20b",  # You must have LM Studio running and the server enabled
+        ProviderName.AZUREOPENAI: "azure/<your_deployment_name>",
     }
 
 
