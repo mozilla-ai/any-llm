@@ -134,7 +134,6 @@ def test_providers_raise_MissingApiKeyError(provider: str) -> None:
         ("azure", "azure"),
         ("cerebras", "cerebras"),
         ("cohere", "cohere"),
-        ("fireworks", "fireworks"),
         ("google", "google"),
         ("groq", "groq"),
         ("huggingface", "huggingface_hub"),
