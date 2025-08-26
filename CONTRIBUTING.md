@@ -20,7 +20,7 @@ We welcome all kinds of contributions, from improving customization, to extendin
 **Maintainers reserve the right to close issues and PRs that do not align with the library roadmap.**
 
 ### Code Clarity and Style
-- **Readbility first:** Code must be self-documenting—if it is not self-explanatory, it should include clear, concise comments where logic is non-obvious.
+- **Readability first:** Code must be self-documenting—if it is not self-explanatory, it should include clear, concise comments where logic is non-obvious.
 - **Consistent Style:** Follow existing codebase style (e.g., function naming, docstring format)
 - **No dead/debug code:** Remove commented-out blocks, leftover print statements, unrelated refactors
 - Failure modes must be documented and handled with robust exception handling.
