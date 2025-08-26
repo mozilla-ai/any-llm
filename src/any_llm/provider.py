@@ -1,5 +1,6 @@
 # Inspired by https://github.com/andrewyng/aisuite/tree/main/aisuite
 import asyncio
+import builtins
 import importlib
 import logging
 import os
@@ -25,6 +26,9 @@ from any_llm.types.responses import Response, ResponseInputParam, ResponseStream
 from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
 
 logger = logging.getLogger(__name__)
+
+
+INSIDE_NOTEBOOK = hasattr(builtins, "__IPYTHON__")
 
 
 class ProviderName(StrEnum):
@@ -177,18 +181,11 @@ class Provider(ABC):
         Returns:
             The response from the API call
         """
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            # No running event loop - this is what we want for sync execution
-            response = run_async_in_sync(self.acompletion(params, **kwargs))
-            if isinstance(response, ChatCompletion):
-                return response
+        response = run_async_in_sync(self.acompletion(params, **kwargs), allow_running_loop=INSIDE_NOTEBOOK)
+        if isinstance(response, ChatCompletion):
+            return response
 
-            return async_iter_to_sync_iter(response)
-        # If we get here, there IS a running loop
-        msg = "Cannot call 'completion()' from an async context. Use 'acompletion()' instead."
-        raise RuntimeError(msg)
+        return async_iter_to_sync_iter(response)
 
     @abstractmethod
     async def acompletion(
@@ -207,17 +204,10 @@ class Provider(ABC):
         Default implementation raises NotImplementedError. Providers that set
         SUPPORTS_RESPONSES to True must override this method.
         """
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            # No running event loop - this is what we want for sync execution
-            response = run_async_in_sync(self.aresponses(model, input_data, **kwargs))
-            if isinstance(response, Response):
-                return response
-            return async_iter_to_sync_iter(response)
-        # If we get here, there IS a running loop
-        msg = "Cannot call 'responses()' from an async context. Use 'aresponses()' instead."
-        raise RuntimeError(msg)
+        response = run_async_in_sync(self.aresponses(model, input_data, **kwargs), allow_running_loop=INSIDE_NOTEBOOK)
+        if isinstance(response, Response):
+            return response
+        return async_iter_to_sync_iter(response)
 
     async def aresponses(
         self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
@@ -231,7 +221,7 @@ class Provider(ABC):
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        return run_async_in_sync(self.aembedding(model, inputs, **kwargs))
+        return run_async_in_sync(self.aembedding(model, inputs, **kwargs), allow_running_loop=INSIDE_NOTEBOOK)
 
     async def aembedding(
         self,
