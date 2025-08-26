@@ -53,6 +53,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.PORTKEY: "@first-integrati-d8a10f/gpt-4.1-mini",  # Owned by njbrake in portkey UI
         ProviderName.LLAMA: "Llama-4-Maverick-17B-128E-Instruct-FP8",
         ProviderName.AZURE: "openai/gpt-4.1-nano",
+        ProviderName.AZUREOPENAI: "azure/<your_deployment_name>",
         ProviderName.PERPLEXITY: "llama-3.1-sonar-small-128k-chat",
         ProviderName.LLAMACPP: "N/A",
     }
@@ -73,6 +74,7 @@ def embedding_provider_model_map() -> dict[ProviderName, str]:
         ProviderName.LMSTUDIO: "text-embedding-nomic-embed-text-v1.5",
         ProviderName.GOOGLE: "gemini-embedding-001",
         ProviderName.AZURE: "openai/text-embedding-3-small",
+        ProviderName.AZUREOPENAI: "azure/<your_deployment_name>",
         ProviderName.VOYAGE: "voyage-3.5-lite",
         ProviderName.LLAMACPP: "N/A",
     }
