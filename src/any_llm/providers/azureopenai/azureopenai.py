@@ -1,9 +1,11 @@
 """Azure OpenAI Provider."""
 
 import os
+
 from openai import AsyncOpenAI, OpenAI
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
+
 
 class AzureopenaiProvider(BaseOpenAIProvider):
     """Azure OpenAI Provider."""
@@ -19,7 +21,7 @@ class AzureopenaiProvider(BaseOpenAIProvider):
         return OpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("AZURE_OPENAI_API_BASE"),
             api_key=self.config.api_key,
-            default_query={"api-version": "preview"}
+            default_query={"api-version": "preview"},
         )
 
     @property
@@ -27,5 +29,5 @@ class AzureopenaiProvider(BaseOpenAIProvider):
         return AsyncOpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("AZURE_OPENAI_API_BASE"),
             api_key=self.config.api_key,
-            default_query={"api-version": "preview"}
+            default_query={"api-version": "preview"},
         )
