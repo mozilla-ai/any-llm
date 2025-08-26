@@ -62,6 +62,16 @@ def test_provider_model_split() -> None:
     assert provider == ProviderName.OLLAMA
     assert model_name == "model:tag"
 
+    model_str = "ollama:models/model-tag"
+    provider, model_name = ProviderFactory.split_model_provider(model_str)
+    assert provider == ProviderName.OLLAMA
+    assert model_name == "models/model-tag"
+
+    model_str = "ollama/models/model-tag"
+    provider, model_name = ProviderFactory.split_model_provider(model_str)
+    assert provider == ProviderName.OLLAMA
+    assert model_name == "models/model-tag"  # legacy format
+
 
 def test_get_provider_enum_valid_provider() -> None:
     """Test get_provider_enum returns correct enum for valid provider."""

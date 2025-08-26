@@ -337,9 +337,15 @@ class ProviderFactory:
 
         The legacy format will be deprecated in version 1.0.
         """
-        # Check for new colon syntax first
-        if "/" in model:
-            # Legacy slash syntax with deprecation warning
+        colon_index = model.find(":")
+        slash_index = model.find("/")
+
+        # Determine which delimiter comes first
+        if colon_index != -1 and (slash_index == -1 or colon_index < slash_index):
+            # The colon came first, so it's using the new syntax.
+            provider, model_name = model.split(":", 1)
+        elif slash_index != -1:
+            # Slash comes first, so it's the legacy syntax
             warnings.warn(
                 f"Model format 'provider/model' is deprecated and will be removed in version 1.0. "
                 f"Please use 'provider:model' format instead. Got: '{model}'",
@@ -347,8 +353,6 @@ class ProviderFactory:
                 stacklevel=3,
             )
             provider, model_name = model.split("/", 1)
-        elif ":" in model:
-            provider, model_name = model.split(":", 1)
         else:
             msg = f"Invalid model format. Expected 'provider:model' or 'provider/model', got '{model}'"
             raise ValueError(msg)
