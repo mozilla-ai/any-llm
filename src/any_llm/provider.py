@@ -33,6 +33,7 @@ class ProviderName(StrEnum):
     ANTHROPIC = "anthropic"
     AWS = "aws"
     AZURE = "azure"
+    AZUREOPENAI = "azureopenai"
     CEREBRAS = "cerebras"
     COHERE = "cohere"
     DATABRICKS = "databricks"
