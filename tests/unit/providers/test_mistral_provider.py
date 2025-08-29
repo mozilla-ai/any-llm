@@ -1,8 +1,12 @@
 from typing import Any
+from unittest.mock import Mock, patch
 
+import httpx
 import pytest
 
+from any_llm.provider import ApiConfig
 from any_llm.providers.mistral.utils import _patch_messages
+from any_llm.types.completion import CompletionParams
 
 
 def test_patch_messages_noop_when_no_tool_before_user() -> None:
@@ -73,6 +77,34 @@ def test_patch_messages_no_insertion_when_next_not_user() -> None:
     ]
     out = _patch_messages(messages)
     assert out == messages
+
+
+@pytest.mark.asyncio
+async def test_mistral_accepts_http_client_async() -> None:
+    """Test that Mistral client accepts and passes through client parameter in async."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    api_key = "test-api-key"
+    mock_http_client = Mock(spec=httpx.AsyncClient)
+
+    with (
+        patch("mistralai.Mistral") as mock_mistral,
+        patch("any_llm.providers.mistral.utils._create_mistral_completion_from_response"),
+        patch("any_llm.providers.mistral.utils._patch_messages", return_value=[]),
+    ):
+        mock_client = Mock()
+        mock_mistral.return_value = mock_client
+        mock_client.chat.complete_async = Mock(return_value=Mock())
+
+        provider = MistralProvider(ApiConfig(api_key=api_key))
+        await provider.acompletion(
+            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]),
+            client=mock_http_client,  # Note: Mistral uses 'client' not 'http_client'
+        )
+
+        # Verify Mistral client was instantiated with client parameter
+        mock_mistral.assert_called_once_with(api_key=api_key, server_url=None, client=mock_http_client)
 
 
 def test_patch_messages_with_invalid_tool_sequence_raises_error() -> None:

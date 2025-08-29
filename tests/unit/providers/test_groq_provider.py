@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 from pydantic import BaseModel
 
@@ -35,6 +36,33 @@ async def test_unsupported_max_tool_calls_parameter() -> None:
 
     with pytest.raises(UnsupportedParameterError):
         await provider.aresponses("test_model", "test_data", max_tool_calls=3)
+
+
+@pytest.mark.asyncio
+async def test_groq_accepts_http_client_async() -> None:
+    """Test that AsyncGroq client accepts and passes through http_client."""
+    pytest.importorskip("groq")
+    from any_llm.providers.groq.groq import GroqProvider
+
+    api_key = "test-api-key"
+    mock_http_client = Mock(spec=httpx.AsyncClient)
+
+    with (
+        patch("groq.AsyncGroq") as mock_async_groq,
+        patch("any_llm.providers.groq.utils.to_chat_completion", return_value=Mock()),
+    ):
+        mock_client = Mock()
+        mock_async_groq.return_value = mock_client
+        mock_client.chat.completions.create = Mock(return_value=Mock())
+
+        provider = GroqProvider(ApiConfig(api_key=api_key))
+        await provider.acompletion(
+            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]),
+            http_client=mock_http_client,
+        )
+
+        # Verify AsyncGroq client was instantiated with http_client
+        mock_async_groq.assert_called_once_with(api_key=api_key, base_url=None, http_client=mock_http_client)
 
 
 @pytest.mark.asyncio

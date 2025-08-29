@@ -70,7 +70,15 @@ class MistralProvider(Provider):
         ):
             kwargs["response_format"] = response_format_from_pydantic_model(params.response_format)
 
-        client = Mistral(api_key=self.config.api_key, server_url=self.config.api_base)
+        # Extract client from kwargs to pass to Mistral client
+        # Note: Mistral SDK uses 'client' parameter, not 'http_client'
+        client_param = kwargs.pop("client", None)
+
+        client = Mistral(
+            api_key=self.config.api_key,
+            server_url=self.config.api_base,
+            client=client_param,  # Mistral uses 'client' parameter
+        )
 
         if params.stream:
             return self._stream_completion_async(
@@ -99,7 +107,15 @@ class MistralProvider(Provider):
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        client = Mistral(api_key=self.config.api_key, server_url=self.config.api_base)
+        # Extract client from kwargs to pass to Mistral client
+        # Note: Mistral SDK uses 'client' parameter, not 'http_client'
+        client_param = kwargs.pop("client", None)
+
+        client = Mistral(
+            api_key=self.config.api_key,
+            server_url=self.config.api_base,
+            client=client_param,
+        )
         result: EmbeddingResponse = await client.embeddings.create_async(
             model=model,
             inputs=inputs,
@@ -112,6 +128,14 @@ class MistralProvider(Provider):
         """
         Fetch available models from the /v1/models endpoint.
         """
-        client = Mistral(api_key=self.config.api_key, server_url=self.config.api_base)
+        # Extract client from kwargs to pass to Mistral client
+        # Note: Mistral SDK uses 'client' parameter, not 'http_client'
+        client_param = kwargs.pop("client", None)
+
+        client = Mistral(
+            api_key=self.config.api_key,
+            server_url=self.config.api_base,
+            client=client_param,
+        )
         models_list = client.models.list(**kwargs)
         return _convert_models_list(models_list)
