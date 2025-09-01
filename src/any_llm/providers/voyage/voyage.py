@@ -37,12 +37,13 @@ class VoyageProvider(Provider):
         self,
         model: str,
         inputs: str | list[str],
+        client_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         if isinstance(inputs, str):
             inputs = [inputs]
 
-        client = AsyncClient(api_key=self.config.api_key)
+        client = AsyncClient(api_key=self.config.api_key, **(client_args if client_args else {}))
         result = await client.embed(
             texts=inputs,
             model=model,

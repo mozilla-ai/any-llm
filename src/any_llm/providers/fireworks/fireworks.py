@@ -22,10 +22,10 @@ class FireworksProvider(BaseOpenAIProvider):
     SUPPORTS_LIST_MODELS = True
 
     async def aresponses(
-        self, model: str, input_data: Any, **kwargs: Any
+        self, model: str, input_data: Any, client_args: dict[str, Any] | None = None, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call Fireworks Responses API and normalize into ChatCompletion/Chunks."""
-        response = await super().aresponses(model, input_data, **kwargs)
+        response = await super().aresponses(model, input_data, client_args=client_args, **kwargs)
 
         if isinstance(response, Response) and not isinstance(response, AsyncStream):
             # See https://fireworks.ai/blog/response-api for details about Fireworks Responses API support

@@ -59,7 +59,7 @@ class GroqProvider(Provider):
         stream: GroqAsyncStream[GroqChatCompletionChunk] = await client.chat.completions.create(
             model=params.model_id,
             messages=cast("Any", params.messages),
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages"}),
+            **params.model_dump(exclude_none=True, exclude={"client_args", "model_id", "messages"}),
             **kwargs,
         )
 
@@ -73,7 +73,7 @@ class GroqProvider(Provider):
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using Groq."""
-        client = groq.AsyncGroq(api_key=self.config.api_key)
+        client = groq.AsyncGroq(api_key=self.config.api_key, **(params.client_args if params.client_args else {}))
 
         if params.reasoning_effort == "auto":
             params.reasoning_effort = None
@@ -99,14 +99,16 @@ class GroqProvider(Provider):
         response: GroqChatCompletion = await client.chat.completions.create(
             model=params.model_id,
             messages=cast("Any", params.messages),
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+            **params.model_dump(
+                exclude_none=True, exclude={"client_args", "model_id", "messages", "response_format", "stream"}
+            ),
             **kwargs,
         )
 
         return to_chat_completion(response)
 
     async def aresponses(
-        self, model: str, input_data: Any, **kwargs: Any
+        self, model: str, input_data: Any, client_args: dict[str, Any] | None = None, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call Groq Responses API and normalize into ChatCompletion/Chunks."""
         # Python SDK doesn't yet support it: https://community.groq.com/feature-requests-6/groq-python-sdk-support-for-responses-api-262
@@ -118,6 +120,7 @@ class GroqProvider(Provider):
         client = AsyncOpenAI(
             base_url="https://api.groq.com/openai/v1",
             api_key=self.config.api_key,
+            **(client_args if client_args else {}),
         )
 
         response = await client.responses.create(
@@ -132,10 +135,10 @@ class GroqProvider(Provider):
 
         return response
 
-    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+    def list_models(self, client_args: dict[str, Any] | None = None, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
-        client = groq.Groq(api_key=self.config.api_key)
+        client = groq.Groq(api_key=self.config.api_key, **(client_args if client_args else {}))
         models_list = client.models.list(**kwargs)
         return _convert_models_list(models_list)

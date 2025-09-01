@@ -198,20 +198,22 @@ class Provider(ABC):
         raise NotImplementedError(msg)
 
     def responses(
-        self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
+        self, model: str, input_data: str | ResponseInputParam, client_args: dict[str, Any] | None = None, **kwargs: Any
     ) -> Response | Iterator[ResponseStreamEvent]:
         """Create a response using the provider's Responses API if supported.
 
         Default implementation raises NotImplementedError. Providers that set
         SUPPORTS_RESPONSES to True must override this method.
         """
-        response = run_async_in_sync(self.aresponses(model, input_data, **kwargs), allow_running_loop=INSIDE_NOTEBOOK)
+        response = run_async_in_sync(
+            self.aresponses(model, input_data, client_args=client_args, **kwargs), allow_running_loop=INSIDE_NOTEBOOK
+        )
         if isinstance(response, Response):
             return response
         return async_iter_to_sync_iter(response)
 
     async def aresponses(
-        self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
+        self, model: str, input_data: str | ResponseInputParam, client_args: dict[str, Any] | None = None, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
@@ -220,20 +222,24 @@ class Provider(ABC):
         self,
         model: str,
         inputs: str | list[str],
+        client_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        return run_async_in_sync(self.aembedding(model, inputs, **kwargs), allow_running_loop=INSIDE_NOTEBOOK)
+        return run_async_in_sync(
+            self.aembedding(model, inputs, client_args=client_args, **kwargs), allow_running_loop=INSIDE_NOTEBOOK
+        )
 
     async def aembedding(
         self,
         model: str,
         inputs: str | list[str],
+        client_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
 
-    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+    def list_models(self, client_args: dict[str, Any] | None = None, **kwargs: Any) -> Sequence[Model]:
         """
         Return a list of Model if the provider supports listing models.
         Should be overridden by subclasses.
@@ -243,8 +249,8 @@ class Provider(ABC):
             raise NotImplementedError(msg)
         raise NotImplementedError(msg)
 
-    async def list_models_async(self, **kwargs: Any) -> Sequence[Model]:
-        return await asyncio.to_thread(self.list_models, **kwargs)
+    async def list_models_async(self, client_args: dict[str, Any] | None = None, **kwargs: Any) -> Sequence[Model]:
+        return await asyncio.to_thread(self.list_models, client_args=client_args, **kwargs)
 
 
 class ProviderFactory:

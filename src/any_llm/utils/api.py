@@ -35,6 +35,7 @@ def _process_completion_params(
     stream_options: dict[str, Any] | None,
     max_completion_tokens: int | None,
     reasoning_effort: Literal["minimal", "low", "medium", "high", "auto"] | None,
+    client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> tuple[Provider, CompletionParams]:
     if provider is None:
@@ -84,5 +85,6 @@ def _process_completion_params(
         stream_options=stream_options,
         max_completion_tokens=max_completion_tokens,
         reasoning_effort=reasoning_effort,
+        client_args=client_args,
     )
     return provider_instance, completion_params

@@ -60,36 +60,42 @@ class GoogleProvider(Provider):
 
     def __init__(self, config: ApiConfig) -> None:
         """Initialize Google GenAI provider."""
-
         self._verify_no_missing_packages()
-
+        self.config = config
         self.use_vertex_ai = os.getenv("GOOGLE_USE_VERTEX_AI", "false").lower() == "true"
 
-        if self.use_vertex_ai:
-            self.project_id = os.getenv("GOOGLE_PROJECT_ID")
-            self.location = os.getenv("GOOGLE_REGION", "us-central1")
+    def _get_client(
+        self, use_vertex_ai: bool, config: ApiConfig, client_args: dict[str, Any] | None = None
+    ) -> "genai.Client":
+        if use_vertex_ai:
+            project_id = os.getenv("GOOGLE_PROJECT_ID")
+            location = os.getenv("GOOGLE_REGION", "us-central1")
 
-            if not self.project_id:
+            if not project_id:
                 msg = "Google Vertex AI"
                 raise MissingApiKeyError(msg, "GOOGLE_PROJECT_ID")
 
-            self.client = genai.Client(vertexai=True, project=self.project_id, location=self.location)
-        else:
-            api_key = getattr(config, "api_key", None) or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+            return genai.Client(
+                vertexai=True, project=project_id, location=location, **(client_args if client_args else {})
+            )
 
-            if not api_key:
-                msg = "Google Gemini Developer API"
-                raise MissingApiKeyError(msg, "GEMINI_API_KEY/GOOGLE_API_KEY")
+        api_key = getattr(config, "api_key", None) or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
-            self.client = genai.Client(api_key=api_key)
+        if not api_key:
+            msg = "Google Gemini Developer API"
+            raise MissingApiKeyError(msg, "GEMINI_API_KEY/GOOGLE_API_KEY")
+
+        return genai.Client(api_key=api_key, **(client_args if client_args else {}))
 
     async def aembedding(
         self,
         model: str,
         inputs: str | list[str],
+        client_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        result = await self.client.aio.models.embed_content(
+        client = self._get_client(self.use_vertex_ai, self.config, client_args)
+        result = await client.aio.models.embed_content(
             model=model,
             contents=inputs,  # type: ignore[arg-type]
             **kwargs,
@@ -131,6 +137,7 @@ class GoogleProvider(Provider):
         base_kwargs = params.model_dump(
             exclude_none=True,
             exclude={
+                "client_args",
                 "model_id",
                 "messages",
                 "response_format",
@@ -156,8 +163,9 @@ class GoogleProvider(Provider):
         if system_instruction:
             generation_config.system_instruction = system_instruction
 
+        client = self._get_client(self.use_vertex_ai, self.config, params.client_args)
         if stream:
-            response_stream = await self.client.aio.models.generate_content_stream(
+            response_stream = await client.aio.models.generate_content_stream(
                 model=params.model_id,
                 contents=formatted_messages,  # type: ignore[arg-type]
                 config=generation_config,
@@ -169,7 +177,7 @@ class GoogleProvider(Provider):
 
             return _stream()
 
-        response: types.GenerateContentResponse = await self.client.aio.models.generate_content(
+        response: types.GenerateContentResponse = await client.aio.models.generate_content(
             model=params.model_id,
             contents=formatted_messages,  # type: ignore[arg-type]
             config=generation_config,
@@ -233,9 +241,10 @@ class GoogleProvider(Provider):
             usage=usage,
         )
 
-    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+    def list_models(self, client_args: dict[str, Any] | None = None, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
-        models_list = self.client.models.list(**kwargs)
+        client = self._get_client(self.use_vertex_ai, self.config, client_args=client_args)
+        models_list = client.models.list(**kwargs)
         return _convert_models_list(models_list)

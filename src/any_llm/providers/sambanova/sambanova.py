@@ -32,6 +32,7 @@ class SambanovaProvider(BaseOpenAIProvider):
         client = AsyncOpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,
+            **(params.client_args if params.client_args else {}),
         )
 
         if params.reasoning_effort == "auto":
@@ -46,7 +47,9 @@ class SambanovaProvider(BaseOpenAIProvider):
                 model=params.model_id,
                 messages=cast("Any", params.messages),
                 response_model=params.response_format,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
+                **params.model_dump(
+                    exclude_none=True, exclude={"client_args", "model_id", "messages", "response_format"}
+                ),
                 **kwargs,
             )
             return _convert_instructor_response(response, params.model_id, self.PROVIDER_NAME)
@@ -54,7 +57,7 @@ class SambanovaProvider(BaseOpenAIProvider):
             await client.chat.completions.create(
                 model=params.model_id,
                 messages=cast("Any", params.messages),
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages"}),
+                **params.model_dump(exclude_none=True, exclude={"client_args", "model_id", "messages"}),
                 **kwargs,
             )
         )

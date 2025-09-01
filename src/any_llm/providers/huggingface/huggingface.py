@@ -76,7 +76,9 @@ class HuggingfaceProvider(Provider):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using HuggingFace."""
         client = AsyncInferenceClient(
-            base_url=self.config.api_base, token=self.config.api_key, timeout=kwargs.get("timeout")
+            base_url=self.config.api_base,
+            token=self.config.api_key,
+            **(params.client_args if params.client_args else {}),
         )
 
         converted_kwargs = _convert_params(params, **kwargs)
@@ -123,7 +125,9 @@ class HuggingfaceProvider(Provider):
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Create a chat completion using HuggingFace."""
         client = InferenceClient(
-            base_url=self.config.api_base, token=self.config.api_key, timeout=kwargs.get("timeout")
+            base_url=self.config.api_base,
+            token=self.config.api_key,
+            **(params.client_args if params.client_args else {}),
         )
 
         converted_kwargs = _convert_params(params, **kwargs)
@@ -163,14 +167,14 @@ class HuggingfaceProvider(Provider):
             usage=usage,
         )
 
-    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+    def list_models(self, client_args: dict[str, Any] | None = None, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
         if not self.SUPPORTS_LIST_MODELS:
             message = f"{self.PROVIDER_NAME} does not support listing models."
             raise NotImplementedError(message)
-        client = HfApi(token=self.config.api_key)
+        client = HfApi(token=self.config.api_key, **(client_args if client_args else {}))
         if kwargs.get("inference") is None and kwargs.get("inference_provider") is None:
             kwargs["inference"] = "warm"
         if kwargs.get("limit") is None:

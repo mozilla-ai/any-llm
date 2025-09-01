@@ -84,17 +84,26 @@ def embedding_provider_model_map() -> dict[ProviderName, str]:
 @pytest.fixture
 def provider_extra_kwargs_map() -> dict[ProviderName, dict[str, Any]]:
     return {
+        ProviderName.ANTHROPIC: {"client_args": {"timeout": 10}},
         ProviderName.AZURE: {
             "api_base": "https://models.github.ai/inference",
         },
+        ProviderName.CEREBRAS: {"client_args": {"timeout": 10}},
+        ProviderName.COHERE: {"client_args": {"timeout": 10}},
         ProviderName.DATABRICKS: {"api_base": "https://dbc-40d03128-ecae.cloud.databricks.com/serving-endpoints"},
+        ProviderName.GROQ: {"client_args": {"timeout": 10}},
+        ProviderName.MISTRAL: {"client_args": {"timeout_ms": 10000}},
         ProviderName.HUGGINGFACE: {
             "api_base": "https://y0okp71n85ezo5nr.us-east-1.aws.endpoints.huggingface.cloud/v1/"
         },
+        ProviderName.OPENAI: {"client_args": {"timeout": 10}},
+        ProviderName.TOGETHER: {"client_args": {"timeout": 10}},
+        ProviderName.VOYAGE: {"client_args": {"timeout": 10}},
         ProviderName.WATSONX: {
             "api_base": "https://us-south.ml.cloud.ibm.com",
             "project_id": "5b083ace-95a6-4f95-a0a0-d4c5d9e98ca0",
         },
+        ProviderName.XAI: {"client_args": {"timeout": 10}},
     }
 
 

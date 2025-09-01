@@ -90,10 +90,11 @@ class TogetherProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         """Make the API call to Together AI with instructor support for structured outputs."""
-        if self.config.api_base:
-            client = together.Together(api_key=self.config.api_key, base_url=self.config.api_base)
-        else:
-            client = together.Together(api_key=self.config.api_key)
+        client = together.Together(
+            api_key=self.config.api_key,
+            base_url=self.config.api_base,
+            **(params.client_args if params.client_args else {}),
+        )
 
         if params.reasoning_effort == "auto":
             params.reasoning_effort = None
@@ -105,7 +106,9 @@ class TogetherProvider(Provider):
                 model=params.model_id,
                 messages=cast("Any", params.messages),
                 response_model=params.response_format,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
+                **params.model_dump(
+                    exclude_none=True, exclude={"client_args", "model_id", "messages", "response_format"}
+                ),
                 **kwargs,
             )
 
@@ -116,7 +119,7 @@ class TogetherProvider(Provider):
                 client,
                 params.model_id,
                 params.messages,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
+                **params.model_dump(exclude_none=True, exclude={"client_args", "model_id", "messages", "stream"}),
                 **kwargs,
             )
 
@@ -125,7 +128,9 @@ class TogetherProvider(Provider):
             client.chat.completions.create(
                 model=params.model_id,
                 messages=cast("Any", params.messages),
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
+                **params.model_dump(
+                    exclude_none=True, exclude={"client_args", "model_id", "messages", "response_format"}
+                ),
                 **kwargs,
             ),
         )
@@ -138,10 +143,11 @@ class TogetherProvider(Provider):
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Make the API call to Together AI with instructor support for structured outputs."""
-        if self.config.api_base:
-            client = together.AsyncTogether(api_key=self.config.api_key, base_url=self.config.api_base)
-        else:
-            client = together.AsyncTogether(api_key=self.config.api_key)
+        client = together.AsyncTogether(
+            api_key=self.config.api_key,
+            base_url=self.config.api_base,
+            **(params.client_args if params.client_args else {}),
+        )
 
         if params.reasoning_effort == "auto":
             params.reasoning_effort = None
@@ -154,7 +160,8 @@ class TogetherProvider(Provider):
                 messages=cast("Any", params.messages),
                 response_model=params.response_format,
                 **params.model_dump(
-                    exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "response_format"}
+                    exclude_none=True,
+                    exclude={"client_args", "model_id", "messages", "reasoning_effort", "response_format"},
                 ),
                 **kwargs,
             )
@@ -166,7 +173,9 @@ class TogetherProvider(Provider):
                 client,
                 params.model_id,
                 params.messages,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "stream"}),
+                **params.model_dump(
+                    exclude_none=True, exclude={"client_args", "model_id", "messages", "reasoning_effort", "stream"}
+                ),
                 **kwargs,
             )
 
@@ -175,7 +184,9 @@ class TogetherProvider(Provider):
             await client.chat.completions.create(
                 model=params.model_id,
                 messages=cast("Any", params.messages),
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
+                **params.model_dump(
+                    exclude_none=True, exclude={"client_args", "model_id", "messages", "response_format"}
+                ),
                 **kwargs,
             ),
         )

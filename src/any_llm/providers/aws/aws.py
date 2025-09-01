@@ -97,14 +97,19 @@ class AwsProvider(Provider):
         """Create a chat completion using AWS Bedrock with instructor support."""
         self._check_aws_credentials()
 
-        client = boto3.client("bedrock-runtime", endpoint_url=self.config.api_base, region_name=self.region_name)  # type: ignore[no-untyped-call]
+        client = boto3.client(  # type: ignore[no-untyped-call]
+            "bedrock-runtime",
+            endpoint_url=self.config.api_base,
+            region_name=self.region_name,
+            **(params.client_args if params.client_args else {}),
+        )
 
         if params.reasoning_effort == "auto":
             params.reasoning_effort = None
 
         completion_kwargs = params.model_dump(
             exclude_none=True,
-            exclude={"model_id", "messages", "response_format", "stream", "parallel_tool_calls"},
+            exclude={"client_args", "model_id", "messages", "response_format", "stream", "parallel_tool_calls"},
         )
         if params.response_format:
             if params.stream:
@@ -158,6 +163,7 @@ class AwsProvider(Provider):
         self,
         model: str,
         inputs: str | list[str],
+        client_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         logger.warning("AWS Bedrock client does not support async. Calls made with this method will be blocking.")
@@ -166,7 +172,7 @@ class AwsProvider(Provider):
 
         # create partial function of sync call
         call_sync_partial: Callable[[], CreateEmbeddingResponse] = functools.partial(
-            self.embedding, model, inputs, **kwargs
+            self.embedding, model, inputs, client_args=client_args, **kwargs
         )
 
         return await loop.run_in_executor(None, call_sync_partial)
@@ -175,12 +181,18 @@ class AwsProvider(Provider):
         self,
         model: str,
         inputs: str | list[str],
+        client_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         """Create embeddings using AWS Bedrock."""
         self._check_aws_credentials()
 
-        client = boto3.client("bedrock-runtime", endpoint_url=self.config.api_base, region_name=self.region_name)  # type: ignore[no-untyped-call]
+        client = boto3.client(
+            "bedrock-runtime",
+            endpoint_url=self.config.api_base,
+            region_name=self.region_name,
+            **(client_args if client_args else {}),
+        )  # type: ignore[no-untyped-call]
 
         input_texts = [inputs] if isinstance(inputs, str) else inputs
 
@@ -205,11 +217,16 @@ class AwsProvider(Provider):
 
         return _create_openai_embedding_response_from_aws(embedding_data, model, total_tokens)
 
-    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+    def list_models(self, client_args: dict[str, Any] | None = None, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
-        client = boto3.client("bedrock", endpoint_url=self.config.api_base, region_name=self.region_name)  # type: ignore[no-untyped-call]
+        client = boto3.client(
+            "bedrock",
+            endpoint_url=self.config.api_base,
+            region_name=self.region_name,
+            **(client_args if client_args else {}),
+        )  # type: ignore[no-untyped-call]
         models_list = client.list_foundation_models(**kwargs).get("modelSummaries", [])
         # AWS doesn't provide a creation date for models
         # AWS doesn't provide typing, but per https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/bedrock/client/list_foundation_models.html
