@@ -57,6 +57,7 @@ class OllamaProvider(Provider):
         self._verify_no_missing_packages()
 
         self.url = config.api_base or os.getenv("OLLAMA_API_URL")
+        self.config = config
 
     async def _stream_completion_async(
         self,
