@@ -78,11 +78,12 @@ class ProviderName(StrEnum):
             raise UnsupportedProviderError(value, supported) from exc
 
 
-class ApiConfig(BaseModel):
-    """Configuration for the provider."""
+class ClientConfig(BaseModel):
+    """Configuration for the underlying client used by the provider."""
 
     api_key: str | None = None
     api_base: str | None = None
+    client_args: dict[str, Any] | None = None
 
 
 class Provider(ABC):
@@ -128,7 +129,7 @@ class Provider(ABC):
     This flag is used to check if the packages are installed before instantiating the provider.
     """
 
-    def __init__(self, config: ApiConfig) -> None:
+    def __init__(self, config: ClientConfig) -> None:
         self._verify_no_missing_packages()
         self.config = self._verify_and_set_api_key(config)
 
@@ -137,7 +138,7 @@ class Provider(ABC):
             msg = f"{self.PROVIDER_NAME} required packages are not installed. Please install them with `pip install any-llm-sdk[{self.PROVIDER_NAME}]`"
             raise ImportError(msg) from self.MISSING_PACKAGES_ERROR
 
-    def _verify_and_set_api_key(self, config: ApiConfig) -> ApiConfig:
+    def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
         # Standardized API key handling. Splitting into its own function so that providers
         # Can easily override this method if they don't want verification (for instance, LMStudio)
         if not config.api_key:
@@ -198,22 +199,20 @@ class Provider(ABC):
         raise NotImplementedError(msg)
 
     def responses(
-        self, model: str, input_data: str | ResponseInputParam, client_args: dict[str, Any] | None = None, **kwargs: Any
+        self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
     ) -> Response | Iterator[ResponseStreamEvent]:
         """Create a response using the provider's Responses API if supported.
 
         Default implementation raises NotImplementedError. Providers that set
         SUPPORTS_RESPONSES to True must override this method.
         """
-        response = run_async_in_sync(
-            self.aresponses(model, input_data, client_args=client_args, **kwargs), allow_running_loop=INSIDE_NOTEBOOK
-        )
+        response = run_async_in_sync(self.aresponses(model, input_data, **kwargs), allow_running_loop=INSIDE_NOTEBOOK)
         if isinstance(response, Response):
             return response
         return async_iter_to_sync_iter(response)
 
     async def aresponses(
-        self, model: str, input_data: str | ResponseInputParam, client_args: dict[str, Any] | None = None, **kwargs: Any
+        self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
@@ -222,24 +221,20 @@ class Provider(ABC):
         self,
         model: str,
         inputs: str | list[str],
-        client_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        return run_async_in_sync(
-            self.aembedding(model, inputs, client_args=client_args, **kwargs), allow_running_loop=INSIDE_NOTEBOOK
-        )
+        return run_async_in_sync(self.aembedding(model, inputs, **kwargs), allow_running_loop=INSIDE_NOTEBOOK)
 
     async def aembedding(
         self,
         model: str,
         inputs: str | list[str],
-        client_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
 
-    def list_models(self, client_args: dict[str, Any] | None = None, **kwargs: Any) -> Sequence[Model]:
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Return a list of Model if the provider supports listing models.
         Should be overridden by subclasses.
@@ -249,8 +244,8 @@ class Provider(ABC):
             raise NotImplementedError(msg)
         raise NotImplementedError(msg)
 
-    async def list_models_async(self, client_args: dict[str, Any] | None = None, **kwargs: Any) -> Sequence[Model]:
-        return await asyncio.to_thread(self.list_models, client_args=client_args, **kwargs)
+    async def list_models_async(self, **kwargs: Any) -> Sequence[Model]:
+        return await asyncio.to_thread(self.list_models, **kwargs)
 
 
 class ProviderFactory:
@@ -259,7 +254,7 @@ class ProviderFactory:
     PROVIDERS_DIR = Path(__file__).parent / "providers"
 
     @classmethod
-    def create_provider(cls, provider_key: str | ProviderName, config: ApiConfig) -> Provider:
+    def create_provider(cls, provider_key: str | ProviderName, config: ClientConfig) -> Provider:
         """Dynamically load and create an instance of a provider based on the naming convention."""
         provider_key = ProviderName.from_string(provider_key).value
 

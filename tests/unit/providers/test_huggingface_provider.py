@@ -2,7 +2,7 @@ from contextlib import contextmanager
 from typing import Any
 from unittest.mock import patch
 
-from any_llm.provider import ApiConfig
+from any_llm.provider import ClientConfig
 from any_llm.providers.huggingface.huggingface import HuggingfaceProvider
 from any_llm.types.completion import CompletionParams
 
@@ -32,7 +32,7 @@ def test_huggingface_with_api_base() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_huggingface_provider() as mock_huggingface:
-        provider = HuggingfaceProvider(ApiConfig(api_key=api_key, api_base=api_base))
+        provider = HuggingfaceProvider(ClientConfig(api_key=api_key, api_base=api_base))
         provider.completion(CompletionParams(model_id="model-id", messages=messages))
 
         mock_huggingface.assert_called_with(base_url=api_base, token=api_key)
@@ -43,7 +43,7 @@ def test_huggingface_with_api_key() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_huggingface_provider() as mock_huggingface:
-        provider = HuggingfaceProvider(ApiConfig(api_key=api_key))
+        provider = HuggingfaceProvider(ClientConfig(api_key=api_key))
         provider.completion(CompletionParams(model_id="model-id", messages=messages))
 
         mock_huggingface.assert_called_with(base_url=None, token=api_key)
@@ -56,7 +56,7 @@ def test_huggingface_with_tools(tools: list[dict[str, Any]]) -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_huggingface_provider() as mock_huggingface:
-        provider = HuggingfaceProvider(ApiConfig(api_key=api_key))
+        provider = HuggingfaceProvider(ClientConfig(api_key=api_key))
         provider.completion(CompletionParams(model_id="model-id", messages=messages, tools=tools))
 
         mock_huggingface.assert_called_with(base_url=None, token=api_key)
@@ -71,7 +71,7 @@ def test_huggingface_with_max_tokens() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_huggingface_provider() as mock_huggingface:
-        provider = HuggingfaceProvider(ApiConfig(api_key=api_key))
+        provider = HuggingfaceProvider(ClientConfig(api_key=api_key))
         provider.completion(CompletionParams(model_id="model-id", messages=messages, max_tokens=100))
 
         mock_huggingface.assert_called_with(base_url=None, token=api_key)
@@ -86,8 +86,8 @@ def test_huggingface_with_timeout() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_huggingface_provider() as mock_huggingface:
-        provider = HuggingfaceProvider(ApiConfig(api_key=api_key))
-        provider.completion(CompletionParams(model_id="model-id", messages=messages, client_args={"timeout": 10}))
+        provider = HuggingfaceProvider(ClientConfig(api_key=api_key, client_args={"timeout": 10}))
+        provider.completion(CompletionParams(model_id="model-id", messages=messages))
 
         mock_huggingface.assert_called_with(base_url=None, token=api_key, timeout=10)
 

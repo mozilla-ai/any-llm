@@ -73,7 +73,7 @@ class MistralProvider(Provider):
         client = Mistral(
             api_key=self.config.api_key,
             server_url=self.config.api_base,
-            **(params.client_args if params.client_args else {}),
+            **(self.config.client_args if self.config.client_args else {}),
         )
 
         if params.stream:
@@ -81,18 +81,14 @@ class MistralProvider(Provider):
                 client,
                 params.model_id,
                 patched_messages,
-                **params.model_dump(
-                    exclude_none=True, exclude={"client_args", "model_id", "messages", "response_format", "stream"}
-                ),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
                 **kwargs,
             )
 
         response = await client.chat.complete_async(
             model=params.model_id,
             messages=patched_messages,  # type: ignore[arg-type]
-            **params.model_dump(
-                exclude_none=True, exclude={"client_args", "model_id", "messages", "response_format", "stream"}
-            ),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
             **kwargs,
         )
 
@@ -105,11 +101,12 @@ class MistralProvider(Provider):
         self,
         model: str,
         inputs: str | list[str],
-        client_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         client = Mistral(
-            api_key=self.config.api_key, server_url=self.config.api_base, **(client_args if client_args else {})
+            api_key=self.config.api_key,
+            server_url=self.config.api_base,
+            **(self.config.client_args if self.config.client_args else {}),
         )
         result: EmbeddingResponse = await client.embeddings.create_async(
             model=model,
@@ -119,12 +116,14 @@ class MistralProvider(Provider):
 
         return _create_openai_embedding_response_from_mistral(result)
 
-    def list_models(self, client_args: dict[str, Any] | None = None, **kwargs: Any) -> Sequence[Model]:
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
         client = Mistral(
-            api_key=self.config.api_key, server_url=self.config.api_base, **(client_args if client_args else {})
+            api_key=self.config.api_key,
+            server_url=self.config.api_base,
+            **(self.config.client_args if self.config.client_args else {}),
         )
         models_list = client.models.list(**kwargs)
         return _convert_models_list(models_list)

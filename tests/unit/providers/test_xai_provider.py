@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from any_llm.provider import ApiConfig
+from any_llm.provider import ClientConfig
 from any_llm.types.completion import ChatCompletion, CompletionParams
 
 
@@ -36,7 +36,7 @@ async def test_response_function_call_id_is_preserved() -> None:
         tool_call.function.arguments = '{"key": "value"}'
         mock_response.tool_calls = [tool_call]
 
-        provider = XaiProvider(ApiConfig(api_key="test-api-key"))
+        provider = XaiProvider(ClientConfig(api_key="test-api-key"))
         response = await provider.acompletion(
             CompletionParams(model_id="model", messages=[{"role": "user", "content": "Hello"}])
         )
@@ -51,7 +51,7 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
     from any_llm.providers.xai.xai import XaiProvider
 
     with mock_xai_provider() as (mock_xai, _):
-        provider = XaiProvider(ApiConfig(api_key="test-api-key"))
+        provider = XaiProvider(ClientConfig(api_key="test-api-key"))
         await provider.acompletion(CompletionParams(model_id="model", messages=agent_loop_messages))
         _, call_kwargs = mock_xai.return_value.chat.create.call_args
 

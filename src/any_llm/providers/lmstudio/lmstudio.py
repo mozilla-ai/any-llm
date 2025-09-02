@@ -1,6 +1,6 @@
 from typing_extensions import override
 
-from any_llm.provider import ApiConfig
+from any_llm.provider import ClientConfig
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
 # LM Studio has a python sdk, but per their docs they are compliant with OpenAI spec
@@ -18,7 +18,7 @@ class LmstudioProvider(BaseOpenAIProvider):
     SUPPORTS_LIST_MODELS = True
 
     @override
-    def _verify_and_set_api_key(self, config: ApiConfig) -> ApiConfig:
+    def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
         # LM Studio doesn't require an API Key,
         # so we can skip the verification step and return directly
         return config

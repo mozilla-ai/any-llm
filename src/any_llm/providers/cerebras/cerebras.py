@@ -48,7 +48,9 @@ class CerebrasProvider(Provider):
     ) -> AsyncIterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
 
-        client = cerebras.AsyncCerebras(api_key=self.config.api_key)
+        client = cerebras.AsyncCerebras(
+            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
+        )
 
         if kwargs.get("response_format", None) is not None:
             msg = "stream and response_format"
@@ -82,12 +84,12 @@ class CerebrasProvider(Provider):
             return self._stream_completion_async(
                 params.model_id,
                 params.messages,
-                **params.model_dump(exclude_none=True, exclude={"client_args", "model_id", "messages", "stream"}),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
                 **kwargs,
             )
 
         client = cerebras.AsyncCerebras(
-            api_key=self.config.api_key, **(params.client_args if params.client_args else {})
+            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
         )
         instructor_client = instructor.from_cerebras(client)
 
@@ -100,9 +102,7 @@ class CerebrasProvider(Provider):
                 model=params.model_id,
                 messages=cast("Any", params.messages),
                 response_model=params.response_format,
-                **params.model_dump(
-                    exclude_none=True, exclude={"client_args", "model_id", "messages", "response_format"}
-                ),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
                 **kwargs,
             )
 
@@ -111,7 +111,7 @@ class CerebrasProvider(Provider):
         response = await client.chat.completions.create(
             model=params.model_id,
             messages=params.messages,
-            **params.model_dump(exclude_none=True, exclude={"client_args", "model_id", "messages", "stream"}),
+            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
             **kwargs,
         )
 
@@ -123,10 +123,12 @@ class CerebrasProvider(Provider):
 
         return _convert_response(response_data)
 
-    def list_models(self, client_args: dict[str, Any] | None = None, **kwargs: Any) -> Sequence[Model]:
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
-        client = cerebras.Cerebras(api_key=self.config.api_key, **(client_args if client_args else {}))
+        client = cerebras.Cerebras(
+            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
+        )
         models_list = client.models.list(**kwargs)
         return _convert_models_list(models_list)

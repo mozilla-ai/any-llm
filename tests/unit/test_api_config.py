@@ -2,7 +2,7 @@ from typing import Any
 from unittest.mock import Mock, patch
 
 from any_llm import completion
-from any_llm.provider import ApiConfig, ProviderName
+from any_llm.provider import ClientConfig, ProviderName
 from any_llm.types.completion import CompletionParams
 
 
@@ -28,7 +28,7 @@ def test_completion_extracts_all_config_from_kwargs() -> None:
         )
 
         mock_factory.create_provider.assert_called_once_with(
-            ProviderName.MISTRAL, ApiConfig(api_key="test_key", api_base="https://test.com")
+            ProviderName.MISTRAL, ClientConfig(api_key="test_key", api_base="https://test.com")
         )
 
         mock_provider.completion.assert_called_once()
@@ -57,7 +57,7 @@ def test_completion_extracts_partial_config_from_kwargs() -> None:
             other_param="value",
         )
 
-        mock_factory.create_provider.assert_called_once_with(ProviderName.MISTRAL, ApiConfig(api_key="test_key"))
+        mock_factory.create_provider.assert_called_once_with(ProviderName.MISTRAL, ClientConfig(api_key="test_key"))
 
         mock_provider.completion.assert_called_once()
         args, kwargs = mock_provider.completion.call_args
@@ -83,7 +83,7 @@ def test_completion_no_config_extraction() -> None:
         }
         completion(model="mistral/mistral-small", messages=[{"role": "user", "content": "Hello"}], **kwargs)
 
-        mock_factory.create_provider.assert_called_once_with(ProviderName.MISTRAL, ApiConfig())
+        mock_factory.create_provider.assert_called_once_with(ProviderName.MISTRAL, ClientConfig())
 
         mock_provider.completion.assert_called_once()
         args, kwargs = mock_provider.completion.call_args
@@ -111,7 +111,7 @@ def test_completion_extracts_api_base_only() -> None:
         )
 
         mock_factory.create_provider.assert_called_once_with(
-            ProviderName.OLLAMA, ApiConfig(api_base="https://custom-endpoint.com")
+            ProviderName.OLLAMA, ClientConfig(api_base="https://custom-endpoint.com")
         )
 
         mock_provider.completion.assert_called_once()

@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from any_llm import acompletion
-from any_llm.provider import ApiConfig, Provider, ProviderFactory, ProviderName
+from any_llm.provider import ClientConfig, Provider, ProviderFactory, ProviderName
 from any_llm.types.completion import ChatCompletionMessage, CompletionParams, Reasoning
 
 
@@ -86,7 +86,7 @@ async def test_all_providers_can_be_loaded(provider: str) -> None:
     This test will automatically include new providers when they're added
     without requiring any code changes.
     """
-    provider_instance = ProviderFactory.create_provider(provider, ApiConfig(api_key="test_key"))
+    provider_instance = ProviderFactory.create_provider(provider, ClientConfig(api_key="test_key"))
 
     assert isinstance(provider_instance, Provider), f"Provider {provider} did not create a valid Provider instance"
 
@@ -101,7 +101,7 @@ async def test_all_providers_can_be_loaded_with_config(provider: str) -> None:
     This test verifies that providers can handle common configuration parameters
     like api_key and api_base without throwing errors during instantiation.
     """
-    sample_config = ApiConfig(api_key="test_key", api_base="https://test.example.com")
+    sample_config = ClientConfig(api_key="test_key", api_base="https://test.example.com")
 
     provider_instance = ProviderFactory.create_provider(provider, sample_config)
 
@@ -116,6 +116,6 @@ async def test_provider_factory_can_create_all_supported_providers() -> None:
     supported_providers = ProviderFactory.get_supported_providers()
 
     for provider_name in supported_providers:
-        provider_instance = ProviderFactory.create_provider(provider_name, ApiConfig(api_key="test_key"))
+        provider_instance = ProviderFactory.create_provider(provider_name, ClientConfig(api_key="test_key"))
 
         assert isinstance(provider_instance, Provider), f"Failed to create valid Provider instance for {provider_name}"

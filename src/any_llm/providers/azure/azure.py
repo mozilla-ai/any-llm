@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Any, cast
 
-from any_llm.provider import ApiConfig, Provider
+from any_llm.provider import ClientConfig, Provider
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -43,7 +43,7 @@ class AzureProvider(Provider):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
-    def __init__(self, config: ApiConfig) -> None:
+    def __init__(self, config: ClientConfig) -> None:
         """Initialize Azure provider."""
         super().__init__(config)
 
@@ -58,26 +58,22 @@ class AzureProvider(Provider):
         )
         raise ValueError(msg)
 
-    def _create_chat_client_async(
-        self, api_version: str, client_args: dict[str, Any] | None = None
-    ) -> aio.ChatCompletionsClient:
+    def _create_chat_client_async(self, api_version: str) -> aio.ChatCompletionsClient:
         """Create and configure a ChatCompletionsClient."""
         return aio.ChatCompletionsClient(
             endpoint=self._get_endpoint(),
             credential=AzureKeyCredential(self.config.api_key or ""),
             api_version=api_version,
-            **(client_args if client_args else {}),
+            **(self.config.client_args if self.config.client_args else {}),
         )
 
-    def _create_embeddings_client_async(
-        self, api_version: str, client_args: dict[str, Any] | None = None
-    ) -> aio.EmbeddingsClient:
+    def _create_embeddings_client_async(self, api_version: str) -> aio.EmbeddingsClient:
         """Create and configure an EmbeddingsClient."""
         return aio.EmbeddingsClient(
             endpoint=self._get_endpoint(),
             credential=AzureKeyCredential(self.config.api_key or ""),
             api_version=api_version,
-            **(client_args if client_args else {}),
+            **(self.config.client_args if self.config.client_args else {}),
         )
 
     async def _stream_completion_async(
@@ -107,7 +103,7 @@ class AzureProvider(Provider):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using Azure AI Inference SDK."""
         api_version = os.getenv("AZURE_API_VERSION", kwargs.pop("api_version", "2024-02-15-preview"))
-        client: aio.ChatCompletionsClient = self._create_chat_client_async(api_version, params.client_args)
+        client: aio.ChatCompletionsClient = self._create_chat_client_async(api_version)
 
         if params.reasoning_effort == "auto":
             params.reasoning_effort = None
@@ -116,9 +112,7 @@ class AzureProvider(Provider):
         if params.response_format:
             azure_response_format = _convert_response_format(params.response_format)
 
-        call_kwargs = params.model_dump(
-            exclude_none=True, exclude={"client_args", "model_id", "messages", "response_format"}
-        )
+        call_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
         if azure_response_format:
             call_kwargs["response_format"] = azure_response_format
 
@@ -147,12 +141,11 @@ class AzureProvider(Provider):
         self,
         model: str,
         inputs: str | list[str],
-        client_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         """Create embeddings using Azure AI Inference SDK."""
         api_version = os.getenv("AZURE_API_VERSION", kwargs.pop("api_version", "2024-02-15-preview"))
-        client: aio.EmbeddingsClient = self._create_embeddings_client_async(api_version, client_args)
+        client: aio.EmbeddingsClient = self._create_embeddings_client_async(api_version)
 
         response: EmbeddingsResult = await client.embed(
             model=model,

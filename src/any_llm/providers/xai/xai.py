@@ -43,7 +43,9 @@ class XaiProvider(Provider):
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Call the XAI Python SDK Chat Completions API and convert to AnyLLM types."""
-        client = XaiAsyncClient(api_key=self.config.api_key, **(params.client_args if params.client_args else {}))
+        client = XaiAsyncClient(
+            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
+        )
 
         xai_messages = []
         for message in params.messages:
@@ -80,7 +82,6 @@ class XaiProvider(Provider):
             **params.model_dump(
                 exclude_none=True,
                 exclude={
-                    "client_args",
                     "model_id",
                     "messages",
                     "stream",
@@ -110,10 +111,10 @@ class XaiProvider(Provider):
 
         return _convert_xai_completion_to_anyllm_response(response)
 
-    def list_models(self, client_args: dict[str, Any] | None = None, **kwargs: Any) -> Sequence[Model]:
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
-        client = XaiClient(api_key=self.config.api_key, **(client_args if client_args else {}))
+        client = XaiClient(api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {}))
         models_list = client.models.list_language_models()
         return _convert_models_list(models_list)

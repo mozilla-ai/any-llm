@@ -1,7 +1,7 @@
 import pytest
 
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ApiConfig
+from any_llm.provider import ClientConfig
 from any_llm.providers.cerebras.cerebras import CerebrasProvider
 
 
@@ -11,7 +11,7 @@ async def test_stream_with_response_format_raises() -> None:
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
 
-    provider = CerebrasProvider(ApiConfig(api_key=api_key))
+    provider = CerebrasProvider(ClientConfig(api_key=api_key))
 
     chunks = provider._stream_completion_async(
         model=model,

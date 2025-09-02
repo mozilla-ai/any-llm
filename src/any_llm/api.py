@@ -3,7 +3,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from any_llm.provider import ApiConfig, ProviderFactory, ProviderName
+from any_llm.provider import ClientConfig, ProviderFactory, ProviderName
 from any_llm.tools import prepare_tools
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, CreateEmbeddingResponse
 from any_llm.types.model import Model
@@ -286,12 +286,7 @@ def responses(
         provider_key = ProviderName.from_string(provider)
         model_name = model
 
-    config: dict[str, str] = {}
-    if api_key:
-        config["api_key"] = str(api_key)
-    if api_base:
-        config["api_base"] = str(api_base)
-    api_config = ApiConfig(**config)
+    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
 
     provider_instance = ProviderFactory.create_provider(provider_key, api_config)
 
@@ -323,7 +318,7 @@ def responses(
     if text is not None:
         responses_kwargs["text"] = text
 
-    return provider_instance.responses(model_name, input_data, client_args=client_args, **responses_kwargs)
+    return provider_instance.responses(model_name, input_data, **responses_kwargs)
 
 
 async def aresponses(
@@ -393,12 +388,7 @@ async def aresponses(
         provider_key = ProviderName.from_string(provider)
         model_name = model
 
-    config: dict[str, str] = {}
-    if api_key:
-        config["api_key"] = str(api_key)
-    if api_base:
-        config["api_base"] = str(api_base)
-    api_config = ApiConfig(**config)
+    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
 
     provider_instance = ProviderFactory.create_provider(provider_key, api_config)
 
@@ -467,16 +457,11 @@ def embedding(
         provider_key = ProviderName.from_string(provider)
         model_name = model
 
-    config: dict[str, str] = {}
-    if api_key:
-        config["api_key"] = str(api_key)
-    if api_base:
-        config["api_base"] = str(api_base)
-    api_config = ApiConfig(**config)
+    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
 
     provider_instance = ProviderFactory.create_provider(provider_key, api_config)
 
-    return provider_instance.embedding(model_name, inputs, client_args=client_args, **kwargs)
+    return provider_instance.embedding(model_name, inputs, **kwargs)
 
 
 async def aembedding(
@@ -510,16 +495,11 @@ async def aembedding(
         provider_key = ProviderName.from_string(provider)
         model_name = model
 
-    config: dict[str, str] = {}
-    if api_key:
-        config["api_key"] = str(api_key)
-    if api_base:
-        config["api_base"] = str(api_base)
-    api_config = ApiConfig(**config)
+    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
 
     provider_instance = ProviderFactory.create_provider(provider_key, api_config)
 
-    return await provider_instance.aembedding(model_name, inputs, client_args=client_args, **kwargs)
+    return await provider_instance.aembedding(model_name, inputs, **kwargs)
 
 
 def list_models(
@@ -531,14 +511,9 @@ def list_models(
 ) -> Sequence[Model]:
     """List available models for a provider."""
     provider_key = ProviderName.from_string(provider)
-    config: dict[str, str] = {}
-    if api_key:
-        config["api_key"] = str(api_key)
-    if api_base:
-        config["api_base"] = str(api_base)
-    api_config = ApiConfig(**config)
+    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
     prov_instance = ProviderFactory.create_provider(provider_key, api_config)
-    return prov_instance.list_models(client_args=client_args, **kwargs)
+    return prov_instance.list_models(**kwargs)
 
 
 async def list_models_async(
@@ -550,11 +525,6 @@ async def list_models_async(
 ) -> Sequence[Model]:
     """List available models for a provider asynchronously."""
     provider_key = ProviderName.from_string(provider)
-    config: dict[str, str] = {}
-    if api_key:
-        config["api_key"] = str(api_key)
-    if api_base:
-        config["api_base"] = str(api_base)
-    api_config = ApiConfig(**config)
+    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
     prov_instance = ProviderFactory.create_provider(provider_key, api_config)
-    return await prov_instance.list_models_async(client_args=client_args, **kwargs)
+    return await prov_instance.list_models_async(**kwargs)

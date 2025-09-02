@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.logging import logger
-from any_llm.provider import ApiConfig, Provider
+from any_llm.provider import ClientConfig, Provider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
 from any_llm.utils.instructor import _convert_instructor_response
@@ -46,7 +46,7 @@ class AwsProvider(Provider):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
-    def __init__(self, config: ApiConfig) -> None:
+    def __init__(self, config: ClientConfig) -> None:
         """Initialize AWS Bedrock provider."""
         # This intentionally does not call super().__init__(config) because AWS has a different way of handling credentials
         self._verify_no_missing_packages()
@@ -101,7 +101,7 @@ class AwsProvider(Provider):
             "bedrock-runtime",
             endpoint_url=self.config.api_base,
             region_name=self.region_name,
-            **(params.client_args if params.client_args else {}),
+            **(self.config.client_args if self.config.client_args else {}),
         )
 
         if params.reasoning_effort == "auto":
@@ -109,7 +109,7 @@ class AwsProvider(Provider):
 
         completion_kwargs = params.model_dump(
             exclude_none=True,
-            exclude={"client_args", "model_id", "messages", "response_format", "stream", "parallel_tool_calls"},
+            exclude={"model_id", "messages", "response_format", "stream", "parallel_tool_calls"},
         )
         if params.response_format:
             if params.stream:
@@ -163,7 +163,6 @@ class AwsProvider(Provider):
         self,
         model: str,
         inputs: str | list[str],
-        client_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         logger.warning("AWS Bedrock client does not support async. Calls made with this method will be blocking.")
@@ -172,7 +171,7 @@ class AwsProvider(Provider):
 
         # create partial function of sync call
         call_sync_partial: Callable[[], CreateEmbeddingResponse] = functools.partial(
-            self.embedding, model, inputs, client_args=client_args, **kwargs
+            self.embedding, model, inputs, **kwargs
         )
 
         return await loop.run_in_executor(None, call_sync_partial)
@@ -181,7 +180,6 @@ class AwsProvider(Provider):
         self,
         model: str,
         inputs: str | list[str],
-        client_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         """Create embeddings using AWS Bedrock."""
@@ -191,7 +189,7 @@ class AwsProvider(Provider):
             "bedrock-runtime",
             endpoint_url=self.config.api_base,
             region_name=self.region_name,
-            **(client_args if client_args else {}),
+            **(self.config.client_args if self.config.client_args else {}),
         )  # type: ignore[no-untyped-call]
 
         input_texts = [inputs] if isinstance(inputs, str) else inputs
@@ -217,7 +215,7 @@ class AwsProvider(Provider):
 
         return _create_openai_embedding_response_from_aws(embedding_data, model, total_tokens)
 
-    def list_models(self, client_args: dict[str, Any] | None = None, **kwargs: Any) -> Sequence[Model]:
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
@@ -225,7 +223,7 @@ class AwsProvider(Provider):
             "bedrock",
             endpoint_url=self.config.api_base,
             region_name=self.region_name,
-            **(client_args if client_args else {}),
+            **(self.config.client_args if self.config.client_args else {}),
         )  # type: ignore[no-untyped-call]
         models_list = client.list_foundation_models(**kwargs).get("modelSummaries", [])
         # AWS doesn't provide a creation date for models

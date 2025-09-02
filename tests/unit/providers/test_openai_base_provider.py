@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from any_llm.provider import ApiConfig
+from any_llm.provider import ClientConfig
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.model import Model
 
@@ -23,7 +23,7 @@ def test_list_models_returns_model_list_when_supported(mock_openai_class: MagicM
     mock_client.models.list.return_value.data = mock_model_data
     mock_openai_class.return_value = mock_client
 
-    config = ApiConfig(api_key="test-key", api_base="https://custom.api.com/v1")
+    config = ClientConfig(api_key="test-key", api_base="https://custom.api.com/v1")
     provider = ListModelsProvider(config=config)
 
     result = provider.list_models()
@@ -46,7 +46,7 @@ def test_list_models_uses_default_api_base_when_not_configured(mock_openai_class
     mock_client.models.list.return_value.data = []
     mock_openai_class.return_value = mock_client
 
-    config = ApiConfig(api_key="test-key")
+    config = ClientConfig(api_key="test-key")
     provider = ListModelsProvider(config=config)
 
     provider.list_models()
@@ -66,7 +66,7 @@ def test_list_models_passes_kwargs_to_client(mock_openai_class: MagicMock) -> No
     mock_client.models.list.return_value.data = []
     mock_openai_class.return_value = mock_client
 
-    config = ApiConfig(api_key="test-key")
+    config = ClientConfig(api_key="test-key")
     provider = ListModelsProvider(config=config)
 
     provider.list_models(limit=10, after="model-123")

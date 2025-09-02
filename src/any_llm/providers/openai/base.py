@@ -37,12 +37,12 @@ class BaseOpenAIProvider(Provider, ABC):
 
     _DEFAULT_REASONING_EFFORT: Literal["minimal", "low", "medium", "high", "auto"] | None = None
 
-    def _get_client(self, client_args: dict[str, Any] | None = None, sync: bool = False) -> AsyncOpenAI | OpenAI:
+    def _get_client(self, sync: bool = False) -> AsyncOpenAI | OpenAI:
         _client_class = OpenAI if sync else AsyncOpenAI
         return _client_class(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,
-            **(client_args if client_args else {}),
+            **(self.config.client_args if self.config.client_args else {}),
         )
 
     def _convert_completion_response_async(
@@ -69,7 +69,7 @@ class BaseOpenAIProvider(Provider, ABC):
     async def acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        client = cast("AsyncOpenAI", self._get_client(params.client_args, sync=False))
+        client = cast("AsyncOpenAI", self._get_client(sync=False))
 
         if params.reasoning_effort == "auto":
             params.reasoning_effort = self._DEFAULT_REASONING_EFFORT
@@ -82,23 +82,23 @@ class BaseOpenAIProvider(Provider, ABC):
             response = await client.chat.completions.parse(
                 model=params.model_id,
                 messages=cast("Any", params.messages),
-                **params.model_dump(exclude_none=True, exclude={"client_args", "model_id", "messages", "stream"}),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
                 **kwargs,
             )
         else:
             response = await client.chat.completions.create(
                 model=params.model_id,
                 messages=cast("Any", params.messages),
-                **params.model_dump(exclude_none=True, exclude={"client_args", "model_id", "messages"}),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages"}),
                 **kwargs,
             )
         return self._convert_completion_response_async(response)
 
     async def aresponses(
-        self, model: str, input_data: Any, client_args: dict[str, Any] | None = None, **kwargs: Any
+        self, model: str, input_data: Any, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call OpenAI Responses API"""
-        client = self._get_client(client_args=client_args)
+        client = self._get_client()
 
         response = await client.responses.create(
             model=model,
@@ -114,7 +114,6 @@ class BaseOpenAIProvider(Provider, ABC):
         self,
         model: str,
         inputs: str | list[str],
-        client_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         # Classes that inherit from BaseOpenAIProvider may override SUPPORTS_EMBEDDING
@@ -122,7 +121,7 @@ class BaseOpenAIProvider(Provider, ABC):
             msg = "This provider does not support embeddings."
             raise NotImplementedError(msg)
 
-        client = cast("AsyncOpenAI", self._get_client(client_args=client_args))
+        client = cast("AsyncOpenAI", self._get_client())
 
         return await client.embeddings.create(
             model=model,
@@ -131,12 +130,12 @@ class BaseOpenAIProvider(Provider, ABC):
             **kwargs,
         )
 
-    def list_models(self, client_args: dict[str, Any] | None = None, **kwargs: Any) -> Sequence[Model]:
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
         if not self.SUPPORTS_LIST_MODELS:
             message = f"{self.PROVIDER_NAME} does not support listing models."
             raise NotImplementedError(message)
-        client = cast("OpenAI", self._get_client(client_args=client_args, sync=True))
+        client = cast("OpenAI", self._get_client(sync=True))
         return client.models.list(**kwargs).data

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
-from any_llm.provider import ApiConfig, Provider
+from any_llm.provider import ClientConfig, Provider
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -52,7 +52,7 @@ class OllamaProvider(Provider):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
-    def __init__(self, config: ApiConfig) -> None:
+    def __init__(self, config: ClientConfig) -> None:
         """We don't use the Provider init because by default we don't require an API key."""
         self._verify_no_missing_packages()
 

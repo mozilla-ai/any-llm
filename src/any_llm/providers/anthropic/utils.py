@@ -298,7 +298,6 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         params.model_dump(
             exclude_none=True,
             exclude={
-                "client_args",
                 "model_id",
                 "messages",
                 "reasoning_effort",

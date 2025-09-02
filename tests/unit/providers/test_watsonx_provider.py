@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from any_llm.provider import ApiConfig
+from any_llm.provider import ClientConfig
 from any_llm.providers.watsonx.watsonx import WatsonxProvider
 from any_llm.types.completion import CompletionParams
 
@@ -59,7 +59,7 @@ async def test_watsonx_non_streaming() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_watsonx_provider() as (mock_model_instance, mock_convert_response, mock_model_inference):
-        provider = WatsonxProvider(ApiConfig(api_key=api_key))
+        provider = WatsonxProvider(ClientConfig(api_key=api_key))
         result = await provider.acompletion(CompletionParams(model_id="test-model", messages=messages))
 
         mock_model_inference.assert_called_once()
@@ -79,7 +79,7 @@ async def test_watsonx_streaming() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_watsonx_streaming_provider() as (mock_model_instance, mock_convert_streaming_chunk, mock_model_inference):
-        provider = WatsonxProvider(ApiConfig(api_key=api_key))
+        provider = WatsonxProvider(ClientConfig(api_key=api_key))
         result = await provider.acompletion(CompletionParams(model_id="test-model", messages=messages, stream=True))
 
         mock_model_inference.assert_called_once()
@@ -101,5 +101,5 @@ async def test_watsonx_streaming() -> None:
 
 def test_watsonx_SUPPORTS_COMPLETION_STREAMING() -> None:
     """Test that WatsonxProvider correctly advertises streaming support."""
-    provider = WatsonxProvider(ApiConfig(api_key="test-key"))
+    provider = WatsonxProvider(ClientConfig(api_key="test-key"))
     assert provider.SUPPORTS_COMPLETION_STREAMING is True

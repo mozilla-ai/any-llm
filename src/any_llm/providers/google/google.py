@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
-from any_llm.provider import ApiConfig, Provider
+from any_llm.provider import ClientConfig, Provider
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -58,15 +58,13 @@ class GoogleProvider(Provider):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
-    def __init__(self, config: ApiConfig) -> None:
+    def __init__(self, config: ClientConfig) -> None:
         """Initialize Google GenAI provider."""
         self._verify_no_missing_packages()
         self.config = config
         self.use_vertex_ai = os.getenv("GOOGLE_USE_VERTEX_AI", "false").lower() == "true"
 
-    def _get_client(
-        self, use_vertex_ai: bool, config: ApiConfig, client_args: dict[str, Any] | None = None
-    ) -> "genai.Client":
+    def _get_client(self, use_vertex_ai: bool, config: ClientConfig) -> "genai.Client":
         if use_vertex_ai:
             project_id = os.getenv("GOOGLE_PROJECT_ID")
             location = os.getenv("GOOGLE_REGION", "us-central1")
@@ -76,7 +74,10 @@ class GoogleProvider(Provider):
                 raise MissingApiKeyError(msg, "GOOGLE_PROJECT_ID")
 
             return genai.Client(
-                vertexai=True, project=project_id, location=location, **(client_args if client_args else {})
+                vertexai=True,
+                project=project_id,
+                location=location,
+                **(config.client_args if config.client_args else {}),
             )
 
         api_key = getattr(config, "api_key", None) or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
@@ -85,16 +86,15 @@ class GoogleProvider(Provider):
             msg = "Google Gemini Developer API"
             raise MissingApiKeyError(msg, "GEMINI_API_KEY/GOOGLE_API_KEY")
 
-        return genai.Client(api_key=api_key, **(client_args if client_args else {}))
+        return genai.Client(api_key=api_key, **(config.client_args if config.client_args else {}))
 
     async def aembedding(
         self,
         model: str,
         inputs: str | list[str],
-        client_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        client = self._get_client(self.use_vertex_ai, self.config, client_args)
+        client = self._get_client(self.use_vertex_ai, self.config)
         result = await client.aio.models.embed_content(
             model=model,
             contents=inputs,  # type: ignore[arg-type]
@@ -137,7 +137,6 @@ class GoogleProvider(Provider):
         base_kwargs = params.model_dump(
             exclude_none=True,
             exclude={
-                "client_args",
                 "model_id",
                 "messages",
                 "response_format",
@@ -163,7 +162,7 @@ class GoogleProvider(Provider):
         if system_instruction:
             generation_config.system_instruction = system_instruction
 
-        client = self._get_client(self.use_vertex_ai, self.config, params.client_args)
+        client = self._get_client(self.use_vertex_ai, self.config)
         if stream:
             response_stream = await client.aio.models.generate_content_stream(
                 model=params.model_id,
@@ -241,10 +240,10 @@ class GoogleProvider(Provider):
             usage=usage,
         )
 
-    def list_models(self, client_args: dict[str, Any] | None = None, **kwargs: Any) -> Sequence[Model]:
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
-        client = self._get_client(self.use_vertex_ai, self.config, client_args=client_args)
+        client = self._get_client(self.use_vertex_ai, self.config)
         models_list = client.models.list(**kwargs)
         return _convert_models_list(models_list)

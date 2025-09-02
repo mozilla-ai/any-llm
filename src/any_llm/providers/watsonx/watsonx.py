@@ -89,7 +89,7 @@ class WatsonxProvider(Provider):
                 url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL"),
             ),
             project_id=kwargs.get("project_id") or os.getenv("WATSONX_PROJECT_ID"),
-            **(params.client_args if params.client_args else {}),
+            **(self.config.client_args if self.config.client_args else {}),
         )
 
         # Handle response_format by inlining schema guidance into the prompt
@@ -102,18 +102,14 @@ class WatsonxProvider(Provider):
 
         if params.stream:
             kwargs = {
-                **params.model_dump(
-                    exclude_none=True, exclude={"client_args", "model_id", "messages", "response_format", "stream"}
-                ),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
                 **kwargs,
             }
             return self._stream_completion_async(model_inference, params.messages, **kwargs)
 
         response = await model_inference.achat(
             messages=params.messages,
-            params=params.model_dump(
-                exclude_none=True, exclude={"client_args", "model_id", "messages", "response_format", "stream"}
-            ),
+            params=params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
         )
 
         return _convert_response(response)
@@ -132,7 +128,7 @@ class WatsonxProvider(Provider):
                 url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL"),
             ),
             project_id=kwargs.get("project_id") or os.getenv("WATSONX_PROJECT_ID"),
-            **(params.client_args if params.client_args else {}),
+            **(self.config.client_args if self.config.client_args else {}),
         )
 
         # Handle response_format by inlining schema guidance into the prompt
@@ -145,23 +141,19 @@ class WatsonxProvider(Provider):
 
         if params.stream:
             kwargs = {
-                **params.model_dump(
-                    exclude_none=True, exclude={"client_args", "model_id", "messages", "response_format", "stream"}
-                ),
+                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
                 **kwargs,
             }
             return self._stream_completion(model_inference, params.messages, **kwargs)
 
         response = model_inference.chat(
             messages=params.messages,
-            params=params.model_dump(
-                exclude_none=True, exclude={"client_args", "model_id", "messages", "response_format", "stream"}
-            ),
+            params=params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
         )
 
         return _convert_response(response)
 
-    def list_models(self, client_args: dict[str, Any] | None = None, **kwargs: Any) -> Sequence[Model]:
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
@@ -170,7 +162,7 @@ class WatsonxProvider(Provider):
             credentials=Credentials(
                 api_key=self.config.api_key, url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL")
             ),
-            **(client_args if client_args else {}),
+            **(self.config.client_args if self.config.client_args else {}),
         )
         models_response = client.foundation_models.get_model_specs(**kwargs)
 

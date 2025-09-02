@@ -1,6 +1,6 @@
 import pytest
 
-from any_llm.provider import ApiConfig, ProviderFactory
+from any_llm.provider import ClientConfig, ProviderFactory
 from any_llm.providers.perplexity import PerplexityProvider
 
 
@@ -11,7 +11,7 @@ def _env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_provider_basics() -> None:
     """Test provider instantiation and basic attributes."""
-    p = PerplexityProvider(ApiConfig(api_key="sk-test"))
+    p = PerplexityProvider(ClientConfig(api_key="sk-test"))
     assert p.PROVIDER_NAME == "perplexity"
     assert p.API_BASE == "https://api.perplexity.ai"  # No override, just default
     assert p.SUPPORTS_COMPLETION is True
@@ -23,7 +23,7 @@ def test_provider_basics() -> None:
 def test_factory_integration() -> None:
     """Test that the provider factory can create and discover the provider."""
     # Test provider creation
-    p = ProviderFactory.create_provider("perplexity", ApiConfig(api_key="sk-1"))
+    p = ProviderFactory.create_provider("perplexity", ClientConfig(api_key="sk-1"))
     assert isinstance(p, PerplexityProvider)
     assert p.PROVIDER_NAME == "perplexity"
 
@@ -54,5 +54,5 @@ def test_provider_metadata() -> None:
 def test_perplexity_api_base_override_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that PERPLEXITY_API_BASE environment variable overrides the default API base."""
     monkeypatch.setenv("PERPLEXITY_API_BASE", "https://example-proxy.local")
-    p = ProviderFactory.create_provider("perplexity", ApiConfig(api_key="dummy"))
+    p = ProviderFactory.create_provider("perplexity", ClientConfig(api_key="dummy"))
     assert getattr(p, "API_BASE", "") == "https://example-proxy.local"

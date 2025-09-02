@@ -16,18 +16,11 @@ class AzureopenaiProvider(BaseOpenAIProvider):
     SUPPORTS_RESPONSES = True
     SUPPORTS_LIST_MODELS = True
 
-    @property
-    def openai_client(self) -> OpenAI:
-        return OpenAI(
+    def _get_client(self, sync: bool = False) -> AsyncOpenAI | OpenAI:
+        _client_class = OpenAI if sync else AsyncOpenAI
+        return _client_class(
             base_url=self.config.api_base or self.API_BASE or os.getenv("AZURE_OPENAI_API_BASE"),
             api_key=self.config.api_key,
-            default_query={"api-version": "preview"},
-        )
-
-    @property
-    def async_openai_client(self) -> AsyncOpenAI:
-        return AsyncOpenAI(
-            base_url=self.config.api_base or self.API_BASE or os.getenv("AZURE_OPENAI_API_BASE"),
-            api_key=self.config.api_key,
+            **(self.config.client_args if self.config.client_args else {}),
             default_query={"api-version": "preview"},
         )

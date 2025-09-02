@@ -6,7 +6,7 @@ import pytest
 from google.genai import types
 
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ApiConfig
+from any_llm.provider import ClientConfig
 from any_llm.providers.google.google import REASONING_EFFORT_TO_THINKING_BUDGETS, GoogleProvider
 from any_llm.types.completion import CompletionParams
 
@@ -46,7 +46,7 @@ async def test_completion_with_system_instruction() -> None:
     messages = [{"role": "system", "content": "You are a helpful assistant"}, {"role": "user", "content": "Hello"}]
 
     with mock_google_provider() as mock_genai:
-        provider = GoogleProvider(ApiConfig(api_key=api_key))
+        provider = GoogleProvider(ClientConfig(api_key=api_key))
         await provider.acompletion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -72,7 +72,7 @@ async def test_completion_with_tool_choice_auto(tool_choice: str, expected_mode:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_google_provider() as mock_genai:
-        provider = GoogleProvider(ApiConfig(api_key=api_key))
+        provider = GoogleProvider(ClientConfig(api_key=api_key))
         await provider.acompletion(CompletionParams(model_id=model, messages=messages, tool_choice=tool_choice))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -89,7 +89,7 @@ async def test_completion_without_tool_choice() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_google_provider() as mock_genai:
-        provider = GoogleProvider(ApiConfig(api_key=api_key))
+        provider = GoogleProvider(ClientConfig(api_key=api_key))
         await provider.acompletion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -105,7 +105,7 @@ async def test_completion_with_stream_and_response_format_raises() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_google_provider():
-        provider = GoogleProvider(ApiConfig(api_key=api_key))
+        provider = GoogleProvider(ClientConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
             await provider.acompletion(
                 CompletionParams(
@@ -124,7 +124,7 @@ async def test_completion_with_parallel_tool_calls_raises() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_google_provider():
-        provider = GoogleProvider(ApiConfig(api_key=api_key))
+        provider = GoogleProvider(ClientConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
             await provider.acompletion(
                 CompletionParams(
@@ -141,7 +141,7 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
     model = "gemini-pro"
 
     with mock_google_provider() as mock_genai:
-        provider = GoogleProvider(ApiConfig(api_key=api_key))
+        provider = GoogleProvider(ClientConfig(api_key=api_key))
         await provider.acompletion(CompletionParams(model_id=model, messages=agent_loop_messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -171,7 +171,7 @@ async def test_completion_with_custom_reasoning_effort(
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_google_provider() as mock_genai:
-        provider = GoogleProvider(ApiConfig(api_key=api_key))
+        provider = GoogleProvider(ClientConfig(api_key=api_key))
         await provider.acompletion(
             CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort)
         )
@@ -195,7 +195,7 @@ async def test_completion_with_max_tokens_conversion() -> None:
     max_tokens = 100
 
     with mock_google_provider() as mock_genai:
-        provider = GoogleProvider(ApiConfig(api_key=api_key))
+        provider = GoogleProvider(ClientConfig(api_key=api_key))
         await provider.acompletion(CompletionParams(model_id=model, messages=messages, max_tokens=max_tokens))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args

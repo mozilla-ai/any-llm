@@ -32,7 +32,7 @@ async def test_embedding_with_api_config() -> None:
         assert call_args[0][1].api_key == "test_key"
         assert call_args[0][1].api_base == "https://test.example.com"
 
-        mock_provider.aembedding.assert_called_once_with("test-model", "Hello world", client_args=None)
+        mock_provider.aembedding.assert_called_once_with("test-model", "Hello world")
         assert result == mock_embedding_response
 
 
