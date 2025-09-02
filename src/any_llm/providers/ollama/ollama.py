@@ -127,7 +127,7 @@ class OllamaProvider(Provider):
         if params.reasoning_effort is not None:
             kwargs["think"] = True
 
-        client = AsyncClient(host=self.url, **(params.client_args if params.client_args else {}))
+        client = AsyncClient(host=self.url, **(self.config.client_args if self.config.client_args else {}))
 
         if params.stream:
             return self._stream_completion_async(client, params.model_id, cleaned_messages, **kwargs)
@@ -146,11 +146,10 @@ class OllamaProvider(Provider):
         self,
         model: str,
         inputs: str | list[str],
-        client_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         """Generate embeddings using Ollama."""
-        client = AsyncClient(host=self.url, **(client_args if client_args else {}))
+        client = AsyncClient(host=self.url, **(self.config.client_args if self.config.client_args else {}))
 
         response = await client.embed(
             model=model,
@@ -159,10 +158,10 @@ class OllamaProvider(Provider):
         )
         return _create_openai_embedding_response_from_ollama(response)
 
-    def list_models(self, client_args: dict[str, Any] | None = None, **kwargs: Any) -> Sequence[Model]:
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
-        client = Client(host=self.url, **(client_args if client_args else {}))
+        client = Client(host=self.url, **(self.config.client_args if self.config.client_args else {}))
         models_list = client.list(**kwargs)
         return _convert_models_list(models_list)

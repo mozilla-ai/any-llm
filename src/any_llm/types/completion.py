@@ -148,6 +148,3 @@ class CompletionParams(BaseModel):
 
     reasoning_effort: Literal["minimal", "low", "medium", "high", "auto"] | None = "auto"
     """Reasoning effort level for models that support it. "auto" will map to each provider's default."""
-
-    client_args: dict[str, Any] | None = None
-    """ Additional provider-specific arguments that will be passed to the provider's client instantiation."""

@@ -92,7 +92,7 @@ def provider_extra_kwargs_map() -> dict[ProviderName, dict[str, Any]]:
         ProviderName.COHERE: {"client_args": {"timeout": 10}},
         ProviderName.DATABRICKS: {"api_base": "https://dbc-40d03128-ecae.cloud.databricks.com/serving-endpoints"},
         ProviderName.GROQ: {"client_args": {"timeout": 10}},
-        ProviderName.MISTRAL: {"client_args": {"timeout_ms": 10000}},
+        ProviderName.MISTRAL: {"client_args": {"timeout_ms": 100000}},
         ProviderName.HUGGINGFACE: {
             "api_base": "https://y0okp71n85ezo5nr.us-east-1.aws.endpoints.huggingface.cloud/v1/"
         },
