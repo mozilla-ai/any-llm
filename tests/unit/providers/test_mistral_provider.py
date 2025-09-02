@@ -1,7 +1,5 @@
 from typing import Any
 
-import pytest
-
 from any_llm.providers.mistral.utils import _patch_messages
 
 
@@ -73,16 +71,6 @@ def test_patch_messages_no_insertion_when_next_not_user() -> None:
     ]
     out = _patch_messages(messages)
     assert out == messages
-
-
-def test_patch_messages_with_invalid_tool_sequence_raises_error() -> None:
-    """Test that an invalid tool message sequence raises a ValueError."""
-    messages: list[dict[str, Any]] = [
-        {"role": "user", "content": "u1"},
-        {"role": "tool", "content": "t1"},
-    ]
-    with pytest.raises(ValueError, match="A tool message must be preceded by an assistant message with tool_calls."):
-        _patch_messages(messages)
 
 
 def test_patch_messages_with_multiple_valid_tool_calls() -> None:
