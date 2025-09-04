@@ -9,6 +9,10 @@ on:
       - '.github/workflows/**'
       - 'pyproject.toml'
   workflow_dispatch:
+    inputs:
+      filter:
+        description: the arg you want to pass to pytest filter (-k)
+        type: string
 
 jobs:
   run-integration-tests:
@@ -66,7 +70,12 @@ jobs:
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
           WATSONX_API_KEY: ${{ secrets.WATSONX_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
-        run: pytest tests/integration -v -n auto --cov --cov-report=xml
+        run: |
+          if [ -n "${{ inputs.filter }}" ]; then
+            pytest tests/integration -v -n auto --cov --cov-report=xml -k "${{ inputs.filter }}"
+          else
+            pytest tests/integration -v -n auto --cov --cov-report=xml
+          fi
 
       - name: Upload coverage reports to Codecov
         if: always()
