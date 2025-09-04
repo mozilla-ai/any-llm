@@ -7,12 +7,10 @@ from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import Provider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 from any_llm.types.model import Model
-from any_llm.utils.instructor import _convert_instructor_response
 
 MISSING_PACKAGES_ERROR = None
 try:
     import cerebras.cloud.sdk as cerebras
-    import instructor
     from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponse
 
     from .utils import (
@@ -91,22 +89,18 @@ class CerebrasProvider(Provider):
         client = cerebras.AsyncCerebras(
             api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
         )
-        instructor_client = instructor.from_cerebras(client)
 
         if params.response_format:
-            if not isinstance(params.response_format, type) or not issubclass(params.response_format, BaseModel):
-                msg = "response_format must be a pydantic model"
-                raise ValueError(msg)
-
-            instructor_response = await instructor_client.chat.completions.create(
-                model=params.model_id,
-                messages=cast("Any", params.messages),
-                response_model=params.response_format,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
-                **kwargs,
-            )
-
-            return _convert_instructor_response(instructor_response, params.model_id, self.PROVIDER_NAME)
+            # See https://inference-docs.cerebras.ai/capabilities/structured-outputs for guide to creating schema
+            if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
+                params.response_format = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "response_schema",
+                        "schema": params.response_format.model_json_schema(),
+                        "strict": True,
+                    },
+                }
 
         response = await client.chat.completions.create(
             model=params.model_id,

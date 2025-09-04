@@ -46,7 +46,6 @@ cohere = [
 
 cerebras = [
   "cerebras_cloud_sdk>=1.23.0",
-  "instructor",
 ]
 
 groq = [
