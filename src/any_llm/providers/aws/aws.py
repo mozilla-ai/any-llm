@@ -20,8 +20,7 @@ try:
     import instructor
 
     from .utils import (
-        _convert_kwargs,
-        _convert_messages,
+        _convert_params,
         _convert_response,
         _create_openai_chunk_from_aws_chunk,
         _create_openai_embedding_response_from_aws,
@@ -104,13 +103,8 @@ class AwsProvider(Provider):
             **(self.config.client_args if self.config.client_args else {}),
         )
 
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
+        completion_kwargs = _convert_params(params, kwargs)
 
-        completion_kwargs = params.model_dump(
-            exclude_none=True,
-            exclude={"model_id", "messages", "response_format", "stream", "parallel_tool_calls"},
-        )
         if params.response_format:
             if params.stream:
                 msg = "stream is not supported for response_format"
@@ -123,23 +117,14 @@ class AwsProvider(Provider):
                 raise ValueError(msg)
 
             instructor_response = instructor_client.chat.completions.create(
-                model=params.model_id,
-                messages=params.messages,  # type: ignore[arg-type]
                 response_model=params.response_format,
                 **completion_kwargs,
             )
 
             return _convert_instructor_response(instructor_response, params.model_id, "aws")
 
-        completion_kwargs = _convert_kwargs(completion_kwargs)
-
-        system_message, formatted_messages = _convert_messages(params.messages)
-
         if params.stream:
             response_stream = client.converse_stream(
-                modelId=params.model_id,
-                messages=formatted_messages,
-                system=system_message,
                 **completion_kwargs,
             )
             stream_generator = response_stream["stream"]
@@ -150,12 +135,7 @@ class AwsProvider(Provider):
                 )
                 if chunk is not None
             )
-        response = client.converse(
-            modelId=params.model_id,
-            messages=formatted_messages,
-            system=system_message,
-            **completion_kwargs,
-        )
+        response = client.converse(**completion_kwargs)
 
         return _convert_response(response)
 
