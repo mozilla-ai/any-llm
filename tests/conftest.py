@@ -85,6 +85,7 @@ def embedding_provider_model_map() -> dict[ProviderName, str]:
 def provider_extra_kwargs_map() -> dict[ProviderName, dict[str, Any]]:
     return {
         ProviderName.ANTHROPIC: {"client_args": {"timeout": 10}},
+        ProviderName.AWS: {"max_tokens": 1000},
         ProviderName.AZURE: {
             "api_base": "https://models.github.ai/inference",
         },
