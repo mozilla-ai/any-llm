@@ -117,6 +117,7 @@ class AwsProvider(Provider):
                 raise ValueError(msg)
 
             instructor_response = instructor_client.chat.completions.create(
+                response_model=params.response_format,
                 **completion_kwargs,
             )
 
