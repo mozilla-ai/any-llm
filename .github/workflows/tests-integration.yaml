@@ -70,6 +70,7 @@ jobs:
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
           WATSONX_API_KEY: ${{ secrets.WATSONX_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           if [ -n "${{ inputs.filter }}" ]; then
             pytest tests/integration -v -n auto --cov --cov-report=xml -k "${{ inputs.filter }}"
