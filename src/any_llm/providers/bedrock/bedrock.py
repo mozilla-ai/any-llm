@@ -32,7 +32,7 @@ except ImportError as e:
 class BedrockProvider(Provider):
     """AWS Bedrock Provider using boto3 and instructor for structured output."""
 
-    PROVIDER_NAME = "aws"
+    PROVIDER_NAME = "bedrock"
     ENV_API_KEY_NAME = "AWS_BEARER_TOKEN_BEDROCK"
     PROVIDER_DOCUMENTATION_URL = "https://aws.amazon.com/bedrock/"
 
