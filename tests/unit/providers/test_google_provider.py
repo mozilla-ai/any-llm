@@ -6,20 +6,29 @@ import pytest
 from google.genai import types
 
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ClientConfig
-from any_llm.providers.google.google import REASONING_EFFORT_TO_THINKING_BUDGETS, GoogleProvider
+from any_llm.provider import ClientConfig, Provider
+from any_llm.providers.gemini import GeminiProvider
+from any_llm.providers.gemini.base import REASONING_EFFORT_TO_THINKING_BUDGETS
+from any_llm.providers.vertexai import VertexaiProvider
 from any_llm.types.completion import CompletionParams
+
+
+@pytest.fixture(params=[GeminiProvider, VertexaiProvider])
+def google_provider_class(request: pytest.FixtureRequest) -> type[Provider]:
+    """Parametrized fixture that provides both GeminiProvider and VertexaiProvider classes."""
+    return request.param  # type: ignore[no-any-return]
 
 
 @contextmanager
 def mock_google_provider():  # type: ignore[no-untyped-def]
     with (
-        patch("any_llm.providers.google.google.genai.Client") as mock_genai,
-        patch("any_llm.providers.google.google._convert_response_to_response_dict") as mock_convert_response,
+        patch("any_llm.providers.gemini.base.genai.Client") as mock_genai,
+        patch("any_llm.providers.gemini.base._convert_response_to_response_dict") as mock_convert_response,
+        patch.dict("os.environ", {"GOOGLE_PROJECT_ID": "test-project", "GOOGLE_REGION": "us-central1"}),
     ):
         mock_convert_response.return_value = {
             "id": "google_genai_response",
-            "model": "google/genai",
+            "model": "gemini/genai",
             "created": 0,
             "choices": [
                 {
@@ -39,14 +48,14 @@ def mock_google_provider():  # type: ignore[no-untyped-def]
 
 
 @pytest.mark.asyncio
-async def test_completion_with_system_instruction() -> None:
+async def test_completion_with_system_instruction(google_provider_class: type[Provider]) -> None:
     """Test that completion works correctly with system_instruction."""
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "system", "content": "You are a helpful assistant"}, {"role": "user", "content": "Hello"}]
 
     with mock_google_provider() as mock_genai:
-        provider = GoogleProvider(ClientConfig(api_key=api_key))
+        provider = google_provider_class(ClientConfig(api_key=api_key))
         await provider.acompletion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -65,14 +74,16 @@ async def test_completion_with_system_instruction() -> None:
     ],
 )
 @pytest.mark.asyncio
-async def test_completion_with_tool_choice_auto(tool_choice: str, expected_mode: str) -> None:
+async def test_completion_with_tool_choice_auto(
+    google_provider_class: type[Provider], tool_choice: str, expected_mode: str
+) -> None:
     """Test that completion correctly processes tool_choice='auto'."""
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_google_provider() as mock_genai:
-        provider = GoogleProvider(ClientConfig(api_key=api_key))
+        provider = google_provider_class(ClientConfig(api_key=api_key))
         await provider.acompletion(CompletionParams(model_id=model, messages=messages, tool_choice=tool_choice))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -82,14 +93,14 @@ async def test_completion_with_tool_choice_auto(tool_choice: str, expected_mode:
 
 
 @pytest.mark.asyncio
-async def test_completion_without_tool_choice() -> None:
+async def test_completion_without_tool_choice(google_provider_class: type[Provider]) -> None:
     """Test that completion works correctly without tool_choice."""
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_google_provider() as mock_genai:
-        provider = GoogleProvider(ClientConfig(api_key=api_key))
+        provider = google_provider_class(ClientConfig(api_key=api_key))
         await provider.acompletion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -99,13 +110,13 @@ async def test_completion_without_tool_choice() -> None:
 
 
 @pytest.mark.asyncio
-async def test_completion_with_stream_and_response_format_raises() -> None:
+async def test_completion_with_stream_and_response_format_raises(google_provider_class: type[Provider]) -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_google_provider():
-        provider = GoogleProvider(ClientConfig(api_key=api_key))
+        provider = google_provider_class(ClientConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
             await provider.acompletion(
                 CompletionParams(
@@ -118,13 +129,13 @@ async def test_completion_with_stream_and_response_format_raises() -> None:
 
 
 @pytest.mark.asyncio
-async def test_completion_with_parallel_tool_calls_raises() -> None:
+async def test_completion_with_parallel_tool_calls_raises(google_provider_class: type[Provider]) -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_google_provider():
-        provider = GoogleProvider(ClientConfig(api_key=api_key))
+        provider = google_provider_class(ClientConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
             await provider.acompletion(
                 CompletionParams(
@@ -136,12 +147,14 @@ async def test_completion_with_parallel_tool_calls_raises() -> None:
 
 
 @pytest.mark.asyncio
-async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, Any]]) -> None:
+async def test_completion_inside_agent_loop(
+    google_provider_class: type[Provider], agent_loop_messages: list[dict[str, Any]]
+) -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
 
     with mock_google_provider() as mock_genai:
-        provider = GoogleProvider(ClientConfig(api_key=api_key))
+        provider = google_provider_class(ClientConfig(api_key=api_key))
         await provider.acompletion(CompletionParams(model_id=model, messages=agent_loop_messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -164,6 +177,7 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
 )
 @pytest.mark.asyncio
 async def test_completion_with_custom_reasoning_effort(
+    google_provider_class: type[Provider],
     reasoning_effort: Literal["low", "medium", "high"] | None,
 ) -> None:
     api_key = "test-api-key"
@@ -171,7 +185,7 @@ async def test_completion_with_custom_reasoning_effort(
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_google_provider() as mock_genai:
-        provider = GoogleProvider(ClientConfig(api_key=api_key))
+        provider = google_provider_class(ClientConfig(api_key=api_key))
         await provider.acompletion(
             CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort)
         )
@@ -187,7 +201,7 @@ async def test_completion_with_custom_reasoning_effort(
 
 
 @pytest.mark.asyncio
-async def test_completion_with_max_tokens_conversion() -> None:
+async def test_completion_with_max_tokens_conversion(google_provider_class: type[Provider]) -> None:
     """Test that max_tokens parameter gets converted to max_output_tokens."""
     api_key = "test-api-key"
     model = "gemini-pro"
@@ -195,7 +209,7 @@ async def test_completion_with_max_tokens_conversion() -> None:
     max_tokens = 100
 
     with mock_google_provider() as mock_genai:
-        provider = GoogleProvider(ClientConfig(api_key=api_key))
+        provider = google_provider_class(ClientConfig(api_key=api_key))
         await provider.acompletion(CompletionParams(model_id=model, messages=messages, max_tokens=max_tokens))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
