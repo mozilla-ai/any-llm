@@ -1,4 +1,4 @@
-from any_llm.providers.google.utils import _convert_tool_spec
+from any_llm.providers.gemini.utils import _convert_tool_spec
 
 
 def test_convert_tool_spec_basic_mapping() -> None:

@@ -1,10 +1,10 @@
-import os
+from abc import abstractmethod
 from collections.abc import AsyncIterator, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from pydantic import BaseModel
 
-from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
+from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ClientConfig, Provider
 from any_llm.types.completion import (
     ChatCompletion,
@@ -38,16 +38,14 @@ try:
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
-# From https://ai.google.dev/gemini-api/docs/openai#thinking
+if TYPE_CHECKING:
+    from google import genai
+
 REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 256, "low": 1024, "medium": 8192, "high": 24576}
 
 
 class GoogleProvider(Provider):
-    """Google Provider using the new response conversion utilities."""
-
-    PROVIDER_NAME = "google"
-    PROVIDER_DOCUMENTATION_URL = "https://cloud.google.com/vertex-ai/docs"
-    ENV_API_KEY_NAME = "GOOGLE_API_KEY/GEMINI_API_KEY"
+    """Base Google Provider class with common functionality for Gemini and Vertex AI."""
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
@@ -58,35 +56,9 @@ class GoogleProvider(Provider):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
-    def __init__(self, config: ClientConfig) -> None:
-        """Initialize Google GenAI provider."""
-        self._verify_no_missing_packages()
-        self.config = config
-        self.use_vertex_ai = os.getenv("GOOGLE_USE_VERTEX_AI", "false").lower() == "true"
-
-    def _get_client(self, use_vertex_ai: bool, config: ClientConfig) -> "genai.Client":
-        if use_vertex_ai:
-            project_id = os.getenv("GOOGLE_PROJECT_ID")
-            location = os.getenv("GOOGLE_REGION", "us-central1")
-
-            if not project_id:
-                msg = "Google Vertex AI"
-                raise MissingApiKeyError(msg, "GOOGLE_PROJECT_ID")
-
-            return genai.Client(
-                vertexai=True,
-                project=project_id,
-                location=location,
-                **(config.client_args if config.client_args else {}),
-            )
-
-        api_key = getattr(config, "api_key", None) or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-
-        if not api_key:
-            msg = "Google Gemini Developer API"
-            raise MissingApiKeyError(msg, "GEMINI_API_KEY/GOOGLE_API_KEY")
-
-        return genai.Client(api_key=api_key, **(config.client_args if config.client_args else {}))
+    @abstractmethod
+    def _get_client(self, config: ClientConfig) -> "genai.Client":
+        """Get the appropriate client for this provider implementation."""
 
     async def aembedding(
         self,
@@ -94,7 +66,7 @@ class GoogleProvider(Provider):
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        client = self._get_client(self.use_vertex_ai, self.config)
+        client = self._get_client(self.config)
         result = await client.aio.models.embed_content(
             model=model,
             contents=inputs,  # type: ignore[arg-type]
@@ -125,7 +97,6 @@ class GoogleProvider(Provider):
 
         if params.reasoning_effort is None:
             kwargs["thinking_config"] = types.ThinkingConfig(include_thoughts=False)
-        # in "auto" mode, we just don't pass a `thinking_config`
         elif params.reasoning_effort != "auto":
             kwargs["thinking_config"] = types.ThinkingConfig(
                 include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort]
@@ -133,7 +104,6 @@ class GoogleProvider(Provider):
 
         stream = bool(params.stream)
         response_format = params.response_format
-        # Build generation config without duplicating keys (e.g., tools)
         base_kwargs = params.model_dump(
             exclude_none=True,
             exclude={
@@ -148,7 +118,6 @@ class GoogleProvider(Provider):
             },
         )
 
-        # Convert max_tokens to max_output_tokens for Google
         if params.max_tokens is not None:
             base_kwargs["max_output_tokens"] = params.max_tokens
 
@@ -162,7 +131,7 @@ class GoogleProvider(Provider):
         if system_instruction:
             generation_config.system_instruction = system_instruction
 
-        client = self._get_client(self.use_vertex_ai, self.config)
+        client = self._get_client(self.config)
         if stream:
             response_stream = await client.aio.models.generate_content_stream(
                 model=params.model_id,
@@ -184,7 +153,6 @@ class GoogleProvider(Provider):
 
         response_dict = _convert_response_to_response_dict(response)
 
-        # Directly construct ChatCompletion
         choices_out: list[Choice] = []
         for i, choice_item in enumerate(response_dict.get("choices", [])):
             message_dict: dict[str, Any] = choice_item.get("message", {})
@@ -211,8 +179,6 @@ class GoogleProvider(Provider):
                 tool_calls=tool_calls,
                 reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
             )
-            from typing import Literal, cast
-
             choices_out.append(
                 Choice(
                     index=i,
@@ -241,9 +207,7 @@ class GoogleProvider(Provider):
         )
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
-        """
-        Fetch available models from the /v1/models endpoint.
-        """
-        client = self._get_client(self.use_vertex_ai, self.config)
+        """Fetch available models from the /v1/models endpoint."""
+        client = self._get_client(self.config)
         models_list = client.models.list(**kwargs)
         return _convert_models_list(models_list)
