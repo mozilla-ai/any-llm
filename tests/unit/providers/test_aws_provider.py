@@ -13,8 +13,6 @@ def mock_aws_provider(region: str):  # type: ignore[no-untyped-def]
     with (
         patch.dict(os.environ, {"AWS_REGION": region}),
         patch("any_llm.providers.aws.aws.AwsProvider._check_aws_credentials"),
-        patch("any_llm.providers.aws.aws._convert_messages", return_value=("", [])),
-        patch("any_llm.providers.aws.aws._convert_kwargs", return_value={}),
         patch("any_llm.providers.aws.aws._convert_response"),
         patch("boto3.client") as mock_boto3_client,
     ):
@@ -45,6 +43,41 @@ def test_boto3_client_created_without_api_base() -> None:
         provider.completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
 
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None, region_name=region)
+
+
+def test_completion_with_kwargs() -> None:
+    """Test that additional kwargs are passed correctly to converse method."""
+    region = "us-east-1"
+    model_id = "model-id"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_aws_provider(region) as mock_boto3_client:
+        provider = AwsProvider(ClientConfig(api_key="test_key"))
+        provider.completion(
+            CompletionParams(
+                model_id=model_id,
+                messages=messages,
+                max_tokens=100,
+            ),
+            guardrailConfig={
+                "guardrailIdentifier": "Guardrail ID",
+                "guardrailVersion": "Guardrail version",
+                "trace": "enabled",
+            },
+        )
+
+        mock_boto3_client.return_value.converse.assert_called_once_with(
+            guardrailConfig={
+                "guardrailIdentifier": "Guardrail ID",
+                "guardrailVersion": "Guardrail version",
+                "trace": "enabled",
+            },
+            inferenceConfig={
+                "maxTokens": 100,
+            },
+            messages=[{"role": "user", "content": [{"text": "Hello"}]}],
+            modelId=model_id,
+        )
 
 
 @contextmanager

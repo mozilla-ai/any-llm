@@ -26,7 +26,6 @@ def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[types.Tool]:
             continue
 
         function = tool["function"]
-        # Preserve nested schema details such as items/additionalProperties for arrays/objects
         properties: dict[str, dict[str, Any]] = {}
         for param_name, param_info in function["parameters"]["properties"].items():
             prop: dict[str, Any] = {
@@ -35,12 +34,10 @@ def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[types.Tool]:
             }
             if "enum" in param_info:
                 prop["enum"] = param_info["enum"]
-            # Google requires explicit items for arrays
             if "items" in param_info:
                 prop["items"] = param_info["items"]
             if prop.get("type") == "array" and "items" not in prop:
                 prop["items"] = {"type": "string"}
-            # Google tool schema does not accept additionalProperties; drop it
             properties[param_name] = prop
 
         parameters_dict = {
@@ -85,7 +82,7 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[types.Conten
             formatted_messages.append(types.Content(role="user", parts=parts))
         elif message["role"] == "assistant":
             if message.get("tool_calls"):
-                tool_call = message["tool_calls"][0]  # Assuming single function call for now
+                tool_call = message["tool_calls"][0]
                 function_call = tool_call["function"]
 
                 parts = [
@@ -202,7 +199,6 @@ def _create_openai_embedding_response_from_google(
         if embedding.values
     ]
 
-    # Google does not provide usage data in the embedding response
     usage = Usage(prompt_tokens=0, total_tokens=0)
 
     return CreateEmbeddingResponse(
@@ -228,10 +224,8 @@ def _create_openai_chunk_from_google_chunk(
 
     for part in candidate.content.parts:
         if part.thought:
-            # This is a thinking/reasoning part
             reasoning_content += part.text or ""
         else:
-            # Regular content part
             content += part.text or ""
 
     delta = ChoiceDelta(
@@ -247,7 +241,7 @@ def _create_openai_chunk_from_google_chunk(
     )
 
     return ChatCompletionChunk(
-        id=f"chatcmpl-{time()}",  # Google doesn't provide an ID in the chunk
+        id=f"chatcmpl-{time()}",
         choices=[choice],
         created=int(time()),
         model=str(response.model_version),
@@ -256,5 +250,4 @@ def _create_openai_chunk_from_google_chunk(
 
 
 def _convert_models_list(models_list: Pager[types.Model]) -> list[Model]:
-    # Google doesn't provide a creation date for models
     return [Model(id=model.name or "Unknown", object="model", created=0, owned_by="google") for model in models_list]

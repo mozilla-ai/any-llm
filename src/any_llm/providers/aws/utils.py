@@ -10,6 +10,7 @@ from any_llm.types.completion import (
     Choice,
     ChoiceDelta,
     ChunkChoice,
+    CompletionParams,
     CompletionUsage,
     CreateEmbeddingResponse,
     Embedding,
@@ -20,34 +21,39 @@ from any_llm.types.completion import (
 INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
 
 
-def _convert_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
-    """Format the kwargs for AWS Bedrock."""
-    kwargs = kwargs.copy()
+def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Convert CompletionParams to kwargs for AWS API."""
+    result_kwargs: dict[str, Any] = kwargs.copy()
 
-    tool_config = _convert_tool_spec(kwargs)
-    kwargs.pop("tools", None)
+    if params.tools:
+        result_kwargs["toolConfig"] = _convert_tool_spec(params.tools, params.tool_choice)
 
-    inference_config = {key: kwargs[key] for key in INFERENCE_PARAMETERS if key in kwargs}
+    inference_config: dict[str, Any] = {}
+    if params.max_tokens:
+        inference_config["maxTokens"] = params.max_tokens
+    if params.temperature:
+        inference_config["temperature"] = params.temperature
+    if params.top_p:
+        inference_config["topP"] = params.top_p
+    if params.stop:
+        inference_config["stopSequences"] = params.stop
 
-    additional_fields = {key: value for key, value in kwargs.items() if key not in INFERENCE_PARAMETERS}
+    if inference_config:
+        result_kwargs["inferenceConfig"] = inference_config
 
-    request_config = {
-        "inferenceConfig": inference_config,
-        "additionalModelRequestFields": additional_fields,
-    }
+    system_message, formatted_messages = _convert_messages(params.messages)
+    result_kwargs["messages"] = formatted_messages
+    if system_message:
+        result_kwargs["system"] = system_message
 
-    if tool_config is not None:
-        request_config["toolConfig"] = tool_config
+    result_kwargs["modelId"] = params.model_id
 
-    return request_config
+    return result_kwargs
 
 
-def _convert_tool_spec(kwargs: dict[str, Any]) -> dict[str, Any] | None:
+def _convert_tool_spec(tools: list[dict[str, Any]], tool_choice: str | dict[str, Any] | None) -> dict[str, Any]:
     """Convert tool specifications to Bedrock format."""
-    if "tools" not in kwargs:
-        return None
-
-    return {
+    tool_config: dict[str, Any] = {
         "tools": [
             {
                 "toolSpec": {
@@ -56,9 +62,13 @@ def _convert_tool_spec(kwargs: dict[str, Any]) -> dict[str, Any] | None:
                     "inputSchema": {"json": tool["function"]["parameters"]},
                 }
             }
-            for tool in kwargs["tools"]
+            for tool in tools
         ]
     }
+    if tool_choice:
+        if tool_choice == "required":
+            tool_config["toolChoice"] = {"any": {}}
+    return tool_config
 
 
 def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
