@@ -18,6 +18,7 @@ def provider_reasoning_model_map() -> dict[ProviderName, str]:
         ProviderName.MISTRAL: "magistral-small-latest",
         ProviderName.XAI: "grok-3-mini-latest",
         ProviderName.OLLAMA: "qwen3:0.6b",
+        ProviderName.OPENROUTER: "deepseek/deepseek-chat-v3.1:free",
         ProviderName.LLAMAFILE: "N/A",
         ProviderName.LLAMACPP: "N/A",
         ProviderName.LMSTUDIO: "openai/gpt-oss-20b",  # You must have LM Studio running and the server enabled
@@ -58,6 +59,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.AZURE: "openai/gpt-4.1-nano",
         ProviderName.AZUREOPENAI: "azure/<your_deployment_name>",
         ProviderName.PERPLEXITY: "llama-3.1-sonar-small-128k-chat",
+        ProviderName.OPENROUTER: "meta-llama/llama-3.3-8b-instruct:free",
         ProviderName.LLAMACPP: "N/A",
     }
 
