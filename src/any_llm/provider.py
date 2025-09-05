@@ -35,7 +35,7 @@ class ProviderName(StrEnum):
     """String enum for supported providers."""
 
     ANTHROPIC = "anthropic"
-    AWS = "aws"
+    BEDROCK = "bedrock"
     AZURE = "azure"
     AZUREOPENAI = "azureopenai"
     CEREBRAS = "cerebras"

@@ -29,7 +29,7 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 
-class AwsProvider(Provider):
+class BedrockProvider(Provider):
     """AWS Bedrock Provider using boto3 and instructor for structured output."""
 
     PROVIDER_NAME = "aws"
