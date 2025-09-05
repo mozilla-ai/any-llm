@@ -176,9 +176,7 @@ def _create_chat_completion_from_ollama_response(response: OllamaChatResponse) -
     if not response_message.thinking and response_message.content:
         # If it didn't come out right from ollama, also look for it in the content between <think> and </think>
         if "<think>" in response_message.content and "</think>" in response_message.content:
-            # set the reasoning apart
             response_message.thinking = response_message.content.split("<think>")[1].split("</think>")[0]
-            # remove the reasoning from the content
             response_message.content = response_message.content.split("</think>")[1]
 
     message = ChatCompletionMessage(
