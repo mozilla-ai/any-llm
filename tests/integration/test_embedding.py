@@ -38,6 +38,6 @@ async def test_embedding_providers_async(
     assert len(result.data) > 0
     for entry in result.data:
         assert all(isinstance(v, float) for v in entry.embedding)
-    if provider not in (ProviderName.GOOGLE, ProviderName.LMSTUDIO):
+    if provider not in (ProviderName.GEMINI, ProviderName.VERTEXAI, ProviderName.LMSTUDIO):
         assert result.usage.prompt_tokens > 0
         assert result.usage.total_tokens > 0

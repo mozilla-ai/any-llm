@@ -108,7 +108,7 @@ def test_unsupported_provider_error_attributes() -> None:
     assert "Supported providers:" in str(e)
 
 
-def test_all_providers_have_required_attributes(provider: str) -> None:
+def test_all_providers_have_required_attributes(provider: ProviderName) -> None:
     """Test that all supported providers can be loaded with sample config parameters.
 
     This test verifies that providers can handle common configuration parameters
@@ -116,7 +116,7 @@ def test_all_providers_have_required_attributes(provider: str) -> None:
     """
     sample_config = ClientConfig(api_key="test_key", api_base="https://test.example.com")
 
-    provider_instance = ProviderFactory.create_provider(provider, sample_config)
+    provider_instance = ProviderFactory.create_provider(provider.value, sample_config)
 
     assert provider_instance.PROVIDER_NAME is not None
     assert provider_instance.PROVIDER_DOCUMENTATION_URL is not None
@@ -128,12 +128,12 @@ def test_all_providers_have_required_attributes(provider: str) -> None:
     assert provider_instance.SUPPORTS_RESPONSES is not None
 
 
-def test_providers_raise_MissingApiKeyError(provider: str) -> None:
-    if provider in ("aws", "google", "ollama", "lmstudio", "llamafile"):
+def test_providers_raise_MissingApiKeyError(provider: ProviderName) -> None:
+    if provider.value in ("aws", "ollama", "lmstudio", "llamafile"):
         pytest.skip("This provider handles `api_key` differently.")
     with patch.dict(os.environ, {}, clear=True):
         with pytest.raises(MissingApiKeyError):
-            ProviderFactory.create_provider(provider, ClientConfig())
+            ProviderFactory.create_provider(provider.value, ClientConfig())
 
 
 @pytest.mark.parametrize(
@@ -144,7 +144,7 @@ def test_providers_raise_MissingApiKeyError(provider: str) -> None:
         ("azure", "azure"),
         ("cerebras", "cerebras"),
         ("cohere", "cohere"),
-        ("google", "google"),
+        ("gemini", "google"),
         ("groq", "groq"),
         ("huggingface", "huggingface_hub"),
         ("mistral", "mistralai"),
