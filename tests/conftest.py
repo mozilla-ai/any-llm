@@ -49,7 +49,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.COHERE: "command-a-03-2025",
         ProviderName.CEREBRAS: "llama-3.3-70b",
         ProviderName.HUGGINGFACE: "huggingface/tgi",  # This is the syntax used in `litellm` when using HF Inference Endpoints (https://docs.litellm.ai/docs/providers/huggingface#dedicated-inference-endpoints)
-        ProviderName.AWS: "amazon.nova-lite-v1:0",
+        ProviderName.BEDROCK: "amazon.nova-lite-v1:0",
         ProviderName.WATSONX: "ibm/granite-3-8b-instruct",
         ProviderName.FIREWORKS: "accounts/fireworks/models/llama4-scout-instruct-basic",
         ProviderName.GROQ: "llama-3.1-8b-instant",
@@ -73,7 +73,7 @@ def embedding_provider_model_map() -> dict[ProviderName, str]:
         ProviderName.NEBIUS: "Qwen/Qwen3-Embedding-8B",
         ProviderName.SAMBANOVA: "E5-Mistral-7B-Instruct",
         ProviderName.MISTRAL: "mistral-embed",
-        ProviderName.AWS: "amazon.titan-embed-text-v2:0",
+        ProviderName.BEDROCK: "amazon.titan-embed-text-v2:0",
         ProviderName.OLLAMA: "gpt-oss:20b",
         ProviderName.LLAMAFILE: "N/A",
         ProviderName.LMSTUDIO: "text-embedding-nomic-embed-text-v1.5",

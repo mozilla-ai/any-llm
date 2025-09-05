@@ -129,7 +129,7 @@ def test_all_providers_have_required_attributes(provider: ProviderName) -> None:
 
 
 def test_providers_raise_MissingApiKeyError(provider: ProviderName) -> None:
-    if provider.value in ("aws", "ollama", "lmstudio", "llamafile"):
+    if provider in (ProviderName.BEDROCK, ProviderName.OLLAMA, ProviderName.LMSTUDIO, ProviderName.LLAMAFILE):
         pytest.skip("This provider handles `api_key` differently.")
     with patch.dict(os.environ, {}, clear=True):
         with pytest.raises(MissingApiKeyError):
@@ -140,7 +140,7 @@ def test_providers_raise_MissingApiKeyError(provider: ProviderName) -> None:
     ("provider_name", "module_name"),
     [
         ("anthropic", "anthropic"),
-        ("aws", "boto3"),
+        ("bedrock", "boto3"),
         ("azure", "azure"),
         ("cerebras", "cerebras"),
         ("cohere", "cohere"),

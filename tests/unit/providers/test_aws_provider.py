@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
 from any_llm.provider import ClientConfig
-from any_llm.providers.aws.aws import AwsProvider
+from any_llm.providers.bedrock import BedrockProvider
 from any_llm.types.completion import CompletionParams
 
 
@@ -12,8 +12,8 @@ from any_llm.types.completion import CompletionParams
 def mock_aws_provider(region: str):  # type: ignore[no-untyped-def]
     with (
         patch.dict(os.environ, {"AWS_REGION": region}),
-        patch("any_llm.providers.aws.aws.AwsProvider._check_aws_credentials"),
-        patch("any_llm.providers.aws.aws._convert_response"),
+        patch("any_llm.providers.bedrock.bedrock.BedrockProvider._check_aws_credentials"),
+        patch("any_llm.providers.bedrock.bedrock._convert_response"),
         patch("boto3.client") as mock_boto3_client,
     ):
         mock_client = Mock()
@@ -28,7 +28,7 @@ def test_boto3_client_created_with_api_base() -> None:
     region = "us-east-1"
 
     with mock_aws_provider(region) as mock_boto3_client:
-        provider = AwsProvider(ClientConfig(api_base=custom_endpoint, api_key="test_key"))
+        provider = BedrockProvider(ClientConfig(api_base=custom_endpoint, api_key="test_key"))
         provider.completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
 
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=custom_endpoint, region_name=region)
@@ -39,7 +39,7 @@ def test_boto3_client_created_without_api_base() -> None:
     region = "us-west-2"
 
     with mock_aws_provider(region) as mock_boto3_client:
-        provider = AwsProvider(ClientConfig(api_key="test_key"))
+        provider = BedrockProvider(ClientConfig(api_key="test_key"))
         provider.completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
 
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None, region_name=region)
@@ -52,7 +52,7 @@ def test_completion_with_kwargs() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_aws_provider(region) as mock_boto3_client:
-        provider = AwsProvider(ClientConfig(api_key="test_key"))
+        provider = BedrockProvider(ClientConfig(api_key="test_key"))
         provider.completion(
             CompletionParams(
                 model_id=model_id,
@@ -85,7 +85,7 @@ def mock_aws_embedding_provider(region: str):  # type: ignore[no-untyped-def]
     """Mock AWS provider specifically for embedding tests."""
     with (
         patch.dict(os.environ, {"AWS_REGION": region}),
-        patch("any_llm.providers.aws.aws.AwsProvider._check_aws_credentials"),
+        patch("any_llm.providers.bedrock.bedrock.BedrockProvider._check_aws_credentials"),
         patch("boto3.client") as mock_boto3_client,
     ):
         mock_client = Mock()
@@ -104,7 +104,7 @@ def test_embedding_single_string() -> None:
     with mock_aws_embedding_provider(region) as (mock_boto3_client, mock_client):
         mock_client.invoke_model.return_value = {"body": Mock(read=Mock(return_value=json.dumps(mock_response_body)))}
 
-        provider = AwsProvider(ClientConfig(api_key="test_key"))
+        provider = BedrockProvider(ClientConfig(api_key="test_key"))
         response = provider.embedding(model_id, input_text)
 
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None, region_name=region)
@@ -138,7 +138,7 @@ def test_embedding_list_of_strings() -> None:
             {"body": Mock(read=Mock(return_value=json.dumps(mock_response_bodies[1])))},
         ]
 
-        provider = AwsProvider(ClientConfig(api_key="test_key"))
+        provider = BedrockProvider(ClientConfig(api_key="test_key"))
         response = provider.embedding(model_id, input_texts)
 
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None, region_name=region)
