@@ -60,8 +60,6 @@ jobs:
           # When you add a new key, also add the provider name to the EXPECTED_PROVIDERS environment variable
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
-          CO_API_KEY: ${{ secrets.CO_API_KEY }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -72,7 +70,7 @@ jobs:
           WATSONX_API_KEY: ${{ secrets.WATSONX_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          EXPECTED_PROVIDERS: "anthropic,bedrock,cohere,databricks,fireworks,gemini,huggingface,llama,mistral,openai,voyage,watsonx,xai,openrouter"
+          EXPECTED_PROVIDERS: "anthropic,bedrock,fireworks,gemini,huggingface,llama,mistral,openai,voyage,watsonx,xai,openrouter"
         run: |
           if [ -n "${{ inputs.filter }}" ]; then
             pytest tests/integration -v -n auto --cov --cov-report=xml -k "${{ inputs.filter }}"
