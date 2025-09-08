@@ -9,7 +9,7 @@ from any_llm import ProviderName, acompletion
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
-from tests.constants import LOCAL_PROVIDERS
+from tests.constants import LOCAL_PROVIDERS, EXPECTED_PROVIDERS
 
 
 @pytest.mark.asyncio
@@ -36,6 +36,8 @@ async def test_completion_reasoning(
             messages=[{"role": "user", "content": "Please say hello! Think very briefly before you respond."}],
         )
     except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+                raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
         if provider in LOCAL_PROVIDERS:
@@ -90,6 +92,8 @@ async def test_completion_reasoning_streaming(
 
         assert reasoning.strip() != "", f"Expected non-empty reasoning content for {provider.value}"
     except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
         if provider in LOCAL_PROVIDERS:

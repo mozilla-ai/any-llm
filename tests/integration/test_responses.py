@@ -8,7 +8,7 @@ from any_llm import ProviderName, aresponses
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
 from any_llm.types.responses import Response
-from tests.constants import LOCAL_PROVIDERS
+from tests.constants import LOCAL_PROVIDERS, EXPECTED_PROVIDERS
 
 
 @pytest.mark.asyncio
@@ -31,6 +31,8 @@ async def test_responses_async(
             instructions="Talk like a pirate.",
         )
     except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
         if provider in LOCAL_PROVIDERS:

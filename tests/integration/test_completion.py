@@ -9,8 +9,7 @@ from any_llm import ProviderName, acompletion
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
 from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
-from tests.constants import LOCAL_PROVIDERS
-
+from tests.constants import LOCAL_PROVIDERS, EXPECTED_PROVIDERS
 
 @pytest.mark.asyncio
 async def test_async_completion(
@@ -37,6 +36,8 @@ async def test_async_completion(
             ],
         )
     except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
         if provider in LOCAL_PROVIDERS:
@@ -79,6 +80,9 @@ async def test_async_completion_parallel(
         assert "paris" in results[0].choices[0].message.content.lower()
         assert "berlin" in results[1].choices[0].message.content.lower()
     except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        print(EXPECTED_PROVIDERS)
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
         if provider in LOCAL_PROVIDERS:
