@@ -1,5 +1,5 @@
 from collections.abc import AsyncIterator, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from any_llm.provider import Provider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
@@ -8,9 +8,6 @@ from any_llm.types.model import Model
 MISSING_PACKAGES_ERROR = None
 try:
     from anthropic import Anthropic, AsyncAnthropic
-    from anthropic.pagination import SyncPage
-    from anthropic.types import Message
-    from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
 
     from .utils import (
         _convert_models_list,
@@ -20,6 +17,11 @@ try:
     )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
+
+if TYPE_CHECKING:
+    from anthropic.pagination import SyncPage
+    from anthropic.types import Message
+    from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
 
 
 class AnthropicProvider(Provider):
@@ -71,7 +73,7 @@ class AnthropicProvider(Provider):
         raise NotImplementedError(msg)
 
     @staticmethod
-    def _convert_list_models_response(response: "Message") -> Sequence[Model]:
+    def _convert_list_models_response(response: "SyncPage[AnthropicModelInfo]") -> Sequence[Model]:
         """Convert Anthropic models list to OpenAI format."""
         return _convert_models_list(response)
 
