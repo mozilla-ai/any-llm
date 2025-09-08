@@ -8,7 +8,7 @@ from any_llm import ProviderName, aresponses
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
 from any_llm.types.responses import Response
-from tests.constants import LOCAL_PROVIDERS, EXPECTED_PROVIDERS
+from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 
 @pytest.mark.asyncio

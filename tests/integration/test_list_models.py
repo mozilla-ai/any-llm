@@ -8,7 +8,7 @@ from any_llm import list_models
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory, ProviderName
 from any_llm.types.model import Model
-from tests.constants import LOCAL_PROVIDERS, EXPECTED_PROVIDERS
+from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 
 def test_list_models(provider: ProviderName, provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]]) -> None:
