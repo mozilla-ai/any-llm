@@ -2,7 +2,7 @@ import asyncio
 import functools
 import json
 import os
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
 
 from pydantic import BaseModel
@@ -11,6 +11,7 @@ from any_llm.exceptions import MissingApiKeyError
 from any_llm.logging import logger
 from any_llm.provider import ClientConfig, Provider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+from any_llm.types.model import Model
 from any_llm.utils.instructor import _convert_instructor_response
 
 MISSING_PACKAGES_ERROR = None
@@ -42,6 +43,44 @@ class SagemakerProvider(Provider):
     SUPPORTS_LIST_MODELS = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
+
+    @staticmethod
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert CompletionParams to kwargs for SageMaker API."""
+        return _convert_params(params, kwargs)
+
+    @staticmethod
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        """Convert SageMaker response to OpenAI format."""
+        model = response.get("model", "")
+        return _convert_response(response, model)
+
+    @staticmethod
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        """Convert SageMaker chunk response to OpenAI format."""
+        model = kwargs.get("model", "")
+        chunk = _create_openai_chunk_from_sagemaker_chunk(response, model)
+        if chunk is None:
+            msg = "Failed to convert SageMaker chunk to OpenAI format"
+            raise ValueError(msg)
+        return chunk
+
+    @staticmethod
+    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
+        """Convert embedding parameters for SageMaker."""
+        return kwargs
+
+    @staticmethod
+    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
+        """Convert SageMaker embedding response to OpenAI format."""
+        return _create_openai_embedding_response_from_sagemaker(
+            response["embedding_data"], response["model"], response["total_tokens"]
+        )
+
+    @staticmethod
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        """Convert SageMaker list models response to OpenAI format."""
+        return []
 
     def __init__(self, config: ClientConfig) -> None:
         """Initialize AWS SageMaker provider."""
@@ -103,7 +142,7 @@ class SagemakerProvider(Provider):
             **(self.config.client_args if self.config.client_args else {}),
         )
 
-        completion_kwargs = _convert_params(params, kwargs)
+        completion_kwargs = self._convert_completion_params(params, **kwargs)
 
         if params.response_format:
             if params.stream:
@@ -127,7 +166,7 @@ class SagemakerProvider(Provider):
                 return _convert_instructor_response(structured_response, params.model_id, "aws")
             except (ValueError, TypeError) as e:
                 logger.warning("Failed to parse structured response: %s", e)
-                return _convert_response(response_body, params.model_id)
+                return self._convert_completion_response({"model": params.model_id, **response_body})
 
         if params.stream:
             response = client.invoke_endpoint_with_response_stream(
@@ -138,11 +177,9 @@ class SagemakerProvider(Provider):
 
             event_stream = response["Body"]
             return (
-                chunk
-                for chunk in (
-                    _create_openai_chunk_from_sagemaker_chunk(event, model=params.model_id) for event in event_stream
-                )
-                if chunk is not None
+                self._convert_completion_chunk_response(event, model=params.model_id)
+                for event in event_stream
+                if _create_openai_chunk_from_sagemaker_chunk(event, model=params.model_id) is not None
             )
 
         response = client.invoke_endpoint(
@@ -152,7 +189,7 @@ class SagemakerProvider(Provider):
         )
 
         response_body = json.loads(response["Body"].read())
-        return _convert_response(response_body, params.model_id)
+        return self._convert_completion_response({"model": params.model_id, **response_body})
 
     async def aembedding(
         self,
@@ -221,4 +258,5 @@ class SagemakerProvider(Provider):
             embedding_data.append({"embedding": embedding, "index": index})
             total_tokens += response_body.get("usage", {}).get("prompt_tokens", len(text.split()))
 
-        return _create_openai_embedding_response_from_sagemaker(embedding_data, model, total_tokens)
+        response_data = {"embedding_data": embedding_data, "model": model, "total_tokens": total_tokens}
+        return self._convert_embedding_response(response_data)

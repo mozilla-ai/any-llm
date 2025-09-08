@@ -8,6 +8,9 @@ from any_llm.types.model import Model
 MISSING_PACKAGES_ERROR = None
 try:
     from anthropic import Anthropic, AsyncAnthropic
+    from anthropic.pagination import SyncPage
+    from anthropic.types import Message
+    from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
 
     from .utils import (
         _convert_models_list,
@@ -45,7 +48,7 @@ class AnthropicProvider(Provider):
         return _convert_params(params, **kwargs)
 
     @staticmethod
-    def _convert_completion_response(response: Any) -> ChatCompletion:
+    def _convert_completion_response(response: "Message") -> ChatCompletion:
         """Convert Anthropic Message to OpenAI ChatCompletion format."""
         return _convert_response(response)
 
@@ -68,7 +71,7 @@ class AnthropicProvider(Provider):
         raise NotImplementedError(msg)
 
     @staticmethod
-    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+    def _convert_list_models_response(response: "Message") -> Sequence[Model]:
         """Convert Anthropic models list to OpenAI format."""
         return _convert_models_list(response)
 
