@@ -59,6 +59,7 @@ class ProviderName(StrEnum):
     OPENROUTER = "openrouter"
     PORTKEY = "portkey"
     SAMBANOVA = "sambanova"
+    SAGEMAKER = "sagemaker"
     TOGETHER = "together"
     VERTEXAI = "vertexai"
     VOYAGE = "voyage"
