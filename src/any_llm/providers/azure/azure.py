@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Any, cast
 
-from any_llm.provider import ClientConfig, Provider
+from any_llm.provider import Provider
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -20,12 +20,13 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterable, AsyncIterator
+    from collections.abc import AsyncIterable, AsyncIterator, Sequence
 
     from azure.ai.inference import aio  # noqa: TC004
     from azure.ai.inference.models import ChatCompletions, EmbeddingsResult, StreamingChatCompletionsUpdate
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+    from any_llm.types.model import Model
 
 
 class AzureProvider(Provider):
@@ -42,10 +43,6 @@ class AzureProvider(Provider):
     SUPPORTS_LIST_MODELS = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
-
-    def __init__(self, config: ClientConfig) -> None:
-        """Initialize Azure provider."""
-        super().__init__(config)
 
     def _get_endpoint(self) -> str:
         """Get the Azure endpoint URL."""
@@ -94,7 +91,7 @@ class AzureProvider(Provider):
         )
 
         async for chunk in azure_stream:
-            yield _create_openai_chunk_from_azure_chunk(chunk)
+            yield self._convert_completion_chunk_response(chunk)
 
     async def acompletion(
         self,
@@ -105,16 +102,7 @@ class AzureProvider(Provider):
         api_version = os.getenv("AZURE_API_VERSION", kwargs.pop("api_version", "2024-02-15-preview"))
         client: aio.ChatCompletionsClient = self._create_chat_client_async(api_version)
 
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
-
-        azure_response_format = None
-        if params.response_format:
-            azure_response_format = _convert_response_format(params.response_format)
-
-        call_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
-        if azure_response_format:
-            call_kwargs["response_format"] = azure_response_format
+        call_kwargs = self._convert_completion_params(params, **kwargs)
 
         if params.stream:
             return self._stream_completion_async(
@@ -122,7 +110,6 @@ class AzureProvider(Provider):
                 params.model_id,
                 params.messages,
                 **call_kwargs,
-                **kwargs,
             )
 
         response: ChatCompletions = cast(
@@ -131,11 +118,10 @@ class AzureProvider(Provider):
                 model=params.model_id,
                 messages=params.messages,
                 **call_kwargs,
-                **kwargs,
             ),
         )
 
-        return _convert_response(response)
+        return self._convert_completion_response(response)
 
     async def aembedding(
         self,
@@ -147,10 +133,59 @@ class AzureProvider(Provider):
         api_version = os.getenv("AZURE_API_VERSION", kwargs.pop("api_version", "2024-02-15-preview"))
         client: aio.EmbeddingsClient = self._create_embeddings_client_async(api_version)
 
+        embedding_kwargs = self._convert_embedding_params({}, **kwargs)
+
         response: EmbeddingsResult = await client.embed(
             model=model,
             input=inputs if isinstance(inputs, list) else [inputs],
-            **kwargs,
+            **embedding_kwargs,
         )
 
+        return self._convert_embedding_response(response)
+
+    @staticmethod
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert CompletionParams to Azure AI Inference format."""
+        if params.reasoning_effort == "auto":
+            params.reasoning_effort = None
+
+        azure_response_format = None
+        if params.response_format:
+            azure_response_format = _convert_response_format(params.response_format)
+
+        call_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
+        if azure_response_format:
+            call_kwargs["response_format"] = azure_response_format
+
+        call_kwargs.update(kwargs)
+        return call_kwargs
+
+    @staticmethod
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        """Convert Azure ChatCompletions response to OpenAI ChatCompletion format."""
+        return _convert_response(response)
+
+    @staticmethod
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        """Convert Azure StreamingChatCompletionsUpdate to OpenAI ChatCompletionChunk format."""
+        return _create_openai_chunk_from_azure_chunk(response)
+
+    @staticmethod
+    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
+        """Convert embedding parameters to Azure AI Inference format."""
+        embedding_kwargs = {}
+        if isinstance(params, dict):
+            embedding_kwargs.update(params)
+        embedding_kwargs.update(kwargs)
+        return embedding_kwargs
+
+    @staticmethod
+    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
+        """Convert Azure EmbeddingsResult to OpenAI CreateEmbeddingResponse format."""
         return _create_openai_embedding_response_from_azure(response)
+
+    @staticmethod
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        """Convert Azure list models response to OpenAI format. Not supported by Azure."""
+        msg = "Azure provider does not support listing models"
+        raise NotImplementedError(msg)

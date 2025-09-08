@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 from any_llm.provider import Provider
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
 
 MISSING_PACKAGES_ERROR = None
@@ -39,6 +39,39 @@ class AnthropicProvider(Provider):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
+    @staticmethod
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert CompletionParams to kwargs for Anthropic API."""
+        return _convert_params(params, **kwargs)
+
+    @staticmethod
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        """Convert Anthropic Message to OpenAI ChatCompletion format."""
+        return _convert_response(response)
+
+    @staticmethod
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        """Convert Anthropic streaming chunk to OpenAI ChatCompletionChunk format."""
+        model_id = kwargs.get("model_id", "unknown")
+        return _create_openai_chunk_from_anthropic_chunk(response, model_id)
+
+    @staticmethod
+    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
+        """Anthropic does not support embeddings."""
+        msg = "Anthropic does not support embeddings"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
+        """Anthropic does not support embeddings."""
+        msg = "Anthropic does not support embeddings"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        """Convert Anthropic models list to OpenAI format."""
+        return _convert_models_list(response)
+
     async def _stream_completion_async(
         self, client: "AsyncAnthropic", **kwargs: Any
     ) -> AsyncIterator[ChatCompletionChunk]:
@@ -47,7 +80,7 @@ class AnthropicProvider(Provider):
             **kwargs,
         ) as anthropic_stream:
             async for event in anthropic_stream:
-                yield _create_openai_chunk_from_anthropic_chunk(event, kwargs.get("model", "unknown"))
+                yield self._convert_completion_chunk_response(event, model_id=kwargs.get("model", "unknown"))
 
     async def acompletion(
         self,
@@ -62,14 +95,14 @@ class AnthropicProvider(Provider):
         )
 
         kwargs["provider_name"] = self.PROVIDER_NAME
-        converted_kwargs = _convert_params(params, **kwargs)
+        converted_kwargs = self._convert_completion_params(params, **kwargs)
 
         if converted_kwargs.pop("stream", False):
             return self._stream_completion_async(client, **converted_kwargs)
 
         message = await client.messages.create(**converted_kwargs)
 
-        return _convert_response(message)
+        return self._convert_completion_response(message)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """List available models from Anthropic."""
@@ -79,4 +112,4 @@ class AnthropicProvider(Provider):
             **(self.config.client_args if self.config.client_args else {}),
         )
         models_list = client.models.list(**kwargs)
-        return _convert_models_list(models_list)
+        return self._convert_list_models_response(models_list)

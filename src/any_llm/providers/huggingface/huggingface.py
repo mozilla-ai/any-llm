@@ -9,6 +9,7 @@ from any_llm.types.completion import (
     Choice,
     CompletionParams,
     CompletionUsage,
+    CreateEmbeddingResponse,
 )
 from any_llm.types.model import Model
 
@@ -46,6 +47,42 @@ class HuggingfaceProvider(Provider):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
+    @staticmethod
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert CompletionParams to kwargs for HuggingFace API."""
+        return _convert_params(params, **kwargs)
+
+    @staticmethod
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        """Convert HuggingFace response to OpenAI format."""
+        # If it's already our ChatCompletion type, return it
+        if isinstance(response, ChatCompletion):
+            return response
+        # Otherwise, validate it as our type
+        return ChatCompletion.model_validate(response)
+
+    @staticmethod
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        """Convert HuggingFace chunk response to OpenAI format."""
+        return _create_openai_chunk_from_huggingface_chunk(response)
+
+    @staticmethod
+    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
+        """Convert embedding parameters for HuggingFace."""
+        msg = "HuggingFace does not support embeddings"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
+        """Convert HuggingFace embedding response to OpenAI format."""
+        msg = "HuggingFace does not support embeddings"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        """Convert HuggingFace list models response to OpenAI format."""
+        return _convert_models_list(response)
+
     async def _stream_completion_async(
         self,
         client: "AsyncInferenceClient",
@@ -55,7 +92,7 @@ class HuggingfaceProvider(Provider):
         response: AsyncIterator[HuggingFaceChatCompletionStreamOutput] = await client.chat_completion(**kwargs)
 
         async for chunk in response:
-            yield _create_openai_chunk_from_huggingface_chunk(chunk)
+            yield self._convert_completion_chunk_response(chunk)
 
     def _stream_completion(
         self,
@@ -67,7 +104,7 @@ class HuggingfaceProvider(Provider):
             **kwargs,
         )
         for chunk in response:
-            yield _create_openai_chunk_from_huggingface_chunk(chunk)
+            yield self._convert_completion_chunk_response(chunk)
 
     async def acompletion(
         self,
@@ -81,7 +118,7 @@ class HuggingfaceProvider(Provider):
             **(self.config.client_args if self.config.client_args else {}),
         )
 
-        converted_kwargs = _convert_params(params, **kwargs)
+        converted_kwargs = self._convert_completion_params(params, **kwargs)
 
         if params.stream:
             converted_kwargs["stream"] = True
@@ -130,7 +167,7 @@ class HuggingfaceProvider(Provider):
             **(self.config.client_args if self.config.client_args else {}),
         )
 
-        converted_kwargs = _convert_params(params, **kwargs)
+        converted_kwargs = self._convert_completion_params(params, **kwargs)
 
         if params.stream:
             converted_kwargs["stream"] = True
@@ -180,4 +217,4 @@ class HuggingfaceProvider(Provider):
         if kwargs.get("limit") is None:
             kwargs["limit"] = 20
         models_list = client.list_models(**kwargs)
-        return _convert_models_list(models_list)
+        return self._convert_list_models_response(models_list)

@@ -52,6 +52,46 @@ class OllamaProvider(Provider):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
+    @staticmethod
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert CompletionParams to kwargs for Ollama API."""
+        # Ollama does not support providing reasoning effort
+        converted_params = params.model_dump(
+            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}
+        )
+        if converted_params.get("reasoning_effort") == "auto":
+            converted_params["reasoning_effort"] = None
+        converted_params.update(kwargs)
+        converted_params["num_ctx"] = converted_params.get("num_ctx", 32000)
+        return converted_params
+
+    @staticmethod
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        """Convert Ollama response to OpenAI format."""
+        return _create_chat_completion_from_ollama_response(response)
+
+    @staticmethod
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        """Convert Ollama chunk response to OpenAI format."""
+        return _create_openai_chunk_from_ollama_chunk(response)
+
+    @staticmethod
+    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
+        """Convert embedding parameters for Ollama."""
+        converted_params = {"input": params}
+        converted_params.update(kwargs)
+        return converted_params
+
+    @staticmethod
+    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
+        """Convert Ollama embedding response to OpenAI format."""
+        return _create_openai_embedding_response_from_ollama(response)
+
+    @staticmethod
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        """Convert Ollama list models response to OpenAI format."""
+        return _convert_models_list(response)
+
     def __init__(self, config: ClientConfig) -> None:
         """We don't use the Provider init because by default we don't require an API key."""
         self._verify_no_missing_packages()
@@ -76,7 +116,7 @@ class OllamaProvider(Provider):
             options=kwargs,
         )
         async for chunk in response:
-            yield _create_openai_chunk_from_ollama_chunk(chunk)
+            yield self._convert_completion_chunk_response(chunk)
 
     async def acompletion(
         self,
@@ -115,33 +155,25 @@ class OllamaProvider(Provider):
 
             cleaned_messages.append(cleaned_message)
 
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
-
-        kwargs = {
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
-            **kwargs,
-        }
-
-        kwargs["num_ctx"] = kwargs.get("num_ctx", 32000)
+        completion_kwargs = self._convert_completion_params(params, **kwargs)
 
         if params.reasoning_effort is not None:
-            kwargs["think"] = True
+            completion_kwargs["think"] = True
 
         client = AsyncClient(host=self.url, **(self.config.client_args if self.config.client_args else {}))
 
         if params.stream:
-            return self._stream_completion_async(client, params.model_id, cleaned_messages, **kwargs)
+            return self._stream_completion_async(client, params.model_id, cleaned_messages, **completion_kwargs)
 
         response: OllamaChatResponse = await client.chat(
             model=params.model_id,
-            tools=kwargs.pop("tools", None),
-            think=kwargs.pop("think", None),
+            tools=completion_kwargs.pop("tools", None),
+            think=completion_kwargs.pop("think", None),
             messages=cleaned_messages,
             format=output_format,
-            options=kwargs,
+            options=completion_kwargs,
         )
-        return _create_chat_completion_from_ollama_response(response)
+        return self._convert_completion_response(response)
 
     async def aembedding(
         self,
@@ -152,12 +184,12 @@ class OllamaProvider(Provider):
         """Generate embeddings using Ollama."""
         client = AsyncClient(host=self.url, **(self.config.client_args if self.config.client_args else {}))
 
+        embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
         response = await client.embed(
             model=model,
-            input=inputs,
-            **kwargs,
+            **embedding_kwargs,
         )
-        return _create_openai_embedding_response_from_ollama(response)
+        return self._convert_embedding_response(response)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
@@ -165,4 +197,4 @@ class OllamaProvider(Provider):
         """
         client = Client(host=self.url, **(self.config.client_args if self.config.client_args else {}))
         models_list = client.list(**kwargs)
-        return _convert_models_list(models_list)
+        return self._convert_list_models_response(models_list)

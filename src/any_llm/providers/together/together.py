@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
 from any_llm.provider import Provider
@@ -6,7 +6,9 @@ from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
     CompletionParams,
+    CreateEmbeddingResponse,
 )
+from any_llm.types.model import Model
 from any_llm.utils.instructor import _convert_instructor_response
 
 MISSING_PACKAGES_ERROR = None
@@ -42,6 +44,46 @@ class TogetherProvider(Provider):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
+    @staticmethod
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert CompletionParams to kwargs for Together API."""
+        # Together does not support providing reasoning effort
+        converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
+        if converted_params.get("reasoning_effort") == "auto":
+            converted_params["reasoning_effort"] = None
+        converted_params.update(kwargs)
+        return converted_params
+
+    @staticmethod
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        """Convert Together response to OpenAI format."""
+        # We need the model parameter for conversion
+        model = response.get("model", "together-model")
+        return _convert_together_response_to_chat_completion(response, model)
+
+    @staticmethod
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        """Convert Together chunk response to OpenAI format."""
+        return _create_openai_chunk_from_together_chunk(response)
+
+    @staticmethod
+    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
+        """Convert embedding parameters for Together."""
+        msg = "Together does not support embeddings"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
+        """Convert Together embedding response to OpenAI format."""
+        msg = "Together does not support embeddings"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        """Convert Together list models response to OpenAI format."""
+        msg = "Together does not support listing models"
+        raise NotImplementedError(msg)
+
     async def _stream_completion_async(
         self,
         client: "together.AsyncTogether",
@@ -61,7 +103,7 @@ class TogetherProvider(Provider):
             ),
         )
         async for chunk in response:
-            yield _create_openai_chunk_from_together_chunk(chunk)
+            yield self._convert_completion_chunk_response(chunk)
 
     def _stream_completion(
         self,
@@ -82,7 +124,7 @@ class TogetherProvider(Provider):
             ),
         )
         for chunk in response:
-            yield _create_openai_chunk_from_together_chunk(chunk)
+            yield self._convert_completion_chunk_response(chunk)
 
     def completion(
         self,
@@ -95,9 +137,6 @@ class TogetherProvider(Provider):
             base_url=self.config.api_base,
             **(self.config.client_args if self.config.client_args else {}),
         )
-
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
 
         if params.response_format:
             instructor_client = instructor.patch(client, mode=instructor.Mode.JSON)  # type: ignore [call-overload]
@@ -112,13 +151,14 @@ class TogetherProvider(Provider):
 
             return _convert_instructor_response(instructor_response, params.model_id, self.PROVIDER_NAME)
 
+        completion_kwargs = self._convert_completion_params(params, **kwargs)
+
         if params.stream:
             return self._stream_completion(
                 client,
                 params.model_id,
                 params.messages,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
-                **kwargs,
+                **completion_kwargs,
             )
 
         response = cast(
@@ -126,12 +166,11 @@ class TogetherProvider(Provider):
             client.chat.completions.create(
                 model=params.model_id,
                 messages=cast("Any", params.messages),
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
-                **kwargs,
+                **completion_kwargs,
             ),
         )
 
-        return _convert_together_response_to_chat_completion(response.model_dump(), params.model_id)
+        return self._convert_completion_response(response.model_dump())
 
     async def acompletion(
         self,
@@ -144,9 +183,6 @@ class TogetherProvider(Provider):
             base_url=self.config.api_base,
             **(self.config.client_args if self.config.client_args else {}),
         )
-
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
 
         if params.response_format:
             instructor_client = instructor.patch(client, mode=instructor.Mode.JSON)  # type: ignore [call-overload]
@@ -164,13 +200,14 @@ class TogetherProvider(Provider):
 
             return _convert_instructor_response(instructor_response, params.model_id, self.PROVIDER_NAME)
 
+        completion_kwargs = self._convert_completion_params(params, **kwargs)
+
         if params.stream:
             return self._stream_completion_async(
                 client,
                 params.model_id,
                 params.messages,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "reasoning_effort", "stream"}),
-                **kwargs,
+                **completion_kwargs,
             )
 
         response = cast(
@@ -178,9 +215,8 @@ class TogetherProvider(Provider):
             await client.chat.completions.create(
                 model=params.model_id,
                 messages=cast("Any", params.messages),
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
-                **kwargs,
+                **completion_kwargs,
             ),
         )
 
-        return _convert_together_response_to_chat_completion(response.model_dump(), params.model_id)
+        return self._convert_completion_response(response.model_dump())

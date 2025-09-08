@@ -149,6 +149,42 @@ class Provider(ABC):
             raise MissingApiKeyError(self.PROVIDER_NAME, self.ENV_API_KEY_NAME)
         return config
 
+    @staticmethod
+    @abstractmethod
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @abstractmethod
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @abstractmethod
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @abstractmethod
+    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @abstractmethod
+    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @abstractmethod
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
+
     @classmethod
     def get_provider_metadata(cls) -> ProviderMetadata:
         """Get provider metadata without requiring instantiation.

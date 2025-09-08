@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import Provider
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
 
 MISSING_PACKAGES_ERROR = None
@@ -38,6 +38,47 @@ class CohereProvider(Provider):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
+    @staticmethod
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert CompletionParams to kwargs for Cohere API."""
+        # Cohere does not support providing reasoning effort
+        converted_params = params.model_dump(
+            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}
+        )
+        if converted_params.get("reasoning_effort") == "auto":
+            converted_params["reasoning_effort"] = None
+        converted_params.update(kwargs)
+        return converted_params
+
+    @staticmethod
+    def _convert_completion_response(response: Any, **kwargs: Any) -> ChatCompletion:
+        """Convert Cohere response to OpenAI format."""
+        # We need the model parameter for conversion
+        model = kwargs.get("model", getattr(response, "model", "cohere-model"))
+        return _convert_response(response, model)
+
+    @staticmethod
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        """Convert Cohere chunk response to OpenAI format."""
+        return _create_openai_chunk_from_cohere_chunk(response)
+
+    @staticmethod
+    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
+        """Convert embedding parameters for Cohere."""
+        msg = "Cohere does not support embeddings"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
+        """Convert Cohere embedding response to OpenAI format."""
+        msg = "Cohere does not support embeddings"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        """Convert Cohere list models response to OpenAI format."""
+        return _convert_models_list(response)
+
     async def _stream_completion_async(
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any
     ) -> AsyncIterator[ChatCompletionChunk]:
@@ -52,7 +93,7 @@ class CohereProvider(Provider):
         )
 
         async for chunk in cohere_stream:
-            yield _create_openai_chunk_from_cohere_chunk(chunk)
+            yield self._convert_completion_chunk_response(chunk)
 
     @staticmethod
     def _preprocess_response_format(response_format: type[BaseModel] | dict[str, Any]) -> dict[str, Any]:
@@ -73,9 +114,6 @@ class CohereProvider(Provider):
     async def acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
-
         if params.response_format is not None:
             kwargs["response_format"] = self._preprocess_response_format(params.response_format)
         if params.stream and params.response_format is not None:
@@ -85,14 +123,14 @@ class CohereProvider(Provider):
             msg = "parallel_tool_calls"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
 
+        completion_kwargs = self._convert_completion_params(params, **kwargs)
         patched_messages = _patch_messages(params.messages)
 
         if params.stream:
             return self._stream_completion_async(
                 params.model_id,
                 patched_messages,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
-                **kwargs,
+                **completion_kwargs,
             )
 
         client = cohere.AsyncClientV2(
@@ -103,11 +141,10 @@ class CohereProvider(Provider):
         response = await client.chat(
             model=params.model_id,
             messages=patched_messages,  # type: ignore[arg-type]
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream", "response_format"}),
-            **kwargs,
+            **completion_kwargs,
         )
 
-        return _convert_response(response, params.model_id)
+        return self._convert_completion_response(response, model=params.model_id)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
@@ -117,4 +154,4 @@ class CohereProvider(Provider):
             api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
         )
         model_list = client.models.list(**kwargs)
-        return _convert_models_list(model_list)
+        return self._convert_list_models_response(model_list)
