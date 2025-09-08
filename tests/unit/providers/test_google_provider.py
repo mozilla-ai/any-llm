@@ -47,6 +47,21 @@ def mock_google_provider():  # type: ignore[no-untyped-def]
         yield mock_genai
 
 
+@pytest.mark.parametrize("env_var", ["GEMINI_API_KEY", "GOOGLE_API_KEY"])
+def test_gemini_initialization_with_env_var_api_key(env_var: str) -> None:
+    """Test that the provider initializes correctly with API key from environment variable."""
+    with patch.dict("os.environ", {env_var: "env-api-key"}, clear=True):
+        provider = GeminiProvider(ClientConfig())
+        assert provider.config.api_key == "env-api-key"
+
+
+def test_vertexai_initialization_with_env_var_api_key() -> None:
+    """Test that the VertexaiProvider initializes correctly with GOOGLE_PROJECT_ID from environment variable."""
+    with patch.dict("os.environ", {"GOOGLE_PROJECT_ID": "env-project-id"}, clear=True):
+        provider = VertexaiProvider(ClientConfig())
+        assert provider.config.api_key == "env-project-id"
+
+
 @pytest.mark.asyncio
 async def test_completion_with_system_instruction(google_provider_class: type[Provider]) -> None:
     """Test that completion works correctly with system_instruction."""
