@@ -8,7 +8,7 @@ from openai import APIConnectionError
 from any_llm import ProviderName, acompletion
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
-from tests.constants import LOCAL_PROVIDERS
+from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 if TYPE_CHECKING:
     from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
@@ -77,6 +77,8 @@ async def test_tool(
         )
         assert second_result.choices[0].message
     except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
         if provider in LOCAL_PROVIDERS:

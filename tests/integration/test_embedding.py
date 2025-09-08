@@ -8,6 +8,7 @@ from any_llm import ProviderName, aembedding
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ProviderFactory
 from any_llm.types.completion import CreateEmbeddingResponse
+from tests.constants import EXPECTED_PROVIDERS
 
 
 @pytest.mark.asyncio
@@ -26,6 +27,8 @@ async def test_embedding_providers_async(
     try:
         result = await aembedding(model=model_id, provider=provider, **extra_kwargs, inputs="Hello world")
     except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
         pytest.skip(f"{provider.value} connection failed, skipping")
