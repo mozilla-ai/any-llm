@@ -46,7 +46,7 @@ class SagemakerProvider(Provider):
     def __init__(self, config: ClientConfig) -> None:
         """Initialize AWS SageMaker provider."""
         logger.warning(
-            "AWS Sagemaker Support is experimental and may have issues. Please file an ticket at https://github.com/mozilla-ai/any-llm/issues if you encounter any issues."
+            "AWS Sagemaker Support is experimental and may not work as expected. Please file an ticket at https://github.com/mozilla-ai/any-llm/issues if you encounter any issues."
         )
         # This intentionally does not call super().__init__(config) because AWS has a different way of handling credentials
         self._verify_no_missing_packages()
