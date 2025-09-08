@@ -129,7 +129,7 @@ def test_all_providers_have_required_attributes(provider: ProviderName) -> None:
 
 
 def test_providers_raise_MissingApiKeyError(provider: ProviderName) -> None:
-    if provider in (ProviderName.BEDROCK, ProviderName.OLLAMA, ProviderName.LMSTUDIO, ProviderName.LLAMAFILE):
+    if provider in (ProviderName.BEDROCK, ProviderName.OLLAMA, ProviderName.LMSTUDIO, ProviderName.LLAMAFILE, ProviderName.SAGEMAKER):
         pytest.skip("This provider handles `api_key` differently.")
     with patch.dict(os.environ, {}, clear=True):
         with pytest.raises(MissingApiKeyError):
