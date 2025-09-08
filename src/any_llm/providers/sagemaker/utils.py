@@ -26,7 +26,7 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
 
     messages = []
     system_message = None
-    
+
     for message in params.messages:
         if message["role"] == "system":
             system_message = message["content"]
@@ -63,7 +63,7 @@ def _convert_response(response: dict[str, Any], model: str) -> ChatCompletion:
         for choice_data in response["choices"]:
             message_data = choice_data.get("message", {})
             tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] | None = None
-            if "tool_calls" in message_data and message_data["tool_calls"]:
+            if message_data.get("tool_calls"):
                 tool_calls = [
                     ChatCompletionMessageFunctionToolCall(
                         id=tc.get("id", f"call_{int(time())}"),
@@ -87,8 +87,7 @@ def _convert_response(response: dict[str, Any], model: str) -> ChatCompletion:
                 Choice(
                     index=choice_data.get("index", 0),
                     finish_reason=cast(
-                        "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']",
-                        finish_reason
+                        "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']", finish_reason
                     ),
                     message=message,
                 )
@@ -156,19 +155,19 @@ def _create_openai_chunk_from_sagemaker_chunk(event: dict[str, Any], model: str)
             content = payload["outputs"].get("text", "")
     elif "generated_text" in payload:
         content = payload["generated_text"]
-    elif "choices" in payload and payload["choices"]:
+    elif payload.get("choices"):
         delta = payload["choices"][0].get("delta", {})
         content = delta.get("content")
         finish_reason_raw = payload["choices"][0].get("finish_reason")
         if finish_reason_raw:
             finish_reason = "length" if finish_reason_raw == "length" else "stop"
 
-    if "is_finished" in payload and payload["is_finished"]:
+    if payload.get("is_finished"):
         finish_reason = "stop"
 
     delta = ChoiceDelta(content=content, role="assistant")
     choice = ChunkChoice(delta=delta, finish_reason=finish_reason, index=0)
-    
+
     return ChatCompletionChunk(
         id=f"chatcmpl-{int(time())}",
         choices=[choice],
