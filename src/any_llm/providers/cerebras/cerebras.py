@@ -44,7 +44,7 @@ class CerebrasProvider(Provider):
         # Cerebras does not support providing reasoning effort
         converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"})
         if converted_params.get("reasoning_effort") == "auto":
-            converted_params["reasoning_effort"] = None
+            converted_params.pop("reasoning_effort")
         converted_params.update(kwargs)
         return converted_params
 
@@ -110,6 +110,18 @@ class CerebrasProvider(Provider):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using Cerebras with instructor support for structured outputs."""
 
+        if params.response_format:
+            # See https://inference-docs.cerebras.ai/capabilities/structured-outputs for guide to creating schema
+            if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
+                params.response_format = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "response_schema",
+                        "schema": params.response_format.model_json_schema(),
+                        "strict": True,
+                    },
+                }
+
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 
         if params.stream:
@@ -122,18 +134,6 @@ class CerebrasProvider(Provider):
         client = cerebras.AsyncCerebras(
             api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
         )
-
-        if params.response_format:
-            # See https://inference-docs.cerebras.ai/capabilities/structured-outputs for guide to creating schema
-            if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
-                params.response_format = {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "response_schema",
-                        "schema": params.response_format.model_json_schema(),
-                        "strict": True,
-                    },
-                }
 
         response = await client.chat.completions.create(
             model=params.model_id,

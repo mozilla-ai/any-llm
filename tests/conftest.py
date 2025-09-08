@@ -53,7 +53,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.SAGEMAKER: "<sagemaker_endpoint_name>",
         ProviderName.WATSONX: "ibm/granite-3-8b-instruct",
         ProviderName.FIREWORKS: "accounts/fireworks/models/llama4-scout-instruct-basic",
-        ProviderName.GROQ: "llama-3.1-8b-instant",
+        ProviderName.GROQ: "openai/gpt-oss-20b",
         ProviderName.PORTKEY: "@first-integrati-d8a10f/gpt-4.1-mini",  # Owned by njbrake in portkey UI
         ProviderName.LLAMA: "Llama-4-Maverick-17B-128E-Instruct-FP8",
         ProviderName.AZURE: "openai/gpt-4.1-nano",

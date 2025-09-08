@@ -50,7 +50,7 @@ class TogetherProvider(Provider):
         # Together does not support providing reasoning effort
         converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
         if converted_params.get("reasoning_effort") == "auto":
-            converted_params["reasoning_effort"] = None
+            converted_params.pop("reasoning_effort")
         converted_params.update(kwargs)
         return converted_params
 

@@ -60,7 +60,7 @@ class OllamaProvider(Provider):
             exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}
         )
         if converted_params.get("reasoning_effort") == "auto":
-            converted_params["reasoning_effort"] = None
+            converted_params.pop("reasoning_effort")
         converted_params.update(kwargs)
         converted_params["num_ctx"] = converted_params.get("num_ctx", 32000)
         return converted_params
@@ -157,7 +157,7 @@ class OllamaProvider(Provider):
 
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 
-        if params.reasoning_effort is not None:
+        if completion_kwargs.get("reasoning_effort") is not None:
             completion_kwargs["think"] = True
 
         client = AsyncClient(host=self.url, **(self.config.client_args if self.config.client_args else {}))

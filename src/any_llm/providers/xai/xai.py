@@ -55,7 +55,7 @@ class XaiProvider(Provider):
             },
         )
         if converted_params.get("reasoning_effort") == "auto":
-            converted_params["reasoning_effort"] = None
+            converted_params.pop("reasoning_effort")
         converted_params.update(kwargs)
         return converted_params
 
