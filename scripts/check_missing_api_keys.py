@@ -10,11 +10,11 @@ import os
 import sys
 from pathlib import Path
 
+from any_llm.exceptions import MissingApiKeyError
+from any_llm.provider import ProviderFactory, ProviderName
+
 src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
-
-from any_llm.provider import ProviderFactory, ProviderName
-from any_llm.exceptions import MissingApiKeyError
 
 
 def check_provider_status():
@@ -81,13 +81,11 @@ def print_results(available_providers, missing_api_keys, missing_packages, other
             print(f"  ❌ {provider['name']} - {provider['error']}")
         print()
 
-
     if other_errors:
         print(f"⚠️  Other Errors ({len(other_errors)}):")
         for provider in sorted(other_errors, key=lambda x: x["name"]):
             print(f"  ❌ {provider['name']} ({provider['error_type']}) - {provider['error']}")
         print()
-
 
     total_providers = len(list(ProviderName))
     available_count = len(available_providers)
