@@ -16,8 +16,6 @@ class GeminiProvider(GoogleProvider):
     ENV_API_KEY_NAME = "GEMINI_API_KEY/GOOGLE_API_KEY"
 
     def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
-        # Standardized API key handling. Splitting into its own function so that providers
-        # Can easily override this method if they don't want verification (for instance, LMStudio)
         if not config.api_key:
             config.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
