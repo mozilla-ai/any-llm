@@ -82,6 +82,7 @@ jobs:
       - name: Run Local Provider Integration tests (parallel with xdist)
         env:
           INCLUDE_LOCAL_PROVIDERS: "true"
+          INCLUDE_NON_LOCAL_PROVIDERS: "false"
           EXPECTED_PROVIDERS: "ollama,llamafile"
         run: |
           if [ -n "${{ inputs.filter }}" ]; then
