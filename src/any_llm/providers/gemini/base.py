@@ -52,6 +52,7 @@ class GoogleProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_COMPLETION_IMAGE = False  # TODO: Add image support https://github.com/mozilla-ai/any-llm/issues/415
+    SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
 

@@ -11,5 +11,6 @@ class ProviderMetadata(BaseModel):
     embedding: bool
     responses: bool
     image: bool
+    pdf: bool
     class_name: str
     list_models: bool

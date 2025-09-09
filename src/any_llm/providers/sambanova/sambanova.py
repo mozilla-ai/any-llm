@@ -24,6 +24,7 @@ class SambanovaProvider(BaseOpenAIProvider):
     PROVIDER_DOCUMENTATION_URL = "https://sambanova.ai/"
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
+    SUPPORTS_COMPLETION_PDF = False
 
     async def acompletion(
         self, params: CompletionParams, **kwargs: Any

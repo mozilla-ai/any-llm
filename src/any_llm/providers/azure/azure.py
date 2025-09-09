@@ -37,6 +37,7 @@ class AzureProvider(Provider):
     PROVIDER_DOCUMENTATION_URL = "https://azure.microsoft.com/en-us/products/ai-services/openai-service"
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION_IMAGE = False
+    SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = True
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_COMPLETION = True
