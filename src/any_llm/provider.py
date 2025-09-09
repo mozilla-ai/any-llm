@@ -111,6 +111,9 @@ class Provider(ABC):
     SUPPORTS_COMPLETION_REASONING: bool
     """Reasoning Content attached to Completion API Response"""
 
+    SUPPORTS_COMPLETION_IMAGE: bool
+    """Image Support for Completion API"""
+
     SUPPORTS_EMBEDDING: bool
     """OpenAI Embedding API"""
 
@@ -165,6 +168,7 @@ class Provider(ABC):
             streaming=cls.SUPPORTS_COMPLETION_STREAMING,
             reasoning=cls.SUPPORTS_COMPLETION_REASONING,
             completion=cls.SUPPORTS_COMPLETION,
+            image=cls.SUPPORTS_COMPLETION_IMAGE,
             embedding=cls.SUPPORTS_EMBEDDING,
             responses=cls.SUPPORTS_RESPONSES,
             list_models=cls.SUPPORTS_LIST_MODELS,
