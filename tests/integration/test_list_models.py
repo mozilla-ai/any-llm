@@ -27,6 +27,6 @@ def test_list_models(provider: ProviderName, provider_extra_kwargs_map: dict[Pro
             raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in LOCAL_PROVIDERS:
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise

@@ -3,6 +3,7 @@ from typing import Any
 import pytest
 
 from any_llm.provider import ProviderName
+from tests.constants import INCLUDE_LOCAL_PROVIDERS, LOCAL_PROVIDERS
 
 
 @pytest.fixture
@@ -125,7 +126,15 @@ def provider_extra_kwargs_map() -> dict[ProviderName, dict[str, Any]]:
     }
 
 
-@pytest.fixture(params=list(ProviderName), ids=lambda x: x.value)
+def _get_providers_for_testing() -> list[ProviderName]:
+    """Get the list of providers to test based on INCLUDE_LOCAL_PROVIDERS setting."""
+    all_providers = list(ProviderName)
+    if INCLUDE_LOCAL_PROVIDERS:
+        return all_providers  # type: ignore[return-value]
+    return [provider for provider in all_providers if provider not in LOCAL_PROVIDERS]  # type: ignore[misc]
+
+
+@pytest.fixture(params=_get_providers_for_testing(), ids=lambda x: x.value)
 def provider(request: pytest.FixtureRequest) -> ProviderName:
     return request.param  # type: ignore[no-any-return]
 

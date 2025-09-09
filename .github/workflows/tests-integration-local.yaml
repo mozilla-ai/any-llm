@@ -1,0 +1,94 @@
+name: Local Providers Integration Tests
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: the arg you want to pass to pytest filter (-k)
+        type: string
+
+jobs:
+  run-local-integration-tests:
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: 3.13
+          activate-environment: true
+
+      - name: Install dependencies
+        run: |
+          uv sync --group tests --extra all
+
+      # cache the ~/.ollama/models directory
+      - uses: actions/cache@v4
+        with:
+          path: ~/.ollama
+          key: ${{ runner.os }}-ollama-models-${{ hashFiles('tests/conftest.py') }}
+          restore-keys: |
+            ${{ runner.os }}-ollama-models-
+
+      # cache the ~/.llamafile/models directory
+      - uses: actions/cache@v4
+        with:
+          path: ~/.llamafile
+          key: ${{ runner.os }}-llamafile-models-${{ hashFiles('tests/conftest.py') }}
+          restore-keys: |
+            ${{ runner.os }}-llamafile-models-
+
+      - name: Setup Ollama
+        uses: ai-action/setup-ollama@v1
+
+      - name: Run ollama
+        run: |
+          ollama serve &
+          ollama pull llama3.2:1b
+          ollama pull qwen3:0.6b
+          ollama pull llava:7b
+
+      - name: Wait for Ollama to be ready
+        run: |
+          timeout 60 bash -c 'until curl -s http://localhost:11434/api/tags >/dev/null; do sleep 1; done'
+
+      - name: Download and Run LlamaFile
+        run: |
+          wget https://huggingface.co/Mozilla/Qwen3-0.6B-llamafile/resolve/main/Qwen_Qwen3-0.6B-Q4_K_M.llamafile
+          chmod +x Qwen_Qwen3-0.6B-Q4_K_M.llamafile
+          ./Qwen_Qwen3-0.6B-Q4_K_M.llamafile --server --v2 &
+          echo $! > llamafile.pid
+
+      - name: Wait for LlamaFile to be ready
+        run: |
+          timeout 60 bash -c 'until curl -s http://localhost:8080/v1/models >/dev/null; do sleep 1; done'
+
+      - name: Run Local Provider Integration tests (parallel with xdist)
+        env:
+          INCLUDE_LOCAL_PROVIDERS: "true"
+          EXPECTED_PROVIDERS: "llamacpp,ollama,lmstudio,llamafile"
+        run: |
+          if [ -n "${{ inputs.filter }}" ]; then
+            pytest tests/integration -v -n auto --cov --cov-report=xml -k "${{ inputs.filter }}"
+          else
+            pytest tests/integration -v -n auto --cov --cov-report=xml
+          fi
+
+      - name: Cleanup LlamaFile process
+        if: always()
+        run: |
+          if [ -f llamafile.pid ]; then
+            kill $(cat llamafile.pid) || true
+            rm llamafile.pid
+          fi
+
+      - name: Upload coverage reports to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}

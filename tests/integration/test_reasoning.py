@@ -40,7 +40,7 @@ async def test_completion_reasoning(
             raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in LOCAL_PROVIDERS:
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise
     assert isinstance(result, ChatCompletion)
@@ -96,6 +96,6 @@ async def test_completion_reasoning_streaming(
             raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in LOCAL_PROVIDERS:
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise
