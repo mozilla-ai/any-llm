@@ -1,9 +1,12 @@
 import os
+from collections.abc import AsyncIterator
+from typing import Any
 
 from google import genai
 
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.provider import ClientConfig
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 
 from .base import GoogleProvider
 
@@ -26,3 +29,10 @@ class GeminiProvider(GoogleProvider):
     def _get_client(self, config: ClientConfig) -> "genai.Client":
         """Get Gemini API client."""
         return genai.Client(api_key=config.api_key, **(config.client_args if config.client_args else {}))
+
+    async def acompletion(
+        self,
+        params: CompletionParams,
+        **kwargs: Any,
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        return await super().acompletion(params, **kwargs)

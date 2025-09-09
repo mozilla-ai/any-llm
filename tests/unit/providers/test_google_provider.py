@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 from typing import Any, Literal
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from google.genai import types
@@ -9,6 +9,7 @@ from any_llm.exceptions import UnsupportedParameterError
 from any_llm.provider import ClientConfig, Provider
 from any_llm.providers.gemini import GeminiProvider
 from any_llm.providers.gemini.base import REASONING_EFFORT_TO_THINKING_BUDGETS
+from any_llm.providers.gemini.utils import _convert_response_to_response_dict
 from any_llm.providers.vertexai import VertexaiProvider
 from any_llm.types.completion import CompletionParams
 
@@ -231,3 +232,113 @@ async def test_completion_with_max_tokens_conversion(google_provider_class: type
         generation_config = call_kwargs["config"]
 
         assert generation_config.max_output_tokens == max_tokens
+
+
+def test_convert_response_single_tool_call() -> None:
+    """Test conversion of Google response with a single tool call to OpenAI format."""
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+    mock_response.candidates[0].content.parts = [Mock()]
+
+    mock_function_call = Mock()
+    mock_function_call.name = "search_web"
+    mock_function_call.args = {"query": "test query", "limit": 5}
+
+    mock_response.candidates[0].content.parts[0].function_call = mock_function_call
+    mock_response.candidates[0].content.parts[0].thought = None
+    mock_response.candidates[0].content.parts[0].text = None
+
+    mock_response.usage_metadata = Mock()
+    mock_response.usage_metadata.prompt_token_count = 10
+    mock_response.usage_metadata.candidates_token_count = 15
+    mock_response.usage_metadata.total_token_count = 25
+
+    response_dict = _convert_response_to_response_dict(mock_response)
+
+    assert len(response_dict["choices"]) == 1
+    choice = response_dict["choices"][0]
+
+    assert choice["message"]["role"] == "assistant"
+    assert choice["message"]["content"] is None
+    assert choice["finish_reason"] == "tool_calls"
+    assert choice["index"] == 0
+
+    tool_calls = choice["message"]["tool_calls"]
+    assert len(tool_calls) == 1
+
+    tool_call = tool_calls[0]
+    assert tool_call["type"] == "function"
+    assert tool_call["function"]["name"] == "search_web"
+    assert tool_call["function"]["arguments"] == '{"query": "test query", "limit": 5}'
+    assert tool_call["id"].startswith("call_")
+    assert tool_call["id"].endswith("_0")
+
+
+def test_convert_response_multiple_parallel_tool_calls() -> None:
+    """Test conversion of Google response with multiple parallel tool calls to OpenAI format."""
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_function_call_1 = Mock()
+    mock_function_call_1.name = "search_web"
+    mock_function_call_1.args = {"query": "test query"}
+
+    mock_function_call_2 = Mock()
+    mock_function_call_2.name = "get_weather"
+    mock_function_call_2.args = {"location": "New York"}
+
+    mock_function_call_3 = Mock()
+    mock_function_call_3.name = "calculate"
+    mock_function_call_3.args = {"expression": "2+2"}
+
+    mock_part_1 = Mock()
+    mock_part_1.function_call = mock_function_call_1
+    mock_part_1.thought = None
+    mock_part_1.text = None
+
+    mock_part_2 = Mock()
+    mock_part_2.function_call = mock_function_call_2
+    mock_part_2.thought = None
+    mock_part_2.text = None
+
+    mock_part_3 = Mock()
+    mock_part_3.function_call = mock_function_call_3
+    mock_part_3.thought = None
+    mock_part_3.text = None
+
+    mock_response.candidates[0].content.parts = [mock_part_1, mock_part_2, mock_part_3]
+
+    mock_response.usage_metadata = Mock()
+    mock_response.usage_metadata.prompt_token_count = 20
+    mock_response.usage_metadata.candidates_token_count = 30
+    mock_response.usage_metadata.total_token_count = 50
+
+    response_dict = _convert_response_to_response_dict(mock_response)
+
+    assert len(response_dict["choices"]) == 1
+    choice = response_dict["choices"][0]
+
+    assert choice["message"]["role"] == "assistant"
+    assert choice["message"]["content"] is None
+    assert choice["finish_reason"] == "tool_calls"
+    assert choice["index"] == 0
+
+    tool_calls = choice["message"]["tool_calls"]
+    assert len(tool_calls) == 3
+
+    assert tool_calls[0]["function"]["name"] == "search_web"
+    assert tool_calls[0]["function"]["arguments"] == '{"query": "test query"}'
+    assert tool_calls[0]["id"].endswith("_0")
+
+    assert tool_calls[1]["function"]["name"] == "get_weather"
+    assert tool_calls[1]["function"]["arguments"] == '{"location": "New York"}'
+    assert tool_calls[1]["id"].endswith("_1")
+
+    assert tool_calls[2]["function"]["name"] == "calculate"
+    assert tool_calls[2]["function"]["arguments"] == '{"expression": "2+2"}'
+    assert tool_calls[2]["id"].endswith("_2")
+
+    tool_call_ids = [tc["id"] for tc in tool_calls]
+    assert len(set(tool_call_ids)) == 3
