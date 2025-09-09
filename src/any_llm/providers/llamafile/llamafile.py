@@ -18,6 +18,7 @@ class LlamafileProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_COMPLETION_STREAMING = False
     SUPPORTS_COMPLETION_IMAGE = False
+    SUPPORTS_COMPLETION_PDF = False
 
     def __init__(self, config: ClientConfig) -> None:
         """We don't use the Provider init because by default we don't require an API key."""

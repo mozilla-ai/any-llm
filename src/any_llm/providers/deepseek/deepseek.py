@@ -13,6 +13,7 @@ class DeepseekProvider(BaseOpenAIProvider):
     PROVIDER_DOCUMENTATION_URL = "https://platform.deepseek.com/"
 
     SUPPORTS_COMPLETION_IMAGE = False
+    SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = False  # DeepSeek doesn't host an embedding model
 
     async def acompletion(
