@@ -137,9 +137,9 @@ def _get_providers_for_testing() -> list[ProviderName]:
     )
 
     return (
-        [provider for provider in filtered if provider not in EXPECTED_PROVIDERS]
+        [provider for provider in filtered if provider not in EXPECTED_PROVIDERS]  # type: ignore[misc]
         if INCLUDE_NON_LOCAL_PROVIDERS
-        else [provider for provider in filtered if provider in EXPECTED_PROVIDERS]
+        else [provider for provider in filtered if provider in EXPECTED_PROVIDERS]  # type: ignore[misc]
     )
 
 
