@@ -64,6 +64,18 @@ def provider_model_map() -> dict[ProviderName, str]:
     }
 
 
+@pytest.fixture
+def provider_image_model_map(provider_model_map: dict[ProviderName, str]) -> dict[ProviderName, str]:
+    return {
+        **provider_model_map,
+        ProviderName.WATSONX: "mistralai/pixtral-12b",
+        ProviderName.SAMBANOVA: "Llama-4-Maverick-17B-128E-Instruct",
+        ProviderName.NEBIUS: "openai/gpt-oss-20b",
+        ProviderName.OPENROUTER: "mistralai/mistral-small-3.2-24b-instruct:free",
+        ProviderName.OLLAMA: "llava:7b",
+    }
+
+
 # Embedding model map - only for providers that support embeddings
 @pytest.fixture
 def embedding_provider_model_map() -> dict[ProviderName, str]:

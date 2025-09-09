@@ -18,6 +18,7 @@ class LlamaProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
+    SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_EMBEDDING = False
 
     async def acompletion(

@@ -238,6 +238,7 @@ tests = [
   "pytest-xdist>=3.6.1",
   "pytest-timeout",
   "debugpy",
+  "aiofiles",
 ]
 
 # For completeness, but 'uv sync --group dev' currently installs the others too.

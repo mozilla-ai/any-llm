@@ -47,6 +47,7 @@ class OllamaProvider(Provider):
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
+    SUPPORTS_COMPLETION_IMAGE = True
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
 
@@ -99,6 +100,35 @@ class OllamaProvider(Provider):
         self.url = config.api_base or os.getenv("OLLAMA_API_URL")
         self.config = config
 
+    def _extract_images_from_message(self, message: dict[str, Any]) -> tuple[str, list[str]]:
+        """
+        Extract images from OpenAI format message and return text content + base64 image strings.
+
+        Args:
+            message: OpenAI format message that may contain image_url content
+
+        Returns:
+            tuple of (text_content, list_of_base64_image_strings)
+        """
+        content = message.get("content", "")
+        images = []
+
+        if isinstance(content, list):
+            text_parts = []
+            for item in content:
+                if item.get("type") == "text":
+                    text_parts.append(item.get("text", ""))
+                elif item.get("type") == "image_url":
+                    image_url = item.get("image_url", {}).get("url", "")
+                    if image_url.startswith("data:image/"):
+                        base64_data = image_url.split(",", 1)[1] if "," in image_url else ""
+                        if base64_data:
+                            # Ollama expects base64 strings directly
+                            images.append(base64_data)
+            content = " ".join(text_parts)
+
+        return content, images
+
     async def _stream_completion_async(
         self,
         client: AsyncClient,
@@ -140,7 +170,7 @@ class OllamaProvider(Provider):
         cleaned_messages = []
         for input_message in params.messages:
             if input_message["role"] == "tool":
-                cleaned_message = {
+                cleaned_message: dict[str, Any] = {
                     "role": "user",
                     "content": json.dumps(input_message["content"]),
                 }
@@ -152,6 +182,13 @@ class OllamaProvider(Provider):
                 }
             else:
                 cleaned_message = input_message.copy()
+
+                if input_message["role"] == "user":
+                    text_content, image_base64_list = self._extract_images_from_message(input_message)
+                    cleaned_message["content"] = text_content
+
+                    if image_base64_list:
+                        cleaned_message["images"] = image_base64_list
 
             cleaned_messages.append(cleaned_message)
 

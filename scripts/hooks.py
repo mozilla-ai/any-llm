@@ -45,10 +45,9 @@ def generate_provider_table(providers: list[ProviderMetadata]):
     if not providers:
         return "No providers found."
 
-    # Create table header
     table_lines = [
-        "| ID | Env Var | Source Code | Responses | Completion | Streaming<br>(Completions) | Reasoning<br>(Completions) | Embedding | List Models |",
-        "|----|---------|-------------|-----------|------------|--------------------------|--------------------------|-----------|-------------|",
+        "| ID | Env Var | Source Code | Responses | Completion | Streaming<br>(Completions) | Reasoning<br>(Completions) | Image <br>(Completions) | Embedding | List Models |",
+        "|----|---------|-------------|-----------|------------|--------------------------|--------------------------|-----------|-----------|-------------|",
     ]
 
     # Add rows for each provider
@@ -67,6 +66,7 @@ def generate_provider_table(providers: list[ProviderMetadata]):
         provider_id_link = f"[`{provider_key}`]({provider.doc_url})"
 
         stream_supported = "✅" if provider.streaming else "❌"
+        image_supported = "✅" if provider.image else "❌"
         embedding_supported = "✅" if provider.embedding else "❌"
         reasoning_supported = "✅" if provider.reasoning else "❌"
         responses_supported = "✅" if provider.responses else "❌"
@@ -75,8 +75,8 @@ def generate_provider_table(providers: list[ProviderMetadata]):
 
         row = (
             f"| {provider_id_link} | {env_key} | {source_link} | {responses_supported} | {completion_supported} | "
-            f"{stream_supported} | {reasoning_supported} | {embedding_supported} |"
-            f"{list_models_supported}"
+            f"{stream_supported} | {reasoning_supported} | {image_supported} | {embedding_supported} | "
+            f"{list_models_supported} |"
         )
         table_lines.append(row)
 
