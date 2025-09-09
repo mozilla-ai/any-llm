@@ -127,6 +127,7 @@ async def test_completion_with_image(
             ],
             **extra_kwargs,
         )
+        assert isinstance(response, ChatCompletion)
         assert response.choices[0].message.content
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:

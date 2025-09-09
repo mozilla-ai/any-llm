@@ -130,7 +130,7 @@ class OllamaProvider(Provider):
         cleaned_messages = []
         for input_message in params.messages:
             if input_message["role"] == "tool":
-                cleaned_message = {
+                cleaned_message: dict[str, Any] = {
                     "role": "user",
                     "content": json.dumps(input_message["content"]),
                 }

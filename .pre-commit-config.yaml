@@ -43,6 +43,7 @@ repos:
           - pip
           - types-requests
           - types-pyyaml
+          - types-aiofiles
         types: [python]
         # use require_serial so that script is only called once per commit
         require_serial: true
