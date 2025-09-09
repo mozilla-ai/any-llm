@@ -10,3 +10,7 @@
 - [Api - Embedding](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/embedding.md)
 - [Api - Exceptions](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/exceptions.md)
 - [Api - List Models](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/list_models.md)
+- [Api - Types - Completion](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/types/completion.md)
+- [Api - Types - Responses](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/types/responses.md)
+- [Api - Types - Model](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/types/model.md)
+- [Api - Types - Provider](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/types/provider.md)

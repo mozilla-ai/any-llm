@@ -295,3 +295,55 @@ as well as what features the provider supports for each model, refer to the prov
 
 
 ---
+
+## api/types/completion.md
+
+<!-- Source: api/types/completion.md -->
+
+## Completion Types
+
+Data models and types for completion operations.
+
+::: any_llm.types.completion
+
+
+---
+
+## api/types/responses.md
+
+<!-- Source: api/types/responses.md -->
+
+## Response Types
+
+Data models and types for API responses.
+
+::: any_llm.types.responses
+
+
+---
+
+## api/types/model.md
+
+<!-- Source: api/types/model.md -->
+
+## Model Types
+
+Data models and types for model operations.
+
+::: any_llm.types.model
+
+
+---
+
+## api/types/provider.md
+
+<!-- Source: api/types/provider.md -->
+
+## Provider Types
+
+Data models and types for provider operations.
+
+::: any_llm.types.provider
+
+
+---
