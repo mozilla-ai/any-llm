@@ -38,7 +38,7 @@ export async function fetchAllModelsStream(
 ): Promise<void> {
   try {
     const response = await fetch(`${API_BASE}/all-models`);
-    
+
     if (!response.ok) {
       throw new Error('Failed to fetch all models');
     }
@@ -76,7 +76,7 @@ export async function fetchAllModelsStream(
             if (data) {
               try {
                 const parsedChunk = JSON.parse(data);
-                
+
                 if (parsedChunk.type === 'status') {
                   onStatus(parsedChunk.message, parsedChunk.progress, parsedChunk.total);
                 } else if (parsedChunk.type === 'provider_complete') {

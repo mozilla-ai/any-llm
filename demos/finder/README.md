@@ -7,7 +7,7 @@ A demo application that helps you search for AI models across different provider
 ## Features
 
 - **Provider Status Dashboard**: See which providers you have API keys configured for
-- **Model Search**: Search for specific models across all configured providers  
+- **Model Search**: Search for specific models across all configured providers
 - **Browse All Models**: View all available models from your configured providers
 - **Real-time Results**: Get instant feedback on model availability
 - **Provider Error Reporting**: See which providers have issues and why

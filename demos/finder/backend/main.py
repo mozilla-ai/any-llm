@@ -1,6 +1,5 @@
-# ruff: noqa: T201
+# ruff: noqa: T201, S104
 import os
-from typing import Any
 
 from any_llm import list_models
 from any_llm.exceptions import MissingApiKeyError
@@ -132,7 +131,7 @@ async def search_models(request: SearchRequest):
                 provider_errors.append({"provider": provider_name.value, "error": str(e)})
 
         except Exception as e:
-            provider_errors.append({"provider": provider_name.value, "error": f"Failed to load provider: {str(e)}"})
+            provider_errors.append({"provider": provider_name.value, "error": f"Failed to load provider: {e!s}"})
 
     # Sort models by provider name, then by model name
     all_models.sort(key=lambda x: (x.provider, x.id))
@@ -148,9 +147,9 @@ async def search_models(request: SearchRequest):
 @app.get("/all-models")
 async def get_all_models():
     """Get all models from all configured providers with streaming updates."""
-    from fastapi.responses import StreamingResponse
     import json
-    import asyncio
+
+    from fastapi.responses import StreamingResponse
 
     async def stream_all_models():
         """Stream models as each provider completes."""
@@ -178,6 +177,7 @@ async def get_all_models():
 
                 providers_to_process.append((provider_name, provider_class))
             except Exception:
+                print(f"Failed to load provider: {provider_name.value}")
                 continue
 
         total_providers = len(providers_to_process)
@@ -186,7 +186,7 @@ async def get_all_models():
         yield f"data: {json.dumps({'type': 'status', 'message': f'Loading models from {total_providers} providers...', 'progress': 0, 'total': total_providers})}\n\n"
 
         # Process each provider
-        for provider_name, provider_class in providers_to_process:
+        for provider_name, _ in providers_to_process:
             try:
                 provider_display = provider_name.value.replace("_", " ").title()
                 yield f"data: {json.dumps({'type': 'status', 'message': f'Loading {provider_display}...', 'progress': completed_providers, 'total': total_providers})}\n\n"

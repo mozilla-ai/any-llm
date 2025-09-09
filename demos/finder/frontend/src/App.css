@@ -9,7 +9,7 @@
   --moz-dark-blue: #00458b;
   --moz-dark-gray: #959595;
   --moz-light-gray: #e7e5e2;
-  
+
   --protocol-blue-50: #0060df;
   --protocol-blue-60: #0250bb;
   --protocol-violet-50: #9059ff;
@@ -58,7 +58,7 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: 
+  background:
     radial-gradient(circle at 20% 50%, var(--moz-neon-green) 0%, transparent 70%),
     radial-gradient(circle at 80% 20%, var(--moz-neon-green) 0%, transparent 70%);
   opacity: 0.05;
@@ -674,49 +674,49 @@ body {
     flex-direction: column;
     padding: 1rem;
   }
-  
+
   .sidebar {
     width: 100%;
     position: static;
   }
-  
+
   .sidebar.collapsed {
     width: 100%;
     height: 60px;
   }
-  
+
   .header h1 {
     font-size: 2rem;
   }
-  
+
   .header p {
     font-size: 1rem;
   }
-  
+
   .model-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .search-section .search-input {
     font-size: 1rem;
     padding: 0.75rem;
   }
-  
+
   .loading-container {
     padding: 1rem;
   }
-  
+
   .loading-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.5rem;
   }
-  
+
   .loading-model-grid {
     grid-template-columns: 1fr;
     max-height: 300px;
   }
-  
+
   .loading-status {
     margin-bottom: 1rem;
   }

@@ -24,11 +24,11 @@ function App() {
     try {
       const cachedModels = localStorage.getItem(CACHE_KEY);
       const cachedTimestamp = localStorage.getItem(CACHE_TIMESTAMP_KEY);
-      
+
       if (cachedModels && cachedTimestamp) {
         const timestamp = new Date(cachedTimestamp);
         const now = new Date();
-        
+
         // Check if cache is still valid (within CACHE_DURATION)
         if (now.getTime() - timestamp.getTime() < CACHE_DURATION) {
           return {
@@ -54,7 +54,7 @@ function App() {
 
   useEffect(() => {
     loadProviderStatus();
-    
+
     // Try to load from cache first
     const cached = loadFromCache();
     if (cached) {
@@ -84,7 +84,7 @@ function App() {
     setAllModels([]);
     setProviderErrors([]);
     setLoadedFromCache(false);
-    
+
     await fetchAllModelsStream(
       // onStatus
       (message: string, progress: number, total: number) => {
@@ -109,7 +109,7 @@ function App() {
         setLastUpdated(timestamp);
         setLoading(false);
         setLoadingStatus(`Loaded ${totalModels} models from all providers`);
-        
+
         // Save to cache
         saveToCache(models, timestamp);
       },
@@ -127,9 +127,9 @@ function App() {
     if (!searchQuery.trim()) {
       return allModels;
     }
-    
+
     const query = searchQuery.toLowerCase().trim();
-    return allModels.filter(model => 
+    return allModels.filter(model =>
       model.id.toLowerCase().includes(query) ||
       model.provider_display_name.toLowerCase().includes(query) ||
       (model.owned_by && model.owned_by.toLowerCase().includes(query))
@@ -163,7 +163,7 @@ function App() {
       <div className="main-content">
         <div className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
           <div className="sidebar-header">
-            <button 
+            <button
               className="sidebar-toggle"
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
               title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -181,8 +181,8 @@ function App() {
                     <div className="progress-text">{loadingStatus}</div>
                     {loadingProgress.total > 0 && (
                       <div className="progress-bar">
-                        <div 
-                          className="progress-fill" 
+                        <div
+                          className="progress-fill"
                           style={{width: `${(loadingProgress.current / loadingProgress.total) * 100}%`}}
                         />
                       </div>
@@ -265,20 +265,20 @@ function App() {
                   </div>
                 )}
               </div>
-              
+
               {loadingProgress.total > 0 && (
                 <div className="loading-progress-bar">
-                  <div 
-                    className="loading-progress-fill" 
+                  <div
+                    className="loading-progress-fill"
                     style={{width: `${(loadingProgress.current / loadingProgress.total) * 100}%`}}
                   />
                 </div>
               )}
-              
+
               <div className="loading-status">
                 {loadingStatus || 'Initializing...'}
               </div>
-              
+
               {/* Show models as they load */}
               {allModels.length > 0 && (
                 <div className="loading-preview">
