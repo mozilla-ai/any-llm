@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
     from ibm_watsonx_ai import APIClient as WatsonxClient  # noqa: TC004
 
-    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
 
 
@@ -48,6 +48,45 @@ class WatsonxProvider(Provider):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
+    @staticmethod
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert CompletionParams to kwargs for Watsonx API."""
+        # Watsonx does not support providing reasoning effort
+        converted_params = params.model_dump(
+            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}
+        )
+        if converted_params.get("reasoning_effort") == "auto":
+            converted_params.pop("reasoning_effort")
+        converted_params.update(kwargs)
+        return converted_params
+
+    @staticmethod
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        """Convert Watsonx response to OpenAI format."""
+        return _convert_response(response)
+
+    @staticmethod
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        """Convert Watsonx chunk response to OpenAI format."""
+        return _convert_streaming_chunk(response)
+
+    @staticmethod
+    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
+        """Convert embedding parameters for Watsonx."""
+        msg = "Watsonx does not support embeddings"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
+        """Convert Watsonx embedding response to OpenAI format."""
+        msg = "Watsonx does not support embeddings"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        """Convert Watsonx list models response to OpenAI format."""
+        return _convert_models_list(response)
+
     async def _stream_completion_async(
         self,
         model_inference: ModelInference,
@@ -60,7 +99,7 @@ class WatsonxProvider(Provider):
             params=kwargs,
         )
         async for chunk in response_stream:
-            yield _convert_streaming_chunk(chunk)
+            yield self._convert_completion_chunk_response(chunk)
 
     def _stream_completion(
         self,
@@ -74,7 +113,7 @@ class WatsonxProvider(Provider):
             params=kwargs,
         )
         for chunk in response_stream:
-            yield _convert_streaming_chunk(chunk)
+            yield self._convert_completion_chunk_response(chunk)
 
     async def acompletion(
         self,
@@ -101,19 +140,17 @@ class WatsonxProvider(Provider):
         if params.reasoning_effort == "auto":
             params.reasoning_effort = None
 
+        completion_kwargs = self._convert_completion_params(params, **kwargs)
+
         if params.stream:
-            kwargs = {
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
-                **kwargs,
-            }
-            return self._stream_completion_async(model_inference, params.messages, **kwargs)
+            return self._stream_completion_async(model_inference, params.messages, **completion_kwargs)
 
         response = await model_inference.achat(
             messages=params.messages,
-            params=params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+            params=completion_kwargs,
         )
 
-        return _convert_response(response)
+        return self._convert_completion_response(response)
 
     def completion(
         self,
@@ -140,19 +177,17 @@ class WatsonxProvider(Provider):
         if params.reasoning_effort == "auto":
             params.reasoning_effort = None
 
+        completion_kwargs = self._convert_completion_params(params, **kwargs)
+
         if params.stream:
-            kwargs = {
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
-                **kwargs,
-            }
-            return self._stream_completion(model_inference, params.messages, **kwargs)
+            return self._stream_completion(model_inference, params.messages, **completion_kwargs)
 
         response = model_inference.chat(
             messages=params.messages,
-            params=params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
+            params=completion_kwargs,
         )
 
-        return _convert_response(response)
+        return self._convert_completion_response(response)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
@@ -178,4 +213,4 @@ class WatsonxProvider(Provider):
         else:
             models_data = {"resources": [models_response]}
 
-        return _convert_models_list(models_data)
+        return self._convert_list_models_response(models_data)
