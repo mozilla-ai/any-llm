@@ -136,7 +136,7 @@ class BaseOpenAIProvider(Provider, ABC):
             if params.stream:
                 msg = "stream is not supported for response_format"
                 raise ValueError(msg)
-            completion_kwargs.pop("stream")
+            completion_kwargs.pop("stream", None)
             response = await client.chat.completions.parse(
                 model=params.model_id,
                 messages=cast("Any", params.messages),

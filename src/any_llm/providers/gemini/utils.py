@@ -135,6 +135,9 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
         and len(response.candidates[0].content.parts) > 0
     ):
         reasoning = None
+        tool_calls_list: list[dict[str, Any]] = []
+        text_content = None
+
         for part in response.candidates[0].content.parts:
             if getattr(part, "thought", None):
                 reasoning = part.text
@@ -144,40 +147,45 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                     for key, value in args.items():
                         args_dict[key] = value
 
-                choices.append(
+                tool_calls_list.append(
                     {
-                        "message": {
-                            "role": "assistant",
-                            "content": None,
-                            "reasoning": reasoning,
-                            "tool_calls": [
-                                {
-                                    "id": f"call_{hash(function_call.name)}",
-                                    "function": {
-                                        "name": function_call.name,
-                                        "arguments": json.dumps(args_dict),
-                                    },
-                                    "type": "function",
-                                }
-                            ],
+                        "id": f"call_{hash(function_call.name)}_{len(tool_calls_list)}",
+                        "function": {
+                            "name": function_call.name,
+                            "arguments": json.dumps(args_dict),
                         },
-                        "finish_reason": "tool_calls",
-                        "index": 0,
+                        "type": "function",
                     }
                 )
             elif getattr(part, "text", None):
-                choices.append(
-                    {
-                        "message": {
-                            "role": "assistant",
-                            "content": part.text,
-                            "reasoning": reasoning,
-                            "tool_calls": None,
-                        },
-                        "finish_reason": "stop",
-                        "index": 0,
-                    }
-                )
+                text_content = part.text
+
+        if tool_calls_list:
+            choices.append(
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "reasoning": reasoning,
+                        "tool_calls": tool_calls_list,
+                    },
+                    "finish_reason": "tool_calls",
+                    "index": 0,
+                }
+            )
+        elif text_content:
+            choices.append(
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": text_content,
+                        "reasoning": reasoning,
+                        "tool_calls": None,
+                    },
+                    "finish_reason": "stop",
+                    "index": 0,
+                }
+            )
 
     response_dict["choices"] = choices
 
