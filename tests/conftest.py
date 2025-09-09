@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 
 from any_llm.provider import ProviderName
-from tests.constants import EXPECTED_PROVIDERS, INCLUDE_LOCAL_PROVIDERS, INCLUDE_NON_LOCAL_PROVIDERS, LOCAL_PROVIDERS
+from tests.constants import INCLUDE_LOCAL_PROVIDERS, INCLUDE_NON_LOCAL_PROVIDERS, LOCAL_PROVIDERS
 
 
 @pytest.fixture
@@ -130,17 +130,13 @@ def _get_providers_for_testing() -> list[ProviderName]:
     """Get the list of providers to test based on INCLUDE_LOCAL_PROVIDERS and INCLUDE_NON_LOCAL_PROVIDERS settings."""
     all_providers = list(ProviderName)
 
-    filtered = (
-        [provider for provider in all_providers if provider in LOCAL_PROVIDERS]
-        if INCLUDE_LOCAL_PROVIDERS
-        else [provider for provider in all_providers if provider not in LOCAL_PROVIDERS]
-    )
+    filtered = []
+    if INCLUDE_LOCAL_PROVIDERS:
+        filtered.extend([provider for provider in all_providers if provider in LOCAL_PROVIDERS])
+    if INCLUDE_NON_LOCAL_PROVIDERS:
+        filtered.extend([provider for provider in all_providers if provider not in LOCAL_PROVIDERS])
 
-    return (
-        [provider for provider in filtered if provider not in EXPECTED_PROVIDERS]  # type: ignore[misc]
-        if INCLUDE_NON_LOCAL_PROVIDERS
-        else [provider for provider in filtered if provider in EXPECTED_PROVIDERS]  # type: ignore[misc]
-    )
+    return filtered  # type: ignore[return-value]
 
 
 @pytest.fixture(params=_get_providers_for_testing(), ids=lambda x: x.value)
