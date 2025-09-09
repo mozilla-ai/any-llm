@@ -50,7 +50,8 @@ jobs:
           WATSONX_API_KEY: ${{ secrets.WATSONX_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          EXPECTED_PROVIDERS: "anthropic,bedrock,fireworks,gemini,huggingface,llama,mistral,openai,voyage,watsonx,xai,openrouter"
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          EXPECTED_PROVIDERS: "anthropic,bedrock,fireworks,gemini,huggingface,llama,mistral,openai,voyage,watsonx,xai,openrouter,cerebras"
           INCLUDE_LOCAL_PROVIDERS: "false"
         run: |
           if [ -n "${{ inputs.filter }}" ]; then
