@@ -10,5 +10,6 @@ class ProviderMetadata(BaseModel):
     completion: bool
     embedding: bool
     responses: bool
+    image: bool
     class_name: str
     list_models: bool

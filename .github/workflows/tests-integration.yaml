@@ -50,6 +50,7 @@ jobs:
           ollama serve &
           ollama pull llama3.2:1b
           ollama pull qwen3:0.6b
+          ollama pull llava:7b
 
       - env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
