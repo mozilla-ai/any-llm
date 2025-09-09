@@ -1,6 +1,19 @@
 name: Local Providers Integration Tests
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '.github/workflows/**'
+      - 'pyproject.toml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '.github/workflows/**'
+      - 'pyproject.toml'
   schedule:
     # Run daily at 2 AM UTC
     - cron: '0 2 * * *'
