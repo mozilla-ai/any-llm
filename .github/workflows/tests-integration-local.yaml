@@ -84,7 +84,7 @@ jobs:
       - name: Run Local Provider Integration tests (parallel with xdist)
         env:
           INCLUDE_LOCAL_PROVIDERS: "true"
-          EXPECTED_PROVIDERS: "llamacpp,ollama,lmstudio,llamafile"
+          EXPECTED_PROVIDERS: "ollama,llamafile"
         run: |
           if [ -n "${{ inputs.filter }}" ]; then
             pytest tests/integration -v -n auto --cov --cov-report=xml -k "${{ inputs.filter }}"

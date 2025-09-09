@@ -21,4 +21,5 @@ class LmstudioProvider(BaseOpenAIProvider):
     def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
         # LM Studio doesn't require an API Key,
         # so we can skip the verification step and return directly
+        config.api_key = ""  # In order to be compatible with the OpenAI client, the API key cannot be None if the OPENAI_API_KEY environment variable is not set (which is the case for LM Studio)
         return config

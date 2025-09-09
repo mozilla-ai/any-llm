@@ -25,6 +25,7 @@ class LlamafileProvider(BaseOpenAIProvider):
 
         self.url = config.api_base or os.getenv("LLAMAFILE_API_URL")
         self.config = config
+        self.config.api_key = ""  # In order to be compatible with the OpenAI client, the API key cannot be None if the OPENAI_API_KEY environment variable is not set (which is the case for LlamaFile)
 
     async def acompletion(
         self, params: CompletionParams, **kwargs: Any
