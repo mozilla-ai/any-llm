@@ -1,4 +1,4 @@
-from typing_extensions import override
+import os
 
 from any_llm.provider import ClientConfig
 from any_llm.providers.openai.base import BaseOpenAIProvider
@@ -17,8 +17,9 @@ class LmstudioProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_LIST_MODELS = True
 
-    @override
-    def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
-        # LM Studio doesn't require an API Key,
-        # so we can skip the verification step and return directly
-        return config
+    def __init__(self, config: ClientConfig) -> None:
+        """We don't use the Provider init because by default we don't require an API key."""
+
+        self.url = config.api_base or os.getenv("LMSTUDIO_API_URL")
+        self.config = config
+        self.config.api_key = ""  # In order to be compatible with the OpenAI client, the API key cannot be None if the OPENAI_API_KEY environment variable is not set (which is the case for LMStudio)

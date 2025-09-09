@@ -33,27 +33,6 @@ jobs:
 
       - env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: python scripts/wake_up_hf_endpoint.py
-
-      # cache the ~/.ollama/models directory
-      - uses: actions/cache@v4
-        with:
-          path: ~/.ollama
-          key: ${{ runner.os }}-ollama-models-${{ hashFiles('tests/conftest.py') }}
-          restore-keys: |
-            ${{ runner.os }}-ollama-models-
-      - name: Setup Ollama
-        uses: ai-action/setup-ollama@v1
-
-      - name: Run ollama
-        run: |
-          ollama serve &
-          ollama pull llama3.2:1b
-          ollama pull qwen3:0.6b
-          ollama pull llava:7b
-
-      - env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python scripts/wake_up_hf_endpoint.py --retry=5
 
       - name: Run Integration tests (parallel with xdist)
@@ -72,6 +51,7 @@ jobs:
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           EXPECTED_PROVIDERS: "anthropic,bedrock,fireworks,gemini,huggingface,llama,mistral,openai,voyage,watsonx,xai,openrouter"
+          INCLUDE_LOCAL_PROVIDERS: "false"
         run: |
           if [ -n "${{ inputs.filter }}" ]; then
             pytest tests/integration -v -n auto --cov --cov-report=xml -k "${{ inputs.filter }}"

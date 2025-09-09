@@ -59,6 +59,6 @@ async def test_streaming_completion_async(
     except UnsupportedParameterError:
         pytest.skip(f"Streaming is not supported for {provider.value}")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in LOCAL_PROVIDERS:
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise

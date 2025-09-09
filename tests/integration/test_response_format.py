@@ -54,6 +54,6 @@ async def test_response_format(
     except UnsupportedParameterError:
         pytest.skip(f"{provider.value} does not support response_format, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in LOCAL_PROVIDERS:
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise
