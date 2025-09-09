@@ -98,6 +98,59 @@ export MISTRAL_API_KEY="YOUR_KEY_HERE"  # or OPENAI_API_KEY, etc
 
 ### Basic Usage
 
+
+### Sending Images to Gemini/Vertex
+
+You can send images to Google Gemini and Vertex providers using the `messages` parameter. Supported formats:
+- Base64-encoded PNG/JPEG (recommended)
+- Image URLs (http/https)
+- Raw bytes (Python bytes/bytearray)
+
+Example (base64):
+
+```python
+import base64
+with open("image.png", "rb") as f:
+    image_base64 = base64.b64encode(f.read()).decode()
+
+response = completion(
+    model="gemini-pro",
+    provider="gemini",
+    messages=[
+        {"role": "user", "content": "Describe this image.", "image_base64": image_base64}
+    ]
+)
+print(response.choices[0].message.content)
+```
+
+Example (URL):
+
+```python
+response = completion(
+    model="vertexai-pro",
+    provider="vertexai",
+    messages=[
+        {"role": "user", "content": "Describe this image.", "image_url": "https://example.com/image.jpg"}
+    ]
+)
+```
+
+Example (bytes):
+
+```python
+with open("image.png", "rb") as f:
+    image_bytes = f.read()
+response = completion(
+    model="gemini-pro",
+    provider="gemini",
+    messages=[
+        {"role": "user", "content": "Describe this image.", "image_bytes": image_bytes}
+    ]
+)
+```
+
+If invalid image data is supplied (corrupt base64, bad URL, wrong type), a `ValueError` will be raised.
+
 **Recommended approach:** Use separate `provider` and `model` parameters:
 
 ```python
