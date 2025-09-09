@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 
 from any_llm.provider import ProviderName
-from tests.constants import EXPECTED_PROVIDERS, INCLUDE_LOCAL_PROVIDERS, INCLUDE_NON_LOCAL_PROVIDERS, LOCAL_PROVIDERS
+from tests.constants import INCLUDE_LOCAL_PROVIDERS, INCLUDE_NON_LOCAL_PROVIDERS, LOCAL_PROVIDERS
 
 
 @pytest.fixture
