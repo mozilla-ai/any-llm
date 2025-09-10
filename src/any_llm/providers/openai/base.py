@@ -1,5 +1,4 @@
 import os
-from abc import ABC
 from collections.abc import AsyncIterator, Sequence
 from typing import Any, Literal, cast
 
@@ -17,7 +16,7 @@ from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponseStreamEvent
 
 
-class BaseOpenAIProvider(Provider, ABC):
+class BaseOpenAIProvider(Provider):
     """
     Base provider for OpenAI-compatible services.
 

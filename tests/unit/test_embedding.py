@@ -20,15 +20,14 @@ async def test_embedding_with_api_config() -> None:
     )
     mock_provider.aembedding = AsyncMock(return_value=mock_embedding_response)
 
-    with patch("any_llm.provider.Provider") as mock_factory:
-        mock_factory.split_model_provider.return_value = (ProviderName.OPENAI, "test-model")
-        mock_factory.create_provider.return_value = mock_provider
+    with patch("any_llm.provider.Provider.create") as mock_create:
+        mock_create.return_value = mock_provider
 
         result = await aembedding(
             "openai/test-model", inputs="Hello world", api_key="test_key", api_base="https://test.example.com"
         )
 
-        call_args = mock_factory.create_provider.call_args
+        call_args = mock_create.call_args
         assert call_args[0][0] == ProviderName.OPENAI
         assert call_args[0][1].api_key == "test_key"
         assert call_args[0][1].api_base == "https://test.example.com"
