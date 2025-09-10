@@ -78,8 +78,30 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[types.Conten
             else:
                 system_instruction += f"\n{message['content']}"
         elif message["role"] == "user":
-            parts = [types.Part.from_text(text=message["content"])]
-            formatted_messages.append(types.Content(role="user", parts=parts))
+                parts = []
+                # Accept text and/or image (base64, URL, bytes)
+                if "content" in message and message["content"]:
+                    parts.append(types.Part.from_text(text=message["content"]))
+                # Validate base64 image
+                if "image_base64" in message and message["image_base64"]:
+                    import base64
+                    try:
+                        base64.b64decode(message["image_base64"], validate=True)
+                        parts.append(types.Part.from_data(data=message["image_base64"], mime_type="image/png"))
+                    except Exception:
+                        raise ValueError("Invalid base64 image data supplied.")
+                # Validate image URL (basic check)
+                if "image_url" in message and message["image_url"]:
+                    url = message["image_url"]
+                    if not (url.startswith("http://") or url.startswith("https://")):
+                        raise ValueError("Invalid image URL supplied.")
+                    parts.append(types.Part.from_data(data=url, mime_type="image_url"))
+                # Validate raw bytes (must be bytes)
+                if "image_bytes" in message and message["image_bytes"]:
+                    if not isinstance(message["image_bytes"], (bytes, bytearray)):
+                        raise ValueError("image_bytes must be bytes or bytearray.")
+                    parts.append(types.Part.from_data(data=message["image_bytes"], mime_type="image/png"))
+                formatted_messages.append(types.Content(role="user", parts=parts))
         elif message["role"] == "assistant":
             if message.get("tool_calls"):
                 tool_call = message["tool_calls"][0]

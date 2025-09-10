@@ -1,3 +1,37 @@
+import pytest
+@pytest.mark.asyncio
+async def test_completion_valid_base64_image() -> None:
+    """Test completion accepts valid base64 image data."""
+    import base64
+    valid_png = base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()
+    mock_provider = Mock()
+    mock_provider.acompletion = AsyncMock()
+    with patch("any_llm.utils.api.ProviderFactory") as mock_factory:
+        mock_factory.get_supported_providers.return_value = ["gemini"]
+        mock_factory.get_provider_enum.return_value = ProviderName.OPENAI
+        mock_factory.split_model_provider.return_value = (ProviderName.OPENAI, "gemini-pro")
+        mock_factory.create_provider.return_value = mock_provider
+        await acompletion("gemini-pro", messages=[{"role": "user", "content": "Describe image", "image_base64": valid_png}])
+        mock_provider.acompletion.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_completion_invalid_base64_image() -> None:
+    """Test completion raises error for invalid base64 image data."""
+    invalid_base64 = "not_base64!"
+    with pytest.raises(ValueError, match="Invalid base64 image data supplied."):
+        await acompletion("gemini-pro", messages=[{"role": "user", "content": "Describe image", "image_base64": invalid_base64}])
+
+@pytest.mark.asyncio
+async def test_completion_invalid_image_url() -> None:
+    """Test completion raises error for invalid image URL."""
+    with pytest.raises(ValueError, match="Invalid image URL supplied."):
+        await acompletion("vertexai-pro", messages=[{"role": "user", "content": "Describe image", "image_url": "ftp://invalid-url"}])
+
+@pytest.mark.asyncio
+async def test_completion_invalid_image_bytes_type() -> None:
+    """Test completion raises error for non-bytes image_bytes."""
+    with pytest.raises(ValueError, match="image_bytes must be bytes or bytearray."):
+        await acompletion("gemini-pro", messages=[{"role": "user", "content": "Describe image", "image_bytes": "not_bytes"}])
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest

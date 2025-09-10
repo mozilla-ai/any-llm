@@ -1,3 +1,44 @@
+@pytest.mark.asyncio
+async def test_integration_valid_base64_image() -> None:
+    """Integration test: valid base64 image for Gemini/Vertex."""
+    import base64
+    valid_png = base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()
+    result = await acompletion(
+        model="gemini-pro",
+        provider="gemini",
+        messages=[{"role": "user", "content": "Describe image", "image_base64": valid_png}]
+    )
+    assert result.choices[0].message.content is not None
+
+@pytest.mark.asyncio
+async def test_integration_invalid_base64_image() -> None:
+    """Integration test: invalid base64 image for Gemini/Vertex."""
+    with pytest.raises(ValueError, match="Invalid base64 image data supplied."):
+        await acompletion(
+            model="gemini-pro",
+            provider="gemini",
+            messages=[{"role": "user", "content": "Describe image", "image_base64": "not_base64!"}]
+        )
+
+@pytest.mark.asyncio
+async def test_integration_invalid_image_url() -> None:
+    """Integration test: invalid image URL for Gemini/Vertex."""
+    with pytest.raises(ValueError, match="Invalid image URL supplied."):
+        await acompletion(
+            model="vertexai-pro",
+            provider="vertexai",
+            messages=[{"role": "user", "content": "Describe image", "image_url": "ftp://invalid-url"}]
+        )
+
+@pytest.mark.asyncio
+async def test_integration_invalid_image_bytes_type() -> None:
+    """Integration test: non-bytes image_bytes for Gemini/Vertex."""
+    with pytest.raises(ValueError, match="image_bytes must be bytes or bytearray."):
+        await acompletion(
+            model="gemini-pro",
+            provider="gemini",
+            messages=[{"role": "user", "content": "Describe image", "image_bytes": "not_bytes"}]
+        )
 import asyncio
 import base64
 from pathlib import Path
