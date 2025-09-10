@@ -38,13 +38,12 @@ async def test_completion_invalid_model_format_multiple_slashes() -> None:
     mock_provider = Mock()
     mock_provider.acompletion = AsyncMock()
 
-    with patch("any_llm.provider.Provider") as mock_factory:
-        mock_factory.get_supported_providers.return_value = ["provider"]
-        mock_factory.get_provider_enum.return_value = ProviderName.OPENAI  # Using a valid provider
-        mock_factory.split_model_provider.return_value = (ProviderName.OPENAI, "model/extra")
-        mock_factory.create_provider.return_value = mock_provider
+    with patch("any_llm.provider.Provider.split_model_provider") as mock_split, \
+         patch("any_llm.provider.Provider.create") as mock_create:
+        mock_split.return_value = (ProviderName.OPENAI, "model/extra")
+        mock_create.return_value = mock_provider
 
-        await acompletion("provider/model/extra", messages=[{"role": "user", "content": "Hello"}])
+        await acompletion("openai/model/extra", messages=[{"role": "user", "content": "Hello"}])
 
         mock_provider.acompletion.assert_called_once()
         args, kwargs = mock_provider.acompletion.call_args
@@ -59,11 +58,10 @@ async def test_completion_converts_chat_message_to_dict() -> None:
     mock_provider = Mock()
     mock_provider.acompletion = AsyncMock()
 
-    with patch("any_llm.provider.Provider") as mock_factory:
-        mock_factory.get_supported_providers.return_value = ["provider"]
-        mock_factory.get_provider_enum.return_value = ProviderName.OPENAI
-        mock_factory.split_model_provider.return_value = (ProviderName.OPENAI, "gpt-4o")
-        mock_factory.create_provider.return_value = mock_provider
+    with patch("any_llm.provider.Provider.split_model_provider") as mock_split, \
+         patch("any_llm.provider.Provider.create") as mock_create:
+        mock_split.return_value = (ProviderName.OPENAI, "gpt-4o")
+        mock_create.return_value = mock_provider
 
         msg = ChatCompletionMessage(role="assistant", content="Hello", reasoning=Reasoning(content="Thinking..."))
         await acompletion("provider/gpt-4o", messages=[msg])

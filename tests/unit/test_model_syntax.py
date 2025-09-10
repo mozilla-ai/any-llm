@@ -33,9 +33,8 @@ def test_completion_with_colon_syntax() -> None:
     mock_provider = Mock()
     mock_provider.completion.return_value = Mock()
 
-    with patch("any_llm.provider.Provider") as mock_factory:
-        mock_factory.split_model_provider.return_value = (ProviderName.OPENAI, "gpt-4")
-        mock_factory.create_provider.return_value = mock_provider
+    with patch("any_llm.provider.Provider.create") as mock_create:
+        mock_create.return_value = mock_provider
 
         completion("openai:gpt-4", messages=[{"role": "user", "content": "Hello"}])
         mock_provider.completion.assert_called_once()
@@ -46,8 +45,8 @@ def test_completion_with_separate_parameters() -> None:
     mock_provider = Mock()
     mock_provider.completion.return_value = Mock()
 
-    with patch("any_llm.provider.Provider") as mock_factory:
-        mock_factory.create_provider.return_value = mock_provider
+    with patch("any_llm.provider.Provider.create") as mock_create:
+        mock_create.return_value = mock_provider
 
         completion(model="gpt-4", provider="openai", messages=[{"role": "user", "content": "Hello"}])
         mock_provider.completion.assert_called_once()

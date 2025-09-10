@@ -35,12 +35,9 @@ async def test_responses_invalid_model_format_multiple_slashes() -> None:
     mock_provider = Mock()
     mock_provider.aresponses = AsyncMock()
 
-    with patch("any_llm.provider.Provider") as mock_factory:
-        mock_factory.get_supported_providers.return_value = ["provider"]
-        mock_factory.get_provider_enum.return_value = ProviderName.OPENAI  # Using a valid provider
-        mock_factory.split_model_provider.return_value = (ProviderName.OPENAI, "model/extra")
-        mock_factory.create_provider.return_value = mock_provider
+    with patch("any_llm.provider.Provider.create") as mock_create:
+        mock_create.return_value = mock_provider
 
-        await aresponses("provider/model/extra", input_data=[{"role": "user", "content": "Hello"}])
+        await aresponses("openai/model/extra", input_data=[{"role": "user", "content": "Hello"}])
 
         mock_provider.aresponses.assert_called_once_with("model/extra", [{"role": "user", "content": "Hello"}])
