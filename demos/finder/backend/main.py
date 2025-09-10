@@ -3,7 +3,7 @@ import os
 
 from any_llm import list_models
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.provider import ProviderFactory, ProviderName
+from any_llm.provider import Provider, ProviderName
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -54,7 +54,7 @@ async def get_provider_status():
 
     for provider_name in ProviderName:
         try:
-            provider_class = ProviderFactory.get_provider_class(provider_name)
+            provider_class = Provider.get_provider_class(provider_name)
 
             status = ProviderStatus(
                 name=provider_name.value,
@@ -95,7 +95,7 @@ async def search_models(request: SearchRequest):
 
     for provider_name in ProviderName:
         try:
-            provider_class = ProviderFactory.get_provider_class(provider_name)
+            provider_class = Provider.get_provider_class(provider_name)
 
             # Skip providers that don't support list_models
             if not provider_class.SUPPORTS_LIST_MODELS:
@@ -161,7 +161,7 @@ async def get_all_models():
         providers_to_process = []
         for provider_name in ProviderName:
             try:
-                provider_class = ProviderFactory.get_provider_class(provider_name)
+                provider_class = Provider.get_provider_class(provider_name)
 
                 # Skip providers that don't support list_models
                 if not provider_class.SUPPORTS_LIST_MODELS:

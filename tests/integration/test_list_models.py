@@ -7,14 +7,14 @@ from openai import APIConnectionError
 from any_llm import list_models
 from any_llm.constants import ProviderName
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.factory import ProviderFactory
+from any_llm.provider import Provider
 from any_llm.types.model import Model
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 
 def test_list_models(provider: ProviderName, provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]]) -> None:
     """Test that all supported providers can be loaded successfully."""
-    cls = ProviderFactory.get_provider_class(provider)
+    cls = Provider.get_provider_class(provider)
     if not cls.SUPPORTS_LIST_MODELS:
         pytest.skip(f"{provider.value} does not support listing models, skipping")
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})

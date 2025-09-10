@@ -12,7 +12,7 @@ def test_completion_extracts_all_config_from_kwargs() -> None:
     mock_provider = Mock()
     mock_provider.completion.return_value = Mock()
 
-    with patch("any_llm.utils.api.ProviderFactory") as mock_factory:
+    with patch("any_llm.provider.Provider") as mock_factory:
         mock_factory.get_supported_providers.return_value = ["mistral"]
         mock_factory.get_provider_enum.return_value = ProviderName.MISTRAL
         mock_factory.split_model_provider.return_value = (ProviderName.MISTRAL, "mistral-small")
@@ -45,7 +45,7 @@ def test_completion_extracts_partial_config_from_kwargs() -> None:
     mock_provider = Mock()
     mock_provider.completion.return_value = Mock()
 
-    with patch("any_llm.utils.api.ProviderFactory") as mock_factory:
+    with patch("any_llm.provider.Provider") as mock_factory:
         mock_factory.get_supported_providers.return_value = ["mistral"]
         mock_factory.get_provider_enum.return_value = ProviderName.MISTRAL
         mock_factory.split_model_provider.return_value = (ProviderName.MISTRAL, "mistral-small")
@@ -73,7 +73,7 @@ def test_completion_no_config_extraction() -> None:
     mock_provider = Mock()
     mock_provider.completion.return_value = Mock()
 
-    with patch("any_llm.utils.api.ProviderFactory") as mock_factory:
+    with patch("any_llm.provider.Provider") as mock_factory:
         mock_factory.get_supported_providers.return_value = ["mistral"]
         mock_factory.get_provider_enum.return_value = ProviderName.MISTRAL
         mock_factory.split_model_provider.return_value = (ProviderName.MISTRAL, "mistral-small")
@@ -99,7 +99,7 @@ def test_completion_extracts_api_base_only() -> None:
     mock_provider = Mock()
     mock_provider.completion.return_value = Mock()
 
-    with patch("any_llm.utils.api.ProviderFactory") as mock_factory:
+    with patch("any_llm.provider.Provider") as mock_factory:
         mock_factory.get_supported_providers.return_value = ["ollama"]
         mock_factory.get_provider_enum.return_value = ProviderName.OLLAMA
         mock_factory.split_model_provider.return_value = (ProviderName.OLLAMA, "llama2")

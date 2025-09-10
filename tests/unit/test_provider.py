@@ -8,7 +8,7 @@ import pytest
 from any_llm.config import ClientConfig
 from any_llm.constants import ProviderName
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
-from any_llm.factory import ProviderFactory
+from any_llm.provider import Provider
 
 
 def test_all_providers_in_enum() -> None:
@@ -55,36 +55,36 @@ def test_provider_enum_values_match_directory_names() -> None:
 def test_provider_model_split() -> None:
     """Test that model strings are split correctly into provider and model name."""
     model_str = "ollama:model:tag"
-    provider, model_name = ProviderFactory.split_model_provider(model_str)
+    provider, model_name = Provider.split_model_provider(model_str)
     assert provider == ProviderName.OLLAMA
     assert model_name == "model:tag"
 
     model_str = "ollama/model:tag"
-    provider, model_name = ProviderFactory.split_model_provider(model_str)
+    provider, model_name = Provider.split_model_provider(model_str)
     assert provider == ProviderName.OLLAMA
     assert model_name == "model:tag"
 
     model_str = "ollama:models/model-tag"
-    provider, model_name = ProviderFactory.split_model_provider(model_str)
+    provider, model_name = Provider.split_model_provider(model_str)
     assert provider == ProviderName.OLLAMA
     assert model_name == "models/model-tag"
 
     model_str = "ollama/models/model-tag"
-    provider, model_name = ProviderFactory.split_model_provider(model_str)
+    provider, model_name = Provider.split_model_provider(model_str)
     assert provider == ProviderName.OLLAMA
     assert model_name == "models/model-tag"  # legacy format
 
 
 def test_get_provider_enum_valid_provider() -> None:
     """Test get_provider_enum returns correct enum for valid provider."""
-    provider_enum = ProviderFactory.get_provider_enum("openai")
+    provider_enum = Provider.get_provider_enum("openai")
     assert provider_enum == ProviderName.OPENAI
 
 
 def test_get_provider_enum_invalid_provider() -> None:
     """Test get_provider_enum raises UnsupportedProviderError for invalid provider."""
     with pytest.raises(UnsupportedProviderError) as exc_info:
-        ProviderFactory.get_provider_enum("invalid_provider")
+        Provider.get_provider_enum("invalid_provider")
 
     exception = exc_info.value
     assert exception.provider_key == "invalid_provider"
@@ -96,17 +96,17 @@ def test_get_provider_enum_invalid_provider() -> None:
 def test_unsupported_provider_error_message() -> None:
     """Test UnsupportedProviderError has correct message format."""
     with pytest.raises(UnsupportedProviderError, match="'invalid_provider' is not a supported provider"):
-        ProviderFactory.get_provider_enum("invalid_provider")
+        Provider.get_provider_enum("invalid_provider")
 
 
 def test_unsupported_provider_error_attributes() -> None:
     """Test UnsupportedProviderError has correct attributes."""
     with pytest.raises(UnsupportedProviderError) as exc_info:
-        ProviderFactory.get_provider_enum("nonexistent")
+        Provider.get_provider_enum("nonexistent")
 
     e = exc_info.value
     assert e.provider_key == "nonexistent"
-    assert e.supported_providers == ProviderFactory.get_supported_providers()
+    assert e.supported_providers == Provider.get_supported_providers()
     assert "Supported providers:" in str(e)
 
 
@@ -118,7 +118,7 @@ def test_all_providers_have_required_attributes(provider: ProviderName) -> None:
     """
     sample_config = ClientConfig(api_key="test_key", api_base="https://test.example.com")
 
-    provider_instance = ProviderFactory.create_provider(provider.value, sample_config)
+    provider_instance = Provider.create(provider.value, sample_config)
 
     assert provider_instance.PROVIDER_NAME is not None
     assert provider_instance.PROVIDER_DOCUMENTATION_URL is not None
@@ -141,7 +141,7 @@ def test_providers_raise_MissingApiKeyError(provider: ProviderName) -> None:
         pytest.skip("This provider handles `api_key` differently.")
     with patch.dict(os.environ, {}, clear=True):
         with pytest.raises(MissingApiKeyError):
-            ProviderFactory.create_provider(provider.value, ClientConfig())
+            Provider.create(provider.value, ClientConfig())
 
 
 @pytest.mark.parametrize(
@@ -170,7 +170,7 @@ def test_providers_raise_ImportError_from_original(provider_name: str, module_na
             if mod.startswith((f"any_llm.providers.{provider_name}", f"{module_name}.")):
                 sys.modules.pop(mod)
         with pytest.raises(ImportError) as e:
-            ProviderFactory.create_provider(provider_name, ClientConfig(api_key="test_key"))
+            Provider.create(provider_name, ClientConfig(api_key="test_key"))
         original_error = e.value.__cause__
         assert any(
             msg in str(original_error)
