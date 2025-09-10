@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
-from any_llm.provider import Provider
+from any_llm.any_llm import AnyLLM
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
 
 
-class TogetherProvider(Provider):
+class TogetherProvider(AnyLLM):
     PROVIDER_NAME = "together"
     ENV_API_KEY_NAME = "TOGETHER_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://together.ai/"

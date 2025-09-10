@@ -22,7 +22,7 @@ from any_llm.types.responses import Response, ResponseInputParam, ResponseStream
 from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
 
 
-class Provider(ABC):
+class AnyLLM(ABC):
     """Provider for the LLM."""
 
     # === Provider-specific configuration (to be overridden by subclasses) ===
@@ -91,7 +91,7 @@ class Provider(ABC):
         return config
 
     @classmethod
-    def create(cls, provider: str | ProviderName, config: ClientConfig) -> "Provider":
+    def create(cls, provider: str | ProviderName, config: ClientConfig) -> "AnyLLM":
         """Create a provider instance using the given provider name and config.
 
         Args:
@@ -104,7 +104,7 @@ class Provider(ABC):
         return cls._create_provider(provider, config)
 
     @classmethod
-    def _create_provider(cls, provider_key: str | ProviderName, config: ClientConfig) -> "Provider":
+    def _create_provider(cls, provider_key: str | ProviderName, config: ClientConfig) -> "AnyLLM":
         """Dynamically load and create an instance of a provider based on the naming convention."""
         provider_key = ProviderName.from_string(provider_key).value
 
@@ -116,14 +116,14 @@ class Provider(ABC):
         try:
             module = importlib.import_module(module_path)
         except ImportError as e:
-            msg = f"Could not import module {module_path}: {e!s}. Please ensure the provider is supported by doing Provider.get_supported_providers()"
+            msg = f"Could not import module {module_path}: {e!s}. Please ensure the provider is supported by doing AnyLLM.get_supported_providers()"
             raise ImportError(msg) from e
 
-        provider_class: type[Provider] = getattr(module, provider_class_name)
+        provider_class: type[AnyLLM] = getattr(module, provider_class_name)
         return provider_class(config=config)
 
     @classmethod
-    def get_provider_class(cls, provider_key: str | ProviderName) -> type["Provider"]:
+    def get_provider_class(cls, provider_key: str | ProviderName) -> type["AnyLLM"]:
         """Get the provider class without instantiating it.
 
         Args:
@@ -142,10 +142,10 @@ class Provider(ABC):
         try:
             module = importlib.import_module(module_path)
         except ImportError as e:
-            msg = f"Could not import module {module_path}: {e!s}. Please ensure the provider is supported by doing Provider.get_supported_providers()"
+            msg = f"Could not import module {module_path}: {e!s}. Please ensure the provider is supported by doing AnyLLM.get_supported_providers()"
             raise ImportError(msg) from e
 
-        provider_class: type[Provider] = getattr(module, provider_class_name)
+        provider_class: type[AnyLLM] = getattr(module, provider_class_name)
         return provider_class
 
     @classmethod

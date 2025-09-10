@@ -8,9 +8,8 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import ProviderName, acompletion
+from any_llm import AnyLLM, ProviderName, acompletion
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.provider import Provider
 from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
@@ -22,7 +21,7 @@ async def test_async_completion(
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    cls = Provider.get_provider_class(provider)
+    cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_COMPLETION:
         pytest.skip(f"{provider.value} does not support completion, skipping")
 
@@ -60,7 +59,7 @@ async def test_async_completion_parallel(
     provider_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
-    cls = Provider.get_provider_class(provider)
+    cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_COMPLETION:
         pytest.skip(f"{provider.value} does not support completion, skipping")
 
@@ -99,7 +98,7 @@ async def test_completion_with_image(
     provider_image_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
-    cls = Provider.get_provider_class(provider)
+    cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_COMPLETION_IMAGE:
         pytest.skip(f"{provider.value} does not support completion, skipping")
 
@@ -145,7 +144,7 @@ async def test_completion_with_pdf(
     provider_image_model_map: dict[ProviderName, str],
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
-    cls = Provider.get_provider_class(provider)
+    cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_COMPLETION_PDF:
         pytest.skip(f"{provider.value} does not support completion, skipping")
 

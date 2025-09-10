@@ -2,10 +2,9 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from any_llm import acompletion
+from any_llm import AnyLLM, acompletion
 from any_llm.config import ClientConfig
 from any_llm.constants import ProviderName
-from any_llm.provider import Provider
 from any_llm.types.completion import ChatCompletionMessage, CompletionParams, Reasoning
 
 
@@ -38,8 +37,10 @@ async def test_completion_invalid_model_format_multiple_slashes() -> None:
     mock_provider = Mock()
     mock_provider.acompletion = AsyncMock()
 
-    with patch("any_llm.provider.Provider.split_model_provider") as mock_split, \
-         patch("any_llm.provider.Provider.create") as mock_create:
+    with (
+        patch("any_llm.any_llm.AnyLLM.split_model_provider") as mock_split,
+        patch("any_llm.any_llm.AnyLLM.create") as mock_create,
+    ):
         mock_split.return_value = (ProviderName.OPENAI, "model/extra")
         mock_create.return_value = mock_provider
 
@@ -58,8 +59,10 @@ async def test_completion_converts_chat_message_to_dict() -> None:
     mock_provider = Mock()
     mock_provider.acompletion = AsyncMock()
 
-    with patch("any_llm.provider.Provider.split_model_provider") as mock_split, \
-         patch("any_llm.provider.Provider.create") as mock_create:
+    with (
+        patch("any_llm.any_llm.AnyLLM.split_model_provider") as mock_split,
+        patch("any_llm.any_llm.AnyLLM.create") as mock_create,
+    ):
         mock_split.return_value = (ProviderName.OPENAI, "gpt-4o")
         mock_create.return_value = mock_provider
 
@@ -78,17 +81,17 @@ async def test_all_providers_can_be_loaded(provider: str) -> None:
     """Test that all supported providers can be loaded successfully.
 
     This test uses the provider fixture which iterates over all providers
-    returned by Provider.get_supported_providers(). It verifies that:
+    returned by AnyLLM.get_supported_providers(). It verifies that:
     1. Each provider can be imported and instantiated
-    2. The created instance is actually a Provider
+    2. The created instance is actually a AnyLLM
     3. No ImportError or other exceptions are raised during loading
 
     This test will automatically include new providers when they're added
     without requiring any code changes.
     """
-    provider_instance = Provider.create(provider, ClientConfig(api_key="test_key"))
+    provider_instance = AnyLLM.create(provider, ClientConfig(api_key="test_key"))
 
-    assert isinstance(provider_instance, Provider), f"Provider {provider} did not create a valid Provider instance"
+    assert isinstance(provider_instance, AnyLLM), f"Provider {provider} did not create a valid AnyLLM instance"
 
     assert hasattr(provider_instance, "acompletion"), f"Provider {provider} does not have an acompletion method"
     assert callable(provider_instance.acompletion), f"Provider {provider} acompletion is not callable"
@@ -103,19 +106,19 @@ async def test_all_providers_can_be_loaded_with_config(provider: str) -> None:
     """
     sample_config = ClientConfig(api_key="test_key", api_base="https://test.example.com")
 
-    provider_instance = Provider.create(provider, sample_config)
+    provider_instance = AnyLLM.create(provider, sample_config)
 
-    assert isinstance(provider_instance, Provider), (
-        f"Provider {provider} did not create a valid Provider instance with config"
+    assert isinstance(provider_instance, AnyLLM), (
+        f"Provider {provider} did not create a valid AnyLLM instance with config"
     )
 
 
 @pytest.mark.asyncio
 async def test_provider_factory_can_create_all_supported_providers() -> None:
-    """Test that Provider can create instances of all providers it claims to support."""
-    supported_providers = Provider.get_supported_providers()
+    """Test that AnyLLM can create instances of all providers it claims to support."""
+    supported_providers = AnyLLM.get_supported_providers()
 
     for provider_name in supported_providers:
-        provider_instance = Provider.create(provider_name, ClientConfig(api_key="test_key"))
+        provider_instance = AnyLLM.create(provider_name, ClientConfig(api_key="test_key"))
 
-        assert isinstance(provider_instance, Provider), f"Failed to create valid Provider instance for {provider_name}"
+        assert isinstance(provider_instance, AnyLLM), f"Failed to create valid AnyLLM instance for {provider_name}"

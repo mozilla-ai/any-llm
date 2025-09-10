@@ -3,9 +3,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from any_llm import AnyLLM
 from any_llm.config import ClientConfig
 from any_llm.constants import ProviderName
-from any_llm.provider import Provider
 from any_llm.tools import prepare_tools
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, CreateEmbeddingResponse
 from any_llm.types.model import Model
@@ -283,14 +283,14 @@ def responses(
 
     """
     if provider is None:
-        provider_key, model_name = Provider.split_model_provider(model)
+        provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
         provider_key = ProviderName.from_string(provider)
         model_name = model
 
     api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
 
-    provider_instance = Provider.create(provider_key, api_config)
+    provider_instance = AnyLLM.create(provider_key, api_config)
 
     responses_kwargs = kwargs.copy()
     if tools is not None:
@@ -385,14 +385,14 @@ async def aresponses(
 
     """
     if provider is None:
-        provider_key, model_name = Provider.split_model_provider(model)
+        provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
         provider_key = ProviderName.from_string(provider)
         model_name = model
 
     api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
 
-    provider_instance = Provider.create(provider_key, api_config)
+    provider_instance = AnyLLM.create(provider_key, api_config)
 
     responses_kwargs = kwargs.copy()
     if tools is not None:
@@ -454,14 +454,14 @@ def embedding(
 
     """
     if provider is None:
-        provider_key, model_name = Provider.split_model_provider(model)
+        provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
         provider_key = ProviderName.from_string(provider)
         model_name = model
 
     api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
 
-    provider_instance = Provider.create(provider_key, api_config)
+    provider_instance = AnyLLM.create(provider_key, api_config)
 
     return provider_instance.embedding(model_name, inputs, **kwargs)
 
@@ -492,14 +492,14 @@ async def aembedding(
 
     """
     if provider is None:
-        provider_key, model_name = Provider.split_model_provider(model)
+        provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
         provider_key = ProviderName.from_string(provider)
         model_name = model
 
     api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
 
-    provider_instance = Provider.create(provider_key, api_config)
+    provider_instance = AnyLLM.create(provider_key, api_config)
 
     return await provider_instance.aembedding(model_name, inputs, **kwargs)
 
@@ -514,7 +514,7 @@ def list_models(
     """List available models for a provider."""
     provider_key = ProviderName.from_string(provider)
     api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
-    prov_instance = Provider.create(provider_key, api_config)
+    prov_instance = AnyLLM.create(provider_key, api_config)
     return prov_instance.list_models(**kwargs)
 
 
@@ -528,5 +528,5 @@ async def list_models_async(
     """List available models for a provider asynchronously."""
     provider_key = ProviderName.from_string(provider)
     api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
-    prov_instance = Provider.create(provider_key, api_config)
+    prov_instance = AnyLLM.create(provider_key, api_config)
     return await prov_instance.list_models_async(**kwargs)

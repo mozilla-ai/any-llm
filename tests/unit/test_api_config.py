@@ -12,7 +12,7 @@ def test_completion_extracts_all_config_from_kwargs() -> None:
     mock_provider = Mock()
     mock_provider.completion.return_value = Mock()
 
-    with patch("any_llm.provider.Provider.create") as mock_create:
+    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
         mock_create.return_value = mock_provider
         kwargs: dict[str, Any] = {
             "other_param": "value",
@@ -42,7 +42,7 @@ def test_completion_extracts_partial_config_from_kwargs() -> None:
     mock_provider = Mock()
     mock_provider.completion.return_value = Mock()
 
-    with patch("any_llm.provider.Provider.create") as mock_create:
+    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
         mock_create.return_value = mock_provider
 
         completion(
@@ -67,7 +67,7 @@ def test_completion_no_config_extraction() -> None:
     mock_provider = Mock()
     mock_provider.completion.return_value = Mock()
 
-    with patch("any_llm.provider.Provider.create") as mock_create:
+    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
         mock_create.return_value = mock_provider
 
         kwargs: dict[str, Any] = {
@@ -90,7 +90,7 @@ def test_completion_extracts_api_base_only() -> None:
     mock_provider = Mock()
     mock_provider.completion.return_value = Mock()
 
-    with patch("any_llm.provider.Provider.create") as mock_create:
+    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
         mock_create.return_value = mock_provider
 
         completion(
@@ -99,9 +99,7 @@ def test_completion_extracts_api_base_only() -> None:
             api_base="https://custom-endpoint.com",
         )
 
-        mock_create.assert_called_once_with(
-            ProviderName.OLLAMA, ClientConfig(api_base="https://custom-endpoint.com")
-        )
+        mock_create.assert_called_once_with(ProviderName.OLLAMA, ClientConfig(api_base="https://custom-endpoint.com"))
 
         mock_provider.completion.assert_called_once()
         args, kwargs = mock_provider.completion.call_args

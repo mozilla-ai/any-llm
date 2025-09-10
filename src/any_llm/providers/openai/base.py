@@ -8,15 +8,15 @@ from openai._types import NOT_GIVEN
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 
+from any_llm.any_llm import AnyLLM
 from any_llm.logging import logger
-from any_llm.provider import Provider
 from any_llm.providers.openai.utils import _convert_chat_completion, _normalize_openai_dict_response
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponseStreamEvent
 
 
-class BaseOpenAIProvider(Provider):
+class BaseOpenAIProvider(AnyLLM):
     """
     Base provider for OpenAI-compatible services.
 

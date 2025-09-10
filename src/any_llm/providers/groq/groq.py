@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING, Any, cast
 from openai import AsyncOpenAI, AsyncStream
 from pydantic import BaseModel
 
+from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import Provider
 from any_llm.types.responses import Response, ResponseStreamEvent
 
 if TYPE_CHECKING:
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from any_llm.types.model import Model
 
 
-class GroqProvider(Provider):
+class GroqProvider(AnyLLM):
     """Groq Provider using instructor for structured output."""
 
     PROVIDER_NAME = "groq"

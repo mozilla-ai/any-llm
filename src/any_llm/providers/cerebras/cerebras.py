@@ -3,8 +3,8 @@ from typing import Any, cast
 
 from pydantic import BaseModel
 
+from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import Provider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
 
@@ -22,7 +22,7 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 
-class CerebrasProvider(Provider):
+class CerebrasProvider(AnyLLM):
     """Cerebras Provider using the official Cerebras SDK with instructor support for structured outputs."""
 
     PROVIDER_NAME = "cerebras"

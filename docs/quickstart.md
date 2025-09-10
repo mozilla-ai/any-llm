@@ -80,12 +80,12 @@ response = completion(
 For advanced use cases that require provider reuse, metadata access, or more control over configuration:
 
 ```python
-from any_llm.provider import Provider
+from any_llm import AnyLLM
 from any_llm.config import ClientConfig
 from any_llm.types.completion import CompletionParams
 
 config = ClientConfig(api_key="your-mistral-api-key")
-provider = Provider.create("mistral", config)
+provider = AnyLLM.create("mistral", config)
 
 params = CompletionParams(
     model_id="mistral-small-latest",
@@ -108,7 +108,7 @@ print(f"Supports tools: {metadata.completion}")
 - Prototyping or writing quick scripts
 - You want the simplest possible interface
 
-**Use Provider Class (`Provider.create`) when:**
+**Use Provider Class (`AnyLLM.create`) when:**
 
 - Building applications that make multiple requests with the same provider
 - You want to avoid repeated provider instantiation overhead
