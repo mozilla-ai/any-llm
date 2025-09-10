@@ -12,17 +12,6 @@ from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
 from any_llm.utils.api import _process_completion_params
 
-# from any_llm import AnyLLM, LLMProvider, LLMConfig
-
-# llm = AnyLLM.create(
-#     LLMProvider.MISTRAL,
-#     LLMConfig(
-#         api_key=api_key,
-#         api_base=api_base,
-#         http_client=http_client
-#     )
-# )
-
 
 def completion(
     model: str,
