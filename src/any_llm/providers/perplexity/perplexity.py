@@ -1,6 +1,6 @@
 import os
 
-from any_llm.provider import ClientConfig
+from any_llm.config import ClientConfig
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
 

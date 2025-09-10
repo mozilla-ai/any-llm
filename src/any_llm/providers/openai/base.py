@@ -31,6 +31,7 @@ class BaseOpenAIProvider(Provider, ABC):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_COMPLETION_IMAGE = True
+    SUPPORTS_COMPLETION_PDF = True
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
 
@@ -135,7 +136,7 @@ class BaseOpenAIProvider(Provider, ABC):
             if params.stream:
                 msg = "stream is not supported for response_format"
                 raise ValueError(msg)
-            completion_kwargs.pop("stream")
+            completion_kwargs.pop("stream", None)
             response = await client.chat.completions.parse(
                 model=params.model_id,
                 messages=cast("Any", params.messages),

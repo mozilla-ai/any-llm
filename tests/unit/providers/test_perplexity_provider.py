@@ -1,6 +1,7 @@
 import pytest
 
-from any_llm.provider import ClientConfig, ProviderFactory
+from any_llm.config import ClientConfig
+from any_llm.factory import ProviderFactory
 from any_llm.providers.perplexity import PerplexityProvider
 
 

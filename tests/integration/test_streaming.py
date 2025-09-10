@@ -7,7 +7,7 @@ from openai import APIConnectionError
 
 from any_llm import ProviderName, acompletion
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
-from any_llm.provider import ProviderFactory
+from any_llm.factory import ProviderFactory
 from any_llm.types.completion import ChatCompletionChunk
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
@@ -59,6 +59,6 @@ async def test_streaming_completion_async(
     except UnsupportedParameterError:
         pytest.skip(f"Streaming is not supported for {provider.value}")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in LOCAL_PROVIDERS:
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise

@@ -6,3 +6,5 @@ class NebiusProvider(BaseOpenAIProvider):
     ENV_API_KEY_NAME = "NEBIUS_API_KEY"
     PROVIDER_NAME = "nebius"
     PROVIDER_DOCUMENTATION_URL = "https://studio.nebius.ai/"
+
+    SUPPORTS_COMPLETION_PDF = False

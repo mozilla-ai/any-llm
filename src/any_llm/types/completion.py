@@ -33,6 +33,7 @@ class Reasoning(BaseModel):
 
 class ChatCompletionMessage(OpenAIChatCompletionMessage):
     reasoning: Reasoning | None = None
+    annotations: list[dict[str, Any]] | None = None  # type: ignore[assignment]
 
 
 class Choice(OpenAIChoice):

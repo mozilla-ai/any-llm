@@ -37,7 +37,10 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from any_llm import acompletion
-from any_llm.provider import ClientConfig, Provider, ProviderFactory, ProviderName
+from any_llm.config import ClientConfig
+from any_llm.constants import ProviderName
+from any_llm.factory import ProviderFactory
+from any_llm.provider import Provider
 from any_llm.types.completion import ChatCompletionMessage, CompletionParams, Reasoning
 
 
