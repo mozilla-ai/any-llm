@@ -3,8 +3,8 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
+from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ClientConfig
 from any_llm.providers.cohere.utils import _patch_messages
 from any_llm.types.completion import CompletionParams
 

@@ -10,8 +10,9 @@ import os
 import sys
 from pathlib import Path
 
+from any_llm.constants import ProviderName
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.provider import ProviderFactory, ProviderName
+from any_llm.factory import ProviderFactory
 
 src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))

@@ -7,9 +7,10 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from any_llm.config import ClientConfig
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.logging import logger
-from any_llm.provider import ClientConfig, Provider
+from any_llm.provider import Provider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
 from any_llm.utils.instructor import _convert_instructor_response

@@ -5,8 +5,9 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from google.genai import types
 
+from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ClientConfig, Provider
+from any_llm.provider import Provider
 from any_llm.providers.gemini import GeminiProvider
 from any_llm.providers.gemini.base import REASONING_EFFORT_TO_THINKING_BUDGETS
 from any_llm.providers.gemini.utils import _convert_response_to_response_dict

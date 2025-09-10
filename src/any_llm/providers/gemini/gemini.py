@@ -2,8 +2,8 @@ import os
 
 from google import genai
 
+from any_llm.config import ClientConfig
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.provider import ClientConfig
 
 from .base import GoogleProvider
 

@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from any_llm import ProviderName, acompletion
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
-from any_llm.provider import ProviderFactory
+from any_llm.factory import ProviderFactory
 from any_llm.types.completion import ChatCompletion
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 

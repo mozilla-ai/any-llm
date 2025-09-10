@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from any_llm import aresponses
-from any_llm.provider import ProviderName
+from any_llm.constants import ProviderName
 
 
 @pytest.mark.asyncio

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
-from any_llm.provider import ClientConfig, Provider
+from any_llm.provider import Provider
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from ollama import AsyncClient, Client  # noqa: TC004
     from ollama import ChatResponse as OllamaChatResponse
 
+    from any_llm.config import ClientConfig
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
 
