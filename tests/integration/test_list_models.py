@@ -5,8 +5,9 @@ import pytest
 from openai import APIConnectionError
 
 from any_llm import list_models
+from any_llm.constants import ProviderName
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.provider import ProviderFactory, ProviderName
+from any_llm.factory import ProviderFactory
 from any_llm.types.model import Model
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 

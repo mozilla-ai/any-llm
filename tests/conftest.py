@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from any_llm.provider import ProviderName
+from any_llm.constants import ProviderName
 from tests.constants import INCLUDE_LOCAL_PROVIDERS, INCLUDE_NON_LOCAL_PROVIDERS, LOCAL_PROVIDERS
 
 

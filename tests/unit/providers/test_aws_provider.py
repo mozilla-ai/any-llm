@@ -3,7 +3,7 @@ import os
 from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
-from any_llm.provider import ClientConfig
+from any_llm.config import ClientConfig
 from any_llm.providers.bedrock import BedrockProvider
 from any_llm.types.completion import CompletionParams
 

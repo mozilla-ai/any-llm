@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from any_llm.provider import ClientConfig
+from any_llm.config import ClientConfig
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.model import Model
 

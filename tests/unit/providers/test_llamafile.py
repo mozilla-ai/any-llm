@@ -2,8 +2,8 @@ from unittest.mock import patch
 
 import pytest
 
+from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ClientConfig
 from any_llm.providers.llamafile.llamafile import LlamafileProvider
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.completion import CompletionParams

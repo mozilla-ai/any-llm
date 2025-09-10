@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 
-from any_llm.provider import ProviderFactory
+from any_llm.factory import ProviderFactory
 from any_llm.types.provider import ProviderMetadata
 
 

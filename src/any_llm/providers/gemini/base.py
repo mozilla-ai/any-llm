@@ -4,8 +4,9 @@ from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel
 
+from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ClientConfig, Provider
+from any_llm.provider import Provider
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,

@@ -2,7 +2,7 @@ from contextlib import contextmanager
 from typing import Any
 from unittest.mock import patch
 
-from any_llm.provider import ClientConfig
+from any_llm.config import ClientConfig
 from any_llm.providers.huggingface.huggingface import HuggingfaceProvider
 from any_llm.types.completion import CompletionParams
 

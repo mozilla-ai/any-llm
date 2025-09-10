@@ -2,8 +2,8 @@ import os
 from collections.abc import AsyncIterator
 from typing import Any
 
+from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ClientConfig
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 
