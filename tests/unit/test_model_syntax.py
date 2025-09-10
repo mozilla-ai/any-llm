@@ -6,12 +6,12 @@ import pytest
 from any_llm import completion
 from any_llm.constants import ProviderName
 from any_llm.exceptions import UnsupportedProviderError
-from any_llm.factory import ProviderFactory
+from any_llm.provider import Provider
 
 
 def test_colon_syntax_valid() -> None:
     """Test that the new colon syntax works correctly."""
-    result = ProviderFactory.split_model_provider("openai:gpt-4")
+    result = Provider.split_model_provider("openai:gpt-4")
     assert result == (ProviderName.OPENAI, "gpt-4")
 
 
@@ -19,7 +19,7 @@ def test_slash_syntax_shows_deprecation_warning() -> None:
     """Test that slash syntax shows deprecation warning."""
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        result = ProviderFactory.split_model_provider("openai/gpt-4")
+        result = Provider.split_model_provider("openai/gpt-4")
         assert result == (ProviderName.OPENAI, "gpt-4")
         assert len(w) == 1
         assert issubclass(w[0].category, DeprecationWarning)
@@ -33,7 +33,7 @@ def test_completion_with_colon_syntax() -> None:
     mock_provider = Mock()
     mock_provider.completion.return_value = Mock()
 
-    with patch("any_llm.utils.api.ProviderFactory") as mock_factory:
+    with patch("any_llm.provider.Provider") as mock_factory:
         mock_factory.split_model_provider.return_value = (ProviderName.OPENAI, "gpt-4")
         mock_factory.create_provider.return_value = mock_provider
 
@@ -46,7 +46,7 @@ def test_completion_with_separate_parameters() -> None:
     mock_provider = Mock()
     mock_provider.completion.return_value = Mock()
 
-    with patch("any_llm.utils.api.ProviderFactory") as mock_factory:
+    with patch("any_llm.provider.Provider") as mock_factory:
         mock_factory.create_provider.return_value = mock_provider
 
         completion(model="gpt-4", provider="openai", messages=[{"role": "user", "content": "Hello"}])
@@ -60,7 +60,7 @@ def test_completion_with_slash_syntax_shows_warning() -> None:
 
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        with patch("any_llm.utils.api.ProviderFactory.create_provider") as mock_create:
+        with patch("any_llm.utils.api.Provider.create") as mock_create:
             mock_create.return_value = mock_provider
 
             completion("openai/gpt-4", messages=[{"role": "user", "content": "Hello"}])

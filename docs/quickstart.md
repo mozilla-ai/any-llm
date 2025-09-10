@@ -41,7 +41,11 @@ export MISTRAL_API_KEY="YOUR_KEY_HERE"  # or OPENAI_API_KEY, etc
 
 ### Basic Usage
 
-[`completion`][any_llm.completion] and [`acompletion`][any_llm.acompletion] use a unified interface across all providers.
+`any-llm` provides two main approaches for working with LLM providers, each optimized for different use cases:
+
+#### Option 1: Direct API Functions
+
+[`completion`][any_llm.completion] and [`acompletion`][any_llm.acompletion] provide a unified interface across all providers - perfect for simple use cases and quick prototyping.
 
 **Recommended approach:** Use separate `provider` and `model` parameters:
 
@@ -70,6 +74,44 @@ response = completion(
     messages=[{"role": "user", "content": "Hello!"}]
 )
 ```
+
+#### Option 2: Provider Class
+
+For advanced use cases that require provider reuse, metadata access, or more control over configuration:
+
+```python
+from any_llm.provider import Provider
+from any_llm.config import ClientConfig
+from any_llm.types.completion import CompletionParams
+
+config = ClientConfig(api_key="your-mistral-api-key")
+provider = Provider.create("mistral", config)
+
+params = CompletionParams(
+    model_id="mistral-small-latest",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+response = provider.completion(params)
+print(response.choices[0].message.content)
+
+metadata = provider.get_provider_metadata()
+print(f"Supports streaming: {metadata.streaming}")
+print(f"Supports tools: {metadata.completion}")
+
+```
+
+#### When to Choose Which Approach
+
+**Use Direct API Functions (`completion`, `acompletion`) when:**
+
+- Making simple, one-off requests
+- Prototyping or writing quick scripts
+- You want the simplest possible interface
+
+**Use Provider Class (`Provider.create`) when:**
+
+- Building applications that make multiple requests with the same provider
+- You want to avoid repeated provider instantiation overhead
 
 The provider_id should be specified according to the [provider ids supported by any-llm](./providers.md).
 The `model_id` portion is passed directly to the provider internals: to understand what model ids are available for a provider,

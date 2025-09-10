@@ -10,10 +10,12 @@ from any_llm.api import (
 )
 from any_llm.constants import ProviderName
 from any_llm.exceptions import MissingApiKeyError
+from any_llm.provider import Provider
 from any_llm.tools import callable_to_tool, prepare_tools
 
 __all__ = [
     "MissingApiKeyError",
+    "Provider",
     "ProviderName",
     "acompletion",
     "aembedding",

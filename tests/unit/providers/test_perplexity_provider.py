@@ -1,7 +1,7 @@
 import pytest
 
 from any_llm.config import ClientConfig
-from any_llm.factory import ProviderFactory
+from any_llm.provider import Provider
 from any_llm.providers.perplexity import PerplexityProvider
 
 
@@ -24,18 +24,18 @@ def test_provider_basics() -> None:
 def test_factory_integration() -> None:
     """Test that the provider factory can create and discover the provider."""
     # Test provider creation
-    p = ProviderFactory.create_provider("perplexity", ClientConfig(api_key="sk-1"))
+    p = Provider.create("perplexity", ClientConfig(api_key="sk-1"))
     assert isinstance(p, PerplexityProvider)
     assert p.PROVIDER_NAME == "perplexity"
 
     # Test that perplexity is in supported providers
-    supported = ProviderFactory.get_supported_providers()
+    supported = Provider.get_supported_providers()
     assert "perplexity" in supported
 
 
 def test_model_provider_split() -> None:
     """Test that model string parsing works correctly."""
-    provider_enum, model_name = ProviderFactory.split_model_provider("perplexity/llama-3.1-sonar-small-128k-chat")
+    provider_enum, model_name = Provider.split_model_provider("perplexity/llama-3.1-sonar-small-128k-chat")
     assert provider_enum.value == "perplexity"
     assert model_name == "llama-3.1-sonar-small-128k-chat"
 
@@ -55,5 +55,5 @@ def test_provider_metadata() -> None:
 def test_perplexity_api_base_override_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that PERPLEXITY_API_BASE environment variable overrides the default API base."""
     monkeypatch.setenv("PERPLEXITY_API_BASE", "https://example-proxy.local")
-    p = ProviderFactory.create_provider("perplexity", ClientConfig(api_key="dummy"))
+    p = Provider.create("perplexity", ClientConfig(api_key="dummy"))
     assert getattr(p, "API_BASE", "") == "https://example-proxy.local"

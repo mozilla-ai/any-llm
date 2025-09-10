@@ -98,6 +98,10 @@ export MISTRAL_API_KEY="YOUR_KEY_HERE"  # or OPENAI_API_KEY, etc
 
 ### Basic Usage
 
+`any-llm` offers two main approaches for interacting with LLM providers:
+
+#### Option 1: Direct API Functions (Recommended for Bootstrapping and Experimentation)
+
 **Recommended approach:** Use separate `provider` and `model` parameters:
 
 ```python
@@ -123,6 +127,35 @@ response = completion(
     messages=[{"role": "user", "content": "Hello!"}]
 )
 ```
+
+#### Option 2: Provider Class (Recommended for Production Use Cases)
+
+For applications that need to reuse providers, perform multiple operations, or require more control:
+
+```python
+from any_llm.provider import Provider
+from any_llm.config import ClientConfig
+
+config = ClientConfig(api_key="your-mistral-api-key")
+provider = Provider.create("mistral", config)
+
+response = provider.completion({
+    "model_id": "mistral-small-latest",
+    "messages": [{"role": "user", "content": "Hello!"}]
+})
+
+```
+
+#### When to Use Which Approach
+
+**Use Direct API Functions when:**
+- Making simple, one-off requests
+- Prototyping or quick scripts
+- You want the simplest possible interface
+
+**Use Provider Class when:**
+- Building applications that make multiple requests with the same provider
+- You want to avoid repeated provider instantiation overhead
 
 The provider_id should be specified according to the [provider ids supported by any-llm](https://mozilla-ai.github.io/any-llm/providers/).
 The `model_id` portion is passed directly to the provider internals: to understand what model ids are available for a provider,
