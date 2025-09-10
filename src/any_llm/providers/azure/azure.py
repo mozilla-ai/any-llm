@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Any, cast
 
-from any_llm.provider import Provider
+from any_llm.any_llm import AnyLLM
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from any_llm.types.model import Model
 
 
-class AzureProvider(Provider):
+class AzureProvider(AnyLLM):
     """Azure Provider using the official Azure AI Inference SDK."""
 
     PROVIDER_NAME = "azure"

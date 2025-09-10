@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import TYPE_CHECKING, Any
 
-from any_llm.provider import Provider
+from any_llm.any_llm import AnyLLM
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     )
 
 
-class HuggingfaceProvider(Provider):
+class HuggingfaceProvider(AnyLLM):
     """HuggingFace Provider using the new response conversion utilities."""
 
     PROVIDER_NAME = "huggingface"

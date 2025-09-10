@@ -1,3 +1,3 @@
 ## Provider
 
-::: any_llm.Provider
+::: any_llm.AnyLLM

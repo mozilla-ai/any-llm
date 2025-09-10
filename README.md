@@ -133,11 +133,11 @@ response = completion(
 For applications that need to reuse providers, perform multiple operations, or require more control:
 
 ```python
-from any_llm.provider import Provider
+from any_llm import AnyLLM
 from any_llm.config import ClientConfig
 
 config = ClientConfig(api_key="your-mistral-api-key")
-provider = Provider.create("mistral", config)
+provider = AnyLLM.create("mistral", config)
 
 response = provider.completion({
     "model_id": "mistral-small-latest",

@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from any_llm import aresponses
-from any_llm.constants import ProviderName
 
 
 @pytest.mark.asyncio
@@ -35,7 +34,7 @@ async def test_responses_invalid_model_format_multiple_slashes() -> None:
     mock_provider = Mock()
     mock_provider.aresponses = AsyncMock()
 
-    with patch("any_llm.provider.Provider.create") as mock_create:
+    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
         mock_create.return_value = mock_provider
 
         await aresponses("openai/model/extra", input_data=[{"role": "user", "content": "Hello"}])

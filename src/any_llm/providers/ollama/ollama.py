@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
-from any_llm.provider import Provider
+from any_llm.any_llm import AnyLLM
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from any_llm.types.model import Model
 
 
-class OllamaProvider(Provider):
+class OllamaProvider(AnyLLM):
     """
     Ollama Provider using the new response conversion utilities.
 

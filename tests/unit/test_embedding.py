@@ -2,9 +2,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from any_llm import aembedding
+from any_llm import AnyLLM, aembedding
 from any_llm.constants import ProviderName
-from any_llm.provider import Provider
 from any_llm.types.completion import CreateEmbeddingResponse, Embedding, Usage
 
 
@@ -20,7 +19,7 @@ async def test_embedding_with_api_config() -> None:
     )
     mock_provider.aembedding = AsyncMock(return_value=mock_embedding_response)
 
-    with patch("any_llm.provider.Provider.create") as mock_create:
+    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
         mock_create.return_value = mock_provider
 
         result = await aembedding(
@@ -39,7 +38,7 @@ async def test_embedding_with_api_config() -> None:
 @pytest.mark.asyncio
 async def test_embedding_unsupported_provider_raises_not_implemented(provider: ProviderName) -> None:
     """Test that calling embedding on a provider that doesn't support it raises NotImplementedError."""
-    cls = Provider.get_provider_class(provider)
+    cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_EMBEDDING:
         with pytest.raises(NotImplementedError, match=None):
             await aembedding(f"{provider.value}/does-not-matter", inputs="Hello world", api_key="test_key")

@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
-from any_llm.provider import Provider
+from any_llm.any_llm import AnyLLM
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
 
@@ -16,7 +16,7 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 
-class VoyageProvider(Provider):
+class VoyageProvider(AnyLLM):
     """
     Provider for Voyage AI services.
     """

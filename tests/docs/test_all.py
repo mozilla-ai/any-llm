@@ -14,6 +14,6 @@ from mktestdocs import check_md_file
 def test_all_docs(doc_file: pathlib.Path, monkeypatch: Any) -> None:
     monkeypatch.setenv("MISTRAL_API_KEY", "test_key")
     with (
-        patch("any_llm.factory.Provider.create"),
+        patch("any_llm.factory.AnyLLM.create"),
     ):
         check_md_file(fpath=doc_file, memory=True)

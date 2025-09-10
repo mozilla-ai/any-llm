@@ -4,9 +4,8 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import ProviderName, aresponses
+from any_llm import AnyLLM, ProviderName, aresponses
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.provider import Provider
 from any_llm.types.responses import Response
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
@@ -18,7 +17,7 @@ async def test_responses_async(
     provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    cls = Provider.get_provider_class(provider)
+    cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_RESPONSES:
         pytest.skip(f"{provider.value} does not support responses, skipping")
     model_id = provider_reasoning_model_map[provider]

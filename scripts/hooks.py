@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 
-from any_llm.provider import Provider
+from any_llm import AnyLLM
 from any_llm.types.provider import ProviderMetadata
 
 
@@ -92,7 +92,7 @@ def inject_provider_table_in_markdown(markdown_content, provider_dir):
     if start_marker not in markdown_content or end_marker not in markdown_content:
         return markdown_content
 
-    provider_metadata = Provider.get_all_provider_metadata()
+    provider_metadata = AnyLLM.get_all_provider_metadata()
     provider_table = generate_provider_table(provider_metadata)
 
     start_idx = markdown_content.find(start_marker)

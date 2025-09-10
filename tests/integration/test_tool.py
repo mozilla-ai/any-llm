@@ -5,9 +5,8 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import ProviderName, acompletion
+from any_llm import AnyLLM, ProviderName, acompletion
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.provider import Provider
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 if TYPE_CHECKING:
@@ -24,7 +23,7 @@ async def test_tool(
     if provider == ProviderName.LLAMAFILE:
         pytest.skip("Llamafile does not support tools, skipping")
 
-    cls = Provider.get_provider_class(provider)
+    cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_COMPLETION:
         pytest.skip(f"{provider.value} does not support tools, skipping")
 

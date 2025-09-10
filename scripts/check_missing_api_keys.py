@@ -10,9 +10,9 @@ import os
 import sys
 from pathlib import Path
 
+from any_llm import AnyLLM
 from any_llm.constants import ProviderName
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.provider import Provider
 
 src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
@@ -30,7 +30,7 @@ def check_provider_status():
 
     for provider_name in ProviderName:
         try:
-            provider_class = Provider.get_provider_class(provider_name)
+            provider_class = AnyLLM.get_provider_class(provider_name)
 
             if provider_class.MISSING_PACKAGES_ERROR is not None:
                 missing_packages.append(
