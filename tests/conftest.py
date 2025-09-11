@@ -43,7 +43,7 @@ def provider_model_map() -> dict[ProviderName, str]:
         ProviderName.TOGETHER: "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
         ProviderName.XAI: "grok-3-mini-latest",
         ProviderName.INCEPTION: "inception-3-70b-instruct",
-        ProviderName.NEBIUS: "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        ProviderName.NEBIUS: "openai/gpt-oss-20b",
         ProviderName.OLLAMA: "llama3.2:1b",
         ProviderName.LLAMAFILE: "N/A",
         ProviderName.LMSTUDIO: "google/gemma-3n-e4b",  # You must have LM Studio running and the server enabled
@@ -111,10 +111,11 @@ def provider_extra_kwargs_map() -> dict[ProviderName, dict[str, Any]]:
         ProviderName.COHERE: {"client_args": {"timeout": 10}},
         ProviderName.DATABRICKS: {"api_base": "https://dbc-40d03128-ecae.cloud.databricks.com/serving-endpoints"},
         ProviderName.GROQ: {"client_args": {"timeout": 10}},
-        ProviderName.MISTRAL: {"client_args": {"timeout_ms": 100000}},
         ProviderName.HUGGINGFACE: {
             "api_base": "https://y0okp71n85ezo5nr.us-east-1.aws.endpoints.huggingface.cloud/v1/"
         },
+        ProviderName.MISTRAL: {"client_args": {"timeout_ms": 100000}},
+        ProviderName.NEBIUS: {"api_base": "https://api.studio.nebius.com/v1/"},
         ProviderName.OPENAI: {"client_args": {"timeout": 10}},
         ProviderName.TOGETHER: {"client_args": {"timeout": 10}},
         ProviderName.VOYAGE: {"client_args": {"timeout": 10}},
