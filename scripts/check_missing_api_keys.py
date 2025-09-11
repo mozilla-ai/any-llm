@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 from any_llm import AnyLLM
-from any_llm.constants import ProviderName
+from any_llm.constants import LLMProvider
 from any_llm.exceptions import MissingApiKeyError
 
 src_path = Path(__file__).parent.parent / "src"
@@ -28,7 +28,7 @@ def check_provider_status():
     print("Checking provider status...")
     print("=" * 50)
 
-    for provider_name in ProviderName:
+    for provider_name in LLMProvider:
         try:
             provider_class = AnyLLM.get_provider_class(provider_name)
 
@@ -88,7 +88,7 @@ def print_results(available_providers, missing_api_keys, missing_packages, other
             print(f"  ❌ {provider['name']} ({provider['error_type']}) - {provider['error']}")
         print()
 
-    total_providers = len(list(ProviderName))
+    total_providers = len(list(LLMProvider))
     available_count = len(available_providers)
     missing_keys_count = len(missing_api_keys)
     missing_packages_count = len(missing_packages)

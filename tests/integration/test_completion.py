@@ -8,7 +8,7 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import AnyLLM, ProviderName, acompletion
+from any_llm import AnyLLM, LLMProvider, acompletion
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
@@ -16,9 +16,9 @@ from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 @pytest.mark.asyncio
 async def test_async_completion(
-    provider: ProviderName,
-    provider_model_map: dict[ProviderName, str],
-    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+    provider: LLMProvider,
+    provider_model_map: dict[LLMProvider, str],
+    provider_extra_kwargs_map: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
     cls = AnyLLM.get_provider_class(provider)
@@ -55,9 +55,9 @@ async def test_async_completion(
 
 @pytest.mark.asyncio
 async def test_async_completion_parallel(
-    provider: ProviderName,
-    provider_model_map: dict[ProviderName, str],
-    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+    provider: LLMProvider,
+    provider_model_map: dict[LLMProvider, str],
+    provider_extra_kwargs_map: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_COMPLETION:
@@ -94,9 +94,9 @@ async def test_async_completion_parallel(
 
 @pytest.mark.asyncio
 async def test_completion_with_image(
-    provider: ProviderName,
-    provider_image_model_map: dict[ProviderName, str],
-    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+    provider: LLMProvider,
+    provider_image_model_map: dict[LLMProvider, str],
+    provider_extra_kwargs_map: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_COMPLETION_IMAGE:
@@ -140,9 +140,9 @@ async def test_completion_with_image(
 
 @pytest.mark.asyncio
 async def test_completion_with_pdf(
-    provider: ProviderName,
-    provider_image_model_map: dict[ProviderName, str],
-    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+    provider: LLMProvider,
+    provider_image_model_map: dict[LLMProvider, str],
+    provider_extra_kwargs_map: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_COMPLETION_PDF:

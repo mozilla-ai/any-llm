@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any
 
 from any_llm.config import ClientConfig
-from any_llm.constants import INSIDE_NOTEBOOK, ProviderName
+from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
 from any_llm.types.completion import (
     ChatCompletion,
@@ -91,7 +91,7 @@ class AnyLLM(ABC):
         return config
 
     @classmethod
-    def create(cls, provider: str | ProviderName, config: ClientConfig) -> "AnyLLM":
+    def create(cls, provider: str | LLMProvider, config: ClientConfig) -> "AnyLLM":
         """Create a provider instance using the given provider name and config.
 
         Args:
@@ -100,13 +100,14 @@ class AnyLLM(ABC):
 
         Returns:
             Provider instance for the specified provider
+
         """
         return cls._create_provider(provider, config)
 
     @classmethod
-    def _create_provider(cls, provider_key: str | ProviderName, config: ClientConfig) -> "AnyLLM":
+    def _create_provider(cls, provider_key: str | LLMProvider, config: ClientConfig) -> "AnyLLM":
         """Dynamically load and create an instance of a provider based on the naming convention."""
-        provider_key = ProviderName.from_string(provider_key).value
+        provider_key = LLMProvider.from_string(provider_key).value
 
         provider_class_name = f"{provider_key.capitalize()}Provider"
         provider_module_name = f"{provider_key}"
@@ -123,7 +124,7 @@ class AnyLLM(ABC):
         return provider_class(config=config)
 
     @classmethod
-    def get_provider_class(cls, provider_key: str | ProviderName) -> type["AnyLLM"]:
+    def get_provider_class(cls, provider_key: str | LLMProvider) -> type["AnyLLM"]:
         """Get the provider class without instantiating it.
 
         Args:
@@ -131,8 +132,9 @@ class AnyLLM(ABC):
 
         Returns:
             The provider class
+
         """
-        provider_key = ProviderName.from_string(provider_key).value
+        provider_key = LLMProvider.from_string(provider_key).value
 
         provider_class_name = f"{provider_key.capitalize()}Provider"
         provider_module_name = f"{provider_key}"
@@ -151,7 +153,7 @@ class AnyLLM(ABC):
     @classmethod
     def get_supported_providers(cls) -> list[str]:
         """Get a list of supported provider keys."""
-        return [provider.value for provider in ProviderName]
+        return [provider.value for provider in LLMProvider]
 
     @classmethod
     def get_all_provider_metadata(cls) -> list[ProviderMetadata]:
@@ -159,6 +161,7 @@ class AnyLLM(ABC):
 
         Returns:
             List of dictionaries containing provider metadata
+
         """
         providers: list[ProviderMetadata] = []
         for provider_key in cls.get_supported_providers():
@@ -171,16 +174,16 @@ class AnyLLM(ABC):
         return providers
 
     @classmethod
-    def get_provider_enum(cls, provider_key: str) -> ProviderName:
+    def get_provider_enum(cls, provider_key: str) -> LLMProvider:
         """Convert a string provider key to a ProviderName enum."""
         try:
-            return ProviderName(provider_key)
+            return LLMProvider(provider_key)
         except ValueError as e:
-            supported = [provider.value for provider in ProviderName]
+            supported = [provider.value for provider in LLMProvider]
             raise UnsupportedProviderError(provider_key, supported) from e
 
     @classmethod
-    def split_model_provider(cls, model: str) -> tuple[ProviderName, str]:
+    def split_model_provider(cls, model: str) -> tuple[LLMProvider, str]:
         """Extract the provider key from the model identifier.
 
         Supports both new format 'provider:model' (e.g., 'mistral:mistral-small')
@@ -256,6 +259,7 @@ class AnyLLM(ABC):
         Returns:
             Dictionary containing provider metadata including name, environment variable,
             documentation URL, and class name.
+
         """
         return ProviderMetadata(
             name=cls.PROVIDER_NAME,
@@ -285,6 +289,7 @@ class AnyLLM(ABC):
 
         Returns:
             The response from the API call
+
         """
         response = run_async_in_sync(self.acompletion(params, **kwargs), allow_running_loop=INSIDE_NOTEBOOK)
         if isinstance(response, ChatCompletion):
@@ -338,8 +343,7 @@ class AnyLLM(ABC):
         raise NotImplementedError(msg)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
-        """
-        Return a list of Model if the provider supports listing models.
+        """Return a list of Model if the provider supports listing models.
         Should be overridden by subclasses.
         """
         msg = "Subclasses must implement list_models method"

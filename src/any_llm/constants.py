@@ -6,7 +6,7 @@ from any_llm.exceptions import UnsupportedProviderError
 INSIDE_NOTEBOOK = hasattr(builtins, "__IPYTHON__")
 
 
-class ProviderName(StrEnum):
+class LLMProvider(StrEnum):
     """String enum for supported providers."""
 
     ANTHROPIC = "anthropic"
@@ -43,7 +43,7 @@ class ProviderName(StrEnum):
     PERPLEXITY = "perplexity"
 
     @classmethod
-    def from_string(cls, value: "str | ProviderName") -> "ProviderName":
+    def from_string(cls, value: "str | LLMProvider") -> "LLMProvider":
         """Convert a string to a ProviderName enum."""
         if isinstance(value, cls):
             return value

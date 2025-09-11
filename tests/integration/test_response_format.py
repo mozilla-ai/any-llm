@@ -5,7 +5,7 @@ import pytest
 from openai import APIConnectionError
 from pydantic import BaseModel
 
-from any_llm import AnyLLM, ProviderName, acompletion
+from any_llm import AnyLLM, LLMProvider, acompletion
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.types.completion import ChatCompletion
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
@@ -13,13 +13,13 @@ from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 @pytest.mark.asyncio
 async def test_response_format(
-    provider: ProviderName,
-    provider_model_map: dict[ProviderName, str],
-    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+    provider: LLMProvider,
+    provider_model_map: dict[LLMProvider, str],
+    provider_extra_kwargs_map: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
 
-    if provider == ProviderName.LLAMAFILE:
+    if provider == LLMProvider.LLAMAFILE:
         pytest.skip("Llamafile does not support response_format, skipping")
     cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_COMPLETION:
