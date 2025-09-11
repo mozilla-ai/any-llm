@@ -136,5 +136,5 @@ def test_patch_messages_with_invalid_tool_sequence_raises_error() -> None:
         {"role": "user", "content": "What's the weather?"},
         {"role": "tool", "name": "get_weather", "content": "It's sunny", "tool_call_id": "call_123"},
     ]
-    with pytest.raises(ValueError, match="A tool message must be preceded by an assistant message with tool_calls."):
+    with pytest.raises(ValueError, match=r"A tool message must be preceded by an assistant message with tool_calls."):
         _patch_messages(messages)
