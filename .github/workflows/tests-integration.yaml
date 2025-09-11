@@ -31,7 +31,8 @@ jobs:
         run: |
           uv sync --group tests --extra all
 
-      - env:
+      - if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'huggingface')
+        env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python scripts/wake_up_hf_endpoint.py --retry=5
 
