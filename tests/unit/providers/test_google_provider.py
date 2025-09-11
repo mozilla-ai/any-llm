@@ -83,6 +83,23 @@ async def test_completion_with_system_instruction(google_provider_class: type[Pr
         assert generation_config.system_instruction == "You are a helpful assistant"
 
 
+@pytest.mark.asyncio
+async def test_completion_with_content_list(google_provider_class: type[Provider]) -> None:
+    """Test that completion works correctly with content in list format."""
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": [{"type": "text", "text": "Hello"}]}]
+
+    with mock_google_provider() as mock_genai:
+        provider = google_provider_class(ClientConfig(api_key=api_key))
+        await provider.acompletion(CompletionParams(model_id=model, messages=messages))
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        contents = call_kwargs["contents"]
+
+        assert contents[0].parts[0].text == "Hello"
+
+
 @pytest.mark.parametrize(
     ("tool_choice", "expected_mode"),
     [

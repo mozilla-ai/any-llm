@@ -78,7 +78,14 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[types.Conten
             else:
                 system_instruction += f"\n{message['content']}"
         elif message["role"] == "user":
-            parts = [types.Part.from_text(text=message["content"])]
+            if isinstance(message["content"], str):
+                parts = [types.Part.from_text(text=message["content"])]
+            else:
+                parts = [
+                    types.Part.from_text(text=content["text"])
+                    for content in message["content"]
+                    if content["type"] == "text"
+                ]
             formatted_messages.append(types.Content(role="user", parts=parts))
         elif message["role"] == "assistant":
             if message.get("tool_calls"):
