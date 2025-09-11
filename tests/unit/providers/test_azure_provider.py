@@ -87,7 +87,7 @@ async def test_azure_with_tools() -> None:
     messages = [{"role": "user", "content": "Hello"}]
     tools = {"type": "function", "function": "foo"}
     tool_choice = "auto"
-    with mock_azure_provider() as (mock_client, mock_convert_response, mock_chat_client):
+    with mock_azure_provider() as (mock_client, mock_convert_response, _):
         provider = AzureProvider(ClientConfig(api_key=api_key, api_base=custom_endpoint))
         await provider.acompletion(
             CompletionParams(
