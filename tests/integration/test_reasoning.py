@@ -5,7 +5,7 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import AnyLLM, ProviderName, acompletion
+from any_llm import AnyLLM, LLMProvider, acompletion
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
@@ -13,9 +13,9 @@ from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 @pytest.mark.asyncio
 async def test_completion_reasoning(
-    provider: ProviderName,
-    provider_reasoning_model_map: dict[ProviderName, str],
-    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+    provider: LLMProvider,
+    provider_reasoning_model_map: dict[LLMProvider, str],
+    provider_extra_kwargs_map: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
     cls = AnyLLM.get_provider_class(provider)
@@ -24,7 +24,7 @@ async def test_completion_reasoning(
 
     model_id = provider_reasoning_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
-    if provider in (ProviderName.ANTHROPIC, ProviderName.GEMINI, ProviderName.VERTEXAI, ProviderName.OLLAMA):
+    if provider in (LLMProvider.ANTHROPIC, LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.OLLAMA):
         extra_kwargs["reasoning_effort"] = "low"
 
     try:
@@ -50,9 +50,9 @@ async def test_completion_reasoning(
 
 @pytest.mark.asyncio
 async def test_completion_reasoning_streaming(
-    provider: ProviderName,
-    provider_reasoning_model_map: dict[ProviderName, str],
-    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+    provider: LLMProvider,
+    provider_reasoning_model_map: dict[LLMProvider, str],
+    provider_extra_kwargs_map: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that reasoning works with streaming for supported providers."""
     cls = AnyLLM.get_provider_class(provider)
@@ -63,7 +63,7 @@ async def test_completion_reasoning_streaming(
 
     model_id = provider_reasoning_model_map[provider]
     extra_kwargs = provider_extra_kwargs_map.get(provider, {})
-    if provider in (ProviderName.ANTHROPIC, ProviderName.GEMINI, ProviderName.VERTEXAI, ProviderName.OLLAMA):
+    if provider in (LLMProvider.ANTHROPIC, LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.OLLAMA):
         extra_kwargs["reasoning_effort"] = "low"
 
     try:

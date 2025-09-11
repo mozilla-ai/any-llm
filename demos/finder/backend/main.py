@@ -1,7 +1,7 @@
 # ruff: noqa: T201, S104
 import os
 
-from any_llm import AnyLLM, ProviderName, list_models
+from any_llm import AnyLLM, LLMProvider, list_models
 from any_llm.exceptions import MissingApiKeyError
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -51,7 +51,7 @@ async def get_provider_status():
     """Get status of all providers including API key configuration."""
     provider_statuses = []
 
-    for provider_name in ProviderName:
+    for provider_name in LLMProvider:
         try:
             provider_class = AnyLLM.get_provider_class(provider_name)
 
@@ -92,7 +92,7 @@ async def search_models(request: SearchRequest):
     all_models = []
     provider_errors = []
 
-    for provider_name in ProviderName:
+    for provider_name in LLMProvider:
         try:
             provider_class = AnyLLM.get_provider_class(provider_name)
 
@@ -158,7 +158,7 @@ async def get_all_models():
 
         # First, get list of providers to process
         providers_to_process = []
-        for provider_name in ProviderName:
+        for provider_name in LLMProvider:
             try:
                 provider_class = AnyLLM.get_provider_class(provider_name)
 

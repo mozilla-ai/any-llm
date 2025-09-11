@@ -1,7 +1,7 @@
 import tomllib
 from pathlib import Path
 
-from any_llm.constants import ProviderName
+from any_llm.constants import LLMProvider
 
 
 def test_all_providers_have_pyproject_options() -> None:
@@ -13,7 +13,7 @@ def test_all_providers_have_pyproject_options() -> None:
 
     optional_deps = set(pyproject_data["project"]["optional-dependencies"].keys())
 
-    all_providers = {provider.value for provider in ProviderName}
+    all_providers = {provider.value for provider in LLMProvider}
 
     missing_deps = all_providers - optional_deps
 

@@ -4,14 +4,14 @@ from unittest.mock import Mock, patch
 import pytest
 
 from any_llm import AnyLLM, completion
-from any_llm.constants import ProviderName
+from any_llm.constants import LLMProvider
 from any_llm.exceptions import UnsupportedProviderError
 
 
 def test_colon_syntax_valid() -> None:
     """Test that the new colon syntax works correctly."""
     result = AnyLLM.split_model_provider("openai:gpt-4")
-    assert result == (ProviderName.OPENAI, "gpt-4")
+    assert result == (LLMProvider.OPENAI, "gpt-4")
 
 
 def test_slash_syntax_shows_deprecation_warning() -> None:
@@ -19,7 +19,7 @@ def test_slash_syntax_shows_deprecation_warning() -> None:
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         result = AnyLLM.split_model_provider("openai/gpt-4")
-        assert result == (ProviderName.OPENAI, "gpt-4")
+        assert result == (LLMProvider.OPENAI, "gpt-4")
         assert len(w) == 1
         assert issubclass(w[0].category, DeprecationWarning)
         assert "deprecated" in str(w[0].message)
@@ -69,25 +69,25 @@ def test_completion_with_slash_syntax_shows_warning() -> None:
 
 def test_provider_name_from_string_with_enum() -> None:
     """Test that from_string works with ProviderName enum."""
-    result = ProviderName.from_string(ProviderName.OPENAI)
-    assert result == ProviderName.OPENAI
+    result = LLMProvider.from_string(LLMProvider.OPENAI)
+    assert result == LLMProvider.OPENAI
 
 
 def test_provider_name_from_string_with_valid_string() -> None:
     """Test that from_string works with valid string."""
-    result = ProviderName.from_string("openai")
-    assert result == ProviderName.OPENAI
+    result = LLMProvider.from_string("openai")
+    assert result == LLMProvider.OPENAI
 
 
 def test_provider_name_from_string_with_uppercase_string() -> None:
     """Test that from_string works with uppercase string."""
-    result = ProviderName.from_string("OPENAI")
-    assert result == ProviderName.OPENAI
+    result = LLMProvider.from_string("OPENAI")
+    assert result == LLMProvider.OPENAI
 
 
 def test_provider_name_from_string_with_invalid_string() -> None:
     """Test that from_string raises UnsupportedProviderError for invalid string."""
     with pytest.raises(UnsupportedProviderError) as exc_info:
-        ProviderName.from_string("invalid_provider")
+        LLMProvider.from_string("invalid_provider")
 
     assert "invalid_provider" in str(exc_info.value)

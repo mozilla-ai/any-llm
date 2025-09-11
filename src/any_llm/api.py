@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from any_llm import AnyLLM
 from any_llm.config import ClientConfig
-from any_llm.constants import ProviderName
+from any_llm.constants import LLMProvider
 from any_llm.tools import prepare_tools
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, CreateEmbeddingResponse
 from any_llm.types.model import Model
@@ -17,7 +17,7 @@ def completion(
     model: str,
     messages: list[dict[str, Any] | ChatCompletionMessage],
     *,
-    provider: str | ProviderName | None = None,
+    provider: str | LLMProvider | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     temperature: float | None = None,
@@ -121,7 +121,7 @@ async def acompletion(
     model: str,
     messages: list[dict[str, Any] | ChatCompletionMessage],
     *,
-    provider: str | ProviderName | None = None,
+    provider: str | LLMProvider | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     temperature: float | None = None,
@@ -225,7 +225,7 @@ def responses(
     model: str,
     input_data: str | ResponseInputParam,
     *,
-    provider: str | ProviderName | None = None,
+    provider: str | LLMProvider | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     max_output_tokens: int | None = None,
@@ -285,7 +285,7 @@ def responses(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = ProviderName.from_string(provider)
+        provider_key = LLMProvider.from_string(provider)
         model_name = model
 
     api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
@@ -327,7 +327,7 @@ async def aresponses(
     model: str,
     input_data: str | ResponseInputParam,
     *,
-    provider: str | ProviderName | None = None,
+    provider: str | LLMProvider | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     max_output_tokens: int | None = None,
@@ -387,7 +387,7 @@ async def aresponses(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = ProviderName.from_string(provider)
+        provider_key = LLMProvider.from_string(provider)
         model_name = model
 
     api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
@@ -429,7 +429,7 @@ def embedding(
     model: str,
     inputs: str | list[str],
     *,
-    provider: str | ProviderName | None = None,
+    provider: str | LLMProvider | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
@@ -456,7 +456,7 @@ def embedding(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = ProviderName.from_string(provider)
+        provider_key = LLMProvider.from_string(provider)
         model_name = model
 
     api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
@@ -470,7 +470,7 @@ async def aembedding(
     model: str,
     inputs: str | list[str],
     *,
-    provider: str | ProviderName | None = None,
+    provider: str | LLMProvider | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
@@ -494,7 +494,7 @@ async def aembedding(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = ProviderName.from_string(provider)
+        provider_key = LLMProvider.from_string(provider)
         model_name = model
 
     api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
@@ -505,28 +505,28 @@ async def aembedding(
 
 
 def list_models(
-    provider: str | ProviderName,
+    provider: str | LLMProvider,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> Sequence[Model]:
     """List available models for a provider."""
-    provider_key = ProviderName.from_string(provider)
+    provider_key = LLMProvider.from_string(provider)
     api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
     prov_instance = AnyLLM.create(provider_key, api_config)
     return prov_instance.list_models(**kwargs)
 
 
 async def list_models_async(
-    provider: str | ProviderName,
+    provider: str | LLMProvider,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> Sequence[Model]:
     """List available models for a provider asynchronously."""
-    provider_key = ProviderName.from_string(provider)
+    provider_key = LLMProvider.from_string(provider)
     api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
     prov_instance = AnyLLM.create(provider_key, api_config)
     return await prov_instance.list_models_async(**kwargs)

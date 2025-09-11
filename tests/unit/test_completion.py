@@ -4,7 +4,7 @@ import pytest
 
 from any_llm import AnyLLM, acompletion
 from any_llm.config import ClientConfig
-from any_llm.constants import ProviderName
+from any_llm.constants import LLMProvider
 from any_llm.types.completion import ChatCompletionMessage, CompletionParams, Reasoning
 
 
@@ -41,7 +41,7 @@ async def test_completion_invalid_model_format_multiple_slashes() -> None:
         patch("any_llm.any_llm.AnyLLM.split_model_provider") as mock_split,
         patch("any_llm.any_llm.AnyLLM.create") as mock_create,
     ):
-        mock_split.return_value = (ProviderName.OPENAI, "model/extra")
+        mock_split.return_value = (LLMProvider.OPENAI, "model/extra")
         mock_create.return_value = mock_provider
 
         await acompletion("openai/model/extra", messages=[{"role": "user", "content": "Hello"}])
@@ -63,7 +63,7 @@ async def test_completion_converts_chat_message_to_dict() -> None:
         patch("any_llm.any_llm.AnyLLM.split_model_provider") as mock_split,
         patch("any_llm.any_llm.AnyLLM.create") as mock_create,
     ):
-        mock_split.return_value = (ProviderName.OPENAI, "gpt-4o")
+        mock_split.return_value = (LLMProvider.OPENAI, "gpt-4o")
         mock_create.return_value = mock_provider
 
         msg = ChatCompletionMessage(role="assistant", content="Hello", reasoning=Reasoning(content="Thinking..."))
