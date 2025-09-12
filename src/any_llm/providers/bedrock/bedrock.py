@@ -107,7 +107,7 @@ class BedrockProvider(AnyLLM):
         if credentials is None and bedrock_api_key is None:
             raise MissingApiKeyError(provider_name=self.PROVIDER_NAME, env_var_name=self.ENV_API_KEY_NAME)
 
-    async def acompletion(
+    async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,
@@ -182,7 +182,7 @@ class BedrockProvider(AnyLLM):
 
         return self._convert_completion_response(response)
 
-    async def aembedding(
+    async def _aembedding(
         self,
         model: str,
         inputs: str | list[str],

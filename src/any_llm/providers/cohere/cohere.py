@@ -113,7 +113,7 @@ class CohereProvider(AnyLLM):
         # Validation logic could/would eventually go here
         return response_format
 
-    async def acompletion(
+    async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         if params.response_format is not None:

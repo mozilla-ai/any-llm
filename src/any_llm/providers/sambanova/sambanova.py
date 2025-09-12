@@ -26,7 +26,7 @@ class SambanovaProvider(BaseOpenAIProvider):
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
     SUPPORTS_COMPLETION_PDF = False
 
-    async def acompletion(
+    async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Make the API call to SambaNova service with instructor for structured output."""

@@ -89,7 +89,7 @@ class AnthropicProvider(AnyLLM):
             async for event in anthropic_stream:
                 yield self._convert_completion_chunk_response(event, model_id=kwargs.get("model", "unknown"))
 
-    async def acompletion(
+    async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,

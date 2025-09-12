@@ -98,7 +98,7 @@ class MistralProvider(AnyLLM):
         async for event in mistral_stream:
             yield self._convert_completion_chunk_response(event)
 
-    async def acompletion(
+    async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         patched_messages = _patch_messages(params.messages)
@@ -137,7 +137,7 @@ class MistralProvider(AnyLLM):
 
         return self._convert_completion_response(response)
 
-    async def aembedding(
+    async def _aembedding(
         self,
         model: str,
         inputs: str | list[str],
