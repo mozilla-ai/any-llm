@@ -281,7 +281,7 @@ class AnyLLM(ABC):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        """This method is designed to make the API call to the provider.
+        """Make the API call to the provider.
 
         Args:
             params: The completion parameters
@@ -344,6 +344,7 @@ class AnyLLM(ABC):
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """Return a list of Model if the provider supports listing models.
+
         Should be overridden by subclasses.
         """
         msg = "Subclasses must implement list_models method"

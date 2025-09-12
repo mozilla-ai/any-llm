@@ -84,7 +84,7 @@ async def test_completion_with_system_instruction(google_provider_class: type[An
 
 
 @pytest.mark.asyncio
-async def test_completion_with_content_list(google_provider_class: type[Provider]) -> None:
+async def test_completion_with_content_list(google_provider_class: type[AnyLLM]) -> None:
     """Test that completion works correctly with content in list format."""
     api_key = "test-api-key"
     model = "gemini-pro"
