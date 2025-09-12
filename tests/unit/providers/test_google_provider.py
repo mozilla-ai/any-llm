@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from google.genai import types
 
+from any_llm.any_llm import AnyLLM
 from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import Provider
 from any_llm.providers.gemini import GeminiProvider
 from any_llm.providers.gemini.base import REASONING_EFFORT_TO_THINKING_BUDGETS
 from any_llm.providers.gemini.utils import _convert_response_to_response_dict
@@ -16,7 +16,7 @@ from any_llm.types.completion import CompletionParams
 
 
 @pytest.fixture(params=[GeminiProvider, VertexaiProvider])
-def google_provider_class(request: pytest.FixtureRequest) -> type[Provider]:
+def google_provider_class(request: pytest.FixtureRequest) -> type[AnyLLM]:
     """Parametrized fixture that provides both GeminiProvider and VertexaiProvider classes."""
     return request.param  # type: ignore[no-any-return]
 
@@ -65,7 +65,7 @@ def test_vertexai_initialization_with_env_var_api_key() -> None:
 
 
 @pytest.mark.asyncio
-async def test_completion_with_system_instruction(google_provider_class: type[Provider]) -> None:
+async def test_completion_with_system_instruction(google_provider_class: type[AnyLLM]) -> None:
     """Test that completion works correctly with system_instruction."""
     api_key = "test-api-key"
     model = "gemini-pro"
@@ -73,7 +73,7 @@ async def test_completion_with_system_instruction(google_provider_class: type[Pr
 
     with mock_google_provider() as mock_genai:
         provider = google_provider_class(ClientConfig(api_key=api_key))
-        await provider.acompletion(CompletionParams(model_id=model, messages=messages))
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
         generation_config = call_kwargs["config"]
@@ -84,7 +84,7 @@ async def test_completion_with_system_instruction(google_provider_class: type[Pr
 
 
 @pytest.mark.asyncio
-async def test_completion_with_content_list(google_provider_class: type[Provider]) -> None:
+async def test_completion_with_content_list(google_provider_class: type[AnyLLM]) -> None:
     """Test that completion works correctly with content in list format."""
     api_key = "test-api-key"
     model = "gemini-pro"
@@ -92,7 +92,7 @@ async def test_completion_with_content_list(google_provider_class: type[Provider
 
     with mock_google_provider() as mock_genai:
         provider = google_provider_class(ClientConfig(api_key=api_key))
-        await provider.acompletion(CompletionParams(model_id=model, messages=messages))
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
         contents = call_kwargs["contents"]
@@ -109,7 +109,7 @@ async def test_completion_with_content_list(google_provider_class: type[Provider
 )
 @pytest.mark.asyncio
 async def test_completion_with_tool_choice_auto(
-    google_provider_class: type[Provider], tool_choice: str, expected_mode: str
+    google_provider_class: type[AnyLLM], tool_choice: str, expected_mode: str
 ) -> None:
     """Test that completion correctly processes tool_choice='auto'."""
     api_key = "test-api-key"
@@ -118,7 +118,7 @@ async def test_completion_with_tool_choice_auto(
 
     with mock_google_provider() as mock_genai:
         provider = google_provider_class(ClientConfig(api_key=api_key))
-        await provider.acompletion(CompletionParams(model_id=model, messages=messages, tool_choice=tool_choice))
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages, tool_choice=tool_choice))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
         generation_config = call_kwargs["config"]
@@ -127,7 +127,7 @@ async def test_completion_with_tool_choice_auto(
 
 
 @pytest.mark.asyncio
-async def test_completion_without_tool_choice(google_provider_class: type[Provider]) -> None:
+async def test_completion_without_tool_choice(google_provider_class: type[AnyLLM]) -> None:
     """Test that completion works correctly without tool_choice."""
     api_key = "test-api-key"
     model = "gemini-pro"
@@ -135,7 +135,7 @@ async def test_completion_without_tool_choice(google_provider_class: type[Provid
 
     with mock_google_provider() as mock_genai:
         provider = google_provider_class(ClientConfig(api_key=api_key))
-        await provider.acompletion(CompletionParams(model_id=model, messages=messages))
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
         generation_config = call_kwargs["config"]
@@ -144,7 +144,7 @@ async def test_completion_without_tool_choice(google_provider_class: type[Provid
 
 
 @pytest.mark.asyncio
-async def test_completion_with_stream_and_response_format_raises(google_provider_class: type[Provider]) -> None:
+async def test_completion_with_stream_and_response_format_raises(google_provider_class: type[AnyLLM]) -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
@@ -152,7 +152,7 @@ async def test_completion_with_stream_and_response_format_raises(google_provider
     with mock_google_provider():
         provider = google_provider_class(ClientConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
-            await provider.acompletion(
+            await provider._acompletion(
                 CompletionParams(
                     model_id=model,
                     messages=messages,
@@ -163,7 +163,7 @@ async def test_completion_with_stream_and_response_format_raises(google_provider
 
 
 @pytest.mark.asyncio
-async def test_completion_with_parallel_tool_calls_raises(google_provider_class: type[Provider]) -> None:
+async def test_completion_with_parallel_tool_calls_raises(google_provider_class: type[AnyLLM]) -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
@@ -171,7 +171,7 @@ async def test_completion_with_parallel_tool_calls_raises(google_provider_class:
     with mock_google_provider():
         provider = google_provider_class(ClientConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
-            await provider.acompletion(
+            await provider._acompletion(
                 CompletionParams(
                     model_id=model,
                     messages=messages,
@@ -182,14 +182,14 @@ async def test_completion_with_parallel_tool_calls_raises(google_provider_class:
 
 @pytest.mark.asyncio
 async def test_completion_inside_agent_loop(
-    google_provider_class: type[Provider], agent_loop_messages: list[dict[str, Any]]
+    google_provider_class: type[AnyLLM], agent_loop_messages: list[dict[str, Any]]
 ) -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
 
     with mock_google_provider() as mock_genai:
         provider = google_provider_class(ClientConfig(api_key=api_key))
-        await provider.acompletion(CompletionParams(model_id=model, messages=agent_loop_messages))
+        await provider._acompletion(CompletionParams(model_id=model, messages=agent_loop_messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
 
@@ -211,7 +211,7 @@ async def test_completion_inside_agent_loop(
 )
 @pytest.mark.asyncio
 async def test_completion_with_custom_reasoning_effort(
-    google_provider_class: type[Provider],
+    google_provider_class: type[AnyLLM],
     reasoning_effort: Literal["low", "medium", "high"] | None,
 ) -> None:
     api_key = "test-api-key"
@@ -220,7 +220,7 @@ async def test_completion_with_custom_reasoning_effort(
 
     with mock_google_provider() as mock_genai:
         provider = google_provider_class(ClientConfig(api_key=api_key))
-        await provider.acompletion(
+        await provider._acompletion(
             CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort)
         )
 
@@ -235,7 +235,7 @@ async def test_completion_with_custom_reasoning_effort(
 
 
 @pytest.mark.asyncio
-async def test_completion_with_max_tokens_conversion(google_provider_class: type[Provider]) -> None:
+async def test_completion_with_max_tokens_conversion(google_provider_class: type[AnyLLM]) -> None:
     """Test that max_tokens parameter gets converted to max_output_tokens."""
     api_key = "test-api-key"
     model = "gemini-pro"
@@ -244,7 +244,7 @@ async def test_completion_with_max_tokens_conversion(google_provider_class: type
 
     with mock_google_provider() as mock_genai:
         provider = google_provider_class(ClientConfig(api_key=api_key))
-        await provider.acompletion(CompletionParams(model_id=model, messages=messages, max_tokens=max_tokens))
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages, max_tokens=max_tokens))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
         generation_config = call_kwargs["config"]

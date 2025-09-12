@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
-from any_llm.provider import Provider
+from any_llm.any_llm import AnyLLM
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from any_llm.types.model import Model
 
 
-class WatsonxProvider(Provider):
+class WatsonxProvider(AnyLLM):
     """IBM Watsonx Provider using the official IBM Watsonx AI SDK."""
 
     PROVIDER_NAME = "watsonx"
@@ -116,7 +116,7 @@ class WatsonxProvider(Provider):
         for chunk in response_stream:
             yield self._convert_completion_chunk_response(chunk)
 
-    async def acompletion(
+    async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,

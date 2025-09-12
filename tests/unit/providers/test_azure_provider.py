@@ -47,7 +47,7 @@ async def test_azure_with_api_key_and_api_base() -> None:
     messages = [{"role": "user", "content": "Hello"}]
     with mock_azure_provider() as (mock_client, mock_convert_response, mock_chat_client):
         provider = AzureProvider(ClientConfig(api_key=api_key, api_base=custom_endpoint))
-        await provider.acompletion(CompletionParams(model_id="model-id", messages=messages))
+        await provider._acompletion(CompletionParams(model_id="model-id", messages=messages))
 
         mock_chat_client.assert_called_once()
 
@@ -68,7 +68,7 @@ async def test_azure_with_api_version() -> None:
     with mock_azure_provider() as (_, _, mock_chat_client):
         with patch("any_llm.providers.azure.azure.AzureKeyCredential") as mock_azure_key_credential:
             provider = AzureProvider(ClientConfig(api_key=api_key, api_base=custom_endpoint))
-            await provider.acompletion(
+            await provider._acompletion(
                 CompletionParams(model_id="model-id", messages=messages), api_version="2025-04-01-preview"
             )
 
@@ -89,7 +89,7 @@ async def test_azure_with_tools() -> None:
     tool_choice = "auto"
     with mock_azure_provider() as (mock_client, mock_convert_response, _):
         provider = AzureProvider(ClientConfig(api_key=api_key, api_base=custom_endpoint))
-        await provider.acompletion(
+        await provider._acompletion(
             CompletionParams(
                 model_id="model-id",
                 messages=messages,
@@ -122,7 +122,7 @@ async def test_azure_streaming() -> None:
         mock_openai_chunk2 = MagicMock()
         mock_stream_completion.return_value = [mock_openai_chunk1, mock_openai_chunk2]
 
-        result = await provider.acompletion(CompletionParams(model_id="model-id", messages=messages, stream=True))
+        result = await provider._acompletion(CompletionParams(model_id="model-id", messages=messages, stream=True))
 
         assert mock_stream_completion.call_count == 1
 

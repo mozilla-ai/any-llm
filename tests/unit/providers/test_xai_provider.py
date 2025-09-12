@@ -37,7 +37,7 @@ async def test_response_function_call_id_is_preserved() -> None:
         mock_response.tool_calls = [tool_call]
 
         provider = XaiProvider(ClientConfig(api_key="test-api-key"))
-        response = await provider.acompletion(
+        response = await provider._acompletion(
             CompletionParams(model_id="model", messages=[{"role": "user", "content": "Hello"}])
         )
         assert isinstance(response, ChatCompletion)
@@ -52,7 +52,7 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
 
     with mock_xai_provider() as (mock_xai, _):
         provider = XaiProvider(ClientConfig(api_key="test-api-key"))
-        await provider.acompletion(CompletionParams(model_id="model", messages=agent_loop_messages))
+        await provider._acompletion(CompletionParams(model_id="model", messages=agent_loop_messages))
         _, call_kwargs = mock_xai.return_value.chat.create.call_args
 
         assert len(call_kwargs["messages"]) == 3

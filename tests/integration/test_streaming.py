@@ -5,21 +5,20 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import ProviderName, acompletion
+from any_llm import AnyLLM, LLMProvider, acompletion
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
-from any_llm.factory import ProviderFactory
 from any_llm.types.completion import ChatCompletionChunk
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 
 @pytest.mark.asyncio
 async def test_streaming_completion_async(
-    provider: ProviderName,
-    provider_model_map: dict[ProviderName, str],
-    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+    provider: LLMProvider,
+    provider_model_map: dict[LLMProvider, str],
+    provider_extra_kwargs_map: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that streaming completion works for supported providers."""
-    cls = ProviderFactory.get_provider_class(provider)
+    cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_COMPLETION_STREAMING:
         pytest.skip(f"{provider.value} does not support streaming completion")
     model_id = provider_model_map[provider]

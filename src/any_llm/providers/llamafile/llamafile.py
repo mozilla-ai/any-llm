@@ -27,7 +27,7 @@ class LlamafileProvider(BaseOpenAIProvider):
         self.config = config
         self.config.api_key = ""  # In order to be compatible with the OpenAI client, the API key cannot be None if the OPENAI_API_KEY environment variable is not set (which is the case for LlamaFile)
 
-    async def acompletion(
+    async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Handle completion - extracted to avoid generator issues."""
@@ -43,4 +43,4 @@ class LlamafileProvider(BaseOpenAIProvider):
                 msg,
                 self.PROVIDER_NAME,
             )
-        return await super().acompletion(params, **kwargs)
+        return await super()._acompletion(params, **kwargs)

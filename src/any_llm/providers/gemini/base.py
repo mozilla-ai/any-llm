@@ -4,9 +4,9 @@ from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel
 
+from any_llm.any_llm import AnyLLM
 from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import Provider
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -45,7 +45,7 @@ if TYPE_CHECKING:
 REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 256, "low": 1024, "medium": 8192, "high": 24576}
 
 
-class GoogleProvider(Provider):
+class GoogleProvider(AnyLLM):
     """Base Google Provider class with common functionality for Gemini and Vertex AI."""
 
     SUPPORTS_COMPLETION_STREAMING = True
@@ -168,7 +168,7 @@ class GoogleProvider(Provider):
     def _get_client(self, config: ClientConfig) -> "genai.Client":
         """Get the appropriate client for this provider implementation."""
 
-    async def aembedding(
+    async def _aembedding(
         self,
         model: str,
         inputs: str | list[str],
@@ -184,7 +184,7 @@ class GoogleProvider(Provider):
         response_data = {"model": model, "result": result}
         return self._convert_embedding_response(response_data)
 
-    async def acompletion(
+    async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,

@@ -3,17 +3,16 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel
 
+from any_llm import AnyLLM
 from any_llm.config import ClientConfig
-from any_llm.constants import ProviderName
-from any_llm.factory import ProviderFactory
-from any_llm.provider import Provider
+from any_llm.constants import LLMProvider
 from any_llm.tools import prepare_tools
 from any_llm.types.completion import ChatCompletionMessage, CompletionParams
 
 
 def _process_completion_params(
     model: str,
-    provider: str | ProviderName | None,
+    provider: str | LLMProvider | None,
     messages: list[dict[str, Any] | ChatCompletionMessage],
     tools: list[dict[str, Any] | Callable[..., Any]] | None,
     tool_choice: str | dict[str, Any] | None,
@@ -40,16 +39,16 @@ def _process_completion_params(
     reasoning_effort: Literal["minimal", "low", "medium", "high", "auto"] | None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> tuple[Provider, CompletionParams]:
+) -> tuple[AnyLLM, CompletionParams]:
     if provider is None:
-        provider_key, model_name = ProviderFactory.split_model_provider(model)
+        provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = ProviderName.from_string(provider)
+        provider_key = LLMProvider.from_string(provider)
         model_name = model
 
     api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
 
-    provider_instance = ProviderFactory.create_provider(provider_key, api_config)
+    provider_instance = AnyLLM.create(provider_key, api_config)
 
     prepared_tools: list[dict[str, Any]] | None = None
     if tools:

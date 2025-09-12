@@ -5,9 +5,8 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import ProviderName, acompletion
+from any_llm import AnyLLM, LLMProvider, acompletion
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.factory import ProviderFactory
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 if TYPE_CHECKING:
@@ -16,15 +15,15 @@ if TYPE_CHECKING:
 
 @pytest.mark.asyncio
 async def test_tool(
-    provider: ProviderName,
-    provider_model_map: dict[ProviderName, str],
-    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+    provider: LLMProvider,
+    provider_model_map: dict[LLMProvider, str],
+    provider_extra_kwargs_map: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    if provider == ProviderName.LLAMAFILE:
+    if provider == LLMProvider.LLAMAFILE:
         pytest.skip("Llamafile does not support tools, skipping")
 
-    cls = ProviderFactory.get_provider_class(provider)
+    cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_COMPLETION:
         pytest.skip(f"{provider.value} does not support tools, skipping")
 

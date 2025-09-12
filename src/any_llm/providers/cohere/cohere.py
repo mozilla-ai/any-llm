@@ -3,8 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import Provider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
 
@@ -22,7 +22,7 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 
-class CohereProvider(Provider):
+class CohereProvider(AnyLLM):
     """Cohere Provider using the new response conversion utilities."""
 
     PROVIDER_NAME = "cohere"
@@ -113,7 +113,7 @@ class CohereProvider(Provider):
         # Validation logic could/would eventually go here
         return response_format
 
-    async def acompletion(
+    async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         if params.response_format is not None:

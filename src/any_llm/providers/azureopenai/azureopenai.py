@@ -1,4 +1,4 @@
-"""Azure OpenAI Provider."""
+"""Azure OpenAI AnyLLM."""
 
 import os
 
@@ -8,7 +8,7 @@ from any_llm.providers.openai.base import BaseOpenAIProvider
 
 
 class AzureopenaiProvider(BaseOpenAIProvider):
-    """Azure OpenAI Provider."""
+    """Azure OpenAI AnyLLM."""
 
     ENV_API_KEY_NAME = "AZURE_OPENAI_API_KEY"
     PROVIDER_NAME = "azureopenai"

@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Any, cast
 
-from any_llm.provider import Provider
+from any_llm.any_llm import AnyLLM
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from any_llm.types.model import Model
 
 
-class AzureProvider(Provider):
+class AzureProvider(AnyLLM):
     """Azure Provider using the official Azure AI Inference SDK."""
 
     PROVIDER_NAME = "azure"
@@ -95,7 +95,7 @@ class AzureProvider(Provider):
         async for chunk in azure_stream:
             yield self._convert_completion_chunk_response(chunk)
 
-    async def acompletion(
+    async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,
@@ -125,7 +125,7 @@ class AzureProvider(Provider):
 
         return self._convert_completion_response(response)
 
-    async def aembedding(
+    async def _aembedding(
         self,
         model: str,
         inputs: str | list[str],

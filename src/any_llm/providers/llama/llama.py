@@ -22,9 +22,9 @@ class LlamaProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = False
 
-    async def acompletion(
+    async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         if params.tools:
             params.tools = [_patch_json_schema(tool) for tool in params.tools]
-        return await super().acompletion(params, **kwargs)
+        return await super()._acompletion(params, **kwargs)

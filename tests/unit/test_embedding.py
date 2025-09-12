@@ -2,9 +2,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from any_llm import aembedding
-from any_llm.constants import ProviderName
-from any_llm.factory import ProviderFactory
+from any_llm import AnyLLM, aembedding
+from any_llm.constants import LLMProvider
 from any_llm.types.completion import CreateEmbeddingResponse, Embedding, Usage
 
 
@@ -20,16 +19,15 @@ async def test_embedding_with_api_config() -> None:
     )
     mock_provider.aembedding = AsyncMock(return_value=mock_embedding_response)
 
-    with patch("any_llm.api.ProviderFactory") as mock_factory:
-        mock_factory.split_model_provider.return_value = (ProviderName.OPENAI, "test-model")
-        mock_factory.create_provider.return_value = mock_provider
+    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
+        mock_create.return_value = mock_provider
 
         result = await aembedding(
             "openai/test-model", inputs="Hello world", api_key="test_key", api_base="https://test.example.com"
         )
 
-        call_args = mock_factory.create_provider.call_args
-        assert call_args[0][0] == ProviderName.OPENAI
+        call_args = mock_create.call_args
+        assert call_args[0][0] == LLMProvider.OPENAI
         assert call_args[0][1].api_key == "test_key"
         assert call_args[0][1].api_base == "https://test.example.com"
 
@@ -38,9 +36,9 @@ async def test_embedding_with_api_config() -> None:
 
 
 @pytest.mark.asyncio
-async def test_embedding_unsupported_provider_raises_not_implemented(provider: ProviderName) -> None:
+async def test_embedding_unsupported_provider_raises_not_implemented(provider: LLMProvider) -> None:
     """Test that calling embedding on a provider that doesn't support it raises NotImplementedError."""
-    cls = ProviderFactory.get_provider_class(provider)
+    cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_EMBEDDING:
         with pytest.raises(NotImplementedError, match=None):
             await aembedding(f"{provider.value}/does-not-matter", inputs="Hello world", api_key="test_key")

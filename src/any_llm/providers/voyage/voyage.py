@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
-from any_llm.provider import Provider
+from any_llm.any_llm import AnyLLM
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
 
@@ -16,7 +16,7 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 
-class VoyageProvider(Provider):
+class VoyageProvider(AnyLLM):
     """
     Provider for Voyage AI services.
     """
@@ -76,7 +76,7 @@ class VoyageProvider(Provider):
         msg = "Voyage does not support listing models"
         raise NotImplementedError(msg)
 
-    async def aembedding(
+    async def _aembedding(
         self,
         model: str,
         inputs: str | list[str],
@@ -93,7 +93,7 @@ class VoyageProvider(Provider):
         response_data = {"model": model, "result": result}
         return self._convert_embedding_response(response_data)
 
-    async def acompletion(
+    async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         msg = "voyage provider doesn't support completion."
