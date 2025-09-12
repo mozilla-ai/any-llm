@@ -105,7 +105,7 @@ class SagemakerProvider(AnyLLM):
                 provider_name=self.PROVIDER_NAME, env_var_name="AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
             )
 
-    async def acompletion(
+    async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,
@@ -194,7 +194,7 @@ class SagemakerProvider(AnyLLM):
         response_body = json.loads(response["Body"].read())
         return self._convert_completion_response({"model": params.model_id, **response_body})
 
-    async def aembedding(
+    async def _aembedding(
         self,
         model: str,
         inputs: str | list[str],

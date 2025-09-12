@@ -88,7 +88,7 @@ class XaiProvider(AnyLLM):
         """Convert xAI list models response to OpenAI format."""
         return _convert_models_list(response)
 
-    async def acompletion(
+    async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Call the XAI Python SDK Chat Completions API and convert to AnyLLM types."""

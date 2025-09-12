@@ -116,7 +116,7 @@ class WatsonxProvider(AnyLLM):
         for chunk in response_stream:
             yield self._convert_completion_chunk_response(chunk)
 
-    async def acompletion(
+    async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,

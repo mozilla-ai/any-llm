@@ -168,7 +168,7 @@ class GoogleProvider(AnyLLM):
     def _get_client(self, config: ClientConfig) -> "genai.Client":
         """Get the appropriate client for this provider implementation."""
 
-    async def aembedding(
+    async def _aembedding(
         self,
         model: str,
         inputs: str | list[str],
@@ -184,7 +184,7 @@ class GoogleProvider(AnyLLM):
         response_data = {"model": model, "result": result}
         return self._convert_embedding_response(response_data)
 
-    async def acompletion(
+    async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,

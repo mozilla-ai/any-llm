@@ -121,7 +121,7 @@ class BaseOpenAIProvider(AnyLLM):
 
         return chunk_iterator()
 
-    async def acompletion(
+    async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         client = cast("AsyncOpenAI", self._get_client(sync=False))
@@ -149,7 +149,7 @@ class BaseOpenAIProvider(AnyLLM):
             )
         return self._convert_completion_response_async(response)
 
-    async def aresponses(
+    async def _aresponses(
         self, model: str, input_data: Any, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call OpenAI Responses API"""
@@ -165,7 +165,7 @@ class BaseOpenAIProvider(AnyLLM):
             raise ValueError(msg)
         return response
 
-    async def aembedding(
+    async def _aembedding(
         self,
         model: str,
         inputs: str | list[str],

@@ -95,7 +95,7 @@ class AzureProvider(AnyLLM):
         async for chunk in azure_stream:
             yield self._convert_completion_chunk_response(chunk)
 
-    async def acompletion(
+    async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,
@@ -125,7 +125,7 @@ class AzureProvider(AnyLLM):
 
         return self._convert_completion_response(response)
 
-    async def aembedding(
+    async def _aembedding(
         self,
         model: str,
         inputs: str | list[str],

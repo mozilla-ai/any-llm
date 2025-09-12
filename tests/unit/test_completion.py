@@ -94,7 +94,7 @@ async def test_all_providers_can_be_loaded(provider: str) -> None:
     assert isinstance(provider_instance, AnyLLM), f"Provider {provider} did not create a valid AnyLLM instance"
 
     assert hasattr(provider_instance, "acompletion"), f"Provider {provider} does not have an acompletion method"
-    assert callable(provider_instance.acompletion), f"Provider {provider} acompletion is not callable"
+    assert callable(provider_instance._acompletion), f"Provider {provider} acompletion is not callable"
 
 
 @pytest.mark.asyncio

@@ -105,7 +105,7 @@ class CerebrasProvider(AnyLLM):
         async for chunk in cast("cerebras.AsyncStream[ChatCompletion]", cerebras_stream):
             yield self._convert_completion_chunk_response(chunk)
 
-    async def acompletion(
+    async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,

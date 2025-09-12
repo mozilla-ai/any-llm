@@ -76,7 +76,7 @@ class VoyageProvider(AnyLLM):
         msg = "Voyage does not support listing models"
         raise NotImplementedError(msg)
 
-    async def aembedding(
+    async def _aembedding(
         self,
         model: str,
         inputs: str | list[str],
@@ -93,7 +93,7 @@ class VoyageProvider(AnyLLM):
         response_data = {"model": model, "result": result}
         return self._convert_embedding_response(response_data)
 
-    async def acompletion(
+    async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         msg = "voyage provider doesn't support completion."

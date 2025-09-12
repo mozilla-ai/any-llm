@@ -73,7 +73,7 @@ async def test_completion_with_system_instruction(google_provider_class: type[An
 
     with mock_google_provider() as mock_genai:
         provider = google_provider_class(ClientConfig(api_key=api_key))
-        await provider.acompletion(CompletionParams(model_id=model, messages=messages))
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
         generation_config = call_kwargs["config"]
@@ -92,7 +92,7 @@ async def test_completion_with_content_list(google_provider_class: type[AnyLLM])
 
     with mock_google_provider() as mock_genai:
         provider = google_provider_class(ClientConfig(api_key=api_key))
-        await provider.acompletion(CompletionParams(model_id=model, messages=messages))
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
         contents = call_kwargs["contents"]
@@ -118,7 +118,7 @@ async def test_completion_with_tool_choice_auto(
 
     with mock_google_provider() as mock_genai:
         provider = google_provider_class(ClientConfig(api_key=api_key))
-        await provider.acompletion(CompletionParams(model_id=model, messages=messages, tool_choice=tool_choice))
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages, tool_choice=tool_choice))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
         generation_config = call_kwargs["config"]
@@ -135,7 +135,7 @@ async def test_completion_without_tool_choice(google_provider_class: type[AnyLLM
 
     with mock_google_provider() as mock_genai:
         provider = google_provider_class(ClientConfig(api_key=api_key))
-        await provider.acompletion(CompletionParams(model_id=model, messages=messages))
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
         generation_config = call_kwargs["config"]
@@ -152,7 +152,7 @@ async def test_completion_with_stream_and_response_format_raises(google_provider
     with mock_google_provider():
         provider = google_provider_class(ClientConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
-            await provider.acompletion(
+            await provider._acompletion(
                 CompletionParams(
                     model_id=model,
                     messages=messages,
@@ -171,7 +171,7 @@ async def test_completion_with_parallel_tool_calls_raises(google_provider_class:
     with mock_google_provider():
         provider = google_provider_class(ClientConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
-            await provider.acompletion(
+            await provider._acompletion(
                 CompletionParams(
                     model_id=model,
                     messages=messages,
@@ -189,7 +189,7 @@ async def test_completion_inside_agent_loop(
 
     with mock_google_provider() as mock_genai:
         provider = google_provider_class(ClientConfig(api_key=api_key))
-        await provider.acompletion(CompletionParams(model_id=model, messages=agent_loop_messages))
+        await provider._acompletion(CompletionParams(model_id=model, messages=agent_loop_messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
 
@@ -220,7 +220,7 @@ async def test_completion_with_custom_reasoning_effort(
 
     with mock_google_provider() as mock_genai:
         provider = google_provider_class(ClientConfig(api_key=api_key))
-        await provider.acompletion(
+        await provider._acompletion(
             CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort)
         )
 
@@ -244,7 +244,7 @@ async def test_completion_with_max_tokens_conversion(google_provider_class: type
 
     with mock_google_provider() as mock_genai:
         provider = google_provider_class(ClientConfig(api_key=api_key))
-        await provider.acompletion(CompletionParams(model_id=model, messages=messages, max_tokens=max_tokens))
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages, max_tokens=max_tokens))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
         generation_config = call_kwargs["config"]

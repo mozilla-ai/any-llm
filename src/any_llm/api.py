@@ -218,7 +218,7 @@ async def acompletion(
         **kwargs,
     )
 
-    return await provider_instance.acompletion(completion_params, **kwargs)
+    return await provider_instance._acompletion(completion_params, **kwargs)
 
 
 def responses(
@@ -422,7 +422,7 @@ async def aresponses(
     if text is not None:
         responses_kwargs["text"] = text
 
-    return await provider_instance.aresponses(model_name, input_data, **responses_kwargs)
+    return await provider_instance._aresponses(model_name, input_data, **responses_kwargs)
 
 
 def embedding(
@@ -501,7 +501,7 @@ async def aembedding(
 
     provider_instance = AnyLLM.create(provider_key, api_config)
 
-    return await provider_instance.aembedding(model_name, inputs, **kwargs)
+    return await provider_instance._aembedding(model_name, inputs, **kwargs)
 
 
 def list_models(

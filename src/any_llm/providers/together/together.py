@@ -174,7 +174,7 @@ class TogetherProvider(AnyLLM):
 
         return self._convert_completion_response(response.model_dump())
 
-    async def acompletion(
+    async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,

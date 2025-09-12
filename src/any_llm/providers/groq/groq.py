@@ -111,7 +111,7 @@ class GroqProvider(AnyLLM):
 
         return _stream()
 
-    async def acompletion(
+    async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using Groq."""
@@ -147,7 +147,7 @@ class GroqProvider(AnyLLM):
 
         return self._convert_completion_response(response)
 
-    async def aresponses(
+    async def _aresponses(
         self, model: str, input_data: Any, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call Groq Responses API and normalize into ChatCompletion/Chunks."""
