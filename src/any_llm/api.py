@@ -80,6 +80,7 @@ def completion(
 
     """
     all_args = locals()
+    all_args.pop("provider")
     model = all_args.pop("model")
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
@@ -166,6 +167,7 @@ async def acompletion(
 
     """
     all_args = locals()
+    all_args.pop("provider")
     model = all_args.pop("model")
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
@@ -241,6 +243,7 @@ def responses(
 
     """
     all_args = locals()
+    all_args.pop("provider")
     model = all_args.pop("model")
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
@@ -317,6 +320,7 @@ async def aresponses(
 
     """
     all_args = locals()
+    all_args.pop("provider")
     model = all_args.pop("model")
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
