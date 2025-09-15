@@ -5,7 +5,7 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import AnyLLM, LLMProvider, acompletion
+from any_llm import AnyLLM, ClientConfig, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
@@ -23,13 +23,6 @@ async def test_tool(
     if provider == LLMProvider.LLAMAFILE:
         pytest.skip("Llamafile does not support tools, skipping")
 
-    cls = AnyLLM.get_provider_class(provider)
-    if not cls.SUPPORTS_COMPLETION:
-        pytest.skip(f"{provider.value} does not support tools, skipping")
-
-    model_id = provider_model_map[provider]
-    extra_kwargs = provider_client_config.get(provider, {})
-
     def echo(message: str) -> str:
         """Tool function to get the capital of a city."""
         return message
@@ -40,12 +33,16 @@ async def test_tool(
     messages: list[dict[str, Any] | ChatCompletionMessage] = [{"role": "user", "content": prompt}]
 
     try:
-        result: ChatCompletion = await acompletion(  # type: ignore[assignment]
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_COMPLETION:
+            pytest.skip(f"{provider.value} does not support tools, skipping")
+        model_id = provider_model_map[provider]
+
+        result: ChatCompletion = await llm.acompletion(  # type: ignore[assignment]
             model=model_id,
             provider=provider,
             messages=messages,
             tools=[echo],
-            **extra_kwargs,
         )
 
         messages.append(result.choices[0].message)
@@ -67,12 +64,11 @@ async def test_tool(
             }
         )
         messages.append({"role": "user", "content": "Did the tool call work?"})
-        second_result: ChatCompletion = await acompletion(  # type: ignore[assignment]
+        second_result: ChatCompletion = await llm.acompletion(  # type: ignore[assignment]
             model=model_id,
             provider=provider,
             messages=messages,
             tools=[echo],
-            **extra_kwargs,
         )
         assert second_result.choices[0].message
     except MissingApiKeyError:

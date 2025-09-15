@@ -12,11 +12,11 @@ from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 def test_list_models(provider: LLMProvider, provider_client_config: dict[LLMProvider, dict[str, Any]]) -> None:
     """Test that all supported providers can be loaded successfully."""
-    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
-    if not llm.SUPPORTS_EMBEDDING:
-        pytest.skip(f"{provider.value} does not support completion, skipping")
-
     try:
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_LIST_MODELS:
+            pytest.skip(f"{provider.value} does not support listing models, skipping")
+
         available_models = llm.list_models()
         assert len(available_models) > 0
         assert isinstance(available_models, list)

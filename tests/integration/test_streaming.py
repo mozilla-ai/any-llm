@@ -18,11 +18,11 @@ async def test_streaming_completion_async(
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that streaming completion works for supported providers."""
-    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
-    if not llm.SUPPORTS_COMPLETION_STREAMING:
-        pytest.skip(f"{provider.value} does not support streaming completion")
-    model_id = provider_model_map[provider]
     try:
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_COMPLETION_STREAMING:
+            pytest.skip(f"{provider.value} does not support streaming completion")
+        model_id = provider_model_map[provider]
         output = ""
         reasoning = ""
         num_chunks = 0

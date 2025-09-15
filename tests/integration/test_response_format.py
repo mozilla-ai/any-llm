@@ -21,17 +21,18 @@ async def test_response_format(
 
     if provider == LLMProvider.LLAMAFILE:
         pytest.skip("Llamafile does not support response_format, skipping")
-    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
-    if not llm.SUPPORTS_COMPLETION:
-        pytest.skip(f"{provider.value} does not support response_format, skipping")
-
-    model_id = provider_model_map[provider]
 
     class ResponseFormat(BaseModel):
         city_name: str
 
     prompt = "What is the capital of France?"
     try:
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_COMPLETION:
+            pytest.skip(f"{provider.value} does not support response_format, skipping")
+
+        model_id = provider_model_map[provider]
+
         result = await llm.acompletion(
             model=model_id,
             provider=provider,

@@ -54,18 +54,17 @@ async def test_completion_reasoning_streaming(
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that reasoning works with streaming for supported providers."""
-    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
-    if not llm.SUPPORTS_COMPLETION_REASONING:
-        pytest.skip(f"{provider.value} does not support reasoning, skipping")
-    if not llm.SUPPORTS_COMPLETION_STREAMING:
-        pytest.skip(f"{provider.value} does not support streaming completion, skipping")
-
-    model_id = provider_reasoning_model_map[provider]
-    extra_kwargs = {}
-    if provider in (LLMProvider.ANTHROPIC, LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.OLLAMA):
-        extra_kwargs["reasoning_effort"] = "low"
-
     try:
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_COMPLETION_REASONING:
+            pytest.skip(f"{provider.value} does not support reasoning, skipping")
+        if not llm.SUPPORTS_COMPLETION_STREAMING:
+            pytest.skip(f"{provider.value} does not support streaming completion, skipping")
+
+        model_id = provider_reasoning_model_map[provider]
+        extra_kwargs = {}
+        if provider in (LLMProvider.ANTHROPIC, LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.OLLAMA):
+            extra_kwargs["reasoning_effort"] = "low"
         output = ""
         reasoning = ""
         num_chunks = 0

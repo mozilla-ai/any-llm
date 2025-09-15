@@ -17,11 +17,11 @@ async def test_responses_async(
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
-    if not llm.SUPPORTS_RESPONSES:
-        pytest.skip(f"{provider.value} does not support responses, skipping")
-    model_id = provider_reasoning_model_map[provider]
     try:
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_RESPONSES:
+            pytest.skip(f"{provider.value} does not support responses, skipping")
+        model_id = provider_reasoning_model_map[provider]
         result = await llm.aresponses(
             f"{provider.value}/{model_id}",
             input_data="What's the capital of France? Please think step by step.",

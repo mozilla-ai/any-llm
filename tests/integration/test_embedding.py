@@ -17,12 +17,12 @@ async def test_embedding_providers_async(
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all embedding-supported providers can generate embeddings successfully."""
-    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
-    if not llm.SUPPORTS_EMBEDDING:
-        pytest.skip(f"{provider.value} does not support completion, skipping")
-
-    model_id = embedding_provider_model_map[provider]
     try:
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_EMBEDDING:
+            pytest.skip(f"{provider.value} does not support embeddings, skipping")
+
+        model_id = embedding_provider_model_map[provider]
         result = await llm.aembedding(model=model_id, inputs="Hello world")
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:

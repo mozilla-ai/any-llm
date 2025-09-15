@@ -21,12 +21,12 @@ async def test_async_completion(
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
-    if not llm.SUPPORTS_COMPLETION:
-        pytest.skip(f"{provider.value} does not support completion, skipping")
-
-    model_id = provider_model_map[provider]
     try:
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_COMPLETION:
+            pytest.skip(f"{provider.value} does not support completion, skipping")
+
+        model_id = provider_model_map[provider]
         result = await llm.acompletion(
             model=model_id,
             messages=[
@@ -56,14 +56,14 @@ async def test_async_completion_parallel(
     provider_model_map: dict[LLMProvider, str],
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
-    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
-    if not llm.SUPPORTS_COMPLETION:
-        pytest.skip(f"{provider.value} does not support completion, skipping")
-
-    model_id = provider_model_map[provider]
-    prompt_1 = "What's the capital of France?"
-    prompt_2 = "What's the capital of Germany?"
     try:
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_COMPLETION:
+            pytest.skip(f"{provider.value} does not support completion, skipping")
+
+        model_id = provider_model_map[provider]
+        prompt_1 = "What's the capital of France?"
+        prompt_2 = "What's the capital of Germany?"
         results = await asyncio.gather(
             llm.acompletion(model=model_id, messages=[{"role": "user", "content": prompt_1}]),
             llm.acompletion(model=model_id, messages=[{"role": "user", "content": prompt_2}]),
@@ -90,12 +90,12 @@ async def test_completion_with_image(
     provider_image_model_map: dict[LLMProvider, str],
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
-    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
-    if not llm.SUPPORTS_COMPLETION_IMAGE:
-        pytest.skip(f"{provider.value} does not support completion, skipping")
-
-    model_id = provider_image_model_map[provider]
     try:
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_COMPLETION_IMAGE:
+            pytest.skip(f"{provider.value} does not support completion, skipping")
+
+        model_id = provider_image_model_map[provider]
         assets_dir = Path(__file__).parent.parent / "assets"
         async with aiofiles.open(assets_dir / "any-llm-logo.png", "rb") as image_file:
             image_data = await image_file.read()
@@ -133,12 +133,12 @@ async def test_completion_with_pdf(
     provider_image_model_map: dict[LLMProvider, str],
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
-    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
-    if not llm.SUPPORTS_COMPLETION_PDF:
-        pytest.skip(f"{provider.value} does not support completion, skipping")
-
-    model_id = provider_image_model_map[provider]
     try:
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_COMPLETION_PDF:
+            pytest.skip(f"{provider.value} does not support completion, skipping")
+
+        model_id = provider_image_model_map[provider]
         assets_dir = Path(__file__).parent.parent / "assets"
         async with aiofiles.open(assets_dir / "cv_1.pdf", "rb") as pdf_file:
             pdf_data = await pdf_file.read()
