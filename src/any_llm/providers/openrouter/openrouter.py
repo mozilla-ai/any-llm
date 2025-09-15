@@ -60,14 +60,14 @@ class OpenrouterProvider(BaseOpenAIProvider):
         stream_mode = body.pop("stream", False)
 
         client_kwargs = body.copy()
-        
+
         # Start with existing extra_body from kwargs if present
         final_extra_body = kwargs.get("extra_body", {}).copy() if kwargs.get("extra_body") else {}
-        
+
         # Add our reasoning if present
         if extra_body:
             final_extra_body.update(extra_body)
-        
+
         # Only add extra_body if it has content
         if final_extra_body:
             client_kwargs["extra_body"] = final_extra_body
