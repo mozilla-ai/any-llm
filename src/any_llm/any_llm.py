@@ -349,7 +349,6 @@ class AnyLLM(ABC):
             stream_options: Additional options controlling streaming behavior
             max_completion_tokens: Maximum number of tokens for the completion
             reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
-            client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
             **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
         Returns:
