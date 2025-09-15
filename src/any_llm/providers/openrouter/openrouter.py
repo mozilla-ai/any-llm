@@ -10,7 +10,6 @@ from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, Comple
 
 
 class OpenrouterProvider(BaseOpenAIProvider):
-
     API_BASE = "https://openrouter.ai/api/v1"
     ENV_API_KEY_NAME = "OPENROUTER_API_KEY"
     PROVIDER_NAME = "openrouter"
@@ -23,7 +22,9 @@ class OpenrouterProvider(BaseOpenAIProvider):
     SUPPORTS_EMBEDDING = False
 
     async def acompletion(
-        self, params: CompletionParams, **kwargs: Any
+        self,
+        params: CompletionParams,
+        **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         messages = params.messages
         if messages and not isinstance(messages[0], dict):
@@ -46,10 +47,10 @@ class OpenrouterProvider(BaseOpenAIProvider):
 
         extra_body: dict[str, Any] = {}
 
+        # Build reasoning directive from standard parameters
         reasoning_directive = build_reasoning_directive(
-            reasoning=(getattr(params, "reasoning", None) or kwargs.get("reasoning")),
-            include_reasoning=kwargs.get("include_reasoning"),
-            reasoning_effort=(getattr(params, "reasoning_effort", None) or kwargs.get("reasoning_effort")),
+            reasoning=kwargs.get("reasoning"),  # Advanced users can pass custom config
+            reasoning_effort=params.reasoning_effort,  # Standard parameter
         )
 
         if reasoning_directive is not None:
@@ -59,10 +60,20 @@ class OpenrouterProvider(BaseOpenAIProvider):
         stream_mode = body.pop("stream", False)
 
         client_kwargs = body.copy()
+        
+        # Start with existing extra_body from kwargs if present
+        final_extra_body = kwargs.get("extra_body", {}).copy() if kwargs.get("extra_body") else {}
+        
+        # Add our reasoning if present
         if extra_body:
-            client_kwargs["extra_body"] = extra_body
+            final_extra_body.update(extra_body)
+        
+        # Only add extra_body if it has content
+        if final_extra_body:
+            client_kwargs["extra_body"] = final_extra_body
 
-        filtered_kwargs = {k: v for k, v in kwargs.items() if k not in ["include_reasoning", "reasoning", "reasoning_effort"]}
+        # Filter out our custom parameters from kwargs
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k not in ["reasoning", "extra_body"]}
         client_kwargs.update(filtered_kwargs)
 
         if stream_mode:
