@@ -1,4 +1,4 @@
 ## Completion
 
-::: any_llm.completion
-::: any_llm.acompletion
+::: any_llm.api.completion
+::: any_llm.api.acompletion

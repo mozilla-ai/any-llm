@@ -27,8 +27,8 @@ Refer to the [Quickstart](./quickstart.md) for instructions on installation and 
 - [embedding](./api/embedding.md) - Text embeddings
 - [responses](./api/responses.md) - OpenAI-style Responses API
 
-**Provider Class** (recommended for advanced use cases):
-- [Provider API](./api/provider.md) - Lower-level provider interface with metadata access and reusability
+**AnyLLM Class** (recommended for advanced use cases):
+- [Provider API](./api/any_llm.md) - Lower-level provider interface with metadata access and reusability
 
 ### Error Handling
 

@@ -18,13 +18,13 @@ async def test_completion_reasoning(
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
-    if not llm.SUPPORTS_COMPLETION_REASONING:
-        pytest.skip(f"{provider.value} does not support reasoning, skipping")
-
-    model_id = provider_reasoning_model_map[provider]
-
     try:
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_COMPLETION_REASONING:
+            pytest.skip(f"{provider.value} does not support reasoning, skipping")
+
+        model_id = provider_reasoning_model_map[provider]
+
         result = await llm.acompletion(
             model=model_id,
             messages=[{"role": "user", "content": "Please say hello! Think very briefly before you respond."}],
