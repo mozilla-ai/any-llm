@@ -441,11 +441,13 @@ class AnyLLM(ABC):
             NotImplementedError: If the selected provider does not support the Responses API.
 
         """
-        if tools:
-            tools = prepare_tools(tools)  # type: ignore[assignment]
-
         all_args = locals()
+        all_args.pop("self")
         kwargs = all_args.pop("kwargs")
+
+        if tools:
+            all_args["tools"] = prepare_tools(tools)
+
         return await self._aresponses(ResponsesParams(**all_args, **kwargs))
 
     async def _aresponses(
