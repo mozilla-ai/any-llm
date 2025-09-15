@@ -4,8 +4,9 @@ from unittest.mock import Mock, patch
 import pytest
 
 from any_llm import completion
+from any_llm.constants import ProviderName
 from any_llm.exceptions import UnsupportedProviderError
-from any_llm.provider import ProviderFactory, ProviderName
+from any_llm.factory import ProviderFactory
 
 
 def test_colon_syntax_valid() -> None:

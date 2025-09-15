@@ -3,7 +3,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from any_llm.provider import ApiConfig, ProviderFactory, ProviderName
+from any_llm.config import ClientConfig
+from any_llm.constants import ProviderName
+from any_llm.factory import ProviderFactory
 from any_llm.tools import prepare_tools
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, CreateEmbeddingResponse
 from any_llm.types.model import Model
@@ -39,6 +41,7 @@ def completion(
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
     reasoning_effort: Literal["minimal", "low", "medium", "high", "auto"] | None = "auto",
+    client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
     """Create a chat completion.
@@ -73,7 +76,8 @@ def completion(
         stream_options: Additional options controlling streaming behavior
         max_completion_tokens: Maximum number of tokens for the completion
         reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
-        **kwargs: Additional provider-specific parameters
+        client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
+        **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
     Returns:
         The completion response from the provider
@@ -106,6 +110,7 @@ def completion(
         stream_options=stream_options,
         max_completion_tokens=max_completion_tokens,
         reasoning_effort=reasoning_effort,
+        client_args=client_args,
         **kwargs,
     )
 
@@ -140,6 +145,7 @@ async def acompletion(
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
     reasoning_effort: Literal["minimal", "low", "medium", "high", "auto"] | None = "auto",
+    client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
     """Create a chat completion asynchronously.
@@ -174,7 +180,8 @@ async def acompletion(
         stream_options: Additional options controlling streaming behavior
         max_completion_tokens: Maximum number of tokens for the completion
         reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
-        **kwargs: Additional provider-specific parameters
+        client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
+        **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
     Returns:
         The completion response from the provider
@@ -207,6 +214,7 @@ async def acompletion(
         stream_options=stream_options,
         max_completion_tokens=max_completion_tokens,
         reasoning_effort=reasoning_effort,
+        client_args=client_args,
         **kwargs,
     )
 
@@ -233,6 +241,7 @@ def responses(
     parallel_tool_calls: int | None = None,
     reasoning: Any | None = None,
     text: Any | None = None,
+    client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> Response | Iterator[ResponseStreamEvent]:
     """Create a response using the OpenAI-style Responses API.
@@ -262,8 +271,8 @@ def responses(
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
         reasoning: Configuration options for reasoning models.
         text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
-
-        **kwargs: Additional provider-specific parameters
+        client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
+        **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
     Returns:
         Either a `Response` object (non-streaming) or an iterator of
@@ -279,12 +288,7 @@ def responses(
         provider_key = ProviderName.from_string(provider)
         model_name = model
 
-    config: dict[str, str] = {}
-    if api_key:
-        config["api_key"] = str(api_key)
-    if api_base:
-        config["api_base"] = str(api_base)
-    api_config = ApiConfig(**config)
+    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
 
     provider_instance = ProviderFactory.create_provider(provider_key, api_config)
 
@@ -339,6 +343,7 @@ async def aresponses(
     parallel_tool_calls: int | None = None,
     reasoning: Any | None = None,
     text: Any | None = None,
+    client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> Response | AsyncIterator[ResponseStreamEvent]:
     """Create a response using the OpenAI-style Responses API.
@@ -368,8 +373,8 @@ async def aresponses(
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
         reasoning: Configuration options for reasoning models.
         text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
-
-        **kwargs: Additional provider-specific parameters
+        client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
+        **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
     Returns:
         Either a `Response` object (non-streaming) or an iterator of
@@ -385,12 +390,7 @@ async def aresponses(
         provider_key = ProviderName.from_string(provider)
         model_name = model
 
-    config: dict[str, str] = {}
-    if api_key:
-        config["api_key"] = str(api_key)
-    if api_base:
-        config["api_base"] = str(api_base)
-    api_config = ApiConfig(**config)
+    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
 
     provider_instance = ProviderFactory.create_provider(provider_key, api_config)
 
@@ -432,6 +432,7 @@ def embedding(
     provider: str | ProviderName | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> CreateEmbeddingResponse:
     """Create an embedding.
@@ -445,7 +446,8 @@ def embedding(
         inputs: The input text to embed
         api_key: API key for the provider
         api_base: Base URL for the provider API
-        **kwargs: Additional provider-specific parameters
+        client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
+        **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
     Returns:
         The embedding of the input text
@@ -457,12 +459,7 @@ def embedding(
         provider_key = ProviderName.from_string(provider)
         model_name = model
 
-    config: dict[str, str] = {}
-    if api_key:
-        config["api_key"] = str(api_key)
-    if api_base:
-        config["api_base"] = str(api_base)
-    api_config = ApiConfig(**config)
+    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
 
     provider_instance = ProviderFactory.create_provider(provider_key, api_config)
 
@@ -476,6 +473,7 @@ async def aembedding(
     provider: str | ProviderName | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> CreateEmbeddingResponse:
     """Create an embedding asynchronously.
@@ -486,7 +484,8 @@ async def aembedding(
         inputs: The input text to embed
         api_key: API key for the provider
         api_base: Base URL for the provider API
-        **kwargs: Additional provider-specific parameters
+        client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
+        **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
     Returns:
         The embedding of the input text
@@ -498,12 +497,7 @@ async def aembedding(
         provider_key = ProviderName.from_string(provider)
         model_name = model
 
-    config: dict[str, str] = {}
-    if api_key:
-        config["api_key"] = str(api_key)
-    if api_base:
-        config["api_base"] = str(api_base)
-    api_config = ApiConfig(**config)
+    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
 
     provider_instance = ProviderFactory.create_provider(provider_key, api_config)
 
@@ -511,30 +505,28 @@ async def aembedding(
 
 
 def list_models(
-    provider: str | ProviderName, api_key: str | None = None, api_base: str | None = None, **kwargs: Any
+    provider: str | ProviderName,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
 ) -> Sequence[Model]:
     """List available models for a provider."""
     provider_key = ProviderName.from_string(provider)
-    config: dict[str, str] = {}
-    if api_key:
-        config["api_key"] = str(api_key)
-    if api_base:
-        config["api_base"] = str(api_base)
-    api_config = ApiConfig(**config)
+    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
     prov_instance = ProviderFactory.create_provider(provider_key, api_config)
     return prov_instance.list_models(**kwargs)
 
 
 async def list_models_async(
-    provider: str | ProviderName, api_key: str | None = None, api_base: str | None = None, **kwargs: Any
+    provider: str | ProviderName,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
 ) -> Sequence[Model]:
     """List available models for a provider asynchronously."""
     provider_key = ProviderName.from_string(provider)
-    config: dict[str, str] = {}
-    if api_key:
-        config["api_key"] = str(api_key)
-    if api_base:
-        config["api_base"] = str(api_base)
-    api_config = ApiConfig(**config)
+    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
     prov_instance = ProviderFactory.create_provider(provider_key, api_config)
     return await prov_instance.list_models_async(**kwargs)

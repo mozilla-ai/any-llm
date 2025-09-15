@@ -3,14 +3,14 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from any_llm import aresponses
-from any_llm.provider import ProviderName
+from any_llm.constants import ProviderName
 
 
 @pytest.mark.asyncio
 async def test_responses_invalid_model_format_no_slash() -> None:
     """Test responses raises ValueError for model without separator."""
     with pytest.raises(
-        ValueError, match="Invalid model format. Expected 'provider:model' or 'provider/model', got 'gpt-5-nano'"
+        ValueError, match=r"Invalid model format. Expected 'provider:model' or 'provider/model', got 'gpt-5-nano'"
     ):
         await aresponses("gpt-5-nano", input_data=[{"role": "user", "content": "Hello"}])
 

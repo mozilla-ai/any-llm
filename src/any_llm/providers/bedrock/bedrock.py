@@ -7,34 +7,33 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from any_llm.config import ClientConfig
+from any_llm.exceptions import MissingApiKeyError
+from any_llm.logging import logger
+from any_llm.provider import Provider
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
+from any_llm.utils.instructor import _convert_instructor_response
 
+MISSING_PACKAGES_ERROR = None
 try:
     import boto3
     import instructor
 
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
-
-from any_llm.exceptions import MissingApiKeyError
-from any_llm.logging import logger
-from any_llm.provider import ApiConfig, Provider
-from any_llm.providers.aws.utils import (
-    _convert_kwargs,
-    _convert_messages,
-    _convert_response,
-    _create_openai_chunk_from_aws_chunk,
-    _create_openai_embedding_response_from_aws,
-)
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
-from any_llm.utils.instructor import _convert_instructor_response
+    from .utils import (
+        _convert_params,
+        _convert_response,
+        _create_openai_chunk_from_aws_chunk,
+        _create_openai_embedding_response_from_aws,
+    )
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 
-class AwsProvider(Provider):
+class BedrockProvider(Provider):
     """AWS Bedrock Provider using boto3 and instructor for structured output."""
 
-    PROVIDER_NAME = "aws"
+    PROVIDER_NAME = "bedrock"
     ENV_API_KEY_NAME = "AWS_BEARER_TOKEN_BEDROCK"
     PROVIDER_DOCUMENTATION_URL = "https://aws.amazon.com/bedrock/"
 
@@ -42,14 +41,59 @@ class AwsProvider(Provider):
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
+    SUPPORTS_COMPLETION_IMAGE = False
+    SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
-    def __init__(self, config: ApiConfig) -> None:
+    @staticmethod
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert CompletionParams to kwargs for AWS API."""
+        return _convert_params(params, kwargs)
+
+    @staticmethod
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        """Convert AWS Bedrock response to OpenAI format."""
+        return _convert_response(response)
+
+    @staticmethod
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        """Convert AWS Bedrock chunk response to OpenAI format."""
+        model = kwargs.get("model", "")
+        chunk = _create_openai_chunk_from_aws_chunk(response, model)
+        if chunk is None:
+            msg = "Failed to convert AWS chunk to OpenAI format"
+            raise ValueError(msg)
+        return chunk
+
+    @staticmethod
+    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
+        """Convert embedding parameters for AWS Bedrock."""
+        # For bedrock, we don't need to convert the params, just pass them through
+        return kwargs
+
+    @staticmethod
+    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
+        """Convert AWS Bedrock embedding response to OpenAI format."""
+        return _create_openai_embedding_response_from_aws(
+            response["embedding_data"], response["model"], response["total_tokens"]
+        )
+
+    @staticmethod
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        """Convert AWS Bedrock list models response to OpenAI format."""
+        models_list = response.get("modelSummaries", [])
+        # AWS doesn't provide a creation date for models
+        # AWS doesn't provide typing, but per https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/bedrock/client/list_foundation_models.html
+        # the modelId is a string and will not be None
+        return [Model(id=model["modelId"], object="model", created=0, owned_by="aws") for model in models_list]
+
+    def __init__(self, config: ClientConfig) -> None:
         """Initialize AWS Bedrock provider."""
         # This intentionally does not call super().__init__(config) because AWS has a different way of handling credentials
+        self._verify_no_missing_packages()
         self.config = config
         self.region_name = os.getenv("AWS_REGION", "us-east-1")
 
@@ -97,15 +141,15 @@ class AwsProvider(Provider):
         """Create a chat completion using AWS Bedrock with instructor support."""
         self._check_aws_credentials()
 
-        client = boto3.client("bedrock-runtime", endpoint_url=self.config.api_base, region_name=self.region_name)  # type: ignore[no-untyped-call]
-
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
-
-        completion_kwargs = params.model_dump(
-            exclude_none=True,
-            exclude={"model_id", "messages", "response_format", "stream", "parallel_tool_calls"},
+        client = boto3.client(  # type: ignore[no-untyped-call]
+            "bedrock-runtime",
+            endpoint_url=self.config.api_base,
+            region_name=self.region_name,
+            **(self.config.client_args if self.config.client_args else {}),
         )
+
+        completion_kwargs = self._convert_completion_params(params, **kwargs)
+
         if params.response_format:
             if params.stream:
                 msg = "stream is not supported for response_format"
@@ -118,41 +162,25 @@ class AwsProvider(Provider):
                 raise ValueError(msg)
 
             instructor_response = instructor_client.chat.completions.create(
-                model=params.model_id,
-                messages=params.messages,  # type: ignore[arg-type]
                 response_model=params.response_format,
                 **completion_kwargs,
             )
 
             return _convert_instructor_response(instructor_response, params.model_id, "aws")
 
-        completion_kwargs = _convert_kwargs(completion_kwargs)
-
-        system_message, formatted_messages = _convert_messages(params.messages)
-
         if params.stream:
             response_stream = client.converse_stream(
-                modelId=params.model_id,
-                messages=formatted_messages,
-                system=system_message,
                 **completion_kwargs,
             )
             stream_generator = response_stream["stream"]
             return (
-                chunk
-                for chunk in (
-                    _create_openai_chunk_from_aws_chunk(item, model=params.model_id) for item in stream_generator
-                )
-                if chunk is not None
+                self._convert_completion_chunk_response(item, model=params.model_id)
+                for item in stream_generator
+                if _create_openai_chunk_from_aws_chunk(item, model=params.model_id) is not None
             )
-        response = client.converse(
-            modelId=params.model_id,
-            messages=formatted_messages,
-            system=system_message,
-            **completion_kwargs,
-        )
+        response = client.converse(**completion_kwargs)
 
-        return _convert_response(response)
+        return self._convert_completion_response(response)
 
     async def aembedding(
         self,
@@ -180,7 +208,12 @@ class AwsProvider(Provider):
         """Create embeddings using AWS Bedrock."""
         self._check_aws_credentials()
 
-        client = boto3.client("bedrock-runtime", endpoint_url=self.config.api_base, region_name=self.region_name)  # type: ignore[no-untyped-call]
+        client = boto3.client(
+            "bedrock-runtime",
+            endpoint_url=self.config.api_base,
+            region_name=self.region_name,
+            **(self.config.client_args if self.config.client_args else {}),
+        )  # type: ignore[no-untyped-call]
 
         input_texts = [inputs] if isinstance(inputs, str) else inputs
 
@@ -203,15 +236,18 @@ class AwsProvider(Provider):
 
             total_tokens += response_body.get("inputTextTokenCount", 0)
 
-        return _create_openai_embedding_response_from_aws(embedding_data, model, total_tokens)
+        response_data = {"embedding_data": embedding_data, "model": model, "total_tokens": total_tokens}
+        return self._convert_embedding_response(response_data)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
-        client = boto3.client("bedrock", endpoint_url=self.config.api_base, region_name=self.region_name)  # type: ignore[no-untyped-call]
-        models_list = client.list_foundation_models(**kwargs).get("modelSummaries", [])
-        # AWS doesn't provide a creation date for models
-        # AWS doesn't provide typing, but per https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/bedrock/client/list_foundation_models.html
-        # the modelId is a string and will not be None
-        return [Model(id=model["modelId"], object="model", created=0, owned_by="aws") for model in models_list]
+        client = boto3.client(
+            "bedrock",
+            endpoint_url=self.config.api_base,
+            region_name=self.region_name,
+            **(self.config.client_args if self.config.client_args else {}),
+        )  # type: ignore[no-untyped-call]
+        response = client.list_foundation_models(**kwargs)
+        return self._convert_list_models_response(response)

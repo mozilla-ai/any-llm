@@ -2,20 +2,15 @@ import json
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-try:
-    from mistralai.models import AssistantMessageContent as MistralAssistantMessageContent
-    from mistralai.models import CompletionEvent
-    from mistralai.models import ModelList as MistralModelList
-    from mistralai.models import ReferenceChunk as MistralReferenceChunk
-    from mistralai.models import TextChunk as MistralTextChunk
-    from mistralai.models import ThinkChunk as MistralThinkChunk
-    from mistralai.models.chatcompletionresponse import ChatCompletionResponse as MistralChatCompletionResponse
-    from mistralai.models.toolcall import ToolCall as MistralToolCall
-    from mistralai.types.basemodel import Unset
-except ImportError as exc:
-    msg = "mistralai is not installed. Please install it with `pip install any-llm-sdk[mistral]`"
-    raise ImportError(msg) from exc
-
+from mistralai.models import AssistantMessageContent as MistralAssistantMessageContent
+from mistralai.models import CompletionEvent
+from mistralai.models import ModelList as MistralModelList
+from mistralai.models import ReferenceChunk as MistralReferenceChunk
+from mistralai.models import TextChunk as MistralTextChunk
+from mistralai.models import ThinkChunk as MistralThinkChunk
+from mistralai.models.chatcompletionresponse import ChatCompletionResponse as MistralChatCompletionResponse
+from mistralai.models.toolcall import ToolCall as MistralToolCall
+from mistralai.types.basemodel import Unset
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -345,10 +340,6 @@ def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for i, msg in enumerate(messages):
         processed_msg.append(msg)
         if msg.get("role") == "tool":
-            if i > 0 and messages[i - 1].get("role") != "assistant":
-                # Use a different variable name for the error message
-                error_msg = "A tool message must be preceded by an assistant message with tool_calls."
-                raise ValueError(error_msg)
             if i + 1 < len(messages) and messages[i + 1].get("role") == "user":
                 # Mistral expects an assistant message after a tool message
                 processed_msg.append({"role": "assistant", "content": "OK"})

@@ -1,7 +1,7 @@
 import tomllib
 from pathlib import Path
 
-from any_llm.provider import ProviderName
+from any_llm.constants import ProviderName
 
 
 def test_all_providers_have_pyproject_options() -> None:

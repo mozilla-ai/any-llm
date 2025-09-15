@@ -1,19 +1,19 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
-
-try:
-    from voyageai.client_async import AsyncClient
-
-    from any_llm.providers.voyage.utils import (
-        _create_openai_embedding_response_from_voyage,
-    )
-
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
 
 from any_llm.provider import Provider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+from any_llm.types.model import Model
+
+MISSING_PACKAGES_ERROR = None
+try:
+    from voyageai.client_async import AsyncClient
+
+    from .utils import (
+        _create_openai_embedding_response_from_voyage,
+    )
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 
 class VoyageProvider(Provider):
@@ -28,11 +28,53 @@ class VoyageProvider(Provider):
     SUPPORTS_COMPLETION = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_COMPLETION_STREAMING = False
+    SUPPORTS_COMPLETION_IMAGE = False
+    SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_RESPONSES = False
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = False
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
+
+    @staticmethod
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert CompletionParams to kwargs for Voyage API."""
+        msg = "Voyage does not support completions"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        """Convert Voyage response to OpenAI format."""
+        msg = "Voyage does not support completions"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        """Convert Voyage chunk response to OpenAI format."""
+        msg = "Voyage does not support completions"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
+        """Convert embedding parameters for Voyage."""
+        if isinstance(params, str):
+            params = [params]
+        converted_params = {"texts": params}
+        converted_params.update(kwargs)
+        return converted_params
+
+    @staticmethod
+    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
+        """Convert Voyage embedding response to OpenAI format."""
+        # We need the model parameter for conversion
+        model = response.get("model", "voyage-model")
+        return _create_openai_embedding_response_from_voyage(model, response["result"])
+
+    @staticmethod
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        """Convert Voyage list models response to OpenAI format."""
+        msg = "Voyage does not support listing models"
+        raise NotImplementedError(msg)
 
     async def aembedding(
         self,
@@ -40,16 +82,16 @@ class VoyageProvider(Provider):
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        if isinstance(inputs, str):
-            inputs = [inputs]
-
-        client = AsyncClient(api_key=self.config.api_key)
-        result = await client.embed(
-            texts=inputs,
-            model=model,
-            **kwargs,
+        embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
+        client = AsyncClient(
+            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
         )
-        return _create_openai_embedding_response_from_voyage(model, result)
+        result = await client.embed(
+            model=model,
+            **embedding_kwargs,
+        )
+        response_data = {"model": model, "result": result}
+        return self._convert_embedding_response(response_data)
 
     async def acompletion(
         self, params: CompletionParams, **kwargs: Any

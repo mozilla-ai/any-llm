@@ -1,11 +1,10 @@
-import sys
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from any_llm.provider import ApiConfig, ProviderFactory
+from any_llm.config import ClientConfig
 from any_llm.types.completion import ChatCompletion, CompletionParams
 
 
@@ -26,21 +25,6 @@ def mock_xai_provider():  # type: ignore[no-untyped-def]
         yield mock_xai, mock_response
 
 
-def test_provider_with_no_packages_installed() -> None:
-    with patch.dict(sys.modules, dict.fromkeys(["xai_sdk"])):
-        try:
-            import any_llm.providers.xai  # noqa: F401
-        except ImportError:
-            pytest.fail("Import raised an unexpected ImportError")
-
-
-def test_call_to_provider_with_no_packages_installed() -> None:
-    packages = ["xai_sdk"]
-    with patch.dict(sys.modules, dict.fromkeys(packages)):
-        with pytest.raises(ImportError, match="xai required packages are not installed"):
-            ProviderFactory.create_provider("xai", ApiConfig())
-
-
 @pytest.mark.asyncio
 async def test_response_function_call_id_is_preserved() -> None:
     from any_llm.providers.xai.xai import XaiProvider
@@ -52,7 +36,7 @@ async def test_response_function_call_id_is_preserved() -> None:
         tool_call.function.arguments = '{"key": "value"}'
         mock_response.tool_calls = [tool_call]
 
-        provider = XaiProvider(ApiConfig(api_key="test-api-key"))
+        provider = XaiProvider(ClientConfig(api_key="test-api-key"))
         response = await provider.acompletion(
             CompletionParams(model_id="model", messages=[{"role": "user", "content": "Hello"}])
         )
@@ -67,7 +51,7 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
     from any_llm.providers.xai.xai import XaiProvider
 
     with mock_xai_provider() as (mock_xai, _):
-        provider = XaiProvider(ApiConfig(api_key="test-api-key"))
+        provider = XaiProvider(ClientConfig(api_key="test-api-key"))
         await provider.acompletion(CompletionParams(model_id="model", messages=agent_loop_messages))
         _, call_kwargs = mock_xai.return_value.chat.create.call_args
 

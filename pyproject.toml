@@ -19,7 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 
 all = [
-  "any-llm-sdk[mistral,anthropic,huggingface,google,cohere,cerebras,fireworks,groq,aws,azure,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,perplexity,llamafile,llamacpp]"
+  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,cohere,cerebras,fireworks,groq,bedrock,azure,azureopenai,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,perplexity,llamafile,llamacpp,sagemaker]"
 ]
 
 perplexity = []
@@ -32,7 +32,11 @@ anthropic = [
   "anthropic",
 ]
 
-google = [
+gemini = [
+  "google-genai",
+]
+
+vertexai = [
   "google-genai",
 ]
 
@@ -46,18 +50,13 @@ cohere = [
 
 cerebras = [
   "cerebras_cloud_sdk>=1.23.0",
-  "instructor",
-]
-
-fireworks = [
-  "fireworks-ai>=0.17.16",
 ]
 
 groq = [
   "groq"
 ]
 
-aws = [
+bedrock = [
   "boto3",
   "instructor",
 ]
@@ -91,11 +90,17 @@ xai = [
   "xai-sdk>=1.0.1",
 ]
 
+sagemaker = [
+  "boto3",
+]
+
 # These providers don't require any additional dependencies, but are included for completeness.
+azureopenai = []
 moonshot = []
 nebius = []
 databricks = []
 deepseek = []
+fireworks = []
 inception = []
 openai = []
 portkey = []
@@ -222,7 +227,7 @@ docs = [
 
 lint = [
   "pre-commit==4.3.0",
-  "pre-commit-uv==4.1.4",
+  "pre-commit-uv==4.1.5",
 ]
 
 tests = [
@@ -233,6 +238,7 @@ tests = [
   "pytest-xdist>=3.6.1",
   "pytest-timeout",
   "debugpy",
+  "aiofiles",
 ]
 
 # For completeness, but 'uv sync --group dev' currently installs the others too.

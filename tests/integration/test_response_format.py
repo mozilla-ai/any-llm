@@ -7,9 +7,9 @@ from pydantic import BaseModel
 
 from any_llm import ProviderName, acompletion
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
-from any_llm.provider import ProviderFactory
+from any_llm.factory import ProviderFactory
 from any_llm.types.completion import ChatCompletion
-from tests.constants import LOCAL_PROVIDERS
+from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 
 @pytest.mark.asyncio
@@ -48,10 +48,12 @@ async def test_response_format(
         output = ResponseFormat.model_validate_json(result.choices[0].message.content)
         assert "paris" in output.city_name.lower()
     except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except UnsupportedParameterError:
         pytest.skip(f"{provider.value} does not support response_format, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in LOCAL_PROVIDERS:
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise

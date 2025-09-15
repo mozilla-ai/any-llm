@@ -2,6 +2,9 @@ import json
 from time import time
 from typing import Any
 
+from google.genai import types
+from google.genai.pagers import Pager
+
 from any_llm.types.completion import (
     ChatCompletionChunk,
     ChoiceDelta,
@@ -13,13 +16,6 @@ from any_llm.types.completion import (
 )
 from any_llm.types.model import Model
 
-try:
-    from google.genai import types
-    from google.genai.pagers import Pager
-except ImportError as exc:
-    msg = "google-genai is not installed. Please install it with `pip install any-llm-sdk[google]`"
-    raise ImportError(msg) from exc
-
 
 def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[types.Tool]:
     """Convert OpenAI tool specification to Google GenAI format."""
@@ -30,7 +26,6 @@ def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[types.Tool]:
             continue
 
         function = tool["function"]
-        # Preserve nested schema details such as items/additionalProperties for arrays/objects
         properties: dict[str, dict[str, Any]] = {}
         for param_name, param_info in function["parameters"]["properties"].items():
             prop: dict[str, Any] = {
@@ -39,12 +34,10 @@ def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[types.Tool]:
             }
             if "enum" in param_info:
                 prop["enum"] = param_info["enum"]
-            # Google requires explicit items for arrays
             if "items" in param_info:
                 prop["items"] = param_info["items"]
             if prop.get("type") == "array" and "items" not in prop:
                 prop["items"] = {"type": "string"}
-            # Google tool schema does not accept additionalProperties; drop it
             properties[param_name] = prop
 
         parameters_dict = {
@@ -85,11 +78,18 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[types.Conten
             else:
                 system_instruction += f"\n{message['content']}"
         elif message["role"] == "user":
-            parts = [types.Part.from_text(text=message["content"])]
+            if isinstance(message["content"], str):
+                parts = [types.Part.from_text(text=message["content"])]
+            else:
+                parts = [
+                    types.Part.from_text(text=content["text"])
+                    for content in message["content"]
+                    if content["type"] == "text"
+                ]
             formatted_messages.append(types.Content(role="user", parts=parts))
         elif message["role"] == "assistant":
             if message.get("tool_calls"):
-                tool_call = message["tool_calls"][0]  # Assuming single function call for now
+                tool_call = message["tool_calls"][0]
                 function_call = tool_call["function"]
 
                 parts = [
@@ -142,6 +142,9 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
         and len(response.candidates[0].content.parts) > 0
     ):
         reasoning = None
+        tool_calls_list: list[dict[str, Any]] = []
+        text_content = None
+
         for part in response.candidates[0].content.parts:
             if getattr(part, "thought", None):
                 reasoning = part.text
@@ -151,40 +154,45 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                     for key, value in args.items():
                         args_dict[key] = value
 
-                choices.append(
+                tool_calls_list.append(
                     {
-                        "message": {
-                            "role": "assistant",
-                            "content": None,
-                            "reasoning": reasoning,
-                            "tool_calls": [
-                                {
-                                    "id": f"call_{hash(function_call.name)}",
-                                    "function": {
-                                        "name": function_call.name,
-                                        "arguments": json.dumps(args_dict),
-                                    },
-                                    "type": "function",
-                                }
-                            ],
+                        "id": f"call_{hash(function_call.name)}_{len(tool_calls_list)}",
+                        "function": {
+                            "name": function_call.name,
+                            "arguments": json.dumps(args_dict),
                         },
-                        "finish_reason": "tool_calls",
-                        "index": 0,
+                        "type": "function",
                     }
                 )
             elif getattr(part, "text", None):
-                choices.append(
-                    {
-                        "message": {
-                            "role": "assistant",
-                            "content": part.text,
-                            "reasoning": reasoning,
-                            "tool_calls": None,
-                        },
-                        "finish_reason": "stop",
-                        "index": 0,
-                    }
-                )
+                text_content = part.text
+
+        if tool_calls_list:
+            choices.append(
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "reasoning": reasoning,
+                        "tool_calls": tool_calls_list,
+                    },
+                    "finish_reason": "tool_calls",
+                    "index": 0,
+                }
+            )
+        elif text_content:
+            choices.append(
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": text_content,
+                        "reasoning": reasoning,
+                        "tool_calls": None,
+                    },
+                    "finish_reason": "stop",
+                    "index": 0,
+                }
+            )
 
     response_dict["choices"] = choices
 
@@ -206,7 +214,6 @@ def _create_openai_embedding_response_from_google(
         if embedding.values
     ]
 
-    # Google does not provide usage data in the embedding response
     usage = Usage(prompt_tokens=0, total_tokens=0)
 
     return CreateEmbeddingResponse(
@@ -232,10 +239,8 @@ def _create_openai_chunk_from_google_chunk(
 
     for part in candidate.content.parts:
         if part.thought:
-            # This is a thinking/reasoning part
             reasoning_content += part.text or ""
         else:
-            # Regular content part
             content += part.text or ""
 
     delta = ChoiceDelta(
@@ -251,7 +256,7 @@ def _create_openai_chunk_from_google_chunk(
     )
 
     return ChatCompletionChunk(
-        id=f"chatcmpl-{time()}",  # Google doesn't provide an ID in the chunk
+        id=f"chatcmpl-{time()}",
         choices=[choice],
         created=int(time()),
         model=str(response.model_version),
@@ -260,5 +265,4 @@ def _create_openai_chunk_from_google_chunk(
 
 
 def _convert_models_list(models_list: Pager[types.Model]) -> list[Model]:
-    # Google doesn't provide a creation date for models
     return [Model(id=model.name or "Unknown", object="model", created=0, owned_by="google") for model in models_list]

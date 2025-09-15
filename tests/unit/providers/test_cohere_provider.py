@@ -3,8 +3,8 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
+from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ApiConfig
 from any_llm.providers.cohere.utils import _patch_messages
 from any_llm.types.completion import CompletionParams
 
@@ -13,7 +13,7 @@ def _mk_provider() -> Any:
     pytest.importorskip("cohere")
     from any_llm.providers.cohere.cohere import CohereProvider
 
-    return CohereProvider(ApiConfig(api_key="test-api-key"))
+    return CohereProvider(ClientConfig(api_key="test-api-key"))
 
 
 def test_preprocess_response_format() -> None:
@@ -136,5 +136,5 @@ def test_patch_messages_with_invalid_tool_sequence_raises_error() -> None:
         {"role": "user", "content": "What's the weather?"},
         {"role": "tool", "name": "get_weather", "content": "It's sunny", "tool_call_id": "call_123"},
     ]
-    with pytest.raises(ValueError, match="A tool message must be preceded by an assistant message with tool_calls."):
+    with pytest.raises(ValueError, match=r"A tool message must be preceded by an assistant message with tool_calls."):
         _patch_messages(messages)

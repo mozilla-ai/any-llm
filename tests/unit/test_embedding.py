@@ -3,7 +3,8 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from any_llm import aembedding
-from any_llm.provider import ProviderFactory, ProviderName
+from any_llm.constants import ProviderName
+from any_llm.factory import ProviderFactory
 from any_llm.types.completion import CreateEmbeddingResponse, Embedding, Usage
 
 

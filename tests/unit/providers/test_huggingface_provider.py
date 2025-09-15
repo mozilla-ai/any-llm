@@ -1,11 +1,8 @@
-import sys
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import patch
 
-import pytest
-
-from any_llm.provider import ApiConfig, ProviderFactory
+from any_llm.config import ClientConfig
 from any_llm.providers.huggingface.huggingface import HuggingfaceProvider
 from any_llm.types.completion import CompletionParams
 
@@ -35,10 +32,10 @@ def test_huggingface_with_api_base() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_huggingface_provider() as mock_huggingface:
-        provider = HuggingfaceProvider(ApiConfig(api_key=api_key, api_base=api_base))
+        provider = HuggingfaceProvider(ClientConfig(api_key=api_key, api_base=api_base))
         provider.completion(CompletionParams(model_id="model-id", messages=messages))
 
-        mock_huggingface.assert_called_with(base_url=api_base, token=api_key, timeout=None)
+        mock_huggingface.assert_called_with(base_url=api_base, token=api_key)
 
 
 def test_huggingface_with_api_key() -> None:
@@ -46,10 +43,10 @@ def test_huggingface_with_api_key() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_huggingface_provider() as mock_huggingface:
-        provider = HuggingfaceProvider(ApiConfig(api_key=api_key))
+        provider = HuggingfaceProvider(ClientConfig(api_key=api_key))
         provider.completion(CompletionParams(model_id="model-id", messages=messages))
 
-        mock_huggingface.assert_called_with(base_url=None, token=api_key, timeout=None)
+        mock_huggingface.assert_called_with(base_url=None, token=api_key)
 
         mock_huggingface.return_value.chat_completion.assert_called_with(model="model-id", messages=messages)
 
@@ -59,10 +56,10 @@ def test_huggingface_with_tools(tools: list[dict[str, Any]]) -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_huggingface_provider() as mock_huggingface:
-        provider = HuggingfaceProvider(ApiConfig(api_key=api_key))
+        provider = HuggingfaceProvider(ClientConfig(api_key=api_key))
         provider.completion(CompletionParams(model_id="model-id", messages=messages, tools=tools))
 
-        mock_huggingface.assert_called_with(base_url=None, token=api_key, timeout=None)
+        mock_huggingface.assert_called_with(base_url=None, token=api_key)
 
         mock_huggingface.return_value.chat_completion.assert_called_with(
             model="model-id", messages=messages, tools=tools
@@ -74,33 +71,14 @@ def test_huggingface_with_max_tokens() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_huggingface_provider() as mock_huggingface:
-        provider = HuggingfaceProvider(ApiConfig(api_key=api_key))
+        provider = HuggingfaceProvider(ClientConfig(api_key=api_key))
         provider.completion(CompletionParams(model_id="model-id", messages=messages, max_tokens=100))
 
-        mock_huggingface.assert_called_with(base_url=None, token=api_key, timeout=None)
+        mock_huggingface.assert_called_with(base_url=None, token=api_key)
 
         mock_huggingface.return_value.chat_completion.assert_called_with(
             model="model-id", messages=messages, max_new_tokens=100
         )
-
-
-def test_provider_with_no_packages_installed() -> None:
-    with patch.dict(sys.modules, dict.fromkeys(["huggingface_hub"])):
-        try:
-            import any_llm.providers.huggingface  # noqa: F401
-        except ImportError:
-            pytest.fail("Import raised an unexpected ImportError")
-
-
-def test_call_to_provider_with_no_packages_installed() -> None:
-    packages = ["huggingface_hub"]
-    with patch.dict(sys.modules, dict.fromkeys(packages)):
-        # Ensure a fresh import under the patched environment so PACKAGES_INSTALLED is recalculated
-        for mod in list(sys.modules):
-            if mod.startswith("any_llm.providers.huggingface"):
-                sys.modules.pop(mod)
-        with pytest.raises(ImportError, match="huggingface required packages are not installed"):
-            ProviderFactory.create_provider("huggingface", ApiConfig())
 
 
 def test_huggingface_with_timeout() -> None:
@@ -108,8 +86,8 @@ def test_huggingface_with_timeout() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_huggingface_provider() as mock_huggingface:
-        provider = HuggingfaceProvider(ApiConfig(api_key=api_key))
-        provider.completion(CompletionParams(model_id="model-id", messages=messages), timeout=10)
+        provider = HuggingfaceProvider(ClientConfig(api_key=api_key, client_args={"timeout": 10}))
+        provider.completion(CompletionParams(model_id="model-id", messages=messages))
 
         mock_huggingface.assert_called_with(base_url=None, token=api_key, timeout=10)
 

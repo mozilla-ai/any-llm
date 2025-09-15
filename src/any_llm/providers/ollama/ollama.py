@@ -1,28 +1,35 @@
+from __future__ import annotations
+
 import json
 import os
-from collections.abc import AsyncIterator, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from pydantic import BaseModel
+
+from any_llm.provider import Provider
+
+MISSING_PACKAGES_ERROR = None
 try:
     from ollama import AsyncClient, Client
-    from ollama import ChatResponse as OllamaChatResponse
 
-    from any_llm.providers.ollama.utils import (
+    from .utils import (
         _convert_models_list,
         _create_chat_completion_from_ollama_response,
         _create_openai_chunk_from_ollama_chunk,
         _create_openai_embedding_response_from_ollama,
     )
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Sequence
 
-from pydantic import BaseModel
+    from ollama import AsyncClient, Client  # noqa: TC004
+    from ollama import ChatResponse as OllamaChatResponse
 
-from any_llm.provider import ApiConfig, Provider
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
-from any_llm.types.model import Model
+    from any_llm.config import ClientConfig
+    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+    from any_llm.types.model import Model
 
 
 class OllamaProvider(Provider):
@@ -41,15 +48,88 @@ class OllamaProvider(Provider):
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
+    SUPPORTS_COMPLETION_IMAGE = True
+    SUPPORTS_COMPLETION_PDF = True
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
-    def __init__(self, config: ApiConfig) -> None:
+    @staticmethod
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert CompletionParams to kwargs for Ollama API."""
+        # Ollama does not support providing reasoning effort
+        converted_params = params.model_dump(
+            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}
+        )
+        if converted_params.get("reasoning_effort") == "auto":
+            converted_params.pop("reasoning_effort")
+        converted_params.update(kwargs)
+        converted_params["num_ctx"] = converted_params.get("num_ctx", 32000)
+        return converted_params
+
+    @staticmethod
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        """Convert Ollama response to OpenAI format."""
+        return _create_chat_completion_from_ollama_response(response)
+
+    @staticmethod
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        """Convert Ollama chunk response to OpenAI format."""
+        return _create_openai_chunk_from_ollama_chunk(response)
+
+    @staticmethod
+    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
+        """Convert embedding parameters for Ollama."""
+        converted_params = {"input": params}
+        converted_params.update(kwargs)
+        return converted_params
+
+    @staticmethod
+    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
+        """Convert Ollama embedding response to OpenAI format."""
+        return _create_openai_embedding_response_from_ollama(response)
+
+    @staticmethod
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        """Convert Ollama list models response to OpenAI format."""
+        return _convert_models_list(response)
+
+    def __init__(self, config: ClientConfig) -> None:
         """We don't use the Provider init because by default we don't require an API key."""
+        self._verify_no_missing_packages()
 
         self.url = config.api_base or os.getenv("OLLAMA_API_URL")
+        self.config = config
+
+    def _extract_images_from_message(self, message: dict[str, Any]) -> tuple[str, list[str]]:
+        """
+        Extract images from OpenAI format message and return text content + base64 image strings.
+
+        Args:
+            message: OpenAI format message that may contain image_url content
+
+        Returns:
+            tuple of (text_content, list_of_base64_image_strings)
+        """
+        content = message.get("content", "")
+        images = []
+
+        if isinstance(content, list):
+            text_parts = []
+            for item in content:
+                if item.get("type") == "text":
+                    text_parts.append(item.get("text", ""))
+                elif item.get("type") == "image_url":
+                    image_url = item.get("image_url", {}).get("url", "")
+                    if image_url.startswith("data:image/"):
+                        base64_data = image_url.split(",", 1)[1] if "," in image_url else ""
+                        if base64_data:
+                            # Ollama expects base64 strings directly
+                            images.append(base64_data)
+            content = " ".join(text_parts)
+
+        return content, images
 
     async def _stream_completion_async(
         self,
@@ -68,7 +148,7 @@ class OllamaProvider(Provider):
             options=kwargs,
         )
         async for chunk in response:
-            yield _create_openai_chunk_from_ollama_chunk(chunk)
+            yield self._convert_completion_chunk_response(chunk)
 
     async def acompletion(
         self,
@@ -92,7 +172,7 @@ class OllamaProvider(Provider):
         cleaned_messages = []
         for input_message in params.messages:
             if input_message["role"] == "tool":
-                cleaned_message = {
+                cleaned_message: dict[str, Any] = {
                     "role": "user",
                     "content": json.dumps(input_message["content"]),
                 }
@@ -105,35 +185,34 @@ class OllamaProvider(Provider):
             else:
                 cleaned_message = input_message.copy()
 
+                if input_message["role"] == "user":
+                    text_content, image_base64_list = self._extract_images_from_message(input_message)
+                    cleaned_message["content"] = text_content
+
+                    if image_base64_list:
+                        cleaned_message["images"] = image_base64_list
+
             cleaned_messages.append(cleaned_message)
 
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
+        completion_kwargs = self._convert_completion_params(params, **kwargs)
 
-        kwargs = {
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}),
-            **kwargs,
-        }
+        if completion_kwargs.get("reasoning_effort") is not None:
+            completion_kwargs["think"] = True
 
-        kwargs["num_ctx"] = kwargs.get("num_ctx", 32000)
-
-        if params.reasoning_effort is not None:
-            kwargs["think"] = True
-
-        client = AsyncClient(host=self.url, timeout=kwargs.pop("timeout", None))
+        client = AsyncClient(host=self.url, **(self.config.client_args if self.config.client_args else {}))
 
         if params.stream:
-            return self._stream_completion_async(client, params.model_id, cleaned_messages, **kwargs)
+            return self._stream_completion_async(client, params.model_id, cleaned_messages, **completion_kwargs)
 
         response: OllamaChatResponse = await client.chat(
             model=params.model_id,
-            tools=kwargs.pop("tools", None),
-            think=kwargs.pop("think", None),
+            tools=completion_kwargs.pop("tools", None),
+            think=completion_kwargs.pop("think", None),
             messages=cleaned_messages,
             format=output_format,
-            options=kwargs,
+            options=completion_kwargs,
         )
-        return _create_chat_completion_from_ollama_response(response)
+        return self._convert_completion_response(response)
 
     async def aembedding(
         self,
@@ -142,19 +221,19 @@ class OllamaProvider(Provider):
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         """Generate embeddings using Ollama."""
-        client = AsyncClient(host=self.url, timeout=kwargs.pop("timeout", None))
+        client = AsyncClient(host=self.url, **(self.config.client_args if self.config.client_args else {}))
 
+        embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
         response = await client.embed(
             model=model,
-            input=inputs,
-            **kwargs,
+            **embedding_kwargs,
         )
-        return _create_openai_embedding_response_from_ollama(response)
+        return self._convert_embedding_response(response)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
-        client = Client(host=self.url, timeout=kwargs.pop("timeout", None))
+        client = Client(host=self.url, **(self.config.client_args if self.config.client_args else {}))
         models_list = client.list(**kwargs)
-        return _convert_models_list(models_list)
+        return self._convert_list_models_response(models_list)

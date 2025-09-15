@@ -1,0 +1,106 @@
+name: Local Providers Integration Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '.github/workflows/**'
+      - 'pyproject.toml'
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: the arg you want to pass to pytest filter (-k)
+        type: string
+
+jobs:
+  run-local-integration-tests:
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: 3.13
+          activate-environment: true
+
+      - name: Install dependencies
+        run: |
+          uv sync --group tests --extra all
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.ollama
+          key: ${{ runner.os }}-ollama-models-${{ hashFiles('tests/conftest.py') }}
+          restore-keys: |
+            ${{ runner.os }}-ollama-models-
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.llamafile
+          key: ${{ runner.os }}-llamafile-${{ hashFiles('tests/conftest.py') }}
+          restore-keys: |
+            ${{ runner.os }}-llamafile-
+
+      - name: Setup Ollama
+        uses: ai-action/setup-ollama@v1
+
+      - name: Run ollama
+        run: |
+          ollama serve &
+          ollama pull llama3.2:1b
+          ollama pull qwen3:0.6b
+          ollama pull llava:7b
+
+      - name: Wait for Ollama to be ready
+        run: |
+          timeout 60 bash -c 'until curl -s http://localhost:11434/api/tags >/dev/null; do sleep 1; done'
+
+      - name: Download and Run LlamaFile
+        run: |
+          mkdir -p ~/.llamafile
+          LLAMAFILE_PATH="$HOME/.llamafile/Qwen_Qwen3-0.6B-Q4_K_M.llamafile"
+
+          if [ ! -f "$LLAMAFILE_PATH" ]; then
+            echo "Downloading llamafile (not found in cache)..."
+            wget -O "$LLAMAFILE_PATH" https://huggingface.co/Mozilla/Qwen3-0.6B-llamafile/resolve/main/Qwen_Qwen3-0.6B-Q4_K_M.llamafile
+            chmod +x "$LLAMAFILE_PATH"
+          else
+            echo "Using cached llamafile"
+          fi
+
+          "$LLAMAFILE_PATH" --server --v2 &
+          echo $! > llamafile.pid
+
+      - name: Wait for LlamaFile to be ready
+        run: |
+          timeout 60 bash -c 'until curl -s http://localhost:8080/v1/models >/dev/null; do sleep 1; done'
+
+      - name: Run Local Provider Integration tests (parallel with xdist)
+        env:
+          INCLUDE_LOCAL_PROVIDERS: "true"
+          INCLUDE_NON_LOCAL_PROVIDERS: "false"
+          EXPECTED_PROVIDERS: "ollama,llamafile"
+        run: |
+          if [ -n "${{ inputs.filter }}" ]; then
+            pytest tests/integration -v -n auto --cov --cov-report=xml -k "${{ inputs.filter }}"
+          else
+            pytest tests/integration -v -n auto --cov --cov-report=xml
+          fi
+
+      - name: Cleanup LlamaFile process
+        if: always()
+        run: |
+          if [ -f llamafile.pid ]; then
+            kill $(cat llamafile.pid) || true
+            rm llamafile.pid
+          fi
+
+      - name: Upload coverage reports to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}

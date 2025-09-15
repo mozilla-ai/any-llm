@@ -3,25 +3,23 @@ from typing import Any, cast
 
 from pydantic import BaseModel
 
+from any_llm.exceptions import UnsupportedParameterError
+from any_llm.provider import Provider
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+from any_llm.types.model import Model
+
+MISSING_PACKAGES_ERROR = None
 try:
     import cerebras.cloud.sdk as cerebras
-    import instructor
     from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponse
 
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
-
-from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ApiConfig, Provider
-from any_llm.providers.cerebras.utils import (
-    _convert_models_list,
-    _convert_response,
-    _create_openai_chunk_from_cerebras_chunk,
-)
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
-from any_llm.types.model import Model
-from any_llm.utils.instructor import _convert_instructor_response
+    from .utils import (
+        _convert_models_list,
+        _convert_response,
+        _create_openai_chunk_from_cerebras_chunk,
+    )
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 
 class CerebrasProvider(Provider):
@@ -35,16 +33,52 @@ class CerebrasProvider(Provider):
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
+    SUPPORTS_COMPLETION_IMAGE = False
+    SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
-    def __init__(self, config: ApiConfig) -> None:
-        """Initialize Cerebras provider."""
-        super().__init__(config)
-        self.client = cerebras.Cerebras(api_key=config.api_key)
-        self.instructor_client = instructor.from_cerebras(self.client)
+    @staticmethod
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert CompletionParams to kwargs for Cerebras API."""
+        # Cerebras does not support providing reasoning effort
+        converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"})
+        if converted_params.get("reasoning_effort") == "auto":
+            converted_params.pop("reasoning_effort")
+        converted_params.update(kwargs)
+        return converted_params
+
+    @staticmethod
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        """Convert Cerebras response to OpenAI format."""
+        return _convert_response(response)
+
+    @staticmethod
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        """Convert Cerebras chunk response to OpenAI format."""
+        if isinstance(response, ChatChunkResponse):
+            return _create_openai_chunk_from_cerebras_chunk(response)
+        msg = f"Unsupported chunk type: {type(response)}"
+        raise ValueError(msg)
+
+    @staticmethod
+    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
+        """Convert embedding parameters for Cerebras."""
+        msg = "Cerebras does not support embeddings"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
+        """Convert Cerebras embedding response to OpenAI format."""
+        msg = "Cerebras does not support embeddings"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        """Convert Cerebras list models response to OpenAI format."""
+        return _convert_models_list(response)
 
     async def _stream_completion_async(
         self,
@@ -54,7 +88,9 @@ class CerebrasProvider(Provider):
     ) -> AsyncIterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
 
-        client = cerebras.AsyncCerebras(api_key=self.config.api_key)
+        client = cerebras.AsyncCerebras(
+            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
+        )
 
         if kwargs.get("response_format", None) is not None:
             msg = "stream and response_format"
@@ -67,11 +103,7 @@ class CerebrasProvider(Provider):
         )
 
         async for chunk in cast("cerebras.AsyncStream[ChatCompletion]", cerebras_stream):
-            if isinstance(chunk, ChatChunkResponse):
-                yield _create_openai_chunk_from_cerebras_chunk(chunk)
-            else:
-                msg = f"Unsupported chunk type: {type(chunk)}"
-                raise ValueError(msg)
+            yield self._convert_completion_chunk_response(chunk)
 
     async def acompletion(
         self,
@@ -80,41 +112,35 @@ class CerebrasProvider(Provider):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using Cerebras with instructor support for structured outputs."""
 
-        # Cerebras does not support providing reasoning effort
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
+        if params.response_format:
+            # See https://inference-docs.cerebras.ai/capabilities/structured-outputs for guide to creating schema
+            if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
+                params.response_format = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "response_schema",
+                        "schema": params.response_format.model_json_schema(),
+                        "strict": True,
+                    },
+                }
+
+        completion_kwargs = self._convert_completion_params(params, **kwargs)
 
         if params.stream:
             return self._stream_completion_async(
                 params.model_id,
                 params.messages,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
-                **kwargs,
+                **completion_kwargs,
             )
 
-        client = cerebras.AsyncCerebras(api_key=self.config.api_key)
-        instructor_client = instructor.from_cerebras(client)
-
-        if params.response_format:
-            if not isinstance(params.response_format, type) or not issubclass(params.response_format, BaseModel):
-                msg = "response_format must be a pydantic model"
-                raise ValueError(msg)
-
-            instructor_response = await instructor_client.chat.completions.create(
-                model=params.model_id,
-                messages=cast("Any", params.messages),
-                response_model=params.response_format,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
-                **kwargs,
-            )
-
-            return _convert_instructor_response(instructor_response, params.model_id, self.PROVIDER_NAME)
+        client = cerebras.AsyncCerebras(
+            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
+        )
 
         response = await client.chat.completions.create(
             model=params.model_id,
             messages=params.messages,
-            **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
-            **kwargs,
+            **completion_kwargs,
         )
 
         if hasattr(response, "model_dump"):
@@ -123,11 +149,14 @@ class CerebrasProvider(Provider):
             msg = "Streaming responses are not supported in this context"
             raise ValueError(msg)
 
-        return _convert_response(response_data)
+        return self._convert_completion_response(response_data)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
-        models_list = self.client.models.list(**kwargs)
-        return _convert_models_list(models_list)
+        client = cerebras.Cerebras(
+            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
+        )
+        models_list = client.models.list(**kwargs)
+        return self._convert_list_models_response(models_list)

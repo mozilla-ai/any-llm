@@ -1,15 +1,18 @@
 import asyncio
+import base64
+from pathlib import Path
 from typing import Any
 
+import aiofiles
 import httpx
 import pytest
 from openai import APIConnectionError
 
 from any_llm import ProviderName, acompletion
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.provider import ProviderFactory
+from any_llm.factory import ProviderFactory
 from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
-from tests.constants import LOCAL_PROVIDERS
+from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 
 @pytest.mark.asyncio
@@ -37,9 +40,11 @@ async def test_async_completion(
             ],
         )
     except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in LOCAL_PROVIDERS:
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise
     assert isinstance(result, ChatCompletion)
@@ -79,8 +84,106 @@ async def test_async_completion_parallel(
         assert "paris" in results[0].choices[0].message.content.lower()
         assert "berlin" in results[1].choices[0].message.content.lower()
     except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in LOCAL_PROVIDERS:
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
+            pytest.skip("Local model host is not set up, skipping")
+        raise
+
+
+@pytest.mark.asyncio
+async def test_completion_with_image(
+    provider: ProviderName,
+    provider_image_model_map: dict[ProviderName, str],
+    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+) -> None:
+    cls = ProviderFactory.get_provider_class(provider)
+    if not cls.SUPPORTS_COMPLETION_IMAGE:
+        pytest.skip(f"{provider.value} does not support completion, skipping")
+
+    try:
+        assets_dir = Path(__file__).parent.parent / "assets"
+        async with aiofiles.open(assets_dir / "any-llm-logo.png", "rb") as image_file:
+            image_data = await image_file.read()
+            base64_img = base64.b64encode(image_data).decode("utf-8")
+        model_id = provider_image_model_map[provider]
+        extra_kwargs = provider_extra_kwargs_map.get(provider, {})
+        response = await acompletion(
+            model=model_id,
+            provider=provider,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Look at the image: does it say any-llm?"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{base64_img}"},
+                        },
+                    ],
+                }
+            ],
+            **extra_kwargs,
+        )
+        assert isinstance(response, ChatCompletion)
+        assert response.choices[0].message.content
+    except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} API key not provided, skipping")
+    except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
+            pytest.skip("Local model host is not set up, skipping")
+        raise
+
+
+@pytest.mark.asyncio
+async def test_completion_with_pdf(
+    provider: ProviderName,
+    provider_image_model_map: dict[ProviderName, str],
+    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+) -> None:
+    cls = ProviderFactory.get_provider_class(provider)
+    if not cls.SUPPORTS_COMPLETION_PDF:
+        pytest.skip(f"{provider.value} does not support completion, skipping")
+
+    try:
+        assets_dir = Path(__file__).parent.parent / "assets"
+        async with aiofiles.open(assets_dir / "cv_1.pdf", "rb") as pdf_file:
+            pdf_data = await pdf_file.read()
+            base64_pdf = base64.b64encode(pdf_data).decode("utf-8")
+        model_id = provider_image_model_map[provider]
+        extra_kwargs = provider_extra_kwargs_map.get(provider, {})
+        data_url = f"data:application/pdf;base64,{base64_pdf}"
+        response = await acompletion(
+            model=model_id,
+            provider=provider,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Look at the pdf: does it say any-llm?"},
+                        {
+                            "type": "file",
+                            "file": {
+                                "filename": "document.pdf",
+                                "file_data": data_url,
+                            },
+                        },
+                    ],
+                }
+            ],
+            **extra_kwargs,
+        )
+        assert isinstance(response, ChatCompletion)
+        assert response.choices[0].message.content
+    except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} API key not provided, skipping")
+    except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local model host is not set up, skipping")
         raise

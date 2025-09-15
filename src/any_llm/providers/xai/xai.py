@@ -2,9 +2,10 @@ from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 from any_llm.provider import Provider
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
 
+MISSING_PACKAGES_ERROR = None
 try:
     from xai_sdk import AsyncClient as XaiAsyncClient
     from xai_sdk import Client as XaiClient
@@ -12,16 +13,15 @@ try:
     from xai_sdk.chat import Response as XaiResponse
     from xai_sdk.chat import assistant, required_tool, system, tool_result, user
 
-    from any_llm.providers.xai.utils import (
+    from .utils import (
         _convert_models_list,
         _convert_openai_tools_to_xai_tools,
         _convert_xai_chunk_to_anyllm_chunk,
         _convert_xai_completion_to_anyllm_response,
     )
 
-    PACKAGES_INSTALLED = True
-except ImportError:
-    PACKAGES_INSTALLED = False
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
 
 
 class XaiProvider(Provider):
@@ -33,17 +33,68 @@ class XaiProvider(Provider):
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_COMPLETION_REASONING = True
+    SUPPORTS_COMPLETION_IMAGE = False
+    SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_RESPONSES = False
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = PACKAGES_INSTALLED
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
+
+    @staticmethod
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert CompletionParams to kwargs for xAI API."""
+        # xAI does not support providing reasoning effort
+        converted_params = params.model_dump(
+            exclude_none=True,
+            exclude={
+                "model_id",
+                "messages",
+                "stream",
+                "response_format",
+                "tools",
+                "tool_choice",
+            },
+        )
+        if converted_params.get("reasoning_effort") == "auto":
+            converted_params.pop("reasoning_effort")
+        converted_params.update(kwargs)
+        return converted_params
+
+    @staticmethod
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        """Convert xAI response to OpenAI format."""
+        return _convert_xai_completion_to_anyllm_response(response)
+
+    @staticmethod
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        """Convert xAI chunk response to OpenAI format."""
+        return _convert_xai_chunk_to_anyllm_chunk(response)
+
+    @staticmethod
+    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
+        """Convert embedding parameters for xAI."""
+        msg = "xAI does not support embeddings"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
+        """Convert xAI embedding response to OpenAI format."""
+        msg = "xAI does not support embeddings"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        """Convert xAI list models response to OpenAI format."""
+        return _convert_models_list(response)
 
     async def acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Call the XAI Python SDK Chat Completions API and convert to AnyLLM types."""
-        client = XaiAsyncClient(api_key=self.config.api_key)
+        client = XaiAsyncClient(
+            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
+        )
 
         xai_messages = []
         for message in params.messages:
@@ -71,24 +122,12 @@ class XaiProvider(Provider):
         elif tool_choice is not None:
             kwargs["tool_choice"] = tool_choice
 
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
+        completion_kwargs = self._convert_completion_params(params, **kwargs)
 
         chat = client.chat.create(
             model=params.model_id,
             messages=xai_messages,
-            **params.model_dump(
-                exclude_none=True,
-                exclude={
-                    "model_id",
-                    "messages",
-                    "stream",
-                    "response_format",
-                    "tools",
-                    "tool_choice",
-                },
-            ),
-            **kwargs,
+            **completion_kwargs,
         )
         if params.stream:
             if params.response_format:
@@ -98,7 +137,7 @@ class XaiProvider(Provider):
 
             async def _stream() -> AsyncIterator[ChatCompletionChunk]:
                 async for _, chunk in stream_iter:
-                    yield _convert_xai_chunk_to_anyllm_chunk(chunk)
+                    yield self._convert_completion_chunk_response(chunk)
 
             return _stream()
 
@@ -107,12 +146,12 @@ class XaiProvider(Provider):
         else:
             response = await chat.sample()
 
-        return _convert_xai_completion_to_anyllm_response(response)
+        return self._convert_completion_response(response)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
-        client = XaiClient(api_key=self.config.api_key)
+        client = XaiClient(api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {}))
         models_list = client.models.list_language_models()
-        return _convert_models_list(models_list)
+        return self._convert_list_models_response(models_list)

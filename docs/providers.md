@@ -8,6 +8,7 @@ as well as what features the provider supports for each model, refer to the prov
     - **Reasoning (Completions)**: Provider can return reasoning traces alongside the assistant message via the completions and/or streaming endpoints. This does not indicate whether the provider offers separate "reasoning models".See [this](https://github.com/mozilla-ai/any-llm/issues/95)
     - **Streaming (Completions)**: Provider can stream completion results back as an iterator.
     discussion for more information.
+    - **Image (Completions)**: Provider supports passing an `image_data` parameter for vision capabilities, as defined by the OpenAI spec [here](https://platform.openai.com/docs/api-reference/chat/create#chat_create-messages).
     - **Responses API**: Provider supports the Responses API variant for text generation.  See [this](https://github.com/mozilla-ai/any-llm/issues/26) to follow along with our implementation effort.
     - **List Models API**: Provider supports listing available models programmatically via the `list_models()` function. This allows you to discover what models are available from the provider at runtime, which can be useful for dynamic model selection or validation.
 

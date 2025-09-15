@@ -30,6 +30,8 @@ class BaseOpenAIProvider(Provider, ABC):
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
+    SUPPORTS_COMPLETION_IMAGE = True
+    SUPPORTS_COMPLETION_PDF = True
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
 
@@ -37,55 +39,114 @@ class BaseOpenAIProvider(Provider, ABC):
 
     _DEFAULT_REASONING_EFFORT: Literal["minimal", "low", "medium", "high", "auto"] | None = None
 
+    @staticmethod
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert CompletionParams to kwargs for OpenAI API."""
+        converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
+        converted_params.update(kwargs)
+        return converted_params
+
+    @staticmethod
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        """Convert OpenAI response to OpenAI format (passthrough)."""
+        if isinstance(response, OpenAIChatCompletion):
+            return _convert_chat_completion(response)
+        # If it's already our ChatCompletion type, return it
+        if isinstance(response, ChatCompletion):
+            return response
+        # Otherwise, validate it as our type
+        return ChatCompletion.model_validate(response)
+
+    @staticmethod
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        """Convert OpenAI chunk response to OpenAI format (passthrough)."""
+        if isinstance(response, OpenAIChatCompletionChunk):
+            if not isinstance(response.created, int):
+                logger.warning(
+                    "API returned an unexpected created type: %s. Setting to int.",
+                    type(response.created),
+                )
+                response.created = int(response.created)
+            normalized_chunk = _normalize_openai_dict_response(response.model_dump())
+            return ChatCompletionChunk.model_validate(normalized_chunk)
+        # If it's already our ChatCompletionChunk type, return it
+        if isinstance(response, ChatCompletionChunk):
+            return response
+        # Otherwise, validate it as our type
+        return ChatCompletionChunk.model_validate(response)
+
+    @staticmethod
+    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
+        """Convert embedding parameters for OpenAI API."""
+        converted_params = {"input": params}
+        converted_params.update(kwargs)
+        return converted_params
+
+    @staticmethod
+    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
+        """Convert OpenAI embedding response to OpenAI format (passthrough)."""
+        if isinstance(response, CreateEmbeddingResponse):
+            return response
+        return CreateEmbeddingResponse.model_validate(response)
+
+    @staticmethod
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        """Convert OpenAI list models response to OpenAI format (passthrough)."""
+        if hasattr(response, "data"):
+            # Validate each model in the data
+            return [Model.model_validate(model) if not isinstance(model, Model) else model for model in response.data]
+        # If it's already a sequence of our Model type, return it
+        if isinstance(response, (list, tuple)) and all(isinstance(item, Model) for item in response):
+            return response
+        # Otherwise, validate each item
+        return [Model.model_validate(item) if not isinstance(item, Model) else item for item in response]
+
+    def _get_client(self, sync: bool = False) -> AsyncOpenAI | OpenAI:
+        _client_class = OpenAI if sync else AsyncOpenAI
+        return _client_class(
+            base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
+            api_key=self.config.api_key,
+            **(self.config.client_args if self.config.client_args else {}),
+        )
+
     def _convert_completion_response_async(
         self, response: OpenAIChatCompletion | AsyncStream[OpenAIChatCompletionChunk]
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Convert an OpenAI completion response to an AnyLLM completion response."""
         if isinstance(response, OpenAIChatCompletion):
-            return _convert_chat_completion(response)
+            return self._convert_completion_response(response)
 
         async def chunk_iterator() -> AsyncIterator[ChatCompletionChunk]:
             async for chunk in response:
-                if not isinstance(chunk.created, int):
-                    logger.warning(
-                        "API returned an unexpected created type: %s. Setting to int.",
-                        type(chunk.created),
-                    )
-                    chunk.created = int(chunk.created)
-
-                normalized_chunk = _normalize_openai_dict_response(chunk.model_dump())
-                yield ChatCompletionChunk.model_validate(normalized_chunk)
+                yield self._convert_completion_chunk_response(chunk)
 
         return chunk_iterator()
 
     async def acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        client = AsyncOpenAI(
-            base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
-            api_key=self.config.api_key,
-        )
+        client = cast("AsyncOpenAI", self._get_client(sync=False))
 
         if params.reasoning_effort == "auto":
             params.reasoning_effort = self._DEFAULT_REASONING_EFFORT
+
+        completion_kwargs = self._convert_completion_params(params, **kwargs)
 
         if params.response_format:
             if params.stream:
                 msg = "stream is not supported for response_format"
                 raise ValueError(msg)
-
+            completion_kwargs.pop("stream", None)
             response = await client.chat.completions.parse(
                 model=params.model_id,
                 messages=cast("Any", params.messages),
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"}),
-                **kwargs,
+                **completion_kwargs,
             )
         else:
             response = await client.chat.completions.create(
                 model=params.model_id,
                 messages=cast("Any", params.messages),
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages"}),
-                **kwargs,
+                **completion_kwargs,
             )
         return self._convert_completion_response_async(response)
 
@@ -93,10 +154,8 @@ class BaseOpenAIProvider(Provider, ABC):
         self, model: str, input_data: Any, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call OpenAI Responses API"""
-        client = AsyncOpenAI(
-            base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
-            api_key=self.config.api_key,
-        )
+        client = self._get_client()
+
         response = await client.responses.create(
             model=model,
             input=input_data,
@@ -118,15 +177,15 @@ class BaseOpenAIProvider(Provider, ABC):
             msg = "This provider does not support embeddings."
             raise NotImplementedError(msg)
 
-        client = AsyncOpenAI(
-            base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
-            api_key=self.config.api_key,
-        )
-        return await client.embeddings.create(
-            model=model,
-            input=inputs,
-            dimensions=kwargs.get("dimensions", NOT_GIVEN),
-            **kwargs,
+        client = cast("AsyncOpenAI", self._get_client())
+
+        embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
+        return self._convert_embedding_response(
+            await client.embeddings.create(
+                model=model,
+                dimensions=kwargs.get("dimensions", NOT_GIVEN),
+                **embedding_kwargs,
+            )
         )
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
@@ -136,8 +195,6 @@ class BaseOpenAIProvider(Provider, ABC):
         if not self.SUPPORTS_LIST_MODELS:
             message = f"{self.PROVIDER_NAME} does not support listing models."
             raise NotImplementedError(message)
-        client = OpenAI(
-            base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
-            api_key=self.config.api_key,
-        )
-        return client.models.list(**kwargs).data
+        client = cast("OpenAI", self._get_client(sync=True))
+        response = client.models.list(**kwargs)
+        return self._convert_list_models_response(response)

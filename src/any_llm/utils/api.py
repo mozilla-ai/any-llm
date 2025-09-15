@@ -3,7 +3,10 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel
 
-from any_llm.provider import ApiConfig, Provider, ProviderFactory, ProviderName
+from any_llm.config import ClientConfig
+from any_llm.constants import ProviderName
+from any_llm.factory import ProviderFactory
+from any_llm.provider import Provider
 from any_llm.tools import prepare_tools
 from any_llm.types.completion import ChatCompletionMessage, CompletionParams
 
@@ -35,6 +38,7 @@ def _process_completion_params(
     stream_options: dict[str, Any] | None,
     max_completion_tokens: int | None,
     reasoning_effort: Literal["minimal", "low", "medium", "high", "auto"] | None,
+    client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> tuple[Provider, CompletionParams]:
     if provider is None:
@@ -43,12 +47,7 @@ def _process_completion_params(
         provider_key = ProviderName.from_string(provider)
         model_name = model
 
-    config: dict[str, str] = {}
-    if api_key:
-        config["api_key"] = str(api_key)
-    if api_base:
-        config["api_base"] = str(api_base)
-    api_config = ApiConfig(**config)
+    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
 
     provider_instance = ProviderFactory.create_provider(provider_key, api_config)
 
