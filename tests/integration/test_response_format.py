@@ -35,7 +35,6 @@ async def test_response_format(
 
         result = await llm.acompletion(
             model=model_id,
-            provider=provider,
             messages=[{"role": "user", "content": prompt}],
             response_format=ResponseFormat,
             # From https://github.com/mozilla-ai/any-llm/issues/150, should be ok to set stream=False

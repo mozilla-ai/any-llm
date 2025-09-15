@@ -40,7 +40,6 @@ async def test_tool(
 
         result: ChatCompletion = await llm.acompletion(  # type: ignore[assignment]
             model=model_id,
-            provider=provider,
             messages=messages,
             tools=[echo],
         )

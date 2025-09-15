@@ -28,7 +28,6 @@ async def test_streaming_completion_async(
         num_chunks = 0
         stream = await llm.acompletion(
             model=model_id,
-            provider=provider,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that exactly follows the user request."},
                 {"role": "user", "content": "Say the exact phrase:'Hello World' with no fancy formatting"},

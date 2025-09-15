@@ -23,7 +23,7 @@ async def test_responses_async(
             pytest.skip(f"{provider.value} does not support responses, skipping")
         model_id = provider_reasoning_model_map[provider]
         result = await llm.aresponses(
-            f"{provider.value}/{model_id}",
+            model_id,
             input_data="What's the capital of France? Please think step by step.",
             instructions="Talk like a pirate.",
         )
