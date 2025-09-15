@@ -26,7 +26,7 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator, Sequence
+    from collections.abc import AsyncIterator, Sequence
 
     from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
         ChatCompletionStreamOutput as HuggingFaceChatCompletionStreamOutput,
@@ -98,18 +98,6 @@ class HuggingfaceProvider(AnyLLM):
         response: AsyncIterator[HuggingFaceChatCompletionStreamOutput] = await client.chat_completion(**kwargs)
 
         async for chunk in response:
-            yield self._convert_completion_chunk_response(chunk)
-
-    def _stream_completion(
-        self,
-        client: AsyncInferenceClient,
-        **kwargs: Any,
-    ) -> Iterator[ChatCompletionChunk]:
-        """Handle streaming completion - extracted to avoid generator issues."""
-        response: Iterator[HuggingFaceChatCompletionStreamOutput] = client.chat_completion(
-            **kwargs,
-        )
-        for chunk in response:
             yield self._convert_completion_chunk_response(chunk)
 
     async def _acompletion(
