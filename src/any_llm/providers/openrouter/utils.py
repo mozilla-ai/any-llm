@@ -12,32 +12,28 @@ from typing import Any
 def build_reasoning_directive(
     *,
     reasoning: Any | None = None,
-    include_reasoning: bool | None = None,
     reasoning_effort: str | None = None,
 ) -> dict[str, Any] | None:
     """Build OpenRouter's reasoning directive from user parameters.
 
     Args:
-        reasoning: Direct reasoning config (dict/object) - preferred
-        include_reasoning: Boolean toggle for reasoning output
-        reasoning_effort: Effort level ("low"/"medium"/"high")
+        reasoning: Direct reasoning config (dict/object) for advanced control
+        reasoning_effort: Standard effort level ("low"/"medium"/"high")
 
     Returns:
         Dict for request body "reasoning" key, or None to omit
     """
+    # Priority 1: Direct reasoning object for advanced users
     if reasoning is not None:
         return _normalize_reasoning_obj(reasoning)
 
-    if include_reasoning is True:
-        return {}
-    if include_reasoning is False:
-        return {"exclude": True}
-
-    if reasoning_effort:
+    # Priority 2: Standard reasoning_effort parameter
+    if reasoning_effort and reasoning_effort != "auto":
         level = str(reasoning_effort).lower()
         if level in {"low", "medium", "high"}:
             return {"effort": level}
 
+    # Default: No reasoning (including for "auto")
     return None
 
 
