@@ -14,7 +14,7 @@ from tests.constants import EXPECTED_PROVIDERS
 async def test_embedding_providers_async(
     provider: LLMProvider,
     embedding_provider_model_map: dict[LLMProvider, str],
-    provider_extra_kwargs_map: dict[LLMProvider, dict[str, Any]],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all embedding-supported providers can generate embeddings successfully."""
     cls = AnyLLM.get_provider_class(provider)
@@ -22,7 +22,7 @@ async def test_embedding_providers_async(
         pytest.skip(f"{provider.value} does not support embeddings, skipping")
 
     model_id = embedding_provider_model_map[provider]
-    extra_kwargs = provider_extra_kwargs_map.get(provider, {})
+    extra_kwargs = provider_client_config.get(provider, {})
     try:
         result = await aembedding(model=model_id, provider=provider, **extra_kwargs, inputs="Hello world")
     except MissingApiKeyError:

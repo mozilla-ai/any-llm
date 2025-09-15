@@ -101,7 +101,7 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
 
 
 @pytest.fixture
-def provider_extra_kwargs_map() -> dict[LLMProvider, dict[str, Any]]:
+def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
     return {
         LLMProvider.ANTHROPIC: {"client_args": {"timeout": 10}},
         LLMProvider.AZURE: {

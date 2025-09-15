@@ -11,12 +11,12 @@ from any_llm.types.model import Model
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 
-def test_list_models(provider: LLMProvider, provider_extra_kwargs_map: dict[LLMProvider, dict[str, Any]]) -> None:
+def test_list_models(provider: LLMProvider, provider_client_config: dict[LLMProvider, dict[str, Any]]) -> None:
     """Test that all supported providers can be loaded successfully."""
     cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_LIST_MODELS:
         pytest.skip(f"{provider.value} does not support listing models, skipping")
-    extra_kwargs = provider_extra_kwargs_map.get(provider, {})
+    extra_kwargs = provider_client_config.get(provider, {})
     try:
         available_models = list_models(provider=provider, **extra_kwargs)
         assert len(available_models) > 0

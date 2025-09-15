@@ -356,24 +356,30 @@ class AnyLLM(ABC):
             The completion response from the provider
 
         """
+        all_args = locals()
+        all_args.pop("self")
+        all_args["model_id"] = all_args.pop("model")
+        kwargs = all_args.pop("kwargs")
+
         if tools:
-            tools = prepare_tools(tools)  # type: ignore[assignment]
+            all_args["tools"] = prepare_tools(tools)  # type: ignore[assignment]
 
         for i, message in enumerate(messages):
             if isinstance(message, ChatCompletionMessage):
                 # Dump the message but exclude the extra field that we extend from OpenAI Spec
                 messages[i] = message.model_dump(exclude_none=True, exclude={"reasoning"})
-
-        all_args = locals()
-        all_args["model_id"] = all_args.pop("model")
-        kwargs = all_args.pop("kwargs")
+        all_args["messages"] = messages
+    
         return await self._acompletion(CompletionParams(**all_args), **kwargs)
 
-    @abstractmethod
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        pass
+        if not self.SUPPORTS_COMPLETION:
+            msg = "Provider doesn't support completion."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _acompletion method"
+        raise NotImplementedError(msg)
 
     def responses(self, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
         """Create a response synchronously.
@@ -442,11 +448,15 @@ class AnyLLM(ABC):
         kwargs = all_args.pop("kwargs")
         return await self._aresponses(ResponsesParams(**all_args, **kwargs))
 
-    @abstractmethod
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
-        pass
+        if not self.SUPPORTS_RESPONSES:
+            msg = "Provider doesn't support responses."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _aresponses method"
+        raise NotImplementedError(msg)
+
 
     def embedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:
         return run_async_in_sync(self.aembedding(model, inputs, **kwargs), allow_running_loop=INSIDE_NOTEBOOK)
@@ -454,9 +464,12 @@ class AnyLLM(ABC):
     async def aembedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:
         return await self._aembedding(model, inputs, **kwargs)
 
-    @abstractmethod
     async def _aembedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:
-        pass
+        if not self.SUPPORTS_EMBEDDING:
+            msg = "Provider doesn't support embedding."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _aembedding method"
+        raise NotImplementedError(msg)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """Return a list of Model if the provider supports listing models.

@@ -15,7 +15,7 @@ from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 async def test_completion_reasoning(
     provider: LLMProvider,
     provider_reasoning_model_map: dict[LLMProvider, str],
-    provider_extra_kwargs_map: dict[LLMProvider, dict[str, Any]],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
     cls = AnyLLM.get_provider_class(provider)
@@ -23,7 +23,7 @@ async def test_completion_reasoning(
         pytest.skip(f"{provider.value} does not support completion reasoning, skipping")
 
     model_id = provider_reasoning_model_map[provider]
-    extra_kwargs = provider_extra_kwargs_map.get(provider, {})
+    extra_kwargs = provider_client_config.get(provider, {})
     if provider in (LLMProvider.ANTHROPIC, LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.OLLAMA):
         extra_kwargs["reasoning_effort"] = "low"
 
@@ -52,7 +52,7 @@ async def test_completion_reasoning(
 async def test_completion_reasoning_streaming(
     provider: LLMProvider,
     provider_reasoning_model_map: dict[LLMProvider, str],
-    provider_extra_kwargs_map: dict[LLMProvider, dict[str, Any]],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that reasoning works with streaming for supported providers."""
     cls = AnyLLM.get_provider_class(provider)
@@ -62,7 +62,7 @@ async def test_completion_reasoning_streaming(
         pytest.skip(f"{provider.value} does not support streaming completion, skipping")
 
     model_id = provider_reasoning_model_map[provider]
-    extra_kwargs = provider_extra_kwargs_map.get(provider, {})
+    extra_kwargs = provider_client_config.get(provider, {})
     if provider in (LLMProvider.ANTHROPIC, LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.OLLAMA):
         extra_kwargs["reasoning_effort"] = "low"
 

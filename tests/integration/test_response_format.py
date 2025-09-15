@@ -15,7 +15,7 @@ from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 async def test_response_format(
     provider: LLMProvider,
     provider_model_map: dict[LLMProvider, str],
-    provider_extra_kwargs_map: dict[LLMProvider, dict[str, Any]],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
 
@@ -25,7 +25,7 @@ async def test_response_format(
     if not cls.SUPPORTS_COMPLETION:
         pytest.skip(f"{provider.value} does not support response_format, skipping")
     model_id = provider_model_map[provider]
-    extra_kwargs = provider_extra_kwargs_map.get(provider, {})
+    extra_kwargs = provider_client_config.get(provider, {})
 
     # From https://github.com/mozilla-ai/any-llm/issues/150, should be ok to set stream=False
     extra_kwargs["stream"] = False

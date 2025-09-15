@@ -14,14 +14,14 @@ from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 async def test_responses_async(
     provider: LLMProvider,
     provider_reasoning_model_map: dict[LLMProvider, str],
-    provider_extra_kwargs_map: dict[LLMProvider, dict[str, Any]],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
     cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_RESPONSES:
         pytest.skip(f"{provider.value} does not support responses, skipping")
     model_id = provider_reasoning_model_map[provider]
-    extra_kwargs = provider_extra_kwargs_map.get(provider, {})
+    extra_kwargs = provider_client_config.get(provider, {})
     try:
         result = await aresponses(
             f"{provider.value}/{model_id}",

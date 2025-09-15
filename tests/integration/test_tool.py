@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 async def test_tool(
     provider: LLMProvider,
     provider_model_map: dict[LLMProvider, str],
-    provider_extra_kwargs_map: dict[LLMProvider, dict[str, Any]],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
     if provider == LLMProvider.LLAMAFILE:
@@ -28,7 +28,7 @@ async def test_tool(
         pytest.skip(f"{provider.value} does not support tools, skipping")
 
     model_id = provider_model_map[provider]
-    extra_kwargs = provider_extra_kwargs_map.get(provider, {})
+    extra_kwargs = provider_client_config.get(provider, {})
 
     def echo(message: str) -> str:
         """Tool function to get the capital of a city."""
