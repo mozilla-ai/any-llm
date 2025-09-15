@@ -2,7 +2,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from any_llm import AnyLLM, aembedding
+from any_llm import AnyLLM
+from any_llm.api import aembedding
 from any_llm.constants import LLMProvider
 from any_llm.types.completion import CreateEmbeddingResponse, Embedding, Usage
 
@@ -17,7 +18,7 @@ async def test_embedding_with_api_config() -> None:
         object="list",
         usage=Usage(prompt_tokens=2, total_tokens=2),
     )
-    mock_provider.aembedding = AsyncMock(return_value=mock_embedding_response)
+    mock_provider._aembedding = AsyncMock(return_value=mock_embedding_response)
 
     with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
         mock_create.return_value = mock_provider
@@ -31,7 +32,7 @@ async def test_embedding_with_api_config() -> None:
         assert call_args[0][1].api_key == "test_key"
         assert call_args[0][1].api_base == "https://test.example.com"
 
-        mock_provider.aembedding.assert_called_once_with("test-model", "Hello world")
+        mock_provider._aembedding.assert_called_once_with("test-model", "Hello world")
         assert result == mock_embedding_response
 
 

@@ -3,7 +3,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from any_llm import AnyLLM, completion
+from any_llm import AnyLLM
+from any_llm.api import completion
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import UnsupportedProviderError
 
@@ -58,7 +59,7 @@ def test_completion_with_slash_syntax_shows_warning() -> None:
 
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        with patch("any_llm.utils.api.AnyLLM.create") as mock_create:
+        with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
             mock_create.return_value = mock_provider
 
             completion("openai/gpt-4", messages=[{"role": "user", "content": "Hello"}])

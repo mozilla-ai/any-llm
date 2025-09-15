@@ -1,4 +1,5 @@
-from collections.abc import AsyncIterator, Iterator, Sequence
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 
 from any_llm.any_llm import AnyLLM
@@ -11,11 +12,10 @@ from any_llm.types.completion import (
     CompletionUsage,
     CreateEmbeddingResponse,
 )
-from any_llm.types.model import Model
 
 MISSING_PACKAGES_ERROR = None
 try:
-    from huggingface_hub import AsyncInferenceClient, HfApi, InferenceClient
+    from huggingface_hub import AsyncInferenceClient, HfApi
 
     from .utils import (
         _convert_models_list,
@@ -26,9 +26,13 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterator, Sequence
+
     from huggingface_hub.inference._generated.types import (  # type: ignore[attr-defined]
         ChatCompletionStreamOutput as HuggingFaceChatCompletionStreamOutput,
     )
+
+    from any_llm.types.model import Model
 
 
 class HuggingfaceProvider(AnyLLM):
@@ -87,7 +91,7 @@ class HuggingfaceProvider(AnyLLM):
 
     async def _stream_completion_async(
         self,
-        client: "AsyncInferenceClient",
+        client: AsyncInferenceClient,
         **kwargs: Any,
     ) -> AsyncIterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
@@ -98,7 +102,7 @@ class HuggingfaceProvider(AnyLLM):
 
     def _stream_completion(
         self,
-        client: "InferenceClient",
+        client: AsyncInferenceClient,
         **kwargs: Any,
     ) -> Iterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""

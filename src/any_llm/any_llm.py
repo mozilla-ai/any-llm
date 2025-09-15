@@ -443,6 +443,7 @@ class AnyLLM(ABC):
         """
         all_args = locals()
         all_args.pop("self")
+        all_args["input"] = all_args.pop("input_data")
         kwargs = all_args.pop("kwargs")
 
         if tools:

@@ -34,7 +34,7 @@ async def test_unsupported_max_tool_calls_parameter() -> None:
     provider = GroqProvider(ClientConfig(api_key="test-api-key"))
 
     with pytest.raises(UnsupportedParameterError):
-        await provider._aresponses("test_model", "test_data", max_tool_calls=3)
+        await provider.aresponses("test_model", "test_data", max_tool_calls=3)
 
 
 @pytest.mark.asyncio

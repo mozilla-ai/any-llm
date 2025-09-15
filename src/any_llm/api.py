@@ -308,7 +308,6 @@ async def aresponses(
         stream: Whether to stream response events
         api_key: API key for the provider
         api_base: Base URL for the provider API
-        user: Unique identifier for the end user
         instructions: A system (or developer) message inserted into the model's context.
         max_tool_calls: The maximum number of total calls to built-in tools that can be processed in a response. This maximum number applies across all built-in tool calls, not per individual tool. Any further attempts to call a tool by the model will be ignored.
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.

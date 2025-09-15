@@ -1,10 +1,9 @@
 from typing import Any
 from unittest.mock import Mock, patch
 
-from any_llm import completion
+from any_llm.api import completion
 from any_llm.config import ClientConfig
 from any_llm.constants import LLMProvider
-from any_llm.types.completion import CompletionParams
 
 
 def test_completion_extracts_all_config_from_kwargs() -> None:
@@ -30,11 +29,10 @@ def test_completion_extracts_all_config_from_kwargs() -> None:
         )
 
         mock_provider.completion.assert_called_once()
-        args, kwargs = mock_provider.completion.call_args
-        assert isinstance(args[0], CompletionParams)
-        assert args[0].model_id == "mistral-small"
-        assert args[0].messages == [{"role": "user", "content": "Hello"}]
-        assert kwargs == {"other_param": "value"}
+        _, kwargs = mock_provider.completion.call_args
+        assert kwargs["model"] == "mistral-small"
+        assert kwargs["messages"] == [{"role": "user", "content": "Hello"}]
+        assert kwargs["other_param"] == "value"
 
 
 def test_completion_extracts_partial_config_from_kwargs() -> None:
@@ -55,11 +53,10 @@ def test_completion_extracts_partial_config_from_kwargs() -> None:
         mock_create.assert_called_once_with(LLMProvider.MISTRAL, ClientConfig(api_key="test_key"))
 
         mock_provider.completion.assert_called_once()
-        args, kwargs = mock_provider.completion.call_args
-        assert isinstance(args[0], CompletionParams)
-        assert args[0].model_id == "mistral-small"
-        assert args[0].messages == [{"role": "user", "content": "Hello"}]
-        assert kwargs == {"other_param": "value"}
+        _, kwargs = mock_provider.completion.call_args
+        assert kwargs["model"] == "mistral-small"
+        assert kwargs["messages"] == [{"role": "user", "content": "Hello"}]
+        assert kwargs["other_param"] == "value"
 
 
 def test_completion_no_config_extraction() -> None:
@@ -78,11 +75,10 @@ def test_completion_no_config_extraction() -> None:
         mock_create.assert_called_once_with(LLMProvider.MISTRAL, ClientConfig())
 
         mock_provider.completion.assert_called_once()
-        args, kwargs = mock_provider.completion.call_args
-        assert isinstance(args[0], CompletionParams)
-        assert args[0].model_id == "mistral-small"
-        assert args[0].messages == [{"role": "user", "content": "Hello"}]
-        assert kwargs == {"other_param": "value"}
+        _, kwargs = mock_provider.completion.call_args
+        assert kwargs["model"] == "mistral-small"
+        assert kwargs["messages"] == [{"role": "user", "content": "Hello"}]
+        assert kwargs["other_param"] == "value"
 
 
 def test_completion_extracts_api_base_only() -> None:
@@ -102,8 +98,6 @@ def test_completion_extracts_api_base_only() -> None:
         mock_create.assert_called_once_with(LLMProvider.OLLAMA, ClientConfig(api_base="https://custom-endpoint.com"))
 
         mock_provider.completion.assert_called_once()
-        args, kwargs = mock_provider.completion.call_args
-        assert isinstance(args[0], CompletionParams)
-        assert args[0].model_id == "llama2"
-        assert args[0].messages == [{"role": "user", "content": "Test"}]
-        assert kwargs == {}
+        _, kwargs = mock_provider.completion.call_args
+        assert kwargs["model"] == "llama2"
+        assert kwargs["messages"] == [{"role": "user", "content": "Test"}]

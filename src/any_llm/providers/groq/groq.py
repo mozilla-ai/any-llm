@@ -153,7 +153,7 @@ class GroqProvider(AnyLLM):
         """Call Groq Responses API and normalize into ChatCompletion/Chunks."""
         # Python SDK doesn't yet support it: https://community.groq.com/feature-requests-6/groq-python-sdk-support-for-responses-api-262
 
-        if "max_tool_calls" in kwargs:
+        if params.max_tool_calls is not None:
             parameter = "max_tool_calls"
             raise UnsupportedParameterError(parameter, self.PROVIDER_NAME)
 

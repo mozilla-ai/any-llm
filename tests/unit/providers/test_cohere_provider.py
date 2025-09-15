@@ -40,7 +40,7 @@ async def test_stream_and_response_format_combination_raises() -> None:
     provider = _mk_provider()
 
     with pytest.raises(UnsupportedParameterError):
-        await provider.acompletion(
+        await provider._acompletion(
             CompletionParams(
                 model_id="model-id",
                 messages=[{"role": "user", "content": "Hello"}],
@@ -55,7 +55,7 @@ async def test_parallel_tool_calls_raises() -> None:
     provider = _mk_provider()
 
     with pytest.raises(UnsupportedParameterError):
-        await provider.acompletion(
+        await provider._acompletion(
             CompletionParams(
                 model_id="model-id",
                 messages=[{"role": "user", "content": "Hello"}],

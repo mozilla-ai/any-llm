@@ -22,14 +22,20 @@ class ResponsesParams(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    model_id: str
+    model: str
     """Model identifier (e.g., 'mistral-small-latest')"""
 
-    input_data: str | ResponseInputParam
+    input: str | ResponseInputParam
     """The input payload accepted by provider's Responses API.
         For OpenAI-compatible providers, this is typically a list mixing
         text, images, and tool instructions, or a dict per OpenAI spec.
     """
+
+    instructions: str | None = None
+
+    max_tool_calls: int | None = None
+
+    text: Any | None = None
 
     tools: list[dict[str, Any]] | None = None
     """List of tools for tool calling. Should be converted to OpenAI tool format dicts"""
