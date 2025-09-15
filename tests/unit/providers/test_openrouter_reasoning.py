@@ -191,7 +191,7 @@ async def test_preserve_existing_extra_body() -> None:
 
     mock_completion = ChatCompletion(
         id="test-preserve",
-        object="chat.completion", 
+        object="chat.completion",
         created=1234567890,
         model="gpt-4",
         choices=[
