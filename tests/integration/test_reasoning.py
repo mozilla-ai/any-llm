@@ -23,15 +23,14 @@ async def test_completion_reasoning(
         pytest.skip(f"{provider.value} does not support reasoning, skipping")
 
     model_id = provider_reasoning_model_map[provider]
-    extra_kwargs = {}
-    if provider in (LLMProvider.ANTHROPIC, LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.OLLAMA):
-        extra_kwargs["reasoning_effort"] = "low"
 
     try:
         result = await llm.acompletion(
             model=model_id,
             messages=[{"role": "user", "content": "Please say hello! Think very briefly before you respond."}],
-            **extra_kwargs,
+            reasoning_effort="low"
+            if provider in (LLMProvider.ANTHROPIC, LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.OLLAMA)
+            else "auto",
         )
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:
@@ -62,9 +61,7 @@ async def test_completion_reasoning_streaming(
             pytest.skip(f"{provider.value} does not support streaming completion, skipping")
 
         model_id = provider_reasoning_model_map[provider]
-        extra_kwargs = {}
-        if provider in (LLMProvider.ANTHROPIC, LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.OLLAMA):
-            extra_kwargs["reasoning_effort"] = "low"
+
         output = ""
         reasoning = ""
         num_chunks = 0
@@ -72,7 +69,9 @@ async def test_completion_reasoning_streaming(
             model=model_id,
             messages=[{"role": "user", "content": "Please say hello! Think very briefly before you respond."}],
             stream=True,
-            **extra_kwargs,
+            reasoning_effort="low"
+            if provider in (LLMProvider.ANTHROPIC, LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.OLLAMA)
+            else "auto",
         )
         assert isinstance(results, AsyncIterable)
         async for result in results:
