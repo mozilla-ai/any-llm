@@ -52,7 +52,7 @@ export MISTRAL_API_KEY="YOUR_KEY_HERE"  # or OPENAI_API_KEY, etc
 ```python
 import os
 
-from any_llm import completion, ProviderName
+from any_llm import completion
 
 # Make sure you have the appropriate environment variable set
 assert os.environ.get('MISTRAL_API_KEY')
@@ -60,7 +60,7 @@ assert os.environ.get('MISTRAL_API_KEY')
 # Recommended: separate provider and model parameters
 response = completion(
     model="mistral-small-latest",
-    provider="mistral", # or ProviderName.MISTRAL
+    provider="mistral",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 print(response.choices[0].message.content)
@@ -75,26 +75,23 @@ response = completion(
 )
 ```
 
-#### Option 2: Provider Class
+#### Option 2: AnyLLM Class
 
 For advanced use cases that require provider reuse, metadata access, or more control over configuration:
 
 ```python
-from any_llm import AnyLLM
-from any_llm.config import ClientConfig
-from any_llm.types.completion import CompletionParams
+from any_llm import AnyLLM, ClientConfig
 
-config = ClientConfig(api_key="your-mistral-api-key")
-provider = AnyLLM.create("mistral", config)
+llm = AnyLLM.create(
+    "mistral", ClientConfig(api_key="your-mistral-api-key"))
 
-params = CompletionParams(
+response = llm.completion(
     model_id="mistral-small-latest",
     messages=[{"role": "user", "content": "Hello!"}]
 )
-response = provider.completion(params)
 print(response.choices[0].message.content)
 
-metadata = provider.get_provider_metadata()
+metadata = llm.get_provider_metadata()
 print(f"Supports streaming: {metadata.streaming}")
 print(f"Supports tools: {metadata.completion}")
 
