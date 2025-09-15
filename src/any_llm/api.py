@@ -86,7 +86,7 @@ def completion(
     else:
         provider_key = LLMProvider.from_string(provider)
         model_id = model
-    all_args["model_id"] = model_id
+    all_args["model"] = model_id
 
     api_config = ClientConfig(
         api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
@@ -172,7 +172,7 @@ async def acompletion(
     else:
         provider_key = LLMProvider.from_string(provider)
         model_id = model
-    all_args["model_id"] = model_id
+    all_args["model"] = model_id
 
     api_config = ClientConfig(
         api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
