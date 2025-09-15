@@ -129,7 +129,6 @@ class WatsonxProvider(AnyLLM):
                 api_key=self.config.api_key,
                 url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL"),
             ),
-            project_id=kwargs.get("project_id") or os.getenv("WATSONX_PROJECT_ID"),
             **(self.config.client_args if self.config.client_args else {}),
         )
 

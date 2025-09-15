@@ -119,7 +119,9 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.VOYAGE: {"client_args": {"timeout": 10}},
         LLMProvider.WATSONX: {
             "api_base": "https://us-south.ml.cloud.ibm.com",
-            "project_id": "5b083ace-95a6-4f95-a0a0-d4c5d9e98ca0",
+            "client_args": {
+                "project_id": "5b083ace-95a6-4f95-a0a0-d4c5d9e98ca0",
+            },
         },
         LLMProvider.XAI: {"client_args": {"timeout": 100}},
     }
