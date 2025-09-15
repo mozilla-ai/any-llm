@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from typing import Any
 
 from any_llm.providers.deepseek.utils import _preprocess_messages
@@ -22,10 +22,3 @@ class DeepseekProvider(BaseOpenAIProvider):
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         return await super()._acompletion(_preprocess_messages(params), **kwargs)
-
-    def completion(
-        self,
-        params: CompletionParams,
-        **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        return super().completion(_preprocess_messages(params), **kwargs)

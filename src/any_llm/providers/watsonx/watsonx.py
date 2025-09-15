@@ -153,43 +153,6 @@ class WatsonxProvider(AnyLLM):
 
         return self._convert_completion_response(response)
 
-    def completion(
-        self,
-        params: CompletionParams,
-        **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        """Create a chat completion using Watsonx."""
-
-        model_inference = ModelInference(
-            model_id=params.model_id,
-            credentials=Credentials(
-                api_key=self.config.api_key,
-                url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL"),
-            ),
-            project_id=kwargs.get("project_id") or os.getenv("WATSONX_PROJECT_ID"),
-            **(self.config.client_args if self.config.client_args else {}),
-        )
-
-        # Handle response_format by inlining schema guidance into the prompt
-        response_format = params.response_format
-        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-            params.messages = _convert_pydantic_to_watsonx_json(response_format, params.messages)
-
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
-
-        completion_kwargs = self._convert_completion_params(params, **kwargs)
-
-        if params.stream:
-            return self._stream_completion(model_inference, params.messages, **completion_kwargs)
-
-        response = model_inference.chat(
-            messages=params.messages,
-            params=completion_kwargs,
-        )
-
-        return self._convert_completion_response(response)
-
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.

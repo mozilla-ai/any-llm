@@ -116,7 +116,7 @@ class SagemakerProvider(AnyLLM):
         loop = asyncio.get_event_loop()
 
         call_sync_partial: Callable[[], ChatCompletion | Iterator[ChatCompletionChunk]] = functools.partial(
-            self.completion, params, **kwargs
+            self._completion, params, **kwargs
         )
 
         result = await loop.run_in_executor(None, call_sync_partial)
@@ -130,7 +130,7 @@ class SagemakerProvider(AnyLLM):
 
         return _stream()
 
-    def completion(
+    def _completion(
         self,
         params: CompletionParams,
         **kwargs: Any,

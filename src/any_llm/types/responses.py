@@ -4,7 +4,7 @@ from openai.types.responses import Response as OpenAIResponse
 from openai.types.responses import ResponseInputParam as OpenAIResponseInputParam
 from openai.types.responses import ResponseOutputMessage as OpenAIResponseOutputMessage
 from openai.types.responses import ResponseStreamEvent as OpenAIResponseStreamEvent
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict
 
 Response = OpenAIResponse
 ResponseStreamEvent = OpenAIResponseStreamEvent

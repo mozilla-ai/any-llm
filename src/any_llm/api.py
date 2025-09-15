@@ -6,7 +6,6 @@ from pydantic import BaseModel
 from any_llm import AnyLLM
 from any_llm.config import ClientConfig
 from any_llm.constants import LLMProvider
-from any_llm.tools import prepare_tools
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, CreateEmbeddingResponse
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
@@ -90,9 +89,7 @@ def completion(
     all_args["model_id"] = model_id
 
     api_config = ClientConfig(
-        api_key=all_args.pop("api_key"),
-        api_base=all_args.pop("api_base"),
-        client_args=all_args.pop("client_args")
+        api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
     )
 
     provider_instance = AnyLLM.create(provider_key, api_config)
@@ -178,9 +175,7 @@ async def acompletion(
     all_args["model_id"] = model_id
 
     api_config = ClientConfig(
-        api_key=all_args.pop("api_key"),
-        api_base=all_args.pop("api_base"),
-        client_args=all_args.pop("client_args")
+        api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
     )
 
     provider_instance = AnyLLM.create(provider_key, api_config)
@@ -255,9 +250,7 @@ def responses(
     all_args["model"] = model_id
 
     api_config = ClientConfig(
-        api_key=all_args.pop("api_key"),
-        api_base=all_args.pop("api_base"),
-        client_args=all_args.pop("client_args")
+        api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
     )
 
     provider_instance = AnyLLM.create(provider_key, api_config)
@@ -333,14 +326,13 @@ async def aresponses(
     all_args["model"] = model_id
 
     api_config = ClientConfig(
-        api_key=all_args.pop("api_key"),
-        api_base=all_args.pop("api_base"),
-        client_args=all_args.pop("client_args")
+        api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
     )
 
     provider_instance = AnyLLM.create(provider_key, api_config)
 
     return await provider_instance.aresponses(**all_args)
+
 
 def embedding(
     model: str,

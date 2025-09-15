@@ -11,9 +11,9 @@ from typing import TYPE_CHECKING, Any, Literal
 from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
 from any_llm.tools import prepare_tools
-from any_llm.types.completion import CompletionParams
+from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, CompletionParams
 from any_llm.types.provider import ProviderMetadata
-from any_llm.types.responses import Response, ResponsesParams, ResponseInputParam, ResponseStreamEvent
+from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
 
 if TYPE_CHECKING:
@@ -23,9 +23,7 @@ if TYPE_CHECKING:
 
     from any_llm.config import ClientConfig
     from any_llm.types.completion import (
-        ChatCompletion,
         ChatCompletionChunk,
-        ChatCompletionMessage,
         CreateEmbeddingResponse,
     )
     from any_llm.types.model import Model
@@ -100,7 +98,7 @@ class AnyLLM(ABC):
         return config
 
     @classmethod
-    def create(cls, provider: str | LLMProvider, config: ClientConfig) -> "AnyLLM":
+    def create(cls, provider: str | LLMProvider, config: ClientConfig) -> AnyLLM:
         """Create a provider instance using the given provider name and config.
 
         Args:
@@ -133,7 +131,7 @@ class AnyLLM(ABC):
         return provider_class(config=config)
 
     @classmethod
-    def get_provider_class(cls, provider_key: str | LLMProvider) -> type["AnyLLM"]:
+    def get_provider_class(cls, provider_key: str | LLMProvider) -> type[AnyLLM]:
         """Get the provider class without instantiating it.
 
         Args:
@@ -325,7 +323,7 @@ class AnyLLM(ABC):
         max_completion_tokens: int | None = None,
         reasoning_effort: Literal["minimal", "low", "medium", "high", "auto"] | None = "auto",
         **kwargs: Any,
-        ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion asynchronously.
 
         Args:
@@ -359,7 +357,7 @@ class AnyLLM(ABC):
 
         """
         if tools:
-            tools = prepare_tools(tools)
+            tools = prepare_tools(tools)  # type: ignore[assignment]
 
         for i, message in enumerate(messages):
             if isinstance(message, ChatCompletionMessage):
@@ -369,11 +367,12 @@ class AnyLLM(ABC):
         all_args = locals()
         all_args["model_id"] = all_args.pop("model")
         kwargs = all_args.pop("kwargs")
-
         return await self._acompletion(CompletionParams(**all_args), **kwargs)
 
     @abstractmethod
-    async def _acompletion(self, params: CompletionParams, **kwargs: Any) -> ChatCompletion | ChatCompletionChunk:
+    async def _acompletion(
+        self, params: CompletionParams, **kwargs: Any
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         pass
 
     def responses(self, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
@@ -437,13 +436,16 @@ class AnyLLM(ABC):
 
         """
         if tools:
-            tools = prepare_tools(tools)
+            tools = prepare_tools(tools)  # type: ignore[assignment]
+
         all_args = locals()
         kwargs = all_args.pop("kwargs")
         return await self._aresponses(ResponsesParams(**all_args, **kwargs))
 
     @abstractmethod
-    async def _aresponses(self, params: ResponsesParams, **kwargs: Any) -> Response | AsyncIterator[ResponseStreamEvent]:
+    async def _aresponses(
+        self, params: ResponsesParams, **kwargs: Any
+    ) -> Response | AsyncIterator[ResponseStreamEvent]:
         pass
 
     def embedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:

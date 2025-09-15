@@ -155,10 +155,7 @@ class BaseOpenAIProvider(AnyLLM):
         """Call OpenAI Responses API"""
         client = self._get_client()
 
-        response = await client.responses.create(
-            **params.model_dump(exclude_none=True),
-            **kwargs
-        )
+        response = await client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
 
         if not isinstance(response, Response | AsyncStream):
             msg = f"Responses API returned an unexpected type: {type(response)}"

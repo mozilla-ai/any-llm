@@ -106,7 +106,9 @@ async def test_completion_with_kwargs() -> None:
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(ClientConfig(api_key=api_key))
-        await provider._acompletion(CompletionParams(model_id=model, messages=messages, max_tokens=100, temperature=0.5))
+        await provider._acompletion(
+            CompletionParams(model_id=model, messages=messages, max_tokens=100, temperature=0.5)
+        )
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model, messages=messages, max_tokens=100, temperature=0.5
