@@ -128,7 +128,7 @@ response = completion(
 )
 ```
 
-#### Option 2: Provider Class (Recommended for Production Use Cases)
+#### Option 2: AnyLLM Class (Recommended for Production Use Cases)
 
 For applications that need to reuse providers, perform multiple operations, or require more control:
 
@@ -136,9 +136,9 @@ For applications that need to reuse providers, perform multiple operations, or r
 from any_llm import AnyLLM, ClientConfig
 
 config = ClientConfig(api_key="your-mistral-api-key")
-provider = AnyLLM.create("mistral", config)
+llm = AnyLLM.create("mistral", config)
 
-response = provider.completion({
+response = llm.completion({
     "model_id": "mistral-small-latest",
     "messages": [{"role": "user", "content": "Hello!"}]
 })
