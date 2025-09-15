@@ -81,6 +81,8 @@ def completion(
     """
     all_args = locals()
     all_args.pop("provider")
+    kwargs = all_args.pop("kwargs")
+
     model = all_args.pop("model")
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
@@ -89,13 +91,13 @@ def completion(
         model_id = model
     all_args["model"] = model_id
 
-    api_config = ClientConfig(
-        api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
+    llm = AnyLLM.create(
+        provider_key,
+        ClientConfig(
+            api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
+        ),
     )
-
-    provider_instance = AnyLLM.create(provider_key, api_config)
-
-    return provider_instance.completion(**all_args)
+    return llm.completion(**all_args, **kwargs)
 
 
 async def acompletion(
@@ -168,6 +170,8 @@ async def acompletion(
     """
     all_args = locals()
     all_args.pop("provider")
+    kwargs = all_args.pop("kwargs")
+
     model = all_args.pop("model")
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
@@ -176,13 +180,13 @@ async def acompletion(
         model_id = model
     all_args["model"] = model_id
 
-    api_config = ClientConfig(
-        api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
+    llm = AnyLLM.create(
+        provider_key,
+        ClientConfig(
+            api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
+        ),
     )
-
-    provider_instance = AnyLLM.create(provider_key, api_config)
-
-    return await provider_instance.acompletion(**all_args)
+    return await llm.acompletion(**all_args, **kwargs)
 
 
 def responses(
@@ -244,6 +248,8 @@ def responses(
     """
     all_args = locals()
     all_args.pop("provider")
+    kwargs = all_args.pop("kwargs")
+
     model = all_args.pop("model")
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
@@ -252,13 +258,13 @@ def responses(
         model_id = model
     all_args["model"] = model_id
 
-    api_config = ClientConfig(
-        api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
+    llm = AnyLLM.create(
+        provider_key,
+        ClientConfig(
+            api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
+        ),
     )
-
-    provider_instance = AnyLLM.create(provider_key, api_config)
-
-    return provider_instance.responses(**all_args)
+    return llm.responses(**all_args, **kwargs)
 
 
 async def aresponses(
@@ -321,6 +327,8 @@ async def aresponses(
     """
     all_args = locals()
     all_args.pop("provider")
+    kwargs = all_args.pop("kwargs")
+
     model = all_args.pop("model")
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
@@ -329,13 +337,13 @@ async def aresponses(
         model_id = model
     all_args["model"] = model_id
 
-    api_config = ClientConfig(
-        api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
+    llm = AnyLLM.create(
+        provider_key,
+        ClientConfig(
+            api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
+        ),
     )
-
-    provider_instance = AnyLLM.create(provider_key, api_config)
-
-    return await provider_instance.aresponses(**all_args)
+    return await llm.aresponses(**all_args, **kwargs)
 
 
 def embedding(
@@ -372,11 +380,8 @@ def embedding(
         provider_key = LLMProvider.from_string(provider)
         model_name = model
 
-    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
-
-    provider_instance = AnyLLM.create(provider_key, api_config)
-
-    return provider_instance.embedding(model_name, inputs, **kwargs)
+    llm = AnyLLM.create(provider_key, ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args))
+    return llm.embedding(model_name, inputs, **kwargs)
 
 
 async def aembedding(
@@ -410,11 +415,8 @@ async def aembedding(
         provider_key = LLMProvider.from_string(provider)
         model_name = model
 
-    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
-
-    provider_instance = AnyLLM.create(provider_key, api_config)
-
-    return await provider_instance._aembedding(model_name, inputs, **kwargs)
+    llm = AnyLLM.create(provider_key, ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args))
+    return await llm._aembedding(model_name, inputs, **kwargs)
 
 
 def list_models(
@@ -425,10 +427,10 @@ def list_models(
     **kwargs: Any,
 ) -> Sequence[Model]:
     """List available models for a provider."""
-    provider_key = LLMProvider.from_string(provider)
-    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
-    prov_instance = AnyLLM.create(provider_key, api_config)
-    return prov_instance.list_models(**kwargs)
+    llm = AnyLLM.create(
+        LLMProvider.from_string(provider), ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
+    )
+    return llm.list_models(**kwargs)
 
 
 async def list_models_async(
@@ -439,7 +441,7 @@ async def list_models_async(
     **kwargs: Any,
 ) -> Sequence[Model]:
     """List available models for a provider asynchronously."""
-    provider_key = LLMProvider.from_string(provider)
-    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
-    prov_instance = AnyLLM.create(provider_key, api_config)
-    return await prov_instance.list_models_async(**kwargs)
+    llm = AnyLLM.create(
+        LLMProvider.from_string(provider), ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
+    )
+    return await llm.list_models_async(**kwargs)
