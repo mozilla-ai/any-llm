@@ -13,7 +13,7 @@ from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
 from any_llm.tools import prepare_tools
 from any_llm.types.completion import CompletionParams
 from any_llm.types.provider import ProviderMetadata
-from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
+from any_llm.types.responses import Response, ResponsesParams, ResponseInputParam, ResponseStreamEvent
 from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
 
 if TYPE_CHECKING:
@@ -29,8 +29,6 @@ if TYPE_CHECKING:
         CreateEmbeddingResponse,
     )
     from any_llm.types.model import Model
-
-
 
 
 class AnyLLM(ABC):
@@ -331,7 +329,7 @@ class AnyLLM(ABC):
         """Create a chat completion asynchronously.
 
         Args:
-            model: Model identifier withing the chosen provider (e.g., model='gpt-4.1-mini' for LLMProvider.OPENAI).
+            model: Model identifier for the chosen provider (e.g., model='gpt-4.1-mini' for LLMProvider.OPENAI).
             messages: List of messages for the conversation
             tools: List of tools for tool calling. Can be Python callables or OpenAI tool format dicts
             tool_choice: Controls which tools the model can call
@@ -372,7 +370,7 @@ class AnyLLM(ABC):
         all_args["model_id"] = all_args.pop("model")
         kwargs = all_args.pop("kwargs")
 
-        return self._acompletion(CompletionParams(**all_args), **kwargs)
+        return await self._acompletion(CompletionParams(**all_args), **kwargs)
 
     @abstractmethod
     async def _acompletion(self, params: CompletionParams, **kwargs: Any) -> ChatCompletion | ChatCompletionChunk:
@@ -393,23 +391,17 @@ class AnyLLM(ABC):
         model: str,
         input_data: str | ResponseInputParam,
         *,
-        provider: str | LLMProvider | None = None,
         tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
         tool_choice: str | dict[str, Any] | None = None,
         max_output_tokens: int | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
         stream: bool | None = None,
-        api_key: str | None = None,
-        api_base: str | None = None,
-        api_timeout: float | None = None,
-        user: str | None = None,
         instructions: str | None = None,
         max_tool_calls: int | None = None,
         parallel_tool_calls: int | None = None,
         reasoning: Any | None = None,
         text: Any | None = None,
-        client_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Create a response using the OpenAI-style Responses API.
@@ -419,8 +411,7 @@ class AnyLLM(ABC):
         `any_llm.types.responses.ResponseStreamEvent` items is returned.
 
         Args:
-            model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
-            provider: Provider name to use for the request. If provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai:gpt-4o'.
+            model: Model identifier for the chosen provider (e.g., model='gpt-4.1-mini' for LLMProvider.OPENAI).
             input_data: The input payload accepted by provider's Responses API.
                 For OpenAI-compatible providers, this is typically a list mixing
                 text, images, and tool instructions, or a dict per OpenAI spec.
@@ -430,16 +421,11 @@ class AnyLLM(ABC):
             temperature: Controls randomness in the response (0.0 to 2.0)
             top_p: Controls diversity via nucleus sampling (0.0 to 1.0)
             stream: Whether to stream response events
-            api_key: API key for the provider
-            api_base: Base URL for the provider API
-            api_timeout: Request timeout in seconds
-            user: Unique identifier for the end user
             instructions: A system (or developer) message inserted into the model's context.
             max_tool_calls: The maximum number of total calls to built-in tools that can be processed in a response. This maximum number applies across all built-in tool calls, not per individual tool. Any further attempts to call a tool by the model will be ignored.
             parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
             reasoning: Configuration options for reasoning models.
             text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
-            client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
             **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
         Returns:
@@ -450,39 +436,24 @@ class AnyLLM(ABC):
             NotImplementedError: If the selected provider does not support the Responses API.
 
         """
-        return self._aeresponses()
+        if tools:
+            tools = prepare_tools(tools)
+        all_args = locals()
+        kwargs = all_args.pop("kwargs")
+        return await self._aresponses(ResponsesParams(**all_args, **kwargs))
 
     @abstractmethod
-    async def _aresponses(
-        self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
-    ) -> Response | AsyncIterator[ResponseStreamEvent]:
-        msg = "Subclasses must implement this method"
-        raise NotImplementedError(msg)
+    async def _aresponses(self, params: ResponsesParams, **kwargs: Any) -> Response | AsyncIterator[ResponseStreamEvent]:
+        pass
 
-    def embedding(
-        self,
-        model: str,
-        inputs: str | list[str],
-        **kwargs: Any,
-    ) -> CreateEmbeddingResponse:
+    def embedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:
         return run_async_in_sync(self.aembedding(model, inputs, **kwargs), allow_running_loop=INSIDE_NOTEBOOK)
 
-    async def aembedding(
-        self,
-        model: str,
-        inputs: str | list[str],
-        **kwargs: Any,
-    ) -> CreateEmbeddingResponse:
-        msg = "Subclasses must implement this method"
-        raise NotImplementedError(msg)
+    async def aembedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:
+        return await self._aembedding(model, inputs, **kwargs)
 
     @abstractmethod
-    async def _aembedding(
-        self,
-        model: str,
-        inputs: str | list[str],
-        **kwargs: Any,
-    ) -> CreateEmbeddingResponse:
+    async def _aembedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:
         pass
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:

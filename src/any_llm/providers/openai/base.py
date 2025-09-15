@@ -13,7 +13,7 @@ from any_llm.logging import logger
 from any_llm.providers.openai.utils import _convert_chat_completion, _normalize_openai_dict_response
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
-from any_llm.types.responses import Response, ResponseStreamEvent
+from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
 
 class BaseOpenAIProvider(AnyLLM):
@@ -150,16 +150,16 @@ class BaseOpenAIProvider(AnyLLM):
         return self._convert_completion_response_async(response)
 
     async def _aresponses(
-        self, model: str, input_data: Any, **kwargs: Any
+        self, params: ResponsesParams, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call OpenAI Responses API"""
         client = self._get_client()
 
         response = await client.responses.create(
-            model=model,
-            input=input_data,
-            **kwargs,
+            **params.model_dump(exclude_none=True),
+            **kwargs
         )
+
         if not isinstance(response, Response | AsyncStream):
             msg = f"Responses API returned an unexpected type: {type(response)}"
             raise ValueError(msg)

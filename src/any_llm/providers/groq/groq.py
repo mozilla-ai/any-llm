@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.types.responses import Response, ResponseStreamEvent
+from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
 if TYPE_CHECKING:
     from any_llm.types.completion import CreateEmbeddingResponse
@@ -148,7 +148,7 @@ class GroqProvider(AnyLLM):
         return self._convert_completion_response(response)
 
     async def _aresponses(
-        self, model: str, input_data: Any, **kwargs: Any
+        self, params: ResponsesParams, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call Groq Responses API and normalize into ChatCompletion/Chunks."""
         # Python SDK doesn't yet support it: https://community.groq.com/feature-requests-6/groq-python-sdk-support-for-responses-api-262
@@ -164,9 +164,8 @@ class GroqProvider(AnyLLM):
         )
 
         response = await client.responses.create(
-            model=model,
-            input=input_data,
-            **kwargs,
+            **params.model_dump(exclude_none=True),
+            **kwargs
         )
 
         if not isinstance(response, Response | AsyncStream):
