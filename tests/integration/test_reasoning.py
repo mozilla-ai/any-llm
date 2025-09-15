@@ -5,7 +5,7 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import AnyLLM, LLMProvider, acompletion
+from any_llm import AnyLLM, ClientConfig, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
@@ -18,21 +18,20 @@ async def test_completion_reasoning(
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    cls = AnyLLM.get_provider_class(provider)
-    if not cls.SUPPORTS_COMPLETION_REASONING:
-        pytest.skip(f"{provider.value} does not support completion reasoning, skipping")
+    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+    if not llm.SUPPORTS_COMPLETION_REASONING:
+        pytest.skip(f"{provider.value} does not support reasoning, skipping")
 
     model_id = provider_reasoning_model_map[provider]
-    extra_kwargs = provider_client_config.get(provider, {})
+    extra_kwargs = {}
     if provider in (LLMProvider.ANTHROPIC, LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.OLLAMA):
         extra_kwargs["reasoning_effort"] = "low"
 
     try:
-        result = await acompletion(
+        result = await llm.acompletion(
             model=model_id,
-            provider=provider,
-            **extra_kwargs,
             messages=[{"role": "user", "content": "Please say hello! Think very briefly before you respond."}],
+            **extra_kwargs,
         )
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:
@@ -55,14 +54,14 @@ async def test_completion_reasoning_streaming(
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that reasoning works with streaming for supported providers."""
-    cls = AnyLLM.get_provider_class(provider)
-    if not cls.SUPPORTS_COMPLETION_REASONING:
-        pytest.skip(f"{provider.value} does not support completion reasoning, skipping")
-    if not cls.SUPPORTS_COMPLETION_STREAMING:
+    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+    if not llm.SUPPORTS_COMPLETION_REASONING:
+        pytest.skip(f"{provider.value} does not support reasoning, skipping")
+    if not llm.SUPPORTS_COMPLETION_STREAMING:
         pytest.skip(f"{provider.value} does not support streaming completion, skipping")
 
     model_id = provider_reasoning_model_map[provider]
-    extra_kwargs = provider_client_config.get(provider, {})
+    extra_kwargs = {}
     if provider in (LLMProvider.ANTHROPIC, LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.OLLAMA):
         extra_kwargs["reasoning_effort"] = "low"
 
@@ -70,12 +69,11 @@ async def test_completion_reasoning_streaming(
         output = ""
         reasoning = ""
         num_chunks = 0
-        results = await acompletion(
+        results = await llm.acompletion(
             model=model_id,
-            provider=provider,
-            **extra_kwargs,
             messages=[{"role": "user", "content": "Please say hello! Think very briefly before you respond."}],
             stream=True,
+            **extra_kwargs,
         )
         assert isinstance(results, AsyncIterable)
         async for result in results:

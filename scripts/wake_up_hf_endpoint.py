@@ -3,7 +3,7 @@ import time
 
 from huggingface_hub.errors import HfHubHTTPError
 
-from any_llm import completion
+from any_llm.api import completion
 
 HF_ENDPOINT = "https://y0okp71n85ezo5nr.us-east-1.aws.endpoints.huggingface.cloud/v1/"
 

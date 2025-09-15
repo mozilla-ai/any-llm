@@ -21,10 +21,7 @@ async def test_async_completion(
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    llm = AnyLLM.create(
-        provider,
-        ClientConfig(**provider_client_config.get(provider, {}))
-    )
+    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
     if not llm.SUPPORTS_COMPLETION:
         pytest.skip(f"{provider.value} does not support completion, skipping")
 
@@ -59,10 +56,7 @@ async def test_async_completion_parallel(
     provider_model_map: dict[LLMProvider, str],
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
-    llm = AnyLLM.create(
-        provider,
-        ClientConfig(**provider_client_config.get(provider, {}))
-    )
+    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
     if not llm.SUPPORTS_COMPLETION:
         pytest.skip(f"{provider.value} does not support completion, skipping")
 
@@ -71,12 +65,8 @@ async def test_async_completion_parallel(
     prompt_2 = "What's the capital of Germany?"
     try:
         results = await asyncio.gather(
-            llm.acompletion(
-                model=model_id, messages=[{"role": "user", "content": prompt_1}]
-            ),
-            llm.acompletion(
-                model=model_id, messages=[{"role": "user", "content": prompt_2}]
-            ),
+            llm.acompletion(model=model_id, messages=[{"role": "user", "content": prompt_1}]),
+            llm.acompletion(model=model_id, messages=[{"role": "user", "content": prompt_2}]),
         )
         assert isinstance(results[0], ChatCompletion)
         assert isinstance(results[1], ChatCompletion)
@@ -100,10 +90,7 @@ async def test_completion_with_image(
     provider_image_model_map: dict[LLMProvider, str],
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
-    llm = AnyLLM.create(
-        provider,
-        ClientConfig(**provider_client_config.get(provider, {}))
-    )
+    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
     if not llm.SUPPORTS_COMPLETION_IMAGE:
         pytest.skip(f"{provider.value} does not support completion, skipping")
 
@@ -126,7 +113,7 @@ async def test_completion_with_image(
                         },
                     ],
                 }
-            ]
+            ],
         )
         assert isinstance(response, ChatCompletion)
         assert response.choices[0].message.content
@@ -146,10 +133,7 @@ async def test_completion_with_pdf(
     provider_image_model_map: dict[LLMProvider, str],
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
-    llm = AnyLLM.create(
-        provider,
-        ClientConfig(**provider_client_config.get(provider, {}))
-    )
+    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
     if not llm.SUPPORTS_COMPLETION_PDF:
         pytest.skip(f"{provider.value} does not support completion, skipping")
 
@@ -176,7 +160,7 @@ async def test_completion_with_pdf(
                         },
                     ],
                 }
-            ]
+            ],
         )
         assert isinstance(response, ChatCompletion)
         assert response.choices[0].message.content

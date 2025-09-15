@@ -5,7 +5,7 @@ import pytest
 from openai import APIConnectionError
 from pydantic import BaseModel
 
-from any_llm import AnyLLM, LLMProvider, acompletion
+from any_llm import AnyLLM, ClientConfig, LLMProvider
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.types.completion import ChatCompletion
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
@@ -21,26 +21,24 @@ async def test_response_format(
 
     if provider == LLMProvider.LLAMAFILE:
         pytest.skip("Llamafile does not support response_format, skipping")
-    cls = AnyLLM.get_provider_class(provider)
-    if not cls.SUPPORTS_COMPLETION:
+    llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+    if not llm.SUPPORTS_COMPLETION:
         pytest.skip(f"{provider.value} does not support response_format, skipping")
-    model_id = provider_model_map[provider]
-    extra_kwargs = provider_client_config.get(provider, {})
 
-    # From https://github.com/mozilla-ai/any-llm/issues/150, should be ok to set stream=False
-    extra_kwargs["stream"] = False
+    model_id = provider_model_map[provider]
 
     class ResponseFormat(BaseModel):
         city_name: str
 
     prompt = "What is the capital of France?"
     try:
-        result = await acompletion(
+        result = await llm.acompletion(
             model=model_id,
             provider=provider,
-            **extra_kwargs,
             messages=[{"role": "user", "content": prompt}],
             response_format=ResponseFormat,
+            # From https://github.com/mozilla-ai/any-llm/issues/150, should be ok to set stream=False
+            stream=False,
         )
         assert isinstance(result, ChatCompletion)
         assert result.choices[0].message.content is not None
