@@ -65,7 +65,6 @@ async def test_tool(
         messages.append({"role": "user", "content": "Did the tool call work?"})
         second_result: ChatCompletion = await llm.acompletion(  # type: ignore[assignment]
             model=model_id,
-            provider=provider,
             messages=messages,
             tools=[echo],
         )
