@@ -182,6 +182,10 @@ strict = true
 disallow_untyped_calls = true
 disallow_untyped_defs = true
 follow_untyped_imports = true
+exclude = (?x)(
+  ^demo
+  | ^scripts
+)
 
 [[tool.mypy.overrides]]
 module = "tests.*"
