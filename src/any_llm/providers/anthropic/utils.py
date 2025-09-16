@@ -1,7 +1,6 @@
 import json
 from typing import Any
 
-from anthropic.pagination import SyncPage
 from anthropic.types import (
     ContentBlockDeltaEvent,
     ContentBlockStartEvent,
@@ -316,7 +315,7 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
     return result_kwargs
 
 
-def _convert_models_list(models_list: SyncPage[AnthropicModelInfo]) -> list[Model]:
+def _convert_models_list(models_list: list[AnthropicModelInfo]) -> list[Model]:
     """Convert Anthropic models list to OpenAI format."""
     return [
         Model(id=model.id, object="model", created=int(model.created_at.timestamp()), owned_by="anthropic")

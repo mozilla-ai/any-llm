@@ -148,12 +148,12 @@ class CohereProvider(AnyLLM):
 
         return self._convert_completion_response(response, model=params.model_id)
 
-    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+    async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
-        client = cohere.ClientV2(
+        client = cohere.AsyncClientV2(
             api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
         )
-        model_list = client.models.list(**kwargs)
+        model_list = await client.models.list(**kwargs)
         return self._convert_list_models_response(model_list)
