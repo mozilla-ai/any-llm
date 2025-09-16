@@ -161,7 +161,6 @@ ignore = [
   "C901",
   "ERA001",
   "SLF001",
-  "PD901",
   "PLC0415", # We use lazy imports in several places
   "PLR0912",
   "PLR0913",
