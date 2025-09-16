@@ -90,7 +90,7 @@ def _convert_response(response_data: ChatCompletions) -> ChatCompletion:
         )
 
     message = ChatCompletionMessage(
-        role=cast("Literal['assistant']", "assistant"),
+        role="assistant",
         content=message_data.content,
         tool_calls=tool_calls,
     )

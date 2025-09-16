@@ -11,7 +11,7 @@ MISSING_PACKAGES_ERROR = None
 try:
     from ibm_watsonx_ai import APIClient as WatsonxClient
     from ibm_watsonx_ai import Credentials
-    from ibm_watsonx_ai.foundation_models import ModelInference
+    from ibm_watsonx_ai.foundation_models.inference.model_inference import ModelInference
 
     from .utils import (
         _convert_models_list,

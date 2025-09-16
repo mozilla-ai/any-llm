@@ -36,6 +36,7 @@ repos:
         language: system
         types: [python]
         verbose: true
+        exclude: demos|scripts
 
   - repo: https://github.com/codespell-project/codespell
     rev: "v2.4.1"

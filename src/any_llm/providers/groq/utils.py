@@ -58,7 +58,7 @@ def to_chat_completion(response: GroqChatCompletion) -> ChatCompletion:
             tool_calls = tool_calls_list
 
         msg = ChatCompletionMessage(
-            role=cast("Literal['assistant']", "assistant"),
+            role="assistant",
             content=message.content,
             tool_calls=tool_calls,
             reasoning=Reasoning(content=cast("str", message.reasoning))

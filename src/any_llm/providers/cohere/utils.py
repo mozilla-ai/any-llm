@@ -188,12 +188,10 @@ def _convert_response(response: Any, model: str) -> ChatCompletion:
     if response.message.content and len(response.message.content) > 0:
         content = response.message.content[0].text
 
-    from typing import Literal, cast
-
-    message = ChatCompletionMessage(role=cast("Literal['assistant']", "assistant"), content=content, tool_calls=None)
+    message = ChatCompletionMessage(role="assistant", content=content, tool_calls=None)
     choice = Choice(
         index=0,
-        finish_reason=cast("Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']", "stop"),
+        finish_reason="stop",
         message=message,
     )
     return ChatCompletion(
