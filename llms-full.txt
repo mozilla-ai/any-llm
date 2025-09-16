@@ -30,9 +30,17 @@ The demo features real-time streaming responses, multiple provider support, and 
 
 Refer to the [Quickstart](#./quickstart.md) for instructions on installation and usage.
 
-### Parameters
+### API Documentation
 
-For a complete list of available functions and their parameters, see the [completion](#./api/completion.md), [embedding](#./api/embedding.md), and [responses](#./api/responses.md) API documentation.
+`any-llm` provides two main interfaces:
+
+**Direct API Functions** (recommended for simple use cases):
+- [completion](#./api/completion.md) - Chat completions with any provider
+- [embedding](#./api/embedding.md) - Text embeddings
+- [responses](#./api/responses.md) - OpenAI-style Responses API
+
+**AnyLLM Class** (recommended for advanced use cases):
+- [Provider API](#./api/any_llm.md) - Lower-level provider interface with metadata access and reusability
 
 ### Error Handling
 
@@ -98,14 +106,18 @@ export MISTRAL_API_KEY="YOUR_KEY_HERE"  # or OPENAI_API_KEY, etc
 
 ### Basic Usage
 
-[`completion`][any_llm.completion] and [`acompletion`][any_llm.acompletion] use a unified interface across all providers.
+`any-llm` provides two main approaches for working with LLM providers, each optimized for different use cases:
+
+#### Option 1: Direct API Functions
+
+[`completion`][any_llm.completion] and [`acompletion`][any_llm.acompletion] provide a unified interface across all providers - perfect for simple use cases and quick prototyping.
 
 **Recommended approach:** Use separate `provider` and `model` parameters:
 
 ```python
 import os
 
-from any_llm import completion, ProviderName
+from any_llm import completion
 
 # Make sure you have the appropriate environment variable set
 assert os.environ.get('MISTRAL_API_KEY')
@@ -113,7 +125,7 @@ assert os.environ.get('MISTRAL_API_KEY')
 # Recommended: separate provider and model parameters
 response = completion(
     model="mistral-small-latest",
-    provider="mistral", # or ProviderName.MISTRAL
+    provider="mistral",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 print(response.choices[0].message.content)
@@ -127,6 +139,41 @@ response = completion(
     messages=[{"role": "user", "content": "Hello!"}]
 )
 ```
+
+#### Option 2: AnyLLM Class
+
+For advanced use cases that require provider reuse, metadata access, or more control over configuration:
+
+```python
+from any_llm import AnyLLM, ClientConfig
+
+llm = AnyLLM.create(
+    "mistral", ClientConfig(api_key="your-mistral-api-key"))
+
+response = llm.completion(
+    model_id="mistral-small-latest",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+print(response.choices[0].message.content)
+
+metadata = llm.get_provider_metadata()
+print(f"Supports streaming: {metadata.streaming}")
+print(f"Supports tools: {metadata.completion}")
+
+```
+
+#### When to Choose Which Approach
+
+**Use Direct API Functions (`completion`, `acompletion`) when:**
+
+- Making simple, one-off requests
+- Prototyping or writing quick scripts
+- You want the simplest possible interface
+
+**Use Provider Class (`AnyLLM.create`) when:**
+
+- Building applications that make multiple requests with the same provider
+- You want to avoid repeated provider instantiation overhead
 
 The provider_id should be specified according to the [provider ids supported by any-llm](#./providers.md).
 The `model_id` portion is passed directly to the provider internals: to understand what model ids are available for a provider,
@@ -231,6 +278,17 @@ as well as what features the provider supports for each model, refer to the prov
 
 ---
 
+## api/any_llm.md
+
+<!-- Source: api/any_llm.md -->
+
+## AnyLLM
+
+::: any_llm.AnyLLM
+
+
+---
+
 ## api/responses.md
 
 <!-- Source: api/responses.md -->
@@ -243,8 +301,8 @@ as well as what features the provider supports for each model, refer to the prov
     This API is experimental and subject to changes based upon our experience as we integrate additional providers.
     Use with caution.
 
-::: any_llm.responses
-::: any_llm.aresponses
+::: any_llm.api.responses
+::: any_llm.api.aresponses
 
 
 ---
@@ -255,8 +313,8 @@ as well as what features the provider supports for each model, refer to the prov
 
 ## Completion
 
-::: any_llm.completion
-::: any_llm.acompletion
+::: any_llm.api.completion
+::: any_llm.api.acompletion
 
 
 ---
@@ -267,8 +325,8 @@ as well as what features the provider supports for each model, refer to the prov
 
 ## Embedding
 
-::: any_llm.embedding
-::: any_llm.aembedding
+::: any_llm.api.embedding
+::: any_llm.api.aembedding
 
 
 ---
@@ -290,8 +348,8 @@ as well as what features the provider supports for each model, refer to the prov
 
 ## Models
 
-::: any_llm.list_models
-::: any_llm.list_models_async
+::: any_llm.api.list_models
+::: any_llm.api.list_models_async
 
 
 ---

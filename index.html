@@ -324,9 +324,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#parameters" class="md-nav__link">
+  <a href="#api-documentation" class="md-nav__link">
     <span class="md-ellipsis">
-      Parameters
+      API Documentation
     </span>
   </a>
   
@@ -441,6 +441,29 @@
             API Reference
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="api/any_llm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    AnyLLM
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
             
               
                 
@@ -574,10 +597,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_6" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_7" >
         
           
-          <label class="md-nav__link" for="__nav_4_6" id="__nav_4_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_4_7" id="__nav_4_7_label" tabindex="0">
             
   
   
@@ -590,8 +613,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_4_6">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_7">
             <span class="md-nav__icon md-icon"></span>
             Types
           </label>
@@ -747,9 +770,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#parameters" class="md-nav__link">
+  <a href="#api-documentation" class="md-nav__link">
     <span class="md-ellipsis">
-      Parameters
+      API Documentation
     </span>
   </a>
   
@@ -812,8 +835,14 @@
 <p>The demo features real-time streaming responses, multiple provider support, and collapsible "thinking" content display.</p>
 <h3 id="getting-started">Getting Started</h3>
 <p>Refer to the <a href="quickstart/">Quickstart</a> for instructions on installation and usage.</p>
-<h3 id="parameters">Parameters</h3>
-<p>For a complete list of available functions and their parameters, see the <a href="api/completion/">completion</a>, <a href="api/embedding/">embedding</a>, and <a href="api/responses/">responses</a> API documentation.</p>
+<h3 id="api-documentation">API Documentation</h3>
+<p><code>any-llm</code> provides two main interfaces:</p>
+<p><strong>Direct API Functions</strong> (recommended for simple use cases):
+- <a href="api/completion/">completion</a> - Chat completions with any provider
+- <a href="api/embedding/">embedding</a> - Text embeddings
+- <a href="api/responses/">responses</a> - OpenAI-style Responses API</p>
+<p><strong>AnyLLM Class</strong> (recommended for advanced use cases):
+- <a href="api/any_llm/">Provider API</a> - Lower-level provider interface with metadata access and reusability</p>
 <h3 id="error-handling">Error Handling</h3>
 <p><code>any-llm</code> provides custom exceptions to indicate common errors like missing API keys
 and parameters that are unsupported by a specific provider.</p>
