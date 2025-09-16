@@ -184,13 +184,13 @@ class BaseOpenAIProvider(AnyLLM):
             )
         )
 
-    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+    async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
         if not self.SUPPORTS_LIST_MODELS:
             message = f"{self.PROVIDER_NAME} does not support listing models."
             raise NotImplementedError(message)
-        client = cast("OpenAI", self._get_client(sync=True))
-        response = client.models.list(**kwargs)
+        client = cast("AsyncOpenAI", self._get_client())
+        response = await client.models.list(**kwargs)
         return self._convert_list_models_response(response)

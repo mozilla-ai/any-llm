@@ -156,14 +156,11 @@ class MistralProvider(AnyLLM):
 
         return self._convert_embedding_response(result)
 
-    def list_models(self, **kwargs: Any) -> Sequence[Model]:
-        """
-        Fetch available models from the /v1/models endpoint.
-        """
+    async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         client = Mistral(
             api_key=self.config.api_key,
             server_url=self.config.api_base,
             **(self.config.client_args if self.config.client_args else {}),
         )
-        models_list = client.models.list(**kwargs)
+        models_list = await client.models.list_async(**kwargs)
         return self._convert_list_models_response(models_list)

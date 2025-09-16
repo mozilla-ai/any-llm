@@ -10,7 +10,7 @@ from any_llm.any_llm import AnyLLM
 
 MISSING_PACKAGES_ERROR = None
 try:
-    from ollama import AsyncClient, Client
+    from ollama import AsyncClient
 
     from .utils import (
         _convert_models_list,
@@ -24,7 +24,7 @@ except ImportError as e:
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
-    from ollama import AsyncClient, Client  # noqa: TC004
+    from ollama import AsyncClient  # noqa: TC004
     from ollama import ChatResponse as OllamaChatResponse
 
     from any_llm.config import ClientConfig
@@ -230,10 +230,7 @@ class OllamaProvider(AnyLLM):
         )
         return self._convert_embedding_response(response)
 
-    def list_models(self, **kwargs: Any) -> Sequence[Model]:
-        """
-        Fetch available models from the /v1/models endpoint.
-        """
-        client = Client(host=self.url, **(self.config.client_args if self.config.client_args else {}))
-        models_list = client.list(**kwargs)
+    async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
+        client = AsyncClient(host=self.url, **(self.config.client_args if self.config.client_args else {}))
+        models_list = await client.list(**kwargs)
         return self._convert_list_models_response(models_list)

@@ -246,8 +246,7 @@ class GoogleProvider(AnyLLM):
         response_dict = _convert_response_to_response_dict(response)
         return self._convert_completion_response((response_dict, params.model_id))
 
-    def list_models(self, **kwargs: Any) -> Sequence[Model]:
-        """Fetch available models from the /v1/models endpoint."""
+    async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         client = self._get_client(self.config)
-        models_list = client.models.list(**kwargs)
+        models_list = await client.aio.models.list(**kwargs)
         return self._convert_list_models_response(models_list)

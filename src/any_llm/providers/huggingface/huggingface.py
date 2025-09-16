@@ -149,7 +149,7 @@ class HuggingfaceProvider(AnyLLM):
             usage=usage,
         )
 
-    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+    async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """

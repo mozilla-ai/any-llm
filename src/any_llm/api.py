@@ -432,7 +432,7 @@ def list_models(
     return llm.list_models(**kwargs)
 
 
-async def list_models_async(
+async def alist_models(
     provider: str | LLMProvider,
     api_key: str | None = None,
     api_base: str | None = None,
@@ -443,4 +443,4 @@ async def list_models_async(
     llm = AnyLLM.create(
         LLMProvider.from_string(provider), ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
     )
-    return await llm.list_models_async(**kwargs)
+    return await llm.alist_models(**kwargs)

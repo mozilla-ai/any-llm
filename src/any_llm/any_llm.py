@@ -1,7 +1,6 @@
 # Inspired by https://github.com/andrewyng/aisuite/tree/main/aisuite
 from __future__ import annotations
 
-import asyncio
 import importlib
 import os
 import warnings
@@ -473,14 +472,14 @@ class AnyLLM(ABC):
         raise NotImplementedError(msg)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
-        """Return a list of Model if the provider supports listing models.
+        return run_async_in_sync(self.alist_models(**kwargs), allow_running_loop=INSIDE_NOTEBOOK)
 
-        Should be overridden by subclasses.
-        """
-        msg = "Subclasses must implement list_models method"
+    async def alist_models(self, **kwargs: Any) -> Sequence[Model]:
+        return await self._alist_models(**kwargs)
+
+    async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         if not self.SUPPORTS_LIST_MODELS:
+            msg = "Provider doesn't support listing models."
             raise NotImplementedError(msg)
+        msg = "Subclasses must implement _alist_models method"
         raise NotImplementedError(msg)
-
-    async def list_models_async(self, **kwargs: Any) -> Sequence[Model]:
-        return await asyncio.to_thread(self.list_models, **kwargs)

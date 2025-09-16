@@ -7,7 +7,7 @@ from any_llm.types.model import Model
 
 MISSING_PACKAGES_ERROR = None
 try:
-    from anthropic import Anthropic, AsyncAnthropic
+    from anthropic import AsyncAnthropic
 
     from .utils import (
         _convert_models_list,
@@ -19,7 +19,6 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
-    from anthropic.pagination import SyncPage
     from anthropic.types import Message
     from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
 
@@ -75,7 +74,7 @@ class AnthropicProvider(AnyLLM):
         raise NotImplementedError(msg)
 
     @staticmethod
-    def _convert_list_models_response(response: "SyncPage[AnthropicModelInfo]") -> Sequence[Model]:
+    def _convert_list_models_response(response: "list[AnthropicModelInfo]") -> Sequence[Model]:
         """Convert Anthropic models list to OpenAI format."""
         return _convert_models_list(response)
 
@@ -111,12 +110,11 @@ class AnthropicProvider(AnyLLM):
 
         return self._convert_completion_response(message)
 
-    def list_models(self, **kwargs: Any) -> Sequence[Model]:
-        """List available models from Anthropic."""
-        client = Anthropic(
+    async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
+        client = AsyncAnthropic(
             api_key=self.config.api_key,
             base_url=self.config.api_base,
             **(self.config.client_args if self.config.client_args else {}),
         )
-        models_list = client.models.list(**kwargs)
-        return self._convert_list_models_response(models_list)
+        models_list = await client.models.list(**kwargs)
+        return self._convert_list_models_response(models_list.data)

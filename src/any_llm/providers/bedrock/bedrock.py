@@ -239,7 +239,7 @@ class BedrockProvider(AnyLLM):
         response_data = {"embedding_data": embedding_data, "model": model, "total_tokens": total_tokens}
         return self._convert_embedding_response(response_data)
 
-    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+    async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.
         """
