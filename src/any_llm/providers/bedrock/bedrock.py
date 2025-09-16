@@ -7,10 +7,10 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from any_llm.any_llm import AnyLLM
 from any_llm.config import ClientConfig
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.logging import logger
-from any_llm.provider import Provider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
 from any_llm.utils.instructor import _convert_instructor_response
@@ -30,7 +30,7 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 
-class BedrockProvider(Provider):
+class BedrockProvider(AnyLLM):
     """AWS Bedrock Provider using boto3 and instructor for structured output."""
 
     PROVIDER_NAME = "bedrock"
@@ -107,7 +107,7 @@ class BedrockProvider(Provider):
         if credentials is None and bedrock_api_key is None:
             raise MissingApiKeyError(provider_name=self.PROVIDER_NAME, env_var_name=self.ENV_API_KEY_NAME)
 
-    async def acompletion(
+    async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,
@@ -119,7 +119,7 @@ class BedrockProvider(Provider):
 
         # create partial function of sync call
         call_sync_partial: Callable[[], ChatCompletion | Iterator[ChatCompletionChunk]] = functools.partial(
-            self.completion, params, **kwargs
+            self._completion, params, **kwargs
         )
 
         result = await loop.run_in_executor(None, call_sync_partial)
@@ -133,7 +133,7 @@ class BedrockProvider(Provider):
 
         return _stream()
 
-    def completion(
+    def _completion(
         self,
         params: CompletionParams,
         **kwargs: Any,
@@ -182,7 +182,7 @@ class BedrockProvider(Provider):
 
         return self._convert_completion_response(response)
 
-    async def aembedding(
+    async def _aembedding(
         self,
         model: str,
         inputs: str | list[str],

@@ -8,6 +8,7 @@ nav:
   - Quickstart: quickstart.md
   - Providers: providers.md
   - API Reference:
+    - AnyLLM: api/any_llm.md
     - Responses: api/responses.md
     - Completion: api/completion.md
     - Embedding: api/embedding.md

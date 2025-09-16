@@ -1,8 +1,8 @@
 import os
 
-from any_llm.constants import ProviderName
+from any_llm.constants import LLMProvider
 
-LOCAL_PROVIDERS = [ProviderName.LLAMACPP, ProviderName.OLLAMA, ProviderName.LMSTUDIO, ProviderName.LLAMAFILE]
+LOCAL_PROVIDERS = [LLMProvider.LLAMACPP, LLMProvider.OLLAMA, LLMProvider.LMSTUDIO, LLMProvider.LLAMAFILE]
 
 EXPECTED_PROVIDERS = os.environ.get("EXPECTED_PROVIDERS", "").split(",")
 

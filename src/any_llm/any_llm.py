@@ -1,0 +1,486 @@
+# Inspired by https://github.com/andrewyng/aisuite/tree/main/aisuite
+from __future__ import annotations
+
+import asyncio
+import importlib
+import os
+import warnings
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, Any, Literal
+
+from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider
+from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
+from any_llm.tools import prepare_tools
+from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, CompletionParams
+from any_llm.types.provider import ProviderMetadata
+from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
+from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+
+    from pydantic import BaseModel
+
+    from any_llm.config import ClientConfig
+    from any_llm.types.completion import (
+        ChatCompletionChunk,
+        CreateEmbeddingResponse,
+    )
+    from any_llm.types.model import Model
+
+
+class AnyLLM(ABC):
+    """Provider for the LLM."""
+
+    # === Provider-specific configuration (to be overridden by subclasses) ===
+    PROVIDER_NAME: str
+    """Must match the name of the provider directory  (case sensitive)"""
+
+    PROVIDER_DOCUMENTATION_URL: str
+    """Link to the provider's documentation"""
+
+    ENV_API_KEY_NAME: str
+    """Environment variable name for the API key"""
+
+    # === Feature support flags (to be set by subclasses) ===
+    SUPPORTS_COMPLETION_STREAMING: bool
+    """OpenAI Streaming Completion API"""
+
+    SUPPORTS_COMPLETION: bool
+    """OpenAI Completion API"""
+
+    SUPPORTS_COMPLETION_REASONING: bool
+    """Reasoning Content attached to Completion API Response"""
+
+    SUPPORTS_COMPLETION_IMAGE: bool
+    """Image Support for Completion API"""
+
+    SUPPORTS_COMPLETION_PDF: bool
+    """PDF Support for Completion API"""
+
+    SUPPORTS_EMBEDDING: bool
+    """OpenAI Embedding API"""
+
+    SUPPORTS_RESPONSES: bool
+    """OpenAI Responses API"""
+
+    SUPPORTS_LIST_MODELS: bool
+    """OpenAI Models API"""
+
+    API_BASE: str | None = None
+    """This is used to set the API base for the provider.
+    It is not required but may prove useful for providers that have overridable api bases.
+    """
+
+    # === Internal Flag Checks ===
+    MISSING_PACKAGES_ERROR: ImportError | None = None
+    """Some providers use SDKs that are not installed by default.
+    This flag is used to check if the packages are installed before instantiating the provider.
+    """
+
+    def __init__(self, config: ClientConfig) -> None:
+        self._verify_no_missing_packages()
+        self.config = self._verify_and_set_api_key(config)
+
+    def _verify_no_missing_packages(self) -> None:
+        if self.MISSING_PACKAGES_ERROR is not None:
+            msg = f"{self.PROVIDER_NAME} required packages are not installed. Please install them with `pip install any-llm-sdk[{self.PROVIDER_NAME}]`"
+            raise ImportError(msg) from self.MISSING_PACKAGES_ERROR
+
+    def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
+        # Standardized API key handling. Splitting into its own function so that providers
+        # Can easily override this method if they don't want verification (for instance, LMStudio)
+        if not config.api_key:
+            config.api_key = os.getenv(self.ENV_API_KEY_NAME)
+
+        if not config.api_key:
+            raise MissingApiKeyError(self.PROVIDER_NAME, self.ENV_API_KEY_NAME)
+        return config
+
+    @classmethod
+    def create(cls, provider: str | LLMProvider, config: ClientConfig) -> AnyLLM:
+        """Create a provider instance using the given provider name and config.
+
+        Args:
+            provider: The provider name (e.g., 'openai', 'anthropic')
+            config: Client configuration for the provider
+
+        Returns:
+            Provider instance for the specified provider
+
+        """
+        return cls._create_provider(provider, config)
+
+    @classmethod
+    def _create_provider(cls, provider_key: str | LLMProvider, config: ClientConfig) -> AnyLLM:
+        """Dynamically load and create an instance of a provider based on the naming convention."""
+        provider_key = LLMProvider.from_string(provider_key).value
+
+        provider_class_name = f"{provider_key.capitalize()}Provider"
+        provider_module_name = f"{provider_key}"
+
+        module_path = f"any_llm.providers.{provider_module_name}"
+
+        try:
+            module = importlib.import_module(module_path)
+        except ImportError as e:
+            msg = f"Could not import module {module_path}: {e!s}. Please ensure the provider is supported by doing AnyLLM.get_supported_providers()"
+            raise ImportError(msg) from e
+
+        provider_class: type[AnyLLM] = getattr(module, provider_class_name)
+        return provider_class(config=config)
+
+    @classmethod
+    def get_provider_class(cls, provider_key: str | LLMProvider) -> type[AnyLLM]:
+        """Get the provider class without instantiating it.
+
+        Args:
+            provider_key: The provider key (e.g., 'anthropic', 'openai')
+
+        Returns:
+            The provider class
+
+        """
+        provider_key = LLMProvider.from_string(provider_key).value
+
+        provider_class_name = f"{provider_key.capitalize()}Provider"
+        provider_module_name = f"{provider_key}"
+
+        module_path = f"any_llm.providers.{provider_module_name}"
+
+        try:
+            module = importlib.import_module(module_path)
+        except ImportError as e:
+            msg = f"Could not import module {module_path}: {e!s}. Please ensure the provider is supported by doing AnyLLM.get_supported_providers()"
+            raise ImportError(msg) from e
+
+        provider_class: type[AnyLLM] = getattr(module, provider_class_name)
+        return provider_class
+
+    @classmethod
+    def get_supported_providers(cls) -> list[str]:
+        """Get a list of supported provider keys."""
+        return [provider.value for provider in LLMProvider]
+
+    @classmethod
+    def get_all_provider_metadata(cls) -> list[ProviderMetadata]:
+        """Get metadata for all supported providers.
+
+        Returns:
+            List of dictionaries containing provider metadata
+
+        """
+        providers: list[ProviderMetadata] = []
+        for provider_key in cls.get_supported_providers():
+            provider_class = cls.get_provider_class(provider_key)
+            metadata = provider_class.get_provider_metadata()
+            providers.append(metadata)
+
+        # Sort providers by name
+        providers.sort(key=lambda x: x.name)
+        return providers
+
+    @classmethod
+    def get_provider_enum(cls, provider_key: str) -> LLMProvider:
+        """Convert a string provider key to a ProviderName enum."""
+        try:
+            return LLMProvider(provider_key)
+        except ValueError as e:
+            supported = [provider.value for provider in LLMProvider]
+            raise UnsupportedProviderError(provider_key, supported) from e
+
+    @classmethod
+    def split_model_provider(cls, model: str) -> tuple[LLMProvider, str]:
+        """Extract the provider key from the model identifier.
+
+        Supports both new format 'provider:model' (e.g., 'mistral:mistral-small')
+        and legacy format 'provider/model' (e.g., 'mistral/mistral-small').
+
+        The legacy format will be deprecated in version 1.0.
+        """
+        colon_index = model.find(":")
+        slash_index = model.find("/")
+
+        # Determine which delimiter comes first
+        if colon_index != -1 and (slash_index == -1 or colon_index < slash_index):
+            # The colon came first, so it's using the new syntax.
+            provider, model_name = model.split(":", 1)
+        elif slash_index != -1:
+            # Slash comes first, so it's the legacy syntax
+            warnings.warn(
+                f"Model format 'provider/model' is deprecated and will be removed in version 1.0. "
+                f"Please use 'provider:model' format instead. Got: '{model}'",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            provider, model_name = model.split("/", 1)
+        else:
+            msg = f"Invalid model format. Expected 'provider:model' or 'provider/model', got '{model}'"
+            raise ValueError(msg)
+
+        if not provider or not model_name:
+            msg = f"Invalid model format. Expected 'provider:model' or 'provider/model', got '{model}'"
+            raise ValueError(msg)
+        return cls.get_provider_enum(provider), model_name
+
+    @staticmethod
+    @abstractmethod
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @abstractmethod
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @abstractmethod
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @abstractmethod
+    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @abstractmethod
+    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @abstractmethod
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
+
+    @classmethod
+    def get_provider_metadata(cls) -> ProviderMetadata:
+        """Get provider metadata without requiring instantiation.
+
+        Returns:
+            Dictionary containing provider metadata including name, environment variable,
+            documentation URL, and class name.
+
+        """
+        return ProviderMetadata(
+            name=cls.PROVIDER_NAME,
+            env_key=cls.ENV_API_KEY_NAME,
+            doc_url=cls.PROVIDER_DOCUMENTATION_URL,
+            streaming=cls.SUPPORTS_COMPLETION_STREAMING,
+            reasoning=cls.SUPPORTS_COMPLETION_REASONING,
+            completion=cls.SUPPORTS_COMPLETION,
+            image=cls.SUPPORTS_COMPLETION_IMAGE,
+            pdf=cls.SUPPORTS_COMPLETION_PDF,
+            embedding=cls.SUPPORTS_EMBEDDING,
+            responses=cls.SUPPORTS_RESPONSES,
+            list_models=cls.SUPPORTS_LIST_MODELS,
+            class_name=cls.__name__,
+        )
+
+    def completion(
+        self,
+        **kwargs: Any,
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+        """Create a chat completion synchronously.
+
+        See [AnyLLM.acompletion][any_llm.any_llm.AnyLLM.acompletion]
+        """
+        response = run_async_in_sync(self.acompletion(**kwargs), allow_running_loop=INSIDE_NOTEBOOK)
+        if isinstance(response, ChatCompletion):
+            return response
+
+        return async_iter_to_sync_iter(response)
+
+    async def acompletion(
+        self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        max_tokens: int | None = None,
+        response_format: dict[str, Any] | type[BaseModel] | None = None,
+        stream: bool | None = None,
+        n: int | None = None,
+        stop: str | list[str] | None = None,
+        presence_penalty: float | None = None,
+        frequency_penalty: float | None = None,
+        seed: int | None = None,
+        user: str | None = None,
+        parallel_tool_calls: bool | None = None,
+        logprobs: bool | None = None,
+        top_logprobs: int | None = None,
+        logit_bias: dict[str, float] | None = None,
+        stream_options: dict[str, Any] | None = None,
+        max_completion_tokens: int | None = None,
+        reasoning_effort: Literal["minimal", "low", "medium", "high", "auto"] | None = "auto",
+        **kwargs: Any,
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        """Create a chat completion asynchronously.
+
+        Args:
+            model: Model identifier for the chosen provider (e.g., model='gpt-4.1-mini' for LLMProvider.OPENAI).
+            messages: List of messages for the conversation
+            tools: List of tools for tool calling. Can be Python callables or OpenAI tool format dicts
+            tool_choice: Controls which tools the model can call
+            temperature: Controls randomness in the response (0.0 to 2.0)
+            top_p: Controls diversity via nucleus sampling (0.0 to 1.0)
+            max_tokens: Maximum number of tokens to generate
+            response_format: Format specification for the response
+            stream: Whether to stream the response
+            n: Number of completions to generate
+            stop: Stop sequences for generation
+            presence_penalty: Penalize new tokens based on presence in text
+            frequency_penalty: Penalize new tokens based on frequency in text
+            seed: Random seed for reproducible results
+            user: Unique identifier for the end user
+            parallel_tool_calls: Whether to allow parallel tool calls
+            logprobs: Include token-level log probabilities in the response
+            top_logprobs: Number of alternatives to return when logprobs are requested
+            logit_bias: Bias the likelihood of specified tokens during generation
+            stream_options: Additional options controlling streaming behavior
+            max_completion_tokens: Maximum number of tokens for the completion
+            reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
+            **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
+
+        Returns:
+            The completion response from the provider
+
+        """
+        all_args = locals()
+        all_args.pop("self")
+        all_args["model_id"] = all_args.pop("model")
+        kwargs = all_args.pop("kwargs")
+
+        if tools:
+            all_args["tools"] = prepare_tools(tools)
+
+        for i, message in enumerate(messages):
+            if isinstance(message, ChatCompletionMessage):
+                # Dump the message but exclude the extra field that we extend from OpenAI Spec
+                messages[i] = message.model_dump(exclude_none=True, exclude={"reasoning"})
+        all_args["messages"] = messages
+
+        return await self._acompletion(CompletionParams(**all_args), **kwargs)
+
+    async def _acompletion(
+        self, params: CompletionParams, **kwargs: Any
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        if not self.SUPPORTS_COMPLETION:
+            msg = "Provider doesn't support completion."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _acompletion method"
+        raise NotImplementedError(msg)
+
+    def responses(self, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
+        """Create a response synchronously.
+
+        See [AnyLLM.aresponses][any_llm.any_llm.AnyLLM.aresponses]
+        """
+        response = run_async_in_sync(self.aresponses(**kwargs), allow_running_loop=INSIDE_NOTEBOOK)
+        if isinstance(response, Response):
+            return response
+        return async_iter_to_sync_iter(response)
+
+    async def aresponses(
+        self,
+        model: str,
+        input_data: str | ResponseInputParam,
+        *,
+        tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        max_output_tokens: int | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        stream: bool | None = None,
+        instructions: str | None = None,
+        max_tool_calls: int | None = None,
+        parallel_tool_calls: int | None = None,
+        reasoning: Any | None = None,
+        text: Any | None = None,
+        **kwargs: Any,
+    ) -> Response | AsyncIterator[ResponseStreamEvent]:
+        """Create a response using the OpenAI-style Responses API.
+
+        This follows the OpenAI Responses API shape and returns the aliased
+        `any_llm.types.responses.Response` type. If `stream=True`, an iterator of
+        `any_llm.types.responses.ResponseStreamEvent` items is returned.
+
+        Args:
+            model: Model identifier for the chosen provider (e.g., model='gpt-4.1-mini' for LLMProvider.OPENAI).
+            input_data: The input payload accepted by provider's Responses API.
+                For OpenAI-compatible providers, this is typically a list mixing
+                text, images, and tool instructions, or a dict per OpenAI spec.
+            tools: Optional tools for tool calling (Python callables or OpenAI tool dicts)
+            tool_choice: Controls which tools the model can call
+            max_output_tokens: Maximum number of output tokens to generate
+            temperature: Controls randomness in the response (0.0 to 2.0)
+            top_p: Controls diversity via nucleus sampling (0.0 to 1.0)
+            stream: Whether to stream response events
+            instructions: A system (or developer) message inserted into the model's context.
+            max_tool_calls: The maximum number of total calls to built-in tools that can be processed in a response. This maximum number applies across all built-in tool calls, not per individual tool. Any further attempts to call a tool by the model will be ignored.
+            parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
+            reasoning: Configuration options for reasoning models.
+            text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
+            **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
+
+        Returns:
+            Either a `Response` object (non-streaming) or an iterator of
+            `ResponseStreamEvent` (streaming).
+
+        Raises:
+            NotImplementedError: If the selected provider does not support the Responses API.
+
+        """
+        all_args = locals()
+        all_args.pop("self")
+        all_args["input"] = all_args.pop("input_data")
+        kwargs = all_args.pop("kwargs")
+
+        if tools:
+            all_args["tools"] = prepare_tools(tools)
+
+        return await self._aresponses(ResponsesParams(**all_args, **kwargs))
+
+    async def _aresponses(
+        self, params: ResponsesParams, **kwargs: Any
+    ) -> Response | AsyncIterator[ResponseStreamEvent]:
+        if not self.SUPPORTS_RESPONSES:
+            msg = "Provider doesn't support responses."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _aresponses method"
+        raise NotImplementedError(msg)
+
+    def embedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:
+        return run_async_in_sync(self.aembedding(model, inputs, **kwargs), allow_running_loop=INSIDE_NOTEBOOK)
+
+    async def aembedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:
+        return await self._aembedding(model, inputs, **kwargs)
+
+    async def _aembedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:
+        if not self.SUPPORTS_EMBEDDING:
+            msg = "Provider doesn't support embedding."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _aembedding method"
+        raise NotImplementedError(msg)
+
+    def list_models(self, **kwargs: Any) -> Sequence[Model]:
+        """Return a list of Model if the provider supports listing models.
+
+        Should be overridden by subclasses.
+        """
+        msg = "Subclasses must implement list_models method"
+        if not self.SUPPORTS_LIST_MODELS:
+            raise NotImplementedError(msg)
+        raise NotImplementedError(msg)
+
+    async def list_models_async(self, **kwargs: Any) -> Sequence[Model]:
+        return await asyncio.to_thread(self.list_models, **kwargs)

@@ -18,9 +18,17 @@ The demo features real-time streaming responses, multiple provider support, and 
 
 Refer to the [Quickstart](./quickstart.md) for instructions on installation and usage.
 
-### Parameters
+### API Documentation
 
-For a complete list of available functions and their parameters, see the [completion](./api/completion.md), [embedding](./api/embedding.md), and [responses](./api/responses.md) API documentation.
+`any-llm` provides two main interfaces:
+
+**Direct API Functions** (recommended for simple use cases):
+- [completion](./api/completion.md) - Chat completions with any provider
+- [embedding](./api/embedding.md) - Text embeddings
+- [responses](./api/responses.md) - OpenAI-style Responses API
+
+**AnyLLM Class** (recommended for advanced use cases):
+- [Provider API](./api/any_llm.md) - Lower-level provider interface with metadata access and reusability
 
 ### Error Handling
 

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
-from any_llm.provider import Provider
+from any_llm.any_llm import AnyLLM
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from any_llm.types.model import Model
 
 
-class WatsonxProvider(Provider):
+class WatsonxProvider(AnyLLM):
     """IBM Watsonx Provider using the official IBM Watsonx AI SDK."""
 
     PROVIDER_NAME = "watsonx"
@@ -116,7 +116,7 @@ class WatsonxProvider(Provider):
         for chunk in response_stream:
             yield self._convert_completion_chunk_response(chunk)
 
-    async def acompletion(
+    async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,
@@ -129,7 +129,6 @@ class WatsonxProvider(Provider):
                 api_key=self.config.api_key,
                 url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL"),
             ),
-            project_id=kwargs.get("project_id") or os.getenv("WATSONX_PROJECT_ID"),
             **(self.config.client_args if self.config.client_args else {}),
         )
 
@@ -147,43 +146,6 @@ class WatsonxProvider(Provider):
             return self._stream_completion_async(model_inference, params.messages, **completion_kwargs)
 
         response = await model_inference.achat(
-            messages=params.messages,
-            params=completion_kwargs,
-        )
-
-        return self._convert_completion_response(response)
-
-    def completion(
-        self,
-        params: CompletionParams,
-        **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        """Create a chat completion using Watsonx."""
-
-        model_inference = ModelInference(
-            model_id=params.model_id,
-            credentials=Credentials(
-                api_key=self.config.api_key,
-                url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL"),
-            ),
-            project_id=kwargs.get("project_id") or os.getenv("WATSONX_PROJECT_ID"),
-            **(self.config.client_args if self.config.client_args else {}),
-        )
-
-        # Handle response_format by inlining schema guidance into the prompt
-        response_format = params.response_format
-        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-            params.messages = _convert_pydantic_to_watsonx_json(response_format, params.messages)
-
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
-
-        completion_kwargs = self._convert_completion_params(params, **kwargs)
-
-        if params.stream:
-            return self._stream_completion(model_inference, params.messages, **completion_kwargs)
-
-        response = model_inference.chat(
             messages=params.messages,
             params=completion_kwargs,
         )

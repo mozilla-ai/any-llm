@@ -13,7 +13,7 @@ from any_llm.types.completion import CompletionParams
 async def test_response_format_dict_raises() -> None:
     provider = LlamafileProvider(ClientConfig())
     with pytest.raises(UnsupportedParameterError):
-        await provider.acompletion(
+        await provider._acompletion(
             CompletionParams(
                 model_id="llama3.1",
                 messages=[{"role": "user", "content": "Hi"}],
@@ -27,8 +27,8 @@ async def test_calls_completion() -> None:
     provider = LlamafileProvider(ClientConfig())
     params = CompletionParams(model_id="llama3.1", messages=[{"role": "user", "content": "Hi"}])
     sentinel = object()
-    with patch.object(BaseOpenAIProvider, "acompletion", autospec=True, return_value=sentinel) as mock_super:
-        result = await provider.acompletion(params, temperature=0.1)
+    with patch.object(BaseOpenAIProvider, "_acompletion", autospec=True, return_value=sentinel) as mock_super:
+        result = await provider._acompletion(params, temperature=0.1)
         assert result is sentinel
         mock_super.assert_called_once_with(provider, params, temperature=0.1)
 
@@ -46,7 +46,7 @@ async def test_tools_raises() -> None:
         }
     ]
     with pytest.raises(UnsupportedParameterError):
-        await provider.acompletion(
+        await provider._acompletion(
             CompletionParams(
                 model_id="llama3.1",
                 messages=[{"role": "user", "content": "Hi"}],

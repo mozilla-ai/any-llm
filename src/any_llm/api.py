@@ -3,21 +3,19 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from any_llm import AnyLLM
 from any_llm.config import ClientConfig
-from any_llm.constants import ProviderName
-from any_llm.factory import ProviderFactory
-from any_llm.tools import prepare_tools
+from any_llm.constants import LLMProvider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, CreateEmbeddingResponse
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
-from any_llm.utils.api import _process_completion_params
 
 
 def completion(
     model: str,
     messages: list[dict[str, Any] | ChatCompletionMessage],
     *,
-    provider: str | ProviderName | None = None,
+    provider: str | LLMProvider | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     temperature: float | None = None,
@@ -32,7 +30,6 @@ def completion(
     seed: int | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
-    api_timeout: float | None = None,
     user: str | None = None,
     parallel_tool_calls: bool | None = None,
     logprobs: bool | None = None,
@@ -67,7 +64,6 @@ def completion(
         seed: Random seed for reproducible results
         api_key: API key for the provider
         api_base: Base URL for the provider API
-        api_timeout: Request timeout in seconds
         user: Unique identifier for the end user
         parallel_tool_calls: Whether to allow parallel tool calls
         logprobs: Include token-level log probabilities in the response
@@ -83,45 +79,32 @@ def completion(
         The completion response from the provider
 
     """
-    provider_instance, completion_params = _process_completion_params(
-        model=model,
-        provider=provider,
-        messages=messages,
-        tools=tools,
-        tool_choice=tool_choice,
-        temperature=temperature,
-        top_p=top_p,
-        max_tokens=max_tokens,
-        response_format=response_format,
-        stream=stream,
-        n=n,
-        stop=stop,
-        presence_penalty=presence_penalty,
-        frequency_penalty=frequency_penalty,
-        seed=seed,
-        api_key=api_key,
-        api_base=api_base,
-        api_timeout=api_timeout,
-        user=user,
-        parallel_tool_calls=parallel_tool_calls,
-        logprobs=logprobs,
-        top_logprobs=top_logprobs,
-        logit_bias=logit_bias,
-        stream_options=stream_options,
-        max_completion_tokens=max_completion_tokens,
-        reasoning_effort=reasoning_effort,
-        client_args=client_args,
-        **kwargs,
-    )
+    all_args = locals()
+    all_args.pop("provider")
+    kwargs = all_args.pop("kwargs")
 
-    return provider_instance.completion(completion_params, **kwargs)
+    model = all_args.pop("model")
+    if provider is None:
+        provider_key, model_id = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = LLMProvider.from_string(provider)
+        model_id = model
+    all_args["model"] = model_id
+
+    llm = AnyLLM.create(
+        provider_key,
+        ClientConfig(
+            api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
+        ),
+    )
+    return llm.completion(**all_args, **kwargs)
 
 
 async def acompletion(
     model: str,
     messages: list[dict[str, Any] | ChatCompletionMessage],
     *,
-    provider: str | ProviderName | None = None,
+    provider: str | LLMProvider | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     temperature: float | None = None,
@@ -136,7 +119,6 @@ async def acompletion(
     seed: int | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
-    api_timeout: float | None = None,
     user: str | None = None,
     parallel_tool_calls: bool | None = None,
     logprobs: bool | None = None,
@@ -171,7 +153,6 @@ async def acompletion(
         seed: Random seed for reproducible results
         api_key: API key for the provider
         api_base: Base URL for the provider API
-        api_timeout: Request timeout in seconds
         user: Unique identifier for the end user
         parallel_tool_calls: Whether to allow parallel tool calls
         logprobs: Include token-level log probabilities in the response
@@ -187,45 +168,32 @@ async def acompletion(
         The completion response from the provider
 
     """
-    provider_instance, completion_params = _process_completion_params(
-        model=model,
-        provider=provider,
-        messages=messages,
-        tools=tools,
-        tool_choice=tool_choice,
-        temperature=temperature,
-        top_p=top_p,
-        max_tokens=max_tokens,
-        response_format=response_format,
-        stream=stream,
-        n=n,
-        stop=stop,
-        presence_penalty=presence_penalty,
-        frequency_penalty=frequency_penalty,
-        seed=seed,
-        api_key=api_key,
-        api_base=api_base,
-        api_timeout=api_timeout,
-        user=user,
-        parallel_tool_calls=parallel_tool_calls,
-        logprobs=logprobs,
-        top_logprobs=top_logprobs,
-        logit_bias=logit_bias,
-        stream_options=stream_options,
-        max_completion_tokens=max_completion_tokens,
-        reasoning_effort=reasoning_effort,
-        client_args=client_args,
-        **kwargs,
-    )
+    all_args = locals()
+    all_args.pop("provider")
+    kwargs = all_args.pop("kwargs")
 
-    return await provider_instance.acompletion(completion_params, **kwargs)
+    model = all_args.pop("model")
+    if provider is None:
+        provider_key, model_id = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = LLMProvider.from_string(provider)
+        model_id = model
+    all_args["model"] = model_id
+
+    llm = AnyLLM.create(
+        provider_key,
+        ClientConfig(
+            api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
+        ),
+    )
+    return await llm.acompletion(**all_args, **kwargs)
 
 
 def responses(
     model: str,
     input_data: str | ResponseInputParam,
     *,
-    provider: str | ProviderName | None = None,
+    provider: str | LLMProvider | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     max_output_tokens: int | None = None,
@@ -234,8 +202,6 @@ def responses(
     stream: bool | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
-    api_timeout: float | None = None,
-    user: str | None = None,
     instructions: str | None = None,
     max_tool_calls: int | None = None,
     parallel_tool_calls: int | None = None,
@@ -264,8 +230,6 @@ def responses(
         stream: Whether to stream response events
         api_key: API key for the provider
         api_base: Base URL for the provider API
-        api_timeout: Request timeout in seconds
-        user: Unique identifier for the end user
         instructions: A system (or developer) message inserted into the model's context.
         max_tool_calls: The maximum number of total calls to built-in tools that can be processed in a response. This maximum number applies across all built-in tool calls, not per individual tool. Any further attempts to call a tool by the model will be ignored.
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
@@ -282,52 +246,32 @@ def responses(
         NotImplementedError: If the selected provider does not support the Responses API.
 
     """
+    all_args = locals()
+    all_args.pop("provider")
+    kwargs = all_args.pop("kwargs")
+
+    model = all_args.pop("model")
     if provider is None:
-        provider_key, model_name = ProviderFactory.split_model_provider(model)
+        provider_key, model_id = AnyLLM.split_model_provider(model)
     else:
-        provider_key = ProviderName.from_string(provider)
-        model_name = model
+        provider_key = LLMProvider.from_string(provider)
+        model_id = model
+    all_args["model"] = model_id
 
-    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
-
-    provider_instance = ProviderFactory.create_provider(provider_key, api_config)
-
-    responses_kwargs = kwargs.copy()
-    if tools is not None:
-        responses_kwargs["tools"] = prepare_tools(tools)
-    if tool_choice is not None:
-        responses_kwargs["tool_choice"] = tool_choice
-    if max_output_tokens is not None:
-        responses_kwargs["max_output_tokens"] = max_output_tokens
-    if temperature is not None:
-        responses_kwargs["temperature"] = temperature
-    if top_p is not None:
-        responses_kwargs["top_p"] = top_p
-    if stream is not None:
-        responses_kwargs["stream"] = stream
-    if api_timeout is not None:
-        responses_kwargs["timeout"] = api_timeout
-    if user is not None:
-        responses_kwargs["user"] = user
-    if instructions is not None:
-        responses_kwargs["instructions"] = instructions
-    if max_tool_calls is not None:
-        responses_kwargs["max_tool_calls"] = max_tool_calls
-    if parallel_tool_calls is not None:
-        responses_kwargs["parallel_tool_calls"] = parallel_tool_calls
-    if reasoning is not None:
-        responses_kwargs["reasoning"] = reasoning
-    if text is not None:
-        responses_kwargs["text"] = text
-
-    return provider_instance.responses(model_name, input_data, **responses_kwargs)
+    llm = AnyLLM.create(
+        provider_key,
+        ClientConfig(
+            api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
+        ),
+    )
+    return llm.responses(**all_args, **kwargs)
 
 
 async def aresponses(
     model: str,
     input_data: str | ResponseInputParam,
     *,
-    provider: str | ProviderName | None = None,
+    provider: str | LLMProvider | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     max_output_tokens: int | None = None,
@@ -336,8 +280,6 @@ async def aresponses(
     stream: bool | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
-    api_timeout: float | None = None,
-    user: str | None = None,
     instructions: str | None = None,
     max_tool_calls: int | None = None,
     parallel_tool_calls: int | None = None,
@@ -366,8 +308,6 @@ async def aresponses(
         stream: Whether to stream response events
         api_key: API key for the provider
         api_base: Base URL for the provider API
-        api_timeout: Request timeout in seconds
-        user: Unique identifier for the end user
         instructions: A system (or developer) message inserted into the model's context.
         max_tool_calls: The maximum number of total calls to built-in tools that can be processed in a response. This maximum number applies across all built-in tool calls, not per individual tool. Any further attempts to call a tool by the model will be ignored.
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
@@ -384,52 +324,32 @@ async def aresponses(
         NotImplementedError: If the selected provider does not support the Responses API.
 
     """
+    all_args = locals()
+    all_args.pop("provider")
+    kwargs = all_args.pop("kwargs")
+
+    model = all_args.pop("model")
     if provider is None:
-        provider_key, model_name = ProviderFactory.split_model_provider(model)
+        provider_key, model_id = AnyLLM.split_model_provider(model)
     else:
-        provider_key = ProviderName.from_string(provider)
-        model_name = model
+        provider_key = LLMProvider.from_string(provider)
+        model_id = model
+    all_args["model"] = model_id
 
-    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
-
-    provider_instance = ProviderFactory.create_provider(provider_key, api_config)
-
-    responses_kwargs = kwargs.copy()
-    if tools is not None:
-        responses_kwargs["tools"] = prepare_tools(tools)
-    if tool_choice is not None:
-        responses_kwargs["tool_choice"] = tool_choice
-    if max_output_tokens is not None:
-        responses_kwargs["max_output_tokens"] = max_output_tokens
-    if temperature is not None:
-        responses_kwargs["temperature"] = temperature
-    if top_p is not None:
-        responses_kwargs["top_p"] = top_p
-    if stream is not None:
-        responses_kwargs["stream"] = stream
-    if api_timeout is not None:
-        responses_kwargs["timeout"] = api_timeout
-    if user is not None:
-        responses_kwargs["user"] = user
-    if instructions is not None:
-        responses_kwargs["instructions"] = instructions
-    if max_tool_calls is not None:
-        responses_kwargs["max_tool_calls"] = max_tool_calls
-    if parallel_tool_calls is not None:
-        responses_kwargs["parallel_tool_calls"] = parallel_tool_calls
-    if reasoning is not None:
-        responses_kwargs["reasoning"] = reasoning
-    if text is not None:
-        responses_kwargs["text"] = text
-
-    return await provider_instance.aresponses(model_name, input_data, **responses_kwargs)
+    llm = AnyLLM.create(
+        provider_key,
+        ClientConfig(
+            api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
+        ),
+    )
+    return await llm.aresponses(**all_args, **kwargs)
 
 
 def embedding(
     model: str,
     inputs: str | list[str],
     *,
-    provider: str | ProviderName | None = None,
+    provider: str | LLMProvider | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
@@ -454,23 +374,20 @@ def embedding(
 
     """
     if provider is None:
-        provider_key, model_name = ProviderFactory.split_model_provider(model)
+        provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = ProviderName.from_string(provider)
+        provider_key = LLMProvider.from_string(provider)
         model_name = model
 
-    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
-
-    provider_instance = ProviderFactory.create_provider(provider_key, api_config)
-
-    return provider_instance.embedding(model_name, inputs, **kwargs)
+    llm = AnyLLM.create(provider_key, ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args))
+    return llm.embedding(model_name, inputs, **kwargs)
 
 
 async def aembedding(
     model: str,
     inputs: str | list[str],
     *,
-    provider: str | ProviderName | None = None,
+    provider: str | LLMProvider | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
@@ -492,41 +409,38 @@ async def aembedding(
 
     """
     if provider is None:
-        provider_key, model_name = ProviderFactory.split_model_provider(model)
+        provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = ProviderName.from_string(provider)
+        provider_key = LLMProvider.from_string(provider)
         model_name = model
 
-    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
-
-    provider_instance = ProviderFactory.create_provider(provider_key, api_config)
-
-    return await provider_instance.aembedding(model_name, inputs, **kwargs)
+    llm = AnyLLM.create(provider_key, ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args))
+    return await llm._aembedding(model_name, inputs, **kwargs)
 
 
 def list_models(
-    provider: str | ProviderName,
+    provider: str | LLMProvider,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> Sequence[Model]:
     """List available models for a provider."""
-    provider_key = ProviderName.from_string(provider)
-    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
-    prov_instance = ProviderFactory.create_provider(provider_key, api_config)
-    return prov_instance.list_models(**kwargs)
+    llm = AnyLLM.create(
+        LLMProvider.from_string(provider), ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
+    )
+    return llm.list_models(**kwargs)
 
 
 async def list_models_async(
-    provider: str | ProviderName,
+    provider: str | LLMProvider,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> Sequence[Model]:
     """List available models for a provider asynchronously."""
-    provider_key = ProviderName.from_string(provider)
-    api_config = ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
-    prov_instance = ProviderFactory.create_provider(provider_key, api_config)
-    return await prov_instance.list_models_async(**kwargs)
+    llm = AnyLLM.create(
+        LLMProvider.from_string(provider), ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
+    )
+    return await llm.list_models_async(**kwargs)

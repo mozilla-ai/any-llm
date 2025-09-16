@@ -3,9 +3,8 @@ import asyncio
 import json
 from typing import Any
 
-from any_llm import acompletion, list_models
+from any_llm import AnyLLM, LLMProvider, acompletion, list_models
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.provider import ProviderFactory, ProviderName
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -43,8 +42,8 @@ async def get_providers():
     """Get all providers that support list_models."""
     supported_providers = []
 
-    for provider_name in ProviderName:
-        provider_class = ProviderFactory.get_provider_class(provider_name)
+    for provider_name in LLMProvider:
+        provider_class = AnyLLM.get_provider_class(provider_name)
         if provider_class.SUPPORTS_LIST_MODELS:
             supported_providers.append(
                 {"name": provider_name.value, "display_name": provider_name.value.replace("_", " ").title()}

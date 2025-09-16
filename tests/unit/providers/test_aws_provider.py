@@ -29,7 +29,7 @@ def test_boto3_client_created_with_api_base() -> None:
 
     with mock_aws_provider(region) as mock_boto3_client:
         provider = BedrockProvider(ClientConfig(api_base=custom_endpoint, api_key="test_key"))
-        provider.completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
+        provider._completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
 
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=custom_endpoint, region_name=region)
 
@@ -40,7 +40,7 @@ def test_boto3_client_created_without_api_base() -> None:
 
     with mock_aws_provider(region) as mock_boto3_client:
         provider = BedrockProvider(ClientConfig(api_key="test_key"))
-        provider.completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
+        provider._completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
 
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None, region_name=region)
 
@@ -53,7 +53,7 @@ def test_completion_with_kwargs() -> None:
 
     with mock_aws_provider(region) as mock_boto3_client:
         provider = BedrockProvider(ClientConfig(api_key="test_key"))
-        provider.completion(
+        provider._completion(
             CompletionParams(
                 model_id=model_id,
                 messages=messages,

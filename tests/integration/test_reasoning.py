@@ -5,35 +5,32 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import ProviderName, acompletion
+from any_llm import AnyLLM, ClientConfig, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.factory import ProviderFactory
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 
 @pytest.mark.asyncio
 async def test_completion_reasoning(
-    provider: ProviderName,
-    provider_reasoning_model_map: dict[ProviderName, str],
-    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+    provider: LLMProvider,
+    provider_reasoning_model_map: dict[LLMProvider, str],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    cls = ProviderFactory.get_provider_class(provider)
-    if not cls.SUPPORTS_COMPLETION_REASONING:
-        pytest.skip(f"{provider.value} does not support completion reasoning, skipping")
-
-    model_id = provider_reasoning_model_map[provider]
-    extra_kwargs = provider_extra_kwargs_map.get(provider, {})
-    if provider in (ProviderName.ANTHROPIC, ProviderName.GEMINI, ProviderName.VERTEXAI, ProviderName.OLLAMA):
-        extra_kwargs["reasoning_effort"] = "low"
-
     try:
-        result = await acompletion(
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_COMPLETION_REASONING:
+            pytest.skip(f"{provider.value} does not support reasoning, skipping")
+
+        model_id = provider_reasoning_model_map[provider]
+
+        result = await llm.acompletion(
             model=model_id,
-            provider=provider,
-            **extra_kwargs,
             messages=[{"role": "user", "content": "Please say hello! Think very briefly before you respond."}],
+            reasoning_effort="low"
+            if provider in (LLMProvider.ANTHROPIC, LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.OLLAMA)
+            else "auto",
         )
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:
@@ -51,32 +48,30 @@ async def test_completion_reasoning(
 
 @pytest.mark.asyncio
 async def test_completion_reasoning_streaming(
-    provider: ProviderName,
-    provider_reasoning_model_map: dict[ProviderName, str],
-    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+    provider: LLMProvider,
+    provider_reasoning_model_map: dict[LLMProvider, str],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that reasoning works with streaming for supported providers."""
-    cls = ProviderFactory.get_provider_class(provider)
-    if not cls.SUPPORTS_COMPLETION_REASONING:
-        pytest.skip(f"{provider.value} does not support completion reasoning, skipping")
-    if not cls.SUPPORTS_COMPLETION_STREAMING:
-        pytest.skip(f"{provider.value} does not support streaming completion, skipping")
-
-    model_id = provider_reasoning_model_map[provider]
-    extra_kwargs = provider_extra_kwargs_map.get(provider, {})
-    if provider in (ProviderName.ANTHROPIC, ProviderName.GEMINI, ProviderName.VERTEXAI, ProviderName.OLLAMA):
-        extra_kwargs["reasoning_effort"] = "low"
-
     try:
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_COMPLETION_REASONING:
+            pytest.skip(f"{provider.value} does not support reasoning, skipping")
+        if not llm.SUPPORTS_COMPLETION_STREAMING:
+            pytest.skip(f"{provider.value} does not support streaming completion, skipping")
+
+        model_id = provider_reasoning_model_map[provider]
+
         output = ""
         reasoning = ""
         num_chunks = 0
-        results = await acompletion(
+        results = await llm.acompletion(
             model=model_id,
-            provider=provider,
-            **extra_kwargs,
             messages=[{"role": "user", "content": "Please say hello! Think very briefly before you respond."}],
             stream=True,
+            reasoning_effort="low"
+            if provider in (LLMProvider.ANTHROPIC, LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.OLLAMA)
+            else "auto",
         )
         assert isinstance(results, AsyncIterable)
         async for result in results:

@@ -8,31 +8,27 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import ProviderName, acompletion
+from any_llm import AnyLLM, ClientConfig, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.factory import ProviderFactory
 from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 
 @pytest.mark.asyncio
 async def test_async_completion(
-    provider: ProviderName,
-    provider_model_map: dict[ProviderName, str],
-    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+    provider: LLMProvider,
+    provider_model_map: dict[LLMProvider, str],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    cls = ProviderFactory.get_provider_class(provider)
-    if not cls.SUPPORTS_COMPLETION:
-        pytest.skip(f"{provider.value} does not support completion, skipping")
-
-    model_id = provider_model_map[provider]
-    extra_kwargs = provider_extra_kwargs_map.get(provider, {})
     try:
-        result = await acompletion(
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_COMPLETION:
+            pytest.skip(f"{provider.value} does not support completion, skipping")
+
+        model_id = provider_model_map[provider]
+        result = await llm.acompletion(
             model=model_id,
-            provider=provider,
-            **extra_kwargs,
             messages=[
                 {"role": "user", "content": "Hello"},
                 ChatCompletionMessage(role="assistant", content="Hi!"),
@@ -56,26 +52,21 @@ async def test_async_completion(
 
 @pytest.mark.asyncio
 async def test_async_completion_parallel(
-    provider: ProviderName,
-    provider_model_map: dict[ProviderName, str],
-    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+    provider: LLMProvider,
+    provider_model_map: dict[LLMProvider, str],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
-    cls = ProviderFactory.get_provider_class(provider)
-    if not cls.SUPPORTS_COMPLETION:
-        pytest.skip(f"{provider.value} does not support completion, skipping")
-
-    model_id = provider_model_map[provider]
-    prompt_1 = "What's the capital of France?"
-    prompt_2 = "What's the capital of Germany?"
-    extra_kwargs = provider_extra_kwargs_map.get(provider, {})
     try:
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_COMPLETION:
+            pytest.skip(f"{provider.value} does not support completion, skipping")
+
+        model_id = provider_model_map[provider]
+        prompt_1 = "What's the capital of France?"
+        prompt_2 = "What's the capital of Germany?"
         results = await asyncio.gather(
-            acompletion(
-                model=model_id, provider=provider, **extra_kwargs, messages=[{"role": "user", "content": prompt_1}]
-            ),
-            acompletion(
-                model=model_id, provider=provider, **extra_kwargs, messages=[{"role": "user", "content": prompt_2}]
-            ),
+            llm.acompletion(model=model_id, messages=[{"role": "user", "content": prompt_1}]),
+            llm.acompletion(model=model_id, messages=[{"role": "user", "content": prompt_2}]),
         )
         assert isinstance(results[0], ChatCompletion)
         assert isinstance(results[1], ChatCompletion)
@@ -95,24 +86,22 @@ async def test_async_completion_parallel(
 
 @pytest.mark.asyncio
 async def test_completion_with_image(
-    provider: ProviderName,
-    provider_image_model_map: dict[ProviderName, str],
-    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+    provider: LLMProvider,
+    provider_image_model_map: dict[LLMProvider, str],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
-    cls = ProviderFactory.get_provider_class(provider)
-    if not cls.SUPPORTS_COMPLETION_IMAGE:
-        pytest.skip(f"{provider.value} does not support completion, skipping")
-
     try:
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_COMPLETION_IMAGE:
+            pytest.skip(f"{provider.value} does not support completion, skipping")
+
+        model_id = provider_image_model_map[provider]
         assets_dir = Path(__file__).parent.parent / "assets"
         async with aiofiles.open(assets_dir / "any-llm-logo.png", "rb") as image_file:
             image_data = await image_file.read()
             base64_img = base64.b64encode(image_data).decode("utf-8")
-        model_id = provider_image_model_map[provider]
-        extra_kwargs = provider_extra_kwargs_map.get(provider, {})
-        response = await acompletion(
+        response = await llm.acompletion(
             model=model_id,
-            provider=provider,
             messages=[
                 {
                     "role": "user",
@@ -125,7 +114,6 @@ async def test_completion_with_image(
                     ],
                 }
             ],
-            **extra_kwargs,
         )
         assert isinstance(response, ChatCompletion)
         assert response.choices[0].message.content
@@ -141,25 +129,23 @@ async def test_completion_with_image(
 
 @pytest.mark.asyncio
 async def test_completion_with_pdf(
-    provider: ProviderName,
-    provider_image_model_map: dict[ProviderName, str],
-    provider_extra_kwargs_map: dict[ProviderName, dict[str, Any]],
+    provider: LLMProvider,
+    provider_image_model_map: dict[LLMProvider, str],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
-    cls = ProviderFactory.get_provider_class(provider)
-    if not cls.SUPPORTS_COMPLETION_PDF:
-        pytest.skip(f"{provider.value} does not support completion, skipping")
-
     try:
+        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        if not llm.SUPPORTS_COMPLETION_PDF:
+            pytest.skip(f"{provider.value} does not support completion, skipping")
+
+        model_id = provider_image_model_map[provider]
         assets_dir = Path(__file__).parent.parent / "assets"
         async with aiofiles.open(assets_dir / "cv_1.pdf", "rb") as pdf_file:
             pdf_data = await pdf_file.read()
             base64_pdf = base64.b64encode(pdf_data).decode("utf-8")
-        model_id = provider_image_model_map[provider]
-        extra_kwargs = provider_extra_kwargs_map.get(provider, {})
         data_url = f"data:application/pdf;base64,{base64_pdf}"
-        response = await acompletion(
+        response = await llm.acompletion(
             model=model_id,
-            provider=provider,
             messages=[
                 {
                     "role": "user",
@@ -175,7 +161,6 @@ async def test_completion_with_pdf(
                     ],
                 }
             ],
-            **extra_kwargs,
         )
         assert isinstance(response, ChatCompletion)
         assert response.choices[0].message.content

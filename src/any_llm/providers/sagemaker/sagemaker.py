@@ -7,10 +7,10 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from any_llm.any_llm import AnyLLM
 from any_llm.config import ClientConfig
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.logging import logger
-from any_llm.provider import Provider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
 from any_llm.utils.instructor import _convert_instructor_response
@@ -29,7 +29,7 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 
-class SagemakerProvider(Provider):
+class SagemakerProvider(AnyLLM):
     """AWS SageMaker Provider using boto3 for inference endpoints."""
 
     PROVIDER_NAME = "sagemaker"
@@ -105,7 +105,7 @@ class SagemakerProvider(Provider):
                 provider_name=self.PROVIDER_NAME, env_var_name="AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
             )
 
-    async def acompletion(
+    async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,
@@ -116,7 +116,7 @@ class SagemakerProvider(Provider):
         loop = asyncio.get_event_loop()
 
         call_sync_partial: Callable[[], ChatCompletion | Iterator[ChatCompletionChunk]] = functools.partial(
-            self.completion, params, **kwargs
+            self._completion, params, **kwargs
         )
 
         result = await loop.run_in_executor(None, call_sync_partial)
@@ -130,7 +130,7 @@ class SagemakerProvider(Provider):
 
         return _stream()
 
-    def completion(
+    def _completion(
         self,
         params: CompletionParams,
         **kwargs: Any,
@@ -194,7 +194,7 @@ class SagemakerProvider(Provider):
         response_body = json.loads(response["Body"].read())
         return self._convert_completion_response({"model": params.model_id, **response_body})
 
-    async def aembedding(
+    async def _aembedding(
         self,
         model: str,
         inputs: str | list[str],

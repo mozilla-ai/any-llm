@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING, Any, cast
 from openai import AsyncOpenAI, AsyncStream
 from pydantic import BaseModel
 
+from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import Provider
-from any_llm.types.responses import Response, ResponseStreamEvent
+from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
 if TYPE_CHECKING:
     from any_llm.types.completion import CreateEmbeddingResponse
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from any_llm.types.model import Model
 
 
-class GroqProvider(Provider):
+class GroqProvider(AnyLLM):
     """Groq Provider using instructor for structured output."""
 
     PROVIDER_NAME = "groq"
@@ -111,7 +111,7 @@ class GroqProvider(Provider):
 
         return _stream()
 
-    async def acompletion(
+    async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using Groq."""
@@ -147,13 +147,13 @@ class GroqProvider(Provider):
 
         return self._convert_completion_response(response)
 
-    async def aresponses(
-        self, model: str, input_data: Any, **kwargs: Any
+    async def _aresponses(
+        self, params: ResponsesParams, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call Groq Responses API and normalize into ChatCompletion/Chunks."""
         # Python SDK doesn't yet support it: https://community.groq.com/feature-requests-6/groq-python-sdk-support-for-responses-api-262
 
-        if "max_tool_calls" in kwargs:
+        if params.max_tool_calls is not None:
             parameter = "max_tool_calls"
             raise UnsupportedParameterError(parameter, self.PROVIDER_NAME)
 
@@ -163,11 +163,7 @@ class GroqProvider(Provider):
             **(self.config.client_args if self.config.client_args else {}),
         )
 
-        response = await client.responses.create(
-            model=model,
-            input=input_data,
-            **kwargs,
-        )
+        response = await client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
 
         if not isinstance(response, Response | AsyncStream):
             msg = f"Responses API returned an unexpected type: {type(response)}"

@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
-from any_llm.provider import Provider
+from any_llm.any_llm import AnyLLM
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
 
 
-class TogetherProvider(Provider):
+class TogetherProvider(AnyLLM):
     PROVIDER_NAME = "together"
     ENV_API_KEY_NAME = "TOGETHER_API_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://together.ai/"
@@ -128,53 +128,7 @@ class TogetherProvider(Provider):
         for chunk in response:
             yield self._convert_completion_chunk_response(chunk)
 
-    def completion(
-        self,
-        params: CompletionParams,
-        **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        """Make the API call to Together AI with instructor support for structured outputs."""
-        client = together.Together(
-            api_key=self.config.api_key,
-            base_url=self.config.api_base,
-            **(self.config.client_args if self.config.client_args else {}),
-        )
-
-        if params.response_format:
-            instructor_client = instructor.patch(client, mode=instructor.Mode.JSON)  # type: ignore [call-overload]
-
-            instructor_response = instructor_client.chat.completions.create(
-                model=params.model_id,
-                messages=cast("Any", params.messages),
-                response_model=params.response_format,
-                **params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"}),
-                **kwargs,
-            )
-
-            return _convert_instructor_response(instructor_response, params.model_id, self.PROVIDER_NAME)
-
-        completion_kwargs = self._convert_completion_params(params, **kwargs)
-
-        if params.stream:
-            return self._stream_completion(
-                client,
-                params.model_id,
-                params.messages,
-                **completion_kwargs,
-            )
-
-        response = cast(
-            "ChatCompletionResponse",
-            client.chat.completions.create(
-                model=params.model_id,
-                messages=cast("Any", params.messages),
-                **completion_kwargs,
-            ),
-        )
-
-        return self._convert_completion_response(response.model_dump())
-
-    async def acompletion(
+    async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,

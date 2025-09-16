@@ -16,7 +16,7 @@ async def test_stream_with_response_format_raises() -> None:
     provider = GroqProvider(ClientConfig(api_key="test-api-key"))
 
     with pytest.raises(UnsupportedParameterError, match="stream and response_format"):
-        await provider.acompletion(
+        await provider._acompletion(
             CompletionParams(
                 model_id="model-id",
                 messages=[{"role": "user", "content": "Hello"}],
@@ -55,7 +55,7 @@ async def test_completion_with_response_format_basemodel() -> None:
         mocked_groq.return_value.chat.completions.create = AsyncMock(return_value=mock_response)
         mocked_to_chat_completion.return_value = mock_response
 
-        await provider.acompletion(
+        await provider._acompletion(
             CompletionParams(
                 model_id="model-id",
                 messages=[{"role": "user", "content": "Hello"}],

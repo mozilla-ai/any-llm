@@ -5,7 +5,7 @@ from openai import AsyncStream
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.completion import Reasoning
-from any_llm.types.responses import Response, ResponseStreamEvent
+from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
 
 class FireworksProvider(BaseOpenAIProvider):
@@ -22,11 +22,11 @@ class FireworksProvider(BaseOpenAIProvider):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
 
-    async def aresponses(
-        self, model: str, input_data: Any, **kwargs: Any
+    async def _aresponses(
+        self, params: ResponsesParams, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call Fireworks Responses API and normalize into ChatCompletion/Chunks."""
-        response = await super().aresponses(model, input_data, **kwargs)
+        response = await super()._aresponses(params, **kwargs)
 
         if isinstance(response, Response) and not isinstance(response, AsyncStream):
             # See https://fireworks.ai/blog/response-api for details about Fireworks Responses API support

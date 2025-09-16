@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator, Sequence
 from typing import TYPE_CHECKING, Any
 
-from any_llm.provider import Provider
+from any_llm.any_llm import AnyLLM
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
 
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
 
 
-class AnthropicProvider(Provider):
+class AnthropicProvider(AnyLLM):
     """
     Anthropic Provider using enhanced Provider framework.
 
@@ -89,7 +89,7 @@ class AnthropicProvider(Provider):
             async for event in anthropic_stream:
                 yield self._convert_completion_chunk_response(event, model_id=kwargs.get("model", "unknown"))
 
-    async def acompletion(
+    async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,

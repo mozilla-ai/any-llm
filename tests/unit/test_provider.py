@@ -5,10 +5,10 @@ from unittest.mock import patch
 
 import pytest
 
+from any_llm import AnyLLM
 from any_llm.config import ClientConfig
-from any_llm.constants import ProviderName
+from any_llm.constants import LLMProvider
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
-from any_llm.factory import ProviderFactory
 
 
 def test_all_providers_in_enum() -> None:
@@ -17,10 +17,10 @@ def test_all_providers_in_enum() -> None:
 
     provider_dirs = []
     for item in providers_dir.iterdir():
-        if item.is_dir() and item.name != "__pycache__":
+        if item.is_dir() and item.name not in ("__pycache__", "google"):
             provider_dirs.append(item.name)
 
-    enum_values = [provider.value for provider in ProviderName]
+    enum_values = [provider.value for provider in LLMProvider]
 
     provider_dirs.sort()
     enum_values.sort()
@@ -40,10 +40,10 @@ def test_provider_enum_values_match_directory_names() -> None:
 
     actual_providers = set()
     for item in providers_dir.iterdir():
-        if item.is_dir() and item.name != "__pycache__":
+        if item.is_dir() and item.name not in ("__pycache__", "google"):
             actual_providers.add(item.name)
 
-    enum_providers = {provider.value for provider in ProviderName}
+    enum_providers = {provider.value for provider in LLMProvider}
 
     assert actual_providers == enum_providers, (
         f"Provider directories and enum values don't match!\n"
@@ -55,36 +55,36 @@ def test_provider_enum_values_match_directory_names() -> None:
 def test_provider_model_split() -> None:
     """Test that model strings are split correctly into provider and model name."""
     model_str = "ollama:model:tag"
-    provider, model_name = ProviderFactory.split_model_provider(model_str)
-    assert provider == ProviderName.OLLAMA
+    provider, model_name = AnyLLM.split_model_provider(model_str)
+    assert provider == LLMProvider.OLLAMA
     assert model_name == "model:tag"
 
     model_str = "ollama/model:tag"
-    provider, model_name = ProviderFactory.split_model_provider(model_str)
-    assert provider == ProviderName.OLLAMA
+    provider, model_name = AnyLLM.split_model_provider(model_str)
+    assert provider == LLMProvider.OLLAMA
     assert model_name == "model:tag"
 
     model_str = "ollama:models/model-tag"
-    provider, model_name = ProviderFactory.split_model_provider(model_str)
-    assert provider == ProviderName.OLLAMA
+    provider, model_name = AnyLLM.split_model_provider(model_str)
+    assert provider == LLMProvider.OLLAMA
     assert model_name == "models/model-tag"
 
     model_str = "ollama/models/model-tag"
-    provider, model_name = ProviderFactory.split_model_provider(model_str)
-    assert provider == ProviderName.OLLAMA
+    provider, model_name = AnyLLM.split_model_provider(model_str)
+    assert provider == LLMProvider.OLLAMA
     assert model_name == "models/model-tag"  # legacy format
 
 
 def test_get_provider_enum_valid_provider() -> None:
     """Test get_provider_enum returns correct enum for valid provider."""
-    provider_enum = ProviderFactory.get_provider_enum("openai")
-    assert provider_enum == ProviderName.OPENAI
+    provider_enum = AnyLLM.get_provider_enum("openai")
+    assert provider_enum == LLMProvider.OPENAI
 
 
 def test_get_provider_enum_invalid_provider() -> None:
     """Test get_provider_enum raises UnsupportedProviderError for invalid provider."""
     with pytest.raises(UnsupportedProviderError) as exc_info:
-        ProviderFactory.get_provider_enum("invalid_provider")
+        AnyLLM.get_provider_enum("invalid_provider")
 
     exception = exc_info.value
     assert exception.provider_key == "invalid_provider"
@@ -96,21 +96,21 @@ def test_get_provider_enum_invalid_provider() -> None:
 def test_unsupported_provider_error_message() -> None:
     """Test UnsupportedProviderError has correct message format."""
     with pytest.raises(UnsupportedProviderError, match="'invalid_provider' is not a supported provider"):
-        ProviderFactory.get_provider_enum("invalid_provider")
+        AnyLLM.get_provider_enum("invalid_provider")
 
 
 def test_unsupported_provider_error_attributes() -> None:
     """Test UnsupportedProviderError has correct attributes."""
     with pytest.raises(UnsupportedProviderError) as exc_info:
-        ProviderFactory.get_provider_enum("nonexistent")
+        AnyLLM.get_provider_enum("nonexistent")
 
     e = exc_info.value
     assert e.provider_key == "nonexistent"
-    assert e.supported_providers == ProviderFactory.get_supported_providers()
+    assert e.supported_providers == AnyLLM.get_supported_providers()
     assert "Supported providers:" in str(e)
 
 
-def test_all_providers_have_required_attributes(provider: ProviderName) -> None:
+def test_all_providers_have_required_attributes(provider: LLMProvider) -> None:
     """Test that all supported providers can be loaded with sample config parameters.
 
     This test verifies that providers can handle common configuration parameters
@@ -118,7 +118,7 @@ def test_all_providers_have_required_attributes(provider: ProviderName) -> None:
     """
     sample_config = ClientConfig(api_key="test_key", api_base="https://test.example.com")
 
-    provider_instance = ProviderFactory.create_provider(provider.value, sample_config)
+    provider_instance = AnyLLM.create(provider.value, sample_config)
 
     assert provider_instance.PROVIDER_NAME is not None
     assert provider_instance.PROVIDER_DOCUMENTATION_URL is not None
@@ -130,18 +130,18 @@ def test_all_providers_have_required_attributes(provider: ProviderName) -> None:
     assert provider_instance.SUPPORTS_RESPONSES is not None
 
 
-def test_providers_raise_MissingApiKeyError(provider: ProviderName) -> None:
+def test_providers_raise_MissingApiKeyError(provider: LLMProvider) -> None:
     if provider in (
-        ProviderName.BEDROCK,
-        ProviderName.OLLAMA,
-        ProviderName.LMSTUDIO,
-        ProviderName.LLAMAFILE,
-        ProviderName.SAGEMAKER,
+        LLMProvider.BEDROCK,
+        LLMProvider.OLLAMA,
+        LLMProvider.LMSTUDIO,
+        LLMProvider.LLAMAFILE,
+        LLMProvider.SAGEMAKER,
     ):
         pytest.skip("This provider handles `api_key` differently.")
     with patch.dict(os.environ, {}, clear=True):
         with pytest.raises(MissingApiKeyError):
-            ProviderFactory.create_provider(provider.value, ClientConfig())
+            AnyLLM.create(provider.value, ClientConfig())
 
 
 @pytest.mark.parametrize(
@@ -170,7 +170,7 @@ def test_providers_raise_ImportError_from_original(provider_name: str, module_na
             if mod.startswith((f"any_llm.providers.{provider_name}", f"{module_name}.")):
                 sys.modules.pop(mod)
         with pytest.raises(ImportError) as e:
-            ProviderFactory.create_provider(provider_name, ClientConfig(api_key="test_key"))
+            AnyLLM.create(provider_name, ClientConfig(api_key="test_key"))
         original_error = e.value.__cause__
         assert any(
             msg in str(original_error)

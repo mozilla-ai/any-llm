@@ -60,7 +60,7 @@ async def test_watsonx_non_streaming() -> None:
 
     with mock_watsonx_provider() as (mock_model_instance, mock_convert_response, mock_model_inference):
         provider = WatsonxProvider(ClientConfig(api_key=api_key))
-        result = await provider.acompletion(CompletionParams(model_id="test-model", messages=messages))
+        result = await provider._acompletion(CompletionParams(model_id="test-model", messages=messages))
 
         mock_model_inference.assert_called_once()
         call_kwargs = mock_model_inference.call_args[1]
@@ -80,7 +80,7 @@ async def test_watsonx_streaming() -> None:
 
     with mock_watsonx_streaming_provider() as (mock_model_instance, mock_convert_streaming_chunk, mock_model_inference):
         provider = WatsonxProvider(ClientConfig(api_key=api_key))
-        result = await provider.acompletion(CompletionParams(model_id="test-model", messages=messages, stream=True))
+        result = await provider._acompletion(CompletionParams(model_id="test-model", messages=messages, stream=True))
 
         mock_model_inference.assert_called_once()
         call_kwargs = mock_model_inference.call_args[1]

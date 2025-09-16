@@ -1,4 +1,4 @@
 ## Embedding
 
-::: any_llm.embedding
-::: any_llm.aembedding
+::: any_llm.api.embedding
+::: any_llm.api.aembedding
