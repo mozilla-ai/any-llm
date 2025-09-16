@@ -28,26 +28,13 @@ repos:
       - id: ruff-format
 
   - repo: local
-    # Thanks to https://jaredkhan.com/blog/mypy-pre-commit
-    # We do not use pre-commit/mirrors-mypy,
-    # as it is difficult to configure to run
-    # with the dependencies correctly installed.
     hooks:
       - id: mypy
         name: mypy
-        entry: "./scripts/run-mypy.sh"
-        language: python
-        language_version: python3.13
-        additional_dependencies:
-          - mypy==1.15.0
-          - pip
-          - types-requests
-          - types-pyyaml
-          - types-aiofiles
+        entry: "uv run mypy"
+        args: []
+        language: system
         types: [python]
-        # use require_serial so that script is only called once per commit
-        require_serial: true
-        # Print the number of files as a sanity-check
         verbose: true
 
   - repo: https://github.com/codespell-project/codespell

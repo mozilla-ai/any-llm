@@ -227,6 +227,7 @@ docs = [
 lint = [
   "pre-commit==4.3.0",
   "pre-commit-uv==4.1.5",
+  "mypy",
 ]
 
 tests = [
