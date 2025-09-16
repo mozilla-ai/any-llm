@@ -16,4 +16,4 @@ def test_all_docs(doc_file: pathlib.Path, monkeypatch: Any) -> None:
     with (
         patch("any_llm.any_llm.AnyLLM.create"),
     ):
-        check_md_file(fpath=doc_file, memory=True)
+        check_md_file(fpath=doc_file, memory=True)  # type: ignore[no-untyped-call]

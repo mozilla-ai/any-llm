@@ -22,7 +22,7 @@ jobs:
           activate-environment: true
 
       - name: Install pre-commit
-        run: uv sync --group lint
+        run: uv sync --group lint --extra all
 
       - uses: actions/cache@v4
         with:
@@ -30,13 +30,6 @@ jobs:
           key: ${{ runner.os }}-mypy-${{ hashFiles('pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-mypy-
-
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/pre-commit
-          key: ${{ runner.os }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pre-commit-
 
       - name: pre-commit
         run: uv run pre-commit run --all-files --verbose

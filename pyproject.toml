@@ -182,6 +182,11 @@ strict = true
 disallow_untyped_calls = true
 disallow_untyped_defs = true
 follow_untyped_imports = true
+exclude = [
+  "demos/",
+  "scripts/"
+]
+
 
 [[tool.mypy.overrides]]
 module = "tests.*"
@@ -227,6 +232,8 @@ docs = [
 lint = [
   "pre-commit==4.3.0",
   "pre-commit-uv==4.1.5",
+  "mypy",
+  "types-aiofiles",
 ]
 
 tests = [

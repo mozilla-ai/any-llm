@@ -137,7 +137,7 @@ def _get_providers_for_testing() -> list[LLMProvider]:
     if INCLUDE_NON_LOCAL_PROVIDERS:
         filtered.extend([provider for provider in all_providers if provider not in LOCAL_PROVIDERS])
 
-    return filtered  # type: ignore[return-value]
+    return filtered
 
 
 @pytest.fixture(params=_get_providers_for_testing(), ids=lambda x: x.value)
