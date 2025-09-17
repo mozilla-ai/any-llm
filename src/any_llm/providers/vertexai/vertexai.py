@@ -12,7 +12,11 @@ class VertexaiProvider(GoogleProvider):
 
     PROVIDER_NAME = "vertexai"
     PROVIDER_DOCUMENTATION_URL = "https://cloud.google.com/vertex-ai/docs"
-    ENV_API_KEY_NAME = "GOOGLE_PROJECT_ID"
+    ENV_API_KEY_NAME = ""
+
+    def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
+        # api_key is not mandatory in vertexai
+        return config
 
     def _get_client(self, config: ClientConfig) -> "genai.Client":
         """Get Vertex AI client."""
@@ -20,5 +24,6 @@ class VertexaiProvider(GoogleProvider):
 
         return genai.Client(
             vertexai=True,
+            api_key=self.config.api_key,
             **(config.client_args if config.client_args else {}),
         )
