@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -64,7 +65,15 @@ async def test_all_providers_can_be_loaded(provider: str) -> None:
     This test will automatically include new providers when they're added
     without requiring any code changes.
     """
-    provider_instance = AnyLLM.create(provider, ClientConfig(api_key="test_key"))
+    kwargs: dict[str, Any] = {"api_key": "test_key"}
+    if provider == "azure":
+        kwargs["api_base"] = "test_api_base"
+    if provider == "vertexai":
+        kwargs["client_args"] = {"project": "test-project", "location": "test-location"}
+    if provider == "sagemaker":
+        pytest.skip("sagemaker requires AWS credentials on instantiation")
+
+    provider_instance = AnyLLM.create(provider, ClientConfig(**kwargs))
 
     assert isinstance(provider_instance, AnyLLM), f"Provider {provider} did not create a valid AnyLLM instance"
 
@@ -79,7 +88,13 @@ async def test_all_providers_can_be_loaded_with_config(provider: str) -> None:
     This test verifies that providers can handle common configuration parameters
     like api_key and api_base without throwing errors during instantiation.
     """
-    sample_config = ClientConfig(api_key="test_key", api_base="https://test.example.com")
+    kwargs: dict[str, Any] = {"api_key": "test_key", "api_base": "https://test.example.com"}
+    if provider == "vertexai":
+        kwargs["client_args"] = {"project": "test-project", "location": "test-location"}
+    if provider == "sagemaker":
+        pytest.skip("sagemaker requires AWS credentials on instantiation")
+
+    sample_config = ClientConfig(**kwargs)
 
     provider_instance = AnyLLM.create(provider, sample_config)
 
@@ -94,6 +109,13 @@ async def test_provider_factory_can_create_all_supported_providers() -> None:
     supported_providers = AnyLLM.get_supported_providers()
 
     for provider_name in supported_providers:
-        provider_instance = AnyLLM.create(provider_name, ClientConfig(api_key="test_key"))
+        kwargs: dict[str, Any] = {"api_key": "test_key"}
+        if provider_name == "azure":
+            kwargs["api_base"] = "test_api_base"
+        if provider_name == "vertexai":
+            kwargs["client_args"] = {"project": "test-project", "location": "test-location"}
+        if provider_name == "sagemaker":
+            continue
+        provider_instance = AnyLLM.create(provider_name, ClientConfig(**kwargs))
 
         assert isinstance(provider_instance, AnyLLM), f"Failed to create valid AnyLLM instance for {provider_name}"

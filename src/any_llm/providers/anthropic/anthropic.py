@@ -1,9 +1,8 @@
-from collections.abc import AsyncIterator, Sequence
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 
 from any_llm.any_llm import AnyLLM
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
-from any_llm.types.model import Model
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -19,8 +18,13 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Sequence
+
     from anthropic.types import Message
     from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
+
+    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+    from any_llm.types.model import Model
 
 
 class AnthropicProvider(AnyLLM):
@@ -45,13 +49,22 @@ class AnthropicProvider(AnyLLM):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
+    client: AsyncAnthropic
+
+    def _init_client(self) -> None:
+        self.client = AsyncAnthropic(
+            api_key=self.config.api_key,
+            base_url=self.config.api_base,
+            **(self.config.client_args if self.config.client_args else {}),
+        )
+
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Anthropic API."""
         return _convert_params(params, **kwargs)
 
     @staticmethod
-    def _convert_completion_response(response: "Message") -> ChatCompletion:
+    def _convert_completion_response(response: Message) -> ChatCompletion:
         """Convert Anthropic Message to OpenAI ChatCompletion format."""
         return _convert_response(response)
 
@@ -74,15 +87,13 @@ class AnthropicProvider(AnyLLM):
         raise NotImplementedError(msg)
 
     @staticmethod
-    def _convert_list_models_response(response: "list[AnthropicModelInfo]") -> Sequence[Model]:
+    def _convert_list_models_response(response: list[AnthropicModelInfo]) -> Sequence[Model]:
         """Convert Anthropic models list to OpenAI format."""
         return _convert_models_list(response)
 
-    async def _stream_completion_async(
-        self, client: "AsyncAnthropic", **kwargs: Any
-    ) -> AsyncIterator[ChatCompletionChunk]:
+    async def _stream_completion_async(self, **kwargs: Any) -> AsyncIterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
-        async with client.messages.stream(
+        async with self.client.messages.stream(
             **kwargs,
         ) as anthropic_stream:
             async for event in anthropic_stream:
@@ -94,27 +105,17 @@ class AnthropicProvider(AnyLLM):
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using Anthropic with instructor support."""
-        client = AsyncAnthropic(
-            api_key=self.config.api_key,
-            base_url=self.config.api_base,
-            **(self.config.client_args if self.config.client_args else {}),
-        )
 
         kwargs["provider_name"] = self.PROVIDER_NAME
         converted_kwargs = self._convert_completion_params(params, **kwargs)
 
         if converted_kwargs.pop("stream", False):
-            return self._stream_completion_async(client, **converted_kwargs)
+            return self._stream_completion_async(**converted_kwargs)
 
-        message = await client.messages.create(**converted_kwargs)
+        message = await self.client.messages.create(**converted_kwargs)
 
         return self._convert_completion_response(message)
 
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        client = AsyncAnthropic(
-            api_key=self.config.api_key,
-            base_url=self.config.api_base,
-            **(self.config.client_args if self.config.client_args else {}),
-        )
-        models_list = await client.models.list(**kwargs)
+        models_list = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(models_list.data)

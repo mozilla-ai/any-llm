@@ -1,14 +1,8 @@
-from collections.abc import AsyncIterator, Sequence
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any, cast
 
 from any_llm.any_llm import AnyLLM
-from any_llm.types.completion import (
-    ChatCompletion,
-    ChatCompletionChunk,
-    CompletionParams,
-    CreateEmbeddingResponse,
-)
-from any_llm.types.model import Model
 from any_llm.utils.instructor import _convert_instructor_response
 
 MISSING_PACKAGES_ERROR = None
@@ -24,10 +18,20 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Sequence
+
     from together.types import (
         ChatCompletionResponse,
     )
     from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
+
+    from any_llm.types.completion import (
+        ChatCompletion,
+        ChatCompletionChunk,
+        CompletionParams,
+        CreateEmbeddingResponse,
+    )
+    from any_llm.types.model import Model
 
 
 class TogetherProvider(AnyLLM):
@@ -45,6 +49,8 @@ class TogetherProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
+
+    client: together.AsyncTogether
 
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
@@ -86,9 +92,15 @@ class TogetherProvider(AnyLLM):
         msg = "Together does not support listing models"
         raise NotImplementedError(msg)
 
+    def _init_client(self) -> None:
+        self.client = together.AsyncTogether(
+            api_key=self.config.api_key,
+            base_url=self.config.api_base,
+            **(self.config.client_args if self.config.client_args else {}),
+        )
+
     async def _stream_completion_async(
         self,
-        client: "together.AsyncTogether",
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
@@ -98,7 +110,7 @@ class TogetherProvider(AnyLLM):
 
         response = cast(
             "AsyncIterator[TogetherChatCompletionChunk]",
-            await client.chat.completions.create(
+            await self.client.chat.completions.create(
                 model=model,
                 messages=messages,
                 **kwargs,
@@ -113,14 +125,9 @@ class TogetherProvider(AnyLLM):
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Make the API call to Together AI with instructor support for structured outputs."""
-        client = together.AsyncTogether(
-            api_key=self.config.api_key,
-            base_url=self.config.api_base,
-            **(self.config.client_args if self.config.client_args else {}),
-        )
 
         if params.response_format:
-            instructor_client = instructor.patch(client, mode=instructor.Mode.JSON)  # type: ignore [call-overload]
+            instructor_client = instructor.patch(self.client, mode=instructor.Mode.JSON)  # type: ignore [call-overload]
 
             instructor_response = await instructor_client.chat.completions.create(
                 model=params.model_id,
@@ -139,7 +146,6 @@ class TogetherProvider(AnyLLM):
 
         if params.stream:
             return self._stream_completion_async(
-                client,
                 params.model_id,
                 params.messages,
                 **completion_kwargs,
@@ -147,7 +153,7 @@ class TogetherProvider(AnyLLM):
 
         response = cast(
             "ChatCompletionResponse",
-            await client.chat.completions.create(
+            await self.client.chat.completions.create(
                 model=params.model_id,
                 messages=cast("Any", params.messages),
                 **completion_kwargs,

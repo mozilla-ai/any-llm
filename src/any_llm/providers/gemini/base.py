@@ -1,11 +1,10 @@
-from abc import abstractmethod
-from collections.abc import AsyncIterator, Sequence
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel
 
 from any_llm.any_llm import AnyLLM
-from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.types.completion import (
     ChatCompletion,
@@ -20,11 +19,9 @@ from any_llm.types.completion import (
     Function,
     Reasoning,
 )
-from any_llm.types.model import Model
 
 MISSING_PACKAGES_ERROR = None
 try:
-    from google import genai
     from google.genai import types
 
     from .utils import (
@@ -40,7 +37,11 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Sequence
+
     from google import genai
+
+    from any_llm.types.model import Model
 
 REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 256, "low": 1024, "medium": 8192, "high": 24576}
 
@@ -58,6 +59,8 @@ class GoogleProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = True
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
+
+    client: genai.Client
 
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
@@ -164,19 +167,14 @@ class GoogleProvider(AnyLLM):
         """Convert Google list models response to OpenAI format."""
         return _convert_models_list(response)
 
-    @abstractmethod
-    def _get_client(self, config: ClientConfig) -> "genai.Client":
-        """Get the appropriate client for this provider implementation."""
-
     async def _aembedding(
         self,
         model: str,
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        client = self._get_client(self.config)
         embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
-        result = await client.aio.models.embed_content(
+        result = await self.client.aio.models.embed_content(
             model=model,
             **embedding_kwargs,
         )
@@ -223,9 +221,8 @@ class GoogleProvider(AnyLLM):
         if system_instruction:
             generation_config.system_instruction = system_instruction
 
-        client = self._get_client(self.config)
         if stream:
-            response_stream = await client.aio.models.generate_content_stream(
+            response_stream = await self.client.aio.models.generate_content_stream(
                 model=params.model_id,
                 contents=formatted_messages,  # type: ignore[arg-type]
                 config=generation_config,
@@ -237,7 +234,7 @@ class GoogleProvider(AnyLLM):
 
             return _stream()
 
-        response: types.GenerateContentResponse = await client.aio.models.generate_content(
+        response: types.GenerateContentResponse = await self.client.aio.models.generate_content(
             model=params.model_id,
             contents=formatted_messages,  # type: ignore[arg-type]
             config=generation_config,
@@ -247,6 +244,5 @@ class GoogleProvider(AnyLLM):
         return self._convert_completion_response((response_dict, params.model_id))
 
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        client = self._get_client(self.config)
-        models_list = await client.aio.models.list(**kwargs)
+        models_list = await self.client.aio.models.list(**kwargs)
         return self._convert_list_models_response(models_list)

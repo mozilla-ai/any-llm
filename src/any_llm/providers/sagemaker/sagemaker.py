@@ -1,3 +1,4 @@
+# mypy: disable-error-code="no-untyped-call"
 import asyncio
 import functools
 import json
@@ -33,7 +34,7 @@ class SagemakerProvider(AnyLLM):
     """AWS SageMaker Provider using boto3 for inference endpoints."""
 
     PROVIDER_NAME = "sagemaker"
-    ENV_API_KEY_NAME = "None"
+    ENV_API_KEY_NAME = "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
     PROVIDER_DOCUMENTATION_URL = "https://aws.amazon.com/sagemaker/"
 
     SUPPORTS_COMPLETION_STREAMING = True
@@ -85,25 +86,23 @@ class SagemakerProvider(AnyLLM):
         """Convert SageMaker list models response to OpenAI format."""
         return []
 
-    def __init__(self, config: ClientConfig) -> None:
-        """Initialize AWS SageMaker provider."""
+    def _init_client(self) -> None:
         logger.warning(
             "AWS Sagemaker Support is experimental and may not work as expected. Please file an ticket at https://github.com/mozilla-ai/any-llm/issues if you encounter any issues."
         )
-        # This intentionally does not call super().__init__(config) because AWS has a different way of handling credentials
-        self._verify_no_missing_packages()
-        self.config = config
-        self.region_name = os.getenv("AWS_REGION", "us-east-1")
+        self.client = boto3.client(
+            "sagemaker-runtime",
+            endpoint_url=self.config.api_base,
+            region_name=os.getenv("AWS_REGION", "us-east-1"),
+            **(self.config.client_args if self.config.client_args else {}),
+        )
 
-    def _check_aws_credentials(self) -> None:
-        """Check if AWS credentials are available."""
-        session = boto3.Session()  # type: ignore[no-untyped-call, attr-defined]
-        credentials = session.get_credentials()  # type: ignore[no-untyped-call]
-
+    def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
+        session = boto3.Session()  # type: ignore[attr-defined]
+        credentials = session.get_credentials()
         if credentials is None:
-            raise MissingApiKeyError(
-                provider_name=self.PROVIDER_NAME, env_var_name="AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
-            )
+            raise MissingApiKeyError(provider_name=self.PROVIDER_NAME, env_var_name=self.ENV_API_KEY_NAME)
+        return config
 
     async def _acompletion(
         self,
@@ -135,16 +134,6 @@ class SagemakerProvider(AnyLLM):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        """Create a chat completion using AWS SageMaker with instructor support."""
-        self._check_aws_credentials()
-
-        client = boto3.client(  # type: ignore[no-untyped-call]
-            "sagemaker-runtime",
-            endpoint_url=self.config.api_base,
-            region_name=self.region_name,
-            **(self.config.client_args if self.config.client_args else {}),
-        )
-
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 
         if params.response_format:
@@ -156,7 +145,7 @@ class SagemakerProvider(AnyLLM):
                 msg = "response_format must be a pydantic model"
                 raise ValueError(msg)
 
-            response = client.invoke_endpoint(
+            response = self.client.invoke_endpoint(
                 EndpointName=params.model_id,
                 Body=json.dumps(completion_kwargs),
                 ContentType="application/json",
@@ -172,7 +161,7 @@ class SagemakerProvider(AnyLLM):
                 return self._convert_completion_response({"model": params.model_id, **response_body})
 
         if params.stream:
-            response = client.invoke_endpoint_with_response_stream(
+            response = self.client.invoke_endpoint_with_response_stream(
                 EndpointName=params.model_id,
                 Body=json.dumps(completion_kwargs),
                 ContentType="application/json",
@@ -185,7 +174,7 @@ class SagemakerProvider(AnyLLM):
                 if _create_openai_chunk_from_sagemaker_chunk(event, model=params.model_id) is not None
             )
 
-        response = client.invoke_endpoint(
+        response = self.client.invoke_endpoint(
             EndpointName=params.model_id,
             Body=json.dumps(completion_kwargs),
             ContentType="application/json",
@@ -205,27 +194,18 @@ class SagemakerProvider(AnyLLM):
         loop = asyncio.get_event_loop()
 
         call_sync_partial: Callable[[], CreateEmbeddingResponse] = functools.partial(
-            self.embedding, model, inputs, **kwargs
+            self._embedding, model, inputs, **kwargs
         )
 
         return await loop.run_in_executor(None, call_sync_partial)
 
-    def embedding(
+    def _embedding(
         self,
         model: str,
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         """Create embeddings using AWS SageMaker."""
-        self._check_aws_credentials()
-
-        client = boto3.client(
-            "sagemaker-runtime",
-            endpoint_url=self.config.api_base,
-            region_name=self.region_name,
-            **(self.config.client_args if self.config.client_args else {}),
-        )  # type: ignore[no-untyped-call]
-
         input_texts = [inputs] if isinstance(inputs, str) else inputs
 
         embedding_data = []
@@ -239,7 +219,7 @@ class SagemakerProvider(AnyLLM):
             if "normalize" in kwargs:
                 request_body["normalize"] = kwargs["normalize"]
 
-            response = client.invoke_endpoint(
+            response = self.client.invoke_endpoint(
                 EndpointName=model,
                 Body=json.dumps(request_body),
                 ContentType="application/json",

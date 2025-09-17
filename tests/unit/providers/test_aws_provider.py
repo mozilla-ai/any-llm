@@ -12,8 +12,8 @@ from any_llm.types.completion import CompletionParams
 def mock_aws_provider(region: str):  # type: ignore[no-untyped-def]
     with (
         patch.dict(os.environ, {"AWS_REGION": region}),
-        patch("any_llm.providers.bedrock.bedrock.BedrockProvider._check_aws_credentials"),
         patch("any_llm.providers.bedrock.bedrock._convert_response"),
+        patch("boto3.Session"),
         patch("boto3.client") as mock_boto3_client,
     ):
         mock_client = Mock()
@@ -85,7 +85,7 @@ def mock_aws_embedding_provider(region: str):  # type: ignore[no-untyped-def]
     """Mock AWS provider specifically for embedding tests."""
     with (
         patch.dict(os.environ, {"AWS_REGION": region}),
-        patch("any_llm.providers.bedrock.bedrock.BedrockProvider._check_aws_credentials"),
+        patch("boto3.Session"),
         patch("boto3.client") as mock_boto3_client,
     ):
         mock_client = Mock()
@@ -105,7 +105,7 @@ def test_embedding_single_string() -> None:
         mock_client.invoke_model.return_value = {"body": Mock(read=Mock(return_value=json.dumps(mock_response_body)))}
 
         provider = BedrockProvider(ClientConfig(api_key="test_key"))
-        response = provider.embedding(model_id, input_text)
+        response = provider._embedding(model_id, input_text)
 
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None, region_name=region)
 
@@ -139,7 +139,7 @@ def test_embedding_list_of_strings() -> None:
         ]
 
         provider = BedrockProvider(ClientConfig(api_key="test_key"))
-        response = provider.embedding(model_id, input_texts)
+        response = provider._embedding(model_id, input_texts)
 
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None, region_name=region)
 

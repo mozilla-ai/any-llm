@@ -2,7 +2,7 @@ import os
 from collections.abc import AsyncIterator, Sequence
 from typing import Any, Literal, cast
 
-from openai import AsyncOpenAI, OpenAI
+from openai import AsyncOpenAI
 from openai._streaming import AsyncStream
 from openai._types import NOT_GIVEN
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
@@ -37,6 +37,8 @@ class BaseOpenAIProvider(AnyLLM):
     PACKAGES_INSTALLED = True
 
     _DEFAULT_REASONING_EFFORT: Literal["minimal", "low", "medium", "high", "auto"] | None = None
+
+    client: AsyncOpenAI
 
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
@@ -100,9 +102,8 @@ class BaseOpenAIProvider(AnyLLM):
         # Otherwise, validate each item
         return [Model.model_validate(item) if not isinstance(item, Model) else item for item in response]
 
-    def _get_client(self, sync: bool = False) -> AsyncOpenAI | OpenAI:
-        _client_class = OpenAI if sync else AsyncOpenAI
-        return _client_class(
+    def _init_client(self) -> None:
+        self.client = AsyncOpenAI(
             base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
             api_key=self.config.api_key,
             **(self.config.client_args if self.config.client_args else {}),
@@ -124,8 +125,6 @@ class BaseOpenAIProvider(AnyLLM):
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        client = cast("AsyncOpenAI", self._get_client(sync=False))
-
         if params.reasoning_effort == "auto":
             params.reasoning_effort = self._DEFAULT_REASONING_EFFORT
 
@@ -136,13 +135,13 @@ class BaseOpenAIProvider(AnyLLM):
                 msg = "stream is not supported for response_format"
                 raise ValueError(msg)
             completion_kwargs.pop("stream", None)
-            response = await client.chat.completions.parse(
+            response = await self.client.chat.completions.parse(
                 model=params.model_id,
                 messages=cast("Any", params.messages),
                 **completion_kwargs,
             )
         else:
-            response = await client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=params.model_id,
                 messages=cast("Any", params.messages),
                 **completion_kwargs,
@@ -153,9 +152,7 @@ class BaseOpenAIProvider(AnyLLM):
         self, params: ResponsesParams, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call OpenAI Responses API"""
-        client = self._get_client()
-
-        response = await client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
+        response = await self.client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
 
         if not isinstance(response, Response | AsyncStream):
             msg = f"Responses API returned an unexpected type: {type(response)}"
@@ -173,11 +170,9 @@ class BaseOpenAIProvider(AnyLLM):
             msg = "This provider does not support embeddings."
             raise NotImplementedError(msg)
 
-        client = cast("AsyncOpenAI", self._get_client())
-
         embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
         return self._convert_embedding_response(
-            await client.embeddings.create(
+            await self.client.embeddings.create(
                 model=model,
                 dimensions=kwargs.get("dimensions", NOT_GIVEN),
                 **embedding_kwargs,
@@ -185,12 +180,8 @@ class BaseOpenAIProvider(AnyLLM):
         )
 
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        """
-        Fetch available models from the /v1/models endpoint.
-        """
         if not self.SUPPORTS_LIST_MODELS:
             message = f"{self.PROVIDER_NAME} does not support listing models."
             raise NotImplementedError(message)
-        client = cast("AsyncOpenAI", self._get_client())
-        response = await client.models.list(**kwargs)
+        response = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(response)

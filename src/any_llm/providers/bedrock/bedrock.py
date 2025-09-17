@@ -1,3 +1,4 @@
+# mypy: disable-error-code="no-untyped-call"
 import asyncio
 import functools
 import json
@@ -90,29 +91,30 @@ class BedrockProvider(AnyLLM):
         # the modelId is a string and will not be None
         return [Model(id=model["modelId"], object="model", created=0, owned_by="aws") for model in models_list]
 
-    def __init__(self, config: ClientConfig) -> None:
-        """Initialize AWS Bedrock provider."""
-        # This intentionally does not call super().__init__(config) because AWS has a different way of handling credentials
-        self._verify_no_missing_packages()
-        self.config = config
-        self.region_name = os.getenv("AWS_REGION", "us-east-1")
+    def _init_client(self) -> None:
+        self.client = boto3.client(
+            "bedrock-runtime",
+            endpoint_url=self.config.api_base,
+            region_name=os.getenv("AWS_REGION", "us-east-1"),
+            **(self.config.client_args if self.config.client_args else {}),
+        )
 
-    def _check_aws_credentials(self) -> None:
-        """Check if AWS credentials are available."""
-        session = boto3.Session()  # type: ignore[no-untyped-call, attr-defined]
-        credentials = session.get_credentials()  # type: ignore[no-untyped-call]
+    def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
+        session = boto3.Session()  # type: ignore[attr-defined]
+        credentials = session.get_credentials()
 
-        bedrock_api_key = os.getenv(self.ENV_API_KEY_NAME)
+        config.api_key = config.api_key or os.getenv(self.ENV_API_KEY_NAME)
 
-        if credentials is None and bedrock_api_key is None:
+        if credentials is None and config.api_key is None:
             raise MissingApiKeyError(provider_name=self.PROVIDER_NAME, env_var_name=self.ENV_API_KEY_NAME)
+
+        return config
 
     async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        """Create a chat completion using AWS Bedrock with instructor support."""
         logger.warning("AWS Bedrock client does not support async. Calls made with this method will be blocking.")
 
         loop = asyncio.get_event_loop()
@@ -138,16 +140,6 @@ class BedrockProvider(AnyLLM):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
-        """Create a chat completion using AWS Bedrock with instructor support."""
-        self._check_aws_credentials()
-
-        client = boto3.client(  # type: ignore[no-untyped-call]
-            "bedrock-runtime",
-            endpoint_url=self.config.api_base,
-            region_name=self.region_name,
-            **(self.config.client_args if self.config.client_args else {}),
-        )
-
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 
         if params.response_format:
@@ -155,7 +147,7 @@ class BedrockProvider(AnyLLM):
                 msg = "stream is not supported for response_format"
                 raise ValueError(msg)
 
-            instructor_client = instructor.from_bedrock(client)
+            instructor_client = instructor.from_bedrock(self.client)
 
             if not isinstance(params.response_format, type) or not issubclass(params.response_format, BaseModel):
                 msg = "response_format must be a pydantic model"
@@ -169,7 +161,7 @@ class BedrockProvider(AnyLLM):
             return _convert_instructor_response(instructor_response, params.model_id, "aws")
 
         if params.stream:
-            response_stream = client.converse_stream(
+            response_stream = self.client.converse_stream(
                 **completion_kwargs,
             )
             stream_generator = response_stream["stream"]
@@ -178,7 +170,7 @@ class BedrockProvider(AnyLLM):
                 for item in stream_generator
                 if _create_openai_chunk_from_aws_chunk(item, model=params.model_id) is not None
             )
-        response = client.converse(**completion_kwargs)
+        response = self.client.converse(**completion_kwargs)
 
         return self._convert_completion_response(response)
 
@@ -194,27 +186,17 @@ class BedrockProvider(AnyLLM):
 
         # create partial function of sync call
         call_sync_partial: Callable[[], CreateEmbeddingResponse] = functools.partial(
-            self.embedding, model, inputs, **kwargs
+            self._embedding, model, inputs, **kwargs
         )
 
         return await loop.run_in_executor(None, call_sync_partial)
 
-    def embedding(
+    def _embedding(
         self,
         model: str,
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        """Create embeddings using AWS Bedrock."""
-        self._check_aws_credentials()
-
-        client = boto3.client(
-            "bedrock-runtime",
-            endpoint_url=self.config.api_base,
-            region_name=self.region_name,
-            **(self.config.client_args if self.config.client_args else {}),
-        )  # type: ignore[no-untyped-call]
-
         input_texts = [inputs] if isinstance(inputs, str) else inputs
 
         embedding_data = []
@@ -228,7 +210,7 @@ class BedrockProvider(AnyLLM):
             if "normalize" in kwargs:
                 request_body["normalize"] = kwargs["normalize"]
 
-            response = client.invoke_model(modelId=model, body=json.dumps(request_body))
+            response = self.client.invoke_model(modelId=model, body=json.dumps(request_body))
 
             response_body = json.loads(response["body"].read())
 
@@ -240,14 +222,11 @@ class BedrockProvider(AnyLLM):
         return self._convert_embedding_response(response_data)
 
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        """
-        Fetch available models from the /v1/models endpoint.
-        """
         client = boto3.client(
             "bedrock",
             endpoint_url=self.config.api_base,
-            region_name=self.region_name,
+            region_name=os.getenv("AWS_REGION", "us-east-1"),
             **(self.config.client_args if self.config.client_args else {}),
-        )  # type: ignore[no-untyped-call]
+        )
         response = client.list_foundation_models(**kwargs)
         return self._convert_list_models_response(response)

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 MISSING_PACKAGES_ERROR = None
 try:
-    import groq
+    from groq import AsyncGroq
 
     from .utils import (
         _convert_models_list,
@@ -27,7 +27,6 @@ except ImportError as e:
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
-    import groq  # noqa: TC004
     from groq import AsyncStream as GroqAsyncStream
     from groq.types.chat import ChatCompletion as GroqChatCompletion
     from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
@@ -53,6 +52,8 @@ class GroqProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = True
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
+
+    client: AsyncGroq
 
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
@@ -91,15 +92,20 @@ class GroqProvider(AnyLLM):
         """Convert Groq list models response to OpenAI format."""
         return _convert_models_list(response)
 
+    def _init_client(self) -> None:
+        self.client = AsyncGroq(
+            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
+        )
+
     async def _stream_async_completion(
-        self, client: groq.AsyncGroq, params: CompletionParams, **kwargs: Any
+        self, params: CompletionParams, **kwargs: Any
     ) -> AsyncIterator[ChatCompletionChunk]:
         if params.stream and params.response_format:
             msg = "stream and response_format"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
 
         completion_kwargs = self._convert_completion_params(params, **kwargs)
-        stream: GroqAsyncStream[GroqChatCompletionChunk] = await client.chat.completions.create(
+        stream: GroqAsyncStream[GroqChatCompletionChunk] = await self.client.chat.completions.create(
             model=params.model_id,
             messages=cast("Any", params.messages),
             **completion_kwargs,
@@ -114,11 +120,6 @@ class GroqProvider(AnyLLM):
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        """Create a chat completion using Groq."""
-        client = groq.AsyncGroq(
-            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
-        )
-
         if params.response_format:
             if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
                 kwargs["response_format"] = {
@@ -135,11 +136,10 @@ class GroqProvider(AnyLLM):
 
         if params.stream:
             return await self._stream_async_completion(
-                client,
                 params,
                 **kwargs,
             )
-        response: GroqChatCompletion = await client.chat.completions.create(
+        response: GroqChatCompletion = await self.client.chat.completions.create(
             model=params.model_id,
             messages=cast("Any", params.messages),
             **completion_kwargs,
@@ -172,11 +172,5 @@ class GroqProvider(AnyLLM):
         return response
 
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        """
-        Fetch available models from the /v1/models endpoint.
-        """
-        client = groq.AsyncGroq(
-            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
-        )
-        models_list = await client.models.list(**kwargs)
+        models_list = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(models_list)

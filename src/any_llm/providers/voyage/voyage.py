@@ -1,9 +1,8 @@
-from collections.abc import AsyncIterator, Sequence
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from any_llm.any_llm import AnyLLM
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
-from any_llm.types.model import Model
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -14,6 +13,12 @@ try:
     )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+    from any_llm.types.model import Model
 
 
 class VoyageProvider(AnyLLM):
@@ -35,6 +40,8 @@ class VoyageProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
+
+    client: AsyncClient
 
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
@@ -76,6 +83,11 @@ class VoyageProvider(AnyLLM):
         msg = "Voyage does not support listing models"
         raise NotImplementedError(msg)
 
+    def _init_client(self) -> None:
+        self.client = AsyncClient(
+            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
+        )
+
     async def _aembedding(
         self,
         model: str,
@@ -83,18 +95,10 @@ class VoyageProvider(AnyLLM):
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
-        client = AsyncClient(
-            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
-        )
-        result = await client.embed(
+
+        result = await self.client.embed(
             model=model,
             **embedding_kwargs,
         )
         response_data = {"model": model, "result": result}
         return self._convert_embedding_response(response_data)
-
-    async def _acompletion(
-        self, params: CompletionParams, **kwargs: Any
-    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        msg = "voyage provider doesn't support completion."
-        raise NotImplementedError(msg)
