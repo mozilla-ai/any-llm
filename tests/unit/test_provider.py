@@ -166,7 +166,6 @@ def test_providers_raise_MissingApiKeyError(provider: LLMProvider) -> None:
         ("huggingface", "huggingface_hub"),
         ("mistral", "mistralai"),
         ("ollama", "ollama"),
-        ("sambanova", "instructor"),
         ("together", "together"),
         ("voyage", "voyageai"),
         ("watsonx", "ibm_watsonx_ai"),
