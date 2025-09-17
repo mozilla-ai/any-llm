@@ -1,4 +1,3 @@
-import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -20,17 +19,14 @@ class LlamafileProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
 
-    def __init__(self, config: ClientConfig) -> None:
-        """We don't use the Provider init because by default we don't require an API key."""
+    def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
+        config.api_key = ""
 
-        self.url = config.api_base or os.getenv("LLAMAFILE_API_URL")
-        self.config = config
-        self.config.api_key = ""  # In order to be compatible with the OpenAI client, the API key cannot be None if the OPENAI_API_KEY environment variable is not set (which is the case for LlamaFile)
+        return config
 
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        """Handle completion - extracted to avoid generator issues."""
         if params.response_format:
             msg = "response_format"
             raise UnsupportedParameterError(
