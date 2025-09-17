@@ -34,3 +34,5 @@ class VertexaiProvider(GoogleProvider):
         if client._api_client.location is None:
             msg = "vertexai"
             raise MissingApiKeyError(msg, "GOOGLE_CLOUD_LOCATION")
+
+        return client
