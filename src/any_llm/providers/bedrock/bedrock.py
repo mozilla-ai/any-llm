@@ -6,20 +6,16 @@ import os
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
 
-from pydantic import BaseModel
-
 from any_llm.any_llm import AnyLLM
 from any_llm.config import ClientConfig
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.logging import logger
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
-from any_llm.utils.instructor import _convert_instructor_response
 
 MISSING_PACKAGES_ERROR = None
 try:
     import boto3
-    import instructor
 
     from .utils import (
         _convert_params,
@@ -141,24 +137,6 @@ class BedrockProvider(AnyLLM):
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
         completion_kwargs = self._convert_completion_params(params, **kwargs)
-
-        if params.response_format:
-            if params.stream:
-                msg = "stream is not supported for response_format"
-                raise ValueError(msg)
-
-            instructor_client = instructor.from_bedrock(self.client)
-
-            if not isinstance(params.response_format, type) or not issubclass(params.response_format, BaseModel):
-                msg = "response_format must be a pydantic model"
-                raise ValueError(msg)
-
-            instructor_response = instructor_client.chat.completions.create(
-                response_model=params.response_format,
-                **completion_kwargs,
-            )
-
-            return _convert_instructor_response(instructor_response, params.model_id, "aws")
 
         if params.stream:
             response_stream = self.client.converse_stream(

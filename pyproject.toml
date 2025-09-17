@@ -58,7 +58,6 @@ groq = [
 
 bedrock = [
   "boto3",
-  "instructor",
 ]
 
 azure = [
