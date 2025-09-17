@@ -72,10 +72,6 @@ together = [
   "together",
 ]
 
-sambanova = [
-  "instructor",
-]
-
 ollama = [
   "ollama>=0.5.1"
 ]
@@ -94,19 +90,20 @@ sagemaker = [
 
 # These providers don't require any additional dependencies, but are included for completeness.
 azureopenai = []
-moonshot = []
-nebius = []
 databricks = []
 deepseek = []
 fireworks = []
 inception = []
-openai = []
-portkey = []
-openrouter = []
-lmstudio = []
 llama = []
-llamafile = []
 llamacpp = []
+llamafile = []
+lmstudio = []
+moonshot = []
+nebius = []
+openai = []
+openrouter = []
+portkey = []
+sambanova = []
 
 [project.urls]
 Documentation = "https://mozilla-ai.github.io/any-llm/"
