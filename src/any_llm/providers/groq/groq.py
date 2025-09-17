@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 
 
 class GroqProvider(AnyLLM):
-    """Groq Provider using instructor for structured output."""
+    """Groq Provider."""
 
     PROVIDER_NAME = "groq"
     ENV_API_KEY_NAME = "GROQ_API_KEY"
