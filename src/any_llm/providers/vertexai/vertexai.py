@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING
 
 from any_llm.config import ClientConfig
+from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.gemini.base import GoogleProvider
 
 if TYPE_CHECKING:
@@ -22,8 +23,14 @@ class VertexaiProvider(GoogleProvider):
         """Get Vertex AI client."""
         from google import genai
 
-        return genai.Client(
+        client = genai.Client(
             vertexai=True,
             api_key=self.config.api_key,
             **(config.client_args if config.client_args else {}),
         )
+        if client._api_client.project is None:
+            msg = "vertexai"
+            raise MissingApiKeyError(msg, "GOOGLE_CLOUD_PROJECT")
+        if client._api_client.location is None:
+            msg = "vertexai"
+            raise MissingApiKeyError(msg, "GOOGLE_CLOUD_LOCATION")
