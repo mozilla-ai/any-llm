@@ -70,7 +70,6 @@ watsonx = [
 
 together = [
   "together",
-  "instructor",
 ]
 
 sambanova = [

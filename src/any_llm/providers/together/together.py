@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+from pydantic import BaseModel
+
 from any_llm.any_llm import AnyLLM
-from any_llm.utils.instructor import _convert_instructor_response
 
 MISSING_PACKAGES_ERROR = None
 try:
-    import instructor
     import together
 
     from .utils import (
@@ -55,10 +55,19 @@ class TogetherProvider(AnyLLM):
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Together API."""
-        # Together does not support providing reasoning effort
         converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
         if converted_params.get("reasoning_effort") == "auto":
             converted_params.pop("reasoning_effort")
+        if (
+            params.response_format is not None
+            and isinstance(params.response_format, type)
+            and issubclass(params.response_format, BaseModel)
+        ):
+            converted_params["response_format"] = {
+                "type": "json_schema",
+                "schema": params.response_format.model_json_schema(),
+            }
+
         converted_params.update(kwargs)
         return converted_params
 
@@ -124,24 +133,6 @@ class TogetherProvider(AnyLLM):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        """Make the API call to Together AI with instructor support for structured outputs."""
-
-        if params.response_format:
-            instructor_client = instructor.patch(self.client, mode=instructor.Mode.JSON)  # type: ignore [call-overload]
-
-            instructor_response = await instructor_client.chat.completions.create(
-                model=params.model_id,
-                messages=cast("Any", params.messages),
-                response_model=params.response_format,
-                **params.model_dump(
-                    exclude_none=True,
-                    exclude={"model_id", "messages", "reasoning_effort", "response_format"},
-                ),
-                **kwargs,
-            )
-
-            return _convert_instructor_response(instructor_response, params.model_id, self.PROVIDER_NAME)
-
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 
         if params.stream:
