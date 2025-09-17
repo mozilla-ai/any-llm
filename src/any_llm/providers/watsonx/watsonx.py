@@ -23,7 +23,7 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator, Sequence
+    from collections.abc import AsyncIterator, Sequence
 
     from ibm_watsonx_ai import APIClient as WatsonxClient  # noqa: TC004
 
@@ -100,20 +100,6 @@ class WatsonxProvider(AnyLLM):
             params=kwargs,
         )
         async for chunk in response_stream:
-            yield self._convert_completion_chunk_response(chunk)
-
-    def _stream_completion(
-        self,
-        model_inference: ModelInference,
-        messages: list[dict[str, Any]],
-        **kwargs: Any,
-    ) -> Iterator[ChatCompletionChunk]:
-        """Handle streaming completion - extracted to avoid generator issues."""
-        response_stream = model_inference.chat_stream(
-            messages=messages,
-            params=kwargs,
-        )
-        for chunk in response_stream:
             yield self._convert_completion_chunk_response(chunk)
 
     async def _acompletion(
