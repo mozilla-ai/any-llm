@@ -5,24 +5,16 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from google.genai import types
 
-from any_llm.any_llm import AnyLLM
 from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.gemini import GeminiProvider
 from any_llm.providers.gemini.base import REASONING_EFFORT_TO_THINKING_BUDGETS
-from any_llm.providers.gemini.utils import _convert_response_to_response_dict
-from any_llm.providers.vertexai import VertexaiProvider
+from any_llm.providers.gemini.utils import _convert_response_to_response_dict, _convert_tool_spec
 from any_llm.types.completion import CompletionParams
 
 
-@pytest.fixture(params=[GeminiProvider, VertexaiProvider])
-def google_provider_class(request: pytest.FixtureRequest) -> type[AnyLLM]:
-    """Parametrized fixture that provides both GeminiProvider and VertexaiProvider classes."""
-    return request.param  # type: ignore[no-any-return]
-
-
 @contextmanager
-def mock_google_provider():  # type: ignore[no-untyped-def]
+def mock_gemini_provider():  # type: ignore[no-untyped-def]
     with (
         patch("any_llm.providers.gemini.base.genai.Client") as mock_genai,
         patch("any_llm.providers.gemini.base._convert_response_to_response_dict") as mock_convert_response,
@@ -57,22 +49,15 @@ def test_gemini_initialization_with_env_var_api_key(env_var: str) -> None:
         assert provider.config.api_key == "env-api-key"
 
 
-def test_vertexai_initialization_with_env_var_api_key() -> None:
-    """Test that the VertexaiProvider initializes correctly with GOOGLE_PROJECT_ID from environment variable."""
-    with patch.dict("os.environ", {"GOOGLE_PROJECT_ID": "env-project-id"}, clear=True):
-        provider = VertexaiProvider(ClientConfig())
-        assert provider.config.api_key == "env-project-id"
-
-
 @pytest.mark.asyncio
-async def test_completion_with_system_instruction(google_provider_class: type[AnyLLM]) -> None:
+async def test_completion_with_system_instruction() -> None:
     """Test that completion works correctly with system_instruction."""
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "system", "content": "You are a helpful assistant"}, {"role": "user", "content": "Hello"}]
 
-    with mock_google_provider() as mock_genai:
-        provider = google_provider_class(ClientConfig(api_key=api_key))
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(ClientConfig(api_key=api_key))
         await provider._acompletion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -84,14 +69,14 @@ async def test_completion_with_system_instruction(google_provider_class: type[An
 
 
 @pytest.mark.asyncio
-async def test_completion_with_content_list(google_provider_class: type[AnyLLM]) -> None:
+async def test_completion_with_content_list() -> None:
     """Test that completion works correctly with content in list format."""
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": [{"type": "text", "text": "Hello"}]}]
 
-    with mock_google_provider() as mock_genai:
-        provider = google_provider_class(ClientConfig(api_key=api_key))
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(ClientConfig(api_key=api_key))
         await provider._acompletion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -108,16 +93,14 @@ async def test_completion_with_content_list(google_provider_class: type[AnyLLM])
     ],
 )
 @pytest.mark.asyncio
-async def test_completion_with_tool_choice_auto(
-    google_provider_class: type[AnyLLM], tool_choice: str, expected_mode: str
-) -> None:
+async def test_completion_with_tool_choice_auto(tool_choice: str, expected_mode: str) -> None:
     """Test that completion correctly processes tool_choice='auto'."""
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
 
-    with mock_google_provider() as mock_genai:
-        provider = google_provider_class(ClientConfig(api_key=api_key))
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(ClientConfig(api_key=api_key))
         await provider._acompletion(CompletionParams(model_id=model, messages=messages, tool_choice=tool_choice))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -127,14 +110,14 @@ async def test_completion_with_tool_choice_auto(
 
 
 @pytest.mark.asyncio
-async def test_completion_without_tool_choice(google_provider_class: type[AnyLLM]) -> None:
+async def test_completion_without_tool_choice() -> None:
     """Test that completion works correctly without tool_choice."""
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
 
-    with mock_google_provider() as mock_genai:
-        provider = google_provider_class(ClientConfig(api_key=api_key))
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(ClientConfig(api_key=api_key))
         await provider._acompletion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -144,13 +127,13 @@ async def test_completion_without_tool_choice(google_provider_class: type[AnyLLM
 
 
 @pytest.mark.asyncio
-async def test_completion_with_stream_and_response_format_raises(google_provider_class: type[AnyLLM]) -> None:
+async def test_completion_with_stream_and_response_format_raises() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
 
-    with mock_google_provider():
-        provider = google_provider_class(ClientConfig(api_key=api_key))
+    with mock_gemini_provider():
+        provider = GeminiProvider(ClientConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
             await provider._acompletion(
                 CompletionParams(
@@ -163,13 +146,13 @@ async def test_completion_with_stream_and_response_format_raises(google_provider
 
 
 @pytest.mark.asyncio
-async def test_completion_with_parallel_tool_calls_raises(google_provider_class: type[AnyLLM]) -> None:
+async def test_completion_with_parallel_tool_calls_raises() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
 
-    with mock_google_provider():
-        provider = google_provider_class(ClientConfig(api_key=api_key))
+    with mock_gemini_provider():
+        provider = GeminiProvider(ClientConfig(api_key=api_key))
         with pytest.raises(UnsupportedParameterError):
             await provider._acompletion(
                 CompletionParams(
@@ -181,14 +164,12 @@ async def test_completion_with_parallel_tool_calls_raises(google_provider_class:
 
 
 @pytest.mark.asyncio
-async def test_completion_inside_agent_loop(
-    google_provider_class: type[AnyLLM], agent_loop_messages: list[dict[str, Any]]
-) -> None:
+async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, Any]]) -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
 
-    with mock_google_provider() as mock_genai:
-        provider = google_provider_class(ClientConfig(api_key=api_key))
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(ClientConfig(api_key=api_key))
         await provider._acompletion(CompletionParams(model_id=model, messages=agent_loop_messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -211,15 +192,14 @@ async def test_completion_inside_agent_loop(
 )
 @pytest.mark.asyncio
 async def test_completion_with_custom_reasoning_effort(
-    google_provider_class: type[AnyLLM],
     reasoning_effort: Literal["low", "medium", "high"] | None,
 ) -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
 
-    with mock_google_provider() as mock_genai:
-        provider = google_provider_class(ClientConfig(api_key=api_key))
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(ClientConfig(api_key=api_key))
         await provider._acompletion(
             CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort)
         )
@@ -235,15 +215,15 @@ async def test_completion_with_custom_reasoning_effort(
 
 
 @pytest.mark.asyncio
-async def test_completion_with_max_tokens_conversion(google_provider_class: type[AnyLLM]) -> None:
+async def test_completion_with_max_tokens_conversion() -> None:
     """Test that max_tokens parameter gets converted to max_output_tokens."""
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
     max_tokens = 100
 
-    with mock_google_provider() as mock_genai:
-        provider = google_provider_class(ClientConfig(api_key=api_key))
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(ClientConfig(api_key=api_key))
         await provider._acompletion(CompletionParams(model_id=model, messages=messages, max_tokens=max_tokens))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -360,3 +340,43 @@ def test_convert_response_multiple_parallel_tool_calls() -> None:
 
     tool_call_ids = [tc["id"] for tc in tool_calls]
     assert len(set(tool_call_ids)) == 3
+
+
+def test_convert_tool_spec_basic_mapping() -> None:
+    openai_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "search",
+                "description": "Search things",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The query"},
+                        # Array without items → should default items to {"type": "string"}
+                        "opts": {"type": "array"},
+                        # Array with items → should be preserved
+                        "count_list": {"type": "array", "items": {"type": "integer"}},
+                        # Enum should be preserved
+                        "mode": {"type": "string", "enum": ["a", "b"]},
+                        # additionalProperties should be dropped
+                        "config": {"type": "object", "additionalProperties": {"type": "integer"}},
+                    },
+                    "required": ["query"],
+                },
+            },
+        }
+    ]
+
+    tools = _convert_tool_spec(openai_tools)
+
+    assert len(tools) == 1
+    assert tools[0].function_declarations[0].name == "search"  # type: ignore[index]
+    assert tools[0].function_declarations[0].description == "Search things"  # type: ignore[index]
+    assert tools[0].function_declarations[0].parameters.type == "OBJECT"  # type: ignore[index, union-attr]
+    assert tools[0].function_declarations[0].parameters.properties["query"].type == "STRING"  # type: ignore[union-attr, index]
+    assert tools[0].function_declarations[0].parameters.properties["opts"].type == "ARRAY"  # type: ignore[union-attr, index]
+    assert tools[0].function_declarations[0].parameters.properties["count_list"].type == "ARRAY"  # type: ignore[union-attr, index]
+    assert tools[0].function_declarations[0].parameters.properties["mode"].type == "STRING"  # type: ignore[union-attr, index]
+    assert tools[0].function_declarations[0].parameters.properties["config"].type == "OBJECT"  # type: ignore[union-attr, index]
+    assert "additionalProperties" not in tools[0].function_declarations[0].parameters.properties["config"]  # type: ignore[union-attr, index]
