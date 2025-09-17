@@ -2,6 +2,7 @@ import json
 from time import time
 from typing import Any, Literal, cast
 
+from any_llm.exceptions import UnsupportedParameterError
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -24,6 +25,14 @@ INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
 def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[str, Any]:
     """Convert CompletionParams to kwargs for AWS API."""
     result_kwargs: dict[str, Any] = kwargs.copy()
+
+    if params.response_format:
+        msg = "response_format"
+        raise UnsupportedParameterError(
+            msg,
+            "bedrock",
+            "Check the following links:\n- https://docs.aws.amazon.com/nova/latest/userguide/prompting-structured-output.html",
+        )
 
     if params.tools:
         result_kwargs["toolConfig"] = _convert_tool_spec(params.tools, params.tool_choice)
