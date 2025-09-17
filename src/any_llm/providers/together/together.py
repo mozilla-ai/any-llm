@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
 from any_llm.any_llm import AnyLLM
@@ -105,27 +105,6 @@ class TogetherProvider(AnyLLM):
             ),
         )
         async for chunk in response:
-            yield self._convert_completion_chunk_response(chunk)
-
-    def _stream_completion(
-        self,
-        client: "together.Together",
-        model: str,
-        messages: list[dict[str, Any]],
-        **kwargs: Any,
-    ) -> Iterator[ChatCompletionChunk]:
-        """Handle streaming completion - extracted to avoid generator issues."""
-        from typing import cast
-
-        response = cast(
-            "Iterator[TogetherChatCompletionChunk]",
-            client.chat.completions.create(
-                model=model,
-                messages=messages,
-                **kwargs,
-            ),
-        )
-        for chunk in response:
             yield self._convert_completion_chunk_response(chunk)
 
     async def _acompletion(
