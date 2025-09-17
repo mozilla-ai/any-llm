@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 
 class CerebrasProvider(AnyLLM):
-    """Cerebras Provider using the official Cerebras SDK with instructor support for structured outputs."""
+    """Cerebras Provider using the official Cerebras SDK."""
 
     PROVIDER_NAME = "cerebras"
     ENV_API_KEY_NAME = "CEREBRAS_API_KEY"

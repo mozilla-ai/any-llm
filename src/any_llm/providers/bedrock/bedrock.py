@@ -28,7 +28,7 @@ except ImportError as e:
 
 
 class BedrockProvider(AnyLLM):
-    """AWS Bedrock Provider using boto3 and instructor for structured output."""
+    """AWS Bedrock Provider using boto3."""
 
     PROVIDER_NAME = "bedrock"
     ENV_API_KEY_NAME = "AWS_BEARER_TOKEN_BEDROCK"

@@ -104,8 +104,6 @@ class AnthropicProvider(AnyLLM):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        """Create a chat completion using Anthropic with instructor support."""
-
         kwargs["provider_name"] = self.PROVIDER_NAME
         converted_kwargs = self._convert_completion_params(params, **kwargs)
 
