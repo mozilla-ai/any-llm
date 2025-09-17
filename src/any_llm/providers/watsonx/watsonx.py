@@ -88,6 +88,11 @@ class WatsonxProvider(AnyLLM):
         """Convert Watsonx list models response to OpenAI format."""
         return _convert_models_list(response)
 
+    def _init_client(self) -> None:
+        # watsonx requires params.model_id to instantiate the client
+        # which is not available at this point.
+        pass
+
     async def _stream_completion_async(
         self,
         model_inference: ModelInference,

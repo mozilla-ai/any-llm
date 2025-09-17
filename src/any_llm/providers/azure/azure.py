@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING, Any, cast
 
 from any_llm.any_llm import AnyLLM
@@ -46,38 +45,30 @@ class AzureProvider(AnyLLM):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
-    def _get_endpoint(self) -> str:
-        """Get the Azure endpoint URL."""
-        if self.config.api_base:
-            return self.config.api_base
+    chat_client: aio.ChatCompletionsClient
+    embeddings_client: aio.EmbeddingsClient
 
-        msg = (
-            "For Azure, api_base is required. Check your deployment page for a URL like this - "
-            "https://<model-deployment-name>.<region>.models.ai.azure.com"
-        )
-        raise ValueError(msg)
+    def _init_client(self) -> None:
+        if not self.config.api_base:
+            msg = (
+                "For Azure, api_base is required. Check your deployment page for a URL like this - "
+                "https://<model-deployment-name>.<region>.models.ai.azure.com"
+            )
+            raise ValueError(msg)
 
-    def _create_chat_client_async(self, api_version: str) -> aio.ChatCompletionsClient:
-        """Create and configure a ChatCompletionsClient."""
-        return aio.ChatCompletionsClient(
-            endpoint=self._get_endpoint(),
+        self.chat_client = aio.ChatCompletionsClient(
+            endpoint=self.config.api_base,
             credential=AzureKeyCredential(self.config.api_key or ""),
-            api_version=api_version,
             **(self.config.client_args if self.config.client_args else {}),
         )
-
-    def _create_embeddings_client_async(self, api_version: str) -> aio.EmbeddingsClient:
-        """Create and configure an EmbeddingsClient."""
-        return aio.EmbeddingsClient(
-            endpoint=self._get_endpoint(),
+        self.embeddings_client = aio.EmbeddingsClient(
+            endpoint=self.config.api_base,
             credential=AzureKeyCredential(self.config.api_key or ""),
-            api_version=api_version,
             **(self.config.client_args if self.config.client_args else {}),
         )
 
     async def _stream_completion_async(
         self,
-        client: aio.ChatCompletionsClient,
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
@@ -85,7 +76,7 @@ class AzureProvider(AnyLLM):
         """Handle streaming completion - extracted to avoid generator issues."""
         azure_stream = cast(
             "AsyncIterable[StreamingChatCompletionsUpdate]",
-            await client.complete(
+            await self.chat_client.complete(
                 model=model,
                 messages=messages,
                 **kwargs,
@@ -101,14 +92,10 @@ class AzureProvider(AnyLLM):
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using Azure AI Inference SDK."""
-        api_version = os.getenv("AZURE_API_VERSION", kwargs.pop("api_version", "2024-02-15-preview"))
-        client: aio.ChatCompletionsClient = self._create_chat_client_async(api_version)
-
         call_kwargs = self._convert_completion_params(params, **kwargs)
 
         if params.stream:
             return self._stream_completion_async(
-                client,
                 params.model_id,
                 params.messages,
                 **call_kwargs,
@@ -116,7 +103,7 @@ class AzureProvider(AnyLLM):
 
         response: ChatCompletions = cast(
             "ChatCompletions",
-            await client.complete(
+            await self.chat_client.complete(
                 model=params.model_id,
                 messages=params.messages,
                 **call_kwargs,
@@ -132,12 +119,9 @@ class AzureProvider(AnyLLM):
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         """Create embeddings using Azure AI Inference SDK."""
-        api_version = os.getenv("AZURE_API_VERSION", kwargs.pop("api_version", "2024-02-15-preview"))
-        client: aio.EmbeddingsClient = self._create_embeddings_client_async(api_version)
-
         embedding_kwargs = self._convert_embedding_params({}, **kwargs)
 
-        response: EmbeddingsResult = await client.embed(
+        response: EmbeddingsResult = await self.embeddings_client.embed(
             model=model,
             input=inputs if isinstance(inputs, list) else [inputs],
             **embedding_kwargs,

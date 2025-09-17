@@ -80,6 +80,7 @@ class AnyLLM(ABC):
     def __init__(self, config: ClientConfig) -> None:
         self._verify_no_missing_packages()
         self.config = self._verify_and_set_api_key(config)
+        self._init_client()
 
     def _verify_no_missing_packages(self) -> None:
         if self.MISSING_PACKAGES_ERROR is not None:
@@ -282,6 +283,11 @@ class AnyLLM(ABC):
             class_name=cls.__name__,
         )
 
+    @abstractmethod
+    def _init_client(self) -> None:
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
+
     def completion(
         self,
         **kwargs: Any,
@@ -458,7 +464,7 @@ class AnyLLM(ABC):
         msg = "Subclasses must implement _aresponses method"
         raise NotImplementedError(msg)
 
-    def embedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:
+    def _embedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:
         return run_async_in_sync(self.aembedding(model, inputs, **kwargs), allow_running_loop=INSIDE_NOTEBOOK)
 
     async def aembedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:

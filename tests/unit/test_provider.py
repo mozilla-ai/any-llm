@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -110,13 +111,20 @@ def test_unsupported_provider_error_attributes() -> None:
     assert "Supported providers:" in str(e)
 
 
-def test_all_providers_have_required_attributes(provider: LLMProvider) -> None:
+@pytest.mark.asyncio
+async def test_all_providers_have_required_attributes(provider: LLMProvider) -> None:
     """Test that all supported providers can be loaded with sample config parameters.
 
     This test verifies that providers can handle common configuration parameters
     like api_key and api_base without throwing errors during instantiation.
     """
-    sample_config = ClientConfig(api_key="test_key", api_base="https://test.example.com")
+    kwargs: dict[str, Any] = {"api_key": "test_key", "api_base": "https://test.example.com"}
+    if provider == "vertexai":
+        kwargs["client_args"] = {"project": "test-project", "location": "test-location"}
+    if provider == "sagemaker":
+        pytest.skip("sagemaker requires AWS credentials on instantiation")
+
+    sample_config = ClientConfig(**kwargs)
 
     provider_instance = AnyLLM.create(provider.value, sample_config)
 

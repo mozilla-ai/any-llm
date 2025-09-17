@@ -15,11 +15,8 @@ class LmstudioProvider(BaseOpenAIProvider):
     PROVIDER_DOCUMENTATION_URL = "https://lmstudio.ai/"
 
     SUPPORTS_COMPLETION_REASONING = True
-    SUPPORTS_LIST_MODELS = True
 
-    def __init__(self, config: ClientConfig) -> None:
-        """We don't use the Provider init because by default we don't require an API key."""
-
-        self.url = config.api_base or os.getenv("LMSTUDIO_API_URL")
-        self.config = config
-        self.config.api_key = ""  # In order to be compatible with the OpenAI client, the API key cannot be None if the OPENAI_API_KEY environment variable is not set (which is the case for LMStudio)
+    def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
+        config.api_key = ""
+        config.api_base = config.api_base or os.getenv("LMSTUDIO_API_URL")
+        return config

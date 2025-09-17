@@ -49,6 +49,8 @@ class MistralProvider(AnyLLM):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
+    client: Mistral
+
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Mistral API."""
@@ -90,10 +92,17 @@ class MistralProvider(AnyLLM):
         """Convert Mistral list models response to OpenAI format."""
         return _convert_models_list(response)
 
+    def _init_client(self) -> None:
+        self.client = Mistral(
+            api_key=self.config.api_key,
+            server_url=self.config.api_base,
+            **(self.config.client_args if self.config.client_args else {}),
+        )
+
     async def _stream_completion_async(
-        self, client: Mistral, model: str, messages: list[dict[str, Any]], **kwargs: Any
+        self, model: str, messages: list[dict[str, Any]], **kwargs: Any
     ) -> AsyncIterator[ChatCompletionChunk]:
-        mistral_stream = await client.chat.stream_async(model=model, messages=messages, **kwargs)  # type: ignore[arg-type]
+        mistral_stream = await self.client.chat.stream_async(model=model, messages=messages, **kwargs)  # type: ignore[arg-type]
 
         async for event in mistral_stream:
             yield self._convert_completion_chunk_response(event)
@@ -113,23 +122,16 @@ class MistralProvider(AnyLLM):
         ):
             kwargs["response_format"] = response_format_from_pydantic_model(params.response_format)
 
-        client = Mistral(
-            api_key=self.config.api_key,
-            server_url=self.config.api_base,
-            **(self.config.client_args if self.config.client_args else {}),
-        )
-
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 
         if params.stream:
             return self._stream_completion_async(
-                client,
                 params.model_id,
                 patched_messages,
                 **completion_kwargs,
             )
 
-        response = await client.chat.complete_async(
+        response = await self.client.chat.complete_async(
             model=params.model_id,
             messages=patched_messages,  # type: ignore[arg-type]
             **completion_kwargs,
@@ -143,24 +145,13 @@ class MistralProvider(AnyLLM):
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
-        client = Mistral(
-            api_key=self.config.api_key,
-            server_url=self.config.api_base,
-            **(self.config.client_args if self.config.client_args else {}),
-        )
         embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
-        result: EmbeddingResponse = await client.embeddings.create_async(
+        result: EmbeddingResponse = await self.client.embeddings.create_async(
             model=model,
             **embedding_kwargs,
         )
-
         return self._convert_embedding_response(result)
 
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        client = Mistral(
-            api_key=self.config.api_key,
-            server_url=self.config.api_base,
-            **(self.config.client_args if self.config.client_args else {}),
-        )
-        models_list = await client.models.list_async(**kwargs)
+        models_list = await self.client.models.list_async(**kwargs)
         return self._convert_list_models_response(models_list)

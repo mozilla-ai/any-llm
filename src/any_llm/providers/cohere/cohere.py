@@ -1,12 +1,11 @@
-from collections.abc import AsyncIterator, Sequence
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
-from any_llm.types.model import Model
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -20,6 +19,12 @@ try:
     )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Sequence
+
+    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+    from any_llm.types.model import Model
 
 
 class CohereProvider(AnyLLM):
@@ -39,6 +44,8 @@ class CohereProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = True
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
+
+    client: cohere.AsyncClientV2
 
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
@@ -81,14 +88,15 @@ class CohereProvider(AnyLLM):
         """Convert Cohere list models response to OpenAI format."""
         return _convert_models_list(response)
 
-    async def _stream_completion_async(
-        self, model: str, messages: list[dict[str, Any]], **kwargs: Any
-    ) -> AsyncIterator[ChatCompletionChunk]:
-        client = cohere.AsyncClientV2(
+    def _init_client(self) -> None:
+        self.client = cohere.AsyncClientV2(
             api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
         )
 
-        cohere_stream = client.chat_stream(
+    async def _stream_completion_async(
+        self, model: str, messages: list[dict[str, Any]], **kwargs: Any
+    ) -> AsyncIterator[ChatCompletionChunk]:
+        cohere_stream = self.client.chat_stream(
             model=model,
             messages=messages,  # type: ignore[arg-type]
             **kwargs,
@@ -135,12 +143,7 @@ class CohereProvider(AnyLLM):
                 **completion_kwargs,
             )
 
-        client = cohere.AsyncClientV2(
-            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
-        )
-
-        # note: ClientV2.chat does not have a `stream` parameter
-        response = await client.chat(
+        response = await self.client.chat(
             model=params.model_id,
             messages=patched_messages,  # type: ignore[arg-type]
             **completion_kwargs,
@@ -149,11 +152,5 @@ class CohereProvider(AnyLLM):
         return self._convert_completion_response(response, model=params.model_id)
 
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        """
-        Fetch available models from the /v1/models endpoint.
-        """
-        client = cohere.AsyncClientV2(
-            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
-        )
-        model_list = await client.models.list(**kwargs)
+        model_list = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(model_list)

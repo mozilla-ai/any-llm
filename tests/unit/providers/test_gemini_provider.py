@@ -16,7 +16,7 @@ from any_llm.types.completion import CompletionParams
 @contextmanager
 def mock_gemini_provider():  # type: ignore[no-untyped-def]
     with (
-        patch("any_llm.providers.gemini.base.genai.Client") as mock_genai,
+        patch("any_llm.providers.gemini.gemini.genai.Client") as mock_genai,
         patch("any_llm.providers.gemini.base._convert_response_to_response_dict") as mock_convert_response,
         patch.dict("os.environ", {"GOOGLE_PROJECT_ID": "test-project", "GOOGLE_REGION": "us-central1"}),
     ):

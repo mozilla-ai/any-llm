@@ -45,12 +45,12 @@ async def test_completion_with_response_format_basemodel() -> None:
     class TestOutput(BaseModel):
         foo: str
 
-    provider = GroqProvider(ClientConfig(api_key="test-api-key"))
-
     with (
-        patch("any_llm.providers.groq.groq.groq.AsyncGroq") as mocked_groq,
+        patch("any_llm.providers.groq.groq.AsyncGroq") as mocked_groq,
         patch("any_llm.providers.groq.groq.to_chat_completion") as mocked_to_chat_completion,
     ):
+        provider = GroqProvider(ClientConfig(api_key="test-api-key"))
+
         mock_response = Mock()
         mocked_groq.return_value.chat.completions.create = AsyncMock(return_value=mock_response)
         mocked_to_chat_completion.return_value = mock_response

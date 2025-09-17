@@ -23,6 +23,7 @@ class GeminiProvider(GoogleProvider):
             raise MissingApiKeyError(self.PROVIDER_NAME, self.ENV_API_KEY_NAME)
         return config
 
-    def _get_client(self, config: ClientConfig) -> "genai.Client":
-        """Get Gemini API client."""
-        return genai.Client(api_key=config.api_key, **(config.client_args if config.client_args else {}))
+    def _init_client(self) -> None:
+        self.client = genai.Client(
+            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
+        )

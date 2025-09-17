@@ -380,7 +380,7 @@ def embedding(
         model_name = model
 
     llm = AnyLLM.create(provider_key, ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args))
-    return llm.embedding(model_name, inputs, **kwargs)
+    return llm._embedding(model_name, inputs, **kwargs)
 
 
 async def aembedding(

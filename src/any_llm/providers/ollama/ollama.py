@@ -55,6 +55,8 @@ class OllamaProvider(AnyLLM):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
+    client: AsyncClient
+
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Ollama API."""
@@ -95,12 +97,14 @@ class OllamaProvider(AnyLLM):
         """Convert Ollama list models response to OpenAI format."""
         return _convert_models_list(response)
 
-    def __init__(self, config: ClientConfig) -> None:
-        """We don't use the Provider init because by default we don't require an API key."""
-        self._verify_no_missing_packages()
+    def _init_client(self) -> None:
+        self.client = AsyncClient(
+            host=self.config.api_base, **(self.config.client_args if self.config.client_args else {})
+        )
 
-        self.url = config.api_base or os.getenv("OLLAMA_API_URL")
-        self.config = config
+    def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
+        config.api_base = config.api_base or os.getenv("OLLAMA_API_URL")
+        return config
 
     def _extract_images_from_message(self, message: dict[str, Any]) -> tuple[str, list[str]]:
         """
@@ -133,14 +137,13 @@ class OllamaProvider(AnyLLM):
 
     async def _stream_completion_async(
         self,
-        client: AsyncClient,
         model: str,
         messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> AsyncIterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
         kwargs.pop("stream", None)
-        response: AsyncIterator[OllamaChatResponse] = await client.chat(
+        response: AsyncIterator[OllamaChatResponse] = await self.client.chat(
             model=model,
             messages=messages,
             think=kwargs.pop("think", None),
@@ -199,12 +202,10 @@ class OllamaProvider(AnyLLM):
         if completion_kwargs.get("reasoning_effort") is not None:
             completion_kwargs["think"] = True
 
-        client = AsyncClient(host=self.url, **(self.config.client_args if self.config.client_args else {}))
-
         if params.stream:
-            return self._stream_completion_async(client, params.model_id, cleaned_messages, **completion_kwargs)
+            return self._stream_completion_async(params.model_id, cleaned_messages, **completion_kwargs)
 
-        response: OllamaChatResponse = await client.chat(
+        response: OllamaChatResponse = await self.client.chat(
             model=params.model_id,
             tools=completion_kwargs.pop("tools", None),
             think=completion_kwargs.pop("think", None),
@@ -221,16 +222,13 @@ class OllamaProvider(AnyLLM):
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         """Generate embeddings using Ollama."""
-        client = AsyncClient(host=self.url, **(self.config.client_args if self.config.client_args else {}))
-
         embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
-        response = await client.embed(
+        response = await self.client.embed(
             model=model,
             **embedding_kwargs,
         )
         return self._convert_embedding_response(response)
 
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        client = AsyncClient(host=self.url, **(self.config.client_args if self.config.client_args else {}))
-        models_list = await client.list(**kwargs)
+        models_list = await self.client.list(**kwargs)
         return self._convert_list_models_response(models_list)

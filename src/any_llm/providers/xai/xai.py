@@ -1,9 +1,8 @@
-from collections.abc import AsyncIterator, Sequence
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from any_llm.any_llm import AnyLLM
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
-from any_llm.types.model import Model
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -22,6 +21,12 @@ try:
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Sequence
+
+    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+    from any_llm.types.model import Model
+
 
 class XaiProvider(AnyLLM):
     API_BASE = "https://api.x.ai/v1"
@@ -39,6 +44,8 @@ class XaiProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = True
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
+
+    client: XaiAsyncClient
 
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
@@ -87,14 +94,14 @@ class XaiProvider(AnyLLM):
         """Convert xAI list models response to OpenAI format."""
         return _convert_models_list(response)
 
-    async def _acompletion(
-        self, params: CompletionParams, **kwargs: Any
-    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        """Call the XAI Python SDK Chat Completions API and convert to AnyLLM types."""
-        client = XaiAsyncClient(
+    def _init_client(self) -> None:
+        self.client = XaiAsyncClient(
             api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
         )
 
+    async def _acompletion(
+        self, params: CompletionParams, **kwargs: Any
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         xai_messages = []
         for message in params.messages:
             if message["role"] == "user":
@@ -123,7 +130,7 @@ class XaiProvider(AnyLLM):
 
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 
-        chat = client.chat.create(
+        chat = self.client.chat.create(
             model=params.model_id,
             messages=xai_messages,
             **completion_kwargs,
@@ -148,11 +155,5 @@ class XaiProvider(AnyLLM):
         return self._convert_completion_response(response)
 
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        """
-        Fetch available models from the /v1/models endpoint.
-        """
-        client = XaiAsyncClient(
-            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
-        )
-        models_list = await client.models.list_language_models()
+        models_list = await self.client.models.list_language_models()
         return self._convert_list_models_response(models_list)

@@ -53,6 +53,8 @@ class HuggingfaceProvider(AnyLLM):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
+    client: AsyncInferenceClient
+
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for HuggingFace API."""
@@ -89,13 +91,18 @@ class HuggingfaceProvider(AnyLLM):
         """Convert HuggingFace list models response to OpenAI format."""
         return _convert_models_list(response)
 
+    def _init_client(self) -> None:
+        self.client = AsyncInferenceClient(
+            base_url=self.config.api_base,
+            token=self.config.api_key,
+            **(self.config.client_args if self.config.client_args else {}),
+        )
+
     async def _stream_completion_async(
         self,
-        client: AsyncInferenceClient,
         **kwargs: Any,
     ) -> AsyncIterator[ChatCompletionChunk]:
-        """Handle streaming completion - extracted to avoid generator issues."""
-        response: AsyncIterator[HuggingFaceChatCompletionStreamOutput] = await client.chat_completion(**kwargs)
+        response: AsyncIterator[HuggingFaceChatCompletionStreamOutput] = await self.client.chat_completion(**kwargs)
 
         async for chunk in response:
             yield self._convert_completion_chunk_response(chunk)
@@ -105,20 +112,13 @@ class HuggingfaceProvider(AnyLLM):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        """Create a chat completion using HuggingFace."""
-        client = AsyncInferenceClient(
-            base_url=self.config.api_base,
-            token=self.config.api_key,
-            **(self.config.client_args if self.config.client_args else {}),
-        )
-
         converted_kwargs = self._convert_completion_params(params, **kwargs)
 
         if params.stream:
             converted_kwargs["stream"] = True
-            return self._stream_completion_async(client, **converted_kwargs)
+            return self._stream_completion_async(**converted_kwargs)
 
-        response = await client.chat_completion(**converted_kwargs)
+        response = await self.client.chat_completion(**converted_kwargs)
 
         data = response
         choices_out: list[Choice] = []
@@ -150,12 +150,6 @@ class HuggingfaceProvider(AnyLLM):
         )
 
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        """
-        Fetch available models from the /v1/models endpoint.
-        """
-        if not self.SUPPORTS_LIST_MODELS:
-            message = f"{self.PROVIDER_NAME} does not support listing models."
-            raise NotImplementedError(message)
         client = HfApi(token=self.config.api_key, **(self.config.client_args if self.config.client_args else {}))
         if kwargs.get("inference") is None and kwargs.get("inference_provider") is None:
             kwargs["inference"] = "warm"

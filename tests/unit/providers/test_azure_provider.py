@@ -67,13 +67,17 @@ async def test_azure_with_api_version() -> None:
     messages = [{"role": "user", "content": "Hello"}]
     with mock_azure_provider() as (_, _, mock_chat_client):
         with patch("any_llm.providers.azure.azure.AzureKeyCredential") as mock_azure_key_credential:
-            provider = AzureProvider(ClientConfig(api_key=api_key, api_base=custom_endpoint))
+            provider = AzureProvider(
+                ClientConfig(
+                    api_key=api_key, api_base=custom_endpoint, client_args={"api_version": "2025-04-01-preview"}
+                )
+            )
             await provider._acompletion(
-                CompletionParams(model_id="model-id", messages=messages), api_version="2025-04-01-preview"
+                CompletionParams(model_id="model-id", messages=messages),
             )
 
             mock_chat_client.assert_called_once_with(
-                endpoint=provider._get_endpoint(),
+                endpoint=provider.config.api_base,
                 credential=mock_azure_key_credential(api_key),
                 api_version="2025-04-01-preview",
             )
@@ -129,9 +133,9 @@ async def test_azure_streaming() -> None:
         call_args = mock_stream_completion.call_args
         assert call_args is not None
         args, kwargs = call_args
-        assert len(args) >= 3  # client, model, messages
-        assert args[1] == "model-id"  # model
-        assert args[2] == messages  # messages
+        assert len(args) == 2  # model, messages
+        assert args[0] == "model-id"  # model
+        assert args[1] == messages  # messages
         assert kwargs.get("stream") is True
 
         assert isinstance(result, list)
