@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
@@ -116,10 +115,7 @@ class WatsonxProvider(AnyLLM):
 
         model_inference = ModelInference(
             model_id=params.model_id,
-            credentials=Credentials(
-                api_key=self.config.api_key,
-                url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL"),
-            ),
+            credentials=Credentials(api_key=self.config.api_key, url=self.config.api_base),
             **(self.config.client_args if self.config.client_args else {}),
         )
 
@@ -148,10 +144,8 @@ class WatsonxProvider(AnyLLM):
         Fetch available models from the /v1/models endpoint.
         """
         client = WatsonxClient(
-            url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL"),
-            credentials=Credentials(
-                api_key=self.config.api_key, url=self.config.api_base or os.getenv("WATSONX_SERVICE_URL")
-            ),
+            url=self.config.api_base,
+            credentials=Credentials(api_key=self.config.api_key, url=self.config.api_base),
             **(self.config.client_args if self.config.client_args else {}),
         )
         models_response = client.foundation_models.get_model_specs(**kwargs)
