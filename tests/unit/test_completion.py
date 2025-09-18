@@ -68,10 +68,12 @@ async def test_all_providers_can_be_loaded(provider: str) -> None:
     kwargs: dict[str, Any] = {"api_key": "test_key"}
     if provider == "azure":
         kwargs["api_base"] = "test_api_base"
-    if provider == "vertexai":
-        kwargs["client_args"] = {"project": "test-project", "location": "test-location"}
+    if provider == "bedrock":
+        kwargs["client_args"] = {"region_name": "us-east-1"}
     if provider == "sagemaker":
         pytest.skip("sagemaker requires AWS credentials on instantiation")
+    if provider == "vertexai":
+        kwargs["client_args"] = {"project": "test-project", "location": "test-location"}
 
     provider_instance = AnyLLM.create(provider, ClientConfig(**kwargs))
 
@@ -89,6 +91,8 @@ async def test_all_providers_can_be_loaded_with_config(provider: str) -> None:
     like api_key and api_base without throwing errors during instantiation.
     """
     kwargs: dict[str, Any] = {"api_key": "test_key", "api_base": "https://test.example.com"}
+    if provider == "bedrock":
+        kwargs["client_args"] = {"region_name": "us-east-1"}
     if provider == "vertexai":
         kwargs["client_args"] = {"project": "test-project", "location": "test-location"}
     if provider == "sagemaker":
@@ -112,6 +116,8 @@ async def test_provider_factory_can_create_all_supported_providers() -> None:
         kwargs: dict[str, Any] = {"api_key": "test_key"}
         if provider_name == "azure":
             kwargs["api_base"] = "test_api_base"
+        if provider_name == "bedrock":
+            kwargs["client_args"] = {"region_name": "us-east-1"}
         if provider_name == "vertexai":
             kwargs["client_args"] = {"project": "test-project", "location": "test-location"}
         if provider_name == "sagemaker":

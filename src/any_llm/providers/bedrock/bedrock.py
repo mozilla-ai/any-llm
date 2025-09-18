@@ -91,7 +91,6 @@ class BedrockProvider(AnyLLM):
         self.client = boto3.client(
             "bedrock-runtime",
             endpoint_url=self.config.api_base,
-            region_name=os.getenv("AWS_REGION", "us-east-1"),
             **(self.config.client_args if self.config.client_args else {}),
         )
 
@@ -203,7 +202,6 @@ class BedrockProvider(AnyLLM):
         client = boto3.client(
             "bedrock",
             endpoint_url=self.config.api_base,
-            region_name=os.getenv("AWS_REGION", "us-east-1"),
             **(self.config.client_args if self.config.client_args else {}),
         )
         response = client.list_foundation_models(**kwargs)
