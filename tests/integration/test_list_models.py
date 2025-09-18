@@ -4,7 +4,7 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import AnyLLM, ClientConfig, LLMProvider
+from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.types.model import Model
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
@@ -13,7 +13,7 @@ from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 def test_list_models(provider: LLMProvider, provider_client_config: dict[LLMProvider, dict[str, Any]]) -> None:
     """Test that all supported providers can be loaded successfully."""
     try:
-        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_LIST_MODELS:
             pytest.skip(f"{provider.value} does not support listing models, skipping")
 

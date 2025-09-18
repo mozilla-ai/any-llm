@@ -2,7 +2,6 @@ from typing import Any
 from unittest.mock import Mock, patch
 
 from any_llm.api import completion
-from any_llm.config import ClientConfig
 from any_llm.constants import LLMProvider
 
 
@@ -24,9 +23,7 @@ def test_completion_extracts_all_config_from_kwargs() -> None:
             **kwargs,
         )
 
-        mock_create.assert_called_once_with(
-            LLMProvider.MISTRAL, ClientConfig(api_key="test_key", api_base="https://test.com")
-        )
+        mock_create.assert_called_once_with(LLMProvider.MISTRAL, api_key="test_key", api_base="https://test.com")
 
         mock_provider.completion.assert_called_once()
         _, kwargs = mock_provider.completion.call_args
@@ -50,7 +47,7 @@ def test_completion_extracts_partial_config_from_kwargs() -> None:
             other_param="value",
         )
 
-        mock_create.assert_called_once_with(LLMProvider.MISTRAL, ClientConfig(api_key="test_key"))
+        mock_create.assert_called_once_with(LLMProvider.MISTRAL, api_key="test_key", api_base=None)
 
         mock_provider.completion.assert_called_once()
         _, kwargs = mock_provider.completion.call_args
@@ -72,7 +69,7 @@ def test_completion_no_config_extraction() -> None:
         }
         completion(model="mistral/mistral-small", messages=[{"role": "user", "content": "Hello"}], **kwargs)
 
-        mock_create.assert_called_once_with(LLMProvider.MISTRAL, ClientConfig())
+        mock_create.assert_called_once_with(LLMProvider.MISTRAL, api_key=None, api_base=None)
 
         mock_provider.completion.assert_called_once()
         _, kwargs = mock_provider.completion.call_args
@@ -95,7 +92,7 @@ def test_completion_extracts_api_base_only() -> None:
             api_base="https://custom-endpoint.com",
         )
 
-        mock_create.assert_called_once_with(LLMProvider.OLLAMA, ClientConfig(api_base="https://custom-endpoint.com"))
+        mock_create.assert_called_once_with(LLMProvider.OLLAMA, api_key=None, api_base="https://custom-endpoint.com")
 
         mock_provider.completion.assert_called_once()
         _, kwargs = mock_provider.completion.call_args

@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from ollama import AsyncClient  # noqa: TC004
     from ollama import ChatResponse as OllamaChatResponse
 
-    from any_llm.config import ClientConfig
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
 
@@ -96,13 +95,11 @@ class OllamaProvider(AnyLLM):
         """Convert Ollama list models response to OpenAI format."""
         return _convert_models_list(response)
 
-    def _init_client(self) -> None:
-        self.client = AsyncClient(
-            host=self.config.api_base, **(self.config.client_args if self.config.client_args else {})
-        )
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        self.client = AsyncClient(host=api_base, **kwargs)
 
-    def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
-        return config
+    def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
+        return api_key
 
     def _extract_images_from_message(self, message: dict[str, Any]) -> tuple[str, list[str]]:
         """

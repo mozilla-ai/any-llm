@@ -5,7 +5,6 @@ import pytest
 
 from any_llm import AnyLLM
 from any_llm.api import acompletion
-from any_llm.config import ClientConfig
 from any_llm.constants import LLMProvider
 
 
@@ -69,13 +68,14 @@ async def test_all_providers_can_be_loaded(provider: str) -> None:
     if provider == "azure":
         kwargs["api_base"] = "test_api_base"
     if provider == "bedrock":
-        kwargs["client_args"] = {"region_name": "us-east-1"}
+        kwargs["region_name"] = "us-east-1"
     if provider == "sagemaker":
         pytest.skip("sagemaker requires AWS credentials on instantiation")
     if provider == "vertexai":
-        kwargs["client_args"] = {"project": "test-project", "location": "test-location"}
+        kwargs["project"] = "test-project"
+        kwargs["location"] = "test-location"
 
-    provider_instance = AnyLLM.create(provider, ClientConfig(**kwargs))
+    provider_instance = AnyLLM.create(provider, **kwargs)
 
     assert isinstance(provider_instance, AnyLLM), f"Provider {provider} did not create a valid AnyLLM instance"
 
@@ -92,15 +92,14 @@ async def test_all_providers_can_be_loaded_with_config(provider: str) -> None:
     """
     kwargs: dict[str, Any] = {"api_key": "test_key", "api_base": "https://test.example.com"}
     if provider == "bedrock":
-        kwargs["client_args"] = {"region_name": "us-east-1"}
+        kwargs["region_name"] = "us-east-1"
     if provider == "vertexai":
-        kwargs["client_args"] = {"project": "test-project", "location": "test-location"}
+        kwargs["project"] = "test-project"
+        kwargs["location"] = "test-location"
     if provider == "sagemaker":
         pytest.skip("sagemaker requires AWS credentials on instantiation")
 
-    sample_config = ClientConfig(**kwargs)
-
-    provider_instance = AnyLLM.create(provider, sample_config)
+    provider_instance = AnyLLM.create(provider, **kwargs)
 
     assert isinstance(provider_instance, AnyLLM), (
         f"Provider {provider} did not create a valid AnyLLM instance with config"
@@ -117,11 +116,12 @@ async def test_provider_factory_can_create_all_supported_providers() -> None:
         if provider_name == "azure":
             kwargs["api_base"] = "test_api_base"
         if provider_name == "bedrock":
-            kwargs["client_args"] = {"region_name": "us-east-1"}
+            kwargs["region_name"] = "us-east-1"
         if provider_name == "vertexai":
-            kwargs["client_args"] = {"project": "test-project", "location": "test-location"}
+            kwargs["project"] = "test-project"
+            kwargs["location"] = "test-location"
         if provider_name == "sagemaker":
             continue
-        provider_instance = AnyLLM.create(provider_name, ClientConfig(**kwargs))
+        provider_instance = AnyLLM.create(provider_name, **kwargs)
 
         assert isinstance(provider_instance, AnyLLM), f"Failed to create valid AnyLLM instance for {provider_name}"

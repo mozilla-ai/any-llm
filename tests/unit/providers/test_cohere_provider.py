@@ -3,7 +3,6 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.cohere.utils import _patch_messages
 from any_llm.types.completion import CompletionParams
@@ -13,7 +12,7 @@ def _mk_provider() -> Any:
     pytest.importorskip("cohere")
     from any_llm.providers.cohere.cohere import CohereProvider
 
-    return CohereProvider(ClientConfig(api_key="test-api-key"))
+    return CohereProvider(api_key="test-api-key")
 
 
 def test_preprocess_response_format() -> None:

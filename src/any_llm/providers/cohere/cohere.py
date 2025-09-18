@@ -88,10 +88,8 @@ class CohereProvider(AnyLLM):
         """Convert Cohere list models response to OpenAI format."""
         return _convert_models_list(response)
 
-    def _init_client(self) -> None:
-        self.client = cohere.AsyncClientV2(
-            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
-        )
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        self.client = cohere.AsyncClientV2(api_key=api_key, **kwargs)
 
     async def _stream_completion_async(
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any

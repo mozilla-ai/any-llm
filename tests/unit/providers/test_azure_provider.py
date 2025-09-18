@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from any_llm.config import ClientConfig
 from any_llm.providers.azure.azure import AzureProvider
 from any_llm.types.completion import CompletionParams
 
@@ -46,7 +45,7 @@ async def test_azure_with_api_key_and_api_base() -> None:
 
     messages = [{"role": "user", "content": "Hello"}]
     with mock_azure_provider() as (mock_client, mock_convert_response, mock_chat_client):
-        provider = AzureProvider(ClientConfig(api_key=api_key, api_base=custom_endpoint))
+        provider = AzureProvider(api_key=api_key, api_base=custom_endpoint)
         await provider._acompletion(CompletionParams(model_id="model-id", messages=messages))
 
         mock_chat_client.assert_called_once()
@@ -67,17 +66,13 @@ async def test_azure_with_api_version() -> None:
     messages = [{"role": "user", "content": "Hello"}]
     with mock_azure_provider() as (_, _, mock_chat_client):
         with patch("any_llm.providers.azure.azure.AzureKeyCredential") as mock_azure_key_credential:
-            provider = AzureProvider(
-                ClientConfig(
-                    api_key=api_key, api_base=custom_endpoint, client_args={"api_version": "2025-04-01-preview"}
-                )
-            )
+            provider = AzureProvider(api_key=api_key, api_base=custom_endpoint, api_version="2025-04-01-preview")
             await provider._acompletion(
                 CompletionParams(model_id="model-id", messages=messages),
             )
 
             mock_chat_client.assert_called_once_with(
-                endpoint=provider.config.api_base,
+                endpoint=custom_endpoint,
                 credential=mock_azure_key_credential(api_key),
                 api_version="2025-04-01-preview",
             )
@@ -92,7 +87,7 @@ async def test_azure_with_tools() -> None:
     tools = {"type": "function", "function": "foo"}
     tool_choice = "auto"
     with mock_azure_provider() as (mock_client, mock_convert_response, _):
-        provider = AzureProvider(ClientConfig(api_key=api_key, api_base=custom_endpoint))
+        provider = AzureProvider(api_key=api_key, api_base=custom_endpoint)
         await provider._acompletion(
             CompletionParams(
                 model_id="model-id",
@@ -119,7 +114,7 @@ async def test_azure_streaming() -> None:
 
     messages = [{"role": "user", "content": "Hello"}]
 
-    provider = AzureProvider(ClientConfig(api_key=api_key, api_base=custom_endpoint))
+    provider = AzureProvider(api_key=api_key, api_base=custom_endpoint)
 
     with patch.object(provider, "_stream_completion_async") as mock_stream_completion:
         mock_openai_chunk1 = MagicMock()

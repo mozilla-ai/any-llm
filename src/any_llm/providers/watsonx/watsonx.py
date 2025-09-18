@@ -87,10 +87,12 @@ class WatsonxProvider(AnyLLM):
         """Convert Watsonx list models response to OpenAI format."""
         return _convert_models_list(response)
 
-    def _init_client(self) -> None:
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         # watsonx requires params.model_id to instantiate the client
         # which is not available at this point.
-        pass
+        self.api_key = api_key
+        self.api_base = api_base
+        self.kwargs = kwargs
 
     async def _stream_completion_async(
         self,
@@ -115,8 +117,8 @@ class WatsonxProvider(AnyLLM):
 
         model_inference = ModelInference(
             model_id=params.model_id,
-            credentials=Credentials(api_key=self.config.api_key, url=self.config.api_base),
-            **(self.config.client_args if self.config.client_args else {}),
+            credentials=Credentials(api_key=self.api_key, url=self.api_base),
+            **self.kwargs,
         )
 
         # Handle response_format by inlining schema guidance into the prompt
@@ -144,9 +146,9 @@ class WatsonxProvider(AnyLLM):
         Fetch available models from the /v1/models endpoint.
         """
         client = WatsonxClient(
-            url=self.config.api_base,
-            credentials=Credentials(api_key=self.config.api_key, url=self.config.api_base),
-            **(self.config.client_args if self.config.client_args else {}),
+            url=self.api_base,
+            credentials=Credentials(api_key=self.api_key, url=self.api_base),
+            **self.kwargs,
         )
         models_response = client.foundation_models.get_model_specs(**kwargs)
 

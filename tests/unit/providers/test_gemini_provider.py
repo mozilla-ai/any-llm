@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from google.genai import types
 
-from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.gemini import GeminiProvider
 from any_llm.providers.gemini.base import REASONING_EFFORT_TO_THINKING_BUDGETS
@@ -45,8 +44,8 @@ def mock_gemini_provider():  # type: ignore[no-untyped-def]
 def test_gemini_initialization_with_env_var_api_key(env_var: str) -> None:
     """Test that the provider initializes correctly with API key from environment variable."""
     with patch.dict("os.environ", {env_var: "env-api-key"}, clear=True):
-        provider = GeminiProvider(ClientConfig())
-        assert provider.config.api_key == "env-api-key"
+        provider = GeminiProvider()
+        assert provider.client._api_client.api_key == "env-api-key"
 
 
 @pytest.mark.asyncio
@@ -57,7 +56,7 @@ async def test_completion_with_system_instruction() -> None:
     messages = [{"role": "system", "content": "You are a helpful assistant"}, {"role": "user", "content": "Hello"}]
 
     with mock_gemini_provider() as mock_genai:
-        provider = GeminiProvider(ClientConfig(api_key=api_key))
+        provider = GeminiProvider(api_key=api_key)
         await provider._acompletion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -76,7 +75,7 @@ async def test_completion_with_content_list() -> None:
     messages = [{"role": "user", "content": [{"type": "text", "text": "Hello"}]}]
 
     with mock_gemini_provider() as mock_genai:
-        provider = GeminiProvider(ClientConfig(api_key=api_key))
+        provider = GeminiProvider(api_key=api_key)
         await provider._acompletion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -100,7 +99,7 @@ async def test_completion_with_tool_choice_auto(tool_choice: str, expected_mode:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_gemini_provider() as mock_genai:
-        provider = GeminiProvider(ClientConfig(api_key=api_key))
+        provider = GeminiProvider(api_key=api_key)
         await provider._acompletion(CompletionParams(model_id=model, messages=messages, tool_choice=tool_choice))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -117,7 +116,7 @@ async def test_completion_without_tool_choice() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_gemini_provider() as mock_genai:
-        provider = GeminiProvider(ClientConfig(api_key=api_key))
+        provider = GeminiProvider(api_key=api_key)
         await provider._acompletion(CompletionParams(model_id=model, messages=messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -133,7 +132,7 @@ async def test_completion_with_stream_and_response_format_raises() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_gemini_provider():
-        provider = GeminiProvider(ClientConfig(api_key=api_key))
+        provider = GeminiProvider(api_key=api_key)
         with pytest.raises(UnsupportedParameterError):
             await provider._acompletion(
                 CompletionParams(
@@ -152,7 +151,7 @@ async def test_completion_with_parallel_tool_calls_raises() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_gemini_provider():
-        provider = GeminiProvider(ClientConfig(api_key=api_key))
+        provider = GeminiProvider(api_key=api_key)
         with pytest.raises(UnsupportedParameterError):
             await provider._acompletion(
                 CompletionParams(
@@ -169,7 +168,7 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
     model = "gemini-pro"
 
     with mock_gemini_provider() as mock_genai:
-        provider = GeminiProvider(ClientConfig(api_key=api_key))
+        provider = GeminiProvider(api_key=api_key)
         await provider._acompletion(CompletionParams(model_id=model, messages=agent_loop_messages))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
@@ -199,7 +198,7 @@ async def test_completion_with_custom_reasoning_effort(
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_gemini_provider() as mock_genai:
-        provider = GeminiProvider(ClientConfig(api_key=api_key))
+        provider = GeminiProvider(api_key=api_key)
         await provider._acompletion(
             CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort)
         )
@@ -223,7 +222,7 @@ async def test_completion_with_max_tokens_conversion() -> None:
     max_tokens = 100
 
     with mock_gemini_provider() as mock_genai:
-        provider = GeminiProvider(ClientConfig(api_key=api_key))
+        provider = GeminiProvider(api_key=api_key)
         await provider._acompletion(CompletionParams(model_id=model, messages=messages, max_tokens=max_tokens))
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args

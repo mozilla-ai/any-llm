@@ -2,7 +2,6 @@ from unittest.mock import patch
 
 import pytest
 
-from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.llamafile.llamafile import LlamafileProvider
 from any_llm.providers.openai.base import BaseOpenAIProvider
@@ -11,7 +10,7 @@ from any_llm.types.completion import CompletionParams
 
 @pytest.mark.asyncio
 async def test_response_format_dict_raises() -> None:
-    provider = LlamafileProvider(ClientConfig())
+    provider = LlamafileProvider()
     with pytest.raises(UnsupportedParameterError):
         await provider._acompletion(
             CompletionParams(
@@ -24,7 +23,7 @@ async def test_response_format_dict_raises() -> None:
 
 @pytest.mark.asyncio
 async def test_calls_completion() -> None:
-    provider = LlamafileProvider(ClientConfig())
+    provider = LlamafileProvider()
     params = CompletionParams(model_id="llama3.1", messages=[{"role": "user", "content": "Hi"}])
     sentinel = object()
     with patch.object(BaseOpenAIProvider, "_acompletion", autospec=True, return_value=sentinel) as mock_super:
@@ -35,7 +34,7 @@ async def test_calls_completion() -> None:
 
 @pytest.mark.asyncio
 async def test_tools_raises() -> None:
-    provider = LlamafileProvider(ClientConfig())
+    provider = LlamafileProvider()
     tools = [
         {
             "type": "function",

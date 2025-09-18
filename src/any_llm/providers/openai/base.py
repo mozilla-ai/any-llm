@@ -104,11 +104,11 @@ class BaseOpenAIProvider(AnyLLM):
         # Otherwise, validate each item
         return [Model.model_validate(item) if not isinstance(item, Model) else item for item in response]
 
-    def _init_client(self) -> None:
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = AsyncOpenAI(
-            base_url=self.config.api_base or self.API_BASE,
-            api_key=self.config.api_key,
-            **(self.config.client_args if self.config.client_args else {}),
+            base_url=api_base or self.API_BASE,
+            api_key=api_key,
+            **kwargs,
         )
 
     def _convert_completion_response_async(

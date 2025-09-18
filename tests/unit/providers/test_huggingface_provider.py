@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from any_llm.config import ClientConfig
 from any_llm.providers.huggingface.huggingface import HuggingfaceProvider
 from any_llm.types.completion import CompletionParams
 
@@ -36,7 +35,7 @@ async def test_huggingface_with_api_base() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_huggingface_provider() as mock_huggingface:
-        provider = HuggingfaceProvider(ClientConfig(api_key=api_key, api_base=api_base))
+        provider = HuggingfaceProvider(api_key=api_key, api_base=api_base)
         await provider._acompletion(CompletionParams(model_id="model-id", messages=messages, max_tokens=100))
         mock_huggingface.assert_called_with(base_url=api_base, token=api_key)
 
@@ -47,7 +46,7 @@ async def test_huggingface_with_max_tokens() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_huggingface_provider() as mock_huggingface:
-        provider = HuggingfaceProvider(ClientConfig(api_key=api_key))
+        provider = HuggingfaceProvider(api_key=api_key)
         await provider._acompletion(CompletionParams(model_id="model-id", messages=messages, max_tokens=100))
 
         mock_huggingface.assert_called_with(base_url=None, token=api_key)
@@ -58,6 +57,6 @@ async def test_huggingface_with_timeout() -> None:
     api_key = "test-api-key"
     messages = [{"role": "user", "content": "Hello"}]
     with mock_huggingface_provider() as mock_huggingface:
-        provider = HuggingfaceProvider(ClientConfig(api_key=api_key, client_args={"timeout": 10}))
+        provider = HuggingfaceProvider(api_key=api_key, timeout=10)
         await provider._acompletion(CompletionParams(model_id="model-id", messages=messages, max_tokens=100))
         mock_huggingface.assert_called_with(base_url=None, token=api_key, timeout=10)

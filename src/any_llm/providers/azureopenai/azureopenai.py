@@ -1,3 +1,5 @@
+from typing import Any
+
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
 
@@ -10,8 +12,8 @@ class AzureopenaiProvider(BaseOpenAIProvider):
     SUPPORTS_RESPONSES = True
     SUPPORTS_LIST_MODELS = True
 
-    def _init_client(self) -> None:
-        if not self.config.client_args:
-            self.config.client_args = {}
-        self.config.client_args["default_query"] = {"api-version": "preview"}
-        return super()._init_client()
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        if not kwargs:
+            kwargs = {}
+        kwargs["default_query"] = {"api-version": "preview"}
+        return super()._init_client(api_key=api_key, api_base=api_base, **kwargs)
