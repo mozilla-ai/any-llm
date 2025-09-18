@@ -20,8 +20,8 @@ async def test_tool(
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
-    if provider == LLMProvider.LLAMAFILE:
-        pytest.skip("Llamafile does not support tools, skipping")
+    if provider in (LLMProvider.LLAMAFILE, LLMProvider.PERPLEXITY):
+        pytest.skip(f"{provider} does not support tools, skipping")
 
     def echo(message: str) -> str:
         """Tool function to get the capital of a city."""
