@@ -15,7 +15,23 @@ on:
         type: string
 
 jobs:
+  expected-providers:
+    runs-on: ubuntu-latest
+    outputs:
+      providers: ${{ steps.set_providers.outputs.expected_providers }}
+      local_providers: ${{ steps.set_local_providers.outputs.expected_providers }}
+    steps:
+      - name: Set expected providers for integration tests
+        id: set_providers
+        run: echo "expected_providers=anthropic,bedrock,fireworks,gemini,huggingface,llama,mistral,nebius,openai,voyage,watsonx,xai,openrouter,cerebras" >> $GITHUB_OUTPUT
+
+      - name: Set expected providers for local integration tests
+        id: set_local_providers
+        run: echo "expected_providers=ollama,llamafile" >> $GITHUB_OUTPUT
+
   run-integration-tests:
+    needs: expected-providers
+    if: github.event.inputs.filter == '' || contains(needs.expected-providers.outputs.providers, github.event.inputs.filter)
     timeout-minutes: 30
     runs-on: ubuntu-latest
 
@@ -53,13 +69,109 @@ jobs:
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
-          EXPECTED_PROVIDERS: "anthropic,bedrock,fireworks,gemini,huggingface,llama,mistral,nebius,openai,voyage,watsonx,xai,openrouter,cerebras"
+          EXPECTED_PROVIDERS: ${{ needs.expected-providers.outputs.providers }}
           INCLUDE_LOCAL_PROVIDERS: "false"
         run: |
           if [ -n "${{ inputs.filter }}" ]; then
             pytest tests/integration -v -n auto --cov --cov-report=xml -k "${{ inputs.filter }}"
           else
             pytest tests/integration -v -n auto --cov --cov-report=xml
+          fi
+
+      - name: Upload coverage reports to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  run-local-integration-tests:
+    needs: expected-providers
+    if: github.event.inputs.filter == '' || contains(needs.expected-providers.outputs.local_providers, github.event.inputs.filter)
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: 3.13
+          activate-environment: true
+
+      - name: Install dependencies
+        run: |
+          uv sync --group tests --extra all
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.ollama
+          key: ${{ runner.os }}-ollama-models-${{ hashFiles('tests/conftest.py') }}
+          restore-keys: |
+            ${{ runner.os }}-ollama-models-
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.llamafile
+          key: ${{ runner.os }}-llamafile-${{ hashFiles('tests/conftest.py') }}
+          restore-keys: |
+            ${{ runner.os }}-llamafile-
+
+      - name: Setup Ollama
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
+        uses: ai-action/setup-ollama@v1
+
+      - name: Run ollama
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
+        run: |
+          ollama serve &
+          ollama pull llama3.2:1b
+          ollama pull qwen3:0.6b
+          ollama pull llava:7b
+
+      - name: Wait for Ollama to be ready
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
+        run: |
+          timeout 60 bash -c 'until curl -s http://localhost:11434/api/tags >/dev/null; do sleep 1; done'
+
+      - name: Download and Run LlamaFile
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamafile')
+        run: |
+          mkdir -p ~/.llamafile
+          LLAMAFILE_PATH="$HOME/.llamafile/Qwen_Qwen3-0.6B-Q4_K_M.llamafile"
+
+          if [ ! -f "$LLAMAFILE_PATH" ]; then
+            echo "Downloading llamafile (not found in cache)..."
+            wget -O "$LLAMAFILE_PATH" https://huggingface.co/Mozilla/Qwen3-0.6B-llamafile/resolve/main/Qwen_Qwen3-0.6B-Q4_K_M.llamafile
+            chmod +x "$LLAMAFILE_PATH"
+          else
+            echo "Using cached llamafile"
+          fi
+
+          "$LLAMAFILE_PATH" --server --v2 &
+          echo $! > llamafile.pid
+
+      - name: Wait for LlamaFile to be ready
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamafile')
+        run: |
+          timeout 60 bash -c 'until curl -s http://localhost:8080/v1/models >/dev/null; do sleep 1; done'
+
+      - name: Run Local Provider Integration tests (parallel with xdist)
+        env:
+          INCLUDE_LOCAL_PROVIDERS: "true"
+          INCLUDE_NON_LOCAL_PROVIDERS: "false"
+        run: |
+          if [ -n "${{ inputs.filter }}" ]; then
+            pytest tests/integration -v -n auto --cov --cov-report=xml -k "${{ inputs.filter }}"
+          else
+            pytest tests/integration -v -n auto --cov --cov-report=xml
+          fi
+
+      - name: Cleanup LlamaFile process
+        if: always()
+        run: |
+          if [ -f llamafile.pid ]; then
+            kill $(cat llamafile.pid) || true
+            rm llamafile.pid
           fi
 
       - name: Upload coverage reports to Codecov
