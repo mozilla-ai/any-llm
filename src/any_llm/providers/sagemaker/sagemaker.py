@@ -2,7 +2,6 @@
 import asyncio
 import functools
 import json
-import os
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
 
@@ -90,7 +89,6 @@ class SagemakerProvider(AnyLLM):
         self.client = boto3.client(
             "sagemaker-runtime",
             endpoint_url=self.config.api_base,
-            region_name=os.getenv("AWS_REGION", "us-east-1"),
             **(self.config.client_args if self.config.client_args else {}),
         )
 
