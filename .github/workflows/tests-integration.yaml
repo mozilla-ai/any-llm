@@ -23,7 +23,7 @@ jobs:
     steps:
       - name: Set expected providers for integration tests
         id: set_providers
-        run: echo "expected_providers=anthropic,bedrock,fireworks,gemini,huggingface,llama,mistral,nebius,openai,voyage,watsonx,xai,openrouter,cerebras" >> $GITHUB_OUTPUT
+        run: echo "expected_providers=anthropic,bedrock,cerebras,fireworks,gemini,huggingface,llama,mistral,nebius,openai,openrouter,perplexity,voyage,watsonx,xai" >> $GITHUB_OUTPUT
 
       - name: Set expected providers for local integration tests
         id: set_local_providers
@@ -69,6 +69,7 @@ jobs:
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
           EXPECTED_PROVIDERS: ${{ needs.expected-providers.outputs.providers }}
           INCLUDE_LOCAL_PROVIDERS: "false"
         run: |
