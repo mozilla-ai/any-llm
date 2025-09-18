@@ -59,7 +59,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.LLAMA: "Llama-4-Maverick-17B-128E-Instruct-FP8",
         LLMProvider.AZURE: "openai/gpt-4.1-nano",
         LLMProvider.AZUREOPENAI: "azure/<your_deployment_name>",
-        LLMProvider.PERPLEXITY: "llama-3.1-sonar-small-128k-chat",
+        LLMProvider.PERPLEXITY: "sonar",
         LLMProvider.OPENROUTER: "meta-llama/llama-3.3-8b-instruct:free",
         LLMProvider.LLAMACPP: "N/A",
     }

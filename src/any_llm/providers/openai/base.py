@@ -68,6 +68,9 @@ class BaseOpenAIProvider(AnyLLM):
                 )
                 response.created = int(response.created)
             normalized_chunk = _normalize_openai_dict_response(response.model_dump())
+            # Some APIs (i.e. Perplexity) return `chat.completion` without the chunk
+            # We can hardcode it as openai expects a literal
+            normalized_chunk["object"] = "chat.completion.chunk"
             return ChatCompletionChunk.model_validate(normalized_chunk)
         # If it's already our ChatCompletionChunk type, return it
         if isinstance(response, ChatCompletionChunk):
