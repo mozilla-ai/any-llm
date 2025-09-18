@@ -119,6 +119,8 @@ async def test_all_providers_have_required_attributes(provider: LLMProvider) -> 
     like api_key and api_base without throwing errors during instantiation.
     """
     kwargs: dict[str, Any] = {"api_key": "test_key", "api_base": "https://test.example.com"}
+    if provider == "bedrock":
+        kwargs["client_args"] = {"region_name": "us-east-1"}
     if provider == "vertexai":
         kwargs["client_args"] = {"project": "test-project", "location": "test-location"}
     if provider == "sagemaker":

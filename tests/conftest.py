@@ -107,6 +107,7 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.AZURE: {
             "api_base": "https://models.github.ai/inference",
         },
+        LLMProvider.BEDROCK: {"client_args": {"region_name": "us-east-1"}},
         LLMProvider.CEREBRAS: {"client_args": {"timeout": 10}},
         LLMProvider.COHERE: {"client_args": {"timeout": 10}},
         LLMProvider.DATABRICKS: {"api_base": "https://dbc-40d03128-ecae.cloud.databricks.com/serving-endpoints"},

@@ -1,5 +1,4 @@
 import json
-import os
 from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
@@ -9,9 +8,8 @@ from any_llm.types.completion import CompletionParams
 
 
 @contextmanager
-def mock_aws_provider(region: str):  # type: ignore[no-untyped-def]
+def mock_aws_provider():  # type: ignore[no-untyped-def]
     with (
-        patch.dict(os.environ, {"AWS_REGION": region}),
         patch("any_llm.providers.bedrock.bedrock._convert_response"),
         patch("boto3.Session"),
         patch("boto3.client") as mock_boto3_client,
@@ -25,33 +23,30 @@ def mock_aws_provider(region: str):  # type: ignore[no-untyped-def]
 def test_boto3_client_created_with_api_base() -> None:
     """Test that boto3.client is created with api_base as endpoint_url when provided."""
     custom_endpoint = "https://custom-bedrock-endpoint.amazonaws.com"
-    region = "us-east-1"
 
-    with mock_aws_provider(region) as mock_boto3_client:
+    with mock_aws_provider() as mock_boto3_client:
         provider = BedrockProvider(ClientConfig(api_base=custom_endpoint, api_key="test_key"))
         provider._completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
 
-        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=custom_endpoint, region_name=region)
+        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=custom_endpoint)
 
 
 def test_boto3_client_created_without_api_base() -> None:
     """Test that boto3.client is created with None endpoint_url when api_base is not provided."""
-    region = "us-west-2"
 
-    with mock_aws_provider(region) as mock_boto3_client:
+    with mock_aws_provider() as mock_boto3_client:
         provider = BedrockProvider(ClientConfig(api_key="test_key"))
         provider._completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
 
-        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None, region_name=region)
+        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None)
 
 
 def test_completion_with_kwargs() -> None:
     """Test that additional kwargs are passed correctly to converse method."""
-    region = "us-east-1"
     model_id = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
 
-    with mock_aws_provider(region) as mock_boto3_client:
+    with mock_aws_provider() as mock_boto3_client:
         provider = BedrockProvider(ClientConfig(api_key="test_key"))
         provider._completion(
             CompletionParams(
@@ -81,10 +76,9 @@ def test_completion_with_kwargs() -> None:
 
 
 @contextmanager
-def mock_aws_embedding_provider(region: str):  # type: ignore[no-untyped-def]
+def mock_aws_embedding_provider():  # type: ignore[no-untyped-def]
     """Mock AWS provider specifically for embedding tests."""
     with (
-        patch.dict(os.environ, {"AWS_REGION": region}),
         patch("boto3.Session"),
         patch("boto3.client") as mock_boto3_client,
     ):
@@ -95,19 +89,18 @@ def mock_aws_embedding_provider(region: str):  # type: ignore[no-untyped-def]
 
 def test_embedding_single_string() -> None:
     """Test embedding with a single string input."""
-    region = "us-east-1"
     model_id = "amazon.titan-embed-text-v1"
     input_text = "Hello world"
 
     mock_response_body = {"embedding": [0.1, 0.2, 0.3], "inputTextTokenCount": 5}
 
-    with mock_aws_embedding_provider(region) as (mock_boto3_client, mock_client):
+    with mock_aws_embedding_provider() as (mock_boto3_client, mock_client):
         mock_client.invoke_model.return_value = {"body": Mock(read=Mock(return_value=json.dumps(mock_response_body)))}
 
         provider = BedrockProvider(ClientConfig(api_key="test_key"))
         response = provider._embedding(model_id, input_text)
 
-        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None, region_name=region)
+        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None)
 
         expected_request_body = {"inputText": input_text}
         mock_client.invoke_model.assert_called_once_with(modelId=model_id, body=json.dumps(expected_request_body))
@@ -123,7 +116,6 @@ def test_embedding_single_string() -> None:
 
 def test_embedding_list_of_strings() -> None:
     """Test embedding with a list of strings."""
-    region = "us-east-1"
     model_id = "amazon.titan-embed-text-v1"
     input_texts = ["Hello world", "Goodbye world"]
 
@@ -132,7 +124,7 @@ def test_embedding_list_of_strings() -> None:
         {"embedding": [0.4, 0.5, 0.6], "inputTextTokenCount": 6},
     ]
 
-    with mock_aws_embedding_provider(region) as (mock_boto3_client, mock_client):
+    with mock_aws_embedding_provider() as (mock_boto3_client, mock_client):
         mock_client.invoke_model.side_effect = [
             {"body": Mock(read=Mock(return_value=json.dumps(mock_response_bodies[0])))},
             {"body": Mock(read=Mock(return_value=json.dumps(mock_response_bodies[1])))},
@@ -141,7 +133,7 @@ def test_embedding_list_of_strings() -> None:
         provider = BedrockProvider(ClientConfig(api_key="test_key"))
         response = provider._embedding(model_id, input_texts)
 
-        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None, region_name=region)
+        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None)
 
         assert mock_client.invoke_model.call_count == 2
         expected_calls = [({"inputText": "Hello world"}, model_id), ({"inputText": "Goodbye world"}, model_id)]
