@@ -15,4 +15,5 @@ class PerplexityProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
+    SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = False
