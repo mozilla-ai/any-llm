@@ -1,4 +1,3 @@
-import os
 from collections.abc import AsyncIterator, Sequence
 from typing import Any, Literal, cast
 
@@ -104,7 +103,7 @@ class BaseOpenAIProvider(AnyLLM):
 
     def _init_client(self) -> None:
         self.client = AsyncOpenAI(
-            base_url=self.config.api_base or self.API_BASE or os.getenv("OPENAI_API_BASE"),
+            base_url=self.config.api_base or self.API_BASE,
             api_key=self.config.api_key,
             **(self.config.client_args if self.config.client_args else {}),
         )
