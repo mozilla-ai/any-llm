@@ -1,5 +1,3 @@
-import os
-
 from any_llm.config import ClientConfig
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
@@ -18,5 +16,4 @@ class LmstudioProvider(BaseOpenAIProvider):
 
     def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
         config.api_key = ""
-        config.api_base = config.api_base or os.getenv("LMSTUDIO_API_URL")
         return config

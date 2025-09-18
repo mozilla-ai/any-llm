@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
@@ -27,7 +26,6 @@ if TYPE_CHECKING:
     from ollama import AsyncClient  # noqa: TC004
     from ollama import ChatResponse as OllamaChatResponse
 
-    from any_llm.config import ClientConfig
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
 
@@ -101,10 +99,6 @@ class OllamaProvider(AnyLLM):
         self.client = AsyncClient(
             host=self.config.api_base, **(self.config.client_args if self.config.client_args else {})
         )
-
-    def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
-        config.api_base = config.api_base or os.getenv("OLLAMA_API_URL")
-        return config
 
     def _extract_images_from_message(self, message: dict[str, Any]) -> tuple[str, list[str]]:
         """

@@ -1,6 +1,3 @@
-import os
-
-from any_llm.config import ClientConfig
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
 
@@ -19,10 +16,3 @@ class PerplexityProvider(BaseOpenAIProvider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_EMBEDDING = False
-
-    def __init__(self, config: ClientConfig) -> None:
-        super().__init__(config)
-        # Override API_BASE if provided in config or environment
-        base = config.api_base or os.getenv("PERPLEXITY_API_BASE")
-        if base:
-            self.API_BASE = base

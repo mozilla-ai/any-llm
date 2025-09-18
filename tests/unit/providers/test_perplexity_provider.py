@@ -50,10 +50,3 @@ def test_provider_metadata() -> None:
     assert metadata.streaming is True
     assert metadata.embedding is False
     assert metadata.responses is False
-
-
-def test_perplexity_api_base_override_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that PERPLEXITY_API_BASE environment variable overrides the default API base."""
-    monkeypatch.setenv("PERPLEXITY_API_BASE", "https://example-proxy.local")
-    p = AnyLLM.create("perplexity", ClientConfig(api_key="dummy"))
-    assert getattr(p, "API_BASE", "") == "https://example-proxy.local"
