@@ -65,23 +65,60 @@ class GoogleProvider(AnyLLM):
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Google API."""
-        base_kwargs = params.model_dump(
-            exclude_none=True,
-            exclude={
-                "model_id",
-                "messages",
-                "response_format",
-                "stream",
-                "tools",
-                "tool_choice",
-                "reasoning_effort",
-                "max_tokens",
-            },
-        )
+        provider_name = kwargs.pop("provider_name")
+
+        if params.parallel_tool_calls is not None:
+            error_message = "parallel_tool_calls"
+            raise UnsupportedParameterError(error_message, provider_name)
+        if params.stream and params.response_format is not None:
+            error_message = "stream and response_format"
+            raise UnsupportedParameterError(error_message, provider_name)
+
+        if params.frequency_penalty is not None:
+            kwargs["frequency_penalty"] = params.frequency_penalty
         if params.max_tokens is not None:
-            base_kwargs["max_output_tokens"] = params.max_tokens
-        base_kwargs.update(kwargs)
-        return base_kwargs
+            kwargs["max_output_tokens"] = params.max_tokens
+        if params.presence_penalty is not None:
+            kwargs["presence_penalty"] = params.presence_penalty
+        if params.reasoning_effort != "auto":
+            if params.reasoning_effort is None:
+                kwargs["thinking_config"] = types.ThinkingConfig(include_thoughts=False)
+            else:
+                kwargs["thinking_config"] = types.ThinkingConfig(
+                    include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort]
+                )
+        if params.seed is not None:
+            kwargs["seed"] = params.seed
+        if params.temperature is not None:
+            kwargs["temperature"] = params.temperature
+        if params.tools is not None:
+            kwargs["tools"] = _convert_tool_spec(params.tools)
+        if isinstance(params.tool_choice, str):
+            kwargs["tool_config"] = _convert_tool_choice(params.tool_choice)
+        if params.top_p is not None:
+            kwargs["top_p"] = params.top_p
+        if params.stop is not None:
+            if isinstance(params.stop, str):
+                kwargs["stop_sequences"] = [params.stop]
+            else:
+                kwargs["stop_sequences"] = params.stop
+
+        response_format = params.response_format
+        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+            kwargs["response_mime_type"] = "application/json"
+            kwargs["response_schema"] = response_format
+
+        formatted_messages, system_instruction = _convert_messages(params.messages)
+        if system_instruction:
+            kwargs["system_instruction"] = system_instruction
+
+        result_kwargs: dict[str, Any] = {
+            "config": types.GenerateContentConfig(**kwargs),
+            "contents": formatted_messages,
+            "model": params.model_id,
+        }
+
+        return result_kwargs
 
     @staticmethod
     def _convert_completion_response(response: Any) -> ChatCompletion:
@@ -187,46 +224,11 @@ class GoogleProvider(AnyLLM):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        if params.stream and params.response_format is not None:
-            error_message = "stream and response_format"
-            raise UnsupportedParameterError(error_message, self.PROVIDER_NAME)
+        kwargs["provider_name"] = self.PROVIDER_NAME
+        converted_kwargs = self._convert_completion_params(params, **kwargs)
 
-        if params.parallel_tool_calls is not None:
-            error_message = "parallel_tool_calls"
-            raise UnsupportedParameterError(error_message, self.PROVIDER_NAME)
-        tools = None
-        if params.tools is not None:
-            tools = _convert_tool_spec(params.tools)
-            kwargs["tools"] = tools
-
-        if isinstance(params.tool_choice, str):
-            kwargs["tool_config"] = _convert_tool_choice(params.tool_choice)
-
-        if params.reasoning_effort is None:
-            kwargs["thinking_config"] = types.ThinkingConfig(include_thoughts=False)
-        elif params.reasoning_effort != "auto":
-            kwargs["thinking_config"] = types.ThinkingConfig(
-                include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort]
-            )
-
-        stream = bool(params.stream)
-        response_format = params.response_format
-        base_kwargs = self._convert_completion_params(params, **kwargs)
-        generation_config = types.GenerateContentConfig(**base_kwargs)
-        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-            generation_config.response_mime_type = "application/json"
-            generation_config.response_schema = response_format
-
-        formatted_messages, system_instruction = _convert_messages(params.messages)
-        if system_instruction:
-            generation_config.system_instruction = system_instruction
-
-        if stream:
-            response_stream = await self.client.aio.models.generate_content_stream(
-                model=params.model_id,
-                contents=formatted_messages,  # type: ignore[arg-type]
-                config=generation_config,
-            )
+        if params.stream:
+            response_stream = await self.client.aio.models.generate_content_stream(**converted_kwargs)
 
             async def _stream() -> AsyncIterator[ChatCompletionChunk]:
                 async for chunk in response_stream:
@@ -234,11 +236,7 @@ class GoogleProvider(AnyLLM):
 
             return _stream()
 
-        response: types.GenerateContentResponse = await self.client.aio.models.generate_content(
-            model=params.model_id,
-            contents=formatted_messages,  # type: ignore[arg-type]
-            config=generation_config,
-        )
+        response: types.GenerateContentResponse = await self.client.aio.models.generate_content(**converted_kwargs)
 
         response_dict = _convert_response_to_response_dict(response)
         return self._convert_completion_response((response_dict, params.model_id))
