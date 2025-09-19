@@ -145,10 +145,10 @@ response = completion(
 For advanced use cases that require provider reuse, metadata access, or more control over configuration:
 
 ```python
-from any_llm import AnyLLM, ClientConfig
+from any_llm import AnyLLM
 
 llm = AnyLLM.create(
-    "mistral", ClientConfig(api_key="your-mistral-api-key"))
+    "mistral", api_key="your-mistral-api-key")
 
 response = llm.completion(
     model_id="mistral-small-latest",
