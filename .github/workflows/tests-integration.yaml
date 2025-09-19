@@ -27,7 +27,7 @@ jobs:
 
       - name: Set expected providers for local integration tests
         id: set_local_providers
-        run: echo "expected_providers=ollama,llamafile" >> $GITHUB_OUTPUT
+        run: echo "expected_providers=ollama,llamacpp,llamafile" >> $GITHUB_OUTPUT
 
   run-integration-tests:
     needs: expected-providers
@@ -104,6 +104,7 @@ jobs:
           uv sync --group tests --extra all
 
       - uses: actions/cache@v4
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
         with:
           path: ~/.ollama
           key: ${{ runner.os }}-ollama-models-${{ hashFiles('tests/conftest.py') }}
@@ -156,15 +157,24 @@ jobs:
         run: |
           timeout 60 bash -c 'until curl -s http://localhost:8080/v1/models >/dev/null; do sleep 1; done'
 
-      - name: Run Local Provider Integration tests (parallel with xdist)
+      - name : Download and Run LlamaCpp
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamacpp')
+        run: docker run -d -p 8090:8090 ghcr.io/ggml-org/llama.cpp:server -hf ggml-org/Qwen3-1.7B-GGUF --jinja --port 8090
+
+      - name: Wait for LlamaCpp to be ready
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamacpp')
+        run: |
+          timeout 60 bash -c 'until curl -s http://localhost:8090/health >/dev/null; do sleep 1; done'
+
+      - name: Run Local Provider Integration tests
         env:
           INCLUDE_LOCAL_PROVIDERS: "true"
           INCLUDE_NON_LOCAL_PROVIDERS: "false"
         run: |
           if [ -n "${{ inputs.filter }}" ]; then
-            pytest tests/integration -v -n auto --cov --cov-report=xml -k "${{ inputs.filter }}"
+            pytest tests/integration -v --cov --cov-report=xml -k "${{ inputs.filter }}"
           else
-            pytest tests/integration -v -n auto --cov --cov-report=xml
+            pytest tests/integration -v --cov --cov-report=xml
           fi
 
       - name: Cleanup LlamaFile process

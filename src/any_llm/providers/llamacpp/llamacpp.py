@@ -9,7 +9,8 @@ class LlamacppProvider(BaseOpenAIProvider):
 
     SUPPORTS_EMBEDDING = True
     SUPPORTS_COMPLETION_REASONING = False
-    SUPPORTS_COMPLETION_STREAMING = False
+    SUPPORTS_COMPLETION_STREAMING = True
+    SUPPORTS_COMPLETION_PDF = False
 
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         return ""
