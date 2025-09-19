@@ -20,7 +20,6 @@ if TYPE_CHECKING:
 
     from pydantic import BaseModel
 
-    from any_llm.config import ClientConfig
     from any_llm.types.completion import (
         ChatCompletionChunk,
         CreateEmbeddingResponse,
@@ -77,42 +76,51 @@ class AnyLLM(ABC):
     This flag is used to check if the packages are installed before instantiating the provider.
     """
 
-    def __init__(self, config: ClientConfig) -> None:
+    def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self._verify_no_missing_packages()
-        self.config = self._verify_and_set_api_key(config)
-        self._init_client()
+        self._init_client(
+            api_key=self._verify_and_set_api_key(api_key),
+            api_base=api_base,
+            **kwargs,
+        )
 
     def _verify_no_missing_packages(self) -> None:
         if self.MISSING_PACKAGES_ERROR is not None:
             msg = f"{self.PROVIDER_NAME} required packages are not installed. Please install them with `pip install any-llm-sdk[{self.PROVIDER_NAME}]`"
             raise ImportError(msg) from self.MISSING_PACKAGES_ERROR
 
-    def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
+    def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         # Standardized API key handling. Splitting into its own function so that providers
-        # Can easily override this method if they don't want verification (for instance, LMStudio)
-        if not config.api_key:
-            config.api_key = os.getenv(self.ENV_API_KEY_NAME)
+        # can easily override this method if they don't want verification (for instance, LMStudio)
+        if not api_key:
+            api_key = os.getenv(self.ENV_API_KEY_NAME)
 
-        if not config.api_key:
+        if not api_key:
             raise MissingApiKeyError(self.PROVIDER_NAME, self.ENV_API_KEY_NAME)
-        return config
+        return api_key
 
     @classmethod
-    def create(cls, provider: str | LLMProvider, config: ClientConfig) -> AnyLLM:
+    def create(
+        cls, provider: str | LLMProvider, api_key: str | None = None, api_base: str | None = None, **kwargs: Any
+    ) -> AnyLLM:
         """Create a provider instance using the given provider name and config.
 
         Args:
             provider: The provider name (e.g., 'openai', 'anthropic')
-            config: Client configuration for the provider
+            api_key: API key for the provider
+            api_base: Base URL for the provider API
+            **kwargs: Additional provider-specific arguments
 
         Returns:
             Provider instance for the specified provider
 
         """
-        return cls._create_provider(provider, config)
+        return cls._create_provider(provider, api_key=api_key, api_base=api_base, **kwargs)
 
     @classmethod
-    def _create_provider(cls, provider_key: str | LLMProvider, config: ClientConfig) -> AnyLLM:
+    def _create_provider(
+        cls, provider_key: str | LLMProvider, api_key: str | None = None, api_base: str | None = None, **kwargs: Any
+    ) -> AnyLLM:
         """Dynamically load and create an instance of a provider based on the naming convention."""
         provider_key = LLMProvider.from_string(provider_key).value
 
@@ -128,7 +136,7 @@ class AnyLLM(ABC):
             raise ImportError(msg) from e
 
         provider_class: type[AnyLLM] = getattr(module, provider_class_name)
-        return provider_class(config=config)
+        return provider_class(api_key=api_key, api_base=api_base, **kwargs)
 
     @classmethod
     def get_provider_class(cls, provider_key: str | LLMProvider) -> type[AnyLLM]:
@@ -284,7 +292,7 @@ class AnyLLM(ABC):
         )
 
     @abstractmethod
-    def _init_client(self) -> None:
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
 

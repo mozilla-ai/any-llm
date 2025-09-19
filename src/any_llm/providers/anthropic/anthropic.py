@@ -51,11 +51,11 @@ class AnthropicProvider(AnyLLM):
 
     client: AsyncAnthropic
 
-    def _init_client(self) -> None:
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = AsyncAnthropic(
-            api_key=self.config.api_key,
-            base_url=self.config.api_base,
-            **(self.config.client_args if self.config.client_args else {}),
+            api_key=api_key,
+            base_url=api_base,
+            **kwargs,
         )
 
     @staticmethod

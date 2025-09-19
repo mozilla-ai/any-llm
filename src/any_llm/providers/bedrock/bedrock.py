@@ -7,7 +7,6 @@ from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
 
 from any_llm.any_llm import AnyLLM
-from any_llm.config import ClientConfig
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.logging import logger
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
@@ -87,23 +86,21 @@ class BedrockProvider(AnyLLM):
         # the modelId is a string and will not be None
         return [Model(id=model["modelId"], object="model", created=0, owned_by="aws") for model in models_list]
 
-    def _init_client(self) -> None:
-        self.client = boto3.client(
-            "bedrock-runtime",
-            endpoint_url=self.config.api_base,
-            **(self.config.client_args if self.config.client_args else {}),
-        )
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        self.api_base = api_base
+        self.kwargs = kwargs
+        self.client = boto3.client("bedrock-runtime", endpoint_url=api_base, **kwargs)
 
-    def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
+    def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         session = boto3.Session()  # type: ignore[attr-defined]
         credentials = session.get_credentials()
 
-        config.api_key = config.api_key or os.getenv(self.ENV_API_KEY_NAME)
+        api_key = api_key or os.getenv(self.ENV_API_KEY_NAME)
 
-        if credentials is None and config.api_key is None:
+        if credentials is None and api_key is None:
             raise MissingApiKeyError(provider_name=self.PROVIDER_NAME, env_var_name=self.ENV_API_KEY_NAME)
 
-        return config
+        return api_key
 
     async def _acompletion(
         self,
@@ -201,8 +198,8 @@ class BedrockProvider(AnyLLM):
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         client = boto3.client(
             "bedrock",
-            endpoint_url=self.config.api_base,
-            **(self.config.client_args if self.config.client_args else {}),
+            endpoint_url=self.api_base,
+            **self.kwargs,
         )
         response = client.list_foundation_models(**kwargs)
         return self._convert_list_models_response(response)

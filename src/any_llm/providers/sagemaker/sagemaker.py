@@ -6,7 +6,6 @@ from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
 
 from any_llm.any_llm import AnyLLM
-from any_llm.config import ClientConfig
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.logging import logger
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
@@ -82,22 +81,22 @@ class SagemakerProvider(AnyLLM):
         """Convert SageMaker list models response to OpenAI format."""
         return []
 
-    def _init_client(self) -> None:
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         logger.warning(
             "AWS Sagemaker Support is experimental and may not work as expected. Please file an ticket at https://github.com/mozilla-ai/any-llm/issues if you encounter any issues."
         )
         self.client = boto3.client(
             "sagemaker-runtime",
-            endpoint_url=self.config.api_base,
-            **(self.config.client_args if self.config.client_args else {}),
+            endpoint_url=api_base,
+            **kwargs,
         )
 
-    def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
+    def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         session = boto3.Session()  # type: ignore[attr-defined]
         credentials = session.get_credentials()
         if credentials is None:
             raise MissingApiKeyError(provider_name=self.PROVIDER_NAME, env_var_name=self.ENV_API_KEY_NAME)
-        return config
+        return api_key
 
     async def _acompletion(
         self,

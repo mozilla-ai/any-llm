@@ -1,7 +1,6 @@
 from collections.abc import AsyncIterator
 from typing import Any
 
-from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
@@ -19,10 +18,8 @@ class LlamafileProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
 
-    def _verify_and_set_api_key(self, config: ClientConfig) -> ClientConfig:
-        config.api_key = ""
-
-        return config
+    def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
+        return ""
 
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any

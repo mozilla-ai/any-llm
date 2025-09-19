@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.utils import DEFAULT_MAX_TOKENS, REASONING_EFFORT_TO_THINKING_BUDGETS
@@ -30,7 +29,7 @@ async def test_anthropic_client_created_with_api_key_and_api_base() -> None:
     custom_endpoint = "https://custom-anthropic-endpoint"
 
     with mock_anthropic_provider() as mock_anthropic:
-        provider = AnthropicProvider(ClientConfig(api_key=api_key, api_base=custom_endpoint))
+        provider = AnthropicProvider(api_key=api_key, api_base=custom_endpoint)
         await provider._acompletion(
             CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}])
         )
@@ -44,7 +43,7 @@ async def test_anthropic_client_created_without_api_base() -> None:
     api_key = "test-api-key"
 
     with mock_anthropic_provider() as mock_anthropic:
-        provider = AnthropicProvider(ClientConfig(api_key=api_key))
+        provider = AnthropicProvider(api_key=api_key)
         await provider._acompletion(
             CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}])
         )
@@ -63,7 +62,7 @@ async def test_completion_with_system_message() -> None:
     ]
 
     with mock_anthropic_provider() as mock_anthropic:
-        provider = AnthropicProvider(ClientConfig(api_key=api_key))
+        provider = AnthropicProvider(api_key=api_key)
         await provider._acompletion(CompletionParams(model_id=model, messages=messages))
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
@@ -86,7 +85,7 @@ async def test_completion_with_multiple_system_messages() -> None:
     ]
 
     with mock_anthropic_provider() as mock_anthropic:
-        provider = AnthropicProvider(ClientConfig(api_key=api_key))
+        provider = AnthropicProvider(api_key=api_key)
         await provider._acompletion(CompletionParams(model_id=model, messages=messages))
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
@@ -105,7 +104,7 @@ async def test_completion_with_kwargs() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_anthropic_provider() as mock_anthropic:
-        provider = AnthropicProvider(ClientConfig(api_key=api_key))
+        provider = AnthropicProvider(api_key=api_key)
         await provider._acompletion(
             CompletionParams(model_id=model, messages=messages, max_tokens=100, temperature=0.5)
         )
@@ -123,7 +122,7 @@ async def test_completion_with_tool_choice_required() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_anthropic_provider() as mock_anthropic:
-        provider = AnthropicProvider(ClientConfig(api_key=api_key))
+        provider = AnthropicProvider(api_key=api_key)
         await provider._acompletion(CompletionParams(model_id=model, messages=messages, tool_choice="required"))
 
         expected_kwargs = {"tool_choice": {"type": "any", "disable_parallel_tool_use": False}}
@@ -145,7 +144,7 @@ async def test_completion_with_tool_choice_and_parallel_tool_calls(parallel_tool
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_anthropic_provider() as mock_anthropic:
-        provider = AnthropicProvider(ClientConfig(api_key=api_key))
+        provider = AnthropicProvider(api_key=api_key)
         await provider._acompletion(
             CompletionParams(
                 model_id=model, messages=messages, tool_choice="auto", parallel_tool_calls=parallel_tool_calls
@@ -168,7 +167,7 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
     model = "model-id"
 
     with mock_anthropic_provider() as mock_anthropic:
-        provider = AnthropicProvider(ClientConfig(api_key=api_key))
+        provider = AnthropicProvider(api_key=api_key)
         await provider._acompletion(CompletionParams(model_id=model, messages=agent_loop_messages))
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
@@ -205,7 +204,7 @@ async def test_completion_with_custom_reasoning_effort(
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_anthropic_provider() as mock_anthropic:
-        provider = AnthropicProvider(ClientConfig(api_key=api_key))
+        provider = AnthropicProvider(api_key=api_key)
         await provider._acompletion(
             CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort)
         )
@@ -229,7 +228,7 @@ async def test_response_format_raises_error() -> None:
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
 
-    provider = AnthropicProvider(ClientConfig(api_key=api_key))
+    provider = AnthropicProvider(api_key=api_key)
 
     with pytest.raises(UnsupportedParameterError, match="Check the following links:"):
         await provider._acompletion(

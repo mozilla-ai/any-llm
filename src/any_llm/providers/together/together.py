@@ -101,11 +101,11 @@ class TogetherProvider(AnyLLM):
         msg = "Together does not support listing models"
         raise NotImplementedError(msg)
 
-    def _init_client(self) -> None:
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = together.AsyncTogether(
-            api_key=self.config.api_key,
-            base_url=self.config.api_base,
-            **(self.config.client_args if self.config.client_args else {}),
+            api_key=api_key,
+            base_url=api_base,
+            **kwargs,
         )
 
     async def _stream_completion_async(

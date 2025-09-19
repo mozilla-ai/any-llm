@@ -83,10 +83,8 @@ class VoyageProvider(AnyLLM):
         msg = "Voyage does not support listing models"
         raise NotImplementedError(msg)
 
-    def _init_client(self) -> None:
-        self.client = AsyncClient(
-            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
-        )
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        self.client = AsyncClient(api_key=api_key, **kwargs)
 
     async def _aembedding(
         self,

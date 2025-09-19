@@ -8,7 +8,7 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import AnyLLM, ClientConfig, LLMProvider
+from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
@@ -22,7 +22,7 @@ async def test_async_completion(
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
     try:
-        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_COMPLETION:
             pytest.skip(f"{provider.value} does not support completion, skipping")
 
@@ -57,7 +57,7 @@ async def test_async_completion_parallel(
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     try:
-        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_COMPLETION:
             pytest.skip(f"{provider.value} does not support completion, skipping")
 
@@ -91,7 +91,7 @@ async def test_completion_with_image(
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     try:
-        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_COMPLETION_IMAGE:
             pytest.skip(f"{provider.value} does not support completion, skipping")
 
@@ -134,7 +134,7 @@ async def test_completion_with_pdf(
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     try:
-        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_COMPLETION_PDF:
             pytest.skip(f"{provider.value} does not support completion, skipping")
 

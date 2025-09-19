@@ -4,7 +4,6 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from any_llm import AnyLLM
-from any_llm.config import ClientConfig
 from any_llm.constants import LLMProvider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, CreateEmbeddingResponse
 from any_llm.types.model import Model
@@ -93,9 +92,9 @@ def completion(
 
     llm = AnyLLM.create(
         provider_key,
-        ClientConfig(
-            api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
-        ),
+        api_key=all_args.pop("api_key"),
+        api_base=all_args.pop("api_base"),
+        **all_args.pop("client_args") or {},
     )
     return llm.completion(**all_args, **kwargs)
 
@@ -182,9 +181,9 @@ async def acompletion(
 
     llm = AnyLLM.create(
         provider_key,
-        ClientConfig(
-            api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
-        ),
+        api_key=all_args.pop("api_key"),
+        api_base=all_args.pop("api_base"),
+        **all_args.pop("client_args") or {},
     )
     return await llm.acompletion(**all_args, **kwargs)
 
@@ -260,9 +259,9 @@ def responses(
 
     llm = AnyLLM.create(
         provider_key,
-        ClientConfig(
-            api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
-        ),
+        api_key=all_args.pop("api_key"),
+        api_base=all_args.pop("api_base"),
+        **all_args.pop("client_args") or {},
     )
     return llm.responses(**all_args, **kwargs)
 
@@ -338,9 +337,9 @@ async def aresponses(
 
     llm = AnyLLM.create(
         provider_key,
-        ClientConfig(
-            api_key=all_args.pop("api_key"), api_base=all_args.pop("api_base"), client_args=all_args.pop("client_args")
-        ),
+        api_key=all_args.pop("api_key"),
+        api_base=all_args.pop("api_base"),
+        **all_args.pop("client_args") or {},
     )
     return await llm.aresponses(**all_args, **kwargs)
 
@@ -379,7 +378,7 @@ def embedding(
         provider_key = LLMProvider.from_string(provider)
         model_name = model
 
-    llm = AnyLLM.create(provider_key, ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args))
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
     return llm._embedding(model_name, inputs, **kwargs)
 
 
@@ -414,7 +413,7 @@ async def aembedding(
         provider_key = LLMProvider.from_string(provider)
         model_name = model
 
-    llm = AnyLLM.create(provider_key, ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args))
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
     return await llm._aembedding(model_name, inputs, **kwargs)
 
 
@@ -426,9 +425,7 @@ def list_models(
     **kwargs: Any,
 ) -> Sequence[Model]:
     """List available models for a provider."""
-    llm = AnyLLM.create(
-        LLMProvider.from_string(provider), ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
-    )
+    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return llm.list_models(**kwargs)
 
 
@@ -440,7 +437,5 @@ async def alist_models(
     **kwargs: Any,
 ) -> Sequence[Model]:
     """List available models for a provider asynchronously."""
-    llm = AnyLLM.create(
-        LLMProvider.from_string(provider), ClientConfig(api_key=api_key, api_base=api_base, client_args=client_args)
-    )
+    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return await llm.alist_models(**kwargs)

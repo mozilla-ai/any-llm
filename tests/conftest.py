@@ -103,28 +103,26 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
 @pytest.fixture
 def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
     return {
-        LLMProvider.ANTHROPIC: {"client_args": {"timeout": 10}},
+        LLMProvider.ANTHROPIC: {"timeout": 10},
         LLMProvider.AZURE: {
             "api_base": "https://models.github.ai/inference",
         },
-        LLMProvider.BEDROCK: {"client_args": {"region_name": "us-east-1"}},
-        LLMProvider.CEREBRAS: {"client_args": {"timeout": 10}},
-        LLMProvider.COHERE: {"client_args": {"timeout": 10}},
+        LLMProvider.BEDROCK: {"region_name": "us-east-1"},
+        LLMProvider.CEREBRAS: {"timeout": 10},
+        LLMProvider.COHERE: {"timeout": 10},
         LLMProvider.DATABRICKS: {"api_base": "https://dbc-40d03128-ecae.cloud.databricks.com/serving-endpoints"},
-        LLMProvider.GROQ: {"client_args": {"timeout": 10}},
-        LLMProvider.MISTRAL: {"client_args": {"timeout_ms": 100000}},
+        LLMProvider.GROQ: {"timeout": 10},
+        LLMProvider.MISTRAL: {"timeout_ms": 100000},
         LLMProvider.NEBIUS: {"api_base": "https://api.studio.nebius.com/v1/"},
         LLMProvider.HUGGINGFACE: {"api_base": "https://y0okp71n85ezo5nr.us-east-1.aws.endpoints.huggingface.cloud/v1/"},
-        LLMProvider.OPENAI: {"client_args": {"timeout": 10}},
-        LLMProvider.TOGETHER: {"client_args": {"timeout": 10}},
-        LLMProvider.VOYAGE: {"client_args": {"timeout": 10}},
+        LLMProvider.OPENAI: {"timeout": 10},
+        LLMProvider.TOGETHER: {"timeout": 10},
+        LLMProvider.VOYAGE: {"timeout": 10},
         LLMProvider.WATSONX: {
             "api_base": "https://us-south.ml.cloud.ibm.com",
-            "client_args": {
-                "project_id": "5b083ace-95a6-4f95-a0a0-d4c5d9e98ca0",
-            },
+            "project_id": "5b083ace-95a6-4f95-a0a0-d4c5d9e98ca0",
         },
-        LLMProvider.XAI: {"client_args": {"timeout": 100}},
+        LLMProvider.XAI: {"timeout": 100},
     }
 
 

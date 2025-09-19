@@ -5,7 +5,7 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import AnyLLM, ClientConfig, LLMProvider
+from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
@@ -19,7 +19,7 @@ async def test_completion_reasoning(
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
     try:
-        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_COMPLETION_REASONING:
             pytest.skip(f"{provider.value} does not support reasoning, skipping")
 
@@ -54,7 +54,7 @@ async def test_completion_reasoning_streaming(
 ) -> None:
     """Test that reasoning works with streaming for supported providers."""
     try:
-        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_COMPLETION_REASONING:
             pytest.skip(f"{provider.value} does not support reasoning, skipping")
         if not llm.SUPPORTS_COMPLETION_STREAMING:

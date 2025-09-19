@@ -2,7 +2,6 @@ import json
 from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
-from any_llm.config import ClientConfig
 from any_llm.providers.bedrock import BedrockProvider
 from any_llm.types.completion import CompletionParams
 
@@ -25,7 +24,7 @@ def test_boto3_client_created_with_api_base() -> None:
     custom_endpoint = "https://custom-bedrock-endpoint.amazonaws.com"
 
     with mock_aws_provider() as mock_boto3_client:
-        provider = BedrockProvider(ClientConfig(api_base=custom_endpoint, api_key="test_key"))
+        provider = BedrockProvider(api_base=custom_endpoint, api_key="test_key")
         provider._completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
 
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=custom_endpoint)
@@ -35,7 +34,7 @@ def test_boto3_client_created_without_api_base() -> None:
     """Test that boto3.client is created with None endpoint_url when api_base is not provided."""
 
     with mock_aws_provider() as mock_boto3_client:
-        provider = BedrockProvider(ClientConfig(api_key="test_key"))
+        provider = BedrockProvider(api_key="test_key")
         provider._completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
 
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None)
@@ -47,7 +46,7 @@ def test_completion_with_kwargs() -> None:
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_aws_provider() as mock_boto3_client:
-        provider = BedrockProvider(ClientConfig(api_key="test_key"))
+        provider = BedrockProvider(api_key="test_key")
         provider._completion(
             CompletionParams(
                 model_id=model_id,
@@ -97,7 +96,7 @@ def test_embedding_single_string() -> None:
     with mock_aws_embedding_provider() as (mock_boto3_client, mock_client):
         mock_client.invoke_model.return_value = {"body": Mock(read=Mock(return_value=json.dumps(mock_response_body)))}
 
-        provider = BedrockProvider(ClientConfig(api_key="test_key"))
+        provider = BedrockProvider(api_key="test_key")
         response = provider._embedding(model_id, input_text)
 
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None)
@@ -130,7 +129,7 @@ def test_embedding_list_of_strings() -> None:
             {"body": Mock(read=Mock(return_value=json.dumps(mock_response_bodies[1])))},
         ]
 
-        provider = BedrockProvider(ClientConfig(api_key="test_key"))
+        provider = BedrockProvider(api_key="test_key")
         response = provider._embedding(model_id, input_texts)
 
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None)

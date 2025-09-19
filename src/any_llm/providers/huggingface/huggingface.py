@@ -91,11 +91,14 @@ class HuggingfaceProvider(AnyLLM):
         """Convert HuggingFace list models response to OpenAI format."""
         return _convert_models_list(response)
 
-    def _init_client(self) -> None:
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        self.api_key = api_key
+        self.api_base = api_base
+        self.kwargs = kwargs
         self.client = AsyncInferenceClient(
-            base_url=self.config.api_base,
-            token=self.config.api_key,
-            **(self.config.client_args if self.config.client_args else {}),
+            base_url=api_base,
+            token=api_key,
+            **kwargs,
         )
 
     async def _stream_completion_async(
@@ -150,7 +153,7 @@ class HuggingfaceProvider(AnyLLM):
         )
 
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        client = HfApi(token=self.config.api_key, **(self.config.client_args if self.config.client_args else {}))
+        client = HfApi(endpoint=self.api_base, token=self.api_key, **self.kwargs)
         if kwargs.get("inference") is None and kwargs.get("inference_provider") is None:
             kwargs["inference"] = "warm"
         if kwargs.get("limit") is None:

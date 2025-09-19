@@ -92,10 +92,10 @@ class GroqProvider(AnyLLM):
         """Convert Groq list models response to OpenAI format."""
         return _convert_models_list(response)
 
-    def _init_client(self) -> None:
-        self.client = AsyncGroq(
-            api_key=self.config.api_key, **(self.config.client_args if self.config.client_args else {})
-        )
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        self.api_key = api_key
+        self.kwargs = kwargs
+        self.client = AsyncGroq(api_key=api_key, **kwargs)
 
     async def _stream_async_completion(
         self, params: CompletionParams, **kwargs: Any
@@ -159,8 +159,8 @@ class GroqProvider(AnyLLM):
 
         client = AsyncOpenAI(
             base_url="https://api.groq.com/openai/v1",
-            api_key=self.config.api_key,
-            **(self.config.client_args if self.config.client_args else {}),
+            api_key=self.api_key,
+            **self.kwargs,
         )
 
         response = await client.responses.create(**params.model_dump(exclude_none=True), **kwargs)

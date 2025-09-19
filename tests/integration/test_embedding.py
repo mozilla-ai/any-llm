@@ -4,7 +4,7 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from any_llm import AnyLLM, ClientConfig, LLMProvider
+from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.types.completion import CreateEmbeddingResponse
 from tests.constants import EXPECTED_PROVIDERS
@@ -18,7 +18,7 @@ async def test_embedding_providers_async(
 ) -> None:
     """Test that all embedding-supported providers can generate embeddings successfully."""
     try:
-        llm = AnyLLM.create(provider, ClientConfig(**provider_client_config.get(provider, {})))
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_EMBEDDING:
             pytest.skip(f"{provider.value} does not support embeddings, skipping")
 

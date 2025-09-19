@@ -48,8 +48,8 @@ class AzureProvider(AnyLLM):
     chat_client: aio.ChatCompletionsClient
     embeddings_client: aio.EmbeddingsClient
 
-    def _init_client(self) -> None:
-        if not self.config.api_base:
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        if not api_base:
             msg = (
                 "For Azure, api_base is required. Check your deployment page for a URL like this - "
                 "https://<model-deployment-name>.<region>.models.ai.azure.com"
@@ -57,14 +57,14 @@ class AzureProvider(AnyLLM):
             raise ValueError(msg)
 
         self.chat_client = aio.ChatCompletionsClient(
-            endpoint=self.config.api_base,
-            credential=AzureKeyCredential(self.config.api_key or ""),
-            **(self.config.client_args if self.config.client_args else {}),
+            endpoint=api_base,
+            credential=AzureKeyCredential(api_key or ""),
+            **kwargs,
         )
         self.embeddings_client = aio.EmbeddingsClient(
-            endpoint=self.config.api_base,
-            credential=AzureKeyCredential(self.config.api_key or ""),
-            **(self.config.client_args if self.config.client_args else {}),
+            endpoint=api_base,
+            credential=AzureKeyCredential(api_key or ""),
+            **kwargs,
         )
 
     async def _stream_completion_async(

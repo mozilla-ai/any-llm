@@ -92,11 +92,11 @@ class MistralProvider(AnyLLM):
         """Convert Mistral list models response to OpenAI format."""
         return _convert_models_list(response)
 
-    def _init_client(self) -> None:
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = Mistral(
-            api_key=self.config.api_key,
-            server_url=self.config.api_base,
-            **(self.config.client_args if self.config.client_args else {}),
+            api_key=api_key,
+            server_url=api_base,
+            **kwargs,
         )
 
     async def _stream_completion_async(

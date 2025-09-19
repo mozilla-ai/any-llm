@@ -7,7 +7,6 @@ from unittest.mock import patch
 import pytest
 
 from any_llm import AnyLLM
-from any_llm.config import ClientConfig
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
 
@@ -120,15 +119,14 @@ async def test_all_providers_have_required_attributes(provider: LLMProvider) -> 
     """
     kwargs: dict[str, Any] = {"api_key": "test_key", "api_base": "https://test.example.com"}
     if provider == "bedrock":
-        kwargs["client_args"] = {"region_name": "us-east-1"}
+        kwargs["region_name"] = "us-east-1"
     if provider == "vertexai":
-        kwargs["client_args"] = {"project": "test-project", "location": "test-location"}
+        kwargs["project"] = "test-project"
+        kwargs["location"] = "test-location"
     if provider == "sagemaker":
         pytest.skip("sagemaker requires AWS credentials on instantiation")
 
-    sample_config = ClientConfig(**kwargs)
-
-    provider_instance = AnyLLM.create(provider.value, sample_config)
+    provider_instance = AnyLLM.create(provider.value, **kwargs)
 
     assert provider_instance.PROVIDER_NAME is not None
     assert provider_instance.PROVIDER_DOCUMENTATION_URL is not None
@@ -152,7 +150,7 @@ def test_providers_raise_MissingApiKeyError(provider: LLMProvider) -> None:
         pytest.skip("This provider handles `api_key` differently.")
     with patch.dict(os.environ, {}, clear=True):
         with pytest.raises(MissingApiKeyError):
-            AnyLLM.create(provider.value, ClientConfig())
+            AnyLLM.create(provider.value)
 
 
 @pytest.mark.parametrize(
@@ -180,7 +178,7 @@ def test_providers_raise_ImportError_from_original(provider_name: str, module_na
             if mod.startswith((f"any_llm.providers.{provider_name}", f"{module_name}.")):
                 sys.modules.pop(mod)
         with pytest.raises(ImportError) as e:
-            AnyLLM.create(provider_name, ClientConfig(api_key="test_key"))
+            AnyLLM.create(provider_name, api_key="test_key")
         original_error = e.value.__cause__
         assert any(
             msg in str(original_error)

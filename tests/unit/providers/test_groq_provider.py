@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from pydantic import BaseModel
 
-from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.types.completion import CompletionParams
 
@@ -13,7 +12,7 @@ async def test_stream_with_response_format_raises() -> None:
     pytest.importorskip("groq")
     from any_llm.providers.groq.groq import GroqProvider
 
-    provider = GroqProvider(ClientConfig(api_key="test-api-key"))
+    provider = GroqProvider(api_key="test-api-key")
 
     with pytest.raises(UnsupportedParameterError, match="stream and response_format"):
         await provider._acompletion(
@@ -31,7 +30,7 @@ async def test_unsupported_max_tool_calls_parameter() -> None:
     pytest.importorskip("groq")
     from any_llm.providers.groq.groq import GroqProvider
 
-    provider = GroqProvider(ClientConfig(api_key="test-api-key"))
+    provider = GroqProvider(api_key="test-api-key")
 
     with pytest.raises(UnsupportedParameterError):
         await provider.aresponses("test_model", "test_data", max_tool_calls=3)
@@ -49,7 +48,7 @@ async def test_completion_with_response_format_basemodel() -> None:
         patch("any_llm.providers.groq.groq.AsyncGroq") as mocked_groq,
         patch("any_llm.providers.groq.groq.to_chat_completion") as mocked_to_chat_completion,
     ):
-        provider = GroqProvider(ClientConfig(api_key="test-api-key"))
+        provider = GroqProvider(api_key="test-api-key")
 
         mock_response = Mock()
         mocked_groq.return_value.chat.completions.create = AsyncMock(return_value=mock_response)
