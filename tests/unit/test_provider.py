@@ -141,9 +141,10 @@ async def test_all_providers_have_required_attributes(provider: LLMProvider) -> 
 def test_providers_raise_MissingApiKeyError(provider: LLMProvider) -> None:
     if provider in (
         LLMProvider.BEDROCK,
-        LLMProvider.OLLAMA,
-        LLMProvider.LMSTUDIO,
+        LLMProvider.LLAMACPP,
         LLMProvider.LLAMAFILE,
+        LLMProvider.LMSTUDIO,
+        LLMProvider.OLLAMA,
         LLMProvider.SAGEMAKER,
         LLMProvider.VERTEXAI,
     ):
