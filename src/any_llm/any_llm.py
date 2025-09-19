@@ -304,7 +304,8 @@ class AnyLLM(ABC):
 
         See [AnyLLM.acompletion][any_llm.any_llm.AnyLLM.acompletion]
         """
-        response = run_async_in_sync(self.acompletion(**kwargs), allow_running_loop=INSIDE_NOTEBOOK)
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        response = run_async_in_sync(self.acompletion(**kwargs), allow_running_loop=allow_running_loop)
         if isinstance(response, ChatCompletion):
             return response
 
@@ -398,7 +399,8 @@ class AnyLLM(ABC):
 
         See [AnyLLM.aresponses][any_llm.any_llm.AnyLLM.aresponses]
         """
-        response = run_async_in_sync(self.aresponses(**kwargs), allow_running_loop=INSIDE_NOTEBOOK)
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        response = run_async_in_sync(self.aresponses(**kwargs), allow_running_loop=allow_running_loop)
         if isinstance(response, Response):
             return response
         return async_iter_to_sync_iter(response)
@@ -473,7 +475,8 @@ class AnyLLM(ABC):
         raise NotImplementedError(msg)
 
     def _embedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:
-        return run_async_in_sync(self.aembedding(model, inputs, **kwargs), allow_running_loop=INSIDE_NOTEBOOK)
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(self.aembedding(model, inputs, **kwargs), allow_running_loop=allow_running_loop)
 
     async def aembedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:
         return await self._aembedding(model, inputs, **kwargs)
@@ -486,7 +489,8 @@ class AnyLLM(ABC):
         raise NotImplementedError(msg)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
-        return run_async_in_sync(self.alist_models(**kwargs), allow_running_loop=INSIDE_NOTEBOOK)
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(self.alist_models(**kwargs), allow_running_loop=allow_running_loop)
 
     async def alist_models(self, **kwargs: Any) -> Sequence[Model]:
         return await self._alist_models(**kwargs)
