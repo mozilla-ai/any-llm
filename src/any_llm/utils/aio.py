@@ -61,7 +61,6 @@ def run_async_in_sync(coro: Coroutine[Any, Any, T], allow_running_loop: bool = T
                     for task in pending_tasks:
                         task.cancel()
 
-                    # Wait for cancellation to complete
                     if pending_tasks:
                         await asyncio.gather(*pending_tasks, return_exceptions=True)
 
