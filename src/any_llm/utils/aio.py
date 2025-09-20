@@ -44,20 +44,16 @@ def run_async_in_sync(coro: Coroutine[Any, Any, T], allow_running_loop: bool = T
         def run_in_thread() -> T:
             async def run_with_cleanup() -> T:
                 try:
-                    # Run the main coroutine
                     result = await coro
 
-                    # Wait for any pending background tasks to complete
-                    # This prevents "Event loop is closed" errors
+                    # Wait for any pending background tasks to complete to prevent "Event loop is closed" errors
                     pending_tasks = [
                         task for task in asyncio.all_tasks() if not task.done() and task is not asyncio.current_task()
                     ]
 
                     if pending_tasks:
-                        # Give background tasks a chance to complete
                         await asyncio.gather(*pending_tasks, return_exceptions=True)
                 except Exception:
-                    # If there's an error, cancel any pending tasks to prevent orphaning
                     pending_tasks = [
                         task for task in asyncio.all_tasks() if not task.done() and task is not asyncio.current_task()
                     ]
