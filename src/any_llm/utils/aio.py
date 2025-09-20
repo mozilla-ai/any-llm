@@ -42,7 +42,37 @@ def run_async_in_sync(coro: Coroutine[Any, Any, T], allow_running_loop: bool = T
         # If we get here, there's a loop running, so we can't use run_until_complete()
         # or asyncio.run() - must use threading approach
         def run_in_thread() -> T:
-            return asyncio.run(coro)
+            async def run_with_cleanup() -> T:
+                try:
+                    # Run the main coroutine
+                    result = await coro
+
+                    # Wait for any pending background tasks to complete
+                    # This prevents "Event loop is closed" errors
+                    pending_tasks = [
+                        task for task in asyncio.all_tasks() if not task.done() and task is not asyncio.current_task()
+                    ]
+
+                    if pending_tasks:
+                        # Give background tasks a chance to complete
+                        await asyncio.gather(*pending_tasks, return_exceptions=True)
+                except Exception:
+                    # If there's an error, cancel any pending tasks to prevent orphaning
+                    pending_tasks = [
+                        task for task in asyncio.all_tasks() if not task.done() and task is not asyncio.current_task()
+                    ]
+
+                    for task in pending_tasks:
+                        task.cancel()
+
+                    # Wait for cancellation to complete
+                    if pending_tasks:
+                        await asyncio.gather(*pending_tasks, return_exceptions=True)
+
+                    raise
+                return result
+
+            return asyncio.run(run_with_cleanup())
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             return executor.submit(run_in_thread).result()
