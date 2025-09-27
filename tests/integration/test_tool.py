@@ -7,7 +7,7 @@ from openai import APIConnectionError
 
 from any_llm import ProviderName, acompletion
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.provider import ProviderFactory
+from any_llm.factory import ProviderFactory
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 if TYPE_CHECKING:
@@ -81,6 +81,6 @@ async def test_tool(
             raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        if provider in LOCAL_PROVIDERS:
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise

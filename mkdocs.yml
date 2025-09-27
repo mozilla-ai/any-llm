@@ -13,6 +13,11 @@ nav:
     - Embedding: api/embedding.md
     - Exceptions: api/exceptions.md
     - List Models: api/list_models.md
+    - Types:
+      - Completion: api/types/completion.md
+      - Responses: api/types/responses.md
+      - Model: api/types/model.md
+      - Provider: api/types/provider.md
 theme:
   name: material
   font:

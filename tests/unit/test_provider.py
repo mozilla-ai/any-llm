@@ -5,8 +5,10 @@ from unittest.mock import patch
 
 import pytest
 
+from any_llm.config import ClientConfig
+from any_llm.constants import ProviderName
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
-from any_llm.provider import ClientConfig, ProviderFactory, ProviderName
+from any_llm.factory import ProviderFactory
 
 
 def test_all_providers_in_enum() -> None:

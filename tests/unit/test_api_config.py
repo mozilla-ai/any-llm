@@ -2,7 +2,8 @@ from typing import Any
 from unittest.mock import Mock, patch
 
 from any_llm import completion
-from any_llm.provider import ClientConfig, ProviderName
+from any_llm.config import ClientConfig
+from any_llm.constants import ProviderName
 from any_llm.types.completion import CompletionParams
 
 

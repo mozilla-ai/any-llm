@@ -1,7 +1,7 @@
 import pytest
 
+from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ClientConfig
 from any_llm.providers.cerebras.cerebras import CerebrasProvider
 
 

@@ -4,8 +4,9 @@ from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel
 
+from any_llm.config import ClientConfig
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.provider import ClientConfig, Provider
+from any_llm.provider import Provider
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -52,6 +53,7 @@ class GoogleProvider(Provider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_COMPLETION_IMAGE = False  # TODO: Add image support https://github.com/mozilla-ai/any-llm/issues/415
+    SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
 

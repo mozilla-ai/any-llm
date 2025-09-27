@@ -50,9 +50,23 @@ async def test_completion_invalid_image_url() -> None:
 async def test_completion_invalid_image_bytes_type() -> None:
     """Test completion raises error for non-bytes image_bytes."""
     with pytest.raises(ValueError, match="image_bytes must be bytes or bytearray."):
+<<<<<<< HEAD
         await acompletion(
             "gemini-pro", messages=[{"role": "user", "content": "Describe image", "image_bytes": "not_bytes"}]
         )
+=======
+        await acompletion("gemini-pro", messages=[{"role": "user", "content": "Describe image", "image_bytes": "not_bytes"}])
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+
+from any_llm import acompletion
+from any_llm.config import ClientConfig
+from any_llm.constants import ProviderName
+from any_llm.factory import ProviderFactory
+from any_llm.provider import Provider
+from any_llm.types.completion import ChatCompletionMessage, CompletionParams, Reasoning
+>>>>>>> b057df200432ef92dd889551071e9b9bb6d4a623
 
 
 @pytest.mark.asyncio

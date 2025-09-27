@@ -6,7 +6,7 @@ from openai import APIConnectionError
 
 from any_llm import ProviderName, aembedding
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.provider import ProviderFactory
+from any_llm.factory import ProviderFactory
 from any_llm.types.completion import CreateEmbeddingResponse
 from tests.constants import EXPECTED_PROVIDERS
 

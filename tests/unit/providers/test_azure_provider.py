@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from any_llm.provider import ClientConfig
+from any_llm.config import ClientConfig
 from any_llm.providers.azure.azure import AzureProvider
 from any_llm.types.completion import CompletionParams
 
