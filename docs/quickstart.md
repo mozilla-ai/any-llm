@@ -80,13 +80,17 @@ response = completion(
 For advanced use cases that require provider reuse, metadata access, or more control over configuration:
 
 ```python
+import os
+
 from any_llm import AnyLLM
 
-llm = AnyLLM.create(
-    "mistral", api_key="your-mistral-api-key")
+# Make sure you have the appropriate environment variable set
+assert os.environ.get('MISTRAL_API_KEY')
+
+llm = AnyLLM.create("mistral")
 
 response = llm.completion(
-    model_id="mistral-small-latest",
+    model="mistral-small-latest",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 print(response.choices[0].message.content)
@@ -94,7 +98,6 @@ print(response.choices[0].message.content)
 metadata = llm.get_provider_metadata()
 print(f"Supports streaming: {metadata.streaming}")
 print(f"Supports tools: {metadata.completion}")
-
 ```
 
 #### When to Choose Which Approach
