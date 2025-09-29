@@ -1,8 +1,6 @@
 from collections.abc import AsyncIterator
 from typing import Any
 
-from openai import AsyncOpenAI
-
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.openai.utils import _convert_chat_completion, _normalize_openai_dict_response
 from any_llm.providers.openrouter.utils import build_reasoning_directive
@@ -21,7 +19,7 @@ class OpenrouterProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = False
 
-    async def acompletion(
+    async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,
@@ -56,7 +54,6 @@ class OpenrouterProvider(BaseOpenAIProvider):
         if reasoning_directive is not None:
             extra_body["reasoning"] = reasoning_directive
 
-        client = AsyncOpenAI(api_key=self.config.api_key, base_url=self.config.api_base or self.API_BASE)
         stream_mode = body.pop("stream", False)
 
         client_kwargs = body.copy()
@@ -77,7 +74,7 @@ class OpenrouterProvider(BaseOpenAIProvider):
         client_kwargs.update(filtered_kwargs)
 
         if stream_mode:
-            stream = await client.chat.completions.create(stream=True, **client_kwargs)
+            stream = await self.client.chat.completions.create(stream=True, **client_kwargs)
 
             async def _stream() -> AsyncIterator[ChatCompletionChunk]:
                 async for chunk in stream:
@@ -87,5 +84,5 @@ class OpenrouterProvider(BaseOpenAIProvider):
 
             return _stream()
 
-        resp = await client.chat.completions.create(**client_kwargs)
+        resp = await self.client.chat.completions.create(**client_kwargs)
         return _convert_chat_completion(resp)
