@@ -29,7 +29,14 @@ async def test_completion_reasoning(
             model=model_id,
             messages=[{"role": "user", "content": "Please say hello! Think very briefly before you respond."}],
             reasoning_effort="low"
-            if provider in (LLMProvider.ANTHROPIC, LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.OLLAMA)
+            if provider
+            in (
+                LLMProvider.ANTHROPIC,
+                LLMProvider.GEMINI,
+                LLMProvider.OLLAMA,
+                LLMProvider.OPENROUTER,
+                LLMProvider.VERTEXAI,
+            )
             else "auto",
         )
     except MissingApiKeyError:
@@ -70,7 +77,14 @@ async def test_completion_reasoning_streaming(
             messages=[{"role": "user", "content": "Please say hello! Think very briefly before you respond."}],
             stream=True,
             reasoning_effort="low"
-            if provider in (LLMProvider.ANTHROPIC, LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.OLLAMA)
+            if provider
+            in (
+                LLMProvider.ANTHROPIC,
+                LLMProvider.GEMINI,
+                LLMProvider.OLLAMA,
+                LLMProvider.OPENROUTER,
+                LLMProvider.VERTEXAI,
+            )
             else "auto",
         )
         assert isinstance(results, AsyncIterable)
