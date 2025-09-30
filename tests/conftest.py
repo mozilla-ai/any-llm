@@ -84,7 +84,7 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.OPENAI: "text-embedding-ada-002",
         LLMProvider.DATABRICKS: "databricks-bge-large-en",
         LLMProvider.NEBIUS: "Qwen/Qwen3-Embedding-8B",
-        LLMProvider.SAMBANOVA: "E5-Mistral-7B-Instruct",
+        LLMProvider.SAMBANOVA: "Meta-Llama-3.1-8B-Instruct",
         LLMProvider.MISTRAL: "mistral-embed",
         LLMProvider.BEDROCK: "amazon.titan-embed-text-v2:0",
         LLMProvider.SAGEMAKER: "<sagemaker_endpoint_name>",
