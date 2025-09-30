@@ -234,3 +234,19 @@ def test_callable_to_tool() -> None:
     assert "oneOf" in props["union_three"]
     assert len(props["union_three"]["oneOf"]) == 3
     assert {s["type"] for s in props["union_three"]["oneOf"]} == {"string", "number", "boolean"}
+
+
+def test_prepare_tools_with_built_in() -> None:
+    """Test prepare_tools respects built-in tools."""
+
+    class BuiltInTool:
+        pass
+
+    def custom_tool(x: int) -> int:
+        """A custom tool."""
+        return x
+
+    tools = prepare_tools([BuiltInTool(), custom_tool], built_in_tools=[BuiltInTool])
+    assert len(tools) == 2
+    assert isinstance(tools[0], BuiltInTool)
+    assert tools[1]["function"]["name"] == "custom_tool"
