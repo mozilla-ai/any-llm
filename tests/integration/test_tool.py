@@ -77,3 +77,40 @@ async def test_tool(
         if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise
+
+
+@pytest.mark.asyncio
+async def test_built_in_tool(
+    provider: LLMProvider,
+    provider_model_map: dict[LLMProvider, str],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
+) -> None:
+    try:
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
+        if not llm.BUILT_IN_TOOLS:
+            pytest.skip(f"{provider.value} does not support built-in tools, skipping")
+        model_id = provider_model_map[provider]
+        if provider == LLMProvider.GEMINI:
+            from google.genai import types
+
+            tool = types.Tool(google_search=types.GoogleSearch())
+
+        messages: list[dict[str, Any] | ChatCompletionMessage] = [
+            {"role": "user", "content": "Search the web to find what the python library any-llm"}
+        ]
+
+        result: ChatCompletion = await llm.acompletion(  # type: ignore[assignment]
+            model=model_id,
+            messages=messages,
+            tools=[tool],
+        )
+        assert result.choices[0].message
+
+    except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} API key not provided, skipping")
+    except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
+            pytest.skip("Local Model host is not set up, skipping")
+        raise

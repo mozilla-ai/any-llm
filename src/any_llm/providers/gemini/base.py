@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from pydantic import BaseModel
 
@@ -57,6 +57,8 @@ class GoogleProvider(AnyLLM):
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
+
+    BUILT_IN_TOOLS: ClassVar[list[Any] | None] = [types.Tool]
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
