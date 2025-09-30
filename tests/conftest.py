@@ -42,7 +42,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.SAMBANOVA: "Meta-Llama-3.1-8B-Instruct",
         LLMProvider.TOGETHER: "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
         LLMProvider.XAI: "grok-3-mini-latest",
-        LLMProvider.INCEPTION: "inception-3-70b-instruct",
+        LLMProvider.INCEPTION: "mercury",
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
         LLMProvider.OLLAMA: "llama3.2:1b",
         LLMProvider.LLAMAFILE: "N/A",
