@@ -236,11 +236,15 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
     return {"type": "string"}
 
 
-def prepare_tools(tools: list[dict[str, Any] | Callable[..., Any]]) -> list[dict[str, Any]]:
+def prepare_tools(
+    tools: list[dict[str, Any] | Callable[..., Any] | Any], built_in_tools: list[Any] | None = None
+) -> list[dict[str, Any] | Any]:
     """Prepare tools for completion API by converting callables to OpenAI format.
 
     Args:
         tools: List of tools, can be mix of callables and already formatted tool dicts
+        built_in_tools: Optional list of built-in tool instances to include as-is
+            For example, in `gemini` provider, you can pass `types.Tool(google_search=types.GoogleSearch())`.
 
     Returns:
         List of tools in OpenAI format
@@ -257,7 +261,9 @@ def prepare_tools(tools: list[dict[str, Any] | Callable[..., Any]]) -> list[dict
     prepared_tools = []
 
     for tool in tools:
-        if callable(tool):
+        if built_in_tools and any(isinstance(tool, b) for b in built_in_tools):
+            prepared_tools.append(tool)
+        elif callable(tool):
             prepared_tools.append(callable_to_tool(tool))
         elif isinstance(tool, dict):
             prepared_tools.append(tool)

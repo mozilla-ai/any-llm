@@ -90,7 +90,7 @@ class CompletionParams(BaseModel):
             raise ValueError(msg)
         return v
 
-    tools: list[dict[str, Any]] | None = None
+    tools: list[dict[str, Any] | Any] | None = None
     """List of tools for tool calling. Should be converted to OpenAI tool format dicts"""
 
     tool_choice: str | dict[str, Any] | None = None

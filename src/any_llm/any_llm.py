@@ -5,7 +5,7 @@ import importlib
 import os
 import warnings
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
@@ -74,6 +74,12 @@ class AnyLLM(ABC):
     MISSING_PACKAGES_ERROR: ImportError | None = None
     """Some providers use SDKs that are not installed by default.
     This flag is used to check if the packages are installed before instantiating the provider.
+    """
+
+    BUILT_IN_TOOLS: ClassVar[list[Any] | None] = None
+    """Some providers have built-in tools that can be used as-is without conversion.
+    This should be a list of the allowed built-in tool instances.
+    For example, in `gemini` provider, this could include `google.genai.types.Tool`.
     """
 
     def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
@@ -375,7 +381,7 @@ class AnyLLM(ABC):
         kwargs = all_args.pop("kwargs")
 
         if tools:
-            all_args["tools"] = prepare_tools(tools)
+            all_args["tools"] = prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
 
         for i, message in enumerate(messages):
             if isinstance(message, ChatCompletionMessage):
@@ -461,7 +467,7 @@ class AnyLLM(ABC):
         kwargs = all_args.pop("kwargs")
 
         if tools:
-            all_args["tools"] = prepare_tools(tools)
+            all_args["tools"] = prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
 
         return await self._aresponses(ResponsesParams(**all_args, **kwargs))
 
