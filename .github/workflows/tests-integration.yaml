@@ -23,7 +23,7 @@ jobs:
     steps:
       - name: Set expected providers for integration tests
         id: set_providers
-        run: echo "expected_providers=anthropic,bedrock,cerebras,fireworks,gemini,huggingface,llama,mistral,nebius,openai,openrouter,perplexity,voyage,watsonx,xai" >> $GITHUB_OUTPUT
+        run: echo "expected_providers=anthropic,bedrock,cerebras,fireworks,gemini,groq,huggingface,llama,mistral,nebius,openai,openrouter,perplexity,voyage,watsonx,xai" >> $GITHUB_OUTPUT
 
       - name: Set expected providers for local integration tests
         id: set_local_providers
@@ -59,6 +59,7 @@ jobs:
           AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           LLAMA_API_KEY: ${{ secrets.LLAMA_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
