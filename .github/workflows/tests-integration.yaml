@@ -23,7 +23,7 @@ jobs:
     steps:
       - name: Set expected providers for integration tests
         id: set_providers
-        run: echo "expected_providers=anthropic,bedrock,cerebras,fireworks,gemini,groq,huggingface,inception,llama,mistral,nebius,openai,openrouter,perplexity,voyage,watsonx,xai" >> $GITHUB_OUTPUT
+        run: echo "expected_providers=anthropic,bedrock,cerebras,databricks,fireworks,gemini,groq,huggingface,inception,llama,mistral,nebius,openai,openrouter,perplexity,voyage,watsonx,xai" >> $GITHUB_OUTPUT
 
       - name: Set expected providers for local integration tests
         id: set_local_providers
@@ -57,6 +57,7 @@ jobs:
           # When you add a new key, also add the provider name to the EXPECTED_PROVIDERS environment variable
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
