@@ -110,7 +110,7 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.BEDROCK: {"region_name": "us-east-1"},
         LLMProvider.CEREBRAS: {"timeout": 10},
         LLMProvider.COHERE: {"timeout": 10},
-        LLMProvider.DATABRICKS: {"api_base": "https://dbc-40d03128-ecae.cloud.databricks.com/serving-endpoints"},
+        LLMProvider.DATABRICKS: {"api_base": "https://dbc-ec667410-1149.cloud.databricks.com/serving-endpoints"},
         LLMProvider.GROQ: {"timeout": 10},
         LLMProvider.HUGGINGFACE: {"api_base": "https://y0okp71n85ezo5nr.us-east-1.aws.endpoints.huggingface.cloud/v1/"},
         LLMProvider.LLAMACPP: {"api_base": "http://127.0.0.1:8090/v1"},
