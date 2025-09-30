@@ -379,3 +379,20 @@ def test_convert_tool_spec_basic_mapping() -> None:
     assert tools[0].function_declarations[0].parameters.properties["mode"].type == "STRING"  # type: ignore[union-attr, index]
     assert tools[0].function_declarations[0].parameters.properties["config"].type == "OBJECT"  # type: ignore[union-attr, index]
     assert "additionalProperties" not in tools[0].function_declarations[0].parameters.properties["config"]  # type: ignore[union-attr, index]
+
+
+@pytest.mark.asyncio
+async def test_gemini_with_built_in_tools() -> None:
+    """Test that built-in tools are added correctly when specified."""
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Hello"}]
+    google_search = types.Tool(google_search=types.GoogleSearch())
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key=api_key)
+        await provider.acompletion(model=model, messages=messages, tools=[google_search])  # type: ignore[arg-type]
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+        assert generation_config.tools is not None
+        assert len(generation_config.tools) == 1
+        assert generation_config.tools[0] == google_search

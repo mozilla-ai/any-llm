@@ -17,11 +17,15 @@ from any_llm.types.completion import (
 from any_llm.types.model import Model
 
 
-def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[types.Tool]:
-    """Convert OpenAI tool specification to Google GenAI format."""
+def _convert_tool_spec(tools: list[dict[str, Any] | Any]) -> list[types.Tool]:
+    converted_tools = []
     function_declarations = []
 
-    for tool in openai_tools:
+    for tool in tools:
+        if isinstance(tool, types.Tool):
+            converted_tools.append(tool)
+            continue
+
         if tool.get("type") != "function":
             continue
 
@@ -53,8 +57,9 @@ def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[types.Tool]:
                 parameters=types.Schema(**parameters_dict),
             )
         )
-
-    return [types.Tool(function_declarations=function_declarations)]
+    if function_declarations:
+        converted_tools.append(types.Tool(function_declarations=function_declarations))
+    return converted_tools
 
 
 def _convert_tool_choice(tool_choice: str) -> types.ToolConfig:
