@@ -3,7 +3,7 @@ import asyncio
 import json
 from typing import Any
 
-from any_llm import AnyLLM, LLMProvider, acompletion, list_models
+from any_llm import AnyLLM, LLMProvider, acompletion, alist_models
 from any_llm.exceptions import MissingApiKeyError
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,7 +56,7 @@ async def get_providers():
 async def get_models(request: ListModelsRequest):
     """List available models for a provider."""
     try:
-        models = list_models(provider=request.provider)
+        models = await alist_models(provider=request.provider)
 
         return {
             "models": [
