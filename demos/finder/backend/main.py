@@ -1,7 +1,7 @@
 # ruff: noqa: T201, S104
 import os
 
-from any_llm import AnyLLM, LLMProvider, list_models
+from any_llm import AnyLLM, LLMProvider, alist_models
 from any_llm.exceptions import MissingApiKeyError
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -109,7 +109,7 @@ async def search_models(request: SearchRequest):
                 continue
 
             try:
-                models = list_models(provider=provider_name.value)
+                models = await alist_models(provider=provider_name.value)
 
                 for model in models:
                     # Check if the model matches the search query
@@ -190,7 +190,7 @@ async def get_all_models():
                 provider_display = provider_name.value.replace("_", " ").title()
                 yield f"data: {json.dumps({'type': 'status', 'message': f'Loading {provider_display}...', 'progress': completed_providers, 'total': total_providers})}\n\n"
 
-                models = list_models(provider=provider_name.value)
+                models = await alist_models(provider=provider_name.value)
 
                 provider_models = []
                 for model in models:
