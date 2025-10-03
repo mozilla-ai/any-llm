@@ -20,46 +20,43 @@ from any_llm.types.completion import (
 def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatCompletionChunk) -> ChatCompletionChunk:
     """Convert a Together streaming chunk to OpenAI ChatCompletionChunk format."""
 
-    if not together_chunk.choices:
-        msg = "Together chunk has no choices"
-        raise ValueError(msg)
+    openai_choices: list[ChunkChoice] = []
+    for choice in together_chunk.choices or []:
+        delta_content = choice.delta
+        content = None
+        role = None
 
-    together_choice = together_chunk.choices[0]
-    delta_content = together_choice.delta
-    if not delta_content:
-        msg = "Together chunk has no delta"
-        raise ValueError(msg)
+        if delta_content:
+            content = delta_content.content
+            if delta_content.role:  # type: ignore[attr-defined]
+                role = cast("Literal['assistant', 'user', 'system']", delta_content.role)  # type: ignore[attr-defined]
 
-    content = delta_content.content
-    role = None
-    if delta_content.role:  # type: ignore[attr-defined]
-        role = cast("Literal['assistant', 'user', 'system']", delta_content.role)  # type: ignore[attr-defined]
+        delta = ChoiceDelta(content=content, role=role)
 
-    delta = ChoiceDelta(content=content, role=role)
+        if delta_content and delta_content.tool_calls:  # type: ignore[attr-defined]
+            openai_tool_calls = []
+            for tool_call in delta_content.tool_calls:  # type: ignore[attr-defined]
+                openai_tool_call = ChoiceDeltaToolCall(
+                    index=0,
+                    id=str(uuid.uuid4()),
+                    type="function",
+                    function=ChoiceDeltaToolCallFunction(
+                        name=tool_call.function.name,
+                        arguments=tool_call.function.arguments,
+                    ),
+                )
+                openai_tool_calls.append(openai_tool_call)
+            delta.tool_calls = openai_tool_calls
 
-    if delta_content.tool_calls:  # type: ignore[attr-defined]
-        openai_tool_calls = []
-        for tool_call in delta_content.tool_calls:  # type: ignore[attr-defined]
-            openai_tool_call = ChoiceDeltaToolCall(
-                index=0,
-                id=str(uuid.uuid4()),
-                type="function",
-                function=ChoiceDeltaToolCallFunction(
-                    name=tool_call.function.name,
-                    arguments=tool_call.function.arguments,
-                ),
-            )
-            openai_tool_calls.append(openai_tool_call)
-        delta.tool_calls = openai_tool_calls
-
-    choice = ChunkChoice(
-        index=0,
-        delta=delta,
-        finish_reason=cast(
-            "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call'] | None",
-            together_choice.finish_reason,
-        ),
-    )
+        openai_choice = ChunkChoice(
+            index=choice.index or len(openai_choices),
+            delta=delta,
+            finish_reason=cast(
+                "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call'] | None",
+                choice.finish_reason,
+            ),
+        )
+        openai_choices.append(openai_choice)
 
     usage = None
     if together_chunk.usage:
@@ -71,7 +68,7 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
 
     return ChatCompletionChunk(
         id=together_chunk.id or f"chatcmpl-{uuid.uuid4()}",
-        choices=[choice],
+        choices=openai_choices,
         created=together_chunk.created or int(datetime.now().timestamp()),
         model=together_chunk.model or "unknown",
         object="chat.completion.chunk",
