@@ -40,7 +40,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.VERTEXAI: "gemini-2.5-flash",
         LLMProvider.MOONSHOT: "moonshot-v1-8k",
         LLMProvider.SAMBANOVA: "Meta-Llama-3.1-8B-Instruct",
-        LLMProvider.TOGETHER: "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+        LLMProvider.TOGETHER: "OpenAI/gpt-oss-20B",
         LLMProvider.XAI: "grok-3-mini-latest",
         LLMProvider.INCEPTION: "mercury",
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
