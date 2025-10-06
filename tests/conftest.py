@@ -55,7 +55,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.WATSONX: "ibm/granite-3-8b-instruct",
         LLMProvider.FIREWORKS: "accounts/fireworks/models/llama4-scout-instruct-basic",
         LLMProvider.GROQ: "openai/gpt-oss-20b",
-        LLMProvider.PORTKEY: "@first-integrati-d8a10f/gpt-4.1-mini",  # Owned by njbrake in portkey UI
+        LLMProvider.PORTKEY: "@any-llm-test/gpt-4.1-nano",
         LLMProvider.LLAMA: "Llama-4-Maverick-17B-128E-Instruct-FP8",
         LLMProvider.AZURE: "openai/gpt-4.1-nano",
         LLMProvider.AZUREOPENAI: "azure/<your_deployment_name>",
