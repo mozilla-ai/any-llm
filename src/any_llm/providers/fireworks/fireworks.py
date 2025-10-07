@@ -4,8 +4,9 @@ from typing import Any
 from openai import AsyncStream
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.types.completion import Reasoning
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
+
+from .utils import extract_reasoning_from_response
 
 
 class FireworksProvider(BaseOpenAIProvider):
@@ -27,13 +28,6 @@ class FireworksProvider(BaseOpenAIProvider):
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call Fireworks Responses API and normalize into ChatCompletion/Chunks."""
         response = await super()._aresponses(params, **kwargs)
-
         if isinstance(response, Response) and not isinstance(response, AsyncStream):
-            # See https://fireworks.ai/blog/response-api for details about Fireworks Responses API support
-            reasoning = response.output[-1].content[0].text.split("</think>")[-1]  # type: ignore[union-attr,index]
-            if reasoning:
-                reasoning = reasoning.strip()
-                response.output[-1].content[0].text = response.output[-1].content[0].text.split("</think>")[0]  # type: ignore[union-attr,index]
-            response.reasoning = Reasoning(content=reasoning) if reasoning else None  # type: ignore[assignment]
-
+            return extract_reasoning_from_response(response)
         return response
