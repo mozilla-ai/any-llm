@@ -1,7 +1,7 @@
 import os
 
-from google import genai
-
+import os
+import google.generativeai as genai
 from any_llm.config import ClientConfig
 from any_llm.exceptions import MissingApiKeyError
 

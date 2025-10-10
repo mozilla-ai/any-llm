@@ -24,8 +24,8 @@ from any_llm.types.model import Model
 
 MISSING_PACKAGES_ERROR = None
 try:
-    from google import genai
-    from google.genai import types
+    import google.generativeai as genai
+    from google.generativeai import types
 
     from .utils import (
         _convert_messages,
@@ -40,7 +40,7 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
-    from google import genai
+    import google.generativeai as genai
 
 REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 256, "low": 1024, "medium": 8192, "high": 24576}
 
