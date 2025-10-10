@@ -10,6 +10,7 @@ MISSING_PACKAGES_ERROR = None
 try:
     from mistralai import Mistral
     from mistralai.extra import response_format_from_pydantic_model
+    from mistralai.models.responseformat import ResponseFormat
 
     from .utils import (
         _convert_models_list,
@@ -115,12 +116,13 @@ class MistralProvider(AnyLLM):
         if params.reasoning_effort == "auto":
             params.reasoning_effort = None
 
-        if (
-            params.response_format is not None
-            and isinstance(params.response_format, type)
-            and issubclass(params.response_format, BaseModel)
-        ):
-            kwargs["response_format"] = response_format_from_pydantic_model(params.response_format)
+        if params.response_format is not None:
+            # Pydantic model
+            if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
+                kwargs["response_format"] = response_format_from_pydantic_model(params.response_format)
+            # Dictionary in OpenAI format
+            elif isinstance(params.response_format, dict):
+                kwargs["response_format"] = ResponseFormat.model_validate(params.response_format)
 
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 
