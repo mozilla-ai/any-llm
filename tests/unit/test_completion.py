@@ -4,7 +4,9 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from any_llm import acompletion
-from any_llm.provider import ClientConfig, Provider, ProviderFactory, ProviderName
+from any_llm.constants import ProviderName
+from any_llm.factory import ProviderFactory
+from any_llm.provider import ClientConfig, Provider
 from any_llm.types.completion import ChatCompletionMessage, CompletionParams, Reasoning
 
 
@@ -31,7 +33,7 @@ async def test_completion_valid_base64_image() -> None:
 async def test_completion_invalid_base64_image() -> None:
     """Test completion raises error for invalid base64 image data."""
     invalid_base64 = "not_base64!"
-    with pytest.raises(ValueError, match="Invalid base64 image data supplied."):
+    with pytest.raises(ValueError, match=r"Invalid base64 image data supplied."):
         await acompletion(
             "gemini-pro", messages=[{"role": "user", "content": "Describe image", "image_base64": invalid_base64}]
         )
@@ -40,7 +42,7 @@ async def test_completion_invalid_base64_image() -> None:
 @pytest.mark.asyncio
 async def test_completion_invalid_image_url() -> None:
     """Test completion raises error for invalid image URL."""
-    with pytest.raises(ValueError, match="Invalid image URL supplied."):
+    with pytest.raises(ValueError, match=r"Invalid image URL supplied."):
         await acompletion(
             "vertexai-pro", messages=[{"role": "user", "content": "Describe image", "image_url": "ftp://invalid-url"}]
         )
@@ -49,7 +51,7 @@ async def test_completion_invalid_image_url() -> None:
 @pytest.mark.asyncio
 async def test_completion_invalid_image_bytes_type() -> None:
     """Test completion raises error for non-bytes image_bytes."""
-    with pytest.raises(ValueError, match="image_bytes must be bytes or bytearray."):
+    with pytest.raises(ValueError, match=r"image_bytes must be bytes or bytearray."):
 
         await acompletion(
             "gemini-pro", messages=[{"role": "user", "content": "Describe image", "image_bytes": "not_bytes"}]
@@ -61,7 +63,7 @@ async def test_completion_invalid_image_bytes_type() -> None:
 async def test_completion_invalid_model_format_no_slash() -> None:
     """Test completion raises ValueError for model without separator."""
     with pytest.raises(
-        ValueError, match="Invalid model format. Expected 'provider:model' or 'provider/model', got 'gpt-4'"
+        ValueError, match=r"Invalid model format. Expected 'provider:model' or 'provider/model', got 'gpt-4'"
     ):
         await acompletion("gpt-4", messages=[{"role": "user", "content": "Hello"}])
 
@@ -188,7 +190,7 @@ async def test_completion_empty_messages() -> None:
 @pytest.mark.asyncio
 async def test_completion_unsupported_image_format() -> None:
     """Test completion raises error for unsupported image format key."""
-    with pytest.raises(ValueError, match="No valid image input found in message."):
+    with pytest.raises(ValueError, match=r"No valid image input found in message."):
         await acompletion(
             "gemini-pro", messages=[{"role": "user", "content": "Describe image", "image_jpeg": "not_supported"}]
         )
@@ -299,7 +301,7 @@ async def test_completion_message_with_extra_fields(extra_fields) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "provider_name,config",
+    ("provider_name", "config"),
     [
         ("openai", ClientConfig(api_key="test_key")),
         ("vertexai", ClientConfig(api_key="test_key", api_base="https://vertex.example.com")),
@@ -309,7 +311,7 @@ async def test_completion_message_with_extra_fields(extra_fields) -> None:
 async def test_provider_factory_various_configs(provider_name, config) -> None:
     """Test ProviderFactory with various provider names and configs."""
     if provider_name == "invalid":
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ProviderFactory.create_provider(provider_name, config)
     else:
         provider_instance = ProviderFactory.create_provider(provider_name, config)
@@ -395,7 +397,7 @@ async def test_completion_message_with_final_extra_fields(extra_fields) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "provider_name,config",
+    ("provider_name", "config"),
     [
         ("openai", ClientConfig(api_key="test_key")),
         ("vertexai", ClientConfig(api_key="test_key", api_base="https://vertex.example.com")),
@@ -409,7 +411,7 @@ async def test_completion_message_with_final_extra_fields(extra_fields) -> None:
 async def test_provider_factory_various_configs_final(provider_name, config) -> None:
     """Test ProviderFactory with final provider names and configs."""
     if provider_name == "invalid" or config.api_key is None or config.api_key == "":
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ProviderFactory.create_provider(provider_name, config)
     else:
         provider_instance = ProviderFactory.create_provider(provider_name, config)
