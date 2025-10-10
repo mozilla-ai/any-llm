@@ -258,6 +258,11 @@ async def test_completion_with_images() -> None:
             ], 
             max_tokens=DEFAULT_MAX_TOKENS,
         )
+
+
+@pytest.mark.asyncio
+async def test_response_format_raises_error() -> None:
+    api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
 
