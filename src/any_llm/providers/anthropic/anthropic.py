@@ -42,7 +42,7 @@ class AnthropicProvider(AnyLLM):
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
-    SUPPORTS_COMPLETION_IMAGE = False  # Needs https://github.com/mozilla-ai/any-llm/issues/416
+    SUPPORTS_COMPLETION_IMAGE = True
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
