@@ -103,31 +103,38 @@ class StructuredOutput(BaseModel):
     bar: int
 
 
+openai_json_schema = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "StructuredOutput",
+        "schema": {**StructuredOutput.model_json_schema(), "additionalProperties": False},
+        "strict": True,
+    },
+}
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("response_format", "expected_converter"),
+    "response_format",
     [
-        (StructuredOutput, "response_format_from_pydantic_model"),
-        ({"type": "json_object", "schema": StructuredOutput.model_json_schema()}, "ResponseFormat"),
+        StructuredOutput,
+        openai_json_schema,
     ],
     ids=["pydantic_model", "openai_json_schema"],
 )
-async def test_response_format_conversion(response_format: Any, expected_converter: str) -> None:
+async def test_response_format(response_format: Any) -> None:
     """Test that response_format is properly converted for both Pydantic and dict formats."""
-    pytest.importorskip("mistralai")
+    mistralai = pytest.importorskip("mistralai")
     from any_llm.providers.mistral.mistral import MistralProvider
 
     with (
         patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral,
-        patch("any_llm.providers.mistral.mistral.response_format_from_pydantic_model") as mocked_pydantic_converter,
-        patch("any_llm.providers.mistral.mistral.ResponseFormat") as mocked_response_format,
-        patch("any_llm.providers.mistral.mistral._create_mistral_completion_from_response") as mocked_converter,
+        patch("any_llm.providers.mistral.mistral._create_mistral_completion_from_response") as mock_converter,
     ):
         provider = MistralProvider(api_key="test-api-key")
 
-        mock_response = Mock()
-        mocked_mistral.return_value.chat.complete_async = AsyncMock(return_value=mock_response)
-        mocked_converter.return_value = Mock()
+        mocked_mistral.return_value.chat.complete_async = AsyncMock(return_value=Mock())
+        mock_converter.return_value = Mock()
 
         await provider._acompletion(
             CompletionParams(
@@ -137,7 +144,23 @@ async def test_response_format_conversion(response_format: Any, expected_convert
             ),
         )
 
-        if expected_converter == "response_format_from_pydantic_model":
-            mocked_pydantic_converter.assert_called_once_with(StructuredOutput)
-        elif expected_converter == "ResponseFormat":
-            mocked_response_format.model_validate.assert_called_once_with(response_format)
+        completion_call_kwargs = mocked_mistral.return_value.chat.complete_async.call_args[1]
+        assert "response_format" in completion_call_kwargs
+
+        response_format_arg = completion_call_kwargs["response_format"]
+        assert isinstance(response_format_arg, mistralai.models.responseformat.ResponseFormat)
+        assert response_format_arg.type == "json_schema"
+        assert response_format_arg.json_schema.name == "StructuredOutput"
+        assert response_format_arg.json_schema.strict is True
+
+        expected_schema = {
+            "properties": {
+                "foo": {"title": "Foo", "type": "string"},
+                "bar": {"title": "Bar", "type": "integer"},
+            },
+            "required": ["foo", "bar"],
+            "title": "StructuredOutput",
+            "type": "object",
+            "additionalProperties": False,
+        }
+        assert response_format_arg.json_schema.schema_definition == expected_schema
