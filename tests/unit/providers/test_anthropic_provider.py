@@ -226,10 +226,10 @@ async def test_completion_with_custom_reasoning_effort(
 async def test_completion_with_images() -> None:
     api_key = "test-api-key"
     model = "model-id"
-    
+
     messages = [
         {
-            "role": "user", 
+            "role": "user",
             "content": [
                 {"type": "text", "text": "Some question about these images."},
                 {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
@@ -240,22 +240,27 @@ async def test_completion_with_images() -> None:
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(api_key=api_key)
-        await provider._acompletion(
-            CompletionParams(model_id=model, messages=messages)
-        )
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages))
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
-            model=model, 
+            model=model,
             messages=[
                 {
-                    "role": "user", 
+                    "role": "user",
                     "content": [
                         {"type": "text", "text": "Some question about these images."},
                         {"type": "image", "source": {"type": "url", "url": "https://example.com/a.png"}},
-                        {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": "qwertyuiopasdfghjklzxcvbnm"}}
-                    ]
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/jpeg",
+                                "data": "qwertyuiopasdfghjklzxcvbnm",
+                            },
+                        },
+                    ],
                 }
-            ], 
+            ],
             max_tokens=DEFAULT_MAX_TOKENS,
         )
 
