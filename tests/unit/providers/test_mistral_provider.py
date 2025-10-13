@@ -98,15 +98,24 @@ def test_patch_messages_with_multiple_valid_tool_calls() -> None:
     ]
 
 
+class StructuredOutput(BaseModel):
+    foo: str
+    bar: int
+
+
 @pytest.mark.asyncio
-async def test_response_format_accepts_pydantic_and_openai_json_schema() -> None:
-    """Test that response_format accepts both Pydantic BaseModel and Openai json schema formats."""
+@pytest.mark.parametrize(
+    ("response_format", "expected_converter"),
+    [
+        (StructuredOutput, "response_format_from_pydantic_model"),
+        ({"type": "json_object", "schema": StructuredOutput.model_json_schema()}, "ResponseFormat"),
+    ],
+    ids=["pydantic_model", "openai_json_schema"],
+)
+async def test_response_format_conversion(response_format: Any, expected_converter: str) -> None:
+    """Test that response_format is properly converted for both Pydantic and dict formats."""
     pytest.importorskip("mistralai")
     from any_llm.providers.mistral.mistral import MistralProvider
-
-    class StructuredOutput(BaseModel):
-        foo: str
-        bar: int
 
     with (
         patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral,
@@ -124,17 +133,11 @@ async def test_response_format_accepts_pydantic_and_openai_json_schema() -> None
             CompletionParams(
                 model_id="test-model",
                 messages=[{"role": "user", "content": "Hello"}],
-                response_format=StructuredOutput,  # Test with Pydantic model
+                response_format=response_format,
             ),
         )
-        mocked_pydantic_converter.assert_called_once_with(StructuredOutput)
 
-        dict_response_format = {"type": "json_object", "schema": StructuredOutput.model_json_schema()}
-        await provider._acompletion(
-            CompletionParams(
-                model_id="test-model",
-                messages=[{"role": "user", "content": "Hello"}],
-                response_format=dict_response_format,  # Test with OpenAI json schema
-            ),
-        )
-        mocked_response_format.model_validate.assert_called_once_with(dict_response_format)
+        if expected_converter == "response_format_from_pydantic_model":
+            mocked_pydantic_converter.assert_called_once_with(StructuredOutput)
+        elif expected_converter == "ResponseFormat":
+            mocked_response_format.model_validate.assert_called_once_with(response_format)
