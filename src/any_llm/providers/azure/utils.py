@@ -33,7 +33,20 @@ def _convert_response_format(
 ) -> JsonSchemaFormat | str | Any:
     """Convert Pydantic model to Azure JsonSchemaFormat."""
     if not isinstance(response_format, type) or not issubclass(response_format, BaseModel):
-        return response_format
+        if not isinstance(response_format, dict):
+            err_msg = "Response format must be a Pydantic model or a dict"
+            raise ValueError(err_msg)
+        json_schema = response_format.get("json_schema")
+
+        if not json_schema:
+            err_msg = "Response format must be a Pydantic model or a dict with a json_schema key"
+            raise ValueError(err_msg)
+        return JsonSchemaFormat(
+            name=response_format.get("json_schema", {}).get("name", ""),
+            schema=response_format.get("json_schema", {}).get("schema"),
+            description=response_format.get("json_schema", {}).get("description", ""),
+            strict=response_format.get("json_schema", {}).get("strict", True),
+        )
 
     schema = response_format.model_json_schema()
     # Azure requires additionalProperties to be false for structured output
