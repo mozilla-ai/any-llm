@@ -12,6 +12,7 @@ from any_llm.types.completion import (
     Choice,
     CompletionUsage,
     Function,
+    Reasoning,
 )
 from any_llm.types.model import Model
 
@@ -75,6 +76,10 @@ def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCo
                     tool_calls_list.append(tool_call_dict)
                 delta["tool_calls"] = tool_calls_list
 
+            reasoning_content = getattr(choice_delta, "reasoning", None)
+            if reasoning_content:
+                delta["reasoning"] = {"content": reasoning_content}
+
     usage = getattr(chunk, "usage", None)
     if usage:
         chunk_dict["usage"] = {
@@ -117,10 +122,13 @@ def _convert_response(response_data: dict[str, Any]) -> ChatCompletion:
                     )
                 )
             tool_calls = tool_calls_list
+
+        reasoning_content = message_data.get("reasoning", None)
         message = ChatCompletionMessage(
             role=message_data.get("role", "assistant"),
             content=message_data.get("content"),
             tool_calls=tool_calls,
+            reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
         )
         from typing import Literal, cast
 

@@ -24,6 +24,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.LLAMACPP: "N/A",
         LLMProvider.LMSTUDIO: "openai/gpt-oss-20b",  # You must have LM Studio running and the server enabled
         LLMProvider.AZUREOPENAI: "azure/<your_deployment_name>",
+        LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.COHERE: "command-a-reasoning-08-2025",
         LLMProvider.DEEPSEEK: "deepseek-reasoner",
     }
