@@ -10,6 +10,7 @@ from any_llm.exceptions import UnsupportedParameterError
 MISSING_PACKAGES_ERROR = None
 try:
     import cohere
+    from cohere import V2ChatResponse
 
     from .utils import (
         _convert_models_list,
@@ -37,7 +38,7 @@ class CohereProvider(AnyLLM):
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
-    SUPPORTS_COMPLETION_REASONING = False
+    SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = False
@@ -60,10 +61,10 @@ class CohereProvider(AnyLLM):
         return converted_params
 
     @staticmethod
-    def _convert_completion_response(response: Any, **kwargs: Any) -> ChatCompletion:
+    def _convert_completion_response(response: V2ChatResponse, **kwargs: Any) -> ChatCompletion:
         """Convert Cohere response to OpenAI format."""
         # We need the model parameter for conversion
-        model = kwargs.get("model", getattr(response, "model", "cohere-model"))
+        model = kwargs.get("model", "unknown")
         return _convert_response(response, model)
 
     @staticmethod
