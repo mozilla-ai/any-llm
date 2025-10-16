@@ -701,6 +701,7 @@
 <h1 id="supported-providers">Supported Providers</h1>
 <p><code>any-llm</code> supports the below providers. In order to discover information about what models are supported by a provider
 as well as what features the provider supports for each model, refer to the provider documentation.</p>
+<p>Provider source code can be found in the <a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers"><code>src/any_llm/providers/</code></a> directory of the repository.</p>
 <div class="admonition note">
 <p class="admonition-title">Legend</p>
 <ul>
@@ -719,7 +720,6 @@ discussion for more information.</li>
 <tr>
 <th>ID</th>
 <th>Env Var</th>
-<th>Source Code</th>
 <th>Responses</th>
 <th>Completion</th>
 <th>Streaming<br>(Completions)</th>
@@ -733,7 +733,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://docs.anthropic.com/en/home"><code>anthropic</code></a></td>
 <td>ANTHROPIC_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/anthropic/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -745,7 +744,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://azure.microsoft.com/en-us/products/ai-services/openai-service"><code>azure</code></a></td>
 <td>AZURE_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/azure/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -757,7 +755,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://learn.microsoft.com/en-us/azure/ai-foundry/"><code>azureopenai</code></a></td>
 <td>AZURE_OPENAI_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/azureopenai/">Source</a></td>
 <td>✅</td>
 <td>✅</td>
 <td>✅</td>
@@ -769,7 +766,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://aws.amazon.com/bedrock/"><code>bedrock</code></a></td>
 <td>AWS_BEARER_TOKEN_BEDROCK</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/bedrock/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -781,7 +777,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://docs.cerebras.ai/"><code>cerebras</code></a></td>
 <td>CEREBRAS_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/cerebras/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -793,7 +788,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://cohere.com/api"><code>cohere</code></a></td>
 <td>COHERE_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/cohere/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -805,7 +799,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://docs.databricks.com/"><code>databricks</code></a></td>
 <td>DATABRICKS_TOKEN</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/databricks/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -817,7 +810,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://platform.deepseek.com/"><code>deepseek</code></a></td>
 <td>DEEPSEEK_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/deepseek/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -829,7 +821,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://fireworks.ai/api"><code>fireworks</code></a></td>
 <td>FIREWORKS_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/fireworks/">Source</a></td>
 <td>✅</td>
 <td>✅</td>
 <td>✅</td>
@@ -841,7 +832,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://ai.google.dev/gemini-api/docs"><code>gemini</code></a></td>
 <td>GEMINI_API_KEY/GOOGLE_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/gemini/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -853,7 +843,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://groq.com/api"><code>groq</code></a></td>
 <td>GROQ_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/groq/">Source</a></td>
 <td>✅</td>
 <td>✅</td>
 <td>✅</td>
@@ -865,7 +854,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://huggingface.co/docs/huggingface_hub/package_reference/inference_client"><code>huggingface</code></a></td>
 <td>HF_TOKEN</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/huggingface/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -877,7 +865,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://inceptionlabs.ai/"><code>inception</code></a></td>
 <td>INCEPTION_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/inception/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -889,7 +876,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://www.llama.com/products/llama-api/"><code>llama</code></a></td>
 <td>LLAMA_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/llama/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -901,7 +887,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://github.com/ggml-org/llama.cpp"><code>llamacpp</code></a></td>
 <td>None</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/llamacpp/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -913,7 +898,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://github.com/Mozilla-Ocho/llamafile"><code>llamafile</code></a></td>
 <td>None</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/llamafile/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>❌</td>
@@ -925,7 +909,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://lmstudio.ai/"><code>lmstudio</code></a></td>
 <td>LM_STUDIO_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/lmstudio/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -937,7 +920,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://docs.mistral.ai/"><code>mistral</code></a></td>
 <td>MISTRAL_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/mistral/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -949,7 +931,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://platform.moonshot.ai/"><code>moonshot</code></a></td>
 <td>MOONSHOT_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/moonshot/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -961,7 +942,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://studio.nebius.ai/"><code>nebius</code></a></td>
 <td>NEBIUS_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/nebius/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -973,7 +953,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://github.com/ollama/ollama"><code>ollama</code></a></td>
 <td>None</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/ollama/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -985,7 +964,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://platform.openai.com/docs/api-reference"><code>openai</code></a></td>
 <td>OPENAI_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/openai/">Source</a></td>
 <td>✅</td>
 <td>✅</td>
 <td>✅</td>
@@ -997,7 +975,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://openrouter.ai/docs"><code>openrouter</code></a></td>
 <td>OPENROUTER_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/openrouter/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1009,7 +986,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://docs.perplexity.ai/"><code>perplexity</code></a></td>
 <td>PERPLEXITY_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/perplexity/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1021,7 +997,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://portkey.ai/docs"><code>portkey</code></a></td>
 <td>PORTKEY_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/portkey/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1033,7 +1008,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://aws.amazon.com/sagemaker/"><code>sagemaker</code></a></td>
 <td>AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/sagemaker/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1045,7 +1019,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://sambanova.ai/"><code>sambanova</code></a></td>
 <td>SAMBANOVA_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/sambanova/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1057,7 +1030,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://together.ai/"><code>together</code></a></td>
 <td>TOGETHER_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/together/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1069,7 +1041,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://cloud.google.com/vertex-ai/docs"><code>vertexai</code></a></td>
 <td></td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/vertexai/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1081,7 +1052,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://docs.voyageai.com/"><code>voyage</code></a></td>
 <td>VOYAGE_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/voyage/">Source</a></td>
 <td>❌</td>
 <td>❌</td>
 <td>❌</td>
@@ -1093,7 +1063,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://www.ibm.com/watsonx"><code>watsonx</code></a></td>
 <td>WATSONX_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/watsonx/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1105,7 +1074,6 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://x.ai/"><code>xai</code></a></td>
 <td>XAI_API_KEY</td>
-<td><a href="https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/xai/">Source</a></td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
