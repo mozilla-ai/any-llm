@@ -15,6 +15,7 @@ class DeepseekProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = False  # DeepSeek doesn't host an embedding model
+    SUPPORTS_COMPLETION_REASONING = True
 
     async def _acompletion(
         self,
