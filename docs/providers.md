@@ -3,6 +3,8 @@
 `any-llm` supports the below providers. In order to discover information about what models are supported by a provider
 as well as what features the provider supports for each model, refer to the provider documentation.
 
+Provider source code can be found in the [`src/any_llm/providers/`](https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers) directory of the repository.
+
 !!! note "Legend"
 
     - **Reasoning (Completions)**: Provider can return reasoning traces alongside the assistant message via the completions and/or streaming endpoints. This does not indicate whether the provider offers separate "reasoning models".See [this](https://github.com/mozilla-ai/any-llm/issues/95)
