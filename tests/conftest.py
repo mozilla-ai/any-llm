@@ -14,7 +14,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.GEMINI: "gemini-2.5-flash",
         LLMProvider.VERTEXAI: "gemini-2.5-flash",
         LLMProvider.GROQ: "openai/gpt-oss-20b",
-        LLMProvider.FIREWORKS: "accounts/fireworks/models/deepseek-r1",
+        LLMProvider.FIREWORKS: "accounts/fireworks/models/gpt-oss-20b",
         LLMProvider.OPENAI: "gpt-5-nano",
         LLMProvider.MISTRAL: "magistral-small-latest",
         LLMProvider.XAI: "grok-3-mini-latest",
