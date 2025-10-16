@@ -2,8 +2,10 @@ from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from azure.ai.inference.models import JsonSchemaFormat
 
 from any_llm.providers.azure.azure import AzureProvider
+from any_llm.providers.azure.utils import _convert_response_format
 from any_llm.types.completion import CompletionParams
 
 
@@ -135,3 +137,29 @@ async def test_azure_streaming() -> None:
 
         assert isinstance(result, list)
         assert len(result) == 2
+
+
+def test_convert_response_format_from_dict() -> None:
+    response_format_dict = {
+        "json_schema": {
+            "name": "TestSchema",
+            "schema": {"type": "object", "properties": {"field": {"type": "string"}}},
+            "description": "A test schema",
+            "strict": True,
+        }
+    }
+
+    result = _convert_response_format(response_format_dict)
+
+    assert isinstance(result, JsonSchemaFormat)
+    assert result.name == "TestSchema"
+    assert result.schema == {"type": "object", "properties": {"field": {"type": "string"}}}
+    assert result.description == "A test schema"
+    assert result.strict is True
+
+
+def test_convert_response_format_from_dict_invalid() -> None:
+    invalid_dict = {"type": "json_object"}
+
+    with pytest.raises(ValueError, match="Response format must be a Pydantic model or a dict with a json_schema key"):
+        _convert_response_format(invalid_dict)

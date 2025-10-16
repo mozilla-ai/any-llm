@@ -35,6 +35,33 @@ def _is_tool_call(message: dict[str, Any]) -> bool:
     return message["role"] == "assistant" and message.get("tool_calls") is not None
 
 
+def _convert_images_for_anthropic(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert images from OpenAI format to Anthropic format.
+    - Parse the "content" field block by block
+    - Convert image blocks to Anthropic format
+    """
+    converted_content = []
+    for block in content:
+        if block.get("type") == "image_url":
+            converted_block: dict[str, Any] = {"type": "image"}
+            url = block.get("image_url", {}).get("url", "")
+            if url[:5] == "data:":
+                mime_part = url[5:]
+                semi_idx = mime_part.find(";")
+                media_type = mime_part[:semi_idx] if semi_idx != -1 else mime_part
+                converted_block["source"] = {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": url.split("base64,")[1],
+                }
+            else:
+                converted_block["source"] = {"type": "url", "url": url}
+            converted_content.append(converted_block)
+        else:
+            converted_content.append(block)
+    return converted_content
+
+
 def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str | None, list[dict[str, Any]]]:
     """Convert messages to Anthropic format.
 
@@ -75,6 +102,10 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
                     "role": "user",
                     "content": [{"type": "tool_result", "tool_use_id": tool_use_id, "content": message["content"]}],
                 }
+
+            if "content" in message and isinstance(message["content"], list):
+                message["content"] = _convert_images_for_anthropic(message["content"])
+
             filtered_messages.append(message)
 
     return system_message, filtered_messages

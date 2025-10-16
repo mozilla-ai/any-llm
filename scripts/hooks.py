@@ -46,23 +46,15 @@ def generate_provider_table(providers: list[ProviderMetadata]):
         return "No providers found."
 
     table_lines = [
-        "| ID | Env Var | Source Code | Responses | Completion | Streaming<br>(Completions) | Reasoning<br>(Completions) | Image <br>(Completions) | Embedding | List Models |",
-        "|----|---------|-------------|-----------|------------|--------------------------|--------------------------|-----------|-----------|-------------|",
+        "| ID | Env Var | Responses | Completion | Streaming<br>(Completions) | Reasoning<br>(Completions) | Image <br>(Completions) | Embedding | List Models |",
+        "|----|---------|-----------|------------|--------------------------|--------------------------|-----------|-----------|-------------|",
     ]
 
-    # Add rows for each provider
-    source_urls = []
     for provider in providers:
         env_key = provider.env_key
 
-        # Use the provider key (directory name) instead of display name
         provider_key = provider.name
-        source_url = f"https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers/{provider_key}/"
-        source_urls.append(source_url)
 
-        source_link = f"[Source]({source_url})"
-
-        # Create provider ID as a hyperlink to the documentation URL
         provider_id_link = f"[`{provider_key}`]({provider.doc_url})"
 
         stream_supported = "✅" if provider.streaming else "❌"
@@ -74,13 +66,12 @@ def generate_provider_table(providers: list[ProviderMetadata]):
         list_models_supported = "✅" if provider.list_models else "❌"
 
         row = (
-            f"| {provider_id_link} | {env_key} | {source_link} | {responses_supported} | {completion_supported} | "
+            f"| {provider_id_link} | {env_key} | {responses_supported} | {completion_supported} | "
             f"{stream_supported} | {reasoning_supported} | {image_supported} | {embedding_supported} | "
             f"{list_models_supported} |"
         )
         table_lines.append(row)
 
-    asyncio.run(validate_url(source_urls))
     return "\n".join(table_lines)
 
 

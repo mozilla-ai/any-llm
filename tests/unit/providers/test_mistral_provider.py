@@ -1,6 +1,11 @@
 from typing import Any
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+from pydantic import BaseModel
 
 from any_llm.providers.mistral.utils import _patch_messages
+from any_llm.types.completion import CompletionParams
 
 
 def test_patch_messages_noop_when_no_tool_before_user() -> None:
@@ -91,3 +96,71 @@ def test_patch_messages_with_multiple_valid_tool_calls() -> None:
         {"role": "assistant", "content": "OK"},
         {"role": "user", "content": "u1"},
     ]
+
+
+class StructuredOutput(BaseModel):
+    foo: str
+    bar: int
+
+
+openai_json_schema = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "StructuredOutput",
+        "schema": {**StructuredOutput.model_json_schema(), "additionalProperties": False},
+        "strict": True,
+    },
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response_format",
+    [
+        StructuredOutput,
+        openai_json_schema,
+    ],
+    ids=["pydantic_model", "openai_json_schema"],
+)
+async def test_response_format(response_format: Any) -> None:
+    """Test that response_format is properly converted for both Pydantic and dict formats."""
+    mistralai = pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    with (
+        patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral,
+        patch("any_llm.providers.mistral.mistral._create_mistral_completion_from_response") as mock_converter,
+    ):
+        provider = MistralProvider(api_key="test-api-key")
+
+        mocked_mistral.return_value.chat.complete_async = AsyncMock(return_value=Mock())
+        mock_converter.return_value = Mock()
+
+        await provider._acompletion(
+            CompletionParams(
+                model_id="test-model",
+                messages=[{"role": "user", "content": "Hello"}],
+                response_format=response_format,
+            ),
+        )
+
+        completion_call_kwargs = mocked_mistral.return_value.chat.complete_async.call_args[1]
+        assert "response_format" in completion_call_kwargs
+
+        response_format_arg = completion_call_kwargs["response_format"]
+        assert isinstance(response_format_arg, mistralai.models.responseformat.ResponseFormat)
+        assert response_format_arg.type == "json_schema"
+        assert response_format_arg.json_schema.name == "StructuredOutput"
+        assert response_format_arg.json_schema.strict is True
+
+        expected_schema = {
+            "properties": {
+                "foo": {"title": "Foo", "type": "string"},
+                "bar": {"title": "Bar", "type": "integer"},
+            },
+            "required": ["foo", "bar"],
+            "title": "StructuredOutput",
+            "type": "object",
+            "additionalProperties": False,
+        }
+        assert response_format_arg.json_schema.schema_definition == expected_schema
