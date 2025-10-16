@@ -36,16 +36,16 @@ def _convert_response_format(
         if not isinstance(response_format, dict):
             err_msg = "Response format must be a Pydantic model or a dict"
             raise ValueError(err_msg)
-        json_schema = response_format.get("json_schema")
+        json_schema: dict[str, Any] = response_format.get("json_schema", {})
 
         if not json_schema:
             err_msg = "Response format must be a Pydantic model or a dict with a json_schema key"
             raise ValueError(err_msg)
         return JsonSchemaFormat(
-            name=response_format.get("json_schema", {}).get("name", ""),
-            schema=response_format.get("json_schema", {}).get("schema"),
-            description=response_format.get("json_schema", {}).get("description", ""),
-            strict=response_format.get("json_schema", {}).get("strict", True),
+            name=json_schema.get("name", ""),
+            schema=json_schema.get("schema"),
+            description=json_schema.get("description", ""),
+            strict=json_schema.get("strict", True),
         )
 
     schema = response_format.model_json_schema()
