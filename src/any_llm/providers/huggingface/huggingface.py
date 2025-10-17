@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from any_llm.any_llm import AnyLLM
+from any_llm.constants import REASONING_FIELD_NAMES
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -11,6 +12,7 @@ from any_llm.types.completion import (
     CompletionParams,
     CompletionUsage,
     CreateEmbeddingResponse,
+    Reasoning,
 )
 
 MISSING_PACKAGES_ERROR = None
@@ -21,6 +23,7 @@ try:
         _convert_models_list,
         _convert_params,
         _create_openai_chunk_from_huggingface_chunk,
+        _normalize_reasoning_on_message,
     )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
@@ -47,7 +50,7 @@ class HuggingfaceProvider(AnyLLM):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
-    SUPPORTS_COMPLETION_REASONING = False
+    SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
 
@@ -101,14 +104,96 @@ class HuggingfaceProvider(AnyLLM):
             **kwargs,
         )
 
+    @staticmethod
+    def _find_reasoning_tag(text: str, opening: bool = True) -> tuple[int, str] | None:
+        """Find the first reasoning tag (opening or closing) in text.
+
+        Returns (position, tag_name) or None if no tag found.
+        """
+        earliest_pos = len(text)
+        earliest_tag = None
+
+        for tag_name in REASONING_FIELD_NAMES:
+            tag = f"<{tag_name}>" if opening else f"</{tag_name}>"
+            pos = text.find(tag)
+            if pos != -1 and pos < earliest_pos:
+                earliest_pos = pos
+                earliest_tag = tag_name
+
+        return (earliest_pos, earliest_tag) if earliest_tag else None
+
+    @staticmethod
+    def _is_partial_reasoning_tag(text: str, opening: bool = True) -> bool:
+        """Check if text could be the start of any reasoning tag."""
+        for tag_name in REASONING_FIELD_NAMES:
+            tag = f"<{tag_name}>" if opening else f"</{tag_name}>"
+            for i in range(1, len(tag) + 1):
+                if text.startswith(tag[:i]):
+                    return True
+        return False
+
     async def _stream_completion_async(
         self,
         **kwargs: Any,
     ) -> AsyncIterator[ChatCompletionChunk]:
         response: AsyncIterator[HuggingFaceChatCompletionStreamOutput] = await self.client.chat_completion(**kwargs)
 
+        buffer = ""
+        current_tag = None
+        reasoning_buffer = ""
+
         async for chunk in response:
-            yield self._convert_completion_chunk_response(chunk)
+            original_chunk = self._convert_completion_chunk_response(chunk)
+
+            if not (len(original_chunk.choices) > 0 and original_chunk.choices[0].delta.content):
+                yield original_chunk
+                continue
+
+            buffer += original_chunk.choices[0].delta.content
+            content_parts = []
+            reasoning_parts = []
+
+            while buffer:
+                if current_tag is None:
+                    tag_info = self._find_reasoning_tag(buffer, opening=True)
+                    if tag_info:
+                        tag_start, tag_name = tag_info
+                        if tag_start > 0:
+                            content_parts.append(buffer[:tag_start])
+                        tag_full = f"<{tag_name}>"
+                        buffer = buffer[tag_start + len(tag_full) :]
+                        current_tag = tag_name
+                    elif self._is_partial_reasoning_tag(buffer, opening=True):
+                        break
+                    else:
+                        content_parts.append(buffer)
+                        buffer = ""
+                else:
+                    tag_close = f"</{current_tag}>"
+                    tag_end = buffer.find(tag_close)
+                    if tag_end != -1:
+                        reasoning_parts.append(reasoning_buffer + buffer[:tag_end])
+                        reasoning_buffer = ""
+                        buffer = buffer[tag_end + len(tag_close) :]
+                        current_tag = None
+                    elif self._is_partial_reasoning_tag(buffer, opening=False):
+                        reasoning_buffer += buffer
+                        buffer = ""
+                        break
+                    else:
+                        reasoning_buffer += buffer
+                        buffer = ""
+
+            if content_parts or reasoning_parts:
+                modified_chunk = original_chunk.model_copy(deep=True)
+                modified_chunk.choices[0].delta.content = "".join(content_parts) if content_parts else None
+                if reasoning_parts:
+                    modified_chunk.choices[0].delta.reasoning = Reasoning(content="".join(reasoning_parts))
+                yield modified_chunk
+            elif not buffer:
+                modified_chunk = original_chunk.model_copy(deep=True)
+                modified_chunk.choices[0].delta.content = None
+                yield modified_chunk
 
     async def _acompletion(
         self,
@@ -127,10 +212,19 @@ class HuggingfaceProvider(AnyLLM):
         choices_out: list[Choice] = []
         for i, ch in enumerate(data.get("choices", [])):
             msg = ch.get("message", {})
+
+            _normalize_reasoning_on_message(msg)
+
+            reasoning_obj = None
+            if msg.get("reasoning") and isinstance(msg["reasoning"], dict):
+                if "content" in msg["reasoning"]:
+                    reasoning_obj = Reasoning(content=msg["reasoning"]["content"])
+
             message = ChatCompletionMessage(
                 role="assistant",
                 content=msg.get("content"),
                 tool_calls=msg.get("tool_calls"),
+                reasoning=reasoning_obj,
             )
             choices_out.append(Choice(index=i, finish_reason=ch.get("finish_reason"), message=message))
 

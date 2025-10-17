@@ -8,3 +8,4 @@ class NebiusProvider(BaseOpenAIProvider):
     PROVIDER_DOCUMENTATION_URL = "https://studio.nebius.ai/"
 
     SUPPORTS_COMPLETION_PDF = False
+    SUPPORTS_COMPLETION_REASONING = True

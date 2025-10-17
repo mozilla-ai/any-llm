@@ -16,10 +16,13 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     Embedding,
     Function,
+    Reasoning,
     Usage,
 )
 
 INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
+
+REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 1024, "low": 2048, "medium": 8192, "high": 24576}
 
 
 def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -37,6 +40,8 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
     if params.tools:
         result_kwargs["toolConfig"] = _convert_tool_spec(params.tools, params.tool_choice)
 
+    reasoning_enabled = params.reasoning_effort is not None and params.reasoning_effort != "auto"
+
     inference_config: dict[str, Any] = {}
     if params.max_tokens:
         inference_config["maxTokens"] = params.max_tokens
@@ -49,6 +54,14 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
 
     if inference_config:
         result_kwargs["inferenceConfig"] = inference_config
+
+    if reasoning_enabled:
+        additional_fields: dict[str, Any] = result_kwargs.get("additionalModelRequestFields", {})
+        reasoning_config: dict[str, Any] = {"type": "enabled"}
+        if params.reasoning_effort in REASONING_EFFORT_TO_THINKING_BUDGETS:
+            reasoning_config["budget_tokens"] = REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort]
+        additional_fields["reasoning_config"] = reasoning_config
+        result_kwargs["additionalModelRequestFields"] = additional_fields
 
     system_message, formatted_messages = _convert_messages(params.messages)
     result_kwargs["messages"] = formatted_messages
@@ -169,62 +182,78 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
     choices_out: list[Choice] = []
     usage: CompletionUsage | None = None
 
-    if response.get("stopReason") == "tool_use":
-        tool_calls_list: list[dict[str, Any]] = []
-        for content in response["output"]["message"]["content"]:
-            if "toolUse" in content:
-                tool = content["toolUse"]
-                tool_calls_list.append(
-                    {
-                        "id": tool["toolUseId"],
-                        "type": "function",
-                        "function": {
-                            "name": tool["name"],
-                            "arguments": json.dumps(tool["input"]),
-                        },
-                    }
-                )
+    reasoning_content: str | None = None
+    content_parts: list[str] = []
+    tool_calls_list: list[dict[str, Any]] = []
 
-        if tool_calls_list:
-            message = ChatCompletionMessage(
-                role="assistant",
-                content=None,
-                tool_calls=[
-                    ChatCompletionMessageFunctionToolCall(
-                        id=tc["id"],
-                        type="function",
-                        function=Function(
-                            name=tc["function"]["name"],
-                            arguments=tc["function"]["arguments"],
-                        ),
-                    )
-                    for tc in tool_calls_list
-                ],
-            )
-            choices_out.append(Choice(index=0, finish_reason="tool_calls", message=message))
-
-            if "usage" in response:
-                usage_data = response["usage"]
-                usage = CompletionUsage(
-                    completion_tokens=usage_data.get("outputTokens", 0),
-                    prompt_tokens=usage_data.get("inputTokens", 0),
-                    total_tokens=usage_data.get("totalTokens", 0),
-                )
-
-            return ChatCompletion(
-                id=response.get("id", ""),
-                model=response.get("model", ""),
-                created=response.get("created", 0),
-                object="chat.completion",
-                choices=choices_out,
-                usage=usage,
+    for content_block in response["output"]["message"]["content"]:
+        if "text" in content_block:
+            content_parts.append(content_block["text"])
+        elif "reasoningContent" in content_block:
+            reasoning_text = content_block["reasoningContent"].get("reasoningText", {}).get("text", "")
+            if reasoning_content is None:
+                reasoning_content = reasoning_text
+            else:
+                reasoning_content += reasoning_text
+        elif "toolUse" in content_block:
+            tool = content_block["toolUse"]
+            tool_calls_list.append(
+                {
+                    "id": tool["toolUseId"],
+                    "type": "function",
+                    "function": {
+                        "name": tool["name"],
+                        "arguments": json.dumps(tool["input"]),
+                    },
+                }
             )
 
-    content = response["output"]["message"]["content"][0]["text"]
+    if response.get("stopReason") == "tool_use" and tool_calls_list:
+        message = ChatCompletionMessage(
+            role="assistant",
+            content=None,
+            reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
+            tool_calls=[
+                ChatCompletionMessageFunctionToolCall(
+                    id=tc["id"],
+                    type="function",
+                    function=Function(
+                        name=tc["function"]["name"],
+                        arguments=tc["function"]["arguments"],
+                    ),
+                )
+                for tc in tool_calls_list
+            ],
+        )
+        choices_out.append(Choice(index=0, finish_reason="tool_calls", message=message))
+
+        if "usage" in response:
+            usage_data = response["usage"]
+            usage = CompletionUsage(
+                completion_tokens=usage_data.get("outputTokens", 0),
+                prompt_tokens=usage_data.get("inputTokens", 0),
+                total_tokens=usage_data.get("totalTokens", 0),
+            )
+
+        return ChatCompletion(
+            id=response.get("id", ""),
+            model=response.get("model", ""),
+            created=response.get("created", 0),
+            object="chat.completion",
+            choices=choices_out,
+            usage=usage,
+        )
+
+    content = "".join(content_parts)
     stop_reason = response.get("stopReason")
     finish_reason: Literal["stop", "length"] = "length" if stop_reason == "max_tokens" else "stop"
 
-    message = ChatCompletionMessage(role="assistant", content=content, tool_calls=None)
+    message = ChatCompletionMessage(
+        role="assistant",
+        content=content,
+        reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
+        tool_calls=None,
+    )
 
     choices_out.append(
         Choice(
@@ -257,9 +286,21 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
 def _create_openai_chunk_from_aws_chunk(chunk: dict[str, Any], model: str) -> ChatCompletionChunk | None:
     """Create an OpenAI ChatCompletionChunk from an AWS Bedrock chunk."""
     content: str | None = None
+    reasoning_content: str | None = None
     finish_reason: Literal["stop", "length"] | None = None
-    if "contentBlockDelta" in chunk:
-        content = chunk["contentBlockDelta"]["delta"]["text"]
+
+    if "contentBlockStart" in chunk:
+        block = chunk["contentBlockStart"]["start"]
+        if "reasoningContent" in block:
+            reasoning_content = ""
+        else:
+            content = ""
+    elif "contentBlockDelta" in chunk:
+        delta = chunk["contentBlockDelta"]["delta"]
+        if "text" in delta:
+            content = delta["text"]
+        elif "reasoningContent" in delta:
+            reasoning_content = delta["reasoningContent"].get("text", "")
     elif "messageStop" in chunk:
         if chunk["messageStop"]["stopReason"] == "max_tokens":
             finish_reason = "length"
@@ -269,7 +310,14 @@ def _create_openai_chunk_from_aws_chunk(chunk: dict[str, Any], model: str) -> Ch
         content = ""
     else:
         return None
-    delta = ChoiceDelta(content=content, role="assistant")
+
+    delta_dict: dict[str, Any] = {"role": "assistant"}
+    if content is not None:
+        delta_dict["content"] = content
+    if reasoning_content is not None:
+        delta_dict["reasoning"] = {"content": reasoning_content}
+
+    delta = ChoiceDelta(**delta_dict)
     choice = ChunkChoice(delta=delta, finish_reason=finish_reason, index=0)
     return ChatCompletionChunk(
         id=f"chatcmpl-{time()}",  # AWS doesn't provide an ID in the chunk
