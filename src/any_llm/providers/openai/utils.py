@@ -4,6 +4,7 @@ from typing import Any
 
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 
+from any_llm.constants import REASONING_FIELD_NAMES
 from any_llm.logging import logger
 from any_llm.types.completion import ChatCompletion
 
@@ -13,11 +14,7 @@ def _normalize_reasoning_on_message(message_dict: dict[str, Any]) -> None:
     if isinstance(message_dict.get("reasoning"), dict) and "content" in message_dict["reasoning"]:
         return
 
-    possible_fields = [
-        "reasoning_content",
-        "thinking",
-        "chain_of_thought",
-    ]
+    possible_fields = REASONING_FIELD_NAMES
     value: Any | None = None
     for field_name in possible_fields:
         if field_name in message_dict and message_dict[field_name] is not None:

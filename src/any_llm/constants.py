@@ -5,6 +5,13 @@ from any_llm.exceptions import UnsupportedProviderError
 
 INSIDE_NOTEBOOK = hasattr(builtins, "__IPYTHON__")
 
+REASONING_FIELD_NAMES = [
+    "reasoning_content",
+    "thinking",
+    "think",
+    "chain_of_thought",
+]
+
 
 class LLMProvider(StrEnum):
     """String enum for supported providers."""
