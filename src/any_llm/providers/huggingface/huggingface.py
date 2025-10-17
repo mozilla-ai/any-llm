@@ -19,9 +19,8 @@ try:
     from huggingface_hub import AsyncInferenceClient, HfApi
 
     from any_llm.utils.reasoning import (
-        find_reasoning_tag,
-        is_partial_reasoning_tag,
         normalize_reasoning_from_provider_fields_and_xml_tags,
+        process_streaming_reasoning_chunks,
     )
 
     from .utils import (
@@ -114,62 +113,28 @@ class HuggingfaceProvider(AnyLLM):
     ) -> AsyncIterator[ChatCompletionChunk]:
         response: AsyncIterator[HuggingFaceChatCompletionStreamOutput] = await self.client.chat_completion(**kwargs)
 
-        buffer = ""
-        current_tag = None
-        reasoning_buffer = ""
+        async def chunk_iterator() -> AsyncIterator[ChatCompletionChunk]:
+            async for chunk in response:
+                yield self._convert_completion_chunk_response(chunk)
 
-        async for chunk in response:
-            original_chunk = self._convert_completion_chunk_response(chunk)
+        def get_content(chunk: ChatCompletionChunk) -> str | None:
+            return chunk.choices[0].delta.content if len(chunk.choices) > 0 else None
 
-            if not (len(original_chunk.choices) > 0 and original_chunk.choices[0].delta.content):
-                yield original_chunk
-                continue
+        def set_content(chunk: ChatCompletionChunk, content: str | None) -> ChatCompletionChunk:
+            chunk.choices[0].delta.content = content
+            return chunk
 
-            buffer += original_chunk.choices[0].delta.content
-            content_parts = []
-            reasoning_parts = []
+        def set_reasoning(chunk: ChatCompletionChunk, reasoning: str) -> ChatCompletionChunk:
+            chunk.choices[0].delta.reasoning = Reasoning(content=reasoning)
+            return chunk
 
-            while buffer:
-                if current_tag is None:
-                    tag_info = find_reasoning_tag(buffer, opening=True)
-                    if tag_info:
-                        tag_start, tag_name = tag_info
-                        if tag_start > 0:
-                            content_parts.append(buffer[:tag_start])
-                        tag_full = f"<{tag_name}>"
-                        buffer = buffer[tag_start + len(tag_full) :]
-                        current_tag = tag_name
-                    elif is_partial_reasoning_tag(buffer, opening=True):
-                        break
-                    else:
-                        content_parts.append(buffer)
-                        buffer = ""
-                else:
-                    tag_close = f"</{current_tag}>"
-                    tag_end = buffer.find(tag_close)
-                    if tag_end != -1:
-                        reasoning_parts.append(reasoning_buffer + buffer[:tag_end])
-                        reasoning_buffer = ""
-                        buffer = buffer[tag_end + len(tag_close) :]
-                        current_tag = None
-                    elif is_partial_reasoning_tag(buffer, opening=False):
-                        reasoning_buffer += buffer
-                        buffer = ""
-                        break
-                    else:
-                        reasoning_buffer += buffer
-                        buffer = ""
-
-            if content_parts or reasoning_parts:
-                modified_chunk = original_chunk.model_copy(deep=True)
-                modified_chunk.choices[0].delta.content = "".join(content_parts) if content_parts else None
-                if reasoning_parts:
-                    modified_chunk.choices[0].delta.reasoning = Reasoning(content="".join(reasoning_parts))
-                yield modified_chunk
-            elif not buffer:
-                modified_chunk = original_chunk.model_copy(deep=True)
-                modified_chunk.choices[0].delta.content = None
-                yield modified_chunk
+        async for chunk in process_streaming_reasoning_chunks(
+            chunk_iterator(),
+            get_content=get_content,
+            set_content=set_content,
+            set_reasoning=set_reasoning,
+        ):
+            yield chunk
 
     async def _acompletion(
         self,
