@@ -103,13 +103,13 @@ async def process_streaming_reasoning_chunks(
                     buffer = ""
 
         if content_parts or reasoning_parts:
-            modified_chunk = original_chunk.model_copy(deep=True)
+            modified_chunk = original_chunk.model_copy(deep=True)  # type: ignore[attr-defined]
             modified_chunk = set_content(modified_chunk, "".join(content_parts) if content_parts else None)
             if reasoning_parts:
                 modified_chunk = set_reasoning(modified_chunk, "".join(reasoning_parts))
             yield modified_chunk
         elif not buffer:
-            modified_chunk = original_chunk.model_copy(deep=True)
+            modified_chunk = original_chunk.model_copy(deep=True)  # type: ignore[attr-defined]
             modified_chunk = set_content(modified_chunk, None)
             yield modified_chunk
 
