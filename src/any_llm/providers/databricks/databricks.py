@@ -11,3 +11,4 @@ class DatabricksProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_LIST_MODELS = False
+    SUPPORTS_COMPLETION_REASONING = True
