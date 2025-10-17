@@ -42,7 +42,7 @@ class TogetherProvider(AnyLLM):
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
-    SUPPORTS_COMPLETION_REASONING = False
+    SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_COMPLETION_IMAGE = True
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = False
@@ -114,7 +114,7 @@ class TogetherProvider(AnyLLM):
         messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> AsyncIterator[ChatCompletionChunk]:
-        """Handle streaming completion - extracted to avoid generator issues."""
+        """Handle streaming completion with reasoning support."""
         from typing import cast
 
         response = cast(
@@ -125,6 +125,7 @@ class TogetherProvider(AnyLLM):
                 **kwargs,
             ),
         )
+
         async for chunk in response:
             yield self._convert_completion_chunk_response(chunk)
 
