@@ -33,6 +33,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.HUGGINGFACE: "huggingface/tgi",
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
         LLMProvider.SAMBANOVA: "DeepSeek-R1-Distill-Llama-70B",
+        LLMProvider.TOGETHER: "OpenAI/gpt-oss-20B",
     }
 
 
