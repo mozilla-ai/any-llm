@@ -21,10 +21,6 @@ async def test_responses_async(
         llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_RESPONSES:
             pytest.skip(f"{provider.value} does not support responses, skipping")
-        if provider == LLMProvider.FIREWORKS:
-            pytest.skip(
-                "Fireworks responses API not returning reasoning field - known bug awaiting their fix (contact Nathan Brake for the email chain)"
-            )
         model_id = provider_reasoning_model_map[provider]
         result = await llm.aresponses(
             model_id,
