@@ -37,6 +37,7 @@ async def test_completion_reasoning(
                 LLMProvider.OPENROUTER,
                 LLMProvider.VERTEXAI,
                 LLMProvider.BEDROCK,
+                LLMProvider.PORTKEY,
             )
             else "auto",
         )
@@ -86,6 +87,7 @@ async def test_completion_reasoning_streaming(
                 LLMProvider.OPENROUTER,
                 LLMProvider.VERTEXAI,
                 LLMProvider.BEDROCK,
+                LLMProvider.PORTKEY,
             )
             else "auto",
         )
