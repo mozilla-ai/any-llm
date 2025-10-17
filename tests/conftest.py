@@ -29,6 +29,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.DEEPSEEK: "deepseek-reasoner",
         LLMProvider.MOONSHOT: "kimi-thinking-preview",
         LLMProvider.DATABRICKS: "databricks-gpt-oss-20b",  # Untested, needs to be verified once we get a Databricks account
+        LLMProvider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     }
 
 
