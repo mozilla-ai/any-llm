@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from any_llm.any_llm import AnyLLM
-from any_llm.constants import REASONING_FIELD_NAMES
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -19,11 +18,16 @@ MISSING_PACKAGES_ERROR = None
 try:
     from huggingface_hub import AsyncInferenceClient, HfApi
 
+    from any_llm.utils.reasoning import (
+        find_reasoning_tag,
+        is_partial_reasoning_tag,
+        normalize_reasoning_from_provider_fields_and_xml_tags,
+    )
+
     from .utils import (
         _convert_models_list,
         _convert_params,
         _create_openai_chunk_from_huggingface_chunk,
-        _normalize_reasoning_on_message,
     )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
@@ -104,34 +108,6 @@ class HuggingfaceProvider(AnyLLM):
             **kwargs,
         )
 
-    @staticmethod
-    def _find_reasoning_tag(text: str, opening: bool = True) -> tuple[int, str] | None:
-        """Find the first reasoning tag (opening or closing) in text.
-
-        Returns (position, tag_name) or None if no tag found.
-        """
-        earliest_pos = len(text)
-        earliest_tag = None
-
-        for tag_name in REASONING_FIELD_NAMES:
-            tag = f"<{tag_name}>" if opening else f"</{tag_name}>"
-            pos = text.find(tag)
-            if pos != -1 and pos < earliest_pos:
-                earliest_pos = pos
-                earliest_tag = tag_name
-
-        return (earliest_pos, earliest_tag) if earliest_tag else None
-
-    @staticmethod
-    def _is_partial_reasoning_tag(text: str, opening: bool = True) -> bool:
-        """Check if text could be the start of any reasoning tag."""
-        for tag_name in REASONING_FIELD_NAMES:
-            tag = f"<{tag_name}>" if opening else f"</{tag_name}>"
-            for i in range(1, len(tag) + 1):
-                if text.startswith(tag[:i]):
-                    return True
-        return False
-
     async def _stream_completion_async(
         self,
         **kwargs: Any,
@@ -155,7 +131,7 @@ class HuggingfaceProvider(AnyLLM):
 
             while buffer:
                 if current_tag is None:
-                    tag_info = self._find_reasoning_tag(buffer, opening=True)
+                    tag_info = find_reasoning_tag(buffer, opening=True)
                     if tag_info:
                         tag_start, tag_name = tag_info
                         if tag_start > 0:
@@ -163,7 +139,7 @@ class HuggingfaceProvider(AnyLLM):
                         tag_full = f"<{tag_name}>"
                         buffer = buffer[tag_start + len(tag_full) :]
                         current_tag = tag_name
-                    elif self._is_partial_reasoning_tag(buffer, opening=True):
+                    elif is_partial_reasoning_tag(buffer, opening=True):
                         break
                     else:
                         content_parts.append(buffer)
@@ -176,7 +152,7 @@ class HuggingfaceProvider(AnyLLM):
                         reasoning_buffer = ""
                         buffer = buffer[tag_end + len(tag_close) :]
                         current_tag = None
-                    elif self._is_partial_reasoning_tag(buffer, opening=False):
+                    elif is_partial_reasoning_tag(buffer, opening=False):
                         reasoning_buffer += buffer
                         buffer = ""
                         break
@@ -213,7 +189,7 @@ class HuggingfaceProvider(AnyLLM):
         for i, ch in enumerate(data.get("choices", [])):
             msg = ch.get("message", {})
 
-            _normalize_reasoning_on_message(msg)
+            normalize_reasoning_from_provider_fields_and_xml_tags(msg)
 
             reasoning_obj = None
             if msg.get("reasoning") and isinstance(msg["reasoning"], dict):

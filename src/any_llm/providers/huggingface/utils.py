@@ -1,4 +1,3 @@
-import re
 import uuid
 from collections.abc import Iterable
 from typing import Any, Literal, cast
@@ -9,7 +8,6 @@ from huggingface_hub.inference._generated.types import (  # type: ignore[attr-de
 )
 from openai.lib._parsing import type_to_response_format_param
 
-from any_llm.constants import REASONING_FIELD_NAMES
 from any_llm.types.completion import (
     ChatCompletionChunk,
     ChoiceDelta,
@@ -19,42 +17,7 @@ from any_llm.types.completion import (
     Reasoning,
 )
 from any_llm.types.model import Model
-
-
-def _normalize_reasoning_on_message(message_dict: dict[str, Any]) -> None:
-    """Mutate a message dict to extract reasoning from content tags and provider-specific fields."""
-    if isinstance(message_dict.get("reasoning"), dict) and "content" in message_dict["reasoning"]:
-        return
-
-    reasoning_content = None
-
-    for field_name in REASONING_FIELD_NAMES:
-        if field_name in message_dict and message_dict[field_name] is not None:
-            reasoning_content = message_dict[field_name]
-            break
-
-    if reasoning_content is None and isinstance(message_dict.get("reasoning"), str):
-        reasoning_content = message_dict["reasoning"]
-
-    content = message_dict.get("content")
-    if isinstance(content, str):
-        for tag_name in REASONING_FIELD_NAMES:
-            tag_open = f"<{tag_name}>"
-            tag_close = f"</{tag_name}>"
-            think_pattern = re.escape(tag_open) + r"(.*?)" + re.escape(tag_close)
-            matches = re.findall(think_pattern, content, re.DOTALL)
-            if matches:
-                extracted_reasoning = "\n".join(matches)
-                if reasoning_content:
-                    reasoning_content = f"{reasoning_content}\n{extracted_reasoning}"
-                else:
-                    reasoning_content = extracted_reasoning
-                content = re.sub(think_pattern, "", content, flags=re.DOTALL).strip()
-
-        message_dict["content"] = content
-
-    if reasoning_content is not None:
-        message_dict["reasoning"] = {"content": str(reasoning_content)}
+from any_llm.utils.reasoning import normalize_reasoning_from_provider_fields_and_xml_tags
 
 
 def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletionStreamOutput) -> ChatCompletionChunk:
@@ -78,7 +41,7 @@ def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletion
         if hasattr(hf_delta, "reasoning"):
             delta_dict["reasoning"] = hf_delta.reasoning
 
-        _normalize_reasoning_on_message(delta_dict)
+        normalize_reasoning_from_provider_fields_and_xml_tags(delta_dict)
 
         openai_role = None
         if delta_dict.get("role"):
