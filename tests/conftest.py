@@ -28,6 +28,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.COHERE: "command-a-reasoning-08-2025",
         LLMProvider.DEEPSEEK: "deepseek-reasoner",
         LLMProvider.MOONSHOT: "kimi-thinking-preview",
+        LLMProvider.DATABRICKS: "databricks-gpt-oss-20b",  # Untested, needs to be verified once we get a Databricks account
     }
 
 
@@ -37,7 +38,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.MISTRAL: "mistral-small-latest",
         LLMProvider.ANTHROPIC: "claude-3-5-haiku-latest",
-        LLMProvider.DATABRICKS: "databricks-meta-llama-3-1-8b-instruct",
+        LLMProvider.DATABRICKS: "databricks-meta-llama-3-1-8b-instruct",  # Untested, needs to be verified once we get a Databricks account
         LLMProvider.DEEPSEEK: "deepseek-chat",
         LLMProvider.OPENAI: "gpt-5-nano",
         LLMProvider.GEMINI: "gemini-2.5-flash",
