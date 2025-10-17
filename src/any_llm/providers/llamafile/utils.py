@@ -1,5 +1,3 @@
-from typing import Any
-
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 
 from any_llm.providers.openai.utils import _normalize_openai_dict_response

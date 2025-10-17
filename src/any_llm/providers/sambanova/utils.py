@@ -1,9 +1,6 @@
-from typing import Any
-
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 
-from any_llm.logging import logger
 from any_llm.providers.openai.utils import _normalize_openai_dict_response
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 from any_llm.utils.reasoning import normalize_reasoning_from_provider_fields_and_xml_tags
