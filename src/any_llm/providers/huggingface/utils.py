@@ -9,7 +9,7 @@ from huggingface_hub.inference._generated.types import (  # type: ignore[attr-de
 )
 from openai.lib._parsing import type_to_response_format_param
 
-from any_llm.constants import REASONING_FIELD_NAMES, REASONING_FIELD_NAMES
+from any_llm.constants import REASONING_FIELD_NAMES
 from any_llm.types.completion import (
     ChatCompletionChunk,
     ChoiceDelta,
