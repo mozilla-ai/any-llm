@@ -34,6 +34,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
         LLMProvider.SAMBANOVA: "DeepSeek-R1-Distill-Llama-70B",
         LLMProvider.TOGETHER: "OpenAI/gpt-oss-20B",
+        LLMProvider.PORTKEY: "@anthropic/claude-3-7-sonnet-latest",
     }
 
 

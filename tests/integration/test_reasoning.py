@@ -37,10 +37,13 @@ async def test_completion_reasoning(
                 LLMProvider.OPENROUTER,
                 LLMProvider.VERTEXAI,
                 LLMProvider.BEDROCK,
+                LLMProvider.PORTKEY,
                 LLMProvider.SAMBANOVA,
                 LLMProvider.TOGETHER,
+                LLMProvider.PORTKEY,
             )
             else "auto",
+            max_tokens=100,  # Portkey with anthropic needed a max tokens value to be set (because it's an anthropic model)
         )
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:
@@ -88,10 +91,12 @@ async def test_completion_reasoning_streaming(
                 LLMProvider.OPENROUTER,
                 LLMProvider.VERTEXAI,
                 LLMProvider.BEDROCK,
+                LLMProvider.PORTKEY,
                 LLMProvider.SAMBANOVA,
                 LLMProvider.TOGETHER,
             )
             else "auto",
+            max_tokens=100,  # Portkey with anthropic needed a max tokens value to be set (because it's an anthropic model)
         )
         assert isinstance(results, AsyncIterable)
         async for result in results:
