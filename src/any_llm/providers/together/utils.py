@@ -14,7 +14,9 @@ from any_llm.types.completion import (
     ChoiceDeltaToolCallFunction,
     ChunkChoice,
     CompletionUsage,
+    Reasoning,
 )
+from any_llm.utils.reasoning import normalize_reasoning_from_provider_fields_and_xml_tags
 
 
 def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatCompletionChunk) -> ChatCompletionChunk:
@@ -25,17 +27,20 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
         delta_content = choice.delta
         content = None
         role = None
+        reasoning = None
 
         if delta_content:
             content = delta_content.content
             if delta_content.role:  # type: ignore[attr-defined]
                 role = cast("Literal['assistant', 'user', 'system']", delta_content.role)  # type: ignore[attr-defined]
+            if hasattr(delta_content, "reasoning") and delta_content.reasoning:
+                reasoning = Reasoning(content=delta_content.reasoning)
 
-        delta = ChoiceDelta(content=content, role=role)
+        delta = ChoiceDelta(content=content, role=role, reasoning=reasoning)
 
-        if delta_content and delta_content.tool_calls:  # type: ignore[attr-defined]
+        if delta_content and hasattr(delta_content, "tool_calls") and delta_content.tool_calls:
             openai_tool_calls = []
-            for tool_call in delta_content.tool_calls:  # type: ignore[attr-defined]
+            for tool_call in delta_content.tool_calls:
                 openai_tool_call = ChoiceDeltaToolCall(
                     index=0,
                     id=str(uuid.uuid4()),
@@ -82,10 +87,13 @@ def _convert_together_response_to_chat_completion(response_data: dict[str, Any],
     for i, ch in enumerate(response_data.get("choices", [])):
         msg = ch.get("message", {})
 
+        normalize_reasoning_from_provider_fields_and_xml_tags(msg)
+
         message = ChatCompletionMessage(
             role=cast("Literal['assistant']", msg.get("role")),
             content=msg.get("content"),
             tool_calls=msg.get("tool_calls"),
+            reasoning=msg.get("reasoning"),
         )
         choices_out.append(
             Choice(

@@ -32,6 +32,8 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         LLMProvider.HUGGINGFACE: "huggingface/tgi",
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
+        LLMProvider.SAMBANOVA: "DeepSeek-R1-Distill-Llama-70B",
+        LLMProvider.TOGETHER: "OpenAI/gpt-oss-20B",
     }
 
 
@@ -77,7 +79,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
 def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict[LLMProvider, str]:
     return {
         **provider_model_map,
-        LLMProvider.WATSONX: "mistralai/pixtral-12b",
+        LLMProvider.WATSONX: "meta-llama/llama-guard-3-11b-vision",
         LLMProvider.SAMBANOVA: "Llama-4-Maverick-17B-128E-Instruct",
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
         LLMProvider.OPENROUTER: "mistralai/mistral-small-3.2-24b-instruct:free",

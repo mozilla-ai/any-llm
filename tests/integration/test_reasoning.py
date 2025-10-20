@@ -38,6 +38,8 @@ async def test_completion_reasoning(
                 LLMProvider.VERTEXAI,
                 LLMProvider.BEDROCK,
                 LLMProvider.PORTKEY,
+                LLMProvider.SAMBANOVA,
+                LLMProvider.TOGETHER,
             )
             else "auto",
         )
@@ -88,6 +90,8 @@ async def test_completion_reasoning_streaming(
                 LLMProvider.VERTEXAI,
                 LLMProvider.BEDROCK,
                 LLMProvider.PORTKEY,
+                LLMProvider.SAMBANOVA,
+                LLMProvider.TOGETHER,
             )
             else "auto",
         )
