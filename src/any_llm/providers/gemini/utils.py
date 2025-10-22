@@ -9,6 +9,7 @@ from any_llm.types.completion import (
     ChatCompletionChunk,
     ChoiceDelta,
     ChunkChoice,
+    CompletionUsage,
     CreateEmbeddingResponse,
     Embedding,
     Reasoning,
@@ -260,12 +261,21 @@ def _create_openai_chunk_from_google_chunk(
         finish_reason="stop" if getattr(candidate.finish_reason, "value", None) == "STOP" else None,
     )
 
+    usage = None
+    if hasattr(response, "usage_metadata") and response.usage_metadata:
+        usage = CompletionUsage(
+            prompt_tokens=getattr(response.usage_metadata, "prompt_token_count", 0),
+            completion_tokens=getattr(response.usage_metadata, "candidates_token_count", 0),
+            total_tokens=getattr(response.usage_metadata, "total_token_count", 0),
+        )
+
     return ChatCompletionChunk(
         id=f"chatcmpl-{time()}",
         choices=[choice],
         created=int(time()),
         model=str(response.model_version),
         object="chat.completion.chunk",
+        usage=usage,
     )
 
 
