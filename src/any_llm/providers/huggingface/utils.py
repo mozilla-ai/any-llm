@@ -99,9 +99,6 @@ def _convert_params(params: CompletionParams, **kwargs: dict[str, Any]) -> dict[
     # timeout is passed to the client instantiation, should not reach the `client.chat_completion` call.
     result_kwargs.pop("timeout", None)
 
-    if params.max_tokens is not None:
-        result_kwargs["max_new_tokens"] = params.max_tokens
-
     if params.reasoning_effort == "auto":
         params.reasoning_effort = None
 
@@ -111,7 +108,7 @@ def _convert_params(params: CompletionParams, **kwargs: dict[str, Any]) -> dict[
     result_kwargs.update(
         params.model_dump(
             exclude_none=True,
-            exclude={"max_tokens", "model_id", "messages", "response_format", "parallel_tool_calls"},
+            exclude={"model_id", "messages", "response_format", "parallel_tool_calls"},
         )
     )
 
