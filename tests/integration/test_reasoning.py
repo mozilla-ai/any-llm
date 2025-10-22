@@ -44,7 +44,9 @@ async def test_completion_reasoning(
                 LLMProvider.PORTKEY,
             )
             else "auto",
-            max_tokens=DEFAULT_MAX_TOKENS,  # Portkey with anthropic needed a max tokens value to be set (because it's an anthropic model)
+            max_tokens=4999
+            if LLMProvider.FIREWORKS == provider
+            else DEFAULT_MAX_TOKENS,  # Fireworks forces streaming if max_tokens is 5000+, Portkey with anthropic needed a max tokens value to be set (because it's an anthropic model)
         )
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:
@@ -97,7 +99,9 @@ async def test_completion_reasoning_streaming(
                 LLMProvider.TOGETHER,
             )
             else "auto",
-            max_tokens=DEFAULT_MAX_TOKENS,  # Portkey with anthropic needed a max tokens value to be set (because it's an anthropic model)
+            max_tokens=4999
+            if LLMProvider.FIREWORKS == provider
+            else DEFAULT_MAX_TOKENS,  # Fireworks forces streaming if max_tokens is 5000+, Portkey with anthropic needed a max tokens value to be set (because it's an anthropic model)
         )
         assert isinstance(results, AsyncIterable)
         async for result in results:
