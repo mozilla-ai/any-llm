@@ -262,11 +262,11 @@ def _create_openai_chunk_from_google_chunk(
     )
 
     usage = None
-    if hasattr(response, "usage_metadata") and response.usage_metadata:
+    if response.usage_metadata:
         usage = CompletionUsage(
-            prompt_tokens=getattr(response.usage_metadata, "prompt_token_count", 0),
-            completion_tokens=getattr(response.usage_metadata, "candidates_token_count", 0),
-            total_tokens=getattr(response.usage_metadata, "total_token_count", 0),
+            prompt_tokens=response.usage_metadata.prompt_token_count or 0,
+            completion_tokens=response.usage_metadata.candidates_token_count or 0,
+            total_tokens=response.usage_metadata.total_token_count or 0,
         )
 
     return ChatCompletionChunk(
