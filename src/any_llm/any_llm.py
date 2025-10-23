@@ -9,9 +9,11 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
+from any_llm.logging import logger
+from any_llm.providers.any_api import AnyAPIProvider
 from any_llm.tools import prepare_tools
 from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, CompletionParams
-from any_llm.types.provider import ProviderMetadata
+from any_llm.types.provider import AnyAPIKey, ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
 
@@ -82,6 +84,8 @@ class AnyLLM(ABC):
     For example, in `gemini` provider, this could include `google.genai.types.Tool`.
     """
 
+    ANY_API_KEY: str = "ANY_API_KEY"
+
     def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self._verify_no_missing_packages()
         self._init_client(
@@ -107,7 +111,8 @@ class AnyLLM(ABC):
 
     @classmethod
     def create(
-        cls, provider: str | LLMProvider, api_key: str | None = None, api_base: str | None = None, **kwargs: Any
+        cls, provider: str | LLMProvider, api_key: str | None = None, api_base: str | None = None,
+        project_id: str | None = None, **kwargs: Any
     ) -> AnyLLM:
         """Create a provider instance using the given provider name and config.
 
@@ -115,17 +120,19 @@ class AnyLLM(ABC):
             provider: The provider name (e.g., 'openai', 'anthropic')
             api_key: API key for the provider
             api_base: Base URL for the provider API
+            project_id: The ID of the any-api project you want to associate this request to.
             **kwargs: Additional provider-specific arguments
 
         Returns:
             Provider instance for the specified provider
 
         """
-        return cls._create_provider(provider, api_key=api_key, api_base=api_base, **kwargs)
+        return cls._create_provider(provider, api_key=api_key, api_base=api_base, project_id=project_id, **kwargs)
 
     @classmethod
     def _create_provider(
-        cls, provider_key: str | LLMProvider, api_key: str | None = None, api_base: str | None = None, **kwargs: Any
+        cls, provider_key: str | LLMProvider, api_key: str | None = None, api_base: str | None = None,
+        project_id: str | None = None, **kwargs: Any
     ) -> AnyLLM:
         """Dynamically load and create an instance of a provider based on the naming convention."""
         provider_key = LLMProvider.from_string(provider_key).value
@@ -142,6 +149,25 @@ class AnyLLM(ABC):
             raise ImportError(msg) from e
 
         provider_class: type[AnyLLM] = getattr(module, provider_class_name)
+
+        if api_key:
+            try:
+                # Validate if the key conforms with the any-api format.
+                # If it does, any-llm must ask any-api for the corresponding provider key.
+                AnyAPIKey(api_key=api_key)
+
+                # The user must currently pass the Project ID associated with the provider key.
+                # This is required because unauthenticated users cannot retrieve project data from the any-api.
+                if not project_id:
+                    msg = "Please provide the any-api project ID you want to use."
+                    raise RuntimeError(msg)
+                return AnyAPIProvider.prepare(
+                    provider_class, any_api_key=api_key, project_id=project_id, api_base=api_base, **kwargs)
+            except ValueError:
+                msg = ("The provided API key does not conform with the any-api format. "
+                       "Passing it as is directly to the corresponding provider.")
+                logger.info(msg)
+
         return provider_class(api_key=api_key, api_base=api_base, **kwargs)
 
     @classmethod

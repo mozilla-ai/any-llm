@@ -13,7 +13,10 @@ dependencies = [
   "openai>=1.99.3",
   "rich",
   "httpx",
-  "typing-extensions"
+  "typing-extensions",
+  "bcrypt>=5.0.0",
+  "cryptography>=46.0.3",
+  "pynacl>=1.6.0",
 ]
 
 [project.optional-dependencies]
