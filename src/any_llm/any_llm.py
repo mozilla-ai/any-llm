@@ -82,6 +82,8 @@ class AnyLLM(ABC):
     For example, in `gemini` provider, this could include `google.genai.types.Tool`.
     """
 
+    ANY_API_KEY = "ANY_API_KEY"
+
     def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self._verify_no_missing_packages()
         self._init_client(
@@ -142,6 +144,11 @@ class AnyLLM(ABC):
             raise ImportError(msg) from e
 
         provider_class: type[AnyLLM] = getattr(module, provider_class_name)
+        if any_api_key := os.getenv(cls.ANY_API_KEY):
+            from any_llm.providers.any_api import AnyAPI
+
+            return AnyAPI(provider_class, any_api_key=any_api_key, api_base=api_base, **kwargs)
+
         return provider_class(api_key=api_key, api_base=api_base, **kwargs)
 
     @classmethod
