@@ -79,7 +79,7 @@ A model discovery tool that helps you find AI models across different providers:
 ### Requirements
 
 - Python 3.11 or newer
-- API_KEYS to access to whichever LLM you choose to use.
+- API_KEYS to access whichever LLM you choose to use.
 
 ### Installation
 
