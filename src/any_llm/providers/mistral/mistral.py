@@ -59,8 +59,17 @@ class MistralProvider(AnyLLM):
         converted_params = params.model_dump(
             exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}
         )
+        converted_params["messages"] = _patch_messages(params.messages)
+
+        if params.response_format is not None:
+            if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
+                converted_params["response_format"] = response_format_from_pydantic_model(params.response_format)
+            elif isinstance(params.response_format, dict):
+                converted_params["response_format"] = ResponseFormat.model_validate(params.response_format)
+
         if converted_params.get("reasoning_effort") == "auto":
             converted_params.pop("reasoning_effort")
+
         converted_params.update(kwargs)
         return converted_params
 
@@ -111,31 +120,16 @@ class MistralProvider(AnyLLM):
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        patched_messages = _patch_messages(params.messages)
-
-        if params.reasoning_effort == "auto":
-            params.reasoning_effort = None
-
-        if params.response_format is not None:
-            # Pydantic model
-            if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
-                kwargs["response_format"] = response_format_from_pydantic_model(params.response_format)
-            # Dictionary in OpenAI format
-            elif isinstance(params.response_format, dict):
-                kwargs["response_format"] = ResponseFormat.model_validate(params.response_format)
-
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 
         if params.stream:
             return self._stream_completion_async(
                 params.model_id,
-                patched_messages,
                 **completion_kwargs,
             )
 
         response = await self.client.chat.complete_async(
             model=params.model_id,
-            messages=patched_messages,  # type: ignore[arg-type]
             **completion_kwargs,
         )
 
