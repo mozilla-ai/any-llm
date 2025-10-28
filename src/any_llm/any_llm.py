@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
     from pydantic import BaseModel
 
+    from any_llm.types.batch import Batch
     from any_llm.types.completion import (
         ChatCompletionChunk,
         CreateEmbeddingResponse,
@@ -64,6 +65,9 @@ class AnyLLM(ABC):
 
     SUPPORTS_LIST_MODELS: bool
     """OpenAI Models API"""
+
+    SUPPORTS_BATCH: bool
+    """OpenAI Batch Completion API"""
 
     API_BASE: str | None = None
     """This is used to set the API base for the provider.
@@ -294,6 +298,7 @@ class AnyLLM(ABC):
             embedding=cls.SUPPORTS_EMBEDDING,
             responses=cls.SUPPORTS_RESPONSES,
             list_models=cls.SUPPORTS_LIST_MODELS,
+            batch_completion=cls.SUPPORTS_BATCH,
             class_name=cls.__name__,
         )
 
@@ -506,4 +511,158 @@ class AnyLLM(ABC):
             msg = "Provider doesn't support listing models."
             raise NotImplementedError(msg)
         msg = "Subclasses must implement _alist_models method"
+        raise NotImplementedError(msg)
+
+    def create_batch(self, **kwargs: Any) -> Batch:
+        """Create a batch synchronously.
+
+        See [AnyLLM.acreate_batch][any_llm.any_llm.AnyLLM.acreate_batch]
+        """
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(self.acreate_batch(**kwargs), allow_running_loop=allow_running_loop)
+
+    async def acreate_batch(
+        self,
+        input_file_path: str,
+        endpoint: str,
+        completion_window: str = "24h",
+        metadata: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> Batch:
+        """Create a batch job asynchronously.
+
+        Args:
+            input_file_path: Path to a local file containing batch requests in JSONL format.
+                The file will be automatically uploaded before creating the batch.
+            endpoint: The endpoint to be used for all requests (e.g., '/v1/chat/completions')
+            completion_window: The time frame within which the batch should be processed (default: '24h')
+            metadata: Optional custom metadata for the batch
+            **kwargs: Additional provider-specific arguments
+
+        Returns:
+            The created batch object
+
+        """
+        return await self._acreate_batch(
+            input_file_path=input_file_path,
+            endpoint=endpoint,
+            completion_window=completion_window,
+            metadata=metadata,
+            **kwargs,
+        )
+
+    async def _acreate_batch(
+        self,
+        input_file_path: str,
+        endpoint: str,
+        completion_window: str = "24h",
+        metadata: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> Batch:
+        if not self.SUPPORTS_BATCH:
+            msg = "Provider doesn't support batch completions."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _acreate_batch method"
+        raise NotImplementedError(msg)
+
+    def retrieve_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Retrieve a batch synchronously.
+
+        See [AnyLLM.aretrieve_batch][any_llm.any_llm.AnyLLM.aretrieve_batch]
+        """
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(self.aretrieve_batch(batch_id, **kwargs), allow_running_loop=allow_running_loop)
+
+    async def aretrieve_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Retrieve a batch job asynchronously.
+
+        Args:
+            batch_id: The ID of the batch to retrieve
+            **kwargs: Additional provider-specific arguments
+
+        Returns:
+            The batch object
+
+        """
+        return await self._aretrieve_batch(batch_id, **kwargs)
+
+    async def _aretrieve_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        if not self.SUPPORTS_BATCH:
+            msg = "Provider doesn't support batch completions."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _aretrieve_batch method"
+        raise NotImplementedError(msg)
+
+    def cancel_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Cancel a batch synchronously.
+
+        See [AnyLLM.acancel_batch][any_llm.any_llm.AnyLLM.acancel_batch]
+        """
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(self.acancel_batch(batch_id, **kwargs), allow_running_loop=allow_running_loop)
+
+    async def acancel_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Cancel a batch job asynchronously.
+
+        Args:
+            batch_id: The ID of the batch to cancel
+            **kwargs: Additional provider-specific arguments
+
+        Returns:
+            The cancelled batch object
+
+        """
+        return await self._acancel_batch(batch_id, **kwargs)
+
+    async def _acancel_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        if not self.SUPPORTS_BATCH:
+            msg = "Provider doesn't support batch completions."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _acancel_batch method"
+        raise NotImplementedError(msg)
+
+    def list_batches(
+        self,
+        after: str | None = None,
+        limit: int | None = None,
+        **kwargs: Any,
+    ) -> Sequence[Batch]:
+        """List batches synchronously.
+
+        See [AnyLLM.alist_batches][any_llm.any_llm.AnyLLM.alist_batches]
+        """
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(
+            self.alist_batches(after=after, limit=limit, **kwargs), allow_running_loop=allow_running_loop
+        )
+
+    async def alist_batches(
+        self,
+        after: str | None = None,
+        limit: int | None = None,
+        **kwargs: Any,
+    ) -> Sequence[Batch]:
+        """List batch jobs asynchronously.
+
+        Args:
+            after: A cursor for pagination. Returns batches after this batch ID.
+            limit: Maximum number of batches to return (default: 20)
+            **kwargs: Additional provider-specific arguments
+
+        Returns:
+            A list of batch objects
+
+        """
+        return await self._alist_batches(after=after, limit=limit, **kwargs)
+
+    async def _alist_batches(
+        self,
+        after: str | None = None,
+        limit: int | None = None,
+        **kwargs: Any,
+    ) -> Sequence[Batch]:
+        if not self.SUPPORTS_BATCH:
+            msg = "Provider doesn't support batch completions."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _alist_batches method"
         raise NotImplementedError(msg)
