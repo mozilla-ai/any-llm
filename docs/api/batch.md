@@ -1,5 +1,8 @@
 # Batch
 
+!!! warning "Experimental API"
+    The Batch API is experimental and subject to breaking changes in future versions. Use with caution in production environments.
+
 The Batch API allows you to process multiple requests asynchronously at a lower cost.
 
 ## File Path Interface

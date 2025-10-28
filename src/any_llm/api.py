@@ -9,6 +9,7 @@ from any_llm.types.batch import Batch
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, CreateEmbeddingResponse
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
+from any_llm.utils.decorators import BATCH_API_EXPERIMENTAL_MESSAGE, experimental
 
 
 def completion(
@@ -442,6 +443,7 @@ async def alist_models(
     return await llm.alist_models(**kwargs)
 
 
+@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
 def create_batch(
     provider: str | LLMProvider,
     input_file_path: str,
@@ -482,6 +484,7 @@ def create_batch(
     )
 
 
+@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
 async def acreate_batch(
     provider: str | LLMProvider,
     input_file_path: str,
@@ -522,6 +525,7 @@ async def acreate_batch(
     )
 
 
+@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
 def retrieve_batch(
     provider: str | LLMProvider,
     batch_id: str,
@@ -549,6 +553,7 @@ def retrieve_batch(
     return llm.retrieve_batch(batch_id, **kwargs)
 
 
+@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
 async def aretrieve_batch(
     provider: str | LLMProvider,
     batch_id: str,
@@ -576,6 +581,7 @@ async def aretrieve_batch(
     return await llm.aretrieve_batch(batch_id, **kwargs)
 
 
+@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
 def cancel_batch(
     provider: str | LLMProvider,
     batch_id: str,
@@ -603,6 +609,7 @@ def cancel_batch(
     return llm.cancel_batch(batch_id, **kwargs)
 
 
+@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
 async def acancel_batch(
     provider: str | LLMProvider,
     batch_id: str,
@@ -630,6 +637,7 @@ async def acancel_batch(
     return await llm.acancel_batch(batch_id, **kwargs)
 
 
+@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
 def list_batches(
     provider: str | LLMProvider,
     *,
@@ -659,6 +667,7 @@ def list_batches(
     return llm.list_batches(after=after, limit=limit, **kwargs)
 
 
+@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
 async def alist_batches(
     provider: str | LLMProvider,
     *,
