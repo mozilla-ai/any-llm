@@ -461,7 +461,6 @@ def create_batch(
     Args:
         provider: Provider name to use for the request (e.g., 'openai', 'mistral')
         input_file_path: Path to a local file containing batch requests in JSONL format.
-            The file will be automatically uploaded before creating the batch.
         endpoint: The endpoint to be used for all requests (e.g., '/v1/chat/completions')
         completion_window: The time frame within which the batch should be processed (default: '24h')
         metadata: Optional custom metadata for the batch
@@ -502,7 +501,6 @@ async def acreate_batch(
     Args:
         provider: Provider name to use for the request (e.g., 'openai', 'mistral')
         input_file_path: Path to a local file containing batch requests in JSONL format.
-            The file will be automatically uploaded before creating the batch.
         endpoint: The endpoint to be used for all requests (e.g., '/v1/chat/completions')
         completion_window: The time frame within which the batch should be processed (default: '24h')
         metadata: Optional custom metadata for the batch
