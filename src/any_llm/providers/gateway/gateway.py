@@ -30,11 +30,12 @@ class GatewayProvider(BaseOpenAIProvider):
         api_key = self._verify_and_set_api_key(api_key)
         if api_key:
             if not kwargs:
-                kwargs = {}
-            elif kwargs.get("extra_headers", {}).get(GATEWAY_HEADER_NAME):
+                # if passed into client init, the parameters
+                kwargs = {"default_headers": {}}
+            elif kwargs.get("default_headers", {}).get(GATEWAY_HEADER_NAME):
                 msg = f"{GATEWAY_HEADER_NAME} header is already set, overriding with new API key"
                 logger.info(msg)
-            kwargs["extra_headers"][GATEWAY_HEADER_NAME] = f"Bearer {api_key}"
+            kwargs["default_headers"][GATEWAY_HEADER_NAME] = f"Bearer {api_key}"
         super().__init__(api_key=api_key, api_base=api_base, **kwargs)
 
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
