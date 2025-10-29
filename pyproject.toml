@@ -19,7 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 
 all = [
-  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,cohere,cerebras,fireworks,groq,bedrock,azure,azureopenai,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,perplexity,llamafile,llamacpp,sagemaker]"
+  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,cohere,cerebras,fireworks,groq,bedrock,azure,azureopenai,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,perplexity,llamafile,llamacpp,sagemaker,zai]"
 ]
 
 perplexity = []
@@ -86,6 +86,10 @@ xai = [
 
 sagemaker = [
   "boto3",
+]
+
+zai = [
+  "zai-sdk>=0.0.4"
 ]
 
 # These providers don't require any additional dependencies, but are included for completeness.
