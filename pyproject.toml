@@ -19,7 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 
 all = [
-  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,cohere,cerebras,fireworks,groq,bedrock,azure,azureopenai,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,perplexity,llamafile,llamacpp,sagemaker]"
+  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,cohere,cerebras,fireworks,groq,bedrock,azure,azureopenai,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,perplexity,llamafile,llamacpp,sagemaker,minimax]"
 ]
 
 perplexity = []
@@ -104,6 +104,7 @@ openai = []
 openrouter = []
 portkey = []
 sambanova = []
+minimax = []
 
 [project.urls]
 Documentation = "https://mozilla-ai.github.io/any-llm/"
