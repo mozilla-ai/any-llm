@@ -74,6 +74,8 @@ async def test_all_providers_can_be_loaded(provider: str) -> None:
     if provider == "vertexai":
         kwargs["project"] = "test-project"
         kwargs["location"] = "test-location"
+    if provider == "gateway":
+        kwargs["api_base"] = "http://127.0.0.1:8080/v1"
 
     provider_instance = AnyLLM.create(provider, **kwargs)
 
@@ -122,6 +124,8 @@ async def test_provider_factory_can_create_all_supported_providers() -> None:
             kwargs["location"] = "test-location"
         if provider_name == "sagemaker":
             continue
+        if provider_name == "gateway":
+            kwargs["api_base"] = "http://127.0.0.1:8080/v1"
         provider_instance = AnyLLM.create(provider_name, **kwargs)
 
         assert isinstance(provider_instance, AnyLLM), f"Failed to create valid AnyLLM instance for {provider_name}"
