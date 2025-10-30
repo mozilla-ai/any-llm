@@ -2,7 +2,13 @@ import os
 
 from any_llm.constants import LLMProvider
 
-LOCAL_PROVIDERS = [LLMProvider.LLAMACPP, LLMProvider.OLLAMA, LLMProvider.LMSTUDIO, LLMProvider.LLAMAFILE]
+LOCAL_PROVIDERS = [
+    LLMProvider.LLAMACPP,
+    LLMProvider.OLLAMA,
+    LLMProvider.LMSTUDIO,
+    LLMProvider.LLAMAFILE,
+    LLMProvider.GATEWAY,
+]
 
 EXPECTED_PROVIDERS = os.environ.get("EXPECTED_PROVIDERS", "").split(",")
 
