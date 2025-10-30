@@ -49,6 +49,7 @@ class LLMProvider(StrEnum):
     XAI = "xai"
     PERPLEXITY = "perplexity"
     ZAI = "zai"
+    GATEWAY = "gateway"
 
     @classmethod
     def from_string(cls, value: "str | LLMProvider") -> "LLMProvider":
