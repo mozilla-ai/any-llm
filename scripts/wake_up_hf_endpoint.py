@@ -17,8 +17,6 @@ def wake_up_hf_endpoint(retry_count: int = 0, retry_interval: int = 10):
             completion(
                 model="huggingface:tgi", messages=[{"role": "user", "content": "Are you awake?"}], api_base=HF_ENDPOINT
             )
-            print("Endpoint ready")
-            return
         except ClientResponseError as e:
             attempt += 1
             if attempt >= max_attempts:
@@ -27,6 +25,9 @@ def wake_up_hf_endpoint(retry_count: int = 0, retry_interval: int = 10):
 
             print(f"Endpoint not ready (attempt {attempt}/{max_attempts}), retrying in {retry_interval}s...\n{e}")
             time.sleep(retry_interval)
+        else:
+            print("Endpoint ready")
+            return
 
 
 if __name__ == "__main__":
