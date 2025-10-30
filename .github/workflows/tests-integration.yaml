@@ -23,7 +23,7 @@ jobs:
     steps:
       - name: Set expected providers for integration tests
         id: set_providers
-        run: echo "expected_providers=anthropic,bedrock,cerebras,cohere,databricks,deepseek,fireworks,gemini,groq,huggingface,inception,llama,mistral,moonshot,nebius,openai,openrouter,perplexity,portkey,together,sambanova,voyage,xai,zai" >> $GITHUB_OUTPUT
+        run: echo "expected_providers=anthropic,bedrock,cerebras,cohere,databricks,deepseek,fireworks,gemini,groq,huggingface,inception,llama,mistral,moonshot,nebius,openai,openrouter,perplexity,portkey,together,sambanova,voyage,xai,zai,minimax" >> $GITHUB_OUTPUT
 
       - name: Set expected providers for local integration tests
         id: set_local_providers
@@ -79,6 +79,7 @@ jobs:
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
           EXPECTED_PROVIDERS: ${{ needs.expected-providers.outputs.providers }}
           INCLUDE_LOCAL_PROVIDERS: "false"
         run: |

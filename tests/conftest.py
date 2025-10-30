@@ -36,6 +36,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.SAMBANOVA: "DeepSeek-R1-Distill-Llama-70B",
         LLMProvider.TOGETHER: "OpenAI/gpt-oss-20B",
         LLMProvider.PORTKEY: "@anthropic/claude-3-7-sonnet-latest",
+        LLMProvider.MINIMAX: "MiniMax-M2",
         LLMProvider.ZAI: "glm-4.5-flash",
     }
 
@@ -76,6 +77,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.PERPLEXITY: "sonar",
         LLMProvider.OPENROUTER: "meta-llama/llama-3.3-8b-instruct:free",
         LLMProvider.LLAMACPP: "N/A",
+        LLMProvider.MINIMAX: "MiniMax-M2",
         LLMProvider.ZAI: "glm-4-32b-0414-128k",
     }
 
