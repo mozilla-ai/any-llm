@@ -1,94 +1,205 @@
-# Contributing to mozilla.ai any-llm
+# Contributing to any-llm
 
-Thank you for your interest in contributing to this repository! This project supports the mozilla.ai goal of empowering choice and transparency when it comes to LLM usage and selection.
+Thank you for your interest in contributing to any-llm! 🎉 
 
-We welcome all kinds of contributions, from improving customization, to extending capabilities, to fixing bugs. Whether you’re an experienced developer or just starting out, your support is highly appreciated.
+We're building a simple, unified interface for working with multiple LLM providers, and we welcome contributions from developers of all experience levels. Whether you're fixing a typo, adding a new provider, or improving our architecture, your help is appreciated.
 
-## **Guidelines for Contributions**
+## Before You Start
 
-### Ground Rules
+### Check for Duplicates
 
-- Review issue discussion fully before starting work. Engage in the thread first when an issue is under discussion.
-- PRs must build on agreed direction where ones exist. If there is no agreed direction, seek consensus from the core maintainers.
-- PRs with "drive-by" unrelated changes or untested refactors will be closed.
-- Untested or failing code is not eligible for review.
-- PR description *must* follow the PR template and explain *what* changed, *why*, and *how to test*.
-- Links to related issues are required.
-- Duplicate PRs will be automatically closed.
-- Only have 1-2 PRs open at a time. Any further PRs will be closed.
+Before creating a new issue or starting work:
+- [ ] Search [existing issues](https://github.com/mozilla-ai/any-llm/issues) for duplicates
+- [ ] Check [open pull requests](https://github.com/mozilla-ai/any-llm/pulls) to see if someone is already working on it
+- [ ] For bugs, verify it still exists in the `main` branch
 
-**Maintainers reserve the right to close issues and PRs that do not align with the library roadmap.**
+### Discuss Major Changes First
 
-### Code Clarity and Style
-- **Readability first:** Code must be self-documenting—if it is not self-explanatory, it should include clear, concise comments where logic is non-obvious.
-- **Consistent Style:** Follow existing codebase style (e.g., function naming, docstring format)
-- **No dead/debug code:** Remove commented-out blocks, leftover print statements, unrelated refactors
-- Failure modes must be documented and handled with robust exception handling.
+For significant changes, please open an issue **before** starting work:
 
-For more details on writing self-documenting code, check out [this guide](https://swimm.io/learn/documentation-tools/tips-for-creating-self-documenting-code).
+- New provider integrations
+- API changes or new public methods
+- Architectural changes
+- Breaking changes
+- New dependencies
 
-### Testing Requirements
-- **Coverage:** All new functionality must include unit tests covering both happy paths and relevant edge cases.
-- **Passing tests:** pre-commit must pass with all checks (see below on how to run).
-- **No silent failures:** Tests should fail loudly on errors. No `assert True` placeholders.
+**Use the `rfc` label** for design discussions. This ensures alignment with project goals and saves everyone time.
 
-### Scope and Size
-- **One purpose per PR:** No kitchen-sink PRs mixing bugfixes, refactors, and features.
-- **Small, reviewable chunks:** If your PR is too large to review in under 30 minutes, break it up into chunks.
-    - Each chunk must be independently testable and reviewable
-    - If you can't explain why it can't be split, expect an automatic request for refactoring.
-- Pull requests that are **large** (>500 LOC changed) or span multiple subsystems will be closed with automatic requests for refactoring.
-- If the PR is to implement a new feature, please first make a GitHub issue to suggest the feature and allow for discussion. We reserve the right to close feature implementations and request discussion via an issue.
+### Read Our Code of Conduct
 
-## **Local Setup**
+All contributors must follow our [Code of Conduct](CODE_OF_CONDUCT.md). We're committed to maintaining a welcoming, inclusive community.
 
-**Install**
+## Development Setup
 
-We recommend to use [uv](https://docs.astral.sh/uv/getting-started/installation/):
+### Prerequisites
 
-```
+- **Python 3.11 or newer**
+- **Git**
+- **uv** (or your preferred package manager)
+- **API keys** for any providers you want to test
+
+### Quick Start
+We recommend using [uv](https://docs.astral.sh/uv/getting-started/installation/) as your Python package and project manager.
+
+```bash
+# 1. Fork the repository on GitHub
+# Click the "Fork" button at https://github.com/mozilla-ai/any-llm
+
+# 2. Clone your fork
+git clone https://github.com/YOUR_USERNAME/any-llm.git
+cd any-llm
+
+# 3. Add upstream remote
+git remote add upstream https://github.com/mozilla-ai/any-llm.git
+
+# 4. Create a virtual environment
 uv venv
-source .venv/bin/activate
+source .venv/bin/activate  
 uv sync --all-extras -U --python=3.13
-```
 
-**Lint**
-
-Ensure all the checks pass:
-
-```bash
+# 5. Ensure all checks pass
 uv run pre-commit run --all-files --verbose
-```
 
-**Tests**
-
-Test changes locally to ensure functionality.
-
-```bash
+# 7. Verify your setup
 pytest -v tests/unit
 pytest -v tests/integration -n auto
 
-**Docs**
+```
 
-Update docs for changes to functionality and maintain consistency with existing docs.
+### Setting Up API Keys
+
+Create a `.env` file in the project root (this file is gitignored):
+
+```bash
+# Add keys for providers you want to test
+OPENAI_API_KEY=your_key_here
+ANTHROPIC_API_KEY=your_key_here
+MISTRAL_API_KEY=your_key_here
+# Add others as needed
+```
+
+Alternatively, export environment variables:
+
+```bash
+export OPENAI_API_KEY="your_key_here"
+```
+
+**⚠️ Never commit API keys!** Always use environment variables or `.env` files.
+
+## Making Changes
+
+### 1. Create a Branch
+
+Always work on a feature branch, never directly on `main`:
+
+```bash
+# Update your main branch
+git checkout main
+git pull upstream main
+
+# Create a new branch
+git checkout -b feature/your-feature-name
+# or
+git checkout -b fix/bug-description
+```
+
+Branch naming conventions:
+- `feature/` - New features
+- `fix/` - Bug fixes
+- `docs/` - Documentation changes
+- `provider/` - New provider integrations
+- `refactor/` - Code improvements without behavior changes
+
+### 2. Make Changes
+Make your changes! Read our [Implementation Checklist](#2-implementation-checklist) if adding a new provider
+
+### 3. Write Tests
+
+**Every change needs tests!** This is non-negotiable.
+
+#### Test Requirements
+
+- **New features**: Add tests covering happy path and error cases
+- **Bug fixes**: Add a test that reproduces the bug
+- **Provider integrations**: Comprehensive test suite required
+- **Target**: Minimum 85% coverage for new code
+
+
+### 4. Update Documentation
+
+Documentation is as important as code!
+
+Update when you:
+- Add a new feature
+- Change existing behavior
+- Add a new provider
+- Fix a bug that affects usage
+
+Documentation to update:
+- **Docstrings** in code (required)
+- **README.md** if changing core functionality
+- **docs/providers.md** when adding providers
 
 ```bash
 mkdocs serve
 ```
 
-## **Adding A New Provider**
+### 5. Commit Your Changes
 
-### Step 1: Provider Class
-Providers should go in the `any_llm/providers` folder. It should have the following directory structure:
+Write clear, descriptive commit messages:
+
+```bash
+# Good commit messages
+git commit -m "Add support for Anthropic Claude 3.5 Sonnet"
+git commit -m "Fix streaming response handling for OpenAI"
+git commit -m "Update documentation for Azure OpenAI configuration"
+
+# Less helpful commit messages (avoid these)
+git commit -m "fix bug"
+git commit -m "update"
+git commit -m "wip"
+```
+
+## Adding a New Provider
+
+Adding provider support is a major contribution! Here's the complete process:
+
+### 1. Check Requirements
+
+Before requesting or implementing:
+
+- [ ] Provider has an official Python SDK **OR** well-documented REST API
+- [ ] Provider is actively maintained and supported
+- [ ] Provider has substantial user base or unique capabilities
+- [ ] Provider's interface is compatible with any-llm's design
+- [ ] No existing issue/PR for adding this provider
+
+
+### 2. Implementation Checklist
+
+Implement the provider keeping this checklist in mind:
 
 ```
-📂 <your_provider>/
- ├── 📄 __init__.py        # Re-exports your provider class
- ├── 📄 your_provider.py   # Main provider implementation
- └── 📁 ...                # Any extra files (utils, configs, etc.)
+any_llm/
+├── providers/
+│   ├── 📂 <your_provider>/
+│   │   ├── 📄 __init__.py
+│   │   ├── 📄 your_provider.py   # Main provider implementation
+│   │   ├── 📁 ...                # Any extra files (utils, configs, etc.)
 ```
 
-At minimum, the `__init__.py` file should contain this:
+**Required Implementation**:
+
+- [ ] Create provider module in `any_llm/providers/`<br>
+In `src/any_llm/provider.py`, add a field to `ProviderName` for your provider.
+- [ ] Handle provider-specific errors gracefully
+- [ ] Add type hints and docstrings
+- [ ] Use official SDK when available
+- [ ] Add to `pyproject.toml` optional dependencies
+- [ ] Add provider to `any_llm/__init__.py` <br>
+<p>
+
+At minimum, the `__init__.py` file should contain :
 
 ```python
 from any_llm.your_provider.your_provider import YourProvider
@@ -98,19 +209,16 @@ __all__ = ["YourProvider"]
 
 Providers must inherit from the `Provider` class found in `any_llm.provider`. All abstract methods must be implemented and class variables must be set.
 
-#### OpenAI API Compatible Providers
-If you are using an OpenAI API compatible client, you can inherit from [BaseOpenAIProvider](https://github.com/mozilla-ai/any-llm/blob/main/src/any_llm/providers/openai/base.py). See the [LMStudio Provider](https://github.com/mozilla-ai/any-llm/blob/main/src/any_llm/providers/lmstudio/lmstudio.py) for an example.
+**Testing Requirements**:
 
-### Step 2: Add `ProviderName`
-In `src/any_llm/provider.py`, add a field to `ProviderName` for your provider.
+- [ ] Unit tests for all provider functions
+- [ ] Integration tests with real API (mocked in CI)
+- [ ] Error handling tests
+- [ ] Streaming tests (if applicable)
+- [ ] Test suite in `tests/unit/providers`
+- [ ] Minimum 85% coverage for provider code
 
-### Step 3: Add Tests
-
-Unit and integration tests must be added for each new provider.
-
-Unit tests should be added to `tests/unit/providers`.
-
-Integration tests are run on a matrix and configs can be added to `tests/conftest.py`. Here is what you need to update:
+Add your test config to the following in `tests/conftest.py`:
 
 | Variable                                                                                                                                           | Notes                                                                                                    |
 | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -119,9 +227,119 @@ Integration tests are run on a matrix and configs can be added to `tests/conftes
 | [embedding_provider_model_map](https://github.com/mozilla-ai/any-llm/blob/2aa7401a857c65efe94f9af7d2d7503330b63ab9/tests/conftest.py#L60C5-L60C33) | Default embedding model                                                                                  |
 | [provider_client_config](https://github.com/mozilla-ai/any-llm/blob/2aa7401a857c65efe94f9af7d2d7503330b63ab9/tests/conftest.py#L79)             | Extra kwargs to pass to provider factory. Include things like `base_url` here. DO NOT include `api_key`. |
 
-🗒️ NOTE: Use the smallest reasonable possible models. Choice of model may be changed by core contributors.
 
-### Notes and Gotchas
+**Documentation Requirements**:
 
-- Not all APIs support the parameters given by the `any-llm` completions, embeddings, and responses APIs, functions. If this is the case for your provider, make sure to add checks and raise a `ParameterError` if any unsupported parameters are passed. Be extra careful about this if you are making OpenAI API compatible provider.
-- Your provider may require specific keyword arguments in its instantiation (for example, `base_url` for some cloud providers). If this is the case, make sure to validate upon provider instantiation and note in the docstring.
+- [ ] Add to `docs/providers.md` with available capabilities. 
+- [ ] Update installation instructions.
+
+
+## Submitting Your Contribution
+
+### 1. Push to Your Fork
+
+```bash
+# Commit your changes
+git add .
+git commit -m "feat: add support for Example provider"
+
+# Push to your fork
+git push origin feature/example-provider
+```
+
+### 2. Create a Pull Request
+
+1. Go to https://github.com/mozilla-ai/any-llm
+2. Click "New Pull Request"
+3. Click "compare across forks"
+4. Select your fork and branch
+5. Fill out the [PR template](pull_request_template.md) completely
+6. Click "Create Pull Request"
+
+
+## Review Process
+
+### What to Expect
+
+1. **Initial Response**: Within **5 business days**
+2. **Simple Fixes**: Usually merged within **1 week**
+3. **Complex Features**: May take **2-3 weeks** for thorough review
+4. **Provider Integrations**: Often require **2-3 review cycles**
+
+### During Review
+
+- Maintainers will provide constructive feedback
+- Address comments with new commits (don't force push)
+- Ask questions if feedback is unclear
+- Be patient and respectful
+- CI must pass before merge
+
+### If Your PR Goes Stale
+
+- No activity for **30+ days** may result in closure
+- You can always reopen and continue later
+- Let us know if you need help finishing
+- We can find another contributor to complete it
+
+
+## Your First Contribution
+
+New to open source? Welcome! Here's how to get started:
+
+### Step 1: Find an Issue
+
+Look for issues labeled:
+- `good-first-issue` - Perfect for newcomers
+- `help-wanted` - Community contributions welcome
+- `documentation` - Often accessible for beginners
+
+### Step 2: Claim the Issue
+
+Comment on the issue:
+> "Hi! I'd like to work on this. Is it still available?"
+
+We'll assign it to you and provide guidance.
+
+### Step 3: Ask Questions Early
+
+Don't spend days stuck! Ask questions:
+- In the issue comments
+- In GitHub Discussions
+- Tag `@maintainers` if needed
+
+### Step 4: Start Small
+
+Your first PR doesn't have to be perfect:
+- Fix a typo
+- Improve documentation
+- Add a test
+- Fix a small bug
+
+### Step 5: Learn and Grow
+
+Every expert was once a beginner. We're here to help you grow as a contributor!
+
+## Code of Conduct
+
+This project follows Mozilla's [Community Participation Guidelines](https://www.mozilla.org/about/governance/policies/participation/).
+
+In brief:
+- **Be respectful and inclusive**
+- **Focus on constructive feedback**
+- **Help create a welcoming environment**
+- **Report concerns** to maintainers
+
+See our full [Code of Conduct](CODE_OF_CONDUCT.md) for details.
+
+## Questions?
+
+- 💬 Open a [GitHub Discussion](https://github.com/mozilla-ai/any-llm/discussions)
+- 🐛 Report a [Bug](https://github.com/mozilla-ai/any-llm/issues/new?template=bug_report.md)
+- 💡 Request a [Feature](https://github.com/mozilla-ai/any-llm/issues/new?template=feature_request.md)
+
+
+We're excited to have you as part of the any-llm community! 🚀
+
+---
+
+**License**: By contributing, you agree that your contributions will be licensed under the same license as the project (see [LICENSE](LICENSE) file).
