@@ -9,6 +9,7 @@ from any_llm.exceptions import MissingApiKeyError
 from any_llm.types.model import Model
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
+
 @pytest.mark.asyncio
 async def test_list_models(provider: LLMProvider, provider_client_config: dict[LLMProvider, dict[str, Any]]) -> None:
     """Test that all supported providers can be loaded successfully."""
