@@ -144,88 +144,55 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-llamafile-
 
-      - name: Skip consolidated local job (replaced by per-provider jobs)
-        run: echo "Local tests are now split per provider."
+      - name: Setup Ollama
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
+        uses: ai-action/setup-ollama@v1
 
-  run-local-ollama-tests:
-    needs: [expected-providers, determine-jobs-to-run]
-    if: needs.determine-jobs-to-run.outputs.should_run_local == 'true' && (github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama'))
-    timeout-minutes: 45
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: astral-sh/setup-uv@v7
-        with:
-          python-version: 3.13
-          activate-environment: true
-
-      - name: Install dependencies
+      - name: Run ollama
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
         run: |
-          uv sync --group tests --extra all
+          ollama serve &
+          ollama pull llama3.2:1b
+          ollama pull qwen3:0.6b
+          ollama pull qwen3-vl:2b
 
-      - name: Start Ollama container
+      - name: Wait for Ollama to be ready
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
         run: |
-          docker run -d --name ollama -p 11434:11434 ollama/ollama:latest
           timeout 60 bash -c 'until curl -s http://localhost:11434/api/tags >/dev/null; do sleep 1; done'
-          docker exec ollama ollama pull llama3.2:1b
-          docker exec ollama ollama pull qwen3:0.6b
-          docker exec ollama ollama pull qwen3-vl:2b
 
-      - name: Run Ollama integration tests
-        env:
-          INCLUDE_LOCAL_PROVIDERS: "true"
-          INCLUDE_NON_LOCAL_PROVIDERS: "false"
+      - name: Download and Run LlamaFile
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamafile')
         run: |
-          if [ -n "${{ inputs.filter }}" ]; then
-            pytest tests/integration -v --cov --cov-report=xml -k "${{ inputs.filter }}" || [ $? -eq 5 ]
+          mkdir -p ~/.llamafile
+          LLAMAFILE_PATH="$HOME/.llamafile/Qwen_Qwen3-0.6B-Q4_K_M.llamafile"
+
+          if [ ! -f "$LLAMAFILE_PATH" ]; then
+            echo "Downloading llamafile (not found in cache)..."
+            wget -O "$LLAMAFILE_PATH" https://huggingface.co/Mozilla/Qwen3-0.6B-llamafile/resolve/main/Qwen_Qwen3-0.6B-Q4_K_M.llamafile
+            chmod +x "$LLAMAFILE_PATH"
           else
-            pytest tests/integration -v --cov --cov-report=xml -k "ollama" || [ $? -eq 5 ]
+            echo "Using cached llamafile"
           fi
 
-      - name: Upload coverage reports to Codecov
-        if: always()
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          "$LLAMAFILE_PATH" --server --v2 &
+          echo $! > llamafile.pid
 
-  run-local-llamafile-tests:
-    needs: [expected-providers, determine-jobs-to-run]
-    if: needs.determine-jobs-to-run.outputs.should_run_local == 'true' && (github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamafile'))
-    timeout-minutes: 45
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: astral-sh/setup-uv@v7
-        with:
-          python-version: 3.13
-          activate-environment: true
-
-      - name: Install dependencies
+      - name: Wait for LlamaFile to be ready
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamafile')
         run: |
-          uv sync --group tests --extra all
-
-      - name: Start LlamaFile container
-        run: |
-          docker run -d --name llamafile -p 8080:8080 debian:bookworm-slim bash -lc '
-            set -e;
-            apt-get update && apt-get install -y wget ca-certificates curl;
-            mkdir -p /root/.llamafile;
-            LLAMAFILE_PATH=/root/.llamafile/Qwen_Qwen3-0.6B-Q4_K_M.llamafile;
-            wget -O "$LLAMAFILE_PATH" https://huggingface.co/Mozilla/Qwen3-0.6B-llamafile/resolve/main/Qwen_Qwen3-0.6B-Q4_K_M.llamafile;
-            chmod +x "$LLAMAFILE_PATH";
-            "$LLAMAFILE_PATH" --server --v2 &
-            while ! curl -s http://localhost:8080/v1/models >/dev/null; do sleep 1; done;
-            wait
-          '
-          # Give the server a moment to initialize networking
-          sleep 2
           timeout 60 bash -c 'until curl -s http://localhost:8080/v1/models >/dev/null; do sleep 1; done'
 
-      - name: Run LlamaFile integration tests
+      - name : Download and Run LlamaCpp
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamacpp')
+        run: docker run -d -p 8090:8090 ghcr.io/ggml-org/llama.cpp:server -hf ggml-org/Qwen3-1.7B-GGUF --jinja --port 8090
+
+      - name: Wait for LlamaCpp to be ready
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamacpp')
+        run: |
+          timeout 60 bash -c 'until curl -s http://localhost:8090/health >/dev/null; do sleep 1; done'
+
+      - name: Run Local Provider Integration tests
         env:
           INCLUDE_LOCAL_PROVIDERS: "true"
           INCLUDE_NON_LOCAL_PROVIDERS: "false"
@@ -233,47 +200,15 @@ jobs:
           if [ -n "${{ inputs.filter }}" ]; then
             pytest tests/integration -v --cov --cov-report=xml -k "${{ inputs.filter }}" || [ $? -eq 5 ]
           else
-            pytest tests/integration -v --cov --cov-report=xml -k "llamafile" || [ $? -eq 5 ]
+            pytest tests/integration -v --cov --cov-report=xml || [ $? -eq 5 ]
           fi
 
-      - name: Upload coverage reports to Codecov
+      - name: Cleanup LlamaFile process
         if: always()
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-
-  run-local-llamacpp-tests:
-    needs: [expected-providers, determine-jobs-to-run]
-    if: needs.determine-jobs-to-run.outputs.should_run_local == 'true' && (github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamacpp'))
-    timeout-minutes: 45
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: astral-sh/setup-uv@v7
-        with:
-          python-version: 3.13
-          activate-environment: true
-
-      - name: Install dependencies
         run: |
-          uv sync --group tests --extra all
-
-      - name: Start llama.cpp container
-        run: |
-          docker run -d --name llamacpp -p 8090:8090 ghcr.io/ggml-org/llama.cpp:server -hf ggml-org/Qwen3-1.7B-GGUF --jinja --port 8090
-          timeout 120 bash -c 'until curl -s http://localhost:8090/health >/dev/null; do sleep 1; done'
-
-      - name: Run llama.cpp integration tests
-        env:
-          INCLUDE_LOCAL_PROVIDERS: "true"
-          INCLUDE_NON_LOCAL_PROVIDERS: "false"
-        run: |
-          if [ -n "${{ inputs.filter }}" ]; then
-            pytest tests/integration -v --cov --cov-report=xml -k "${{ inputs.filter }}" || [ $? -eq 5 ]
-          else
-            pytest tests/integration -v --cov --cov-report=xml -k "llamacpp" || [ $? -eq 5 ]
+          if [ -f llamafile.pid ]; then
+            kill $(cat llamafile.pid) || true
+            rm llamafile.pid
           fi
 
       - name: Upload coverage reports to Codecov
