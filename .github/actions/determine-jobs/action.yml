@@ -1,0 +1,69 @@
+name: 'Determine Jobs to Run'
+description: 'Determines which test jobs should run based on filter input'
+inputs:
+  filter:
+    description: 'The pytest filter string (-k argument)'
+    required: true
+  providers:
+    description: 'Comma-separated list of non-local providers'
+    required: true
+  local_providers:
+    description: 'Comma-separated list of local providers'
+    required: true
+outputs:
+  should_run_integration:
+    description: 'Whether the integration tests job should run'
+    value: ${{ steps.determine.outputs.should_run_integration }}
+  should_run_local:
+    description: 'Whether the local integration tests job should run'
+    value: ${{ steps.determine.outputs.should_run_local }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Determine which jobs should run
+      id: determine
+      shell: bash
+      run: |
+        FILTER="${{ inputs.filter }}"
+        PROVIDERS="${{ inputs.providers }}"
+        LOCAL_PROVIDERS="${{ inputs.local_providers }}"
+
+        echo "Filter input: '$FILTER'"
+
+        if [ -z "$FILTER" ]; then
+          echo "No filter provided, running all jobs"
+          echo "should_run_integration=true" >> $GITHUB_OUTPUT
+          echo "should_run_local=true" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        MATCHED_INTEGRATION=false
+        IFS=',' read -ra PROVIDER_ARRAY <<< "$PROVIDERS"
+        for provider in "${PROVIDER_ARRAY[@]}"; do
+          if [[ "$FILTER" == *"$provider"* ]]; then
+            echo "Filter matches integration provider: $provider"
+            MATCHED_INTEGRATION=true
+            break
+          fi
+        done
+
+        MATCHED_LOCAL=false
+        IFS=',' read -ra LOCAL_PROVIDER_ARRAY <<< "$LOCAL_PROVIDERS"
+        for provider in "${LOCAL_PROVIDER_ARRAY[@]}"; do
+          if [[ "$FILTER" == *"$provider"* ]]; then
+            echo "Filter matches local provider: $provider"
+            MATCHED_LOCAL=true
+            break
+          fi
+        done
+
+        if [ "$MATCHED_INTEGRATION" = false ] && [ "$MATCHED_LOCAL" = false ]; then
+          echo "Filter doesn't match any specific provider, treating as test function filter"
+          echo "Running all jobs to let pytest handle the filtering"
+          echo "should_run_integration=true" >> $GITHUB_OUTPUT
+          echo "should_run_local=true" >> $GITHUB_OUTPUT
+        else
+          echo "should_run_integration=$MATCHED_INTEGRATION" >> $GITHUB_OUTPUT
+          echo "should_run_local=$MATCHED_LOCAL" >> $GITHUB_OUTPUT
+        fi
