@@ -17,7 +17,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.GROQ: "openai/gpt-oss-20b",
         LLMProvider.FIREWORKS: "accounts/fireworks/models/gpt-oss-20b",
         LLMProvider.OPENAI: "gpt-5-nano",
-        LLMProvider.MISTRAL: "magistral-small-latest",
+        LLMProvider.MISTRAL: "magistral-medium-latest",
         LLMProvider.XAI: "grok-3-mini-latest",
         LLMProvider.OLLAMA: "qwen3:0.6b",
         LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
