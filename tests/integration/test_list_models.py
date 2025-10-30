@@ -9,8 +9,8 @@ from any_llm.exceptions import MissingApiKeyError
 from any_llm.types.model import Model
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
-
-def test_list_models(provider: LLMProvider, provider_client_config: dict[LLMProvider, dict[str, Any]]) -> None:
+@pytest.mark.asyncio
+async def test_list_models(provider: LLMProvider, provider_client_config: dict[LLMProvider, dict[str, Any]]) -> None:
     """Test that all supported providers can be loaded successfully."""
     try:
         config = provider_client_config.get(provider, {})
@@ -21,7 +21,7 @@ def test_list_models(provider: LLMProvider, provider_client_config: dict[LLMProv
         if not llm.SUPPORTS_LIST_MODELS:
             pytest.skip(f"{provider.value} does not support listing models, skipping")
 
-        available_models = llm.list_models()
+        available_models = await llm.alist_models()
         assert len(available_models) > 0
         assert isinstance(available_models, list)
         assert all(isinstance(model, Model) for model in available_models)
