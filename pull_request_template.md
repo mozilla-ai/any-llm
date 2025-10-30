@@ -24,9 +24,9 @@ Fixes #(issue)
 ## Changes Made
 <!-- Describe the changes in detail -->
 
-- 
-- 
-- 
+-
+-
+-
 
 ## Testing
 <!-- Describe the tests you ran to verify your changes -->

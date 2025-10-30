@@ -1,6 +1,6 @@
 # Contributing to any-llm
 
-Thank you for your interest in contributing to any-llm! 🎉 
+Thank you for your interest in contributing to any-llm! 🎉
 
 We're building a simple, unified interface for working with multiple LLM providers, and we welcome contributions from developers of all experience levels. Whether you're fixing a typo, adding a new provider, or improving our architecture, your help is appreciated.
 
@@ -54,7 +54,7 @@ git remote add upstream https://github.com/mozilla-ai/any-llm.git
 
 # 4. Create a virtual environment
 uv venv
-source .venv/bin/activate  
+source .venv/bin/activate
 uv sync --all-extras -U --python=3.13
 
 # 5. Ensure all checks pass
@@ -230,7 +230,7 @@ Add your test config to the following in `tests/conftest.py`:
 
 **Documentation Requirements**:
 
-- [ ] Add to `docs/providers.md` with available capabilities. 
+- [ ] Add to `docs/providers.md` with available capabilities.
 - [ ] Update installation instructions.
 
 
