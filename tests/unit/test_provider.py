@@ -147,6 +147,7 @@ def test_providers_raise_MissingApiKeyError(provider: LLMProvider) -> None:
         LLMProvider.OLLAMA,
         LLMProvider.SAGEMAKER,
         LLMProvider.VERTEXAI,
+        LLMProvider.GATEWAY,
     ):
         pytest.skip("This provider handles `api_key` differently.")
     with patch.dict(os.environ, {}, clear=True):

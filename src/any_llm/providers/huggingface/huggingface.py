@@ -11,11 +11,17 @@ from any_llm.types.completion import (
     CompletionParams,
     CompletionUsage,
     CreateEmbeddingResponse,
+    Reasoning,
 )
 
 MISSING_PACKAGES_ERROR = None
 try:
     from huggingface_hub import AsyncInferenceClient, HfApi
+
+    from any_llm.utils.reasoning import (
+        normalize_reasoning_from_provider_fields_and_xml_tags,
+        process_streaming_reasoning_chunks,
+    )
 
     from .utils import (
         _convert_models_list,
@@ -47,9 +53,10 @@ class HuggingfaceProvider(AnyLLM):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
-    SUPPORTS_COMPLETION_REASONING = False
+    SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
+    SUPPORTS_BATCH = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -107,8 +114,28 @@ class HuggingfaceProvider(AnyLLM):
     ) -> AsyncIterator[ChatCompletionChunk]:
         response: AsyncIterator[HuggingFaceChatCompletionStreamOutput] = await self.client.chat_completion(**kwargs)
 
-        async for chunk in response:
-            yield self._convert_completion_chunk_response(chunk)
+        async def chunk_iterator() -> AsyncIterator[ChatCompletionChunk]:
+            async for chunk in response:
+                yield self._convert_completion_chunk_response(chunk)
+
+        def get_content(chunk: ChatCompletionChunk) -> str | None:
+            return chunk.choices[0].delta.content if len(chunk.choices) > 0 else None
+
+        def set_content(chunk: ChatCompletionChunk, content: str | None) -> ChatCompletionChunk:
+            chunk.choices[0].delta.content = content
+            return chunk
+
+        def set_reasoning(chunk: ChatCompletionChunk, reasoning: str) -> ChatCompletionChunk:
+            chunk.choices[0].delta.reasoning = Reasoning(content=reasoning)
+            return chunk
+
+        async for chunk in process_streaming_reasoning_chunks(
+            chunk_iterator(),
+            get_content=get_content,
+            set_content=set_content,
+            set_reasoning=set_reasoning,
+        ):
+            yield chunk
 
     async def _acompletion(
         self,
@@ -127,10 +154,19 @@ class HuggingfaceProvider(AnyLLM):
         choices_out: list[Choice] = []
         for i, ch in enumerate(data.get("choices", [])):
             msg = ch.get("message", {})
+
+            normalize_reasoning_from_provider_fields_and_xml_tags(msg)
+
+            reasoning_obj = None
+            if msg.get("reasoning") and isinstance(msg["reasoning"], dict):
+                if "content" in msg["reasoning"]:
+                    reasoning_obj = Reasoning(content=msg["reasoning"]["content"])
+
             message = ChatCompletionMessage(
                 role="assistant",
                 content=msg.get("content"),
                 tool_calls=msg.get("tool_calls"),
+                reasoning=reasoning_obj,
             )
             choices_out.append(Choice(index=i, finish_reason=ch.get("finish_reason"), message=message))
 

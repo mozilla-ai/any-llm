@@ -396,3 +396,54 @@ async def test_gemini_with_built_in_tools() -> None:
         assert generation_config.tools is not None
         assert len(generation_config.tools) == 1
         assert generation_config.tools[0] == google_search
+
+
+@pytest.mark.asyncio
+async def test_streaming_completion_includes_usage_data() -> None:
+    """Test that streaming chunks include usage metadata when available."""
+    from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
+
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+    mock_response.candidates[0].content.parts = [Mock()]
+    mock_response.candidates[0].content.parts[0].text = "Hello"
+    mock_response.candidates[0].content.parts[0].thought = None
+    mock_response.candidates[0].finish_reason = Mock()
+    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.model_version = "gemini-2.5-flash"
+
+    mock_response.usage_metadata = Mock()
+    mock_response.usage_metadata.prompt_token_count = 10
+    mock_response.usage_metadata.candidates_token_count = 5
+    mock_response.usage_metadata.total_token_count = 15
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    assert chunk.usage is not None, "Usage data should be included in streaming chunks"
+    assert chunk.usage.prompt_tokens == 10
+    assert chunk.usage.completion_tokens == 5
+    assert chunk.usage.total_tokens == 15
+
+
+@pytest.mark.asyncio
+async def test_streaming_completion_without_usage_metadata() -> None:
+    """Test that streaming chunks handle missing usage metadata gracefully."""
+    from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
+
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+    mock_response.candidates[0].content.parts = [Mock()]
+    mock_response.candidates[0].content.parts[0].text = "Hello"
+    mock_response.candidates[0].content.parts[0].thought = None
+    mock_response.candidates[0].finish_reason = Mock()
+    mock_response.candidates[0].finish_reason.value = None
+    mock_response.model_version = "gemini-2.5-flash"
+
+    mock_response.usage_metadata = None
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    assert chunk.usage is None, "Usage should be None when metadata is not available"
+    assert chunk.choices[0].delta.content == "Hello"

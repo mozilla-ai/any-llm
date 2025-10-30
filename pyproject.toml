@@ -19,7 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 
 all = [
-  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,cohere,cerebras,fireworks,groq,bedrock,azure,azureopenai,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,perplexity,llamafile,llamacpp,sagemaker]"
+  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,cohere,cerebras,fireworks,groq,bedrock,azure,azureopenai,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,perplexity,llamafile,llamacpp,sagemaker,gateway,zai,minimax]"
 ]
 
 perplexity = []
@@ -88,6 +88,7 @@ sagemaker = [
   "boto3",
 ]
 
+
 # These providers don't require any additional dependencies, but are included for completeness.
 azureopenai = []
 databricks = []
@@ -104,6 +105,9 @@ openai = []
 openrouter = []
 portkey = []
 sambanova = []
+minimax = []
+gateway = []
+zai = []
 
 [project.urls]
 Documentation = "https://mozilla-ai.github.io/any-llm/"
@@ -198,6 +202,8 @@ filterwarnings = [
   "ignore:Pydantic V1 style `@validator` validators are deprecated:pydantic.warnings.PydanticDeprecatedSince20:fireworks\\.client\\.image_api",
   # Silence fireworks generated protos deprecation about BaseModelDetails.tunable only
   "ignore:BaseModelDetails\\.tunable is deprecated:DeprecationWarning:fireworks\\.control_plane\\.generated\\.protos\\.gateway.*",
+  # Silence model format deprecation warnings
+  "ignore:Model format 'provider/model' is deprecated:DeprecationWarning",
 ]
 
 [tool.coverage.run]
