@@ -12,6 +12,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.ANTHROPIC: "claude-sonnet-4-20250514",
         LLMProvider.MISTRAL: "magistral-small-latest",
         LLMProvider.GEMINI: "gemini-2.5-flash",
+        LLMProvider.GATEWAY: "gpt-5-nano",
         LLMProvider.VERTEXAI: "gemini-2.5-flash",
         LLMProvider.GROQ: "openai/gpt-oss-20b",
         LLMProvider.FIREWORKS: "accounts/fireworks/models/gpt-oss-20b",
@@ -35,6 +36,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.SAMBANOVA: "DeepSeek-R1-Distill-Llama-70B",
         LLMProvider.TOGETHER: "OpenAI/gpt-oss-20B",
         LLMProvider.PORTKEY: "@anthropic/claude-3-7-sonnet-latest",
+        LLMProvider.ZAI: "glm-4.5-flash",
     }
 
 
@@ -47,6 +49,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.DATABRICKS: "databricks-meta-llama-3-1-8b-instruct",  # Untested, needs to be verified once we get a Databricks account
         LLMProvider.DEEPSEEK: "deepseek-chat",
         LLMProvider.OPENAI: "gpt-5-nano",
+        LLMProvider.GATEWAY: "gpt-5-nano",
         LLMProvider.GEMINI: "gemini-2.5-flash",
         LLMProvider.VERTEXAI: "gemini-2.5-flash",
         LLMProvider.MOONSHOT: "moonshot-v1-8k",
@@ -73,6 +76,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.PERPLEXITY: "sonar",
         LLMProvider.OPENROUTER: "meta-llama/llama-3.3-8b-instruct:free",
         LLMProvider.LLAMACPP: "N/A",
+        LLMProvider.ZAI: "glm-4-32b-0414-128k",
     }
 
 
@@ -108,6 +112,7 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.AZUREOPENAI: "azure/<your_deployment_name>",
         LLMProvider.VOYAGE: "voyage-3.5-lite",
         LLMProvider.LLAMACPP: "N/A",
+        LLMProvider.GATEWAY: "text-embedding-ada-002",
     }
 
 
@@ -122,6 +127,7 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.CEREBRAS: {"timeout": 10},
         LLMProvider.COHERE: {"timeout": 10},
         LLMProvider.DATABRICKS: {"api_base": "https://dbc-ec667410-1149.cloud.databricks.com/serving-endpoints"},
+        LLMProvider.GATEWAY: {"api_base": "http://127.0.0.1:3000", "timeout": 1},
         LLMProvider.GROQ: {"timeout": 10},
         LLMProvider.HUGGINGFACE: {"api_base": "https://y0okp71n85ezo5nr.us-east-1.aws.endpoints.huggingface.cloud/v1/"},
         LLMProvider.LLAMACPP: {"api_base": "http://127.0.0.1:8090/v1"},

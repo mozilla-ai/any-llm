@@ -48,6 +48,7 @@ class LLMProvider(StrEnum):
     WATSONX = "watsonx"
     XAI = "xai"
     PERPLEXITY = "perplexity"
+    ZAI = "zai"
     GATEWAY = "gateway"
 
     @classmethod
