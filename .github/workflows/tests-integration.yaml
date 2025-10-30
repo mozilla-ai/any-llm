@@ -185,7 +185,7 @@ jobs:
 
       - name : Download and Run LlamaCpp
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamacpp')
-        run: docker run -d -p 8090:8090 ghcr.io/ggml-org/llama.cpp:server -hf ggml-org/Qwen3-1.7B-GGUF --jinja --port 8090
+        run: docker run -d -p 8090:8090 ghcr.io/ggml-org/llama.cpp:server -hf ggml-org/Qwen3-1.7B-GGUF --jinja --port 8090 --platform linux/arm64
 
       - name: Wait for LlamaCpp to be ready
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamacpp')
