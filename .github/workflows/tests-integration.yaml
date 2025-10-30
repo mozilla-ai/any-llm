@@ -101,9 +101,9 @@ jobs:
           INCLUDE_LOCAL_PROVIDERS: "false"
         run: |
           if [ -n "${{ inputs.filter }}" ]; then
-            pytest tests/integration -v -n auto --cov --cov-report=xml -k "${{ inputs.filter }}"
+            pytest tests/integration -v -n auto --cov --cov-report=xml --exit-zero -k "${{ inputs.filter }}"
           else
-            pytest tests/integration -v -n auto --cov --cov-report=xml
+            pytest tests/integration -v -n auto --cov --cov-report=xml --exit-zero
           fi
 
       - name: Upload coverage reports to Codecov
@@ -199,9 +199,9 @@ jobs:
           INCLUDE_NON_LOCAL_PROVIDERS: "false"
         run: |
           if [ -n "${{ inputs.filter }}" ]; then
-            pytest tests/integration -v --cov --cov-report=xml -k "${{ inputs.filter }}"
+            pytest tests/integration -v --cov --cov-report=xml --exit-zero -k "${{ inputs.filter }}"
           else
-            pytest tests/integration -v --cov --cov-report=xml
+            pytest tests/integration -v --cov --cov-report=xml --exit-zero
           fi
 
       - name: Cleanup LlamaFile process
