@@ -2,6 +2,7 @@ import argparse
 import time
 
 from aiohttp.client_exceptions import ClientResponseError
+from huggingface_hub.errors import HfHubHTTPError
 
 from any_llm.api import completion
 
@@ -17,7 +18,7 @@ def wake_up_hf_endpoint(retry_count: int = 0, retry_interval: int = 10):
             completion(
                 model="huggingface:tgi", messages=[{"role": "user", "content": "Are you awake?"}], api_base=HF_ENDPOINT
             )
-        except ClientResponseError as e:
+        except (ClientResponseError, HfHubHTTPError) as e:
             attempt += 1
             if attempt >= max_attempts:
                 print(f"Endpoint not ready after {attempt} attempts, giving up...\n{e}")
