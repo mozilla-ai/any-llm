@@ -5,7 +5,7 @@ from any_llm.providers.deepseek.utils import _preprocess_messages
 from any_llm.types.completion import CompletionParams
 
 
-class TestResponseFormat(BaseModel):
+class PersonResponseFormat(BaseModel):
     name: str
     age: int
 
@@ -17,7 +17,7 @@ async def test_preprocess_messages_with_pydantic_model() -> None:
     params = CompletionParams(
         model_id="deepseek-chat",
         messages=messages,
-        response_format=TestResponseFormat,
+        response_format=PersonResponseFormat,
     )
 
     processed_params = _preprocess_messages(params)
