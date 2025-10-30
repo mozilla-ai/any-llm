@@ -29,9 +29,62 @@ jobs:
         id: set_local_providers
         run: echo "expected_providers=ollama,llamacpp,llamafile" >> $GITHUB_OUTPUT
 
-  run-integration-tests:
+  determine-jobs-to-run:
     needs: expected-providers
-    if: github.event.inputs.filter == '' || contains(needs.expected-providers.outputs.providers, github.event.inputs.filter)
+    runs-on: ubuntu-latest
+    outputs:
+      should_run_integration: ${{ steps.check_filter.outputs.should_run_integration }}
+      should_run_local: ${{ steps.check_filter.outputs.should_run_local }}
+    steps:
+      - name: Determine which jobs should run based on filter
+        id: check_filter
+        run: |
+          FILTER="${{ github.event.inputs.filter }}"
+          PROVIDERS="${{ needs.expected-providers.outputs.providers }}"
+          LOCAL_PROVIDERS="${{ needs.expected-providers.outputs.local_providers }}"
+
+          echo "Filter input: '$FILTER'"
+
+          if [ -z "$FILTER" ]; then
+            echo "No filter provided, running all jobs"
+            echo "should_run_integration=true" >> $GITHUB_OUTPUT
+            echo "should_run_local=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          MATCHED_INTEGRATION=false
+          IFS=',' read -ra PROVIDER_ARRAY <<< "$PROVIDERS"
+          for provider in "${PROVIDER_ARRAY[@]}"; do
+            if echo "$FILTER" | grep -qE "(^|[^a-zA-Z0-9_])${provider}([^a-zA-Z0-9_]|$)"; then
+              echo "Filter matches integration provider: $provider"
+              MATCHED_INTEGRATION=true
+              break
+            fi
+          done
+
+          MATCHED_LOCAL=false
+          IFS=',' read -ra LOCAL_PROVIDER_ARRAY <<< "$LOCAL_PROVIDERS"
+          for provider in "${LOCAL_PROVIDER_ARRAY[@]}"; do
+            if echo "$FILTER" | grep -qE "(^|[^a-zA-Z0-9_])${provider}([^a-zA-Z0-9_]|$)"; then
+              echo "Filter matches local provider: $provider"
+              MATCHED_LOCAL=true
+              break
+            fi
+          done
+
+          if [ "$MATCHED_INTEGRATION" = false ] && [ "$MATCHED_LOCAL" = false ]; then
+            echo "Filter doesn't match any specific provider, treating as test function filter"
+            echo "Running all jobs to let pytest handle the filtering"
+            echo "should_run_integration=true" >> $GITHUB_OUTPUT
+            echo "should_run_local=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_run_integration=$MATCHED_INTEGRATION" >> $GITHUB_OUTPUT
+            echo "should_run_local=$MATCHED_LOCAL" >> $GITHUB_OUTPUT
+          fi
+
+  run-integration-tests:
+    needs: [expected-providers, determine-jobs-to-run]
+    if: needs.determine-jobs-to-run.outputs.should_run_integration == 'true'
     timeout-minutes: 30
     runs-on: ubuntu-latest
 
@@ -96,8 +149,8 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
   run-local-integration-tests:
-    needs: expected-providers
-    if: github.event.inputs.filter == '' || contains(needs.expected-providers.outputs.local_providers, github.event.inputs.filter)
+    needs: [expected-providers, determine-jobs-to-run]
+    if: needs.determine-jobs-to-run.outputs.should_run_local == 'true'
     timeout-minutes: 45
     runs-on: ubuntu-latest
 
