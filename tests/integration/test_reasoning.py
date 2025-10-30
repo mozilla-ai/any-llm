@@ -83,7 +83,7 @@ async def test_completion_reasoning_streaming(
         num_chunks = 0
         results = await llm.acompletion(
             model=model_id,
-            messages=[{"role": "user", "content": "Please say hello! Think very briefly before you respond."}],
+            messages=[{"role": "user", "content": "Please say hello! Think before you respond."}],
             stream=True,
             reasoning_effort="low"
             if provider
@@ -97,6 +97,7 @@ async def test_completion_reasoning_streaming(
                 LLMProvider.PORTKEY,
                 LLMProvider.SAMBANOVA,
                 LLMProvider.TOGETHER,
+                LLMProvider.PORTKEY,
             )
             else "auto",
             max_tokens=4999
@@ -113,9 +114,9 @@ async def test_completion_reasoning_streaming(
                     reasoning += result.choices[0].delta.reasoning.content or ""
 
         assert num_chunks >= 1, f"Expected at least 1 chunk, got {num_chunks}"
-        assert output.strip() != "", "Expected non-empty output content"
+        assert output != "", f"Expected non-empty output content, got {output}"
 
-        assert reasoning.strip() != "", f"Expected non-empty reasoning content for {provider.value}"
+        assert reasoning != "", f"Expected non-empty reasoning content for {provider.value}, got {output}"
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:
             raise

@@ -6,6 +6,7 @@ from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatComple
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.providers.minimax.utils import _convert_chat_completion
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, Reasoning
 from any_llm.utils.reasoning import process_streaming_reasoning_chunks
@@ -22,6 +23,14 @@ class MinimaxProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_LIST_MODELS = False
     SUPPORTS_EMBEDDING = False
+
+    @staticmethod
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        if isinstance(response, OpenAIChatCompletion):
+            return _convert_chat_completion(response)
+        if isinstance(response, ChatCompletion):
+            return response
+        return ChatCompletion.model_validate(response)
 
     def _convert_completion_response_async(
         self, response: OpenAIChatCompletion | AsyncStream[OpenAIChatCompletionChunk]
