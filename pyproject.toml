@@ -197,7 +197,7 @@ module = ["pytest", "mktestdocs", "pytest_lazy_fixtures", "syrupy.assertion"]
 ignore_missing_imports = true # pytest related modules are not found
 
 [tool.pytest.ini_options]
-timeout = 240
+timeout = 120
 filterwarnings = [
   # Silence Pydantic V1-style validator deprecation warnings coming from fireworks only
   "ignore:Pydantic V1 style `@validator` validators are deprecated:pydantic.warnings.PydanticDeprecatedSince20:fireworks\\.client\\.image_api",
