@@ -35,6 +35,7 @@ class ZaiProvider(BaseOpenAIProvider):
         if params.response_format is not None:
             param = "response_format"
             raise UnsupportedParameterError(param, "zai")
+        # Copy of the logic from the base implementation because you can't use super() in a static method
         converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
         converted_params.update(kwargs)
         return converted_params
