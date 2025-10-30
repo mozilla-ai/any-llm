@@ -74,7 +74,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.PERPLEXITY: "sonar",
         LLMProvider.OPENROUTER: "meta-llama/llama-3.3-8b-instruct:free",
         LLMProvider.LLAMACPP: "N/A",
-        LLMProvider.ZAI: "glm-4.5-flash",
+        LLMProvider.ZAI: "glm-4-32b-0414-128k",
     }
 
 

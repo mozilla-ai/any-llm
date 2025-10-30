@@ -1,4 +1,8 @@
+from typing import Any
+
+from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.types.completion import CompletionParams
 
 
 class ZaiProvider(BaseOpenAIProvider):
@@ -23,3 +27,14 @@ class ZaiProvider(BaseOpenAIProvider):
     SUPPORTS_LIST_MODELS = True
 
     PACKAGES_INSTALLED = True
+
+    @staticmethod
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        # response_format is supported in the z.ai SDK, but the SDK doesn't yet have an async client
+        # so we can't use it in any-llm
+        if params.response_format is not None:
+            param = "response_format"
+            raise UnsupportedParameterError(param, "zai")
+        converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
+        converted_params.update(kwargs)
+        return converted_params

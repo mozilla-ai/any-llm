@@ -88,9 +88,6 @@ sagemaker = [
   "boto3",
 ]
 
-zai = [
-  "zai-sdk>=0.0.4"
-]
 
 # These providers don't require any additional dependencies, but are included for completeness.
 azureopenai = []
@@ -109,6 +106,7 @@ openrouter = []
 portkey = []
 sambanova = []
 gateway = []
+zai = []
 
 [project.urls]
 Documentation = "https://mozilla-ai.github.io/any-llm/"
