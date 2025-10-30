@@ -115,7 +115,7 @@ jobs:
     needs: [expected-providers, determine-jobs-to-run]
     if: needs.determine-jobs-to-run.outputs.should_run_local == 'true'
     timeout-minutes: 45
-    runs-on: [self-hosted, linux, GPU-runner]
+    runs-on: ubuntu-24.04-arm # slightly bigger instance https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job
 
     steps:
       - uses: actions/checkout@v5
