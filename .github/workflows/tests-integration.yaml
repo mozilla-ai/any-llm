@@ -29,9 +29,26 @@ jobs:
         id: set_local_providers
         run: echo "expected_providers=ollama,llamacpp,llamafile" >> $GITHUB_OUTPUT
 
-  run-integration-tests:
+  determine-jobs-to-run:
     needs: expected-providers
-    if: github.event.inputs.filter == '' || contains(needs.expected-providers.outputs.providers, github.event.inputs.filter)
+    runs-on: ubuntu-latest
+    outputs:
+      should_run_integration: ${{ steps.determine.outputs.should_run_integration }}
+      should_run_local: ${{ steps.determine.outputs.should_run_local }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Determine which jobs should run based on filter
+        id: determine
+        uses: ./.github/actions/determine-jobs
+        with:
+          filter: ${{ github.event.inputs.filter }}
+          providers: ${{ needs.expected-providers.outputs.providers }}
+          local_providers: ${{ needs.expected-providers.outputs.local_providers }}
+
+  run-integration-tests:
+    needs: [expected-providers, determine-jobs-to-run]
+    if: needs.determine-jobs-to-run.outputs.should_run_integration == 'true'
     timeout-minutes: 30
     runs-on: ubuntu-latest
 
@@ -50,7 +67,7 @@ jobs:
       - if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'huggingface')
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: python scripts/wake_up_hf_endpoint.py --retry=5
+        run: python scripts/wake_up_hf_endpoint.py --retry-count=30 --retry-interval=10
 
       - name: Run Integration tests (parallel with xdist)
         env:
@@ -83,9 +100,9 @@ jobs:
           INCLUDE_LOCAL_PROVIDERS: "false"
         run: |
           if [ -n "${{ inputs.filter }}" ]; then
-            pytest tests/integration -v -n auto --cov --cov-report=xml -k "${{ inputs.filter }}"
+            pytest tests/integration -v -n auto --cov --cov-report=xml -k "${{ inputs.filter }}" || [ $? -eq 5 ]
           else
-            pytest tests/integration -v -n auto --cov --cov-report=xml
+            pytest tests/integration -v -n auto --cov --cov-report=xml || [ $? -eq 5 ]
           fi
 
       - name: Upload coverage reports to Codecov
@@ -95,8 +112,8 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
   run-local-integration-tests:
-    needs: expected-providers
-    if: github.event.inputs.filter == '' || contains(needs.expected-providers.outputs.local_providers, github.event.inputs.filter)
+    needs: [expected-providers, determine-jobs-to-run]
+    if: needs.determine-jobs-to-run.outputs.should_run_local == 'true'
     timeout-minutes: 45
     runs-on: ubuntu-latest
 
@@ -181,9 +198,9 @@ jobs:
           INCLUDE_NON_LOCAL_PROVIDERS: "false"
         run: |
           if [ -n "${{ inputs.filter }}" ]; then
-            pytest tests/integration -v --cov --cov-report=xml -k "${{ inputs.filter }}"
+            pytest tests/integration -v --cov --cov-report=xml -k "${{ inputs.filter }}" || [ $? -eq 5 ]
           else
-            pytest tests/integration -v --cov --cov-report=xml
+            pytest tests/integration -v --cov --cov-report=xml || [ $? -eq 5 ]
           fi
 
       - name: Cleanup LlamaFile process
