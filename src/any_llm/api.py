@@ -5,9 +5,11 @@ from pydantic import BaseModel
 
 from any_llm import AnyLLM
 from any_llm.constants import LLMProvider
+from any_llm.types.batch import Batch
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, CreateEmbeddingResponse
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
+from any_llm.utils.decorators import BATCH_API_EXPERIMENTAL_MESSAGE, experimental
 
 
 def completion(
@@ -439,3 +441,255 @@ async def alist_models(
     """List available models for a provider asynchronously."""
     llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return await llm.alist_models(**kwargs)
+
+
+@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
+def create_batch(
+    provider: str | LLMProvider,
+    input_file_path: str,
+    endpoint: str,
+    *,
+    completion_window: str = "24h",
+    metadata: dict[str, str] | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> Batch:
+    """Create a batch job.
+
+    Args:
+        provider: Provider name to use for the request (e.g., 'openai', 'mistral')
+        input_file_path: Path to a local file containing batch requests in JSONL format.
+        endpoint: The endpoint to be used for all requests (e.g., '/v1/chat/completions')
+        completion_window: The time frame within which the batch should be processed (default: '24h')
+        metadata: Optional custom metadata for the batch
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+        **kwargs: Additional provider-specific arguments
+
+    Returns:
+        The created batch object
+
+    """
+    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return llm.create_batch(
+        input_file_path=input_file_path,
+        endpoint=endpoint,
+        completion_window=completion_window,
+        metadata=metadata,
+        **kwargs,
+    )
+
+
+@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
+async def acreate_batch(
+    provider: str | LLMProvider,
+    input_file_path: str,
+    endpoint: str,
+    *,
+    completion_window: str = "24h",
+    metadata: dict[str, str] | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> Batch:
+    """Create a batch job asynchronously.
+
+    Args:
+        provider: Provider name to use for the request (e.g., 'openai', 'mistral')
+        input_file_path: Path to a local file containing batch requests in JSONL format.
+        endpoint: The endpoint to be used for all requests (e.g., '/v1/chat/completions')
+        completion_window: The time frame within which the batch should be processed (default: '24h')
+        metadata: Optional custom metadata for the batch
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+        **kwargs: Additional provider-specific arguments
+
+    Returns:
+        The created batch object
+
+    """
+    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return await llm.acreate_batch(
+        input_file_path=input_file_path,
+        endpoint=endpoint,
+        completion_window=completion_window,
+        metadata=metadata,
+        **kwargs,
+    )
+
+
+@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
+def retrieve_batch(
+    provider: str | LLMProvider,
+    batch_id: str,
+    *,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> Batch:
+    """Retrieve a batch job.
+
+    Args:
+        provider: Provider name to use for the request (e.g., 'openai', 'mistral')
+        batch_id: The ID of the batch to retrieve
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+        **kwargs: Additional provider-specific arguments
+
+    Returns:
+        The batch object
+
+    """
+    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return llm.retrieve_batch(batch_id, **kwargs)
+
+
+@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
+async def aretrieve_batch(
+    provider: str | LLMProvider,
+    batch_id: str,
+    *,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> Batch:
+    """Retrieve a batch job asynchronously.
+
+    Args:
+        provider: Provider name to use for the request (e.g., 'openai', 'mistral')
+        batch_id: The ID of the batch to retrieve
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+        **kwargs: Additional provider-specific arguments
+
+    Returns:
+        The batch object
+
+    """
+    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return await llm.aretrieve_batch(batch_id, **kwargs)
+
+
+@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
+def cancel_batch(
+    provider: str | LLMProvider,
+    batch_id: str,
+    *,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> Batch:
+    """Cancel a batch job.
+
+    Args:
+        provider: Provider name to use for the request (e.g., 'openai', 'mistral')
+        batch_id: The ID of the batch to cancel
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+        **kwargs: Additional provider-specific arguments
+
+    Returns:
+        The cancelled batch object
+
+    """
+    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return llm.cancel_batch(batch_id, **kwargs)
+
+
+@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
+async def acancel_batch(
+    provider: str | LLMProvider,
+    batch_id: str,
+    *,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> Batch:
+    """Cancel a batch job asynchronously.
+
+    Args:
+        provider: Provider name to use for the request (e.g., 'openai', 'mistral')
+        batch_id: The ID of the batch to cancel
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+        **kwargs: Additional provider-specific arguments
+
+    Returns:
+        The cancelled batch object
+
+    """
+    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return await llm.acancel_batch(batch_id, **kwargs)
+
+
+@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
+def list_batches(
+    provider: str | LLMProvider,
+    *,
+    after: str | None = None,
+    limit: int | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> Sequence[Batch]:
+    """List batch jobs.
+
+    Args:
+        provider: Provider name to use for the request (e.g., 'openai', 'mistral')
+        after: A cursor for pagination. Returns batches after this batch ID.
+        limit: Maximum number of batches to return (default: 20)
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+        **kwargs: Additional provider-specific arguments
+
+    Returns:
+        A list of batch objects
+
+    """
+    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return llm.list_batches(after=after, limit=limit, **kwargs)
+
+
+@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
+async def alist_batches(
+    provider: str | LLMProvider,
+    *,
+    after: str | None = None,
+    limit: int | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> Sequence[Batch]:
+    """List batch jobs asynchronously.
+
+    Args:
+        provider: Provider name to use for the request (e.g., 'openai', 'mistral')
+        after: A cursor for pagination. Returns batches after this batch ID.
+        limit: Maximum number of batches to return (default: 20)
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+        **kwargs: Additional provider-specific arguments
+
+    Returns:
+        A list of batch objects
+
+    """
+    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return await llm.alist_batches(after=after, limit=limit, **kwargs)

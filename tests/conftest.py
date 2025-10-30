@@ -12,9 +12,10 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.ANTHROPIC: "claude-sonnet-4-20250514",
         LLMProvider.MISTRAL: "magistral-small-latest",
         LLMProvider.GEMINI: "gemini-2.5-flash",
+        LLMProvider.GATEWAY: "gpt-5-nano",
         LLMProvider.VERTEXAI: "gemini-2.5-flash",
         LLMProvider.GROQ: "openai/gpt-oss-20b",
-        LLMProvider.FIREWORKS: "accounts/fireworks/models/deepseek-r1",
+        LLMProvider.FIREWORKS: "accounts/fireworks/models/gpt-oss-20b",
         LLMProvider.OPENAI: "gpt-5-nano",
         LLMProvider.MISTRAL: "magistral-small-latest",
         LLMProvider.XAI: "grok-3-mini-latest",
@@ -27,6 +28,15 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.COHERE: "command-a-reasoning-08-2025",
         LLMProvider.DEEPSEEK: "deepseek-reasoner",
+        LLMProvider.MOONSHOT: "kimi-thinking-preview",
+        LLMProvider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        LLMProvider.HUGGINGFACE: "huggingface/tgi",
+        LLMProvider.NEBIUS: "openai/gpt-oss-20b",
+        LLMProvider.SAMBANOVA: "DeepSeek-R1-Distill-Llama-70B",
+        LLMProvider.TOGETHER: "OpenAI/gpt-oss-20B",
+        LLMProvider.PORTKEY: "@anthropic/claude-3-7-sonnet-latest",
+        LLMProvider.MINIMAX: "MiniMax-M2",
+        LLMProvider.ZAI: "glm-4.5-flash",
     }
 
 
@@ -36,9 +46,9 @@ def provider_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.MISTRAL: "mistral-small-latest",
         LLMProvider.ANTHROPIC: "claude-3-5-haiku-latest",
-        LLMProvider.DATABRICKS: "databricks-meta-llama-3-1-8b-instruct",
         LLMProvider.DEEPSEEK: "deepseek-chat",
         LLMProvider.OPENAI: "gpt-5-nano",
+        LLMProvider.GATEWAY: "gpt-5-nano",
         LLMProvider.GEMINI: "gemini-2.5-flash",
         LLMProvider.VERTEXAI: "gemini-2.5-flash",
         LLMProvider.MOONSHOT: "moonshot-v1-8k",
@@ -65,6 +75,8 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.PERPLEXITY: "sonar",
         LLMProvider.OPENROUTER: "meta-llama/llama-3.3-8b-instruct:free",
         LLMProvider.LLAMACPP: "N/A",
+        LLMProvider.MINIMAX: "MiniMax-M2",
+        LLMProvider.ZAI: "glm-4-32b-0414-128k",
     }
 
 
@@ -72,7 +84,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
 def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict[LLMProvider, str]:
     return {
         **provider_model_map,
-        LLMProvider.WATSONX: "mistralai/pixtral-12b",
+        LLMProvider.WATSONX: "meta-llama/llama-guard-3-11b-vision",
         LLMProvider.SAMBANOVA: "Llama-4-Maverick-17B-128E-Instruct",
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
         LLMProvider.OPENROUTER: "mistralai/mistral-small-3.2-24b-instruct:free",
@@ -85,7 +97,6 @@ def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict
 def embedding_provider_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.OPENAI: "text-embedding-ada-002",
-        LLMProvider.DATABRICKS: "databricks-bge-large-en",
         LLMProvider.NEBIUS: "Qwen/Qwen3-Embedding-8B",
         LLMProvider.SAMBANOVA: "Meta-Llama-3.1-8B-Instruct",
         LLMProvider.MISTRAL: "mistral-embed",
@@ -100,6 +111,7 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.AZUREOPENAI: "azure/<your_deployment_name>",
         LLMProvider.VOYAGE: "voyage-3.5-lite",
         LLMProvider.LLAMACPP: "N/A",
+        LLMProvider.GATEWAY: "text-embedding-ada-002",
     }
 
 
@@ -113,7 +125,7 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.BEDROCK: {"region_name": "us-east-1"},
         LLMProvider.CEREBRAS: {"timeout": 10},
         LLMProvider.COHERE: {"timeout": 10},
-        LLMProvider.DATABRICKS: {"api_base": "https://dbc-ec667410-1149.cloud.databricks.com/serving-endpoints"},
+        LLMProvider.GATEWAY: {"api_base": "http://127.0.0.1:3000", "timeout": 1},
         LLMProvider.GROQ: {"timeout": 10},
         LLMProvider.HUGGINGFACE: {"api_base": "https://y0okp71n85ezo5nr.us-east-1.aws.endpoints.huggingface.cloud/v1/"},
         LLMProvider.LLAMACPP: {"api_base": "http://127.0.0.1:8090/v1"},

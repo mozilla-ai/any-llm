@@ -79,7 +79,7 @@ A model discovery tool that helps you find AI models across different providers:
 ### Requirements
 
 - Python 3.11 or newer
-- API_KEYS to access to whichever LLM you choose to use.
+- API_KEYS to access whichever LLM you choose to use.
 
 ### Installation
 
@@ -137,23 +137,27 @@ from any_llm import AnyLLM
 
 llm = AnyLLM.create("mistral", api_key="your-mistral-api-key")
 
-response = llm.completion({
-    "model_id": "mistral-small-latest",
-    "messages": [{"role": "user", "content": "Hello!"}]
-})
+response = llm.completion(
+    model="mistral-small-latest",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
 
 ```
 
 #### When to Use Which Approach
 
-**Use Direct API Functions when:**
-- Making simple, one-off requests
-- Prototyping or quick scripts
-- You want the simplest possible interface
+**Direct API Functions (`completion`, `acompletion`):**
+- Creates a new provider client on each call
+- Stateless with no connection reuse between calls
+- Minimal code for single requests
+- Suitable for: scripts, notebooks, infrequent API calls
 
-**Use Provider Class when:**
-- Building applications that make multiple requests with the same provider
-- You want to avoid repeated provider instantiation overhead
+**AnyLLM Class (`AnyLLM.create`):**
+- Reuses the same provider client across multiple calls
+- Connection pooling and client state management
+- Suitable for: applications making multiple requests, long-running services
+
+Both approaches support identical features (streaming, tools, responses API, etc.). The functional API internally uses the class-based API. Choose based on your code structure and usage patterns
 
 The provider_id should be specified according to the [provider ids supported by any-llm](https://mozilla-ai.github.io/any-llm/providers/).
 The `model_id` portion is passed directly to the provider internals: to understand what model ids are available for a provider,

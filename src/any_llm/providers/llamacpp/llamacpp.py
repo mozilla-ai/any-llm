@@ -8,7 +8,7 @@ class LlamacppProvider(BaseOpenAIProvider):
     PROVIDER_DOCUMENTATION_URL = "https://github.com/ggml-org/llama.cpp"
 
     SUPPORTS_EMBEDDING = True
-    SUPPORTS_COMPLETION_REASONING = False
+    SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION_PDF = False
 

@@ -14,8 +14,10 @@ from any_llm.types.completion import (
     ChunkChoice,
     CompletionParams,
     CompletionUsage,
+    Reasoning,
 )
 from any_llm.types.model import Model
+from any_llm.utils.reasoning import normalize_reasoning_from_provider_fields_and_xml_tags
 
 
 def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletionStreamOutput) -> ChatCompletionChunk:
@@ -30,14 +32,31 @@ def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletion
 
     for i, hf_choice in enumerate(hf_choices):
         hf_delta = hf_choice.delta
-        content = hf_delta.content
-        role = hf_delta.role
+
+        delta_dict: dict[str, Any] = {}
+        if hf_delta.content is not None:
+            delta_dict["content"] = hf_delta.content
+        if hf_delta.role is not None:
+            delta_dict["role"] = hf_delta.role
+        if hasattr(hf_delta, "reasoning"):
+            delta_dict["reasoning"] = hf_delta.reasoning
+
+        normalize_reasoning_from_provider_fields_and_xml_tags(delta_dict)
 
         openai_role = None
-        if role:
-            openai_role = cast("Literal['developer', 'system', 'user', 'assistant', 'tool']", role)
+        if delta_dict.get("role"):
+            openai_role = cast("Literal['developer', 'system', 'user', 'assistant', 'tool']", delta_dict["role"])
 
-        delta = ChoiceDelta(content=content, role=openai_role)
+        reasoning_obj = None
+        if delta_dict.get("reasoning") and isinstance(delta_dict["reasoning"], dict):
+            if "content" in delta_dict["reasoning"]:
+                reasoning_obj = Reasoning(content=delta_dict["reasoning"]["content"])
+
+        delta = ChoiceDelta(
+            content=delta_dict.get("content"),
+            role=openai_role,
+            reasoning=reasoning_obj,
+        )
 
         choice = ChunkChoice(
             index=i,
@@ -80,9 +99,6 @@ def _convert_params(params: CompletionParams, **kwargs: dict[str, Any]) -> dict[
     # timeout is passed to the client instantiation, should not reach the `client.chat_completion` call.
     result_kwargs.pop("timeout", None)
 
-    if params.max_tokens is not None:
-        result_kwargs["max_new_tokens"] = params.max_tokens
-
     if params.reasoning_effort == "auto":
         params.reasoning_effort = None
 
@@ -92,7 +108,7 @@ def _convert_params(params: CompletionParams, **kwargs: dict[str, Any]) -> dict[
     result_kwargs.update(
         params.model_dump(
             exclude_none=True,
-            exclude={"max_tokens", "model_id", "messages", "response_format", "parallel_tool_calls"},
+            exclude={"model_id", "messages", "response_format", "parallel_tool_calls"},
         )
     )
 

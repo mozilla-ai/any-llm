@@ -7,7 +7,7 @@ from any_llm.providers.sambanova.sambanova import SambanovaProvider
 from any_llm.types.completion import CompletionParams
 
 
-class TestResponseSchema(BaseModel):
+class PersonSchema(BaseModel):
     name: str
     age: int
 
@@ -26,7 +26,7 @@ async def test_sambanova_converts_pydantic_response_format(mock_openai_class: Ma
     provider = SambanovaProvider(api_key="test-key")
 
     messages = [{"role": "user", "content": "Hello"}]
-    params = CompletionParams(model_id="test-model", messages=messages, response_format=TestResponseSchema)
+    params = CompletionParams(model_id="test-model", messages=messages, response_format=PersonSchema)
 
     await provider._acompletion(params)
 
@@ -41,7 +41,7 @@ async def test_sambanova_converts_pydantic_response_format(mock_openai_class: Ma
         "type": "json_schema",
         "json_schema": {
             "name": "response_schema",
-            "schema": TestResponseSchema.model_json_schema(),
+            "schema": PersonSchema.model_json_schema(),
         },
     }
 

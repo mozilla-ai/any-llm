@@ -1,15 +1,19 @@
+import asyncio
 from collections.abc import AsyncIterator, Sequence
+from io import BytesIO
+from pathlib import Path
 from typing import Any, Literal, cast
 
 from openai import AsyncOpenAI
 from openai._streaming import AsyncStream
-from openai._types import NOT_GIVEN
+from openai._types import NOT_GIVEN, Omit
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 
 from any_llm.any_llm import AnyLLM
 from any_llm.logging import logger
 from any_llm.providers.openai.utils import _convert_chat_completion, _normalize_openai_dict_response
+from any_llm.types.batch import Batch
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
@@ -32,6 +36,7 @@ class BaseOpenAIProvider(AnyLLM):
     SUPPORTS_COMPLETION_PDF = True
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
+    SUPPORTS_BATCH = False
 
     PACKAGES_INSTALLED = True
 
@@ -187,3 +192,78 @@ class BaseOpenAIProvider(AnyLLM):
             raise NotImplementedError(message)
         response = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(response)
+
+    async def _acreate_batch(
+        self,
+        input_file_path: str,
+        endpoint: str,
+        completion_window: str = "24h",
+        metadata: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> Batch:
+        """Create a batch job using the OpenAI Batch API.
+
+        This method automatically uploads the file before creating the batch.
+        """
+        if not self.SUPPORTS_BATCH:
+            message = f"{self.PROVIDER_NAME} does not support batch completions."
+            raise NotImplementedError(message)
+
+        file_path = Path(input_file_path)
+        file_content = await asyncio.to_thread(file_path.read_bytes)
+
+        file_obj = BytesIO(file_content)
+        file_obj.name = file_path.name
+
+        uploaded_file = await self.client.files.create(file=file_obj, purpose="batch")
+
+        valid_endpoint = cast(
+            "Literal['/v1/chat/completions', '/v1/embeddings', '/v1/completions']",
+            endpoint,
+        )
+        valid_completion_window = cast("Literal['24h']", completion_window)
+
+        return await self.client.batches.create(
+            input_file_id=uploaded_file.id,
+            endpoint=valid_endpoint,
+            completion_window=valid_completion_window,
+            metadata=metadata or {},
+            **kwargs,
+        )
+
+    async def _aretrieve_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Retrieve a batch job using the OpenAI Batch API."""
+        if not self.SUPPORTS_BATCH:
+            message = f"{self.PROVIDER_NAME} does not support batch completions."
+            raise NotImplementedError(message)
+
+        return await self.client.batches.retrieve(batch_id, **kwargs)
+
+    async def _acancel_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Cancel a batch job using the OpenAI Batch API."""
+        if not self.SUPPORTS_BATCH:
+            message = f"{self.PROVIDER_NAME} does not support batch completions."
+            raise NotImplementedError(message)
+
+        return await self.client.batches.cancel(batch_id, **kwargs)
+
+    async def _alist_batches(
+        self,
+        after: str | None = None,
+        limit: int | None = None,
+        **kwargs: Any,
+    ) -> Sequence[Batch]:
+        """List batch jobs using the OpenAI Batch API."""
+        if not self.SUPPORTS_BATCH:
+            message = f"{self.PROVIDER_NAME} does not support batch completions."
+            raise NotImplementedError(message)
+
+        after_param: str | Omit = after if after is not None else Omit()
+        limit_param: int | Omit = limit if limit is not None else Omit()
+
+        response = await self.client.batches.list(
+            after=after_param,
+            limit=limit_param,
+            **kwargs,
+        )
+        return response.data

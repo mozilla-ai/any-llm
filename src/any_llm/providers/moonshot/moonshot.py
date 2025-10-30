@@ -10,3 +10,4 @@ class MoonshotProvider(BaseOpenAIProvider):
     SUPPORTS_EMBEDDING = False  # Moonshot doesn't host an embedding model
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
+    SUPPORTS_COMPLETION_REASONING = True

@@ -7,6 +7,7 @@ from openai import APIConnectionError
 
 from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
+from any_llm.providers.anthropic.utils import DEFAULT_MAX_TOKENS
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
@@ -36,8 +37,16 @@ async def test_completion_reasoning(
                 LLMProvider.OLLAMA,
                 LLMProvider.OPENROUTER,
                 LLMProvider.VERTEXAI,
+                LLMProvider.BEDROCK,
+                LLMProvider.PORTKEY,
+                LLMProvider.SAMBANOVA,
+                LLMProvider.TOGETHER,
+                LLMProvider.PORTKEY,
             )
             else "auto",
+            max_tokens=4999
+            if LLMProvider.FIREWORKS == provider
+            else DEFAULT_MAX_TOKENS,  # Fireworks forces streaming if max_tokens is 5000+, Portkey with anthropic needed a max tokens value to be set (because it's an anthropic model)
         )
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:
@@ -84,8 +93,15 @@ async def test_completion_reasoning_streaming(
                 LLMProvider.OLLAMA,
                 LLMProvider.OPENROUTER,
                 LLMProvider.VERTEXAI,
+                LLMProvider.BEDROCK,
+                LLMProvider.PORTKEY,
+                LLMProvider.SAMBANOVA,
+                LLMProvider.TOGETHER,
             )
             else "auto",
+            max_tokens=4999
+            if LLMProvider.FIREWORKS == provider
+            else DEFAULT_MAX_TOKENS,  # Fireworks forces streaming if max_tokens is 5000+, Portkey with anthropic needed a max tokens value to be set (because it's an anthropic model)
         )
         assert isinstance(results, AsyncIterable)
         async for result in results:

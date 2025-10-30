@@ -9,3 +9,4 @@ class OpenaiProvider(BaseOpenAIProvider):
     PROVIDER_DOCUMENTATION_URL = "https://platform.openai.com/docs/api-reference"
     SUPPORTS_RESPONSES = True
     SUPPORTS_LIST_MODELS = True
+    SUPPORTS_BATCH = True
