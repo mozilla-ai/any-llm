@@ -11,6 +11,7 @@
 [![Read the Blog Post](https://img.shields.io/badge/Read%20the%20Blog%20Post-red.svg)](https://blog.mozilla.ai/introducing-any-llm-a-unified-api-to-access-any-llm-provider/)
 
 [![Docs](https://github.com/mozilla-ai/any-llm/actions/workflows/docs.yaml/badge.svg)](https://github.com/mozilla-ai/any-llm/actions/workflows/docs.yaml/)
+
 [![Linting](https://github.com/mozilla-ai/any-llm/actions/workflows/lint.yaml/badge.svg)](https://github.com/mozilla-ai/any-llm/actions/workflows/lint.yaml/)
 [![Unit Tests](https://github.com/mozilla-ai/any-llm/actions/workflows/tests-unit.yaml/badge.svg)](https://github.com/mozilla-ai/any-llm/actions/workflows/tests-unit.yaml/)
 [![Integration Tests](https://github.com/mozilla-ai/any-llm/actions/workflows/tests-integration.yaml/badge.svg)](https://github.com/mozilla-ai/any-llm/actions/workflows/tests-integration.yaml/)
@@ -21,82 +22,77 @@
     <img src="https://img.shields.io/static/v1?label=Chat%20on&message=Discord&color=blue&logo=Discord&style=flat-square" alt="Discord">
 </a>
 
-A single interface to use different llm providers.
+**Communicate with any LLM provider using a single, unified interface.**
+Switch between OpenAI, Anthropic, Mistral, Ollama, and more without changing your code.
+
+[Documentation](https://mozilla-ai.github.io/any-llm/) | [Try the Demos](#-try-it) | [Contributing](#-contributing)
 
 </div>
 
-## [Documentation](https://mozilla-ai.github.io/any-llm/)
-
-## [Supported Providers](https://mozilla-ai.github.io/any-llm/providers)
-
-## Key Features
-
-`any-llm` offers:
-- **Simple, unified interface** - one function for all providers, switch models with just a string change
-- **Developer friendly** - full type hints for better IDE support and clear, actionable error messages
-- **Leverages official provider SDKs** when available, reducing maintenance burden and ensuring compatibility
-- **Stays framework-agnostic** so it can be used across different projects and use cases
-- **Actively maintained** - we use this in our own product ([any-agent](https://github.com/mozilla-ai/any-agent)) ensuring continued support
-- **No Proxy or Gateway server required** so you don't need to deal with setting up any other service to talk to whichever LLM provider you need.
-
-## Motivation
-
-The landscape of LLM provider interfaces presents a fragmented ecosystem with several challenges that `any-llm` aims to address:
-
-**The Challenge with API Standardization:**
-
-While the OpenAI API has become the de facto standard for LLM provider interfaces, providers implement slight variations. Some providers are fully OpenAI-compatible, while others may have different parameter names, response formats, or feature sets. This creates a need for light wrappers that can gracefully handle these differences while maintaining a consistent interface.
-
-**Existing Solutions and Their Limitations:**
-
-- **[LiteLLM](https://github.com/BerriAI/litellm)**: While popular, it reimplements provider interfaces rather than leveraging official SDKs, which can lead to compatibility issues and unexpected behavior modifications
-- **[AISuite](https://github.com/andrewyng/aisuite/issues)**: Offers a clean, modular approach but lacks active maintenance, comprehensive testing, and modern Python typing standards.
-- **[Framework-specific solutions](https://github.com/agno-agi/agno/tree/main/libs/agno/agno/models)**: Some agent frameworks either depend on LiteLLM or implement their own provider integrations, creating fragmentation
-- **[Proxy Only Solutions](https://openrouter.ai/)**: solutions like [OpenRouter](https://openrouter.ai/) and [Portkey](https://github.com/Portkey-AI/portkey-python-sdk) require a hosted proxy to serve as the interface between your code and the LLM provider.
-
-## Demos
-
-Try `any-llm` in action with our interactive demos:
-
-### 💬 Chat Demo
-**[📂 Run the Chat Demo](./demos/chat/README.md)**
-
-An interactive chat interface showcasing streaming completions and provider switching:
-- Real-time streaming responses with character-by-character display
-- Support for multiple LLM providers with easy switching
-- Collapsible "thinking" content display for supported models
-- Clean chat interface with auto-scrolling
-
-### 🔍 Model Finder Demo
-**[📂 Run the Model Finder Demo](./demos/finder/README.md)**
-
-A model discovery tool that helps you find AI models across different providers:
-- Search and filter models across all your configured providers
-- Provider status dashboard showing which APIs you have configured
-
 ## Quickstart
+
+```python
+pip install 'any-llm-sdk[mistral,ollama]'
+
+export MISTRAL_API_KEY="YOUR_KEY_HERE"  # or OPENAI_API_KEY, etc
+from any_llm import completion
+import os
+
+# Make sure you have the appropriate environment variable set
+assert os.environ.get('MISTRAL_API_KEY')
+
+response = completion(
+    model="mistral-small-latest",
+    provider="mistral",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+print(response.choices[0].message.content)
+```
+**That's it!** Change the provider name and add provider-specific keys to switch between LLM providers.
+
+
+## Installation
 
 ### Requirements
 
 - Python 3.11 or newer
-- API_KEYS to access whichever LLM you choose to use.
+- API keys for whichever LLM providers you want to use
 
-### Installation
+### Basic Installation
 
-In your pip install, include the [supported providers](https://mozilla-ai.github.io/any-llm/providers/) that you plan on using, or use the `all` option if you want to install support for all `any-llm` supported providers.
-
-```bash
-pip install 'any-llm-sdk[mistral,ollama]'
-```
-
-Make sure you have the appropriate API key environment variable set for your provider. Alternatively,
-you could use the `api_key` parameter when making a completion call instead of setting an environment variable.
+Install support for specific providers:
 
 ```bash
-export MISTRAL_API_KEY="YOUR_KEY_HERE"  # or OPENAI_API_KEY, etc
+pip install 'any-llm-sdk[openai]'           # Just OpenAI
+pip install 'any-llm-sdk[mistral,ollama]'   # Multiple providers
+pip install 'any-llm-sdk[all]'              # All supported providers
 ```
 
-### Basic Usage
+See our [list of supported providers](https://mozilla-ai.github.io/any-llm/providers/) to choose which ones you need.
+
+### Setting Up API Keys
+
+Set environment variables for your chosen providers:
+
+```bash
+export OPENAI_API_KEY="your-key-here"
+export ANTHROPIC_API_KEY="your-key-here"
+export MISTRAL_API_KEY="your-key-here"
+# ... etc
+```
+
+Alternatively, pass API keys directly in your code (see [Usage](#-usage) examples).
+
+## Why choose `any-llm`?
+
+- **Simple, unified interface** - Single function for all providers, switch models with just a string change
+- **Developer friendly** - Full type hints for better IDE support and clear, actionable error messages
+- **Leverages official provider SDKs** - Ensures maximum compatibility
+- **Stays framework-agnostic** so it can be used across different projects and use cases
+- **Battle-tested** - Powers our own production tools ([any-agent](https://github.com/mozilla-ai/any-agent))
+- **No Proxy or Gateway server required** - Direct connections to whichever LLM provider you need.
+
+## Usage
 
 `any-llm` offers two main approaches for interacting with LLM providers:
 
@@ -119,7 +115,7 @@ response = completion(
 print(response.choices[0].message.content)
 ```
 
-**Alternative syntax:** You can also use the combined `provider:model` format:
+**Alternative syntax:** Use combined `provider:model` format:
 
 ```python
 response = completion(
@@ -128,7 +124,7 @@ response = completion(
 )
 ```
 
-#### Option 2: AnyLLM Class (Recommended for Production Use Cases)
+#### Option 2: AnyLLM Class (Recommended for Production)
 
 For applications that need to reuse providers, perform multiple operations, or require more control:
 
@@ -146,23 +142,12 @@ response = llm.completion(
 
 #### When to Use Which Approach
 
-**Direct API Functions (`completion`, `acompletion`):**
-- Creates a new provider client on each call
-- Stateless with no connection reuse between calls
-- Minimal code for single requests
-- Suitable for: scripts, notebooks, infrequent API calls
+| Approach | Best For | Connection Handling |
+|----------|----------|---------------------|
+| **Direct API Functions** (`completion`) | Scripts, notebooks, single requests | New client per call (stateless) |
+| **AnyLLM Class** (`AnyLLM.create`) | Production apps, multiple requests | Reuses client (connection pooling) |
 
-**AnyLLM Class (`AnyLLM.create`):**
-- Reuses the same provider client across multiple calls
-- Connection pooling and client state management
-- Suitable for: applications making multiple requests, long-running services
-
-Both approaches support identical features (streaming, tools, responses API, etc.). The functional API internally uses the class-based API. Choose based on your code structure and usage patterns
-
-The provider_id should be specified according to the [provider ids supported by any-llm](https://mozilla-ai.github.io/any-llm/providers/).
-The `model_id` portion is passed directly to the provider internals: to understand what model ids are available for a provider,
-you will need to refer to the provider documentation or use our `list_models` API if the provider supports that API.
-
+Both approaches support identical features : streaming, tools, responses API, etc.
 
 ### Responses API
 
@@ -184,3 +169,58 @@ result = responses(
 # Non-streaming returns an OpenAI-compatible Responses object alias
 print(result.output_text)
 ```
+
+### Finding the Right Model
+
+The `provider_id` should match our [supported provider names](https://mozilla-ai.github.io/any-llm/providers/).
+
+The `model_id` is passed directly to the provider. To find available models:
+- Check the provider's documentation
+- Use our `list_models` API (if the provider supports it)
+
+
+## Try It
+
+Try `any-llm` in action with our interactive demos:
+
+### 💬 Chat Demo
+**[📂 Run the Chat Demo](./demos/chat/README.md)**
+
+An interactive chat interface showcasing streaming completions and provider switching:
+- Real-time streaming responses
+- Easy switchign between multiple LLM providers
+- Collapsible "thinking" content display for supported models
+- Auto-scrolling chat interface
+
+### 🔍 Model Finder Demo
+**[📂 Run the Model Finder Demo](./demos/finder/README.md)**
+
+A model discovery tool featuring:
+- Search and filter models across all your configured providers
+- Provider status dashboard
+- API configuration checker
+
+## Motivation
+
+The landscape of LLM provider interfaces is fragmented. While OpenAI's API has become the de facto standard, providers implement slight variations in parameter names, response formats, and feature sets. This creates a need for light wrappers that gracefully handle these differences while maintaining a consistent interface.
+
+**Existing Solutions and Their Limitations:**
+
+- **[LiteLLM](https://github.com/BerriAI/litellm)**: Popular but reimplements provider interfaces rather than leveraging official SDKs, leading to potential compatibility issues.
+- **[AISuite](https://github.com/andrewyng/aisuite/issues)**: Clean, modular approach but lacks active maintenance, comprehensive testing, and modern Python typing standards.
+- **[Framework-specific solutions](https://github.com/agno-agi/agno/tree/main/libs/agno/agno/models)**: Some agent frameworks either depend on LiteLLM or implement their own provider integrations, creating fragmentation
+- **[Proxy Only Solutions](https://openrouter.ai/)**: solutions like [OpenRouter](https://openrouter.ai/) and [Portkey](https://github.com/Portkey-AI/portkey-python-sdk) require a hosted proxy between your code and the LLM provider.
+
+`any-llm` addresses these challenges by leveraging official SDKs when available, maintaining framework-agnostic design, and requiring no proxy servers.
+
+## Documentation
+- **[Full Documentation](https://mozilla-ai.github.io/any-llm/)** - Complete guides and API reference
+- **[Supported Providers](https://mozilla-ai.github.io/any-llm/providers/)** - List of all supported LLM providers
+- **[Cookbook Examples](https://mozilla-ai.github.io/any-llm/cookbook/)** - In-depth usage examples
+
+
+## Contributing
+We welcome contributions from developers of all skill levels! Please see our [Contributing Guide](CONTRIBUTING.md) or open an issue to discuss changes.
+
+## License
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE.md) file for details.

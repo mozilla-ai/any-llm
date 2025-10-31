@@ -21,6 +21,8 @@ nav:
       - Model: api/types/model.md
       - Provider: api/types/provider.md
       - Batch: api/types/batch.md
+  - Cookbooks:
+    - Get Started with: cookbooks/any_llm_getting_started.ipynb
 theme:
   name: material
   font:
@@ -70,6 +72,9 @@ markdown_extensions:
 plugins:
 - search
 - include-markdown
+- mkdocs-jupyter:
+      no_input: false
+      show_input: true
 - mkdocstrings:
     handlers:
       python:
