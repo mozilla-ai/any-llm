@@ -29,7 +29,7 @@ async def test_tool(
 
     available_tools = {"echo": echo}
 
-    prompt = "Please call the `echo` tool with the argument `Hello, world!`"
+    prompt = "Please call the `echo` tool with the argument `Hello, world!`. You must use the tool, do not ask any follow up questions."
     messages: list[dict[str, Any] | ChatCompletionMessage] = [{"role": "user", "content": prompt}]
 
     try:
@@ -47,8 +47,10 @@ async def test_tool(
         messages.append(result.choices[0].message)
 
         completion_tool_calls = result.choices[0].message.tool_calls
-        assert completion_tool_calls is not None
-        assert len(completion_tool_calls) == 1
+        assert completion_tool_calls is not None, f"No tool calls found in response: {result.choices[0].message}"
+        assert (
+            len(completion_tool_calls) > 0
+        )  # if the llm wants to call more than one tool that's ok for the purpose of the test
         assert hasattr(completion_tool_calls[0], "function")
         assert completion_tool_calls[0].function.name
         tool_to_call = available_tools[completion_tool_calls[0].function.name]

@@ -17,10 +17,10 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.GROQ: "openai/gpt-oss-20b",
         LLMProvider.FIREWORKS: "accounts/fireworks/models/gpt-oss-20b",
         LLMProvider.OPENAI: "gpt-5-nano",
-        LLMProvider.MISTRAL: "magistral-small-latest",
+        LLMProvider.MISTRAL: "magistral-medium-latest",
         LLMProvider.XAI: "grok-3-mini-latest",
         LLMProvider.OLLAMA: "qwen3:0.6b",
-        LLMProvider.OPENROUTER: "deepseek/deepseek-v3.1-terminus",
+        LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
         LLMProvider.LLAMAFILE: "N/A",
         LLMProvider.LLAMACPP: "N/A",
         LLMProvider.LMSTUDIO: "openai/gpt-oss-20b",  # You must have LM Studio running and the server enabled
@@ -34,7 +34,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
         LLMProvider.SAMBANOVA: "DeepSeek-R1-Distill-Llama-70B",
         LLMProvider.TOGETHER: "OpenAI/gpt-oss-20B",
-        LLMProvider.PORTKEY: "@anthropic/claude-3-7-sonnet-latest",
+        LLMProvider.PORTKEY: "@nebius-any-llm/Qwen/Qwen3-14B",
         LLMProvider.MINIMAX: "MiniMax-M2",
         LLMProvider.ZAI: "glm-4.5-flash",
     }
@@ -68,12 +68,12 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.WATSONX: "ibm/granite-3-8b-instruct",
         LLMProvider.FIREWORKS: "accounts/fireworks/models/llama4-scout-instruct-basic",
         LLMProvider.GROQ: "openai/gpt-oss-20b",
-        LLMProvider.PORTKEY: "@any-llm-test/gpt-4.1-nano",
+        LLMProvider.PORTKEY: "@any-llm-test/gpt-4.1-mini",
         LLMProvider.LLAMA: "Llama-4-Maverick-17B-128E-Instruct-FP8",
         LLMProvider.AZURE: "openai/gpt-4.1-nano",
         LLMProvider.AZUREOPENAI: "azure/<your_deployment_name>",
         LLMProvider.PERPLEXITY: "sonar",
-        LLMProvider.OPENROUTER: "meta-llama/llama-3.3-8b-instruct:free",
+        LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
         LLMProvider.LLAMACPP: "N/A",
         LLMProvider.MINIMAX: "MiniMax-M2",
         LLMProvider.ZAI: "glm-4-32b-0414-128k",
@@ -84,11 +84,12 @@ def provider_model_map() -> dict[LLMProvider, str]:
 def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict[LLMProvider, str]:
     return {
         **provider_model_map,
+        LLMProvider.OPENAI: "gpt-5-mini",  # Slightly more powerful so that it doesn't get caught in a loop of logic
         LLMProvider.WATSONX: "meta-llama/llama-guard-3-11b-vision",
         LLMProvider.SAMBANOVA: "Llama-4-Maverick-17B-128E-Instruct",
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
-        LLMProvider.OPENROUTER: "mistralai/mistral-small-3.2-24b-instruct:free",
-        LLMProvider.OLLAMA: "llava:7b",
+        LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
+        LLMProvider.OLLAMA: "qwen3-vl:2b",
     }
 
 
@@ -127,6 +128,7 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.COHERE: {"timeout": 10},
         LLMProvider.GATEWAY: {"api_base": "http://127.0.0.1:3000", "timeout": 1},
         LLMProvider.GROQ: {"timeout": 10},
+        LLMProvider.OPENAI: {"timeout": 100},
         LLMProvider.HUGGINGFACE: {"api_base": "https://y0okp71n85ezo5nr.us-east-1.aws.endpoints.huggingface.cloud/v1/"},
         LLMProvider.LLAMACPP: {"api_base": "http://127.0.0.1:8090/v1"},
         LLMProvider.MISTRAL: {"timeout_ms": 100000},

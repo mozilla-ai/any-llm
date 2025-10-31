@@ -45,6 +45,6 @@ repos:
         exclude: CODE_OF_CONDUCT.md|tests/assets|demos/
 
   - repo: https://github.com/kynan/nbstripout
-    rev: 0.6.1
+    rev: 0.8.1
     hooks:
       - id: nbstripout
