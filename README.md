@@ -81,7 +81,7 @@ export MISTRAL_API_KEY="your-key-here"
 # ... etc
 ```
 
-Alternatively, pass API keys directly in your code (see [Usage](#-usage) examples).
+Alternatively, pass API keys directly in your code (see [Usage](#usage) examples).
 
 ## Why choose `any-llm`?
 
