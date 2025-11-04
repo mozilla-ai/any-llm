@@ -4,7 +4,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.conftest import MODEL_NAME
+from tests.gateway.conftest import MODEL_NAME
 
 
 @pytest.mark.asyncio

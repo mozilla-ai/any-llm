@@ -13,13 +13,13 @@ python scripts/generate_openapi.py
 
 All chat completion endpoints require the use of a client key: these are keys created by someone using the master key.
 
-Look for the routes in `src/any_llm_gateway/chat.py`
+Look for the routes in `src/any_llm/gateway/chat.py`
 
 ## Key Management
 
 All key management endpoints require the master key in the `X-AnyLLM-Key` header.
 
-Look for the routes in `src/any_llm_gateway/keys.py`
+Look for the routes in `src/any_llm/gateway/keys.py`
 
 ## User Management
 

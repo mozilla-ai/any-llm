@@ -4,7 +4,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from any_llm.gateway.budget import calculate_next_reset
-from tests.conftest import MODEL_NAME
+from tests.gateway.conftest import MODEL_NAME
 
 
 def test_calculate_next_reset() -> None:
@@ -142,7 +142,7 @@ def test_budget_actually_resets_when_duration_passes(
 
     initial_time = datetime(2025, 10, 1, 12, 0, 0, tzinfo=UTC)
 
-    with patch("any_llm_gateway.routes.users.datetime") as mock_datetime:
+    with patch("any_llm.gateway.routes.users.datetime") as mock_datetime:
         mock_datetime.now.return_value = initial_time
 
         client.post(
@@ -156,10 +156,10 @@ def test_budget_actually_resets_when_duration_passes(
     user_data = user_response.json()
     assert user_data["spend"] == 0.0
 
-    with patch("any_llm_gateway.budget.datetime") as mock_datetime_budget:
+    with patch("any_llm.gateway.budget.datetime") as mock_datetime_budget:
         mock_datetime_budget.now.return_value = initial_time
 
-        with patch("any_llm_gateway.routes.chat.datetime") as mock_datetime_chat:
+        with patch("any_llm.gateway.routes.chat.datetime") as mock_datetime_chat:
             mock_datetime_chat.now.return_value = initial_time
 
             response = client.post(
@@ -181,10 +181,10 @@ def test_budget_actually_resets_when_duration_passes(
 
     time_after_reset = initial_time + timedelta(seconds=61)
 
-    with patch("any_llm_gateway.budget.datetime") as mock_datetime_budget:
+    with patch("any_llm.gateway.budget.datetime") as mock_datetime_budget:
         mock_datetime_budget.now.return_value = time_after_reset
 
-        with patch("any_llm_gateway.routes.chat.datetime") as mock_datetime_chat:
+        with patch("any_llm.gateway.routes.chat.datetime") as mock_datetime_chat:
             mock_datetime_chat.now.return_value = time_after_reset
 
             response = client.post(
@@ -219,7 +219,7 @@ def test_per_user_reset_schedules_with_actual_reset(client: TestClient, master_k
     user_a_time = datetime(2025, 10, 1, 0, 0, 0, tzinfo=UTC)
     user_b_time = datetime(2025, 10, 2, 0, 0, 0, tzinfo=UTC)
 
-    with patch("any_llm_gateway.routes.users.datetime") as mock_datetime:
+    with patch("any_llm.gateway.routes.users.datetime") as mock_datetime:
         mock_datetime.now.return_value = user_a_time
 
         response_a = client.post(
@@ -228,7 +228,7 @@ def test_per_user_reset_schedules_with_actual_reset(client: TestClient, master_k
             headers=master_key_header,
         )
 
-    with patch("any_llm_gateway.routes.users.datetime") as mock_datetime:
+    with patch("any_llm.gateway.routes.users.datetime") as mock_datetime:
         mock_datetime.now.return_value = user_b_time
 
         response_b = client.post(

@@ -3,7 +3,7 @@ from typing import Any
 
 from rich.logging import RichHandler
 
-logger = logging.getLogger("any_llm_gateway")
+logger = logging.getLogger("gateway")
 
 
 def setup_logger(
@@ -13,7 +13,7 @@ def setup_logger(
     propagate: bool = False,
     **kwargs: Any,
 ) -> None:
-    """Configure the any_llm_gateway logger with the specified settings.
+    """Configure the gateway logger with the specified settings.
 
     Args:
         level: The logging level to use (default: logging.INFO)

@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from any_llm.gateway.config import GatewayConfig
 from any_llm.gateway.db.models import UsageLog, User
-from tests.conftest import MODEL_NAME
+from tests.gateway.conftest import MODEL_NAME
 
 
 @pytest.mark.asyncio
