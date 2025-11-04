@@ -1,22 +1,29 @@
 from collections.abc import Generator
+from pathlib import Path
 
+from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from any_llm.gateway.db.models import Base
+from alembic import command
 
 _engine = None
 _SessionLocal = None
 
 
 def init_db(database_url: str) -> None:
-    """Initialize database connection and create tables."""
+    """Initialize database connection and run migrations."""
     global _engine, _SessionLocal  # noqa: PLW0603
 
     _engine = create_engine(database_url, pool_pre_ping=True)
     _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
 
-    Base.metadata.create_all(bind=_engine)
+    alembic_cfg = Config()
+    alembic_dir = Path(__file__).parent.parent.parent.parent.parent / "alembic"
+    alembic_cfg.set_main_option("script_location", str(alembic_dir))
+    alembic_cfg.set_main_option("sqlalchemy.url", database_url)
+
+    command.upgrade(alembic_cfg, "head")
 
 
 def get_db() -> Generator[Session]:

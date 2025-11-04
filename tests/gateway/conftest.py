@@ -1,18 +1,31 @@
 import os
 from collections.abc import Generator
+from pathlib import Path
 from typing import Any
 
 import pytest
+from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from testcontainers.postgres import PostgresContainer
 
+from alembic import command
 from any_llm.gateway.config import API_KEY_HEADER, GatewayConfig
 from any_llm.gateway.db import Base, get_db
 from any_llm.gateway.server import create_app
 
 MODEL_NAME = "gemini:gemini-2.5-flash"
+
+
+def _run_alembic_migrations(database_url: str) -> None:
+    """Run Alembic migrations for test database."""
+    alembic_cfg = Config()
+    alembic_dir = Path(__file__).parent.parent.parent / "alembic"
+    alembic_cfg.set_main_option("script_location", str(alembic_dir))
+    alembic_cfg.set_main_option("sqlalchemy.url", database_url)
+    alembic_cfg.attributes["configure_logger"] = False
+    command.upgrade(alembic_cfg, "head")
 
 
 @pytest.fixture(scope="session")
@@ -33,7 +46,7 @@ def postgres_url() -> Generator[str]:
 def test_db(postgres_url: str) -> Generator[Session]:
     """Create a test database session."""
     engine = create_engine(postgres_url, pool_pre_ping=True)
-    Base.metadata.create_all(bind=engine)
+    _run_alembic_migrations(postgres_url)
 
     testing_session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = testing_session_local()
@@ -60,7 +73,7 @@ def test_config(postgres_url: str) -> GatewayConfig:
 def client(test_config: GatewayConfig) -> Generator[TestClient]:
     """Create a test client for the FastAPI app."""
     engine = create_engine(test_config.database_url, pool_pre_ping=True)
-    Base.metadata.create_all(bind=engine)
+    _run_alembic_migrations(test_config.database_url)
 
     app = create_app(test_config)
 
