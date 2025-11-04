@@ -106,8 +106,21 @@ openrouter = []
 portkey = []
 sambanova = []
 minimax = []
-gateway = []
+gateway = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "sqlalchemy>=2.0.0",
+  "alembic>=1.13.0",
+  "pydantic-settings>=2.0.0",
+  "pyyaml>=6.0",
+  "click>=8.1.0",
+  "python-dotenv>=1.0.0",
+  "psycopg2-binary>=2.9.9",
+]
 zai = []
+
+[project.scripts]
+any-llm-gateway = "any_llm.gateway.cli:main"
 
 [project.urls]
 Documentation = "https://mozilla-ai.github.io/any-llm/"
@@ -173,6 +186,7 @@ extend-select = ["ALL"]
 "src/any_llm/providers/**" = ["D"]
 "src/any_llm/any_llm.py" = ["D"]
 "src/any_llm/types/**" = ["A005", "D"]
+"src/any_llm/gateway/**" = ["D"]
 "demos/**" = ["T201", "S104"]
 "scripts/**" = ["D", "T201"]
 "docs/cookbooks/**" = ["D", "T201"]
@@ -234,6 +248,7 @@ lint = [
   "pre-commit-uv==4.2.0",
   "mypy",
   "types-aiofiles",
+  "types-pyyaml",
 ]
 
 tests = [
@@ -245,6 +260,7 @@ tests = [
   "pytest-timeout",
   "debugpy",
   "aiofiles",
+  "testcontainers[postgres]>=4.0.0",
 ]
 
 # For completeness, but 'uv sync --group dev' currently installs the others too.

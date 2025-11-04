@@ -83,6 +83,16 @@ export MISTRAL_API_KEY="your-key-here"
 
 Alternatively, pass API keys directly in your code (see [Usage](#usage) examples).
 
+### Gateway Installation
+
+For production deployments with API key management, budget enforcement, and usage tracking:
+
+```bash
+pip install 'any-llm-sdk[gateway]'
+```
+
+See the [Gateway Documentation](https://mozilla-ai.github.io/any-llm/gateway/quickstart/) for setup and deployment instructions.
+
 ## Why choose `any-llm`?
 
 - **Simple, unified interface** - Single function for all providers, switch models with just a string change

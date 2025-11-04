@@ -1,0 +1,48 @@
+name: Gateway Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/any_llm/gateway/**'
+      - 'alembic/**'
+      - 'docker/**'
+      - 'pyproject.toml'
+      - '.github/workflows/gateway-tests.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/any_llm/gateway/**'
+      - 'alembic/**'
+      - 'docker/**'
+      - 'pyproject.toml'
+      - '.github/workflows/gateway-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: astral-sh/setup-uv@v7
+      with:
+        python-version: 3.13
+        activate-environment: true
+
+    - name: Install dependencies
+      run: |
+         uv sync --extra gateway --extra postgres --group tests -U --python=3.13
+
+    - name: Run gateway integration tests
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      run: |
+        pytest tests/gateway/ -v -s --tb=long
+
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
