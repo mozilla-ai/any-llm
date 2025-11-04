@@ -33,7 +33,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-         uv sync --extra gateway --extra postgres --group tests -U --python=3.13
+         uv sync --extra gateway --group tests -U --python=3.13
 
     - name: Run gateway integration tests
       env:
