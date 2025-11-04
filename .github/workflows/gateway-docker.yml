@@ -11,7 +11,7 @@ on:
       - 'pyproject.toml'
       - '.github/workflows/gateway-docker.yml'
   release:
-    types: [created]
+    types: [published]
   workflow_dispatch:
 
 env:

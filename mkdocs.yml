@@ -8,6 +8,7 @@ nav:
   - Quickstart: quickstart.md
   - Providers: providers.md
   - Gateway:
+    - Overview: gateway/overview.md
     - Quick Start: gateway/quickstart.md
     - Authentication: gateway/authentication.md
     - Budget Management: gateway/budget-management.md
