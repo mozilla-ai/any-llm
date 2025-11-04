@@ -29,6 +29,10 @@ class GatewayConfig(BaseSettings):
         default="postgresql://postgres:postgres@localhost:5432/any_llm_gateway",
         description="Database connection URL for PostgreSQL",
     )
+    auto_migrate: bool = Field(
+        default=True,
+        description="Automatically run database migrations on startup",
+    )
     host: str = Field(default="0.0.0.0", description="Host to bind the server to")  # noqa: S104
     port: int = Field(default=8000, description="Port to bind the server to")
     master_key: str | None = Field(default=None, description="Master key for protecting management endpoints")

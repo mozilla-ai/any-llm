@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from testcontainers.postgres import PostgresContainer
 
@@ -56,6 +56,9 @@ def test_db(postgres_url: str) -> Generator[Session]:
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)
+        with engine.connect() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS alembic_version CASCADE"))
+            conn.commit()
 
 
 @pytest.fixture(scope="session")
@@ -66,15 +69,17 @@ def test_config(postgres_url: str) -> GatewayConfig:
         master_key="test-master-key",
         host="127.0.0.1",
         port=8000,
+        auto_migrate=False,
     )
 
 
 @pytest.fixture
 def client(test_config: GatewayConfig) -> Generator[TestClient]:
     """Create a test client for the FastAPI app."""
-    engine = create_engine(test_config.database_url, pool_pre_ping=True)
-    _run_alembic_migrations(test_config.database_url)
+    from sqlalchemy import text
 
+    _run_alembic_migrations(test_config.database_url)
+    engine = create_engine(test_config.database_url, pool_pre_ping=True)
     app = create_app(test_config)
 
     def override_get_db() -> Generator[Session]:
@@ -92,6 +97,9 @@ def client(test_config: GatewayConfig) -> Generator[TestClient]:
             yield test_client
     finally:
         Base.metadata.drop_all(bind=engine)
+        with engine.connect() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS alembic_version CASCADE"))
+            conn.commit()
 
 
 @pytest.fixture

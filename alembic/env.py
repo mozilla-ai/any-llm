@@ -23,16 +23,15 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 target_metadata = Base.metadata
 
-# Get database URL from environment variables
-# Priority: GATEWAY_DATABASE_URL -> DATABASE_URL -> default (PostgreSQL for migrations)
-database_url = (
-    os.getenv("GATEWAY_DATABASE_URL")
-    or os.getenv("DATABASE_URL")
-    or "postgresql://gateway:gateway@localhost:5432/gateway"
-)
-
-
-config.set_main_option("sqlalchemy.url", database_url)
+# Get database URL from config (if already set programmatically) or environment variables
+# Priority: Programmatically set URL -> GATEWAY_DATABASE_URL -> DATABASE_URL -> default
+if config.get_main_option("sqlalchemy.url") is None:
+    database_url = (
+        os.getenv("GATEWAY_DATABASE_URL")
+        or os.getenv("DATABASE_URL")
+        or "postgresql://gateway:gateway@localhost:5432/gateway"
+    )
+    config.set_main_option("sqlalchemy.url", database_url)
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

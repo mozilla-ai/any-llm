@@ -19,7 +19,7 @@ def create_app(config: GatewayConfig) -> FastAPI:
         Configured FastAPI application
 
     """
-    init_db(config.database_url)
+    init_db(config.database_url, auto_migrate=config.auto_migrate)
     set_config(config)
 
     db = next(get_db())

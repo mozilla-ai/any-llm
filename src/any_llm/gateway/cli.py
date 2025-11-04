@@ -31,6 +31,7 @@ def cli() -> None:
 @click.option("--port", default=None, type=int, help="Port to bind the server to")
 @click.option("--database-url", envvar="DATABASE_URL", help="Database connection URL")
 @click.option("--master-key", envvar="GATEWAY_MASTER_KEY", help="Master key for management endpoints")
+@click.option("--auto-migrate/--no-auto-migrate", default=None, help="Automatically run database migrations on startup")
 @click.option("--workers", default=1, type=int, help="Number of worker processes")
 @click.option(
     "--log-level",
@@ -44,6 +45,7 @@ def serve(
     port: int | None,
     database_url: str | None,
     master_key: str | None,
+    auto_migrate: bool | None,
     workers: int,
     log_level: int,
 ) -> None:
@@ -59,6 +61,8 @@ def serve(
         gateway_config.database_url = database_url
     if master_key:
         gateway_config.master_key = master_key
+    if auto_migrate is not None:
+        gateway_config.auto_migrate = auto_migrate
 
     if not gateway_config.master_key:
         logger.warning(

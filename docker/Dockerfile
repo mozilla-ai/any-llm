@@ -6,12 +6,9 @@ COPY pyproject.toml ./
 COPY src/ ./src/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
-COPY docker-entrypoint.sh ./
 
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -e .[gateway]
-
-RUN chmod +x docker-entrypoint.sh
 
 RUN useradd -m -u 1000 gateway && \
     chown -R gateway:gateway /app
@@ -26,5 +23,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 ENV GATEWAY_HOST=0.0.0.0
 ENV GATEWAY_PORT=8000
 
-ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["any-llm-gateway", "serve"]
