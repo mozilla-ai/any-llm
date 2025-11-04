@@ -86,29 +86,6 @@ Provide developers with time-limited API keys for testing and development withou
 
 ## Getting Started
 
-The fastest way to try any-llm gateway:
-
-```bash
-docker run \
-  -e GATEWAY_MASTER_KEY="your-secure-master-key" \
-  -e OPENAI_API_KEY="your-api-key" \
-  -p 8000:8000 \
-  ghcr.io/mozilla-ai/any-llm-gateway:latest
-```
-
-Then make requests using the gateway:
-
-```python
-from any_llm import completion
-
-response = completion(
-    model="openai:gpt-4o-mini",
-    messages=[{"role": "user", "content": "Hello!"}],
-    base_url="http://localhost:8000/v1",
-    api_key="your-secure-master-key"
-)
-```
-
 For comprehensive setup instructions, see the [Quick Start Guide](quickstart.md).
 
 ## Next Steps
