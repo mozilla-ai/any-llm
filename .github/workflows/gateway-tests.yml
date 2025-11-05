@@ -41,7 +41,7 @@ jobs:
       env:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       run: |
-        pytest tests/gateway/ -v -s --tb=long
+        pytest tests/gateway/ -v --cov --cov-report=xml --cov-append -n auto
 
     - name: Upload coverage
       uses: codecov/codecov-action@v3

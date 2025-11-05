@@ -4,13 +4,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from testcontainers.postgres import PostgresContainer
 
-from alembic import command
 from any_llm.gateway.config import API_KEY_HEADER, GatewayConfig
 from any_llm.gateway.db import Base, get_db
 from any_llm.gateway.server import create_app
@@ -21,7 +21,7 @@ MODEL_NAME = "gemini:gemini-2.5-flash"
 def _run_alembic_migrations(database_url: str) -> None:
     """Run Alembic migrations for test database."""
     alembic_cfg = Config()
-    alembic_dir = Path(__file__).parent.parent.parent / "alembic"
+    alembic_dir = Path(__file__).parent.parent.parent / "src" / "any_llm" / "gateway" / "alembic"
     alembic_cfg.set_main_option("script_location", str(alembic_dir))
     alembic_cfg.set_main_option("sqlalchemy.url", database_url)
     alembic_cfg.attributes["configure_logger"] = False
