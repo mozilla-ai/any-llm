@@ -28,6 +28,25 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          else
+            # Convert git describe output to PEP 440 compatible version
+            # e.g., 1.1.0-22-g593c535 -> 1.1.0.dev22+g593c535
+            RAW_VERSION=$(git describe --tags --always --dirty)
+            if [[ $RAW_VERSION =~ ^([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)-g([0-9a-f]+)(-dirty)?$ ]]; then
+              VERSION="${BASH_REMATCH[1]}.dev${BASH_REMATCH[2]}+g${BASH_REMATCH[3]}${BASH_REMATCH[4]}"
+            else
+              VERSION="0.0.0.dev0+${RAW_VERSION}"
+            fi
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -54,3 +73,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.VERSION }}

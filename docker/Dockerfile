@@ -1,4 +1,4 @@
-FROM python:3.13-slim as base
+FROM python:3.13-slim AS base
 
 WORKDIR /app
 
@@ -7,8 +7,12 @@ COPY src/ ./src/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
 
+# Set version explicitly for setuptools-scm
+ARG VERSION=0.0.0
+ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
+
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -e .[gateway]
+    pip install --no-cache-dir .[gateway]
 
 RUN useradd -m -u 1000 gateway && \
     chown -R gateway:gateway /app
