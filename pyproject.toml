@@ -136,6 +136,7 @@ where = ["src"]
 namespaces = false
 
 [tool.setuptools_scm]
+write_to = "src/any_llm/_version.py"
 
 [tool.pylint.messages_control]
 disable = [

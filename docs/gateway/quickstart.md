@@ -2,9 +2,6 @@
 
 ## Run from Docker Image
 
-> [!IMPORTANT]
-> You need to [authenticate to the container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-with-a-personal-access-token-classic).
-
 ```bash
 docker run \
 -e GATEWAY_MASTER_KEY="your-secure-master-key" \
@@ -13,11 +10,7 @@ docker run \
 ghcr.io/mozilla-ai/any-llm-gateway:latest
 ```
 
-
 ## Local development
-
-> [!IMPORTANT]
-> The following assumes that you have cloned this repository and `cd` into its root.
 
 ### Option 1: Docker compose
 
@@ -26,10 +19,10 @@ First, create a `config.yaml` file with your configuration, using config.example
 Then run the Docker containers:
 
 ```bash
-docker-compose up -d --build
+docker-compose -f docker/docker-compose.yml up -d --build
 
 # Tail the logs
-docker-compose logs -f
+docker-compose -f docker/docker-compose.yml logs -f
 ```
 
 This will run any-llm-gateway using the credentials and configuration specified in `config.yaml`.
