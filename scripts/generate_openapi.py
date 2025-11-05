@@ -61,8 +61,27 @@ def check_spec(spec: dict, existing_path: Path) -> bool:
     with open(existing_path, encoding="utf-8") as f:
         existing_spec = json.load(f)
 
-    generated_json = json.dumps(spec, indent=2, sort_keys=True)
-    existing_json = json.dumps(existing_spec, indent=2, sort_keys=True)
+    # Create copies to avoid modifying originals
+    spec_copy = spec.copy()
+    existing_copy = existing_spec.copy()
+
+    # Remove version from comparison since it's dynamically generated from git
+    if "info" in spec_copy and "version" in spec_copy["info"]:
+        spec_copy["info"] = spec_copy["info"].copy()
+        spec_copy["info"].pop("version")
+    if "info" in existing_copy and "version" in existing_copy["info"]:
+        existing_copy["info"] = existing_copy["info"].copy()
+        existing_copy["info"].pop("version")
+
+    generated_json = json.dumps(spec_copy, indent=2, sort_keys=True)
+    existing_json = json.dumps(existing_copy, indent=2, sort_keys=True)
+    if generated_json != existing_json:
+        print("Generated spec does not match existing spec", file=sys.stderr)
+        print("Generated spec:")
+        print(generated_json)
+        print("Existing spec:")
+        print(existing_json)
+        return False
 
     return generated_json == existing_json
 
