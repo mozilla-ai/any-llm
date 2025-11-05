@@ -4,14 +4,12 @@ WORKDIR /app
 
 COPY pyproject.toml ./
 COPY src/ ./src/
-COPY alembic/ ./alembic/
-COPY alembic.ini ./
 
 ARG VERSION=0.0.0+docker
 ENV SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION}"
 
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir .[gateway]
+    pip install --no-cache-dir .[all,gateway]
 
 RUN useradd -m -u 1000 gateway && \
     chown -R gateway:gateway /app

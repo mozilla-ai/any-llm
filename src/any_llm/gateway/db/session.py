@@ -1,11 +1,10 @@
 from collections.abc import Generator
 from pathlib import Path
 
+from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
-
-from alembic import command
 
 _engine = None
 _SessionLocal = None
@@ -25,7 +24,7 @@ def init_db(database_url: str, auto_migrate: bool = True) -> None:
 
     if auto_migrate:
         alembic_cfg = Config()
-        alembic_dir = Path(__file__).parent.parent.parent.parent.parent / "alembic"
+        alembic_dir = Path(__file__).parent.parent / "alembic"
         alembic_cfg.set_main_option("script_location", str(alembic_dir))
         alembic_cfg.set_main_option("sqlalchemy.url", database_url)
 

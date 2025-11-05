@@ -29,6 +29,7 @@ This will run any-llm-gateway using the credentials and configuration specified 
 
 ### Option 2: CLI
 
+In order for this to work, you will need to have a Postgres DB running.
 ```bash
 uv venv --python=3.13
 source .venv/bin/activate
@@ -82,19 +83,6 @@ curl -X POST http://localhost:8000/v1/keys \
   -d '{"key_name": "mobile-app"}'
 ```
 
-Response:
-```json
-{
-  "id": "abc-123",
-  "key": "gw-...",
-  "key_name": "mobile-app",
-  "created_at": "2025-10-20T10:00:00",
-  "expires_at": null,
-  "is_active": true,
-  "metadata": {}
-}
-```
-
 Now you can use that new api key and don't need to pass in the user field.
 
 ```bash
@@ -105,48 +93,3 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 ```
 
 Usage is automatically tracked under the virtual user associated with the virtual key.
-
-Response:
-
-```json
-{
-    "id": "chatcmpl-CT9lmQ9yXkO5RUEbPYIAQFi5jECGl",
-    "choices": [
-        {
-            "finish_reason": "stop",
-            "index": 0,
-            "logprobs": null,
-            "message": {
-                "content": "Hello! How can I assist you today?",
-                "refusal": null,
-                "role": "assistant",
-                "annotations": [],
-                "audio": null,
-                "function_call": null,
-                "tool_calls": null,
-                "reasoning": null
-            }
-        }
-    ],
-    "created": 1761065102,
-    "model": "gpt-4-0613",
-    "object": "chat.completion",
-    "service_tier": "default",
-    "system_fingerprint": null,
-    "usage": {
-        "completion_tokens": 9,
-        "prompt_tokens": 9,
-        "total_tokens": 18,
-        "completion_tokens_details": {
-            "accepted_prediction_tokens": 0,
-            "audio_tokens": 0,
-            "reasoning_tokens": 0,
-            "rejected_prediction_tokens": 0
-        },
-        "prompt_tokens_details": {
-            "audio_tokens": 0,
-            "cached_tokens": 0
-        }
-    }
-}
-```

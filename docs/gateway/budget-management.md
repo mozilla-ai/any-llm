@@ -50,34 +50,6 @@ curl -X PATCH http://localhost:8000/v1/users/user-123 \
   -d '{"budget_id": "abc-123"}'
 ```
 
-## Budget Enforcement
-
-- **No budget assigned** (`budget_id: null`): User has unlimited spending
-- **Budget with `max_budget: null`**: Budget tracks spending but doesn't enforce limits
-- **Budget with `max_budget` set**: Requests are blocked when `user.spend >= max_budget`
-
-## Managing Budgets
-
-```bash
-# List all budgets
-curl http://localhost:8000/v1/budgets \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key"
-
-# Get specific budget
-curl http://localhost:8000/v1/budgets/abc-123 \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key"
-
-# Update budget
-curl -X PATCH http://localhost:8000/v1/budgets/abc-123 \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
-  -H "Content-Type: application/json" \
-  -d '{"max_budget": 25.0}'
-
-# Delete budget
-curl -X DELETE http://localhost:8000/v1/budgets/abc-123 \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key"
-```
-
 ## Per-User Budget Resets
 
 Budget resets are **per-user**, not global. Each user tracks their own budget period based on when they were assigned the budget.

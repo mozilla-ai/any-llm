@@ -64,9 +64,3 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 ```
 
 Usage is automatically tracked under the virtual user associated with the virtual key.
-
-## Key Management
-
-All key management endpoints require the master key in the `X-AnyLLM-Key` header.
-
-Look for the routes in `src/any_llm/gateway/keys.py`

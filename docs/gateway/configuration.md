@@ -40,8 +40,6 @@ export GATEWAY_PORT=8000
 any-llm-gateway serve
 ```
 
-
-
 ## Model Pricing Configuration
 
 Configure model pricing in your config file to automatically track costs. Pricing can be set via config file or dynamically via the API.
@@ -60,24 +58,3 @@ pricing:
 **Important notes:**
 - Database pricing takes precedence - config only sets initial values
 - If pricing for the model already exists in the database, config values are ignored (with a warning logged)
-
-## Database Migrations
-
-If you're using PostgreSQL and need to make schema changes, alembic is supported
-
-```bash
-# Set your database URL
-export DATABASE_URL="postgresql://user:pass@localhost/gateway_db"
-
-# Apply migrations
-alembic upgrade head
-
-# Create a new migration (after changing models)
-alembic revision --autogenerate -m "describe your changes"
-
-# View migration history
-alembic history
-
-# View current migration
-alembic current
-```

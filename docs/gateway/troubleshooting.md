@@ -5,9 +5,6 @@
 Make sure the database URL is correct and the database is accessible:
 
 ```bash
-
-
-# Test PostgreSQL
 python -c "from sqlalchemy import create_engine; engine = create_engine('postgresql://user:pass@host/db'); print('OK')"
 ```
 

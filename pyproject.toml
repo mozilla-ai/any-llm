@@ -129,6 +129,7 @@ Source = "https://github.com/mozilla-ai/any-llm"
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
+"any_llm.gateway" = ["alembic.ini", "alembic/**/*"]
 
 [tool.setuptools.packages.find]
 exclude = ["tests", "tests.*"]
@@ -241,6 +242,7 @@ docs = [
   "mkdocstrings-python",
   "mkdocs-include-markdown-plugin>=7.1.5",
   "mkdocs-jupyter>=0.25.1",
+  "mkdocs-swagger-ui-tag>=0.6.10",
 ]
 
 

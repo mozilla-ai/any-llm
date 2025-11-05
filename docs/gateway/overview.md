@@ -66,23 +66,6 @@ Track spending per user, view detailed usage history, and get the observability 
 - **Flexible Configuration**: Configure via YAML or environment variables
 - **Database**: Designed for PostgreSQL
 - **Kubernetes Ready**: Built-in liveness and readiness probes
-- **Scalable**: Horizontal scaling support for high-traffic deployments
-
-[See deployment options →](quickstart.md)
-
-## Common Use Cases
-
-### SaaS Applications
-Implement tiered pricing with budget-based access control. Issue virtual API keys to customers and track their usage for billing.
-
-### Research Teams
-Give researchers access to multiple LLM providers while tracking costs per user or project. Set monthly budgets to prevent overspending.
-
-### Enterprise Deployments
-Centralize LLM access with a single gateway, track departmental spending, and enforce organization-wide budgets.
-
-### Development Teams
-Provide developers with time-limited API keys for testing and development without exposing production provider credentials.
 
 ## Getting Started
 
