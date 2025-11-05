@@ -83,9 +83,12 @@ export MISTRAL_API_KEY="your-key-here"
 
 Alternatively, pass API keys directly in your code (see [Usage](#usage) examples).
 
-### Any-LLM Gateway
+> **Note:** For production deployments requiring budget management and usage tracking, see the [Any-LLM Gateway](#any-llm-gateway) section below.
 
-any-llm-gateway is a FastAPI-based proxy server that adds enterprise-grade features on top of the core library:
+
+## Any-LLM Gateway
+
+any-llm-gateway is an **optional** FastAPI-based proxy server that adds enterprise-grade features on top of the core library:
 
 - **Budget Management** - Enforce spending limits with automatic daily, weekly, or monthly resets
 - **API Key Management** - Issue, revoke, and monitor virtual API keys without exposing provider credentials
@@ -94,7 +97,7 @@ any-llm-gateway is a FastAPI-based proxy server that adds enterprise-grade featu
 
 The gateway sits between your applications and LLM providers, exposing an OpenAI-compatible API that works with any supported provider.
 
-**Quick Start:**
+### Quick Start
 ```bash
 docker run \
   -e GATEWAY_MASTER_KEY="your-secure-master-key" \
@@ -175,7 +178,7 @@ response = llm.completion(
 | **Direct API Functions** (`completion`) | Scripts, notebooks, single requests | New client per call (stateless) |
 | **AnyLLM Class** (`AnyLLM.create`) | Production apps, multiple requests | Reuses client (connection pooling) |
 
-Both approaches support identical features : streaming, tools, responses API, etc.
+Both approaches support identical features: streaming, tools, responses API, etc.
 
 ### Responses API
 
@@ -216,7 +219,7 @@ Try `any-llm` in action with our interactive demos:
 
 An interactive chat interface showcasing streaming completions and provider switching:
 - Real-time streaming responses
-- Easy switchign between multiple LLM providers
+- Easy switching between multiple LLM providers
 - Collapsible "thinking" content display for supported models
 - Auto-scrolling chat interface
 
