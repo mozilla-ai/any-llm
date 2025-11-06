@@ -106,6 +106,8 @@ docker run \
   ghcr.io/mozilla-ai/any-llm/gateway:latest
 ```
 
+> **Note:** You can use a specific release version instead of `latest` (e.g., `1.2.0`). See [available versions](https://github.com/orgs/mozilla-ai/packages/container/package/any-llm%2Fgateway).
+
 **Perfect for:**
 - SaaS applications with tiered pricing
 - Research teams tracking costs per user

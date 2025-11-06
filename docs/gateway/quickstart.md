@@ -10,11 +10,18 @@ docker run \
 ghcr.io/mozilla-ai/any-llm/gateway:latest
 ```
 
+> **Note:** Instead of `latest`, you can use a specific release version (e.g., `1.2.0`). See [available versions](https://github.com/orgs/mozilla-ai/packages/container/package/any-llm%2Fgateway) on GitHub Packages.
+
 ## Local development
 
 ### Option 1: Docker compose
 
-First, create a `config.yaml` file with your configuration, using config.example.yaml as a template.
+First, create a `config.yaml` file with your configuration. You can copy `docker/config.example.yaml` as a starting point:
+
+```bash
+cp docker/config.example.yaml docker/config.yaml
+# Edit docker/config.yaml with your settings
+```
 
 Then run the Docker containers:
 
