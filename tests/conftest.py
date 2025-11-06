@@ -34,7 +34,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
         LLMProvider.SAMBANOVA: "DeepSeek-R1-Distill-Llama-70B",
         LLMProvider.TOGETHER: "OpenAI/gpt-oss-20B",
-        LLMProvider.PORTKEY: "@nebius-any-llm/Qwen/Qwen3-14B",
+        LLMProvider.PORTKEY: "@nebius-any-llm/Qwen/Qwen3-32B",
         LLMProvider.MINIMAX: "MiniMax-M2",
         LLMProvider.ZAI: "glm-4.5-flash",
     }
