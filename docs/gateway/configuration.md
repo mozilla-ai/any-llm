@@ -4,6 +4,9 @@
 
 Create a `config.yaml`:
 
+> **Generating a secure master key:**
+> `python -c "import secrets; print(secrets.token_urlsafe(32))"`
+
 ```yaml
 database_url: "postgresql://gateway:gateway@localhost:5432/gateway_db"
 master_key: "your-secure-master-key"

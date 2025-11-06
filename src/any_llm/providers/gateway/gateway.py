@@ -25,7 +25,7 @@ class GatewayProvider(BaseOpenAIProvider):
 
     def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         if not api_base:
-            msg = "For any-llm gateway, api_base is required"
+            msg = "For any-llm-gateway, api_base is required"
             raise ValueError(msg)
         api_key = self._verify_and_set_api_key(api_key)
         if api_key:

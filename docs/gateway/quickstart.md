@@ -2,6 +2,8 @@
 
 ## Run from Docker Image
 
+First, generate a secure master key: `python -c "import secrets; print(secrets.token_urlsafe(32))"`
+
 ```bash
 docker run \
 -e GATEWAY_MASTER_KEY="your-secure-master-key" \

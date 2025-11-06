@@ -1,6 +1,16 @@
 # Authentication
 
-The any-llm Gateway supports two main authentication patterns for making completion requests.
+any-llm-gateway supports two main authentication patterns for making completion requests.
+
+## Generating a Master Key
+
+The master key is used to authenticate administrative operations. Generate a cryptographically secure key (minimum 32 characters recommended):
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Set the generated key as the `GATEWAY_MASTER_KEY` environment variable or in your configuration file.
 
 ## Direct Master Key Authentication
 

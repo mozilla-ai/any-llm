@@ -1,4 +1,4 @@
-# Configuration for any-llm Gateway
+# Configuration for any-llm-gateway
 
 # Database connection URL
 database_url: "postgresql://postgres:postgres@localhost:5432/any_llm_gateway"

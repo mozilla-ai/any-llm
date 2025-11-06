@@ -7,14 +7,6 @@ nav:
   - Intro: index.md
   - Quickstart: quickstart.md
   - Providers: providers.md
-  - Gateway:
-    - Overview: gateway/overview.md
-    - Quick Start: gateway/quickstart.md
-    - Authentication: gateway/authentication.md
-    - Budget Management: gateway/budget-management.md
-    - Configuration: gateway/configuration.md
-    - API Reference: gateway/api-reference.md
-    - Troubleshooting: gateway/troubleshooting.md
   - API Reference:
     - AnyLLM: api/any_llm.md
     - Responses: api/responses.md
@@ -29,6 +21,14 @@ nav:
       - Model: api/types/model.md
       - Provider: api/types/provider.md
       - Batch: api/types/batch.md
+  - Gateway:
+    - Overview: gateway/overview.md
+    - Quick Start: gateway/quickstart.md
+    - Authentication: gateway/authentication.md
+    - Budget Management: gateway/budget-management.md
+    - Configuration: gateway/configuration.md
+    - API Reference: gateway/api-reference.md
+    - Troubleshooting: gateway/troubleshooting.md
   - Cookbooks:
     - Get Started with: cookbooks/any_llm_getting_started.ipynb
 theme:
@@ -80,6 +80,8 @@ markdown_extensions:
 plugins:
 - search
 - include-markdown
+- drawio-exporter:
+    format: svg
 - mkdocs-jupyter:
       no_input: false
       show_input: true
