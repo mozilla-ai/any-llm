@@ -83,6 +83,37 @@ export MISTRAL_API_KEY="your-key-here"
 
 Alternatively, pass API keys directly in your code (see [Usage](#usage) examples).
 
+> **Note:** For production deployments requiring budget management and usage tracking, see the [Any-LLM Gateway](#any-llm-gateway) section below.
+
+
+## Any-LLM Gateway
+
+any-llm-gateway is an **optional** FastAPI-based proxy server that adds enterprise-grade features on top of the core library:
+
+- **Budget Management** - Enforce spending limits with automatic daily, weekly, or monthly resets
+- **API Key Management** - Issue, revoke, and monitor virtual API keys without exposing provider credentials
+- **Usage Analytics** - Track every request with full token counts, costs, and metadata
+- **Multi-tenant Support** - Manage access and budgets across users and teams
+
+The gateway sits between your applications and LLM providers, exposing an OpenAI-compatible API that works with any supported provider.
+
+### Quick Start
+```bash
+docker run \
+  -e GATEWAY_MASTER_KEY="your-secure-master-key" \
+  -e OPENAI_API_KEY="your-api-key" \
+  -p 8000:8000 \
+  ghcr.io/mozilla-ai/any-llm-gateway:latest
+```
+
+**Perfect for:**
+- SaaS applications with tiered pricing
+- Research teams tracking costs per user
+- Enterprise deployments with centralized LLM access
+- Development teams needing temporary, scoped API keys
+
+See the [Gateway Documentation](https://mozilla-ai.github.io/any-llm/gateway/overview/) for complete setup and deployment instructions.
+
 ## Why choose `any-llm`?
 
 - **Simple, unified interface** - Single function for all providers, switch models with just a string change
@@ -90,7 +121,7 @@ Alternatively, pass API keys directly in your code (see [Usage](#usage) examples
 - **Leverages official provider SDKs** - Ensures maximum compatibility
 - **Stays framework-agnostic** so it can be used across different projects and use cases
 - **Battle-tested** - Powers our own production tools ([any-agent](https://github.com/mozilla-ai/any-agent))
-- **No Proxy or Gateway server required** - Direct connections to whichever LLM provider you need.
+- **Flexible deployment** - Direct connections for simplicity, or optional any-llm-gateway for production budget and access control
 
 ## Usage
 
@@ -147,7 +178,7 @@ response = llm.completion(
 | **Direct API Functions** (`completion`) | Scripts, notebooks, single requests | New client per call (stateless) |
 | **AnyLLM Class** (`AnyLLM.create`) | Production apps, multiple requests | Reuses client (connection pooling) |
 
-Both approaches support identical features : streaming, tools, responses API, etc.
+Both approaches support identical features: streaming, tools, responses API, etc.
 
 ### Responses API
 
@@ -188,7 +219,7 @@ Try `any-llm` in action with our interactive demos:
 
 An interactive chat interface showcasing streaming completions and provider switching:
 - Real-time streaming responses
-- Easy switchign between multiple LLM providers
+- Easy switching between multiple LLM providers
 - Collapsible "thinking" content display for supported models
 - Auto-scrolling chat interface
 

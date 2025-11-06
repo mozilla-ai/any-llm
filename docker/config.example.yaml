@@ -1,0 +1,40 @@
+# Configuration for any-llm Gateway
+
+# Database connection URL
+database_url: "postgresql://postgres:postgres@localhost:5432/any_llm_gateway"
+
+# Server configuration
+host: "0.0.0.0"
+port: 8000
+
+# Master key for protecting key management endpoints
+master_key: "${GATEWAY_MASTER_KEY}"
+
+# Pre-configured provider credentials
+providers:
+  vertexai:
+    credentials: "/app/service_account.json"
+    project: "any-llm-gateway"
+    location: "us-central1"
+
+  openai:
+    api_key: "your-openai-api-key-here"
+    api_base: "https://api.openai.com/v1"  # optional
+
+  anthropic:
+    api_key: "your-anthropic-api-key-here"
+
+  mistral:
+    api_key: "your-mistral-api-key-here"
+
+  # Add more providers as needed...
+
+# Model pricing configuration (optional but necessary for price tracking)
+# Format: "provider:model" -> input/output price per million tokens
+# Database pricing takes precedence - config only sets initial values
+# Prices are in USD per million tokens
+pricing:
+  # See https://cloud.google.com/vertex-ai/generative-ai/pricing
+  vertexai:Qwen3-235B-A22B-Instruct-2507:
+    input_price_per_million: 0.25
+    output_price_per_million: 1.00

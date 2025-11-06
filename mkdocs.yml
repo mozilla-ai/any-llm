@@ -7,6 +7,14 @@ nav:
   - Intro: index.md
   - Quickstart: quickstart.md
   - Providers: providers.md
+  - Gateway:
+    - Overview: gateway/overview.md
+    - Quick Start: gateway/quickstart.md
+    - Authentication: gateway/authentication.md
+    - Budget Management: gateway/budget-management.md
+    - Configuration: gateway/configuration.md
+    - API Reference: gateway/api-reference.md
+    - Troubleshooting: gateway/troubleshooting.md
   - API Reference:
     - AnyLLM: api/any_llm.md
     - Responses: api/responses.md
@@ -81,6 +89,7 @@ plugins:
         options:
           show_root_heading: true
           heading_level: 3
+- swagger-ui-tag
 
 hooks:
   - scripts/hooks.py

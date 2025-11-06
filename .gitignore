@@ -1,3 +1,5 @@
+# _version file
+src/any_llm/_version.py
 # Claude Code generated file
 CLAUDE.md
 uv.lock
@@ -211,3 +213,8 @@ marimo/_lsp/
 __marimo__/
 
 .vscode
+
+# Gateway-specific files
+service_account.json
+config.yaml
+gateway.db
