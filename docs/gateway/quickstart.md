@@ -7,7 +7,7 @@ docker run \
 -e GATEWAY_MASTER_KEY="your-secure-master-key" \
 -e OPENAI_API_KEY="your-api-key" \
 -p 8000:8000 \
-ghcr.io/mozilla-ai/any-llm-gateway:latest
+ghcr.io/mozilla-ai/any-llm/gateway:latest
 ```
 
 ## Local development
