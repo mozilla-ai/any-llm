@@ -30,10 +30,12 @@ The gateway exposes an OpenAI-compatible Completions API that works with any sup
         "messages": [{"role": "user", "content": "Hello!"}]
       }'
     ```
+  > Learn how to set up your secure master key [here](authentication.md)
 - **Usage Tracking**: Logs all requests with token counts and costs
 - **Streaming Support**: Handles streaming responses with automatic token tracking
 
-![Gateway Architecture](../images/gateway.png)
+### Gateway Architecture
+<img src="../../images/gateway.png" alt="Gateway Architecture" width="600" align="center"/>
 
 ## Key Features
 
@@ -53,17 +55,17 @@ Create shared budget tiers with automatic daily, weekly, or monthly resets. Budg
 Choose between two authentication patterns:
 
 **Master Key Authentication**
-* Ideal for trusted services and internal tools
-* Full access to all gateway features
+- Ideal for trusted services and internal tools
+- Full access to all gateway features
 
 **Virtual API Keys**
-* Create scoped keys with fine-grained control
-* Set expiration dates for time-limited access
-* Associate with users for spend tracking
-* Add custom metadata for tracking
-* Activate, deactivate, or revoke on demand
+- Create scoped keys with fine-grained control
+- Set expiration dates for time-limited access
+- Associate with users for spend tracking
+- Add custom metadata for tracking
+- Activate, deactivate, or revoke on demand
 
-[Learn more about authentication →](authentication.md)
+[Learn how to set up authentication →](authentication.md)
 
 ### Complete Usage Analytics
 
@@ -85,7 +87,6 @@ Track spending per user, view detailed usage history, and get the observability 
 
 ### Performance Impact
 The gateway adds minimal latency (<50ms) to requests while providing complete observability.
-
 
 ## Getting Started
 
