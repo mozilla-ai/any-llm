@@ -80,8 +80,6 @@ markdown_extensions:
 plugins:
 - search
 - include-markdown
-- drawio-exporter:
-    format: svg
 - mkdocs-jupyter:
       no_input: false
       show_input: true

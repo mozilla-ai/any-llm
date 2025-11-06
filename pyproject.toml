@@ -243,7 +243,6 @@ docs = [
   "mkdocs-include-markdown-plugin>=7.1.5",
   "mkdocs-jupyter>=0.25.1",
   "mkdocs-swagger-ui-tag>=0.6.10",
-  "mkdocs-drawio-exporter",
 ]
 
 
