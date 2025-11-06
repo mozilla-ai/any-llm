@@ -33,7 +33,7 @@ The gateway exposes an OpenAI-compatible Completions API that works with any sup
 - **Usage Tracking**: Logs all requests with token counts and costs
 - **Streaming Support**: Handles streaming responses with automatic token tracking
 
-![Gateway Architecture](gateway.drawio)
+![Gateway Architecture](../images/gateway.png)
 
 ## Key Features
 
