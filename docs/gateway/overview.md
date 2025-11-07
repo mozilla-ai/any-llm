@@ -37,7 +37,7 @@ The gateway exposes an OpenAI-compatible Completions API that works with any sup
 
 ### Gateway Architecture
 <p align="center" width="100%">
-  <img src="../../images/gateway.png" alt="Gateway Architecture" width="70%" align="center"/>
+  <img src="../../images/gateway.png" alt="Diagram showing application connecting to gateway, which then routes to multiple LLM providers (OpenAI, Anthropic, Google, etc). The gateway interfaces with a PostgreSQL database for storing usage, budgets, and keys." width="70%" align="center"/>
 </p>
 
 ## Key Features
