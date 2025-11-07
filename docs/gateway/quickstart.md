@@ -107,7 +107,7 @@ completion(
   provider="gateway",
   model="openai:gpt-5",
   api_base="http://localhost:8000/v1",
-  api_key=os.environ['GATEWAY_MASTER_KEY'],
+  api_key=os.getenv('GATEWAY_MASTER_KEY'),
   messages=[{"role": "user", "content": "Hello!"}],
   user="user-123",
 )
