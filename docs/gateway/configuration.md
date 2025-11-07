@@ -2,7 +2,7 @@
 
 ## Option 1: Config File
 
-Create a `config.yaml`:
+Create a `config.yml`:
 
 > **Generating a secure master key:**
 > `python -c "import secrets; print(secrets.token_urlsafe(32))"`
@@ -29,7 +29,7 @@ pricing:
 
 Start with config file:
 ```bash
-any-llm-gateway serve --config config.yaml
+any-llm-gateway serve --config config.yml
 ```
 
 ## Option 2: Environment Variables

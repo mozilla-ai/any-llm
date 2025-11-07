@@ -1,104 +1,119 @@
 # Quick Start
 
-## Run from Docker Image
+This guide will help you set up any-llm-gateway and make your first LLM completion request. The gateway acts as a proxy between your applications and LLM providers, providing cost control, usage tracking, and API key management.
+
+By the end of this guide, you will:
+1. Configure provider credentials and model pricing (e.g., OpenAI API key)
+1. Run the gateway running
+1. Authenticate requests using a master key
+1. Make completion requests through the gateway
+
+> **Note:**: for the purposes of this quickstart we will utilize the docker-compose and config.yml file, but alternative configuration designs are available and detailed [here](./configuration.md)
+
+## Pre-Requisites
+
+1. Docker
+1. Access to at least one LLM provider
+
+## Configure and run the Gateway
+
+When running any-llm-gateway, it must have a few things configured:
+
+1. `GATEWAY_MASTER_KEY`. This master key has admin access to manage budgets, users, virtual keys, etc.
+1. `DATABASE_URL`. The gateway relies upon a postgres database for storage.
+1. Provider Keys. The gateway connects to providers (Mistral, AWS, Vertex, Azure, etc) using credentials that must be set.
+
+For the purposes of the quickstart we will use the included `docker/docker-compose.yml`, but feel free to view and edit the file as needed.
+
+### Generate the master key
 
 First, generate a secure master key: `python -c "import secrets; print(secrets.token_urlsafe(32))"`
 
-```bash
-docker run \
--e GATEWAY_MASTER_KEY="your-secure-master-key" \
--e OPENAI_API_KEY="your-api-key" \
--p 8000:8000 \
-ghcr.io/mozilla-ai/any-llm/gateway:latest
-```
+Save the output of this command, you'll need it soon!
 
-> **Note:** Instead of `latest`, you can use a specific release version (e.g., `1.2.0`). See [available versions](https://github.com/orgs/mozilla-ai/packages/container/package/any-llm%2Fgateway) on GitHub Packages.
+### Create and edit config.yml file
 
-## Local development
-
-### Option 1: Docker compose
-
-First, create a `config.yaml` file with your configuration. You can copy `docker/config.example.yaml` as a starting point:
+Copy the example `docker/config.example.yml` file to `docker/config.yml`
 
 ```bash
-cp docker/config.example.yaml docker/config.yaml
-# Edit docker/config.yaml with your settings
+cp docker/config.example.yml docker/config.yml
 ```
 
-Then run the Docker containers:
+At a minimum you'll need to fill out the value for the master_key, and also enter credential information for at least one provider. You can browse supported providers [here](https://mozilla-ai.github.io/any-llm/providers/). If you would like to user usage cost, you'll also need to configure model pricing, as explained in the config template file.
+
+
+### Run it
+
+Run the docker-compose file, ensuring that the config.yml file you created is located in the same directory as the docker-compose.yml file (`docker/config.yml`).
+
+The default setting is to build the gateway from source, but see the docker-compose.yml file comment to see how to use a published version of any-llm-gateway instead of the source code.
 
 ```bash
 docker-compose -f docker/docker-compose.yml up -d --build
+```
 
-# Tail the logs
+When complete, you can now view the logs.
+
+```bash
 docker-compose -f docker/docker-compose.yml logs -f
 ```
 
-This will run any-llm-gateway using the credentials and configuration specified in `config.yaml`.
 
-### Option 2: CLI
+## Use the gateway
 
-In order for this to work, you will need to have a Postgres DB running.
+Now that it's running, clients can make requests! The gateway supports two authentication patterns: use of the master key, or virtual keys. See the [authentication doc](./authentication.md) for more information. For this guide we will use the master key for both administration and client requests.
+
+To make the below commands easier to run, you can set the key as an env var in your terminal:
+
 ```bash
-uv venv --python=3.13
-source .venv/bin/activate
-uv sync --all-extras -U
+export GATEWAY_MASTER_KEY=YOUR_MASTER_KEY
 ```
 
-```bash
-export GATEWAY_MASTER_KEY="your-secure-master-key"
-export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/any_llm_gateway"
-export OPENAI_API_KEY="your-api-key" # Or GEMINI_API_KEY etc
+> **tip**: for the below `curl` commands, append `| jq` in order for it be pretty-printed in the console.
 
-any-llm-gateway serve # Or, you can put the env vars in a config.yaml file and run serve with --config path/to/yaml
-```
+### Create a user
 
-## Basic Usage
-
-The gateway supports two authentication patterns for making completion requests:
-
-### Option 1: Direct Master Key Authentication
-
-First, create a user.
+In order to track usage, we must first create a user so that we can associate our completion request with them.
 
 ```bash
-curl -X POST http://localhost:8000/v1/users \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
+curl -s -X POST http://localhost:8000/v1/users \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"user_id": "user-123", "alias": "Alice"}'
+  -d '{"user_id": "user-123", "alias": "Bob"}'
 ```
 
-Use the master key directly and specify which user is making the request.
+### Make a request
+
+Make a completion request using the master key and specify that the completion should be attached to the user you just created. This is only required when authenticating using the master key, if a user has a virtual key they do not need to specify a user id. You may also need to adjust the model to match one of the providers that you configured when running the gateway.
 
 ```bash
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
+curl -s -X POST http://localhost:8000/v1/chat/completions \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "openai:gpt-4o-mini",
+    "model": "openai:gpt-5",
     "messages": [{"role": "user", "content": "Hello!"}],
     "user": "user-123"
   }'
 ```
 
-### Option 2: Virtual API Keys
+### View the usage metrics
 
-Create a virtual API key (you can optionally pass in a user_id too if you want the key linked to a user)
-
-```bash
-curl -X POST http://localhost:8000/v1/keys \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
-  -H "Content-Type: application/json" \
-  -d '{"key_name": "mobile-app"}'
-```
-
-Now you can use that new api key and don't need to pass in the user field.
+Now using the master key, we can access the usage information for the user.
 
 ```bash
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "X-AnyLLM-Key: Bearer gw-..." \
-  -H "Content-Type: application/json" \
-  -d '{"model": "openai:gpt-5-mini", "messages": [{"role": "user", "content": "Hello!"}]}'
+curl -s http://localhost:8000/v1/users/user-123 \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json"
 ```
 
-Usage is automatically tracked under the virtual user associated with the virtual key.
+You'll notice that the user does not have a budget attached, which means that we track the usage but do not limit them! For more information on creating and managing budgets and budget reset cycles, see the [Budget Management docs](budget-management.md)
+
+## Next Steps
+
+
+
+- **[Configuration](configuration.md)** - Configure providers, pricing, and other settings
+- **[Authentication](authentication.md)** - Learn about master keys and virtual API keys
+- **[Budget Management](budget-management.md)** - Set spending limits and track costs
+- **[API Reference](api-reference.md)** - Explore the complete API

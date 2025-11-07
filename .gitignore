@@ -216,5 +216,5 @@ __marimo__/
 
 # Gateway-specific files
 service_account.json
-config.yaml
+config.yml
 gateway.db

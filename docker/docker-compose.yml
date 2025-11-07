@@ -1,5 +1,7 @@
 services:
   gateway:
+    # if pulling from ghcr.io, use the following instead, and comment out the build section:
+    # image: ghcr.io/mozilla-ai/any-llm/gateway:latest
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -8,12 +10,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./config.yaml:/app/config.yaml
+      - ./config.yml:/app/config.yml
       - ./service_account.json:/app/service_account.json
-    environment:
-      - DATABASE_URL=postgresql://gateway:gateway@postgres:5432/gateway
-      - GATEWAY_MASTER_KEY=${GATEWAY_MASTER_KEY:-change-me-in-production}
-    command: ["any-llm-gateway", "serve", "--config", "/app/config.yaml"]
+    command: ["any-llm-gateway", "serve", "--config", "/app/config.yml"]
     depends_on:
       postgres:
         condition: service_healthy
