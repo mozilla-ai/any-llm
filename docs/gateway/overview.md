@@ -15,11 +15,13 @@ Managing LLM costs and access at scale is challenging. Give users unrestricted a
 
 ## How it works
 
-The gateway exposes an OpenAI-compatible Completions API that works with any supported provider. Your applications connect to the gateway instead of directly to LLM providers, and the gateway handles:
+The gateway acts as a transparent proxy between your applications and LLM providers. Here's the request flow:
 
-- **Authentication**: Validates requests using master keys or virtual API keys
-- **Budget Enforcement**: Checks spending limits before forwarding requests
-- **Provider Routing**: Routes requests to the appropriate LLM provider using the `provider:model` format (e.g., `openai:gpt-4o-mini`, `anthropic:claude-3-5-sonnet-20241022`)
+1. **Your application** sends a request to the gateway (instead of directly to OpenAI, Anthropic, etc.)
+2. **The gateway** authenticates the request, checks budget limits, and tracks usage
+3. **The gateway** routes to the appropriate provider based on the model format
+4. **The provider** processes the request and returns the response
+5. **The gateway** logs the usage and returns the response to your application
 
     ```bash
     curl -X POST http://localhost:8000/v1/chat/completions \
@@ -31,11 +33,7 @@ The gateway exposes an OpenAI-compatible Completions API that works with any sup
       }'
     ```
   > Learn how to set up your secure master key [here](authentication.md)  
-  
-- **Usage Tracking**: Logs all requests with token counts and costs
-- **Streaming Support**: Handles streaming responses with automatic token tracking
 
-### Gateway Architecture
 <p align="center" width="100%">
   <img src="../../images/gateway.png" alt="Diagram showing application connecting to gateway, which then routes to multiple LLM providers (OpenAI, Anthropic, Google, etc). The gateway interfaces with a PostgreSQL database for storing usage, budgets, and keys." width="70%" align="center"/>
 </p>
