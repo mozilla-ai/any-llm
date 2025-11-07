@@ -7,7 +7,7 @@ Budgets provide shared spending limits that can be assigned to multiple users. T
 ```bash
 # Create a budget with a $10.00 spending limit and monthly resets (30 days = 2592000 seconds)
 curl -X POST http://localhost:8000/v1/budgets \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "max_budget": 10.0,
@@ -15,7 +15,9 @@ curl -X POST http://localhost:8000/v1/budgets \
   }'
 ```
 
-Response:
+<details> 
+<summary> Sample Response</summary>
+
 ```json
 {
   "budget_id": "abc-123",
@@ -25,6 +27,7 @@ Response:
   "updated_at": "2025-10-22T10:00:00Z"
 }
 ```
+</details>
 
 ## Assigning Budgets to Users
 
@@ -35,7 +38,7 @@ When creating or updating a user, specify the `budget_id`:
 ```bash
 # Create a user with a budget
 curl -X POST http://localhost:8000/v1/users \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "user_id": "user-456",
@@ -45,7 +48,7 @@ curl -X POST http://localhost:8000/v1/users \
 
 # Update an existing user's budget
 curl -X PATCH http://localhost:8000/v1/users/user-123 \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"budget_id": "abc-123"}'
 ```
