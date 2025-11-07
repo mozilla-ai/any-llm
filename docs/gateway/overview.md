@@ -30,12 +30,15 @@ The gateway exposes an OpenAI-compatible Completions API that works with any sup
         "messages": [{"role": "user", "content": "Hello!"}]
       }'
     ```
-  > Learn how to set up your secure master key [here](authentication.md)
+  > Learn how to set up your secure master key [here](authentication.md)  
+  
 - **Usage Tracking**: Logs all requests with token counts and costs
 - **Streaming Support**: Handles streaming responses with automatic token tracking
 
 ### Gateway Architecture
-<img src="../../images/gateway.png" alt="Gateway Architecture" width="600" align="center"/>
+<p align="center" width="100%">
+  <img src="../../images/gateway.png" alt="Gateway Architecture" width="70%" align="center"/>
+</p>
 
 ## Key Features
 
@@ -65,7 +68,7 @@ Choose between two authentication patterns:
 - Add custom metadata for tracking
 - Activate, deactivate, or revoke on demand
 
-[Learn how to set up authentication →](authentication.md)
+[Set up your keys →](authentication.md)
 
 ### Complete Usage Analytics
 
