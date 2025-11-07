@@ -55,8 +55,8 @@ providers:
 
 models:
   openai:gpt-4:
-    input_cost: 0.15
-    output_cost: 0.60
+    input_price_per_million: 0.15
+    output_price_per_million: 0.60
 ```
 
 
