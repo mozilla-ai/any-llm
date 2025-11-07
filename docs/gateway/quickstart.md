@@ -97,6 +97,22 @@ curl -s -X POST http://localhost:8000/v1/chat/completions \
   }'
 ```
 
+Alternatively, if you are using the any-llm python sdk, you can access using the gateway client.
+
+```python
+import os
+from any_llm import completion
+
+completion(
+  provider="gateway",
+  model="openai:gpt-5",
+  api_base="http://localhost:8000/v1",
+  api_key=os.environ['GATEWAY_MASTER_KEY'],
+  messages=[{"role": "user", "content": "Hello!"}],
+  user="user-123",
+)
+```
+
 ### View the usage metrics
 
 Now using the master key, we can access the usage information for the user.
