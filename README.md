@@ -83,10 +83,10 @@ export MISTRAL_API_KEY="your-key-here"
 
 Alternatively, pass API keys directly in your code (see [Usage](#usage) examples).
 
-> **Note:** For production deployments requiring budget management and usage tracking, see the [Any-LLM Gateway](#any-llm-gateway) section below.
+> **Note:** For production deployments requiring budget management and usage tracking, see [any-llm-gateway](#any-llm-gateway) section below.
 
 
-## Any-LLM Gateway
+## any-llm-gateway
 
 any-llm-gateway is an **optional** FastAPI-based proxy server that adds enterprise-grade features on top of the core library:
 
@@ -106,11 +106,20 @@ docker run \
   ghcr.io/mozilla-ai/any-llm/gateway:latest
 ```
 
-**Perfect for:**
-- SaaS applications with tiered pricing
-- Research teams tracking costs per user
-- Enterprise deployments with centralized LLM access
-- Development teams needing temporary, scoped API keys
+> **Note:** You can use a specific release version instead of `latest` (e.g., `1.2.0`). See [available versions](https://github.com/orgs/mozilla-ai/packages/container/package/any-llm%2Fgateway).
+
+### Do You Need the Gateway?
+
+| Use the Core Library Directly | Deploy the Gateway |
+|-------------------------------|-------------------|
+|Prototyping and experimentation |Multi-user or team environments |
+|Single developer usage |Need to enforce spending limits |
+|Scripts, notebooks, or automation |SaaS applications with tiered pricing |
+|Direct control over provider API keys |Hide provider credentials from end users |
+|Simple, low-latency integration |Centralized usage tracking and analytics |
+|No budget enforcement needed |Cost attribution and chargebacks |
+|Learning and testing |Virtual API key management |
+| |Production deployments with governance |
 
 See the [Gateway Documentation](https://mozilla-ai.github.io/any-llm/gateway/overview/) for complete setup and deployment instructions.
 

@@ -18,7 +18,7 @@ python -c "from sqlalchemy import create_engine; engine = create_engine('postgre
 
 ### Configuration Issues
 
-- Verify your `config.yaml` file is properly formatted
+- Verify your `config.yml` file is properly formatted
 - Check that environment variables are set correctly
 - Ensure provider API keys are valid and have proper permissions
 

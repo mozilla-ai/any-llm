@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate OpenAPI specification for the any-llm Gateway.
+"""Generate OpenAPI specification for the any-llm-gateway.
 
 This script creates the FastAPI application and exports its OpenAPI specification
 to a JSON file. It can be run in two modes:

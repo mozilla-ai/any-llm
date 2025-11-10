@@ -907,7 +907,7 @@
   },
   "info": {
     "description": "A clean FastAPI gateway for any-llm with API key management",
-    "title": "any-llm Gateway",
+    "title": "any-llm-gateway",
     "version": "1.1.1.dev23+g56c5a9b20.d20251105"
   },
   "openapi": "3.1.0",
