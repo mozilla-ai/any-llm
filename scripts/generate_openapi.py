@@ -38,8 +38,7 @@ def _add_security_schemes(spec: dict) -> dict:
             "in": "header",
             "name": API_KEY_HEADER,
             "description": (
-                "API key authentication for chat completions and user operations. "
-                "Format: `Bearer <your-api-key>`"
+                "API key authentication for chat completions and user operations. Format: `Bearer <your-api-key>`"
             ),
         },
         "MasterKeyAuth": {
@@ -56,7 +55,7 @@ def _add_security_schemes(spec: dict) -> dict:
 
     # Add security requirements to endpoints based on their tags and dependencies
     if "paths" in spec:
-        for path, methods in spec["paths"].items():
+        for _path, methods in spec["paths"].items():
             for method, endpoint in methods.items():
                 if method in ["get", "post", "put", "patch", "delete"]:
                     # Determine security based on tags and common patterns
@@ -115,9 +114,7 @@ def generate_openapi_spec() -> dict:
     spec = app.openapi()
 
     # Add security schemes to the OpenAPI spec
-    spec = _add_security_schemes(spec)
-
-    return spec
+    return _add_security_schemes(spec)
 
 
 def write_spec(spec: dict, output_path: Path) -> None:
