@@ -13,8 +13,94 @@ import json
 import sys
 from pathlib import Path
 
-from any_llm.gateway.config import GatewayConfig
+from any_llm.gateway.config import API_KEY_HEADER, GatewayConfig
 from any_llm.gateway.server import create_app
+
+
+def _add_security_schemes(spec: dict) -> dict:
+    """Add security scheme definitions to OpenAPI spec.
+
+    Args:
+        spec: OpenAPI specification dictionary
+
+    Returns:
+        Modified specification with security schemes
+
+    """
+    # Ensure components section exists
+    if "components" not in spec:
+        spec["components"] = {}
+
+    # Add security schemes
+    spec["components"]["securitySchemes"] = {
+        "APIKeyAuth": {
+            "type": "apiKey",
+            "in": "header",
+            "name": API_KEY_HEADER,
+            "description": (
+                "API key authentication for chat completions and user operations. "
+                "Format: `Bearer <your-api-key>`"
+            ),
+        },
+        "MasterKeyAuth": {
+            "type": "apiKey",
+            "in": "header",
+            "name": API_KEY_HEADER,
+            "description": (
+                "Master key authentication for administrative operations "
+                "(key management, user management, budget configuration, pricing configuration). "
+                "Format: `Bearer <your-master-key>`"
+            ),
+        },
+    }
+
+    # Add security requirements to endpoints based on their tags and dependencies
+    if "paths" in spec:
+        for path, methods in spec["paths"].items():
+            for method, endpoint in methods.items():
+                if method in ["get", "post", "put", "patch", "delete"]:
+                    # Determine security based on tags and common patterns
+                    tags = endpoint.get("tags", [])
+
+                    # Health endpoint - no auth required
+                    if "health" in tags:
+                        continue
+
+                    # Get existing description
+                    existing_desc = endpoint.get("description", "")
+
+                    # Admin endpoints (keys, users, budgets, pricing) require master key
+                    if any(tag in ["keys", "users", "budgets", "pricing"] for tag in tags):
+                        endpoint["security"] = [{"MasterKeyAuth": []}]
+                        # Add security note to description
+                        security_note = (
+                            "\n\n**Authentication:** Requires Master Key\n\n"
+                            "Include header: `X-AnyLLM-Key: Bearer <your-master-key>`"
+                        )
+                        endpoint["description"] = existing_desc + security_note
+
+                    # Chat endpoints can use either API key or master key
+                    elif "chat" in tags:
+                        endpoint["security"] = [{"APIKeyAuth": []}, {"MasterKeyAuth": []}]
+                        # Add security note to description
+                        security_note = (
+                            "\n\n**Authentication:** Requires API Key or Master Key\n\n"
+                            "Include header: `X-AnyLLM-Key: Bearer <your-api-key>` or "
+                            "`X-AnyLLM-Key: Bearer <your-master-key>`"
+                        )
+                        endpoint["description"] = existing_desc + security_note
+
+                    # Default: require API key
+                    else:
+                        endpoint["security"] = [{"APIKeyAuth": []}]
+                        # Add security note to description
+                        security_note = (
+                            "\n\n**Authentication:** Requires API Key\n\n"
+                            "Include header: `X-AnyLLM-Key: Bearer <your-api-key>`"
+                        )
+                        endpoint["description"] = existing_desc + security_note
+
+    return spec
 
 
 def generate_openapi_spec() -> dict:
@@ -26,7 +112,12 @@ def generate_openapi_spec() -> dict:
     """
     config = GatewayConfig(database_url="sqlite:///:memory:")
     app = create_app(config)
-    return app.openapi()
+    spec = app.openapi()
+
+    # Add security schemes to the OpenAPI spec
+    spec = _add_security_schemes(spec)
+
+    return spec
 
 
 def write_spec(spec: dict, output_path: Path) -> None:
