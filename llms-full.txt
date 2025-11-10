@@ -283,481 +283,6 @@ Provider source code can be found in the [`src/any_llm/providers/`](https://gith
 
 ---
 
-## gateway/overview.md
-
-<!-- Source: gateway/overview.md -->
-
-# Gateway Overview
-
-## What is any-llm gateway?
-
-any-llm gateway is a FastAPI-based proxy server that adds production-grade budget enforcement, API key management, and usage analytics on top of any-llm's multi-provider foundation. It sits between your applications and LLM providers, giving you complete control over costs, access, and observability.
-
-## Why use the gateway?
-
-Managing LLM costs and access at scale is challenging. Give users unrestricted access and you risk runaway costs. Lock it down too much and you slow down innovation. any-llm gateway solves this by providing:
-
-- **Cost Control**: Set budgets that automatically enforce or track spending limits
-- **Access Management**: Issue, revoke, and monitor API keys generated for user access without exposing provider credentials
-- **Complete Visibility**: Track every request with full token counts, costs, and metadata
-- **Production-Ready**: Deploy with Docker and Postgres, Kubernetes-ready
-
-## How it works
-
-The gateway exposes an OpenAI-compatible Completions API that works with any supported provider. Your applications connect to the gateway instead of directly to LLM providers, and the gateway handles:
-
-- **Authentication**: Validates requests using master keys or virtual API keys
-- **Budget Enforcement**: Checks spending limits before forwarding requests
-- **Provider Routing**: Routes requests to the appropriate LLM provider using the `provider:model` format (e.g., `openai:gpt-4o-mini`, `anthropic:claude-3-5-sonnet-20241022`)
-- **Usage Tracking**: Logs all requests with token counts and costs
-- **Streaming Support**: Handles streaming responses with automatic token tracking
-
-## Key Features
-
-### Smart Budget Management
-
-Create shared budget tiers with automatic daily, weekly, or monthly resets. Budgets can be:
-
-- **Shared across multiple users** - Perfect for team or organization-wide limits
-- **Automatically enforced** - Requests are rejected when budgets are exceeded
-- **Tracking-only mode** - Monitor spending without blocking requests
-- **Auto-resetting** - No manual intervention required for recurring budgets
-
-[Set up your first budget →](#budget-management.md)
-
-### Flexible API Key System
-
-Choose between two authentication patterns:
-
-**Master Key Authentication**
-* Ideal for trusted services and internal tools
-* Full access to all gateway features
-
-**Virtual API Keys**
-* Create scoped keys with fine-grained control
-* Set expiration dates for time-limited access
-* Associate with users for spend tracking
-* Add custom metadata for tracking
-* Activate, deactivate, or revoke on demand
-
-[Learn more about authentication →](#authentication.md)
-
-### Complete Usage Analytics
-
-Every request is logged with comprehensive details:
-
-- Full token counts (prompt, completion, total)
-- Per-request costs based on admin-configured per-token pricing
-- Request metadata and timestamps
-- User and API key attribution
-
-Track spending per user, view detailed usage history, and get the observability you need for cost attribution and chargebacks.
-
-### Production-Ready Deployment
-
-- **Quick Start**: Deploy with Docker in minutes
-- **Flexible Configuration**: Configure via YAML or environment variables
-- **Database**: Designed for PostgreSQL
-- **Kubernetes Ready**: Built-in liveness and readiness probes
-
-### Performance Impact
-The gateway adds minimal latency (<50ms) to requests while providing complete observability.
-
-
-## Getting Started
-
-For comprehensive setup instructions, see the [Quick Start Guide](#quickstart.md).
-
-## Next Steps
-
-- **[Quick Start](#quickstart.md)** - Deploy and configure your first gateway
-- **[Authentication](#authentication.md)** - Set up master keys and virtual API keys
-- **[Budget Management](#budget-management.md)** - Configure spending limits and tracking
-- **[Configuration](#configuration.md)** - Learn about all configuration options
-- **[API Reference](#api-reference.md)** - Explore the complete API
-
-
----
-
-## gateway/quickstart.md
-
-<!-- Source: gateway/quickstart.md -->
-
-# Quick Start
-
-## Run from Docker Image
-
-```bash
-docker run \
--e GATEWAY_MASTER_KEY="your-secure-master-key" \
--e OPENAI_API_KEY="your-api-key" \
--p 8000:8000 \
-ghcr.io/mozilla-ai/any-llm/gateway:latest
-```
-
-## Local development
-
-### Option 1: Docker compose
-
-First, create a `config.yaml` file with your configuration, using config.example.yaml as a template.
-
-Then run the Docker containers:
-
-```bash
-docker-compose -f docker/docker-compose.yml up -d --build
-
-# Tail the logs
-docker-compose -f docker/docker-compose.yml logs -f
-```
-
-This will run any-llm-gateway using the credentials and configuration specified in `config.yaml`.
-
-### Option 2: CLI
-
-In order for this to work, you will need to have a Postgres DB running.
-```bash
-uv venv --python=3.13
-source .venv/bin/activate
-uv sync --all-extras -U
-```
-
-```bash
-export GATEWAY_MASTER_KEY="your-secure-master-key"
-export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/any_llm_gateway"
-export OPENAI_API_KEY="your-api-key" # Or GEMINI_API_KEY etc
-
-any-llm-gateway serve # Or, you can put the env vars in a config.yaml file and run serve with --config path/to/yaml
-```
-
-## Basic Usage
-
-The gateway supports two authentication patterns for making completion requests:
-
-### Option 1: Direct Master Key Authentication
-
-First, create a user.
-
-```bash
-curl -X POST http://localhost:8000/v1/users \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
-  -H "Content-Type: application/json" \
-  -d '{"user_id": "user-123", "alias": "Alice"}'
-```
-
-Use the master key directly and specify which user is making the request.
-
-```bash
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "openai:gpt-4o-mini",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "user": "user-123"
-  }'
-```
-
-### Option 2: Virtual API Keys
-
-Create a virtual API key (you can optionally pass in a user_id too if you want the key linked to a user)
-
-```bash
-curl -X POST http://localhost:8000/v1/keys \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
-  -H "Content-Type: application/json" \
-  -d '{"key_name": "mobile-app"}'
-```
-
-Now you can use that new api key and don't need to pass in the user field.
-
-```bash
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "X-AnyLLM-Key: Bearer gw-..." \
-  -H "Content-Type: application/json" \
-  -d '{"model": "openai:gpt-5-mini", "messages": [{"role": "user", "content": "Hello!"}]}'
-```
-
-Usage is automatically tracked under the virtual user associated with the virtual key.
-
-
----
-
-## gateway/authentication.md
-
-<!-- Source: gateway/authentication.md -->
-
-# Authentication
-
-The any-llm Gateway supports two main authentication patterns for making completion requests.
-
-## Direct Master Key Authentication
-
-Use the master key directly and specify which user is making the request.
-
-### Creating a User
-
-```bash
-curl -X POST http://localhost:8000/v1/users \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
-  -H "Content-Type: application/json" \
-  -d '{"user_id": "user-123", "alias": "Alice"}'
-```
-
-### Making Requests with Master Key
-
-```bash
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "openai:gpt-4o-mini",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "user": "user-123"
-  }'
-```
-
-## Virtual API Keys
-
-Virtual API keys provide a more secure way to authenticate requests without exposing the master key.
-
-### Creating a Virtual API Key
-
-```bash
-curl -X POST http://localhost:8000/v1/keys \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
-  -H "Content-Type: application/json" \
-  -d '{"key_name": "mobile-app"}'
-```
-
-Response:
-```json
-{
-  "id": "abc-123",
-  "key": "gw-...",
-  "key_name": "mobile-app",
-  "created_at": "2025-10-20T10:00:00",
-  "expires_at": null,
-  "is_active": true,
-  "metadata": {}
-}
-```
-
-### Using Virtual API Keys
-
-```bash
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "X-AnyLLM-Key: Bearer gw-..." \
-  -H "Content-Type: application/json" \
-  -d '{"model": "openai:gpt-5-mini", "messages": [{"role": "user", "content": "Hello!"}]}'
-```
-
-Usage is automatically tracked under the virtual user associated with the virtual key.
-
-
----
-
-## gateway/budget-management.md
-
-<!-- Source: gateway/budget-management.md -->
-
-# Budget Management
-
-Budgets provide shared spending limits that can be assigned to multiple users. This allows you to create budget tiers (like "Free", "Pro", "Enterprise") and enforce spending limits across groups of users.
-
-## Creating a Budget
-
-```bash
-# Create a budget with a $10.00 spending limit and monthly resets (30 days = 2592000 seconds)
-curl -X POST http://localhost:8000/v1/budgets \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "max_budget": 10.0,
-    "budget_duration_sec": 2592000
-  }'
-```
-
-Response:
-```json
-{
-  "budget_id": "abc-123",
-  "max_budget": 10.0,
-  "budget_duration_sec": 2592000,
-  "created_at": "2025-10-22T10:00:00Z",
-  "updated_at": "2025-10-22T10:00:00Z"
-}
-```
-
-## Assigning Budgets to Users
-
-When creating or updating a user, specify the `budget_id`:
-
-**Warning: If you don't create and set a budget, budget is unlimited**
-
-```bash
-# Create a user with a budget
-curl -X POST http://localhost:8000/v1/users \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "user_id": "user-456",
-    "alias": "Bob",
-    "budget_id": "abc-123"
-  }'
-
-# Update an existing user's budget
-curl -X PATCH http://localhost:8000/v1/users/user-123 \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
-  -H "Content-Type: application/json" \
-  -d '{"budget_id": "abc-123"}'
-```
-
-## Per-User Budget Resets
-
-Budget resets are **per-user**, not global. Each user tracks their own budget period based on when they were assigned the budget.
-
-**Example:**
-1. Create a budget with `budget_duration_sec: 604800` (1 week)
-2. Assign User A to the budget on Monday
-3. Assign User B to the budget on Tuesday
-4. User A's budget resets every Monday
-5. User B's budget resets every Tuesday
-
-This allows you to create budget tiers (like "Free", "Pro", "Enterprise") without worrying about all users resetting at the same time.
-
-## Automatic Reset Behavior
-
-Budget resets happen automatically using a "lazy reset" approach:
-- When a user makes a request, the system checks if their `next_budget_reset_at` has passed
-- If yes, the user's `spend` is reset to $0.00 and a new reset date is calculated
-- A log entry is created in `budget_reset_logs` for audit purposes
-- The request then proceeds normally
-
-
----
-
-## gateway/configuration.md
-
-<!-- Source: gateway/configuration.md -->
-
-# Configuration
-
-## Option 1: Config File
-
-Create a `config.yaml`:
-
-```yaml
-database_url: "postgresql://gateway:gateway@localhost:5432/gateway_db"
-master_key: "your-secure-master-key"
-
-providers:
-  openai:
-    api_key: "${OPENAI_API_KEY}"
-  gemini:
-    api_key: "${GEMINI_API_KEY}"
-  vertexai:
-    credentials: "/path/to/service_account.json"
-    project: "your-gcp-project-id"
-    location: "us-central1"
-
-pricing:
-  openai:gpt-3.5-turbo:
-    input_price_per_million: 0.5
-    output_price_per_million: 1.5
-```
-
-Start with config file:
-```bash
-any-llm-gateway serve --config config.yaml
-```
-
-## Option 2: Environment Variables
-
-```bash
-export DATABASE_URL="postgresql://gateway:gateway@localhost:5432/gateway_db"
-export GATEWAY_MASTER_KEY="your-secure-master-key"
-export GATEWAY_HOST="0.0.0.0"
-export GATEWAY_PORT=8000
-
-any-llm-gateway serve
-```
-
-## Model Pricing Configuration
-
-Configure model pricing in your config file to automatically track costs. Pricing can be set via config file or dynamically via the API.
-
-### Config File Pricing
-
-Add pricing for models in your config file using the format `provider:model`:
-
-```yaml
-pricing:
-  openai:gpt-3.5-turbo:
-    input_price_per_million: 0.5
-    output_price_per_million: 1.5
-```
-
-**Important notes:**
-- Database pricing takes precedence - config only sets initial values
-- If pricing for the model already exists in the database, config values are ignored (with a warning logged)
-
-
----
-
-## gateway/api-reference.md
-
-<!-- Source: gateway/api-reference.md -->
-
-# API Reference
-
-<swagger-ui src="openapi.json"/>
-
-
----
-
-## gateway/troubleshooting.md
-
-<!-- Source: gateway/troubleshooting.md -->
-
-# Troubleshooting
-
-## Database connection errors
-
-Make sure the database URL is correct and the database is accessible:
-
-```bash
-python -c "from sqlalchemy import create_engine; engine = create_engine('postgresql://user:pass@host/db'); print('OK')"
-```
-
-## Common Issues
-
-### Authentication Errors
-
-- Ensure you're using the correct master key format: `Bearer your-secure-master-key`
-- Check that the `X-AnyLLM-Key` header is properly set
-- Verify that virtual API keys are active and not expired
-
-### Configuration Issues
-
-- Verify your `config.yaml` file is properly formatted
-- Check that environment variables are set correctly
-- Ensure provider API keys are valid and have proper permissions
-
-### Budget Enforcement
-
-- Check that budgets are properly assigned to users
-- Verify budget limits are set correctly
-- Monitor user spending to ensure limits are being enforced
-
-## Getting Help
-
-- Check the logs for detailed error messages
-- Verify your configuration matches the examples in the documentation
-- Ensure all required environment variables are set
-
-
----
-
 ## api/any_llm.md
 
 <!-- Source: api/any_llm.md -->
@@ -930,6 +455,809 @@ Data models and types for provider operations.
 Data models and types for batch operations.
 
 ::: any_llm.types.batch
+
+
+---
+
+## gateway/overview.md
+
+<!-- Source: gateway/overview.md -->
+
+# Gateway Overview
+
+## What is any-llm-gateway?
+
+any-llm-gateway is a FastAPI-based proxy server that adds production-grade budget enforcement, API key management, and usage analytics on top of any-llm's multi-provider foundation. It sits between your applications and LLM providers, giving you complete control over costs, access, and observability.
+
+## Why use the gateway?
+
+Managing LLM costs and access at scale is challenging. Give users unrestricted access and you risk runaway costs. Lock it down too much and you slow down innovation. any-llm-gateway solves this by providing:
+
+- **Cost Control**: Set budgets that automatically enforce or track spending limits
+- **Access Management**: Issue, revoke, and monitor API keys generated for user access without exposing provider credentials
+- **Complete Visibility**: Track every request with full token counts, costs, and metadata
+- **Production-Ready**: Deploy with Docker and Postgres, Kubernetes-ready
+
+## How it works
+
+The gateway acts as a transparent proxy between your applications and LLM providers. Here's the request flow:
+
+1. **Your application** sends a request to the gateway (instead of directly to OpenAI, Anthropic, etc.)
+2. **The gateway** authenticates the request, checks budget limits, and tracks usage
+3. **The gateway** routes to the appropriate provider based on the model format
+4. **The provider** processes the request and returns the response
+5. **The gateway** logs the usage and returns the response to your application
+
+    ```bash
+    curl -X POST http://localhost:8000/v1/chat/completions \
+      -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model": "openai:gpt-5",
+        "messages": [{"role": "user", "content": "Hello!"}]
+      }'
+    ```
+  > Learn how to set up your secure master key [here](#authentication.md)  
+
+<p align="center" width="100%">
+  <img src="../../images/gateway.png" alt="Diagram showing application connecting to gateway, which then routes to multiple LLM providers (OpenAI, Anthropic, Google, etc). The gateway interfaces with a PostgreSQL database for storing usage, budgets, and keys." width="70%" align="center"/>
+</p>
+
+## Key Features
+
+### Smart Budget Management
+
+Create shared budget tiers with automatic daily, weekly, or monthly resets. Budgets can be:
+
+- **Shared across multiple users** - Perfect for team or organization-wide limits
+- **Automatically enforced** - Requests are rejected when budgets are exceeded
+- **Tracking-only mode** - Monitor spending without blocking requests
+- **Auto-resetting** - No manual intervention required for recurring budgets
+
+[Set up your first budget →](#budget-management.md)
+
+### Flexible API Key System
+
+Choose between two authentication patterns:
+
+**Master Key Authentication**
+- Ideal for trusted services and internal tools
+- Full access to all gateway features
+
+**Virtual API Keys**
+- Create scoped keys with fine-grained control
+- Set expiration dates for time-limited access
+- Associate with users for spend tracking
+- Add custom metadata for tracking
+- Activate, deactivate, or revoke on demand
+
+[Set up your keys →](#authentication.md)
+
+### Complete Usage Analytics
+
+Every request is logged with comprehensive details:
+
+- Full token counts (prompt, completion, total)
+- Per-request costs based on admin-configured per-token pricing
+- Request metadata and timestamps
+- User and API key attribution
+
+Track spending per user, view detailed usage history, and get the observability you need for cost attribution and chargebacks.
+
+### Production-Ready Deployment
+
+- **Quick Start**: Deploy with Docker in minutes
+- **Flexible Configuration**: Configure via YAML or environment variables
+- **Database**: Designed for PostgreSQL
+- **Kubernetes Ready**: Built-in liveness and readiness probes
+
+### Performance Impact
+The gateway adds minimal latency (<50ms) to requests while providing complete observability.
+
+## Getting Started
+
+For comprehensive setup instructions, see the [Quick Start Guide](#quickstart.md).
+
+## Next Steps
+
+- **[Quick Start](#quickstart.md)** - Deploy and configure your first gateway
+- **[Authentication](#authentication.md)** - Set up master keys and virtual API keys
+- **[Budget Management](#budget-management.md)** - Configure spending limits and tracking
+- **[Configuration](#configuration.md)** - Learn about all configuration options
+- **[API Reference](#api-reference.md)** - Explore the complete API
+
+
+---
+
+## gateway/quickstart.md
+
+<!-- Source: gateway/quickstart.md -->
+
+# Quick Start
+
+This guide will help you set up any-llm-gateway and make your first LLM completion request. The gateway acts as a proxy between your applications and LLM providers, providing cost control, usage tracking, and API key management.
+
+By the end of this guide, you will:  
+
+1. Configure provider credentials and model pricing (e.g., OpenAI API key)  
+1. Run the gateway   
+1. Authenticate requests using a master key  
+1. Make completion requests through the gateway  
+
+> **Note:** for the purposes of this quickstart we will utilize the docker-compose and config.yml file, but alternative configuration designs are available and detailed [here](#./configuration.md)
+
+## Pre-Requisites
+
+1. Docker
+1. Access to at least one LLM provider
+
+## Configure and run the Gateway
+
+When running any-llm-gateway, it must have a few things configured:
+
+1. `GATEWAY_MASTER_KEY`. This master key has admin access to manage budgets, users, virtual keys, etc.
+1. `DATABASE_URL`. The gateway relies upon a postgres database for storage.
+1. Provider Keys. The gateway connects to providers (Mistral, AWS, Vertex, Azure, etc) using credentials that must be set.
+
+For the purposes of the quickstart we will use the included `docker/docker-compose.yml`, but you can customize the file to your own requirements.
+
+### Generate  master key
+
+First, generate a secure master key: 
+```python 
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Save the output of this command, you'll need it in the next steps. 
+
+### Configure providers 
+
+Copy the example `docker/config.example.yml` file to `docker/config.yml`
+
+```bash
+cp docker/config.example.yml docker/config.yml
+```
+
+At a minimum you'll need to fill out the value for the master_key, and also enter credential information for at least one provider. You can browse supported providers [here](https://mozilla-ai.github.io/any-llm/providers/). If you would like to track usage cost, you'll also need to configure model pricing, as explained in the config template file.
+
+```yaml
+master_key: 09kS0xTiz6JqO....
+
+providers:
+  openai:
+    api_key: YOUR_OPENAI_API_KEY_HERE
+    api_base: "https://api.openai.com/v1"  # optional, useful when you want to use a specific version of the API
+
+models:
+  openai:gpt-4:
+    input_price_per_million: 0.15
+    output_price_per_million: 0.60
+```
+
+
+### Start the gateway
+
+Run the docker-compose file, ensuring that your config.yml is located in the same directory as the docker-compose.yml file (`docker/config.yml`).
+
+The default setting is to build the gateway from source, but see the docker-compose.yml file comment to see how to use a published version of any-llm-gateway instead of the source code.
+
+```bash
+# From project root directory
+docker-compose -f docker/docker-compose.yml up -d --build
+```
+
+````bash
+# Verify the gateway is running
+curl http://localhost:8000/health
+
+# Expected response:
+# {"status": "healthy"}
+````
+
+### View Logs 
+
+```bash
+docker-compose -f docker/docker-compose.yml logs -f
+```
+
+
+## Create a user and make your first request
+
+Now that it's running, clients can make requests! The gateway supports two authentication patterns: use of the master key, or virtual keys. See the [authentication doc](#./authentication.md) for more information. For this guide we will use the master key for both administration and client requests.
+
+To make the below commands easier to run, you can set the key as an env var in your terminal:
+
+```bash
+export GATEWAY_MASTER_KEY=YOUR_MASTER_KEY
+```
+
+> **tip**: for the below `curl` commands, append `| jq` in order for it be pretty-printed in the console.
+
+### Create a user
+
+In order to track usage, we must first create a user so that we can associate our completion request with them.
+
+```bash
+curl -s -X POST http://localhost:8000/v1/users \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "user-123", "alias": "Bob"}'
+```
+
+<details>
+<summary>Sample Response</summary>
+
+```bash
+{
+    "user_id": "user-123",
+    "alias": "Bob",
+    "spend": 0,
+    "budget_id": null,
+    "budget_started_at": null,
+    "next_budget_reset_at": null,
+    "blocked": false,
+    "created_at": "2025-11-07T16:41:44.429258+00:00",
+    "updated_at": "2025-11-07T16:41:44.429261+00:00",
+    "metadata": {}
+}
+```
+</details>
+
+### Make a request
+
+Make a completion request using the master key and specify that the completion should be attached to the user you just created. This is only required when authenticating using the master key, if a user has a virtual key they do not need to specify a user id. You may also need to adjust the model to match one of the providers that you configured when running the gateway.
+
+```bash
+curl -s -X POST http://localhost:8000/v1/chat/completions \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai:gpt-4",
+    "messages": [{"role": "user", "content": "Write a haiku on Uranus!"}],
+    "user": "user-123"
+  }'
+```
+
+<details>  
+<summary>Sample Response </summary>
+
+```json 
+{
+    "id": "chatcmpl-CZJvdiwHSdCZ2TfIPhutgPY4WYP46",
+    "choices": [
+        {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+                "content": "Gleaming ice-blue sphere,\nCircling in celestial dance,\nUranus, so clear.",
+                "refusal": null,
+                "role": "assistant",
+                "annotations": [],
+                "audio": null,
+                "function_call": null,
+                "tool_calls": null,
+                "reasoning": null
+            }
+        }
+    ],
+    "created": 1762534121,
+    "model": "gpt-4-0613",
+    "object": "chat.completion",
+    "service_tier": "default",
+    "system_fingerprint": null,
+    "usage": {
+        "completion_tokens": 21,
+        "prompt_tokens": 15,
+        "total_tokens": 36,
+        "completion_tokens_details": {
+            "accepted_prediction_tokens": 0,
+            "audio_tokens": 0,
+            "reasoning_tokens": 0,
+            "rejected_prediction_tokens": 0
+        },
+        "prompt_tokens_details": {
+            "audio_tokens": 0,
+            "cached_tokens": 0
+        }
+    }
+}
+```
+
+</details>
+
+Alternatively, if you are using the any-llm python sdk, you can access using the gateway client.
+
+```python
+import os
+from any_llm import completion
+
+completion(
+  provider="gateway",
+  model="openai:gpt-4",
+  api_base="http://localhost:8000/v1",
+  api_key=os.environ['GATEWAY_MASTER_KEY'],
+  messages=[{"role": "user", "content": "Write a haiku on Uranus!"}],
+  user="user-123",
+)
+```
+
+### View metrics
+
+Now using the master key, we can access the usage information for the user.
+
+```bash
+curl -s http://localhost:8000/v1/users/user-123 \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json"
+```
+
+<details>
+<summary>Sample Response </summary>
+
+```json
+{
+    "user_id": "user-123",
+    "alias": "Bob",
+    "spend": 0.0000216,
+    "budget_id": null,
+    "budget_started_at": null,
+    "next_budget_reset_at": null,
+    "blocked": false,
+    "created_at": "2025-11-07T16:41:44.429258+00:00",
+    "updated_at": "2025-11-07T16:48:42.972327+00:00",
+    "metadata": {}
+}
+```
+</details>  
+
+You'll notice that the user does not have a budget attached, which means that we track their usage but do not limit them! For more information on creating and managing budgets and budget reset cycles, see the [Budget Management docs](#budget-management.md)
+
+## Next Steps
+
+
+
+- **[Configuration](#configuration.md)** - Configure providers, pricing, and other settings
+- **[Authentication](#authentication.md)** - Learn about master keys and virtual API keys
+- **[Budget Management](#budget-management.md)** - Set spending limits and track costs
+- **[API Reference](#api-reference.md)** - Explore the complete API
+
+
+---
+
+## gateway/authentication.md
+
+<!-- Source: gateway/authentication.md -->
+
+# Authentication
+
+any-llm-gateway offers two authentication methods, each designed for different use cases. Understanding when to use each approach will help you secure your gateway effectively.
+## Authentication Methods Overview
+
+| Method | Best For | Key Management | Usage Tracking |
+|--------|----------|----------------|----------------|
+| **Master Key** | Internal services, admin operations, trusted environments | Single key with full access | Requires manual user specification |
+| **Virtual API Keys** | External apps, per-user access, customer-facing services | Multiple scoped keys | Automatic per-key tracking |
+
+
+## Master Key 
+The master key is the root credential for your gateway installation. It has unrestricted access to all gateway operations and should be treated with the same security as your production database credentials.
+
+### Generating a Master Key
+
+Generate a cryptographically secure master key (minimum 32 characters recommended):
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+**Example output:**
+```
+Zx8Q_vKm3nR7wP2sT9yU5iO1eA6hD4fG0bN8cL3jM5k
+```
+
+Set the generated key in your configuration:
+
+**Using environment variables:**
+```bash
+export GATEWAY_MASTER_KEY="Zx8Q_vKm3nR7wP2sT9yU5iO1eA6hD4fG0bN8cL3jM5k"
+```
+
+**Using config.yml:**
+```yaml
+master_key: "Zx8Q_vKm3nR7wP2sT9yU5iO1eA6hD4fG0bN8cL3jM5k"
+```
+
+### Creating a User
+
+```bash
+curl -X POST http://localhost:8000/v1/users \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "user-123", "alias": "Alice"}'
+```
+<details>
+<summary>With optional metadata</summary>
+
+```bash
+curl -X POST http://localhost:8000/v1/users \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d ' { 
+    "user_id": "user-123", 
+    "alias": "Alice",
+    "metadata": {
+      "department": "Engineering",
+      "team": "ML",
+      "email": "alice@example.com"
+    }
+  }'
+```
+</details>
+
+### Making Requests with Master Key
+When using the master key, you **must** specify which user is making the request using the `user` field:
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai:gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Write a haiku on Jupiter"}],
+    "user": "user-123"
+  }'
+```
+The `user` field tells the gateway which user's budget and spend tracking to update. Without this field, the request will be rejected.
+
+## Virtual API Keys
+
+Virtual API keys provide scoped access for making completion requests without exposing the master key. Each virtual key can have expiration dates, metadata, and associated users for automatic usage tracking.
+
+### Creating a Virtual API Key
+Create a virtual key with a descriptive name : 
+
+```bash
+curl -X POST http://localhost:8000/v1/keys \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"key_name": "mobile-app"}'
+```
+> **Important:** Save the `key` value immediately—it's only shown once and cannot be retrieved later.
+
+<details>
+<summary>Example Response</summary>
+
+```json
+{
+  "id": "abc-123",
+  "key": "gw-...",
+  "key_name": "mobile-app",
+  "created_at": "2025-10-20T10:00:00",
+  "expires_at": null,
+  "is_active": true,
+  "metadata": {}
+}
+```
+</details>
+
+#### Key with Expiration
+
+Create a key that automatically expires on a specific date:
+
+```bash
+curl -X POST http://localhost:8000/v1/keys \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "key_name": "trial-access",
+    "expires_at": "2025-12-31T23:59:59Z"
+  }'
+```
+
+### Using Virtual API Keys
+Making requests with a virtual key is simpler than using the master key—no `user` field is required:
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "X-AnyLLM-Key: Bearer gw-..." \
+  -H "Content-Type: application/json" \
+  -d '{"model": "openai:gpt-5-mini", "messages": [{"role": "user", "content": "Write a haiku on Saturn"}]}'
+```
+
+The gateway automatically tracks usage based on the virtual key used.
+### Managing Virtual Keys
+
+#### List All Keys
+**List all keys:**
+```bash
+curl http://localhost:8000/v1/keys \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}"
+```
+
+**Deactivate a key:**
+```bash
+curl -X PATCH http://localhost:8000/v1/keys/<virtual_key_id>\
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"is_active": false}'
+```
+
+**Delete a key:**
+```bash
+curl -X DELETE http://localhost:8000/v1/keys/<virtual_key_id> \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}"
+```
+
+> See [API Reference](#api-reference.md) for complete key management operations.
+
+
+Note: The actual key values are never returned in list or get operations for security reasons.
+
+## Next Steps
+
+Now that you understand authentication, explore these related topics:
+
+- **[Budget Management](#budget-management.md)** - Set spending limits for users and enforce budgets
+- **[Configuration](#configuration.md)** - Learn about provider setup and pricing configuration
+- **[API Reference](#api-reference.md)** - Explore all available endpoints for managing keys and users
+- **[Quick Start](#quickstart.md)** - Complete walkthrough of setting up your first gateway
+
+For questions or issues, refer to the [troubleshooting guide](#troubleshooting.md) or check the project's issue tracker.
+
+
+---
+
+## gateway/budget-management.md
+
+<!-- Source: gateway/budget-management.md -->
+
+# Budget Management
+
+Budgets provide shared spending limits that can be assigned to multiple users. This allows you to create budget tiers (like "Free", "Pro", "Enterprise") and enforce spending limits across groups of users.
+
+## Creating a Budget
+
+```bash
+# Create a budget with a $10.00 spending limit and monthly resets (30 days = 2592000 seconds)
+curl -X POST http://localhost:8000/v1/budgets \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "max_budget": 10.0,
+    "budget_duration_sec": 2592000
+  }'
+```
+
+<details> 
+<summary> Sample Response</summary>
+
+```json
+{
+  "budget_id": "abc-123",
+  "max_budget": 10.0,
+  "budget_duration_sec": 2592000,
+  "created_at": "2025-10-22T10:00:00Z",
+  "updated_at": "2025-10-22T10:00:00Z"
+}
+```
+</details>
+
+## Assigning Budgets to Users
+
+When creating or updating a user, specify the `budget_id`:
+
+**Warning: If you don't create and set a budget, budget is unlimited**
+
+```bash
+# Create a user with a budget
+curl -X POST http://localhost:8000/v1/users \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "user-456",
+    "alias": "Bob",
+    "budget_id": "abc-123"
+  }'
+
+# Update an existing user's budget
+curl -X PATCH http://localhost:8000/v1/users/user-123 \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"budget_id": "abc-123"}'
+```
+
+## Per-User Budget Resets
+
+Budget resets are **per-user**, not global. Each user tracks their own budget period based on when they were assigned the budget.
+
+**Example:**
+1. Create a budget with `budget_duration_sec: 604800` (1 week)
+2. Assign User A to the budget on Monday
+3. Assign User B to the budget on Tuesday
+4. User A's budget resets every Monday
+5. User B's budget resets every Tuesday
+
+This allows you to create budget tiers (like "Free", "Pro", "Enterprise") without worrying about all users resetting at the same time.
+
+## Automatic Reset Behavior
+
+Budget resets happen automatically using a "lazy reset" approach:
+- When a user makes a request, the system checks if their `next_budget_reset_at` has passed
+- If yes, the user's `spend` is reset to $0.00 and a new reset date is calculated
+- A log entry is created in `budget_reset_logs` for audit purposes
+- The request then proceeds normally
+
+
+---
+
+## gateway/configuration.md
+
+<!-- Source: gateway/configuration.md -->
+
+# Configuration
+
+The any-llm-gateway requires configuration to connect to your database, authenticate requests, and route to LLM providers. This guide covers the two main configuration approaches and how to set up model pricing for cost tracking.
+
+You can configure the gateway using either a YAML configuration file or environment variables:
+
+- **Config File (Recommended)**: Best for development and when managing multiple providers with complex settings. Easier to version control and share across teams.
+- **Environment Variables**: Best for production deployments, containerized environments, or when following 12-factor app principles.
+
+Both methods can also be combined—environment variables will override config file values.
+
+## Option 1: Config File
+
+Create a `config.yml` file with your database connection, master key, and provider credentials:
+
+> **Generating a secure master key:**
+> ```bash
+>  python -c "import secrets; print(secrets.token_urlsafe(32))"
+> ```
+
+```yaml
+#Database connection
+database_url: "postgresql://gateway:gateway@localhost:5432/gateway_db"
+
+#Master key for admin access
+master_key: "your-secure-master-key"
+
+## LLM Provider Credentials 
+providers:
+  openai:
+    api_key: "${OPENAI_API_KEY}"
+  gemini:
+    api_key: "${GEMINI_API_KEY}"
+  vertexai:
+    credentials: "/path/to/service_account.json"
+    project: "your-gcp-project-id"
+    location: "us-central1"
+
+# Model pricing for cost-tracking (optional)
+pricing:
+  openai:gpt-4:
+    input_price_per_million: 0.15
+    output_price_per_million: 0.6
+```
+
+Start the gateway with your config file:
+
+```bash
+any-llm-gateway serve --config config.yml
+```
+
+## Option 2: Environment Variables
+Configure the gateway entirely through environment variables—useful for containerized deployments:
+
+```bash
+#Required settings
+export DATABASE_URL="postgresql://gateway:gateway@localhost:5432/gateway_db"
+export GATEWAY_MASTER_KEY="your-secure-master-key"
+export GATEWAY_HOST="0.0.0.0"
+export GATEWAY_PORT=8000
+
+any-llm-gateway serve
+```
+> **Note**: Model pricing cannot be set via environment variables. Use the config file or the [Pricing API](#dynamic-pricing-via-api) instead.
+
+
+## Model Pricing Configuration
+
+Configure model pricing in your config file to automatically track costs. Pricing can be set via config file or dynamically via the API.
+
+### Config File Pricing
+
+Add pricing for models in your config file using the format `provider:model-name`:
+
+```yaml
+pricing:
+  openai:gpt-3.5-turbo:
+    input_price_per_million: 0.5
+    output_price_per_million: 1.5
+```
+
+### Dynamic Pricing via API
+
+You can also set or update pricing dynamically using the API:
+```bash
+curl -X POST http://localhost:8000/v1/pricing \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai:gpt-4",
+    "input_price_per_million": 30.0,
+    "output_price_per_million": 60.0
+  }'
+```
+
+This is useful for:  
+- Updating pricing without restarting the gateway  
+- Managing pricing in production environments  
+- Adjusting rates as provider pricing changes  
+
+**Important notes:**  
+- Database pricing takes precedence - config only sets initial values  
+- If pricing for the model already exists in the database, config values are ignored (with a warning logged)
+
+## Next Steps
+
+- See [supported providers](https://mozilla-ai.github.io/any-llm/providers/) for provider-specific configuration
+- Learn about [authentication methods](#./authentication.md) for managing access
+- Set up [budget management](#./budget-management.md) to enforce spending limits
+
+
+---
+
+## gateway/api-reference.md
+
+<!-- Source: gateway/api-reference.md -->
+
+# API Reference
+
+<swagger-ui src="openapi.json"/>
+
+
+---
+
+## gateway/troubleshooting.md
+
+<!-- Source: gateway/troubleshooting.md -->
+
+# Troubleshooting
+
+## Database connection errors
+
+Make sure the database URL is correct and the database is accessible:
+
+```bash
+python -c "from sqlalchemy import create_engine; engine = create_engine('postgresql://user:pass@host/db'); print('OK')"
+```
+
+## Common Issues
+
+### Authentication Errors
+
+- Ensure you're using the correct master key format: `Bearer your-secure-master-key`
+- Check that the `X-AnyLLM-Key` header is properly set
+- Verify that virtual API keys are active and not expired
+
+### Configuration Issues
+
+- Verify your `config.yml` file is properly formatted
+- Check that environment variables are set correctly
+- Ensure provider API keys are valid and have proper permissions
+
+### Budget Enforcement
+
+- Check that budgets are properly assigned to users
+- Verify budget limits are set correctly
+- Monitor user spending to ensure limits are being enforced
+
+## Getting Help
+
+- Check the logs for detailed error messages
+- Verify your configuration matches the examples in the documentation
+- Ensure all required environment variables are set
 
 
 ---

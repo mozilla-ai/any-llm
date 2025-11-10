@@ -5,13 +5,6 @@
 - [Introduction](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/index.md)
 - [Quickstart](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/quickstart.md): pip install any-llm-sdk[mistral,ollama]
 - [Providers](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/providers.md): any-llm supports the below providers. In order to discover information about what models are supported by a provider
-- [Gateway - Overview](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/overview.md): any-llm gateway is a FastAPI-based proxy server that adds production-grade budget enforcement, API key management, and usage analytics on top of any-llm's multi-provider foundation. It sits between your applications and LLM providers, giving you complete control over costs, access, and observability.
-- [Gateway - Quickstart](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/quickstart.md): -e GATEWAY_MASTER_KEY="your-secure-master-key" \
-- [Gateway - Authentication](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/authentication.md): The any-llm Gateway supports two main authentication patterns for making completion requests.
-- [Gateway - Budget-Management](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/budget-management.md): Budgets provide shared spending limits that can be assigned to multiple users. This allows you to create budget tiers (like "Free", "Pro", "Enterprise") and enforce spending limits across groups of users.
-- [Gateway - Configuration](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/configuration.md): Create a config.yaml:
-- [Gateway - Api-Reference](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/api-reference.md)
-- [Gateway - Troubleshooting](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/troubleshooting.md): Make sure the database URL is correct and the database is accessible:
 - [Api - Any Llm](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/any_llm.md)
 - [Api - Responses](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/responses.md)
 - [Api - Completion](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/completion.md)
@@ -24,3 +17,10 @@
 - [Api - Types - Model](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/types/model.md)
 - [Api - Types - Provider](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/types/provider.md)
 - [Api - Types - Batch](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/types/batch.md)
+- [Gateway - Overview](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/overview.md): any-llm-gateway is a FastAPI-based proxy server that adds production-grade budget enforcement, API key management, and usage analytics on top of any-llm's multi-provider foundation. It sits between your applications and LLM providers, giving you complete control over costs, access, and observability.
+- [Gateway - Quickstart](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/quickstart.md): This guide will help you set up any-llm-gateway and make your first LLM completion request. The gateway acts as a proxy between your applications and LLM providers, providing cost control, usage tracking, and API key management.
+- [Gateway - Authentication](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/authentication.md): any-llm-gateway offers two authentication methods, each designed for different use cases. Understanding when to use each approach will help you secure your gateway effectively.
+- [Gateway - Budget-Management](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/budget-management.md): Budgets provide shared spending limits that can be assigned to multiple users. This allows you to create budget tiers (like "Free", "Pro", "Enterprise") and enforce spending limits across groups of users.
+- [Gateway - Configuration](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/configuration.md): The any-llm-gateway requires configuration to connect to your database, authenticate requests, and route to LLM providers. This guide covers the two main configuration approaches and how to set up model pricing for cost tracking.
+- [Gateway - Api-Reference](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/api-reference.md)
+- [Gateway - Troubleshooting](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/troubleshooting.md): Make sure the database URL is correct and the database is accessible:
