@@ -41,16 +41,17 @@ theme:
     - media: "(prefers-color-scheme: light)"
       scheme: default
       primary: blue gray
+      accent: blue
       toggle:
         icon: material/lightbulb
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
       primary: grey
+      accent: blue
       toggle:
         icon: material/lightbulb-outline
         name: Switch to light mode
-    - accent: blue
   logo: images/any-llm-logo-mark.png
   favicon: images/any-llm_favicon.png
   features:

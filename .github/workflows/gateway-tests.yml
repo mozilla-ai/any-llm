@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - uses: astral-sh/setup-uv@v7
       with:
@@ -44,7 +44,7 @@ jobs:
         pytest tests/gateway/ -v --cov --cov-report=xml --cov-append -n auto
 
     - name: Upload coverage
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v5
       with:
         file: ./coverage.xml
         fail_ci_if_error: false
