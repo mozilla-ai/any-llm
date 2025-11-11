@@ -903,26 +903,12 @@
         "title": "ValidationError",
         "type": "object"
       }
-    },
-    "securitySchemes": {
-      "APIKeyAuth": {
-        "description": "API key authentication for chat completions and user operations. Format: `Bearer <your-api-key>`",
-        "in": "header",
-        "name": "X-AnyLLM-Key",
-        "type": "apiKey"
-      },
-      "MasterKeyAuth": {
-        "description": "Master key authentication for administrative operations (key management, user management, budget configuration, pricing configuration). Format: `Bearer <your-master-key>`",
-        "in": "header",
-        "name": "X-AnyLLM-Key",
-        "type": "apiKey"
-      }
     }
   },
   "info": {
     "description": "A clean FastAPI gateway for any-llm with API key management",
     "title": "any-llm-gateway",
-    "version": "1.2.1.dev13+g8f7c24ddb.d20251107"
+    "version": "1.1.1.dev23+g56c5a9b20.d20251105"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1001,7 +987,7 @@
     },
     "/v1/budgets": {
       "get": {
-        "description": "List all budgets with pagination.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "List all budgets with pagination.",
         "operationId": "list_budgets_v1_budgets_get",
         "parameters": [
           {
@@ -1051,18 +1037,13 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "List Budgets",
         "tags": [
           "budgets"
         ]
       },
       "post": {
-        "description": "Create a new budget.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "Create a new budget.",
         "operationId": "create_budget_v1_budgets_post",
         "requestBody": {
           "content": {
@@ -1096,11 +1077,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "Create Budget",
         "tags": [
           "budgets"
@@ -1109,7 +1085,7 @@
     },
     "/v1/budgets/{budget_id}": {
       "delete": {
-        "description": "Delete a budget.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "Delete a budget.",
         "operationId": "delete_budget_v1_budgets__budget_id__delete",
         "parameters": [
           {
@@ -1137,18 +1113,13 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "Delete Budget",
         "tags": [
           "budgets"
         ]
       },
       "get": {
-        "description": "Get details of a specific budget.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "Get details of a specific budget.",
         "operationId": "get_budget_v1_budgets__budget_id__get",
         "parameters": [
           {
@@ -1183,18 +1154,13 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "Get Budget",
         "tags": [
           "budgets"
         ]
       },
       "patch": {
-        "description": "Update a budget.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "Update a budget.",
         "operationId": "update_budget_v1_budgets__budget_id__patch",
         "parameters": [
           {
@@ -1239,11 +1205,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "Update Budget",
         "tags": [
           "budgets"
@@ -1252,7 +1213,7 @@
     },
     "/v1/chat/completions": {
       "post": {
-        "description": "OpenAI-compatible chat completions endpoint.\n\nSupports both streaming and non-streaming responses.\nHandles reasoning content from any-llm providers.\n\nAuthentication modes:\n- Master key + user field: Use specified user (must exist)\n- API key + user field: Use specified user (must exist)\n- API key without user field: Use virtual user created with API key\n\n**Authentication:** Requires API Key or Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-api-key>` or `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "OpenAI-compatible chat completions endpoint.\n\nSupports both streaming and non-streaming responses.\nHandles reasoning content from any-llm providers.\n\nAuthentication modes:\n- Master key + user field: Use specified user (must exist)\n- API key + user field: Use specified user (must exist)\n- API key without user field: Use virtual user created with API key",
         "operationId": "chat_completions_v1_chat_completions_post",
         "requestBody": {
           "content": {
@@ -1284,14 +1245,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "APIKeyAuth": []
-          },
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "Chat Completions",
         "tags": [
           "chat"
@@ -1300,7 +1253,7 @@
     },
     "/v1/keys": {
       "get": {
-        "description": "List all API keys.\n\nRequires master key authentication.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "List all API keys.\n\nRequires master key authentication.",
         "operationId": "list_keys_v1_keys_get",
         "parameters": [
           {
@@ -1350,18 +1303,13 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "List Keys",
         "tags": [
           "keys"
         ]
       },
       "post": {
-        "description": "Create a new API key.\n\nRequires master key authentication.\n\nIf user_id is provided, the key will be associated with that user (creates user if it doesn't exist).\nIf user_id is not provided, a new user will be created automatically and the key will be associated with it.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "Create a new API key.\n\nRequires master key authentication.\n\nIf user_id is provided, the key will be associated with that user (creates user if it doesn't exist).\nIf user_id is not provided, a new user will be created automatically and the key will be associated with it.",
         "operationId": "create_key_v1_keys_post",
         "requestBody": {
           "content": {
@@ -1395,11 +1343,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "Create Key",
         "tags": [
           "keys"
@@ -1408,7 +1351,7 @@
     },
     "/v1/keys/{key_id}": {
       "delete": {
-        "description": "Delete (revoke) an API key.\n\nRequires master key authentication.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "Delete (revoke) an API key.\n\nRequires master key authentication.",
         "operationId": "delete_key_v1_keys__key_id__delete",
         "parameters": [
           {
@@ -1436,18 +1379,13 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "Delete Key",
         "tags": [
           "keys"
         ]
       },
       "get": {
-        "description": "Get details of a specific API key.\n\nRequires master key authentication.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "Get details of a specific API key.\n\nRequires master key authentication.",
         "operationId": "get_key_v1_keys__key_id__get",
         "parameters": [
           {
@@ -1482,18 +1420,13 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "Get Key",
         "tags": [
           "keys"
         ]
       },
       "patch": {
-        "description": "Update an API key.\n\nRequires master key authentication.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "Update an API key.\n\nRequires master key authentication.",
         "operationId": "update_key_v1_keys__key_id__patch",
         "parameters": [
           {
@@ -1538,11 +1471,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "Update Key",
         "tags": [
           "keys"
@@ -1551,7 +1479,7 @@
     },
     "/v1/pricing": {
       "get": {
-        "description": "List all model pricing.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "List all model pricing.",
         "operationId": "list_pricing_v1_pricing_get",
         "parameters": [
           {
@@ -1601,18 +1529,13 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "List Pricing",
         "tags": [
           "pricing"
         ]
       },
       "post": {
-        "description": "Set or update pricing for a model.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "Set or update pricing for a model.",
         "operationId": "set_pricing_v1_pricing_post",
         "requestBody": {
           "content": {
@@ -1646,11 +1569,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "Set Pricing",
         "tags": [
           "pricing"
@@ -1659,7 +1577,7 @@
     },
     "/v1/pricing/{model_key}": {
       "delete": {
-        "description": "Delete pricing for a model.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "Delete pricing for a model.",
         "operationId": "delete_pricing_v1_pricing__model_key__delete",
         "parameters": [
           {
@@ -1687,18 +1605,13 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "Delete Pricing",
         "tags": [
           "pricing"
         ]
       },
       "get": {
-        "description": "Get pricing for a specific model.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "Get pricing for a specific model.",
         "operationId": "get_pricing_v1_pricing__model_key__get",
         "parameters": [
           {
@@ -1733,11 +1646,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "Get Pricing",
         "tags": [
           "pricing"
@@ -1746,7 +1654,7 @@
     },
     "/v1/users": {
       "get": {
-        "description": "List all users with pagination.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "List all users with pagination.",
         "operationId": "list_users_v1_users_get",
         "parameters": [
           {
@@ -1796,18 +1704,13 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "List Users",
         "tags": [
           "users"
         ]
       },
       "post": {
-        "description": "Create a new user.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "Create a new user.",
         "operationId": "create_user_v1_users_post",
         "requestBody": {
           "content": {
@@ -1841,11 +1744,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "Create User",
         "tags": [
           "users"
@@ -1854,7 +1752,7 @@
     },
     "/v1/users/{user_id}": {
       "delete": {
-        "description": "Delete a user.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "Delete a user.",
         "operationId": "delete_user_v1_users__user_id__delete",
         "parameters": [
           {
@@ -1882,18 +1780,13 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "Delete User",
         "tags": [
           "users"
         ]
       },
       "get": {
-        "description": "Get details of a specific user.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "Get details of a specific user.",
         "operationId": "get_user_v1_users__user_id__get",
         "parameters": [
           {
@@ -1928,18 +1821,13 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "Get User",
         "tags": [
           "users"
         ]
       },
       "patch": {
-        "description": "Update a user.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "Update a user.",
         "operationId": "update_user_v1_users__user_id__patch",
         "parameters": [
           {
@@ -1984,11 +1872,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "Update User",
         "tags": [
           "users"
@@ -1997,7 +1880,7 @@
     },
     "/v1/users/{user_id}/usage": {
       "get": {
-        "description": "Get usage history for a specific user.\n\n**Authentication:** Requires Master Key\n\nInclude header: `X-AnyLLM-Key: Bearer <your-master-key>`",
+        "description": "Get usage history for a specific user.",
         "operationId": "get_user_usage_v1_users__user_id__usage_get",
         "parameters": [
           {
@@ -2056,11 +1939,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "MasterKeyAuth": []
-          }
-        ],
         "summary": "Get User Usage",
         "tags": [
           "users"
