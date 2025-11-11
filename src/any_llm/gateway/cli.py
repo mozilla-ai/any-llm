@@ -16,7 +16,7 @@ from any_llm.gateway.server import create_app
 
 @click.group()
 def cli() -> None:
-    """any-llm Gateway CLI."""
+    """any-llm-gateway CLI."""
 
 
 @cli.command()
@@ -70,7 +70,7 @@ def serve(
         )
         logger.warning("Set GATEWAY_MASTER_KEY environment variable or use --master-key flag.")
 
-    logger.info(f"Starting any-llm Gateway on {gateway_config.host}:{gateway_config.port}")
+    logger.info(f"Starting any-llm-gateway on {gateway_config.host}:{gateway_config.port}")
     logger.info(f"Database: {gateway_config.database_url}")
 
     if gateway_config.providers:

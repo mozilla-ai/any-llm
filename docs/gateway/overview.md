@@ -1,12 +1,12 @@
 # Gateway Overview
 
-## What is any-llm gateway?
+## What is any-llm-gateway?
 
-any-llm gateway is a FastAPI-based proxy server that adds production-grade budget enforcement, API key management, and usage analytics on top of any-llm's multi-provider foundation. It sits between your applications and LLM providers, giving you complete control over costs, access, and observability.
+any-llm-gateway is a FastAPI-based proxy server that adds production-grade budget enforcement, API key management, and usage analytics on top of any-llm's multi-provider foundation. It sits between your applications and LLM providers, giving you complete control over costs, access, and observability.
 
 ## Why use the gateway?
 
-Managing LLM costs and access at scale is challenging. Give users unrestricted access and you risk runaway costs. Lock it down too much and you slow down innovation. any-llm gateway solves this by providing:
+Managing LLM costs and access at scale is challenging. Give users unrestricted access and you risk runaway costs. Lock it down too much and you slow down innovation. any-llm-gateway solves this by providing:
 
 - **Cost Control**: Set budgets that automatically enforce or track spending limits
 - **Access Management**: Issue, revoke, and monitor API keys generated for user access without exposing provider credentials
@@ -15,13 +15,28 @@ Managing LLM costs and access at scale is challenging. Give users unrestricted a
 
 ## How it works
 
-The gateway exposes an OpenAI-compatible Completions API that works with any supported provider. Your applications connect to the gateway instead of directly to LLM providers, and the gateway handles:
+The gateway acts as a transparent proxy between your applications and LLM providers. Here's the request flow:
 
-- **Authentication**: Validates requests using master keys or virtual API keys
-- **Budget Enforcement**: Checks spending limits before forwarding requests
-- **Provider Routing**: Routes requests to the appropriate LLM provider using the `provider:model` format (e.g., `openai:gpt-4o-mini`, `anthropic:claude-3-5-sonnet-20241022`)
-- **Usage Tracking**: Logs all requests with token counts and costs
-- **Streaming Support**: Handles streaming responses with automatic token tracking
+1. **Your application** sends a request to the gateway (instead of directly to OpenAI, Anthropic, etc.)
+2. **The gateway** authenticates the request, checks budget limits, and tracks usage
+3. **The gateway** routes to the appropriate provider based on the model format
+4. **The provider** processes the request and returns the response
+5. **The gateway** logs the usage and returns the response to your application
+
+    ```bash
+    curl -X POST http://localhost:8000/v1/chat/completions \
+      -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model": "openai:gpt-5",
+        "messages": [{"role": "user", "content": "Hello!"}]
+      }'
+    ```
+  > Learn how to set up your secure master key [here](authentication.md)  
+
+<p align="center" width="100%">
+  <img src="../../images/gateway.png" alt="Diagram showing application connecting to gateway, which then routes to multiple LLM providers (OpenAI, Anthropic, Google, etc). The gateway interfaces with a PostgreSQL database for storing usage, budgets, and keys." width="70%" align="center"/>
+</p>
 
 ## Key Features
 
@@ -41,17 +56,17 @@ Create shared budget tiers with automatic daily, weekly, or monthly resets. Budg
 Choose between two authentication patterns:
 
 **Master Key Authentication**
-* Ideal for trusted services and internal tools
-* Full access to all gateway features
+- Ideal for trusted services and internal tools
+- Full access to all gateway features
 
 **Virtual API Keys**
-* Create scoped keys with fine-grained control
-* Set expiration dates for time-limited access
-* Associate with users for spend tracking
-* Add custom metadata for tracking
-* Activate, deactivate, or revoke on demand
+- Create scoped keys with fine-grained control
+- Set expiration dates for time-limited access
+- Associate with users for spend tracking
+- Add custom metadata for tracking
+- Activate, deactivate, or revoke on demand
 
-[Learn more about authentication →](authentication.md)
+[Set up your keys →](authentication.md)
 
 ### Complete Usage Analytics
 
@@ -73,7 +88,6 @@ Track spending per user, view detailed usage history, and get the observability 
 
 ### Performance Impact
 The gateway adds minimal latency (<50ms) to requests while providing complete observability.
-
 
 ## Getting Started
 

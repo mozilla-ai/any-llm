@@ -29,7 +29,7 @@ def create_app(config: GatewayConfig) -> FastAPI:
         db.close()
 
     app = FastAPI(
-        title="any-llm Gateway",
+        title="any-llm-gateway",
         description="A clean FastAPI gateway for any-llm with API key management",
         version=__version__,
     )

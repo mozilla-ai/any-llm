@@ -1,0 +1,44 @@
+# Configuration for any-llm-gateway
+
+# Database connection URL
+database_url: "postgresql://gateway:gateway@postgres:5432/gateway"
+
+# Server configuration - if you want to use a different port, change it here and in the docker-compose.yml file.
+host: "0.0.0.0"
+port: 8000
+
+# Master key for protecting key management endpoints
+master_key: YOUR_MASTER_KEY_HERE
+
+# Pre-configured provider credentials
+providers:
+  vertexai:
+    # Vertex AI is a unique case in that it requires a service account JSON file, project ID, and location. See src/any_llm/gateway/auth/vertex_auth.py for more details.
+    credentials: "/app/service_account.json" # Internal docker path as mapped in docker-compose.yml,
+    project: YOUR_GCP_PROJECT_ID_HERE
+    location: "us-central1"
+
+  openai:
+    api_key: YOUR_OPENAI_API_KEY_HERE
+    api_base: "https://api.openai.com/v1"  # optional
+
+  anthropic:
+    api_key: YOUR_ANTHROPIC_API_KEY_HERE
+
+  mistral:
+    api_key: YOUR_MISTRAL_API_KEY_HERE
+
+  # Add more providers as needed...
+
+# Model pricing configuration (optional but necessary for price tracking)
+# Format: "provider:model" -> input/output price per million tokens
+# Database pricing takes precedence - config only sets initial values
+# Prices are in USD per million tokens
+pricing:
+  # See https://cloud.google.com/vertex-ai/generative-ai/pricing
+  # vertexai:Qwen3-235B-A22B-Instruct-2507:
+  #   input_price_per_million: 0.25
+  #   output_price_per_million: 1.00
+  # openai:gpt-5:
+    # input_price_per_million: 0.25
+    # output_price_per_million: 1.00

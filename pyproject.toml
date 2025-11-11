@@ -247,7 +247,7 @@ docs = [
 
 
 lint = [
-  "pre-commit==4.3.0",
+  "pre-commit==4.4.0",
   "pre-commit-uv==4.2.0",
   "mypy",
   "types-aiofiles",
