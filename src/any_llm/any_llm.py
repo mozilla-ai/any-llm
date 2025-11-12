@@ -11,7 +11,7 @@ from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
 from any_llm.tools import prepare_tools
 from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, CompletionParams
-from any_llm.types.provider import ProviderMetadata
+from any_llm.types.provider import PlatformKey, ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
 from any_llm.utils.decorators import BATCH_API_EXPERIMENTAL_MESSAGE, experimental
@@ -87,6 +87,8 @@ class AnyLLM(ABC):
     For example, in `gemini` provider, this could include `google.genai.types.Tool`.
     """
 
+    ANY_LLM_KEY: str = "ANY_LLM_KEY"
+
     def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self._verify_no_missing_packages()
         self._init_client(
@@ -147,6 +149,36 @@ class AnyLLM(ABC):
             raise ImportError(msg) from e
 
         provider_class: type[AnyLLM] = getattr(module, provider_class_name)
+
+        if not api_key:
+            api_key = os.getenv(cls.ANY_LLM_KEY)
+
+        if api_key:
+            try:
+                # Validate if the key conforms with the any-api format.
+                # If it does, any-llm must ask any-api for the corresponding provider key.
+                PlatformKey(api_key=api_key)
+
+                # Import and instantiate PlatformProvider in-place to avoid circular dependency issues.
+                platform_class_name = "PlatformProvider"
+                platform_module_path = "any_llm.providers.platform"
+                try:
+                    platform_module = importlib.import_module(platform_module_path)
+                except ImportError as e:
+                    msg = f"Could not import module {module_path}: {e!s}. Please ensure the provider is supported by doing AnyLLM.get_supported_providers()"
+                    raise ImportError(msg) from e
+
+                platform_class: type[AnyLLM] = getattr(platform_module, platform_class_name)
+
+                # Instantiate the class first and pass the provider next,
+                # so we don't change the common API between different provideers.
+                platform_provider = platform_class(api_key=api_key, api_base=api_base, **kwargs)
+                platform_provider.provider = provider_class  # type: ignore[attr-defined]
+            except ValueError:
+                pass
+            else:
+                return platform_provider
+
         return provider_class(api_key=api_key, api_base=api_base, **kwargs)
 
     @classmethod
