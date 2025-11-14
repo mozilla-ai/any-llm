@@ -114,15 +114,82 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, An
             if bedrock_message:
                 formatted_messages.append(bedrock_message)
         else:  # user messages
+            if isinstance(message.get("content"), list):
+                # Handle messages with structured content (e.g., images)
+                content = _convert_images(message["content"])
+            else:
+                # Handle simple text messages
+                content = [{"text": message["content"]}]
             formatted_messages.append(
                 {
                     "role": message["role"],
-                    "content": [{"text": message["content"]}],
+                    "content": content,
                 }
             )
 
     return system_message, formatted_messages
 
+def _convert_images(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert images from OpenAI format to AWS Bedrock format.
+
+    - Parse the "content" field block by block
+    - Convert image blocks to Bedrock format
+    - Support both URL and base64 encoded images
+    """
+    converted_content = []
+    for block in content:
+        if block.get("type") == "image_url":
+            converted_block: dict[str, Any] = {"image": {}}
+            url = block.get("image_url", {}).get("url", "")
+
+            if url.startswith("data:image/"):
+                # Handle base64 encoded images
+                mime_part = url[5:]  # Remove "data:"
+                semi_idx = mime_part.find(";")
+                if semi_idx != -1:
+                    media_type = mime_part[:semi_idx]
+                    # Extract format from media type (e.g., "image/png" -> "png")
+                    format_type = media_type.split("/")[1] if "/" in media_type else "png"
+                    base64_data = url.split("base64,", 1)[1] if "base64," in url else ""
+                    converted_block["image"] = {
+                        "format": format_type,
+                        "source": {
+                            "type": "base64",
+                            "data": base64_data,
+                        }
+                    }
+                else:
+                    # Fallback if parsing fails
+                    converted_block["image"] = {
+                        "format": "png",
+                        "source": {
+                            "type": "base64",
+                            "data": url.split("base64,", 1)[1] if "base64," in url else "",
+                        }
+                    }
+            else:
+                # Handle URL images - need to determine format from URL or default to png
+                format_type = "png"  # Default format
+                if url.lower().endswith((".jpg", ".jpeg")):
+                    format_type = "jpeg"
+                elif url.lower().endswith(".png"):
+                    format_type = "png"
+                elif url.lower().endswith(".gif"):
+                    format_type = "gif"
+                elif url.lower().endswith(".webp"):
+                    format_type = "webp"
+
+                converted_block["image"] = {
+                    "format": format_type,
+                    "source": {
+                        "type": "url",
+                        "url": url,
+                    }
+                }
+            converted_content.append(converted_block)
+        else:
+            converted_content.append(block)
+    return converted_content
 
 def _convert_tool_result(message: dict[str, Any]) -> dict[str, Any] | None:
     """Convert OpenAI tool result format to AWS Bedrock format."""

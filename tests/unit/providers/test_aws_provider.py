@@ -150,3 +150,36 @@ def test_embedding_list_of_strings() -> None:
         assert response.data[1].index == 1
         assert response.usage.prompt_tokens == 11
         assert response.usage.total_tokens == 11
+
+
+def test_completion_with_images() -> None:
+    """Test that completion correctly processes messages with images."""
+    model_id = "model-id"
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Some question about these images."},
+                {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
+                {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,qwertyuiopasdfghjklzxcvbnm"}},
+            ],
+        }
+    ]
+
+    with mock_aws_provider() as mock_boto3_client:
+        provider = BedrockProvider(api_key="test_key")
+        provider._completion(CompletionParams(model_id=model_id, messages=messages))
+
+        mock_boto3_client.return_value.converse.assert_called_once_with(
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Some question about these images."},
+                        {"image": {"format": "png", "source": {"type": "url", "url": "https://example.com/a.png"}}},
+                        {"image": {"format": "jpeg", "source": {"type": "base64", "data": "qwertyuiopasdfghjklzxcvbnm"}}},
+                    ],
+                }
+            ],
+            modelId=model_id,
+        )
