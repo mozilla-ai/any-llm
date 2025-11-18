@@ -76,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#demo" class="md-skip">
+        <a href="#why-any-llm" class="md-skip">
           Skip to content
         </a>
       
@@ -312,10 +312,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#demo" class="md-nav__link">
+  <a href="#why-any-llm" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Demo
+        Why any-llm
       
     </span>
   </a>
@@ -327,6 +327,17 @@
     <span class="md-ellipsis">
       
         Getting Started
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#demo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Demo
       
     </span>
   </a>
@@ -1266,10 +1277,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#demo" class="md-nav__link">
+  <a href="#why-any-llm" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Demo
+        Why any-llm
       
     </span>
   </a>
@@ -1281,6 +1292,17 @@
     <span class="md-ellipsis">
       
         Getting Started
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#demo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Demo
       
     </span>
   </a>
@@ -1349,17 +1371,43 @@
 
 <p align="center">
   <picture>
-    <img src="./images/any-llm-logo.png" width="20%" alt="Project logo"/>
+    <img src="./images/any-llm-logo.png" width="20%" alt="any-llm logo"/>
   </picture>
+      <p align="center">  <b>Stop rewriting code for every LLM provider </b></p>
 </p>
 
 <p><code>any-llm</code> is a Python library providing a single interface to different llm providers.</p>
-<h3 id="demo">Demo</h3>
-<p>Try <code>any-llm</code> in action with our interactive chat demo that showcases streaming completions and provider switching:</p>
-<p><strong><a href="https://github.com/mozilla-ai/any-llm/tree/main/demos/chat#readme">📂 Run the Demo</a></strong></p>
-<p>The demo features real-time streaming responses, multiple provider support, and collapsible "thinking" content display.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">any_llm</span><span class="w"> </span><span class="kn">import</span> <span class="n">completion</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1"># Using the messages format</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">response</span> <span class="o">=</span> <span class="n">completion</span><span class="p">(</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o-mini&quot;</span><span class="p">,</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">messages</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="s2">&quot;What is Python?&quot;</span><span class="p">}],</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="p">)</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="nb">print</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="c1"># Switch providers without changing your code</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="n">response</span> <span class="o">=</span> <span class="n">completion</span><span class="p">(</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;claude-sonnet-4-5-20250929&quot;</span><span class="p">,</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="n">messages</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="s2">&quot;What is Python?&quot;</span><span class="p">}],</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="n">provider</span><span class="o">=</span><span class="s2">&quot;anthropic&quot;</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="p">)</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="nb">print</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>
+</span></code></pre></div>
+<h3 id="why-any-llm">Why any-llm</h3>
+<ul>
+<li>Switch providers in one line</li>
+<li>Consistent error handling across providers</li>
+<li>Simple API, powerful features</li>
+</ul>
+<p><a href="providers/">View supported providers →</a></p>
 <h3 id="getting-started">Getting Started</h3>
-<p>Refer to the <a href="quickstart/">Quickstart</a> for instructions on installation and usage.</p>
+<p><strong><a href="quickstart/">Get started in 5 minutes →</a></strong> - Install the library and run your first API call.</p>
+<h3 id="demo">Demo</h3>
+<p>Try <code>any-llm</code> in action with our interactive chat demo:</p>
+<p><strong><a href="https://github.com/mozilla-ai/any-llm/tree/main/demos/chat#readme">📂 Run the Demo</a></strong></p>
+<p>Features: real-time streaming responses, multiple provider support, and collapsible "thinking" content display.</p>
 <h3 id="api-documentation">API Documentation</h3>
 <p><code>any-llm</code> provides two main interfaces:</p>
 <p><strong>Direct API Functions</strong> (recommended for simple use cases):
