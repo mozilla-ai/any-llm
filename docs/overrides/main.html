@@ -2,7 +2,7 @@
 
 {% block extrahead %}
   {{ super() }}
-  
+
   {% if page and page.meta and page.meta.schema %}
     <script type="application/ld+json">
     {
@@ -14,7 +14,7 @@
       {% if page.meta.schema.description %}
       "description": "{{ page.meta.schema.description }}",
       {% endif %}
-      
+
       {# Software-specific fields #}
       {% if page.meta.schema.type == "SoftwareSourceCode" %}
         {% if page.meta.schema.programmingLanguage %}
@@ -27,7 +27,7 @@
         "license": "{{ page.meta.schema.license }}",
         {% endif %}
       {% endif %}
-      
+
       {# HowTo-specific fields #}
       {% if page.meta.schema.type == "HowTo" %}
         {% if page.meta.schema.totalTime %}
@@ -68,7 +68,7 @@
         ],
         {% endif %}
       {% endif %}
-      
+
       {# TechArticle-specific fields #}
       {% if page.meta.schema.type == "TechArticle" %}
         {% if page.meta.schema.datePublished %}
@@ -95,7 +95,7 @@
         },
         {% endif %}
       {% endif %}
-      
+
       {# Author (common to all types) #}
       "author": {
         "@type": "Organization",
