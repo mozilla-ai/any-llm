@@ -1,4 +1,26 @@
-## Quickstart
+---
+schema:
+  type: "HowTo"
+  name: "How to Install and Use any-llm"
+  description: "Step-by-step guide to installing any-llm and making your first API call with Python"
+  totalTime: "PT5M"
+  tool:
+    - "Python 3.11 or newer"
+    - "pip package manager"
+  supply:
+    - "API key from your chosen LLM provider"
+  steps:
+    - name: "Install any-llm"
+      text: "Install any-llm with your chosen providers using pip. Use the all option to install support for all providers."
+      url: "https://mozilla-ai.github.io/any-llm/quickstart/#installation"
+    - name: "Set up API keys"
+      text: "Configure your provider's API key as an environment variable. Make sure you have the appropriate environment variable set for your chosen provider."
+      url: "https://mozilla-ai.github.io/any-llm/quickstart/#api-keys"
+    - name: "Make your first completion call"
+      text: "Import the completion function from any-llm and create your first API call with your chosen model and provider"
+      url: "https://mozilla-ai.github.io/any-llm/quickstart/#your-first-api-call"
+---
+
 
 ### Requirements
 
