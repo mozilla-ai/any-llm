@@ -34,6 +34,7 @@ nav:
     - Get Started with: cookbooks/any_llm_getting_started.ipynb
 theme:
   name: material
+  custom_dir: docs/overrides
   font:
     text: Noto Sans
     code: Noto Sans Mono
