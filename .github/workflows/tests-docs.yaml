@@ -35,7 +35,7 @@ jobs:
 
       - name: Install
         run: |
-          uv sync --group tests --extra mistral
+          uv sync --group tests --extra anthropic --extra mistral
 
       - name: Run Documentation tests
         env:
