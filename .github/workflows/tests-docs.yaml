@@ -39,9 +39,10 @@ jobs:
 
       - name: Run Documentation tests
         env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GATEWAY_MASTER_KEY: ${{ secrets.GATEWAY_MASTER_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GATEWAY_MASTER_KEY: ${{ secrets.GATEWAY_MASTER_KEY }}
         run: pytest tests/docs -v --cov --cov-report=xml
 
       - name: Upload coverage reports to Codecov
