@@ -20,7 +20,9 @@ if TYPE_CHECKING:
     from any_llm.types.completion import ChatCompletion
 
 
-ANY_LLM_PLATFORM_URL = os.getenv("ANY_LLM_PLATFORM_URL", "http://localhost:8000/api/v1")
+API_V1_STR = "/api/v1"
+ANY_LLM_PLATFORM_URL = os.getenv("ANY_LLM_PLATFORM_URL", "https://platform-api.any-llm.ai")
+ANY_LLM_PLATFORM_API_URL = f"{ANY_LLM_PLATFORM_URL}{API_V1_STR}"
 
 
 def _parse_any_llm_key(any_api_key: str) -> tuple[str, str, str]:
@@ -178,7 +180,7 @@ def get_provider_key(any_llm_key: str, provider: type[AnyLLM]) -> str:
     public_key = _extract_public_key(private_key)
 
     # Create and solve a new challenge to prove ownership of the private key without sharing it.
-    challenge_data = _create_challenge(public_key, ANY_LLM_PLATFORM_URL)
+    challenge_data = _create_challenge(public_key, ANY_LLM_PLATFORM_API_URL)
     solved_challenge = _solve_challenge(challenge_data["encrypted_challenge"], private_key)
 
     # Fetch and decrypt the provider key
@@ -186,7 +188,7 @@ def get_provider_key(any_llm_key: str, provider: type[AnyLLM]) -> str:
         provider=provider.PROVIDER_NAME,
         public_key=public_key,
         solved_challenge=solved_challenge,
-        any_api_url=ANY_LLM_PLATFORM_URL,
+        any_api_url=ANY_LLM_PLATFORM_API_URL,
     )
     return _decrypt_provider_key(provider_key_data["encrypted_key"], private_key)
 
@@ -212,17 +214,20 @@ async def post_completion_usage_event(
     public_key = _extract_public_key(private_key)
 
     # Create and solve a new challenge to prove ownership of the private key without sharing it.
-    challenge_data = _create_challenge(public_key, ANY_LLM_PLATFORM_URL)
+    challenge_data = _create_challenge(public_key, ANY_LLM_PLATFORM_API_URL)
     solved_challenge = _solve_challenge(challenge_data["encrypted_challenge"], private_key)
 
     # Fetch the provider key info
     provider_key_data = _fetch_provider_key(
-        provider=provider, public_key=public_key, solved_challenge=solved_challenge, any_api_url=ANY_LLM_PLATFORM_URL
+        provider=provider,
+        public_key=public_key,
+        solved_challenge=solved_challenge,
+        any_api_url=ANY_LLM_PLATFORM_API_URL,
     )
     provider_key_id = provider_key_data.get("id")
 
     # Create and solve a new challenge to prove ownership of the project
-    challenge_data = _create_challenge(public_key, ANY_LLM_PLATFORM_URL)
+    challenge_data = _create_challenge(public_key, ANY_LLM_PLATFORM_API_URL)
     solved_challenge = _solve_challenge(challenge_data["encrypted_challenge"], private_key)
 
     # Send usage event data
@@ -244,7 +249,7 @@ async def post_completion_usage_event(
     }
 
     response = await client.post(
-        f"{ANY_LLM_PLATFORM_URL}/usage-events/",
+        f"{ANY_LLM_PLATFORM_API_URL}/usage-events/",
         json=payload,
         headers={"encryption-key": public_key, "AnyLLM-Challenge-Response": str(solved_challenge)},
     )
