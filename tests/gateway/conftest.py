@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from testcontainers.postgres import PostgresContainer
 
 from any_llm.gateway.config import API_KEY_HEADER, GatewayConfig
-from any_llm.gateway.db import Base, get_db
+from any_llm.gateway.db import Base, get_db, User, UsageLog
 from any_llm.gateway.server import create_app
 
 MODEL_NAME = "gemini:gemini-2.5-flash"
@@ -169,3 +169,26 @@ def model_pricing(client: TestClient, master_key_header: dict[str, str]) -> dict
     assert response.status_code == 200
     result: dict[str, Any] = response.json()
     return result
+
+
+@pytest.fixture
+def user_factory(test_db: Session):
+    """Factory for creating users."""
+    def _user_factory(**kwargs):
+        user = User(**kwargs)
+        test_db.add(user)
+        test_db.commit()
+        test_db.refresh(user)
+        return user
+    return _user_factory
+
+@pytest.fixture
+def usage_log_factory(test_db: Session):
+    """Factory for creating usage logs."""
+    def _usage_log_factory(**kwargs):
+        log = UsageLog(**kwargs)
+        test_db.add(log)
+        test_db.commit()
+        test_db.refresh(log)
+        return log
+    return _usage_log_factory
