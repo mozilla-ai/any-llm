@@ -3,59 +3,41 @@
 ### Requirements
 
 - Python 3.11 or newer
-- API_KEYS to access to whichever LLM you choose to use.
+- API keys for your chosen LLM provider
 
 ### Installation
+```bash
+pip install any-llm-sdk[all]  # Install with all provider support
+```
 
-#### Direct Usage
+#### Installing Specific Providers
 
-In your pip install, include the [supported providers](./providers.md) that you plan on using, or use the `all` option if you want to install support for all `any-llm` supported providers.
+If you want to install a specific provider from our [supported providers](./providers.md):
 
 ```bash
 pip install any-llm-sdk[mistral]  # For Mistral provider
 pip install any-llm-sdk[ollama]   # For Ollama provider
 # install multiple providers
 pip install any-llm-sdk[mistral,ollama]
-# or install support for all providers
-pip install any-llm-sdk[all]
 ```
 
 #### Library Integration
 
-If you're integrating `any-llm` into your own library that others will use, you only need to install the base package:
+If you're building a library, install just the base package (`pip install any-llm-sdk`) and let your users install provider dependencies.
 
-```bash
-pip install any-llm-sdk
-```
+> **API Keys:** Set your provider's API key as an environment variable (e.g., `export MISTRAL_API_KEY="your-key"`) or pass it directly using the `api_key` parameter.
 
-In this scenario, the end users of your library will be responsible for installing the appropriate provider dependencies when they want to use specific providers. `any-llm` is designed so that you'll only encounter exceptions at runtime if you try to use a provider without having the required dependencies installed.
-
-Those exceptions will clearly describe what needs to be installed to resolve the issue.
-
-Make sure you have the appropriate API key environment variable set for your provider. Alternatively,
-you could use the `api_key` parameter when making a completion call instead of setting an environment variable.
-
-```bash
-export MISTRAL_API_KEY="YOUR_KEY_HERE"  # or OPENAI_API_KEY, etc
-```
-
-### Basic Usage
-
-`any-llm` provides two main approaches for working with LLM providers, each optimized for different use cases:
-
-#### Option 1: Direct API Functions
-
-[`completion`][any_llm.completion] and [`acompletion`][any_llm.acompletion] provide a unified interface across all providers - perfect for simple use cases and quick prototyping.
-
-**Recommended approach:** Use separate `provider` and `model` parameters:
+### Your First API Call 
 
 ```python
 import os
 
 from any_llm import completion
 
-# Make sure you have the appropriate environment variable set
-assert os.environ.get('MISTRAL_API_KEY')
+# Make sure you have the appropriate API key set
+api_key = os.environ.get('MISTRAL_API_KEY')
+if not api_key:
+    raise ValueError("Please set MISTRAL_API_KEY environment variable")
 
 # Recommended: separate provider and model parameters
 response = completion(
@@ -66,26 +48,19 @@ response = completion(
 print(response.choices[0].message.content)
 ```
 
-**Alternative syntax:** You can also use the combined `provider:model` format:
+### Advanced: Using the AnyLLM Class
 
-```python
-response = completion(
-    model="mistral:mistral-small-latest",  # <provider_id>:<model_id>
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-```
-
-#### Option 2: AnyLLM Class
-
-For advanced use cases that require provider reuse, metadata access, or more control over configuration:
+For applications making multiple requests with the same provider, use the `AnyLLM` class to avoid repeated provider instantiation:
 
 ```python
 import os
 
 from any_llm import AnyLLM
 
-# Make sure you have the appropriate environment variable set
-assert os.environ.get('MISTRAL_API_KEY')
+# Make sure you have the appropriate API key set
+api_key = os.environ.get('MISTRAL_API_KEY')
+if not api_key:
+    raise ValueError("Please set MISTRAL_API_KEY environment variable")
 
 llm = AnyLLM.create("mistral")
 
@@ -113,9 +88,7 @@ print(f"Supports tools: {metadata.completion}")
 - Building applications that make multiple requests with the same provider
 - You want to avoid repeated provider instantiation overhead
 
-The provider_id should be specified according to the [provider ids supported by any-llm](./providers.md).
-The `model_id` portion is passed directly to the provider internals: to understand what model ids are available for a provider,
-you will need to refer to the provider documentation or use our [`list_models`](./api/list_models.md)  API if the provider supports that API.
+**Finding model names:** Check the [providers page](./providers.md) for provider IDs, or use the [`list_models`](./api/list_models.md) API to see available models for your provider.
 
 ### Streaming
 
@@ -171,6 +144,9 @@ def get_weather(location: str, unit: str = "F") -> str:
     Args:
         location: The city or location to get weather for
         unit: Temperature unit, either 'C' or 'F'
+
+    Returns: 
+        Current weather description
     """
     return f"Weather in {location} is sunny and 75{unit}!"
 

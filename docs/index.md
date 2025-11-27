@@ -1,22 +1,51 @@
 <p align="center">
   <picture>
-    <img src="./images/any-llm-logo.png" width="20%" alt="Project logo"/>
+    <img src="./images/any-llm-logo.png" width="20%" alt="any-llm logo"/>
   </picture>
+      <p align="center">  <b>Stop rewriting code for every LLM provider </b></p>
 </p>
 
 `any-llm` is a Python library providing a single interface to different llm providers.
 
-### Demo
+```python
+from any_llm import completion
 
-Try `any-llm` in action with our interactive chat demo that showcases streaming completions and provider switching:
+# Using the messages format
+response = completion(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "What is Python?"}],
+    provider="openai"
+)
+print(response)
 
-**[📂 Run the Demo](https://github.com/mozilla-ai/any-llm/tree/main/demos/chat#readme)**
+# Switch providers without changing your code
+response = completion(
+    model="claude-sonnet-4-5-20250929",
+    messages=[{"role": "user", "content": "What is Python?"}],
+    provider="anthropic"
+)
+print(response)
+```
 
-The demo features real-time streaming responses, multiple provider support, and collapsible "thinking" content display.
+### Why any-llm
+  - Switch providers in one line
+  - Consistent error handling across providers
+  - Simple API, powerful features
+
+[View supported providers →](./providers.md)
 
 ### Getting Started
 
-Refer to the [Quickstart](./quickstart.md) for instructions on installation and usage.
+**[Get started in 5 minutes →](./quickstart.md)** - Install the library and run your first API call.
+
+
+### Demo
+
+Try `any-llm` in action with our interactive chat demo:
+
+**[📂 Run the Demo](https://github.com/mozilla-ai/any-llm/tree/main/demos/chat#readme)**
+
+Features: real-time streaming responses, multiple provider support, and collapsible "thinking" content display.
 
 ### API Documentation
 

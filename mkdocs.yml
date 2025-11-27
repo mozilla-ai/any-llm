@@ -29,6 +29,7 @@ nav:
     - Configuration: gateway/configuration.md
     - API Reference: gateway/api-reference.md
     - Troubleshooting: gateway/troubleshooting.md
+    - Docker Deployment: gateway/docker-deployment.md
   - Cookbooks:
     - Get Started with: cookbooks/any_llm_getting_started.ipynb
 theme:

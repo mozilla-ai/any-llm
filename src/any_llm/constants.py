@@ -39,6 +39,7 @@ class LLMProvider(StrEnum):
     OLLAMA = "ollama"
     OPENAI = "openai"
     OPENROUTER = "openrouter"
+    PLATFORM = "platform"
     PORTKEY = "portkey"
     SAMBANOVA = "sambanova"
     SAGEMAKER = "sagemaker"
