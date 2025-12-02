@@ -4,8 +4,86 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from any_llm import AnyLLM
-from any_llm.api import acompletion
+from any_llm.api import acompletion, aresponses
 from any_llm.constants import LLMProvider
+
+
+@pytest.mark.asyncio
+async def test_acompletion_parameter_capture() -> None:
+    """Test that acompletion correctly captures and passes all parameters."""
+    mock_provider = Mock()
+    mock_provider.acompletion = AsyncMock(return_value=Mock())
+
+    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
+        mock_create.return_value = mock_provider
+
+        await acompletion(
+            model="openai:gpt-4",
+            messages=[{"role": "user", "content": "Hello"}],
+            tools=[{"type": "function", "function": {"name": "test"}}],
+            temperature=0.7,
+            max_tokens=100,
+            stream=False,
+            reasoning_effort="high",
+            api_key="sk-test-key-123",
+            api_base="https://custom-openai.example.com/v1",
+            custom_param="custom_value",
+        )
+
+        mock_create.assert_called_once_with(
+            LLMProvider.OPENAI,
+            api_key="sk-test-key-123",
+            api_base="https://custom-openai.example.com/v1",
+        )
+
+        mock_provider.acompletion.assert_called_once()
+        call_args = mock_provider.acompletion.call_args
+        assert call_args.kwargs["model"] == "gpt-4"
+        assert call_args.kwargs["messages"] == [{"role": "user", "content": "Hello"}]
+        assert call_args.kwargs["tools"] == [{"type": "function", "function": {"name": "test"}}]
+        assert call_args.kwargs["temperature"] == 0.7
+        assert call_args.kwargs["max_tokens"] == 100
+        assert call_args.kwargs["stream"] is False
+        assert call_args.kwargs["reasoning_effort"] == "high"
+        assert call_args.kwargs["custom_param"] == "custom_value"
+
+
+@pytest.mark.asyncio
+async def test_aresponses_parameter_capture() -> None:
+    """Test that aresponses correctly captures and passes all parameters."""
+    mock_provider = Mock()
+    mock_provider.aresponses = AsyncMock(return_value=Mock())
+
+    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
+        mock_create.return_value = mock_provider
+
+        await aresponses(
+            model="mistral:mistral-large",
+            input_data="test input",
+            tools=[{"type": "function", "function": {"name": "search"}}],
+            temperature=0.5,
+            stream=True,
+            instructions="Be helpful",
+            api_key="mistral-key-456",
+            api_base="https://custom-mistral.example.com/v1",
+            another_custom_param="another_value",
+        )
+
+        mock_create.assert_called_once_with(
+            LLMProvider.MISTRAL,
+            api_key="mistral-key-456",
+            api_base="https://custom-mistral.example.com/v1",
+        )
+
+        mock_provider.aresponses.assert_called_once()
+        call_args = mock_provider.aresponses.call_args
+        assert call_args.kwargs["model"] == "mistral-large"
+        assert call_args.kwargs["input_data"] == "test input"
+        assert call_args.kwargs["tools"] == [{"type": "function", "function": {"name": "search"}}]
+        assert call_args.kwargs["temperature"] == 0.5
+        assert call_args.kwargs["stream"] is True
+        assert call_args.kwargs["instructions"] == "Be helpful"
+        assert call_args.kwargs["another_custom_param"] == "another_value"
 
 
 @pytest.mark.asyncio
