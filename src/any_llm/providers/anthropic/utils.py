@@ -290,6 +290,12 @@ def _convert_tool_choice(params: CompletionParams) -> dict[str, Any]:
     tool_choice = params.tool_choice or "any"
     if tool_choice == "required":
         tool_choice = "any"
+    elif isinstance(tool_choice, dict):
+        if tool_choice_type := tool_choice.get("type"):
+            if tool_choice_type in ("custom", "function"):
+                return {"type": "tool", "name": tool_choice[tool_choice_type]["name"]}
+        msg = f"Unsupported tool_choice format: {tool_choice}"
+        raise ValueError(msg)
     return {"type": tool_choice, "disable_parallel_tool_use": not parallel_tool_calls}
 
 
