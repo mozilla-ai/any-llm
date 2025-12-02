@@ -246,9 +246,7 @@ def test_inactive_api_key_rejected(
     assert response.status_code == 401
 
 
-def test_authorization_header_accepted(
-    client: TestClient, test_config: GatewayConfig
-) -> None:
+def test_authorization_header_accepted(client: TestClient, test_config: GatewayConfig) -> None:
     """Test that Authorization header works as fallback for OpenAI client compatibility."""
     # Use Authorization header instead of X-AnyLLM-Key
     auth_header = {"Authorization": f"Bearer {test_config.master_key}"}
