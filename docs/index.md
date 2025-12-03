@@ -1,8 +1,18 @@
+---
+schema:
+  type: "SoftwareSourceCode"
+  name: "any-llm"
+  description: "A Python library providing a single interface to different LLM providers including OpenAI, Anthropic, Mistral, and more"
+  programmingLanguage: "Python"
+  codeRepository: "https://github.com/mozilla-ai/any-llm"
+  license: "https://github.com/mozilla-ai/any-llm/blob/main/LICENSE"
+---
+
 <p align="center">
   <picture>
     <img src="./images/any-llm-logo.png" width="20%" alt="any-llm logo"/>
   </picture>
-      <p align="center">  <b>Stop rewriting code for every LLM provider </b></p>
+      <p align="center">  <b>One interface. Every LLM. </b></p>
 </p>
 
 `any-llm` is a Python library providing a single interface to different llm providers.
