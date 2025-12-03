@@ -3,13 +3,13 @@ updates:
   - directory: "/"
     package-ecosystem: "pip"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     labels:
       - "maintenance"
 
   - directory: "/"
     package-ecosystem: "github-actions"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     labels:
       - "maintenance"
