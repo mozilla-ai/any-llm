@@ -59,6 +59,100 @@
 
     
     
+  
+
+  
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "HowTo",
+      
+      "name": "How to Install and Use any-llm",
+      
+      
+      "description": "Step-by-step guide to installing any-llm and making your first API call with Python",
+      
+
+      
+      
+
+      
+      
+        
+        "totalTime": "PT5M",
+        
+        
+        "tool": [
+          
+          {
+            "@type": "HowToTool",
+            "name": "Python 3.11 or newer"
+          },
+          
+          {
+            "@type": "HowToTool",
+            "name": "pip package manager"
+          }
+          
+        ],
+        
+        
+        "supply": [
+          
+          {
+            "@type": "HowToSupply",
+            "name": "API key from your chosen LLM provider"
+          }
+          
+        ],
+        
+        
+        "step": [
+          
+          {
+            "@type": "HowToStep",
+            "name": "Install any-llm",
+            "text": "Install any-llm with your chosen providers using pip. Use the all option to install support for all providers."
+            
+            ,"url": "https://mozilla-ai.github.io/any-llm/quickstart/#installation"
+            
+          },
+          
+          {
+            "@type": "HowToStep",
+            "name": "Set up API keys",
+            "text": "Configure your provider's API key as an environment variable. Make sure you have the appropriate environment variable set for your chosen provider."
+            
+            ,"url": "https://mozilla-ai.github.io/any-llm/quickstart/#api-keys"
+            
+          },
+          
+          {
+            "@type": "HowToStep",
+            "name": "Make your first completion call",
+            "text": "Import the completion function from any-llm and create your first API call with your chosen model and provider"
+            
+            ,"url": "https://mozilla-ai.github.io/any-llm/quickstart/#your-first-api-call"
+            
+          }
+          
+        ],
+        
+      
+
+      
+      
+
+      
+      "author": {
+        "@type": "Organization",
+        "name": "Mozilla.ai",
+        "url": "https://mozilla.ai"
+      }
+    }
+    </script>
+  
+
   </head>
   
   
@@ -78,7 +172,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#quickstart" class="md-skip">
+        <a href="#requirements" class="md-skip">
           Skip to content
         </a>
       
@@ -341,18 +435,6 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#quickstart" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Quickstart
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Quickstart">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
   <a href="#requirements" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -362,8 +444,8 @@
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#installation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -401,8 +483,8 @@
     </nav>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#your-first-api-call" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -412,8 +494,8 @@
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#advanced-using-the-anyllm-class" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -440,8 +522,8 @@
     </nav>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#streaming" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -451,8 +533,8 @@
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#embeddings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -462,8 +544,8 @@
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#tools" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -471,11 +553,6 @@
       
     </span>
   </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -1352,18 +1429,6 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#quickstart" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Quickstart
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Quickstart">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
   <a href="#requirements" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1373,8 +1438,8 @@
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#installation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1412,8 +1477,8 @@
     </nav>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#your-first-api-call" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1423,8 +1488,8 @@
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#advanced-using-the-anyllm-class" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1451,8 +1516,8 @@
     </nav>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#streaming" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1462,8 +1527,8 @@
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#embeddings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1473,8 +1538,8 @@
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#tools" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1482,11 +1547,6 @@
       
     </span>
   </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -1517,7 +1577,6 @@
 
   <h1>Quickstart</h1>
 
-<h2 id="quickstart">Quickstart</h2>
 <h3 id="requirements">Requirements</h3>
 <ul>
 <li>Python 3.11 or newer</li>
@@ -1662,6 +1721,9 @@
 
 
 
+
+  
+  
 
 
 

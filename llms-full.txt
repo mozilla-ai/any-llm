@@ -10,11 +10,21 @@ This file contains all documentation pages concatenated for easy consumption by 
 
 <!-- Source: index.md -->
 
+---
+schema:
+  type: "SoftwareSourceCode"
+  name: "any-llm"
+  description: "A Python library providing a single interface to different LLM providers including OpenAI, Anthropic, Mistral, and more"
+  programmingLanguage: "Python"
+  codeRepository: "https://github.com/mozilla-ai/any-llm"
+  license: "https://github.com/mozilla-ai/any-llm/blob/main/LICENSE"
+---
+
 <p align="center">
   <picture>
     <img src="./images/any-llm-logo.png" width="20%" alt="any-llm logo"/>
   </picture>
-      <p align="center">  <b>Stop rewriting code for every LLM provider </b></p>
+      <p align="center">  <b>One interface. Every LLM. </b></p>
 </p>
 
 `any-llm` is a Python library providing a single interface to different llm providers.
@@ -92,7 +102,29 @@ This documentation is available in two AI-friendly formats:
 
 <!-- Source: quickstart.md -->
 
-## Quickstart
+---
+schema:
+  type: "HowTo"
+  name: "How to Install and Use any-llm"
+  description: "Step-by-step guide to installing any-llm and making your first API call with Python"
+  totalTime: "PT5M"
+  tool:
+    - "Python 3.11 or newer"
+    - "pip package manager"
+  supply:
+    - "API key from your chosen LLM provider"
+  steps:
+    - name: "Install any-llm"
+      text: "Install any-llm with your chosen providers using pip. Use the all option to install support for all providers."
+      url: "https://mozilla-ai.github.io/any-llm/quickstart/#installation"
+    - name: "Set up API keys"
+      text: "Configure your provider's API key as an environment variable. Make sure you have the appropriate environment variable set for your chosen provider."
+      url: "https://mozilla-ai.github.io/any-llm/quickstart/#api-keys"
+    - name: "Make your first completion call"
+      text: "Import the completion function from any-llm and create your first API call with your chosen model and provider"
+      url: "https://mozilla-ai.github.io/any-llm/quickstart/#your-first-api-call"
+---
+
 
 ### Requirements
 
@@ -263,6 +295,15 @@ any-llm automatically converts your Python functions to OpenAI tools format. Fun
 ## providers.md
 
 <!-- Source: providers.md -->
+
+---
+schema:
+  type: "TechArticle"
+  name: "Supported Providers - any-llm"
+  description: "Complete list of LLM providers supported by any-llm including OpenAI, Anthropic, Mistral, and more"
+  datePublished: "2024-03-15"
+  dateModified: "2024-11-18"
+---
 
 # Supported Providers
 
