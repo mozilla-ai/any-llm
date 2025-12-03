@@ -85,3 +85,4 @@ Dockerfile*
 coverage.xml
 *.cover
 .hypothesis/
+demos
