@@ -1,10 +1,13 @@
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from tests.gateway.conftest import MODEL_NAME
+
+if TYPE_CHECKING:
+    from tests.gateway.conftest import LiveServer
 
 
 @pytest.mark.asyncio
@@ -187,3 +190,19 @@ async def test_chat_completion_multi_turn_conversation(
     assert "choices" in data
     content = data["choices"][0]["message"]["content"].lower()
     assert "alice" in content
+
+
+def test_completion_with_openai_client(live_server: "LiveServer") -> None:
+    """Test chat completion using the OpenAI SDK client with Authorization header."""
+    from openai import OpenAI
+
+    openai_client = OpenAI(
+        base_url=f"{live_server.url}/v1",
+        api_key=live_server.api_key,
+    )
+    response = openai_client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=[{"role": "user", "content": "Hello, world!"}],
+    )
+
+    assert response.choices[0].message.content is not None
