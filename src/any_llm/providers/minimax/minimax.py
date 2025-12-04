@@ -41,7 +41,9 @@ class MinimaxProvider(BaseOpenAIProvider):
 
         async def chunk_iterator() -> AsyncIterator[ChatCompletionChunk]:
             async for chunk in response:
-                yield self._convert_completion_chunk_response(chunk)
+                if isinstance(chunk, OpenAIChatCompletionChunk):
+                    if chunk.choices and chunk.choices[0].delta:
+                        yield self._convert_completion_chunk_response(chunk)
 
         def get_content(chunk: ChatCompletionChunk) -> str | None:
             return chunk.choices[0].delta.content if len(chunk.choices) > 0 else None
