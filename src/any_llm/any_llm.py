@@ -413,21 +413,44 @@ class AnyLLM(ABC):
             The completion response from the provider
 
         """
-        all_args = locals()
-        all_args.pop("self")
-        all_args["model_id"] = all_args.pop("model")
-        kwargs = all_args.pop("kwargs")
-
+        prepared_tools = None
         if tools:
-            all_args["tools"] = prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
+            prepared_tools = prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
 
-        for i, message in enumerate(messages):
+        processed_messages: list[dict[str, Any]] = []
+        for message in messages:
             if isinstance(message, ChatCompletionMessage):
                 # Dump the message but exclude the extra field that we extend from OpenAI Spec
-                messages[i] = message.model_dump(exclude_none=True, exclude={"reasoning"})
-        all_args["messages"] = messages
+                processed_messages.append(message.model_dump(exclude_none=True, exclude={"reasoning"}))
+            else:
+                processed_messages.append(message)
 
-        return await self._acompletion(CompletionParams(**all_args), **kwargs)
+        params = CompletionParams(
+            model_id=model,
+            messages=processed_messages,
+            tools=prepared_tools,
+            tool_choice=tool_choice,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+            response_format=response_format,
+            stream=stream,
+            n=n,
+            stop=stop,
+            presence_penalty=presence_penalty,
+            frequency_penalty=frequency_penalty,
+            seed=seed,
+            user=user,
+            parallel_tool_calls=parallel_tool_calls,
+            logprobs=logprobs,
+            top_logprobs=top_logprobs,
+            logit_bias=logit_bias,
+            stream_options=stream_options,
+            max_completion_tokens=max_completion_tokens,
+            reasoning_effort=reasoning_effort,
+        )
+
+        return await self._acompletion(params, **kwargs)
 
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
@@ -499,15 +522,28 @@ class AnyLLM(ABC):
             NotImplementedError: If the selected provider does not support the Responses API.
 
         """
-        all_args = locals()
-        all_args.pop("self")
-        all_args["input"] = all_args.pop("input_data")
-        kwargs = all_args.pop("kwargs")
-
+        prepared_tools = None
         if tools:
-            all_args["tools"] = prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
+            prepared_tools = prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
 
-        return await self._aresponses(ResponsesParams(**all_args, **kwargs))
+        params = ResponsesParams(
+            model=model,
+            input=input_data,
+            tools=prepared_tools,
+            tool_choice=tool_choice,
+            max_output_tokens=max_output_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            stream=stream,
+            instructions=instructions,
+            max_tool_calls=max_tool_calls,
+            parallel_tool_calls=bool(parallel_tool_calls),
+            reasoning=reasoning,
+            text=text,
+            **kwargs,
+        )
+
+        return await self._aresponses(params)
 
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
