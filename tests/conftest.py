@@ -66,7 +66,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.BEDROCK: "amazon.nova-lite-v1:0",
         LLMProvider.SAGEMAKER: "<sagemaker_endpoint_name>",
         LLMProvider.WATSONX: "ibm/granite-3-8b-instruct",
-        LLMProvider.FIREWORKS: "accounts/fireworks/models/llama4-scout-instruct-basic",
+        LLMProvider.FIREWORKS: "accounts/fireworks/models/gpt-oss-20b",
         LLMProvider.GROQ: "openai/gpt-oss-20b",
         LLMProvider.PORTKEY: "@any-llm-test/gpt-4.1-mini",
         LLMProvider.LLAMA: "Llama-4-Maverick-17B-128E-Instruct-FP8",
