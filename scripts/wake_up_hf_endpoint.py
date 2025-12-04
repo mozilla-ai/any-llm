@@ -6,7 +6,7 @@ from huggingface_hub.errors import HfHubHTTPError
 
 from any_llm.api import completion
 
-HF_ENDPOINT = "https://y0okp71n85ezo5nr.us-east-1.aws.endpoints.huggingface.cloud/v1/"
+HF_ENDPOINT = "https://oze7k8n86bjfzgjk.us-east-1.aws.endpoints.huggingface.cloud/v1"
 
 
 def wake_up_hf_endpoint(retry_count: int = 0, retry_interval: int = 10):
