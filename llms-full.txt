@@ -885,6 +885,25 @@ any-llm-gateway offers two authentication methods, each designed for different u
 | **Master Key** | Internal services, admin operations, trusted environments | Single key with full access | Requires manual user specification |
 | **Virtual API Keys** | External apps, per-user access, customer-facing services | Multiple scoped keys | Automatic per-key tracking |
 
+### Supported Headers
+
+The gateway accepts authentication via two headers:
+
+- **`X-AnyLLM-Key`** (preferred): The gateway's native authentication header
+- **`Authorization`**: Standard HTTP authorization header for OpenAI client compatibility
+
+Both headers use the `Bearer <token>` format. When both headers are present, `X-AnyLLM-Key` takes precedence.
+
+Using the `Authorization` header allows you to use the gateway with OpenAI-compatible clients without modification:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="your-master-key-or-virtual-key",  # Sent as Authorization: Bearer ...
+)
+```
 
 ## Master Key 
 The master key is the root credential for your gateway installation. It has unrestricted access to all gateway operations and should be treated with the same security as your production database credentials.
