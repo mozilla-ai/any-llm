@@ -160,6 +160,38 @@ git commit -m "update"
 git commit -m "wip"
 ```
 
+## Developing the Gateway
+
+If you are contributing to the `any-llm-gateway` (the FastAPI proxy), the setup differs slightly from the SDK. We use a layered Docker Compose setup:
+
+1. `docker-compose.yml`: Defines the production image (used by end-users).
+2. `docker-compose.override.yml`: Overrides the image with your local build context.
+
+### Running the Gateway Locally
+
+Because the `docker-compose.override.yml` is checked into the repository, Docker will automatically detect it and build from your source code.
+
+1. **Navigate to the gateway directory**
+
+   ```bash
+   cd any-llm-gateway
+   ```
+
+2. **Run with Build** Run the following command to build your local changes and start the service:
+```bash
+docker compose up --build
+```
+
+3. **Verify Local Version** To ensure you are running your local version, check the logs or the health endpoint. The service runs on http://localhost:8000.
+
+### Gateway Tests
+To run tests specifically for the gateway:
+
+```bash
+# From the project root
+pytest tests/gateway
+```
+
 ## Adding a New Provider
 
 Adding provider support is a major contribution! Here's the complete process:
