@@ -109,7 +109,7 @@ class GoogleProvider(AnyLLM):
         response_format = params.response_format
         if isinstance(response_format, type) and issubclass(response_format, BaseModel):
             kwargs["response_mime_type"] = "application/json"
-            kwargs["response_schema"] = response_format
+            kwargs["response_json_schema"] = response_format
 
         formatted_messages, system_instruction = _convert_messages(params.messages)
         if system_instruction:
