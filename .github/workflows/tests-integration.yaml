@@ -36,7 +36,7 @@ jobs:
       should_run_integration: ${{ steps.determine.outputs.should_run_integration }}
       should_run_local: ${{ steps.determine.outputs.should_run_local }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Determine which jobs should run based on filter
         id: determine
@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - uses: astral-sh/setup-uv@v7
         with:
@@ -118,7 +118,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - uses: astral-sh/setup-uv@v7
         with:
