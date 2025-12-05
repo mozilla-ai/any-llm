@@ -1,12 +1,8 @@
 services:
   gateway:
     # if pulling from ghcr.io, use the following instead, and comment out the build section:
-    # image: ghcr.io/mozilla-ai/any-llm/gateway:latest
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        VERSION: ${VERSION:-0.0.0+local}
+    image: ghcr.io/mozilla-ai/any-llm/gateway:latest
+
     # If you want to use a different port, change it here and in the config.yml file.
     ports:
       - "8000:8000"
