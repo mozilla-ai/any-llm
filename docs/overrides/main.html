@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block extrahead %}
+  {{ super() }}
+
+  {% if page and page.meta and page.meta.schema %}
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "{{ page.meta.schema.type }}",
+      {% if page.meta.schema.name %}
+      "name": "{{ page.meta.schema.name }}",
+      {% endif %}
+      {% if page.meta.schema.description %}
+      "description": "{{ page.meta.schema.description }}",
+      {% endif %}
+
+      {# Software-specific fields #}
+      {% if page.meta.schema.type == "SoftwareSourceCode" %}
+        {% if page.meta.schema.programmingLanguage %}
+        "programmingLanguage": "{{ page.meta.schema.programmingLanguage }}",
+        {% endif %}
+        {% if page.meta.schema.codeRepository %}
+        "codeRepository": "{{ page.meta.schema.codeRepository }}",
+        {% endif %}
+        {% if page.meta.schema.license %}
+        "license": "{{ page.meta.schema.license }}",
+        {% endif %}
+      {% endif %}
+
+      {# HowTo-specific fields #}
+      {% if page.meta.schema.type == "HowTo" %}
+        {% if page.meta.schema.totalTime %}
+        "totalTime": "{{ page.meta.schema.totalTime }}",
+        {% endif %}
+        {% if page.meta.schema.tool %}
+        "tool": [
+          {% for tool in page.meta.schema.tool %}
+          {
+            "@type": "HowToTool",
+            "name": "{{ tool }}"
+          }{% if not loop.last %},{% endif %}
+          {% endfor %}
+        ],
+        {% endif %}
+        {% if page.meta.schema.supply %}
+        "supply": [
+          {% for supply in page.meta.schema.supply %}
+          {
+            "@type": "HowToSupply",
+            "name": "{{ supply }}"
+          }{% if not loop.last %},{% endif %}
+          {% endfor %}
+        ],
+        {% endif %}
+        {% if page.meta.schema.steps %}
+        "step": [
+          {% for step in page.meta.schema.steps %}
+          {
+            "@type": "HowToStep",
+            "name": "{{ step.name }}",
+            "text": "{{ step.text }}"
+            {% if step.url %}
+            ,"url": "{{ step.url }}"
+            {% endif %}
+          }{% if not loop.last %},{% endif %}
+          {% endfor %}
+        ],
+        {% endif %}
+      {% endif %}
+
+      {# TechArticle-specific fields #}
+      {% if page.meta.schema.type == "TechArticle" %}
+        {% if page.meta.schema.datePublished %}
+        "datePublished": "{{ page.meta.schema.datePublished }}",
+        {% endif %}
+        {% if page.meta.schema.dateModified %}
+        "dateModified": "{{ page.meta.schema.dateModified }}",
+        {% endif %}
+        {% if page.canonical_url %}
+        "url": "{{ page.canonical_url }}",
+        "mainEntityOfPage": {
+          "@type": "WebPage",
+          "@id": "{{ page.canonical_url }}"
+        },
+        {% endif %}
+        {% if config.site_url %}
+        "publisher": {
+          "@type": "Organization",
+          "name": "Mozilla.ai",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "{{ config.site_url }}images/any-llm-logo-mark.png"
+          }
+        },
+        {% endif %}
+      {% endif %}
+
+      {# Author (common to all types) #}
+      "author": {
+        "@type": "Organization",
+        "name": "Mozilla.ai",
+        "url": "https://mozilla.ai"
+      }
+    }
+    </script>
+  {% endif %}
+{% endblock %}

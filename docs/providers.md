@@ -1,3 +1,12 @@
+---
+schema:
+  type: "TechArticle"
+  name: "Supported Providers - any-llm"
+  description: "Complete list of LLM providers supported by any-llm including OpenAI, Anthropic, Mistral, and more"
+  datePublished: "2024-03-15"
+  dateModified: "2024-11-18"
+---
+
 # Supported Providers
 
 `any-llm` supports the below providers. In order to discover information about what models are supported by a provider
