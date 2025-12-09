@@ -645,7 +645,11 @@ When running any-llm-gateway, it must have a few things configured:
 1. `DATABASE_URL`. The gateway relies upon a postgres database for storage.
 1. Provider Keys. The gateway connects to providers (Mistral, AWS, Vertex, Azure, etc) using credentials that must be set.
 
-For the purposes of the quickstart we will use the included `docker/docker-compose.yml`, but you can customize the file to your own requirements.
+### Create a project directory
+```bash 
+mkdir any-llm-gateway
+cd any-llm-gateway
+```
 
 ### Generate  master key
 
@@ -658,13 +662,9 @@ Save the output of this command, you'll need it in the next steps.
 
 ### Configure providers 
 
-Copy the example `docker/config.example.yml` file to `docker/config.yml`
+Create a file name `config.yml` and paste the below content:
 
-```bash
-cp docker/config.example.yml docker/config.yml
-```
-
-At a minimum you'll need to fill out the value for the master_key, and also enter credential information for at least one provider. You can browse supported providers [here](https://mozilla-ai.github.io/any-llm/providers/). If you would like to track usage cost, you'll also need to configure model pricing, as explained in the config template file.
+> **Action** :  At a minimum you'll need to fill out the master_key, and also enter credential information for at least one provider. You can browse supported providers [here](https://mozilla-ai.github.io/any-llm/providers/). If you would like to track usage cost, you'll also need to configure model pricing, as explained in the [config template file](https://raw.githubusercontent.com/mozilla-ai/any-llm/main/docker/config.example.yml).
 
 ```yaml
 database_url: "postgresql://gateway:gateway@postgres:5432/gateway"
@@ -682,16 +682,61 @@ models:
     output_price_per_million: 0.60
 ```
 
+### Set up Docker Configuration 
+
+Create a file named `docker-compose.yml` with the following content.
+
+<detail> 
+<summary> Click to view docker-compose.yml content </summary>
+
+```yaml 
+services:
+  gateway:
+    # Use the official production image
+    image: ghcr.io/mozilla-ai/any-llm/gateway:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config.yml:/app/config.yml
+      # UNCOMMENT the next line ONLY if using Google Vertex AI (requires service_account.json)
+      # - ./service_account.json:/app/service_account.json
+    command: ["any-llm-gateway", "serve", "--config", "/app/config.yml"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=gateway
+      - POSTGRES_PASSWORD=gateway
+      - POSTGRES_DB=gateway
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+```
+</detail>
+
+**Alternatively**, you can download the file directly from the repository: 
+
+```bash 
+curl -o docker-compose.yml https://raw.githubusercontent.com/mozilla-ai/any-llm/main/docker/docker-compose.yml
+```
 
 ### Start the gateway
 
-Run the docker-compose file, ensuring that your config.yml is located in the same directory as the docker-compose.yml file (`docker/config.yml`).
-
-The default setting is to build the gateway from source, but see the docker-compose.yml file comment to see how to use a published version of any-llm-gateway instead of the source code.
-
 ```bash
 # From project root directory
-docker-compose -f docker/docker-compose.yml up -d --build
+docker compose up -d
 ```
 
 ````bash
@@ -705,7 +750,7 @@ curl http://localhost:8000/health
 ### View Logs 
 
 ```bash
-docker-compose -f docker/docker-compose.yml logs -f
+docker compose logs -f
 ```
 
 
@@ -723,7 +768,7 @@ export GATEWAY_MASTER_KEY=YOUR_MASTER_KEY
 
 ### Create a user
 
-In order to track usage, we must first create a user so that we can associate our completion request with them.
+To track usage, we must first create a user so that to associate our completion request.
 
 ```bash
 curl -s -X POST http://localhost:8000/v1/users \
@@ -862,8 +907,6 @@ curl -s http://localhost:8000/v1/users/user-123 \
 You'll notice that the user does not have a budget attached, which means that we track their usage but do not limit them! For more information on creating and managing budgets and budget reset cycles, see the [Budget Management docs](#budget-management.md)
 
 ## Next Steps
-
-
 
 - **[Configuration](#configuration.md)** - Configure providers, pricing, and other settings
 - **[Authentication](#authentication.md)** - Learn about master keys and virtual API keys
