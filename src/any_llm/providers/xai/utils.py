@@ -63,7 +63,7 @@ def _convert_xai_chunk_to_anyllm_chunk(chunk: XaiChunk) -> ChatCompletionChunk:
                 )
             delta_tool_calls = delta_tool_calls_list or None
 
-        openai_role = _map_xai_role_to_openai(choice.role)
+        openai_role = _map_xai_role_to_openai(choice.role)  # type: ignore[arg-type]
         delta = ChoiceDelta(content=choice.content, role=openai_role, reasoning=reasoning)
         delta.tool_calls = delta_tool_calls
 
