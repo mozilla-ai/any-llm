@@ -26,6 +26,7 @@ platform = [
   "bcrypt>=5.0.0",
   "cryptography>=46.0.3",
   "pynacl>=1.6.0",
+  "requests>=2.32.5",
 ]
 
 perplexity = []
