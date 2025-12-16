@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING, Any, cast
 
 from any_llm_platform_client import AnyLLMPlatformClient
@@ -11,7 +12,6 @@ from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
     CompletionParams,
-    CompletionUsage,
     CreateEmbeddingResponse,
 )
 
@@ -91,9 +91,18 @@ class PlatformProvider(AnyLLM):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        start_time = time.perf_counter()
+
+        # Enable usage data in streaming responses
+        if params.stream and params.stream_options is None:
+            params.stream_options = {"include_usage": True}
+
         completion = await self.provider._acompletion(params=params, **kwargs)
 
         if not params.stream:
+            end_time = time.perf_counter()
+            total_duration_ms = (end_time - start_time) * 1000
+
             await post_completion_usage_event(
                 platform_client=self.platform_client,
                 client=self.client,
@@ -102,26 +111,87 @@ class PlatformProvider(AnyLLM):
                 completion=cast("ChatCompletion", completion),
                 provider_key_id=self.provider_key_id,  # type: ignore[arg-type]
                 client_name=self.client_name,
+                total_duration_ms=total_duration_ms,
             )
             return completion
 
         # For streaming, wrap the iterator to collect usage info
-        return self._stream_with_usage_tracking(cast("AsyncIterator[ChatCompletionChunk]", completion))
+        return self._stream_with_usage_tracking(cast("AsyncIterator[ChatCompletionChunk]", completion), start_time)
 
     async def _stream_with_usage_tracking(
-        self, stream: AsyncIterator[ChatCompletionChunk]
+        self, stream: AsyncIterator[ChatCompletionChunk], start_time: float
     ) -> AsyncIterator[ChatCompletionChunk]:
         """Wrap the stream to track usage after completion."""
         chunks: list[ChatCompletionChunk] = []
+        time_to_first_token_ms: float | None = None
+        time_to_last_content_token_ms: float | None = None
+        output_tokens = 0
+        chunk_latencies: list[float] = []
+        previous_chunk_time: float | None = None
 
         async for chunk in stream:
+            current_time = time.perf_counter()
+
+            # Capture time to first token (first chunk with content)
+            if time_to_first_token_ms is None and chunk.choices and chunk.choices[0].delta.content:
+                time_to_first_token_ms = (current_time - start_time) * 1000
+
+            # Track inter-chunk latency
+            if previous_chunk_time is not None:
+                inter_chunk_latency = (current_time - previous_chunk_time) * 1000
+                chunk_latencies.append(inter_chunk_latency)
+            previous_chunk_time = current_time
+
             chunks.append(chunk)
+
+            # Count tokens as we stream and track last content token time
+            if chunk.choices and chunk.choices[0].delta.content:
+                output_tokens += 1
+                time_to_last_content_token_ms = (current_time - start_time) * 1000
+
             yield chunk
 
         # After stream completes, reconstruct completion for usage tracking
         if chunks:
-            # Combine chunks into a single ChatCompletion-like object
+            end_time = time.perf_counter()
+            total_duration_ms = (end_time - start_time) * 1000
+
+            # Use time_to_last_content_token_ms if available, otherwise use total_duration_ms
+            time_to_last_token_ms = time_to_last_content_token_ms or total_duration_ms
+
+            # Calculate tokens per second based on actual output tokens from usage
+            tokens_per_second: float | None = None
+            chunks_received = len(chunks)
+            avg_chunk_size: float | None = None
+            inter_chunk_latency_variance_ms: float | None = None
+
+            # Combine chunks into a single ChatCompletion-like object (do this once)
             final_completion = self._combine_chunks(chunks)
+
+            # Get actual token count from usage data
+            last_chunk = chunks[-1]
+
+            # Try to get token count from last chunk's usage data, fallback to combined completion
+            actual_output_tokens: int | None = None
+            if last_chunk.usage and last_chunk.usage.completion_tokens:
+                actual_output_tokens = last_chunk.usage.completion_tokens
+            elif final_completion.usage and final_completion.usage.completion_tokens:
+                actual_output_tokens = final_completion.usage.completion_tokens
+
+            # Calculate metrics if we have token count
+            if actual_output_tokens is not None and actual_output_tokens > 0:
+                if time_to_last_token_ms > 0:
+                    tokens_per_second = (actual_output_tokens * 1000) / time_to_last_token_ms
+
+                # Calculate average chunk size
+                if chunks_received > 0:
+                    avg_chunk_size = actual_output_tokens / chunks_received
+
+            # Calculate inter-chunk latency variance
+            if len(chunk_latencies) > 1:
+                mean_latency = sum(chunk_latencies) / len(chunk_latencies)
+                variance = sum((x - mean_latency) ** 2 for x in chunk_latencies) / len(chunk_latencies)
+                inter_chunk_latency_variance_ms = variance
             await post_completion_usage_event(
                 platform_client=self.platform_client,
                 client=self.client,
@@ -130,6 +200,13 @@ class PlatformProvider(AnyLLM):
                 completion=final_completion,
                 provider_key_id=self.provider_key_id,  # type: ignore[arg-type]
                 client_name=self.client_name,
+                time_to_first_token_ms=time_to_first_token_ms,
+                time_to_last_token_ms=time_to_last_token_ms,
+                total_duration_ms=total_duration_ms,
+                tokens_per_second=tokens_per_second,
+                chunks_received=chunks_received,
+                avg_chunk_size=avg_chunk_size,
+                inter_chunk_latency_variance_ms=inter_chunk_latency_variance_ms,
             )
 
     def _combine_chunks(self, chunks: list[ChatCompletionChunk]) -> ChatCompletion:
@@ -140,20 +217,17 @@ class PlatformProvider(AnyLLM):
         if not last_chunk.usage:
             msg = (
                 "The last chunk of your streaming response does not contain usage data. "
-                "Consult your provider documentation on how to retrieve it."
+                "Performance metrics requiring token counts will not be available. "
+                "Consult your provider documentation on how to enable usage data in streaming responses."
             )
-            logger.error(msg)
+            logger.warning(msg)
 
             return ChatCompletion(
                 id=last_chunk.id,
                 model=last_chunk.model,
                 created=last_chunk.created,
                 object="chat.completion",
-                usage=CompletionUsage(
-                    completion_tokens=0,
-                    prompt_tokens=0,
-                    total_tokens=0,
-                ),
+                usage=None,  # Set to None instead of zeros to distinguish from actual zero tokens
                 choices=[],
             )
 
