@@ -319,8 +319,8 @@ async def test_acompletion_streaming_success(
     assert call_args.kwargs["completion"].usage.total_tokens == 15
 
 
-@patch("any_llm.providers.platform.utils.requests.post")
-@patch("any_llm.providers.platform.utils.requests.get")
+@patch("any_llm.providers.platform.utils.httpx.post")
+@patch("any_llm.providers.platform.utils.httpx.get")
 @patch("any_llm.providers.platform.utils._solve_challenge")
 def test_get_provider_key_success(
     mock_solve_challenge: Mock,
@@ -363,7 +363,7 @@ def test_get_provider_key_success(
         mock_decrypt.assert_called_once()
 
 
-@patch("any_llm.providers.platform.utils.requests.post")
+@patch("any_llm.providers.platform.utils.httpx.post")
 def test_get_provider_key_invalid_api_key_format(mock_post: Mock) -> None:
     """Test error handling when ANY_LLM_KEY has invalid format."""
     invalid_key = "INVALID_KEY_FORMAT"
@@ -374,7 +374,7 @@ def test_get_provider_key_invalid_api_key_format(mock_post: Mock) -> None:
     mock_post.assert_not_called()
 
 
-@patch("any_llm.providers.platform.utils.requests.post")
+@patch("any_llm.providers.platform.utils.httpx.post")
 def test_get_provider_key_challenge_creation_failure(mock_post: Mock) -> None:
     """Test error handling when challenge creation fails."""
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
@@ -390,8 +390,8 @@ def test_get_provider_key_challenge_creation_failure(mock_post: Mock) -> None:
     mock_post.assert_called_once()
 
 
-@patch("any_llm.providers.platform.utils.requests.post")
-@patch("any_llm.providers.platform.utils.requests.get")
+@patch("any_llm.providers.platform.utils.httpx.post")
+@patch("any_llm.providers.platform.utils.httpx.get")
 @patch("any_llm.providers.platform.utils._solve_challenge")
 def test_get_provider_key_fetch_failure(
     mock_solve_challenge: Mock,
@@ -425,8 +425,8 @@ def test_get_provider_key_fetch_failure(
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.utils.requests.post")
-@patch("any_llm.providers.platform.utils.requests.get")
+@patch("any_llm.providers.platform.utils.httpx.post")
+@patch("any_llm.providers.platform.utils.httpx.get")
 @patch("any_llm.providers.platform.utils._solve_challenge")
 async def test_post_completion_usage_event_success(
     mock_solve_challenge: Mock,
@@ -515,7 +515,7 @@ async def test_post_completion_usage_event_success(
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.utils.requests.post")
+@patch("any_llm.providers.platform.utils.httpx.post")
 async def test_post_completion_usage_event_invalid_key_format(mock_post: Mock) -> None:
     """Test error handling when ANY_LLM_KEY has invalid format."""
     invalid_key = "INVALID_KEY_FORMAT"
