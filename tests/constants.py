@@ -8,6 +8,7 @@ LOCAL_PROVIDERS = [
     LLMProvider.LMSTUDIO,
     LLMProvider.LLAMAFILE,
     LLMProvider.GATEWAY,
+    LLMProvider.VLLM,
 ]
 
 EXPECTED_PROVIDERS = os.environ.get("EXPECTED_PROVIDERS", "").split(",")
