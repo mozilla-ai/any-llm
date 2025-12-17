@@ -133,7 +133,7 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.OPENAI: {"timeout": 100},
         LLMProvider.HUGGINGFACE: {"api_base": "https://oze7k8n86bjfzgjk.us-east-1.aws.endpoints.huggingface.cloud/v1"},
         LLMProvider.LLAMACPP: {"api_base": "http://127.0.0.1:8090/v1"},
-        LLMProvider.VLLM: {"api_base": "http://127.0.0.1:8000/v1"},
+        LLMProvider.VLLM: {"api_base": "http://127.0.0.1:8080/v1"},
         LLMProvider.MISTRAL: {"timeout_ms": 100000},
         LLMProvider.NEBIUS: {"api_base": "https://api.studio.nebius.com/v1/"},
         LLMProvider.OPENAI: {"timeout": 10},

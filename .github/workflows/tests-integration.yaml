@@ -200,20 +200,18 @@ jobs:
         run: |
           timeout 60 bash -c 'until curl -s http://localhost:8090/health >/dev/null; do sleep 1; done'
 
-      - name: Download and Run vLLM
+      - name: Install and Run vLLM (CPU)
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'vllm')
         run: |
-          docker run -d -p 8000:8000 \
-            --security-opt seccomp=unconfined \
-            --cap-add SYS_NICE \
-            -e VLLM_CPU_KVCACHE_SPACE=4 \
-            public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:latest \
-            --model Qwen/Qwen2.5-0.5B-Instruct --dtype bfloat16 --max-model-len 2048
+          uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly/cpu
+          export VLLM_CPU_KVCACHE_SPACE=4
+          vllm serve Qwen/Qwen2.5-0.5B-Instruct --dtype bfloat16 --max-model-len 2048 --port 8080 &
+          echo $! > vllm.pid
 
       - name: Wait for vLLM to be ready
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'vllm')
         run: |
-          timeout 120 bash -c 'until curl -s http://localhost:8000/health >/dev/null; do sleep 1; done'
+          timeout 180 bash -c 'until curl -s http://localhost:8080/v1/models >/dev/null; do sleep 1; done'
 
       - name: Run Local Provider Integration tests
         env:
@@ -232,6 +230,14 @@ jobs:
           if [ -f llamafile.pid ]; then
             kill $(cat llamafile.pid) || true
             rm llamafile.pid
+          fi
+
+      - name: Cleanup vLLM process
+        if: always()
+        run: |
+          if [ -f vllm.pid ]; then
+            kill $(cat vllm.pid) || true
+            rm vllm.pid
           fi
 
       - name: Upload coverage reports to Codecov
