@@ -203,7 +203,7 @@ jobs:
       - name: Install and Run vLLM (CPU)
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'vllm')
         run: |
-          uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly/cpu --prerelease=allow --index-strategy unsafe-best-match
+          uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly/cpu --prerelease=allow --index-strategy unsafe-best-match --torch-backend cpu
           export VLLM_CPU_KVCACHE_SPACE=4
           vllm serve Qwen/Qwen2.5-0.5B-Instruct --dtype bfloat16 --max-model-len 2048 --port 8080 &
           echo $! > vllm.pid
