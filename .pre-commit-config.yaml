@@ -25,7 +25,9 @@ repos:
         args:
           - "--fix"
           - "--exit-non-zero-on-fix"
+        exclude: any-llm-sdk-stub
       - id: ruff-format
+        exclude: any-llm-sdk-stub
 
   - repo: local
     hooks:
@@ -36,7 +38,7 @@ repos:
         language: system
         types: [python]
         verbose: true
-        exclude: demos|scripts
+        exclude: demos|scripts|any-llm-sdk-stub
 
   - repo: https://github.com/codespell-project/codespell
     rev: "v2.4.1"

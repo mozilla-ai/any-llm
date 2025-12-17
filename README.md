@@ -17,7 +17,7 @@
 [![Integration Tests](https://github.com/mozilla-ai/any-llm/actions/workflows/tests-integration.yaml/badge.svg)](https://github.com/mozilla-ai/any-llm/actions/workflows/tests-integration.yaml/)
 
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)
-[![PyPI](https://img.shields.io/pypi/v/any-llm-sdk)](https://pypi.org/project/any-llm-sdk/)
+[![PyPI](https://img.shields.io/pypi/v/any-llm)](https://pypi.org/project/any-llm/)
 <a href="https://discord.gg/4gf3zXrQUc">
     <img src="https://img.shields.io/static/v1?label=Chat%20on&message=Discord&color=blue&logo=Discord&style=flat-square" alt="Discord">
 </a>
@@ -32,7 +32,7 @@ Switch between OpenAI, Anthropic, Mistral, Ollama, and more without changing you
 ## Quickstart
 
 ```python
-pip install 'any-llm-sdk[mistral,ollama]'
+pip install 'any-llm[mistral,ollama]'
 
 export MISTRAL_API_KEY="YOUR_KEY_HERE"  # or OPENAI_API_KEY, etc
 from any_llm import completion
@@ -63,9 +63,9 @@ print(response.choices[0].message.content)
 Install support for specific providers:
 
 ```bash
-pip install 'any-llm-sdk[openai]'           # Just OpenAI
-pip install 'any-llm-sdk[mistral,ollama]'   # Multiple providers
-pip install 'any-llm-sdk[all]'              # All supported providers
+pip install 'any-llm[openai]'           # Just OpenAI
+pip install 'any-llm[mistral,ollama]'   # Multiple providers
+pip install 'any-llm[all]'              # All supported providers
 ```
 
 See our [list of supported providers](https://mozilla-ai.github.io/any-llm/providers/) to choose which ones you need.

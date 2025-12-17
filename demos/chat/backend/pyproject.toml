@@ -13,7 +13,7 @@ dependencies = [
     "fastapi>=0.115.6",
     "uvicorn[standard]>=0.32.1",
     "python-multipart>=0.0.20",
-    "any-llm-sdk[all]>=0.15.0",
+    "any-llm[all]>=0.15.0",
 ]
 
 [project.urls]
