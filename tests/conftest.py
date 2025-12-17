@@ -23,6 +23,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
         LLMProvider.LLAMAFILE: "N/A",
         LLMProvider.LLAMACPP: "N/A",
+        LLMProvider.VLLM: "N/A",
         LLMProvider.LMSTUDIO: "openai/gpt-oss-20b",  # You must have LM Studio running and the server enabled
         LLMProvider.AZUREOPENAI: "azure/<your_deployment_name>",
         LLMProvider.CEREBRAS: "gpt-oss-120b",
@@ -60,6 +61,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.OLLAMA: "llama3.2:1b",
         LLMProvider.LLAMAFILE: "N/A",
         LLMProvider.LMSTUDIO: "google/gemma-3n-e4b",  # You must have LM Studio running and the server enabled
+        LLMProvider.VLLM: "Qwen/Qwen2.5-0.5B-Instruct",
         LLMProvider.COHERE: "command-a-03-2025",
         LLMProvider.CEREBRAS: "llama-3.3-70b",
         LLMProvider.HUGGINGFACE: "huggingface/tgi",  # This is the syntax used in `litellm` when using HF Inference Endpoints (https://docs.litellm.ai/docs/providers/huggingface#dedicated-inference-endpoints)
@@ -131,6 +133,7 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.OPENAI: {"timeout": 100},
         LLMProvider.HUGGINGFACE: {"api_base": "https://oze7k8n86bjfzgjk.us-east-1.aws.endpoints.huggingface.cloud/v1"},
         LLMProvider.LLAMACPP: {"api_base": "http://127.0.0.1:8090/v1"},
+        LLMProvider.VLLM: {"api_base": "http://127.0.0.1:8000/v1"},
         LLMProvider.MISTRAL: {"timeout_ms": 100000},
         LLMProvider.NEBIUS: {"api_base": "https://api.studio.nebius.com/v1/"},
         LLMProvider.OPENAI: {"timeout": 10},

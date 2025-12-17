@@ -45,6 +45,7 @@ class LLMProvider(StrEnum):
     SAGEMAKER = "sagemaker"
     TOGETHER = "together"
     VERTEXAI = "vertexai"
+    VLLM = "vllm"
     VOYAGE = "voyage"
     WATSONX = "watsonx"
     XAI = "xai"
