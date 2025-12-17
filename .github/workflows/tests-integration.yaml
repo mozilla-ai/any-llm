@@ -202,7 +202,13 @@ jobs:
 
       - name: Download and Run vLLM
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'vllm')
-        run: docker run -d -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model Qwen/Qwen2.5-0.5B-Instruct --dtype half --max-model-len 2048
+        run: |
+          docker run -d -p 8000:8000 \
+            --security-opt seccomp=unconfined \
+            --cap-add SYS_NICE \
+            -e VLLM_CPU_KVCACHE_SPACE=4 \
+            public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:latest \
+            --model Qwen/Qwen2.5-0.5B-Instruct --dtype bfloat16 --max-model-len 2048
 
       - name: Wait for vLLM to be ready
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'vllm')
