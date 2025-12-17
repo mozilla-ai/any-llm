@@ -22,9 +22,6 @@ all = [
 ]
 
 platform = [
-  "typing-extensions",
-  "bcrypt>=5.0.0",
-  "cryptography>=46.0.3",
   "pynacl>=1.6.0",
 ]
 

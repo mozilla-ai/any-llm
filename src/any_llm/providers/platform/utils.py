@@ -7,15 +7,13 @@ import re
 import uuid
 from typing import TYPE_CHECKING, Any
 
+import httpx
 import nacl.bindings
 import nacl.public
-import requests
 
 from any_llm.logging import logger
 
 if TYPE_CHECKING:
-    import httpx
-
     from any_llm.any_llm import AnyLLM
     from any_llm.types.completion import ChatCompletion
 
@@ -60,7 +58,7 @@ def _create_challenge(public_key: str, any_api_url: str) -> Any:
     """Create an authentication challenge."""
     logger.info("Creating authentication challenge...")
 
-    response = requests.post(
+    response = httpx.post(
         f"{any_api_url}/auth/",
         json={
             "encryption_key": public_key,
@@ -131,7 +129,7 @@ def _fetch_provider_key(
     """Fetch the provider key using the solved challenge."""
     logger.info(f"Fetching provider key for {provider}...")
 
-    response = requests.get(
+    response = httpx.get(
         f"{any_api_url}/provider-keys/{provider}",
         headers={"encryption-key": public_key, "AnyLLM-Challenge-Response": str(solved_challenge)},
     )

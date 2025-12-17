@@ -1,0 +1,9 @@
+services:
+  gateway:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        VERSION: ${VERSION:-0.0.0+local}
+
+    image: any-llm-gateway:local
