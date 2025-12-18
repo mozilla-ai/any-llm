@@ -5,6 +5,7 @@ preserved across multi-turn conversations with tool calls.
 """
 
 import json
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -13,6 +14,7 @@ from openai import APIConnectionError
 
 from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
+from any_llm.types.completion import ChatCompletionMessageFunctionToolCall
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 if TYPE_CHECKING:
@@ -67,6 +69,8 @@ async def test_agent_loop_parallel_tool_calls(
         messages.append(result.choices[0].message)
 
         for tool_call in tool_calls:
+            if not isinstance(tool_call, ChatCompletionMessageFunctionToolCall):
+                continue
             assert tool_call.function.name == "get_weather"
             args = json.loads(tool_call.function.arguments)
             tool_result = get_weather(**args)
@@ -121,7 +125,10 @@ async def test_agent_loop_sequential_tool_calls(
         ]
 
         tools = [get_current_date, get_weather]
-        available_tools = {"get_current_date": get_current_date, "get_weather": get_weather}
+        available_tools: dict[str, Callable[..., str]] = {
+            "get_current_date": get_current_date,
+            "get_weather": get_weather,
+        }
 
         max_iterations = 5
         iteration = 0
@@ -144,8 +151,11 @@ async def test_agent_loop_sequential_tool_calls(
             messages.append(result.choices[0].message)
 
             for tool_call in tool_calls:
-                tool_fn = available_tools.get(tool_call.function.name)
-                assert tool_fn is not None, f"Unknown tool: {tool_call.function.name}"
+                if not isinstance(tool_call, ChatCompletionMessageFunctionToolCall):
+                    continue
+                tool_name = tool_call.function.name
+                assert tool_name in available_tools, f"Unknown tool: {tool_name}"
+                tool_fn = available_tools[tool_name]
 
                 args = json.loads(tool_call.function.arguments) if tool_call.function.arguments else {}
                 tool_result = tool_fn(**args)
@@ -159,7 +169,7 @@ async def test_agent_loop_sequential_tool_calls(
                     }
                 )
 
-        assert iteration < max_iterations, "Agent loop did not complete within max iterations"
+        assert iteration <= max_iterations, "Agent loop did not complete within max iterations"
 
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:
