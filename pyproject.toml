@@ -23,7 +23,6 @@ all = [
 
 platform = [
   "any-llm-platform-client>=0.1.0",
-  "pynacl>=1.6.0",
 ]
 
 perplexity = []
