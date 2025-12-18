@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+from any_llm_platform_client import AnyLLMPlatformClient
 from httpx import AsyncClient
 
 from any_llm.any_llm import AnyLLM
@@ -14,7 +15,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
 )
 
-from .utils import get_provider_key, post_completion_usage_event
+from .utils import post_completion_usage_event
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
@@ -42,11 +43,17 @@ class PlatformProvider(AnyLLM):
         self.any_llm_key = self._verify_and_set_api_key(api_key)
         self.api_base = api_base
         self.kwargs = kwargs
+        self.provider_key_id: str | None = None
+        self.project_id: str | None = None
 
         self._init_client(api_key=api_key, api_base=api_base, **kwargs)
 
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = AsyncClient(**kwargs)
+        # Initialize the platform client for authentication and usage tracking
+        from .utils import ANY_LLM_PLATFORM_API_URL
+
+        self.platform_client = AnyLLMPlatformClient(any_llm_platform_url=ANY_LLM_PLATFORM_API_URL)
 
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
@@ -81,10 +88,12 @@ class PlatformProvider(AnyLLM):
 
         if not params.stream:
             await post_completion_usage_event(
+                platform_client=self.platform_client,
                 client=self.client,
                 any_llm_key=self.any_llm_key,  # type: ignore[arg-type]
                 provider=self.provider.PROVIDER_NAME,
                 completion=cast("ChatCompletion", completion),
+                provider_key_id=self.provider_key_id,  # type: ignore[arg-type]
             )
             return completion
 
@@ -106,10 +115,12 @@ class PlatformProvider(AnyLLM):
             # Combine chunks into a single ChatCompletion-like object
             final_completion = self._combine_chunks(chunks)
             await post_completion_usage_event(
+                platform_client=self.platform_client,
                 client=self.client,
                 any_llm_key=self.any_llm_key,  # type: ignore [arg-type]
                 provider=self.provider.PROVIDER_NAME,
                 completion=final_completion,
+                provider_key_id=self.provider_key_id,  # type: ignore[arg-type]
             )
 
     def _combine_chunks(self, chunks: list[ChatCompletionChunk]) -> ChatCompletion:
@@ -154,5 +165,12 @@ class PlatformProvider(AnyLLM):
 
     @provider.setter
     def provider(self, provider_class: type[AnyLLM]) -> None:
-        provider_key = get_provider_key(any_llm_key=self.any_llm_key, provider=provider_class)  # type: ignore[arg-type]
-        self._provider = provider_class(api_key=provider_key, api_base=self.api_base, **self.kwargs)
+        if self.any_llm_key is None:
+            msg = "any_llm_key is required for platform provider"
+            raise ValueError(msg)
+        provider_key_result = self.platform_client.get_decrypted_provider_key(
+            any_llm_key=self.any_llm_key, provider=provider_class.PROVIDER_NAME
+        )
+        self.provider_key_id = str(provider_key_result.provider_key_id)
+        self.project_id = str(provider_key_result.project_id)
+        self._provider = provider_class(api_key=provider_key_result.api_key, api_base=self.api_base, **self.kwargs)

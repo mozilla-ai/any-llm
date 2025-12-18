@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.openai import OpenaiProvider
 from any_llm.providers.platform import PlatformProvider
-from any_llm.providers.platform.utils import get_provider_key, post_completion_usage_event
+from any_llm.providers.platform.utils import post_completion_usage_event
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -126,11 +126,23 @@ def test_platform_key_completely_invalid() -> None:
         assert "Invalid API key format" in str(exc_info.value)
 
 
-@patch("any_llm.providers.platform.platform.get_provider_key")
-def test_prepare_creates_provider(mock_get_provider_key: Mock) -> None:
-    """Test proper initialization with an API key from get_provider_key."""
+@patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
+def test_prepare_creates_provider(mock_get_decrypted_provider_key: Mock) -> None:
+    """Test proper initialization with an API key."""
+    from datetime import datetime
+    from uuid import UUID
+
+    from any_llm_platform_client import DecryptedProviderKey
+
     mock_provider_key = "mock-provider-api-key"
-    mock_get_provider_key.return_value = mock_provider_key
+    mock_result = DecryptedProviderKey(
+        api_key=mock_provider_key,
+        provider_key_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
+        project_id=UUID("550e8400-e29b-41d4-a716-446655440001"),
+        provider="openai",
+        created_at=datetime.now(),
+    )
+    mock_get_decrypted_provider_key.return_value = mock_result
     any_llm_key = "ANY.v1.kid123.fingerprint456-base64key"
 
     provider_instance = PlatformProvider(
@@ -140,32 +152,42 @@ def test_prepare_creates_provider(mock_get_provider_key: Mock) -> None:
 
     assert provider_instance.PROVIDER_NAME == "platform"
     assert provider_instance.provider.PROVIDER_NAME == "openai"
-    mock_get_provider_key.assert_called_once_with(
-        any_llm_key=any_llm_key,
-        provider=OpenaiProvider,
-    )
+    assert provider_instance.provider_key_id == "550e8400-e29b-41d4-a716-446655440000"
+    assert provider_instance.project_id == "550e8400-e29b-41d4-a716-446655440001"
+    # Verify get_decrypted_provider_key was called
+    call_args = mock_get_decrypted_provider_key.call_args
+    assert call_args.kwargs["any_llm_key"] == any_llm_key
+    assert call_args.kwargs["provider"] == "openai"
 
 
-@patch("any_llm.providers.platform.platform.get_provider_key")
-def test_prepare_creates_provider_without_api_key(mock_get_provider_key: Mock) -> None:
+def test_prepare_creates_provider_without_api_key() -> None:
     """Test error handling when instantiating a PlatformProvider without an ANY_LLM_KEY set."""
-    mock_provider_key = "mock-provider-api-key"
-    mock_get_provider_key.return_value = mock_provider_key
-
     with pytest.raises(MissingApiKeyError):
         PlatformProvider()
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.get_provider_key")
+@patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
 @patch("any_llm.providers.platform.platform.post_completion_usage_event")
 async def test_acompletion_non_streaming_success(
     mock_post_usage: AsyncMock,
-    mock_get_provider_key: Mock,
+    mock_get_decrypted_provider_key: Mock,
 ) -> None:
     """Test that non-streaming completions correctly call the provider and post usage events."""
+    from datetime import datetime
+    from uuid import UUID
+
+    from any_llm_platform_client import DecryptedProviderKey
+
     mock_provider_key = "mock-provider-api-key"
-    mock_get_provider_key.return_value = mock_provider_key
+    mock_result = DecryptedProviderKey(
+        api_key=mock_provider_key,
+        provider_key_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
+        project_id=UUID("550e8400-e29b-41d4-a716-446655440001"),
+        provider="openai",
+        created_at=datetime.now(),
+    )
+    mock_get_decrypted_provider_key.return_value = mock_result
     any_llm_key = "ANY.v1.kid123.fingerprint456-base64key"
 
     mock_completion = ChatCompletion(
@@ -207,24 +229,38 @@ async def test_acompletion_non_streaming_success(
     # Assertions
     assert result == mock_completion
     provider_instance.provider._acompletion.assert_called_once_with(params=params)
-    mock_post_usage.assert_called_once_with(
-        client=provider_instance.client,
-        any_llm_key=any_llm_key,
-        provider="openai",
-        completion=mock_completion,
-    )
+    # Verify post_completion_usage_event was called with the platform_client instance
+    call_args = mock_post_usage.call_args
+    assert call_args.kwargs["client"] == provider_instance.client
+    assert call_args.kwargs["any_llm_key"] == any_llm_key
+    assert call_args.kwargs["provider"] == "openai"
+    assert call_args.kwargs["completion"] == mock_completion
+    assert call_args.kwargs["provider_key_id"] == "550e8400-e29b-41d4-a716-446655440000"
+    assert "platform_client" in call_args.kwargs
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.get_provider_key")
+@patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
 @patch("any_llm.providers.platform.platform.post_completion_usage_event")
 async def test_acompletion_streaming_success(
     mock_post_usage: AsyncMock,
-    mock_get_provider_key: Mock,
+    mock_get_decrypted_provider_key: Mock,
 ) -> None:
     """Test that streaming completions correctly wrap the iterator and track usage."""
+    from datetime import datetime
+    from uuid import UUID
+
+    from any_llm_platform_client import DecryptedProviderKey
+
     mock_provider_key = "mock-provider-api-key"
-    mock_get_provider_key.return_value = mock_provider_key
+    mock_result = DecryptedProviderKey(
+        api_key=mock_provider_key,
+        provider_key_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
+        project_id=UUID("550e8400-e29b-41d4-a716-446655440001"),
+        provider="openai",
+        created_at=datetime.now(),
+    )
+    mock_get_decrypted_provider_key.return_value = mock_result
     any_llm_key = "ANY.v1.kid123.fingerprint456-base64key"
 
     # Create mock streaming chunks
@@ -317,126 +353,19 @@ async def test_acompletion_streaming_success(
     assert call_args.kwargs["completion"].usage.prompt_tokens == 10
     assert call_args.kwargs["completion"].usage.completion_tokens == 5
     assert call_args.kwargs["completion"].usage.total_tokens == 15
-
-
-@patch("any_llm.providers.platform.utils.httpx.post")
-@patch("any_llm.providers.platform.utils.httpx.get")
-@patch("any_llm.providers.platform.utils._solve_challenge")
-def test_get_provider_key_success(
-    mock_solve_challenge: Mock,
-    mock_get: Mock,
-    mock_post: Mock,
-) -> None:
-    """Test successful provider key retrieval flow."""
-    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
-    solved_challenge_uuid = "550e8400-e29b-41d4-a716-446655440000"
-    encrypted_provider_key = "mock-encrypted-provider-key"
-    decrypted_provider_key = "mock-decrypted-provider-key"
-
-    # Mock challenge creation response
-    mock_post.return_value.status_code = 200
-    mock_post.return_value.json.return_value = {
-        "encrypted_challenge": "mock-encrypted-challenge",
-    }
-
-    # Mock challenge solving
-    mock_solve_challenge.return_value = solved_challenge_uuid
-
-    # Mock provider key fetch response
-    mock_get.return_value.status_code = 200
-    mock_get.return_value.json.return_value = {
-        "encrypted_key": encrypted_provider_key,
-    }
-
-    # Mock decryption by patching _decrypt_provider_key
-    with patch("any_llm.providers.platform.utils._decrypt_provider_key") as mock_decrypt:
-        mock_decrypt.return_value = decrypted_provider_key
-
-        # Call the function
-        result = get_provider_key(any_llm_key=any_llm_key, provider=OpenaiProvider)
-
-        # Assertions
-        assert result == decrypted_provider_key
-        mock_post.assert_called_once()
-        mock_get.assert_called_once()
-        mock_solve_challenge.assert_called_once()
-        mock_decrypt.assert_called_once()
-
-
-@patch("any_llm.providers.platform.utils.httpx.post")
-def test_get_provider_key_invalid_api_key_format(mock_post: Mock) -> None:
-    """Test error handling when ANY_LLM_KEY has invalid format."""
-    invalid_key = "INVALID_KEY_FORMAT"
-
-    with pytest.raises(ValueError, match="Invalid ANY_API_KEY format"):
-        get_provider_key(any_llm_key=invalid_key, provider=OpenaiProvider)
-
-    mock_post.assert_not_called()
-
-
-@patch("any_llm.providers.platform.utils.httpx.post")
-def test_get_provider_key_challenge_creation_failure(mock_post: Mock) -> None:
-    """Test error handling when challenge creation fails."""
-    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
-
-    # Mock failed challenge creation
-    mock_post.return_value.status_code = 400
-    mock_post.return_value.json.return_value = {"error": "Bad request"}
-    mock_post.return_value.text = "Bad request"
-
-    with pytest.raises(RuntimeError, match="Bad request"):
-        get_provider_key(any_llm_key=any_llm_key, provider=OpenaiProvider)
-
-    mock_post.assert_called_once()
-
-
-@patch("any_llm.providers.platform.utils.httpx.post")
-@patch("any_llm.providers.platform.utils.httpx.get")
-@patch("any_llm.providers.platform.utils._solve_challenge")
-def test_get_provider_key_fetch_failure(
-    mock_solve_challenge: Mock,
-    mock_get: Mock,
-    mock_post: Mock,
-) -> None:
-    """Test error handling when provider key fetch fails."""
-    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
-    solved_challenge_uuid = "550e8400-e29b-41d4-a716-446655440000"
-
-    # Mock successful challenge creation
-    mock_post.return_value.status_code = 200
-    mock_post.return_value.json.return_value = {
-        "encrypted_challenge": "mock-encrypted-challenge",
-    }
-
-    # Mock challenge solving
-    mock_solve_challenge.return_value = solved_challenge_uuid
-
-    # Mock failed provider key fetch
-    mock_get.return_value.status_code = 404
-    mock_get.return_value.json.return_value = {"error": "Provider key not found"}
-    mock_get.return_value.text = "Provider key not found"
-
-    with pytest.raises(RuntimeError, match="Provider key not found"):
-        get_provider_key(any_llm_key=any_llm_key, provider=OpenaiProvider)
-
-    mock_post.assert_called_once()
-    mock_get.assert_called_once()
-    mock_solve_challenge.assert_called_once()
+    assert call_args.kwargs["provider_key_id"] == "550e8400-e29b-41d4-a716-446655440000"
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.utils.httpx.post")
-@patch("any_llm.providers.platform.utils.httpx.get")
-@patch("any_llm.providers.platform.utils._solve_challenge")
-async def test_post_completion_usage_event_success(
-    mock_solve_challenge: Mock,
-    mock_get: Mock,
-    mock_post: Mock,
-) -> None:
+async def test_post_completion_usage_event_success() -> None:
     """Test successful posting of completion usage event."""
+    from uuid import UUID
+
+    from any_llm_platform_client import AnyLLMPlatformClient
+
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
     solved_challenge_uuid = "550e8400-e29b-41d4-a716-446655440000"
-    provider_key_id = "provider-key-123"
+    provider_key_id = UUID("550e8400-e29b-41d4-a716-446655440002")
 
     # Create mock completion
     completion = ChatCompletion(
@@ -458,46 +387,34 @@ async def test_post_completion_usage_event_success(
         ),
     )
 
-    # Mock challenge creation response (called twice)
-    mock_post.return_value.status_code = 200
-    mock_post.return_value.json.return_value = {
-        "encrypted_challenge": "mock-encrypted-challenge",
-    }
+    # Create mock client instance
+    mock_platform_client = Mock(spec=AnyLLMPlatformClient)
 
-    # Mock challenge solving (called twice)
-    mock_solve_challenge.return_value = solved_challenge_uuid
-
-    # Mock provider key fetch response
-    mock_get.return_value.status_code = 200
-    mock_get.return_value.json.return_value = {
-        "id": provider_key_id,
-        "encrypted_key": "mock-encrypted-key",
-    }
+    # Mock async methods with AsyncMock
+    mock_platform_client.aget_solved_challenge = AsyncMock(return_value=UUID(solved_challenge_uuid))
+    mock_platform_client.get_public_key = Mock(return_value="mock-public-key")
 
     # Create mock httpx client
-    mock_response = AsyncMock()
-    mock_response.raise_for_status = AsyncMock()
+    mock_response = Mock()
+    mock_response.raise_for_status = Mock()
 
     client = AsyncMock(spec=httpx.AsyncClient)
     client.post = AsyncMock(return_value=mock_response)
 
     # Call the function
     await post_completion_usage_event(
+        platform_client=mock_platform_client,
         client=client,
         any_llm_key=any_llm_key,
         provider="openai",
         completion=completion,
+        provider_key_id=str(provider_key_id),
     )
 
     # Assertions
-    # Challenge creation should be called twice (once for provider key, once for usage event)
-    assert mock_post.call_count == 2
-
-    # Provider key fetch should be called once
-    mock_get.assert_called_once()
-
-    # Challenge solving should be called twice
-    assert mock_solve_challenge.call_count == 2
+    # Convenience method should be called once
+    mock_platform_client.aget_solved_challenge.assert_called_once_with(any_llm_key=any_llm_key)
+    mock_platform_client.get_public_key.assert_called_once_with(any_llm_key)
 
     # Usage event POST should be called once
     client.post.assert_called_once()
@@ -506,7 +423,7 @@ async def test_post_completion_usage_event_success(
     call_args = client.post.call_args
     assert "/usage-events/" in call_args.args[0]
     payload = call_args.kwargs["json"]
-    assert payload["provider_key_id"] == provider_key_id
+    assert payload["provider_key_id"] == str(provider_key_id)
     assert payload["provider"] == "openai"
     assert payload["model"] == "gpt-4"
     assert payload["data"]["input_tokens"] == "10"
@@ -515,9 +432,10 @@ async def test_post_completion_usage_event_success(
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.utils.httpx.post")
-async def test_post_completion_usage_event_invalid_key_format(mock_post: Mock) -> None:
+async def test_post_completion_usage_event_invalid_key_format() -> None:
     """Test error handling when ANY_LLM_KEY has invalid format."""
+    from any_llm_platform_client import AnyLLMPlatformClient
+
     invalid_key = "INVALID_KEY_FORMAT"
 
     completion = ChatCompletion(
@@ -539,17 +457,22 @@ async def test_post_completion_usage_event_invalid_key_format(mock_post: Mock) -
         ),
     )
 
+    mock_platform_client = Mock(spec=AnyLLMPlatformClient)
+
+    # Mock the platform client methods to raise ValueError for invalid key
+    mock_platform_client.aget_solved_challenge = AsyncMock(side_effect=ValueError("Invalid ANY_LLM_KEY format"))
+
     client = AsyncMock(spec=httpx.AsyncClient)
 
-    with pytest.raises(ValueError, match="Invalid ANY_API_KEY format"):
+    with pytest.raises(ValueError, match="Invalid ANY_LLM_KEY format"):
         await post_completion_usage_event(
+            platform_client=mock_platform_client,
             client=client,
             any_llm_key=invalid_key,
             provider="openai",
             completion=completion,
+            provider_key_id="550e8400-e29b-41d4-a716-446655440000",
         )
-
-    mock_post.assert_not_called()
 
 
 @patch("any_llm.any_llm.importlib.import_module")
