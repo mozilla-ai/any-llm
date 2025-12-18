@@ -69,8 +69,8 @@ async def post_completion_usage_event(
 
     # Build data payload with token usage
     data: dict[str, Any] = {
-        "input_tokens": str(completion.usage.prompt_tokens),  # type: ignore[union-attr]
-        "output_tokens": str(completion.usage.completion_tokens),  # type: ignore[union-attr]
+        "input_tokens": str(completion.usage.prompt_tokens),
+        "output_tokens": str(completion.usage.completion_tokens),
     }
 
     # Add performance metrics if available
