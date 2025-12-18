@@ -299,6 +299,96 @@ async def test_completion_with_images() -> None:
 
 
 @pytest.mark.asyncio
+async def test_completion_with_parallel_tool_calls() -> None:
+    """Test that parallel tool calls are correctly converted to Anthropic format.
+
+    When an assistant message contains multiple tool calls and their results
+    come in consecutive tool messages, each tool result should correctly
+    reference its corresponding tool_use_id from the tool message's tool_call_id field.
+    """
+    api_key = "test-api-key"
+    model = "model-id"
+
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Call first and second tool."},
+        {
+            "content": "",
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "toolu_014vbRyMX81AhxfBMNYRma3A",
+                    "function": {"arguments": "{}", "name": "first_tool"},
+                    "type": "function",
+                },
+                {
+                    "id": "toolu_01WhTsYUFmDbsbSZbs9WDciT",
+                    "function": {"arguments": '{"query": "test"}', "name": "second_tool"},
+                    "type": "function",
+                },
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "toolu_014vbRyMX81AhxfBMNYRma3A",
+            "content": "First Result",
+            "name": "first_tool",
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "toolu_01WhTsYUFmDbsbSZbs9WDciT",
+            "content": "Second Result",
+            "name": "second_tool",
+        },
+    ]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key=api_key)
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages))
+
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
+            model=model,
+            messages=[
+                {"role": "user", "content": "Call first and second tool."},
+                {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_014vbRyMX81AhxfBMNYRma3A",
+                            "name": "first_tool",
+                            "input": {},
+                        },
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_01WhTsYUFmDbsbSZbs9WDciT",
+                            "name": "second_tool",
+                            "input": {"query": "test"},
+                        },
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_014vbRyMX81AhxfBMNYRma3A",
+                            "content": "First Result",
+                        },
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_01WhTsYUFmDbsbSZbs9WDciT",
+                            "content": "Second Result",
+                        },
+                    ],
+                },
+            ],
+            system="You are a helpful assistant.",
+            max_tokens=DEFAULT_MAX_TOKENS,
+        )
+
+
+@pytest.mark.asyncio
 async def test_response_format_raises_error() -> None:
     api_key = "test-api-key"
     model = "model-id"
