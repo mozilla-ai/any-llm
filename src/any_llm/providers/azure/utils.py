@@ -1,11 +1,17 @@
 import json
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from azure.ai.inference.models import (
     ChatCompletions,
     EmbeddingsResult,
     JsonSchemaFormat,
     StreamingChatCompletionsUpdate,
+)
+from openai.types.chat.chat_completion_message_custom_tool_call import (
+    ChatCompletionMessageCustomToolCall,
+)
+from openai.types.chat.chat_completion_message_function_tool_call import (
+    ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
 )
 from pydantic import BaseModel
 
@@ -26,6 +32,11 @@ from any_llm.types.completion import (
     Function,
     Usage,
 )
+
+if TYPE_CHECKING:
+    ChatCompletionMessageToolCallType = (
+        OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
+    )
 
 
 def _convert_response_format(
@@ -105,7 +116,7 @@ def _convert_response(response_data: ChatCompletions) -> ChatCompletion:
     message = ChatCompletionMessage(
         role="assistant",
         content=message_data.content,
-        tool_calls=tool_calls,
+        tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls),
     )
 
     choice = Choice(

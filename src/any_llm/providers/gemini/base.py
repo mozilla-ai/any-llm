@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
+from openai.types.chat.chat_completion_message_custom_tool_call import (
+    ChatCompletionMessageCustomToolCall,
+)
+from openai.types.chat.chat_completion_message_function_tool_call import (
+    ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
+)
 from pydantic import BaseModel
 
 from any_llm.any_llm import AnyLLM
@@ -42,6 +48,10 @@ if TYPE_CHECKING:
     from google import genai
 
     from any_llm.types.model import Model
+
+    ChatCompletionMessageToolCallType = (
+        OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
+    )
 
 REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 256, "low": 1024, "medium": 8192, "high": 24576}
 
@@ -152,7 +162,7 @@ class GoogleProvider(AnyLLM):
             message = ChatCompletionMessage(
                 role="assistant",
                 content=message_dict.get("content"),
-                tool_calls=tool_calls,
+                tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls),
                 reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
             )
             from typing import Literal

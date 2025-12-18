@@ -517,7 +517,7 @@ def test_convert_messages_with_thought_signature_in_extra_content() -> None:
     original_bytes = b"test-signature-bytes"
     base64_signature = base64.b64encode(original_bytes).decode("utf-8")
 
-    messages = [
+    messages: list[dict[str, Any]] = [
         {"role": "user", "content": "What is the weather?"},
         {
             "role": "assistant",
@@ -540,12 +540,13 @@ def test_convert_messages_with_thought_signature_in_extra_content() -> None:
     # SDK decodes base64 string to bytes
     assistant_message = formatted_messages[1]
     assert assistant_message.role == "model"
+    assert assistant_message.parts is not None
     assert len(assistant_message.parts) == 1
     assert assistant_message.parts[0].thought_signature == original_bytes
 
 
 def test_convert_messages_without_thought_signature_uses_skip_sentinel() -> None:
-    messages = [
+    messages: list[dict[str, Any]] = [
         {"role": "user", "content": "What is the weather?"},
         {
             "role": "assistant",
@@ -567,12 +568,13 @@ def test_convert_messages_without_thought_signature_uses_skip_sentinel() -> None
     # SDK may decode the sentinel string, so just verify it's set (not None)
     assistant_message = formatted_messages[1]
     assert assistant_message.role == "model"
+    assert assistant_message.parts is not None
     assert len(assistant_message.parts) == 1
     assert assistant_message.parts[0].thought_signature is not None
 
 
 def test_convert_messages_parallel_tool_calls_only_first_gets_skip_sentinel() -> None:
-    messages = [
+    messages: list[dict[str, Any]] = [
         {"role": "user", "content": "Get weather for Paris and London"},
         {
             "role": "assistant",
@@ -595,6 +597,7 @@ def test_convert_messages_parallel_tool_calls_only_first_gets_skip_sentinel() ->
     formatted_messages, _ = _convert_messages(messages)
 
     assistant_message = formatted_messages[1]
+    assert assistant_message.parts is not None
     assert len(assistant_message.parts) == 2
     # First tool call should have skip sentinel set (SDK decodes to bytes)
     assert assistant_message.parts[0].thought_signature is not None
