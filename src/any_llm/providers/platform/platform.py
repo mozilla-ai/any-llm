@@ -52,6 +52,7 @@ class PlatformProvider(AnyLLM):
         self.client = AsyncClient(**kwargs)
         # Initialize the platform client for authentication and usage tracking
         from .utils import ANY_LLM_PLATFORM_API_URL
+
         self.platform_client = AnyLLMPlatformClient(any_llm_platform_url=ANY_LLM_PLATFORM_API_URL)
 
     @staticmethod
@@ -168,8 +169,7 @@ class PlatformProvider(AnyLLM):
             msg = "any_llm_key is required for platform provider"
             raise ValueError(msg)
         provider_key_result = self.platform_client.get_decrypted_provider_key(
-            any_llm_key=self.any_llm_key,
-            provider=provider_class.PROVIDER_NAME
+            any_llm_key=self.any_llm_key, provider=provider_class.PROVIDER_NAME
         )
         self.provider_key_id = str(provider_key_result.provider_key_id)
         self.project_id = str(provider_key_result.project_id)
