@@ -56,8 +56,21 @@ class ChatCompletionChunk(OpenAIChatCompletionChunk):
     choices: list[ChunkChoice]  # type: ignore[assignment]
 
 
-ChatCompletionMessageFunctionToolCall = OpenAIChatCompletionMessageFunctionToolCall
-ChatCompletionMessageToolCall = OpenAIChatCompletionMessageFunctionToolCall | OpenAIChatCompletionMessageToolCall
+class ChatCompletionMessageFunctionToolCall(OpenAIChatCompletionMessageFunctionToolCall):
+    """Extended tool call type that includes extra_content for provider-specific data.
+
+    The extra_content field is used to store provider-specific metadata that needs
+    to be preserved across multi-turn conversations. For example, Gemini 3 models
+    require thought_signature to be passed back with function calls.
+
+    Example extra_content structure for Gemini:
+        {"google": {"thought_signature": "<base64-encoded-signature>"}}
+    """
+
+    extra_content: dict[str, Any] | None = None
+
+
+ChatCompletionMessageToolCall = ChatCompletionMessageFunctionToolCall | OpenAIChatCompletionMessageToolCall
 Function = OpenAIFunction
 CompletionUsage = OpenAICompletionUsage
 CreateEmbeddingResponse = OpenAICreateEmbeddingResponse

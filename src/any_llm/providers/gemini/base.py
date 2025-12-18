@@ -143,6 +143,7 @@ class GoogleProvider(AnyLLM):
                                 name=tc["function"]["name"],
                                 arguments=tc["function"]["arguments"],
                             ),
+                            extra_content=tc.get("extra_content"),
                         )
                     )
                 tool_calls = tool_calls_list
