@@ -2,12 +2,6 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from cerebras.cloud.sdk.types import ModelListResponse as CerebrasModelListResponse
 from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponse
-from openai.types.chat.chat_completion_message_custom_tool_call import (
-    ChatCompletionMessageCustomToolCall,
-)
-from openai.types.chat.chat_completion_message_function_tool_call import (
-    ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
-)
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -23,6 +17,13 @@ from any_llm.types.completion import (
 from any_llm.types.model import Model
 
 if TYPE_CHECKING:
+    from openai.types.chat.chat_completion_message_custom_tool_call import (
+        ChatCompletionMessageCustomToolCall,
+    )
+    from openai.types.chat.chat_completion_message_function_tool_call import (
+        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
+    )
+
     ChatCompletionMessageToolCallType = (
         OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
     )

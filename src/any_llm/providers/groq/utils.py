@@ -3,12 +3,6 @@ from typing import TYPE_CHECKING, Literal, cast
 from groq.types import ModelListResponse as GroqModelListResponse
 from groq.types.chat import ChatCompletion as GroqChatCompletion
 from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
-from openai.types.chat.chat_completion_message_custom_tool_call import (
-    ChatCompletionMessageCustomToolCall,
-)
-from openai.types.chat.chat_completion_message_function_tool_call import (
-    ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
-)
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -28,6 +22,13 @@ from any_llm.types.completion import (
 from any_llm.types.model import Model
 
 if TYPE_CHECKING:
+    from openai.types.chat.chat_completion_message_custom_tool_call import (
+        ChatCompletionMessageCustomToolCall,
+    )
+    from openai.types.chat.chat_completion_message_function_tool_call import (
+        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
+    )
+
     ChatCompletionMessageToolCallType = (
         OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
     )

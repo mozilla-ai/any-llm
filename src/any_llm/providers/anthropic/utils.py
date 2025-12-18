@@ -9,12 +9,6 @@ from anthropic.types import (
     MessageStopEvent,
 )
 from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
-from openai.types.chat.chat_completion_message_custom_tool_call import (
-    ChatCompletionMessageCustomToolCall,
-)
-from openai.types.chat.chat_completion_message_function_tool_call import (
-    ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
-)
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.logging import logger
@@ -33,6 +27,13 @@ from any_llm.types.completion import (
 from any_llm.types.model import Model
 
 if TYPE_CHECKING:
+    from openai.types.chat.chat_completion_message_custom_tool_call import (
+        ChatCompletionMessageCustomToolCall,
+    )
+    from openai.types.chat.chat_completion_message_function_tool_call import (
+        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
+    )
+
     ChatCompletionMessageToolCallType = (
         OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
     )

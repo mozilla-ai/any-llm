@@ -2,12 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
-from openai.types.chat.chat_completion_message_custom_tool_call import (
-    ChatCompletionMessageCustomToolCall,
-)
-from openai.types.chat.chat_completion_message_function_tool_call import (
-    ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
-)
 from pydantic import BaseModel
 
 from any_llm.any_llm import AnyLLM
@@ -46,6 +40,12 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
     from google import genai
+    from openai.types.chat.chat_completion_message_custom_tool_call import (
+        ChatCompletionMessageCustomToolCall,
+    )
+    from openai.types.chat.chat_completion_message_function_tool_call import (
+        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
+    )
 
     from any_llm.types.model import Model
 
