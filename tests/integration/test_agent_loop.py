@@ -1,11 +1,4 @@
-"""Integration tests for agent loop scenarios with multi-turn tool calling.
-
-This test verifies that thought signatures (required by Gemini 3 models) are properly
-preserved across multi-turn conversations with tool calls.
-"""
-
 import json
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -18,6 +11,8 @@ from any_llm.types.completion import ChatCompletionMessageFunctionToolCall
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
 
 
