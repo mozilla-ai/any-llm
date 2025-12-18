@@ -11,7 +11,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.ANTHROPIC: "claude-sonnet-4-20250514",
         LLMProvider.MISTRAL: "magistral-small-latest",
-        LLMProvider.GEMINI: "gemini-3-flash-preview",
+        LLMProvider.GEMINI: "gemini-2.5-flash",
         LLMProvider.GATEWAY: "gpt-5-nano",
         LLMProvider.VERTEXAI: "gemini-2.5-flash",
         LLMProvider.GROQ: "openai/gpt-oss-20b",
