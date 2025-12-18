@@ -164,6 +164,9 @@ class PlatformProvider(AnyLLM):
 
     @provider.setter
     def provider(self, provider_class: type[AnyLLM]) -> None:
+        if self.any_llm_key is None:
+            msg = "any_llm_key is required for platform provider"
+            raise ValueError(msg)
         provider_key_result = self.platform_client.get_decrypted_provider_key(
             any_llm_key=self.any_llm_key,
             provider=provider_class.PROVIDER_NAME
