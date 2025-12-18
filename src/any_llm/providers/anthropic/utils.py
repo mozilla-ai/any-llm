@@ -1,5 +1,5 @@
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from anthropic.types import (
     ContentBlockDeltaEvent,
@@ -9,6 +9,12 @@ from anthropic.types import (
     MessageStopEvent,
 )
 from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
+from openai.types.chat.chat_completion_message_custom_tool_call import (
+    ChatCompletionMessageCustomToolCall,
+)
+from openai.types.chat.chat_completion_message_function_tool_call import (
+    ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
+)
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.logging import logger
@@ -25,6 +31,11 @@ from any_llm.types.completion import (
     Reasoning,
 )
 from any_llm.types.model import Model
+
+if TYPE_CHECKING:
+    ChatCompletionMessageToolCallType = (
+        OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
+    )
 
 DEFAULT_MAX_TOKENS = 8192
 REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 1024, "low": 2048, "medium": 8192, "high": 24576}
@@ -237,7 +248,7 @@ def _convert_response(response: Message) -> ChatCompletion:
         role="assistant",
         content="".join(content_parts),
         reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
-        tool_calls=tool_calls or None,
+        tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls or None),
     )
 
     usage = CompletionUsage(
@@ -246,7 +257,7 @@ def _convert_response(response: Message) -> ChatCompletion:
         total_tokens=response.usage.input_tokens + response.usage.output_tokens,
     )
 
-    from typing import Literal, cast
+    from typing import Literal
 
     choice = Choice(
         index=0,

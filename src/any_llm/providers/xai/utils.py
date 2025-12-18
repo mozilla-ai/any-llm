@@ -1,7 +1,13 @@
 import uuid
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
+from openai.types.chat.chat_completion_message_custom_tool_call import (
+    ChatCompletionMessageCustomToolCall,
+)
+from openai.types.chat.chat_completion_message_function_tool_call import (
+    ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
+)
 from xai_sdk.chat import Chunk as XaiChunk
 from xai_sdk.chat import Response as XaiResponse
 from xai_sdk.chat import tool as xai_make_tool
@@ -24,6 +30,11 @@ from any_llm.types.completion import (
     Reasoning,
 )
 from any_llm.types.model import Model
+
+if TYPE_CHECKING:
+    ChatCompletionMessageToolCallType = (
+        OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
+    )
 
 
 def _map_xai_role_to_openai(
@@ -63,7 +74,7 @@ def _convert_xai_chunk_to_anyllm_chunk(chunk: XaiChunk) -> ChatCompletionChunk:
                 )
             delta_tool_calls = delta_tool_calls_list or None
 
-        openai_role = _map_xai_role_to_openai(choice.role)  # type: ignore[arg-type]
+        openai_role = _map_xai_role_to_openai(choice.role)
         delta = ChoiceDelta(content=choice.content, role=openai_role, reasoning=reasoning)
         delta.tool_calls = delta_tool_calls
 
@@ -111,7 +122,7 @@ def _convert_xai_completion_to_anyllm_response(response: XaiResponse) -> ChatCom
     message = ChatCompletionMessage(
         role="assistant",
         content=response.content,
-        tool_calls=tool_calls,
+        tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls),
         reasoning=reasoning,
     )
 
