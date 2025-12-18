@@ -7,12 +7,6 @@ from azure.ai.inference.models import (
     JsonSchemaFormat,
     StreamingChatCompletionsUpdate,
 )
-from openai.types.chat.chat_completion_message_custom_tool_call import (
-    ChatCompletionMessageCustomToolCall,
-)
-from openai.types.chat.chat_completion_message_function_tool_call import (
-    ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
-)
 from pydantic import BaseModel
 
 from any_llm.types.completion import (
@@ -34,6 +28,13 @@ from any_llm.types.completion import (
 )
 
 if TYPE_CHECKING:
+    from openai.types.chat.chat_completion_message_custom_tool_call import (
+        ChatCompletionMessageCustomToolCall,
+    )
+    from openai.types.chat.chat_completion_message_function_tool_call import (
+        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
+    )
+
     ChatCompletionMessageToolCallType = (
         OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
     )

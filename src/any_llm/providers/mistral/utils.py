@@ -2,13 +2,6 @@ import json
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from openai.types.chat.chat_completion_message_custom_tool_call import (
-    ChatCompletionMessageCustomToolCall,
-)
-from openai.types.chat.chat_completion_message_function_tool_call import (
-    ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
-)
-
 from mistralai.models import AssistantMessageContent as MistralAssistantMessageContent
 from mistralai.models import CompletionEvent
 from mistralai.models import ModelList as MistralModelList
@@ -41,6 +34,12 @@ from any_llm.types.model import Model
 
 if TYPE_CHECKING:
     from mistralai.models.embeddingresponse import EmbeddingResponse
+    from openai.types.chat.chat_completion_message_custom_tool_call import (
+        ChatCompletionMessageCustomToolCall,
+    )
+    from openai.types.chat.chat_completion_message_function_tool_call import (
+        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
+    )
 
     ChatCompletionMessageToolCallType = (
         OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
