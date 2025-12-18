@@ -67,11 +67,13 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
 
     - Extract messages with `role=system`.
     - Replace `role=tool` with `role=user`, according to examples in https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/.
+    - Handle multiple tool calls in a single assistant message.
+    - Merge consecutive tool results into a single user message.
     """
     system_message = None
-    filtered_messages = []
+    filtered_messages: list[dict[str, Any]] = []
 
-    for n, message in enumerate(messages):
+    for message in messages:
         if message["role"] == "system":
             if system_message is None:
                 system_message = message["content"]
@@ -81,26 +83,41 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
             # Handle messages inside agent loop.
             # See https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview#tool-use-examples
             if _is_tool_call(message):
-                tool_call = message["tool_calls"][0]
-                message = {
-                    "role": "assistant",
-                    "content": [
+                # Convert ALL tool calls from the assistant message
+                tool_use_blocks = []
+                for tool_call in message["tool_calls"]:
+                    tool_use_blocks.append(
                         {
                             "type": "tool_use",
                             "id": tool_call["id"],
                             "name": tool_call["function"]["name"],
                             "input": json.loads(tool_call["function"]["arguments"]),
                         }
-                    ],
+                    )
+                message = {
+                    "role": "assistant",
+                    "content": tool_use_blocks,
                 }
             elif message["role"] == "tool":
-                previous_message = messages[n - 1] if n > 0 else None
-                tool_use_id = ""
-                if previous_message and _is_tool_call(previous_message):
-                    tool_use_id = previous_message["tool_calls"][0]["id"]
+                # Use tool_call_id from the message itself
+                tool_use_id = message.get("tool_call_id", "")
+                tool_result = {"type": "tool_result", "tool_use_id": tool_use_id, "content": message["content"]}
+
+                # Check if the previous message is already a user message with tool_results
+                # If so, merge this tool_result into it
+                if (
+                    filtered_messages
+                    and filtered_messages[-1]["role"] == "user"
+                    and isinstance(filtered_messages[-1]["content"], list)
+                    and filtered_messages[-1]["content"]
+                    and filtered_messages[-1]["content"][0].get("type") == "tool_result"
+                ):
+                    filtered_messages[-1]["content"].append(tool_result)
+                    continue
+
                 message = {
                     "role": "user",
-                    "content": [{"type": "tool_result", "tool_use_id": tool_use_id, "content": message["content"]}],
+                    "content": [tool_result],
                 }
 
             if "content" in message and isinstance(message["content"], list):
