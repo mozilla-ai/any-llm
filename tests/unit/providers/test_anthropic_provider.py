@@ -309,7 +309,7 @@ async def test_completion_with_parallel_tool_calls() -> None:
     api_key = "test-api-key"
     model = "model-id"
 
-    messages = [
+    messages: list[dict[str, Any]] = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Call first and second tool."},
         {
