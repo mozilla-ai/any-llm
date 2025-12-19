@@ -429,6 +429,72 @@ async def test_post_completion_usage_event_success() -> None:
     assert payload["data"]["input_tokens"] == "10"
     assert payload["data"]["output_tokens"] == "5"
     assert "id" in payload
+    assert "client_name" not in payload  # No client_name provided
+
+
+@pytest.mark.asyncio
+async def test_post_completion_usage_event_with_client_name() -> None:
+    """Test posting completion usage event with client_name included."""
+    from uuid import UUID
+
+    from any_llm_platform_client import AnyLLMPlatformClient
+
+    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+    solved_challenge_uuid = "550e8400-e29b-41d4-a716-446655440000"
+    provider_key_id = UUID("550e8400-e29b-41d4-a716-446655440002")
+    client_name = "my-test-client"
+
+    # Create mock completion
+    completion = ChatCompletion(
+        id="chatcmpl-123",
+        model="gpt-4",
+        created=1234567890,
+        object="chat.completion",
+        choices=[
+            Choice(
+                index=0,
+                message=ChatCompletionMessage(role="assistant", content="Hello!"),
+                finish_reason="stop",
+            )
+        ],
+        usage=CompletionUsage(
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        ),
+    )
+
+    # Create mock client instance
+    mock_platform_client = Mock(spec=AnyLLMPlatformClient)
+
+    # Mock async methods with AsyncMock
+    mock_platform_client.aget_solved_challenge = AsyncMock(return_value=UUID(solved_challenge_uuid))
+    mock_platform_client.get_public_key = Mock(return_value="mock-public-key")
+
+    # Create mock httpx client
+    mock_response = Mock()
+    mock_response.raise_for_status = Mock()
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+    client.post = AsyncMock(return_value=mock_response)
+
+    # Call the function
+    await post_completion_usage_event(
+        platform_client=mock_platform_client,
+        client=client,
+        any_llm_key=any_llm_key,
+        provider="openai",
+        completion=completion,
+        provider_key_id=str(provider_key_id),
+        client_name=client_name,
+    )
+
+    # Verify client_name is included in the payload
+    call_args = client.post.call_args
+    payload = call_args.kwargs["json"]
+    assert payload["client_name"] == client_name
+    assert payload["provider"] == "openai"
+    assert payload["model"] == "gpt-4"
 
 
 @pytest.mark.asyncio
