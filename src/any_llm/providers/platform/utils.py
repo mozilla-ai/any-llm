@@ -25,6 +25,7 @@ async def post_completion_usage_event(
     provider: str,
     completion: ChatCompletion,
     provider_key_id: str,
+    client_name: str | None = None,
 ) -> None:
     """Posts completion usage events.
 
@@ -38,6 +39,7 @@ async def post_completion_usage_event(
         provider: The name of the LLM provider.
         completion: The LLM response.
         provider_key_id: The unique identifier for the provider key.
+        client_name: Optional name of the client for per-client usage tracking.
     """
     # Get solved challenge using the convenience method
     solved_challenge = await platform_client.aget_solved_challenge(any_llm_key=any_llm_key)
@@ -56,6 +58,8 @@ async def post_completion_usage_event(
         },
         "id": str(uuid.uuid4()),
     }
+    if client_name:
+        payload["client_name"] = client_name
 
     response = await client.post(
         f"{ANY_LLM_PLATFORM_API_URL}/usage-events/",
