@@ -39,9 +39,16 @@ class PlatformProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
 
-    def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any):
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_base: str | None = None,
+        client_name: str | None = None,
+        **kwargs: Any,
+    ):
         self.any_llm_key = self._verify_and_set_api_key(api_key)
         self.api_base = api_base
+        self.client_name = client_name
         self.kwargs = kwargs
         self.provider_key_id: str | None = None
         self.project_id: str | None = None
@@ -94,6 +101,7 @@ class PlatformProvider(AnyLLM):
                 provider=self.provider.PROVIDER_NAME,
                 completion=cast("ChatCompletion", completion),
                 provider_key_id=self.provider_key_id,  # type: ignore[arg-type]
+                client_name=self.client_name,
             )
             return completion
 
@@ -121,6 +129,7 @@ class PlatformProvider(AnyLLM):
                 provider=self.provider.PROVIDER_NAME,
                 completion=final_completion,
                 provider_key_id=self.provider_key_id,  # type: ignore[arg-type]
+                client_name=self.client_name,
             )
 
     def _combine_chunks(self, chunks: list[ChatCompletionChunk]) -> ChatCompletion:
