@@ -4,10 +4,12 @@ from typing import TYPE_CHECKING, Any
 import httpx
 import pytest
 from openai import APIConnectionError
+from openai.types.chat.chat_completion_message_function_tool_call import (
+    ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
+)
 
 from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.types.completion import ChatCompletionMessageFunctionToolCall
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 if TYPE_CHECKING:
@@ -64,7 +66,7 @@ async def test_agent_loop_parallel_tool_calls(
         messages.append(result.choices[0].message)
 
         for tool_call in tool_calls:
-            if not isinstance(tool_call, ChatCompletionMessageFunctionToolCall):
+            if not isinstance(tool_call, OpenAIChatCompletionMessageFunctionToolCall):
                 continue
             assert tool_call.function.name == "get_weather"
             args = json.loads(tool_call.function.arguments)
@@ -146,7 +148,7 @@ async def test_agent_loop_sequential_tool_calls(
             messages.append(result.choices[0].message)
 
             for tool_call in tool_calls:
-                if not isinstance(tool_call, ChatCompletionMessageFunctionToolCall):
+                if not isinstance(tool_call, OpenAIChatCompletionMessageFunctionToolCall):
                     continue
                 tool_name = tool_call.function.name
                 assert tool_name in available_tools, f"Unknown tool: {tool_name}"
