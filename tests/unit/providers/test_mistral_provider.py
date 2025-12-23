@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -258,9 +258,6 @@ async def test_user_parameter_excluded_streaming() -> None:
         )
 
         # Consume the stream to trigger the API call
-        # Type assertion: we know stream=True returns an AsyncIterator
-        from typing import cast
-
         stream = cast("AsyncIterator[ChatCompletionChunk]", result)
         async for _ in stream:
             pass
