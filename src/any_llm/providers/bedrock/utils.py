@@ -94,26 +94,41 @@ def _convert_tool_spec(tools: list[dict[str, Any]], tool_choice: str | dict[str,
 
 
 def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Convert messages to AWS Bedrock format."""
+    """Convert messages to AWS Bedrock format.
+
+    Bedrock requires that consecutive tool results are merged into a single user message.
+    This is necessary because Bedrock expects all toolResult blocks that correspond to
+    tool calls from a single assistant message to be grouped together.
+    """
     system_message = []
     if messages and messages[0]["role"] == "system":
         system_message = [{"text": messages[0]["content"]}]
         messages = messages[1:]
 
-    formatted_messages = []
+    formatted_messages: list[dict[str, Any]] = []
+    pending_tool_results: list[dict[str, Any]] = []
+
+    def flush_tool_results() -> None:
+        """Flush accumulated tool results into a single user message."""
+        if pending_tool_results:
+            formatted_messages.append({"role": "user", "content": pending_tool_results.copy()})
+            pending_tool_results.clear()
+
     for message in messages:
         if message["role"] == "system":
             continue
 
         if message["role"] == "tool":
-            bedrock_message = _convert_tool_result(message)
-            if bedrock_message:
-                formatted_messages.append(bedrock_message)
+            tool_result_content = _convert_tool_result_content(message)
+            if tool_result_content:
+                pending_tool_results.append(tool_result_content)
         elif message["role"] == "assistant":
+            flush_tool_results()
             bedrock_message = _convert_assistant(message)
             if bedrock_message:
                 formatted_messages.append(bedrock_message)
         else:  # user messages
+            flush_tool_results()
             formatted_messages.append(
                 {
                     "role": message["role"],
@@ -121,11 +136,18 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, An
                 }
             )
 
+    # Flush any remaining tool results at the end
+    flush_tool_results()
+
     return system_message, formatted_messages
 
 
-def _convert_tool_result(message: dict[str, Any]) -> dict[str, Any] | None:
-    """Convert OpenAI tool result format to AWS Bedrock format."""
+def _convert_tool_result_content(message: dict[str, Any]) -> dict[str, Any] | None:
+    """Convert OpenAI tool result format to AWS Bedrock toolResult content block.
+
+    Returns just the toolResult content block, not the full message.
+    The caller is responsible for grouping these into a user message.
+    """
     if message["role"] != "tool" or "content" not in message:
         return None
 
@@ -140,10 +162,7 @@ def _convert_tool_result(message: dict[str, Any]) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         content = [{"text": message["content"]}]
 
-    return {
-        "role": "user",
-        "content": [{"toolResult": {"toolUseId": tool_call_id, "content": content}}],
-    }
+    return {"toolResult": {"toolUseId": tool_call_id, "content": content}}
 
 
 def _convert_assistant(message: dict[str, Any]) -> dict[str, Any] | None:
