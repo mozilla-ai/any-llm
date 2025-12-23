@@ -9,7 +9,7 @@
 - [Api - Responses](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/responses.md)
 - [Api - Completion](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/completion.md)
 - [Api - Embedding](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/embedding.md)
-- [Api - Exceptions](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/exceptions.md)
+- [Api - Exceptions](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/exceptions.md): show_root_heading: false
 - [Api - List Models](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/list_models.md)
 - [Api - Batch](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/batch.md): The Batch API is experimental and subject to breaking changes in future versions. Use with caution in production environments.
 - [Api - Types - Completion](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/types/completion.md)
