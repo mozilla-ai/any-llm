@@ -29,7 +29,7 @@ schema:
 
 ### Installation
 ```bash
-pip install any-llm-sdk[all]  # Install with all provider support
+pip install any-llm[all]  # Install with all provider support
 ```
 
 #### Installing Specific Providers
@@ -37,15 +37,15 @@ pip install any-llm-sdk[all]  # Install with all provider support
 If you want to install a specific provider from our [supported providers](./providers.md):
 
 ```bash
-pip install any-llm-sdk[mistral]  # For Mistral provider
-pip install any-llm-sdk[ollama]   # For Ollama provider
+pip install any-llm[mistral]  # For Mistral provider
+pip install any-llm[ollama]   # For Ollama provider
 # install multiple providers
-pip install any-llm-sdk[mistral,ollama]
+pip install any-llm[mistral,ollama]
 ```
 
 #### Library Integration
 
-If you're building a library, install just the base package (`pip install any-llm-sdk`) and let your users install provider dependencies.
+If you're building a library, install just the base package (`pip install any-llm`) and let your users install provider dependencies.
 
 > **API Keys:** Set your provider's API key as an environment variable (e.g., `export MISTRAL_API_KEY="your-key"`) or pass it directly using the `api_key` parameter.
 

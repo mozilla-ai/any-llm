@@ -5,7 +5,7 @@ from any_llm.api import acompletion, aembedding, alist_models, aresponses, compl
 from any_llm.constants import LLMProvider
 
 try:
-    __version__ = version("any-llm-sdk")
+    __version__ = version("any-llm")
 except PackageNotFoundError:
     # In the case of local development
     # i.e., running directly from the source directory without package being installed
@@ -15,6 +15,7 @@ except PackageNotFoundError:
 __all__ = [
     "AnyLLM",
     "LLMProvider",
+    "__version__",
     "acompletion",
     "aembedding",
     "alist_models",

@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=48"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "any-llm-sdk"
+version = "0.16.0"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.11"
+dependencies = [
+  "any-llm>=0.16.0",  # Depends on the new package name
+]
+
+description = "Deprecated: Please use 'any-llm' instead. This package is now just a redirect."
+
+[project.urls]
+Documentation = "https://mozilla-ai.github.io/any-llm/"
+Issues = "https://github.com/mozilla-ai/any-llm/issues"
+Source = "https://github.com/mozilla-ai/any-llm"
+
+[tool.setuptools.packages.find]
+exclude = ["tests", "tests.*"]
+where = ["src"]
+namespaces = false

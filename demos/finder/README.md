@@ -91,7 +91,7 @@ If you see "No providers are configured with API keys":
 ### Provider errors
 The application will show provider-specific errors in the results. Common issues:
 - **API key not configured**: Set the required environment variable
-- **Missing packages**: Install additional dependencies with `pip install any-llm-sdk[provider_name]`
+- **Missing packages**: Install additional dependencies with `pip install any-llm[provider_name]`
 - **API errors**: Check your API key validity and provider service status
 
 ### Search returns no results

@@ -1,0 +1,7 @@
+# Ruff configuration for the stub package
+# This package intentionally uses star imports to re-export from any-llm
+
+[lint]
+ignore = [
+    "F405",  # May be undefined from star imports - expected for stub package
+]
