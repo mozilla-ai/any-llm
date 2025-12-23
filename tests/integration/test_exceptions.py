@@ -14,6 +14,7 @@ def _raise_authentication_error() -> None:
     """Helper function to raise authentication error for non-streaming responses."""
     raise AuthenticationError(_STREAM_ERROR_MSG)
 
+
 # Providers that can be tested with invalid API keys
 # (i.e., they don't require local infrastructure)
 TESTABLE_PROVIDERS = [

@@ -24,12 +24,8 @@ def test_all_docs(doc_file: pathlib.Path) -> None:
 
         def mock_completion_side_effect(*args, **kwargs):
             if kwargs.get("stream", False):
-                return [
-                    Mock(choices=[Mock(delta=Mock(content="Hello!"))])
-                ]
-            return Mock(
-                choices=[Mock(message=Mock(content="Hello!"), delta=Mock(content="Hello!"))]
-            )
+                return [Mock(choices=[Mock(delta=Mock(content="Hello!"))])]
+            return Mock(choices=[Mock(message=Mock(content="Hello!"), delta=Mock(content="Hello!"))])
 
         with (
             patch("any_llm.any_llm.AnyLLM.split_model_provider") as mock_split,
