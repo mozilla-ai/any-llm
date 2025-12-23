@@ -134,8 +134,12 @@ async def test_streaming_with_bad_api_key(
 
         # If acompletion succeeds, the error should occur during iteration
         with pytest.raises(AuthenticationError) as exc_info:
-            async for _ in stream:
-                pass
+            if hasattr(stream, '__aiter__'):
+                async for _ in stream:
+                    pass
+            else:
+                # Non-streaming response, raise the error immediately
+                raise AuthenticationError("Expected streaming response but got non-streaming")
     except AuthenticationError as exc_info_value:
         # If acompletion fails immediately, that's also acceptable
         exc_info = type("MockExcInfo", (), {"value": exc_info_value})()

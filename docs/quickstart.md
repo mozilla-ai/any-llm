@@ -237,6 +237,8 @@ All unified exceptions preserve the original provider exception for debugging:
 ```python
 from any_llm.exceptions import RateLimitError
 
+messages = [{"role": "user", "content": "Hello!"}]
+
 try:
     response = completion(model="gpt-4", provider="openai", messages=messages)
 except RateLimitError as e:

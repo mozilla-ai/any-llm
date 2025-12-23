@@ -17,7 +17,7 @@ from any_llm.utils.exception_handler import convert_exception
 
 
 def test_client_error_with_invalid_api_key() -> None:
-    original = ClientError("Invalid API key provided")
+    original = ClientError(code=401, response_json={"error": {"message": "Invalid API key provided"}})
 
     result = convert_exception(original, "gemini")
 
@@ -27,7 +27,7 @@ def test_client_error_with_invalid_api_key() -> None:
 
 
 def test_client_error_with_invalid_request() -> None:
-    original = ClientError("Invalid request: bad parameter")
+    original = ClientError(code=400, response_json={"error": {"message": "Invalid request: bad parameter"}})
 
     result = convert_exception(original, "gemini")
 
@@ -37,7 +37,7 @@ def test_client_error_with_invalid_request() -> None:
 
 
 def test_server_error_conversion() -> None:
-    original = ServerError("Internal server error")
+    original = ServerError(code=500, response_json={"error": {"message": "Internal server error"}})
 
     result = convert_exception(original, "gemini")
 
@@ -47,7 +47,7 @@ def test_server_error_conversion() -> None:
 
 
 def test_api_error_with_rate_limit_message() -> None:
-    original = APIError("Rate limit exceeded. Too many requests.")
+    original = APIError(code=429, response_json={"error": {"message": "Rate limit exceeded. Too many requests."}})
 
     result = convert_exception(original, "gemini")
 
@@ -57,7 +57,7 @@ def test_api_error_with_rate_limit_message() -> None:
 
 
 def test_api_error_generic() -> None:
-    original = APIError("Some API error occurred")
+    original = APIError(code=400, response_json={"error": {"message": "Some API error occurred"}})
 
     result = convert_exception(original, "gemini")
 

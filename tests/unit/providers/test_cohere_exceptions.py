@@ -27,7 +27,7 @@ from any_llm.utils.exception_handler import convert_exception
 
 
 def test_too_many_requests_error_conversion() -> None:
-    original = TooManyRequestsError()
+    original = TooManyRequestsError(body="Rate limit exceeded")
 
     result = convert_exception(original, "cohere")
 
@@ -37,7 +37,7 @@ def test_too_many_requests_error_conversion() -> None:
 
 
 def test_unauthorized_error_conversion() -> None:
-    original = UnauthorizedError()
+    original = UnauthorizedError(body="Unauthorized")
 
     result = convert_exception(original, "cohere")
 
@@ -47,7 +47,7 @@ def test_unauthorized_error_conversion() -> None:
 
 
 def test_forbidden_error_conversion() -> None:
-    original = ForbiddenError()
+    original = ForbiddenError(body="Forbidden")
 
     result = convert_exception(original, "cohere")
 
@@ -57,7 +57,7 @@ def test_forbidden_error_conversion() -> None:
 
 
 def test_bad_request_error_conversion() -> None:
-    original = BadRequestError()
+    original = BadRequestError(body="Bad request")
 
     result = convert_exception(original, "cohere")
 
@@ -67,7 +67,7 @@ def test_bad_request_error_conversion() -> None:
 
 
 def test_not_found_error_conversion() -> None:
-    original = NotFoundError()
+    original = NotFoundError(body="Not found")
 
     result = convert_exception(original, "cohere")
 
@@ -77,7 +77,7 @@ def test_not_found_error_conversion() -> None:
 
 
 def test_internal_server_error_conversion() -> None:
-    original = InternalServerError()
+    original = InternalServerError(body="Internal server error")
 
     result = convert_exception(original, "cohere")
 
@@ -87,7 +87,7 @@ def test_internal_server_error_conversion() -> None:
 
 
 def test_service_unavailable_error_conversion() -> None:
-    original = ServiceUnavailableError()
+    original = ServiceUnavailableError(body="Service unavailable")
 
     result = convert_exception(original, "cohere")
 
@@ -97,7 +97,7 @@ def test_service_unavailable_error_conversion() -> None:
 
 
 def test_gateway_timeout_error_conversion() -> None:
-    original = GatewayTimeoutError()
+    original = GatewayTimeoutError(body="Gateway timeout")
 
     result = convert_exception(original, "cohere")
 

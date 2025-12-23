@@ -105,7 +105,6 @@ def test_api_error_with_500_status() -> None:
         request=MagicMock(),
         body={"error": {"message": "Internal server error"}},
     )
-    original.status_code = 500
 
     result = convert_exception(original, "anthropic")
 
