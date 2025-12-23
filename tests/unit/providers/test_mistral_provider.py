@@ -1,4 +1,4 @@
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -6,6 +6,11 @@ from pydantic import BaseModel
 
 from any_llm.providers.mistral.utils import _patch_messages
 from any_llm.types.completion import CompletionParams
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from mistralai.models import ChatCompletionChunk
 
 
 def test_patch_messages_noop_when_no_tool_before_user() -> None:
@@ -254,10 +259,7 @@ async def test_user_parameter_excluded_streaming() -> None:
 
         # Consume the stream to trigger the API call
         # Type assertion: we know stream=True returns an AsyncIterator
-        from collections.abc import AsyncIterator
         from typing import cast
-
-        from mistralai.models import ChatCompletionChunk
 
         stream = cast("AsyncIterator[ChatCompletionChunk]", result)
         async for _ in stream:
