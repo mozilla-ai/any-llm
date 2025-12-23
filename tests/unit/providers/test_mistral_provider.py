@@ -10,8 +10,6 @@ from any_llm.types.completion import CompletionParams
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from mistralai.models import ChatCompletionChunk
-
 
 def test_patch_messages_noop_when_no_tool_before_user() -> None:
     messages: list[dict[str, Any]] = [
@@ -258,7 +256,7 @@ async def test_user_parameter_excluded_streaming() -> None:
         )
 
         # Consume the stream to trigger the API call
-        stream = cast("AsyncIterator[ChatCompletionChunk]", result)
+        stream = cast("AsyncIterator[Any]", result)
         async for _ in stream:
             pass
 
