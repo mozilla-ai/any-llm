@@ -22,7 +22,7 @@ def test_all_docs(doc_file: pathlib.Path) -> None:
         mock_embedding_result.data = [Mock(embedding=[0.1, 0.2, 0.3])]
         mock_embedding_result.usage = Mock(total_tokens=10)
 
-        def mock_completion_side_effect(*args, **kwargs):
+        def mock_completion_side_effect(*args, **kwargs):  # type: ignore[no-untyped-def]
             if kwargs.get("stream", False):
                 return [Mock(choices=[Mock(delta=Mock(content="Hello!"))])]
             return Mock(choices=[Mock(message=Mock(content="Hello!"), delta=Mock(content="Hello!"))])
