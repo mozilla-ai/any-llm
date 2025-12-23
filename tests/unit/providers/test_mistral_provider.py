@@ -165,6 +165,7 @@ async def test_response_format(response_format: Any) -> None:
         }
         assert response_format_arg.json_schema.schema_definition == expected_schema
 
+
 @pytest.mark.asyncio
 async def test_user_parameter_excluded() -> None:
     """Test that the 'user' parameter is excluded when calling Mistral API."""
@@ -192,10 +193,10 @@ async def test_user_parameter_excluded() -> None:
 
         # Verify the call was made
         completion_call_kwargs = mocked_mistral.return_value.chat.complete_async.call_args[1]
-        
+
         # Assert 'user' parameter is NOT passed to Mistral API
         assert "user" not in completion_call_kwargs, "The 'user' parameter should be excluded for Mistral API"
-        
+
         # Assert other parameters are still passed correctly
         assert completion_call_kwargs["model"] == "mistral-small-latest"
         assert completion_call_kwargs["temperature"] == 0.7
@@ -205,7 +206,7 @@ async def test_user_parameter_excluded() -> None:
 @pytest.mark.asyncio
 async def test_user_parameter_excluded_streaming() -> None:
     """Test that the 'user' parameter is excluded in streaming mode."""
-    mistralai = pytest.importorskip("mistralai")
+    pytest.importorskip("mistralai")
     from any_llm.providers.mistral.mistral import MistralProvider
 
     with (
@@ -218,12 +219,12 @@ async def test_user_parameter_excluded_streaming() -> None:
         mock_delta.content = "test"
         mock_delta.role = "assistant"
         mock_delta.tool_calls = None
-        
+
         mock_choice = Mock()
         mock_choice.delta = mock_delta
         mock_choice.index = 0
         mock_choice.finish_reason = None
-        
+
         mock_chunk = Mock()
         mock_chunk.data = Mock()
         mock_chunk.data.choices = [mock_choice]
@@ -236,13 +237,13 @@ async def test_user_parameter_excluded_streaming() -> None:
         async def mock_stream(*args: Any, **kwargs: Any) -> Any:
             async def async_iter() -> Any:
                 yield mock_chunk
-            
+
             return async_iter()
 
         mocked_mistral.return_value.chat.stream_async = AsyncMock(side_effect=mock_stream)
 
         # Call with 'user' parameter in streaming mode
-        stream = await provider._acompletion(
+        result = await provider._acompletion(
             CompletionParams(
                 model_id="mistral-small-latest",
                 messages=[{"role": "user", "content": "Hello"}],
@@ -252,11 +253,18 @@ async def test_user_parameter_excluded_streaming() -> None:
         )
 
         # Consume the stream to trigger the API call
+        # Type assertion: we know stream=True returns an AsyncIterator
+        from collections.abc import AsyncIterator
+        from typing import cast
+
+        from mistralai.models import ChatCompletionChunk
+
+        stream = cast("AsyncIterator[ChatCompletionChunk]", result)
         async for _ in stream:
             pass
 
         # Verify the call was made
         stream_call_kwargs = mocked_mistral.return_value.chat.stream_async.call_args[1]
-        
+
         # Assert 'user' parameter is NOT passed to Mistral API
         assert "user" not in stream_call_kwargs, "The 'user' parameter should be excluded in streaming mode"
