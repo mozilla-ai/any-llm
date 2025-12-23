@@ -39,7 +39,7 @@ print(response)
 
 ### Why any-llm
   - Switch providers in one line
-  - Consistent error handling across providers
+  - Unified exception handling across providers
   - Simple API, powerful features
 
 [View supported providers →](./providers.md)
@@ -68,13 +68,6 @@ Features: real-time streaming responses, multiple provider support, and collapsi
 
 **AnyLLM Class** (recommended for advanced use cases):
 - [Provider API](./api/any_llm.md) - Lower-level provider interface with metadata access and reusability
-
-### Error Handling
-
-`any-llm` provides custom exceptions to indicate common errors like missing API keys
-and parameters that are unsupported by a specific provider.
-
-For more details on exceptions, see the [exceptions API documentation](./api/exceptions.md).
 
 ## For AI Systems
 

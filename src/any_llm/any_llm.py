@@ -15,6 +15,7 @@ from any_llm.types.provider import PlatformKey, ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
 from any_llm.utils.decorators import BATCH_API_EXPERIMENTAL_MESSAGE, experimental
+from any_llm.utils.exception_handler import handle_exceptions
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator, Sequence
@@ -355,6 +356,7 @@ class AnyLLM(ABC):
 
         return async_iter_to_sync_iter(response)
 
+    @handle_exceptions(wrap_streaming=True)
     async def acompletion(
         self,
         model: str,
@@ -472,6 +474,7 @@ class AnyLLM(ABC):
             return response
         return async_iter_to_sync_iter(response)
 
+    @handle_exceptions(wrap_streaming=True)
     async def aresponses(
         self,
         model: str,
@@ -558,6 +561,7 @@ class AnyLLM(ABC):
         allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
         return run_async_in_sync(self.aembedding(model, inputs, **kwargs), allow_running_loop=allow_running_loop)
 
+    @handle_exceptions()
     async def aembedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:
         return await self._aembedding(model, inputs, **kwargs)
 
@@ -572,6 +576,7 @@ class AnyLLM(ABC):
         allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
         return run_async_in_sync(self.alist_models(**kwargs), allow_running_loop=allow_running_loop)
 
+    @handle_exceptions()
     async def alist_models(self, **kwargs: Any) -> Sequence[Model]:
         return await self._alist_models(**kwargs)
 
@@ -591,6 +596,7 @@ class AnyLLM(ABC):
         allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
         return run_async_in_sync(self.acreate_batch(**kwargs), allow_running_loop=allow_running_loop)
 
+    @handle_exceptions()
     @experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
     async def acreate_batch(
         self,
@@ -644,6 +650,7 @@ class AnyLLM(ABC):
         allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
         return run_async_in_sync(self.aretrieve_batch(batch_id, **kwargs), allow_running_loop=allow_running_loop)
 
+    @handle_exceptions()
     @experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
     async def aretrieve_batch(self, batch_id: str, **kwargs: Any) -> Batch:
         """Retrieve a batch job asynchronously.
@@ -674,6 +681,7 @@ class AnyLLM(ABC):
         allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
         return run_async_in_sync(self.acancel_batch(batch_id, **kwargs), allow_running_loop=allow_running_loop)
 
+    @handle_exceptions()
     @experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
     async def acancel_batch(self, batch_id: str, **kwargs: Any) -> Batch:
         """Cancel a batch job asynchronously.
@@ -711,6 +719,7 @@ class AnyLLM(ABC):
             self.alist_batches(after=after, limit=limit, **kwargs), allow_running_loop=allow_running_loop
         )
 
+    @handle_exceptions()
     @experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
     async def alist_batches(
         self,
