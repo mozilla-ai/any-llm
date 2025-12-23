@@ -6,6 +6,14 @@ from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import AnyLLMError, AuthenticationError
 from any_llm.utils.exception_handler import ANY_LLM_UNIFIED_EXCEPTIONS_ENV
 
+# Constants
+_STREAM_ERROR_MSG = "Expected streaming response but got non-streaming"
+
+
+def _raise_authentication_error() -> None:
+    """Helper function to raise authentication error for non-streaming responses."""
+    raise AuthenticationError(_STREAM_ERROR_MSG)
+
 # Providers that can be tested with invalid API keys
 # (i.e., they don't require local infrastructure)
 TESTABLE_PROVIDERS = [
@@ -133,13 +141,14 @@ async def test_streaming_with_bad_api_key(
         )
 
         # If acompletion succeeds, the error should occur during iteration
-        with pytest.raises(AuthenticationError) as exc_info:
-            if hasattr(stream, '__aiter__'):
+        if hasattr(stream, "__aiter__"):
+            with pytest.raises(AuthenticationError) as exc_info:
                 async for _ in stream:
                     pass
-            else:
-                # Non-streaming response, raise the error immediately
-                raise AuthenticationError("Expected streaming response but got non-streaming")
+        else:
+            # Non-streaming response, raise the error immediately
+            with pytest.raises(AuthenticationError) as exc_info:
+                _raise_authentication_error()
     except AuthenticationError as exc_info_value:
         # If acompletion fails immediately, that's also acceptable
         exc_info = type("MockExcInfo", (), {"value": exc_info_value})()
