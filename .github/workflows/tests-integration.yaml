@@ -27,7 +27,7 @@ jobs:
 
       - name: Set expected providers for local integration tests
         id: set_local_providers
-        run: echo "expected_providers=ollama,llamacpp,llamafile,vllm" >> $GITHUB_OUTPUT
+        run: echo "expected_providers=ollama,llamacpp,llamafile" >> $GITHUB_OUTPUT
 
   determine-jobs-to-run:
     needs: expected-providers
@@ -144,14 +144,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-llamafile-
 
-      - uses: actions/cache@v4
-        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'vllm')
-        with:
-          path: ~/.cache/huggingface
-          key: ${{ runner.os }}-vllm-models-${{ hashFiles('tests/conftest.py') }}
-          restore-keys: |
-            ${{ runner.os }}-vllm-models-
-
       - name: Setup Ollama
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
         uses: ai-action/setup-ollama@v1
@@ -200,19 +192,6 @@ jobs:
         run: |
           timeout 60 bash -c 'until curl -s http://localhost:8090/health >/dev/null; do sleep 1; done'
 
-      - name: Install and Run vLLM (CPU)
-        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'vllm')
-        run: |
-          uv pip install vllm --extra-index-url https://wheels.vllm.ai/nightly/cpu --prerelease=allow --index-strategy unsafe-best-match --torch-backend cpu
-          export VLLM_CPU_KVCACHE_SPACE=4
-          vllm serve Qwen/Qwen2.5-0.5B-Instruct --dtype bfloat16 --max-model-len 2048 --port 8080 > vllm.log 2>&1 &
-          echo $! > vllm.pid
-
-      - name: Wait for vLLM to be ready
-        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'vllm')
-        run: |
-          timeout 600 bash -c 'until curl -s http://localhost:8080/v1/models >/dev/null; do echo "Waiting for vLLM..."; sleep 5; done' || (echo "=== vLLM logs ===" && cat vllm.log && exit 1)
-
       - name: Run Local Provider Integration tests
         env:
           INCLUDE_LOCAL_PROVIDERS: "true"
@@ -230,14 +209,6 @@ jobs:
           if [ -f llamafile.pid ]; then
             kill $(cat llamafile.pid) || true
             rm llamafile.pid
-          fi
-
-      - name: Cleanup vLLM process
-        if: always()
-        run: |
-          if [ -f vllm.pid ]; then
-            kill $(cat vllm.pid) || true
-            rm vllm.pid
           fi
 
       - name: Upload coverage reports to Codecov
