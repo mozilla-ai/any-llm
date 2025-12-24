@@ -1,8 +1,10 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from any_llm.gateway.auth import verify_master_key
@@ -35,6 +37,9 @@ class UserResponse(BaseModel):
     created_at: str
     updated_at: str
     metadata: dict[str, Any]
+    total_input_tokens: int
+    total_output_tokens: int
+    total_tokens: int
 
 
 class UpdateUserRequest(BaseModel):
@@ -62,6 +67,57 @@ class UsageLogResponse(BaseModel):
     cost: float | None
     status: str
     error_message: str | None
+
+
+@dataclass
+class TokenUsage:
+    input: int
+    output: int
+    total: int
+
+
+def _get_token_usage_by_user_id(db: Session, user_id: str) -> TokenUsage:
+    """Fetches token usage for a single user."""
+    token_usage_result = (
+        db.query(
+            func.coalesce(func.sum(UsageLog.prompt_tokens), 0).label("input"),
+            func.coalesce(func.sum(UsageLog.completion_tokens), 0).label("output"),
+            func.coalesce(func.sum(UsageLog.total_tokens), 0).label("total"),
+        )
+        .filter(UsageLog.user_id == user_id)
+        .first()
+    )
+    return TokenUsage(
+        input=int(token_usage_result.input),
+        output=int(token_usage_result.output),
+        total=int(token_usage_result.total),
+    )
+
+
+def _get_token_usage_by_user_ids(db: Session, user_ids: list[str]) -> dict[str, TokenUsage]:
+    """Fetches token usage for multiple users."""
+    token_usage_results = (
+        db.query(
+            UsageLog.user_id,
+            func.coalesce(func.sum(UsageLog.prompt_tokens), 0).label("input"),
+            func.coalesce(func.sum(UsageLog.completion_tokens), 0).label("output"),
+            func.coalesce(func.sum(UsageLog.total_tokens), 0).label("total"),
+        )
+        .filter(UsageLog.user_id.in_(user_ids))
+        .group_by(UsageLog.user_id)
+        .all()
+    )
+
+    token_usage_map = {
+        result.user_id: TokenUsage(
+            input=int(result.input),
+            output=int(result.output),
+            total=int(result.total),
+        )
+        for result in token_usage_results
+    }
+
+    return token_usage_map
 
 
 @router.post("", dependencies=[Depends(verify_master_key)])
@@ -113,6 +169,9 @@ async def create_user(
         created_at=user.created_at.isoformat(),
         updated_at=user.updated_at.isoformat(),
         metadata=dict(user.metadata_) if user.metadata_ else {},
+        total_input_tokens=0,
+        total_output_tokens=0,
+        total_tokens=0,
     )
 
 
@@ -124,6 +183,11 @@ async def list_users(
 ) -> list[UserResponse]:
     """List all users with pagination."""
     users = db.query(User).offset(skip).limit(limit).all()
+
+    user_ids = [user.user_id for user in users]
+    token_usage_map = _get_token_usage_by_user_ids(db, user_ids)
+
+    default_token_usage = TokenUsage(0, 0, 0)
 
     return [
         UserResponse(
@@ -137,6 +201,9 @@ async def list_users(
             created_at=user.created_at.isoformat(),
             updated_at=user.updated_at.isoformat(),
             metadata=dict(user.metadata_) if user.metadata_ else {},
+            total_input_tokens=(token_usage := token_usage_map.get(user.user_id, default_token_usage)).input,
+            total_output_tokens=token_usage.output,
+            total_tokens=token_usage.total,
         )
         for user in users
     ]
@@ -156,6 +223,8 @@ async def get_user(
             detail=f"User with id '{user_id}' not found",
         )
 
+    token_usage = _get_token_usage_by_user_id(db, user_id)
+
     return UserResponse(
         user_id=user.user_id,
         alias=user.alias,
@@ -167,6 +236,9 @@ async def get_user(
         created_at=user.created_at.isoformat(),
         updated_at=user.updated_at.isoformat(),
         metadata=dict(user.metadata_) if user.metadata_ else {},
+        total_input_tokens=token_usage.input,
+        total_output_tokens=token_usage.output,
+        total_tokens=token_usage.total,
     )
 
 
@@ -210,6 +282,8 @@ async def update_user(
     db.commit()
     db.refresh(user)
 
+    token_usage = _get_token_usage_by_user_id(db, user.user_id)
+
     return UserResponse(
         user_id=user.user_id,
         alias=user.alias,
@@ -221,6 +295,9 @@ async def update_user(
         created_at=user.created_at.isoformat(),
         updated_at=user.updated_at.isoformat(),
         metadata=dict(user.metadata_) if user.metadata_ else {},
+        total_input_tokens=token_usage.input,
+        total_output_tokens=token_usage.output,
+        total_tokens=token_usage.total,
     )
 
 
