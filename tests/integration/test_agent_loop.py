@@ -38,7 +38,7 @@ async def test_agent_loop_parallel_tool_calls(
     provider_model_map: dict[LLMProvider, str],
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
-    if provider in (LLMProvider.LLAMAFILE, LLMProvider.PERPLEXITY):
+    if provider in (*LOCAL_PROVIDERS, LLMProvider.PERPLEXITY):
         pytest.skip(f"{provider} does not support tools, skipping")
 
     try:
@@ -105,7 +105,7 @@ async def test_agent_loop_sequential_tool_calls(
     provider_model_map: dict[LLMProvider, str],
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
-    if provider in (LLMProvider.LLAMAFILE, LLMProvider.PERPLEXITY):
+    if provider in (*LOCAL_PROVIDERS, LLMProvider.PERPLEXITY):
         pytest.skip(f"{provider} does not support tools, skipping")
 
     try:
