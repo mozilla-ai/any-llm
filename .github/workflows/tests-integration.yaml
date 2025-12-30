@@ -154,7 +154,7 @@ jobs:
           ollama serve &
           ollama pull llama3.2:1b
           ollama pull qwen3:0.6b
-          ollama pull qwen3-vl:2b
+          ollama pull moondream
 
       - name: Wait for Ollama to be ready
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
