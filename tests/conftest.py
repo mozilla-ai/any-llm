@@ -91,7 +91,7 @@ def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict
         LLMProvider.SAMBANOVA: "Llama-4-Maverick-17B-128E-Instruct",
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
         LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
-        LLMProvider.OLLAMA: "moondream",  # Fast vision model for CI
+        LLMProvider.OLLAMA: "llava-phi3",  # Fast vision model compatible with OpenAI format
         LLMProvider.FIREWORKS: "accounts/fireworks/models/qwen2p5-vl-32b-instruct",
     }
 
