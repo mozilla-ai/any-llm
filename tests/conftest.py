@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 
 from any_llm.constants import LLMProvider
-from tests.constants import INCLUDE_LOCAL_PROVIDERS, INCLUDE_NON_LOCAL_PROVIDERS, LOCAL_PROVIDERS
+from tests.constants import CI_EXCLUDED_PROVIDERS, INCLUDE_LOCAL_PROVIDERS, INCLUDE_NON_LOCAL_PROVIDERS, LOCAL_PROVIDERS
 
 
 @pytest.fixture
@@ -158,7 +158,7 @@ def _get_providers_for_testing() -> list[LLMProvider]:
     if INCLUDE_NON_LOCAL_PROVIDERS:
         filtered.extend([provider for provider in all_providers if provider not in LOCAL_PROVIDERS])
 
-    return filtered
+    return [provider for provider in filtered if provider not in CI_EXCLUDED_PROVIDERS]
 
 
 @pytest.fixture(params=_get_providers_for_testing(), ids=lambda x: x.value)
