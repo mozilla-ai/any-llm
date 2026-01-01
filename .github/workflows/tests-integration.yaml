@@ -129,7 +129,7 @@ jobs:
         run: |
           uv sync --group tests --extra all
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
         with:
           path: ~/.ollama
@@ -137,7 +137,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ollama-models-
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: ~/.llamafile
           key: ${{ runner.os }}-llamafile-${{ hashFiles('tests/conftest.py') }}
