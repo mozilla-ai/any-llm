@@ -146,7 +146,7 @@ jobs:
 
       - name: Setup Ollama
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
-        uses: ai-action/setup-ollama@v1
+        uses: ai-action/setup-ollama@v2
 
       - name: Run ollama
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
