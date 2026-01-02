@@ -24,7 +24,7 @@ jobs:
       - name: Install pre-commit
         run: uv sync --group lint --extra all
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: .mypy_cache
           key: ${{ runner.os }}-mypy-${{ hashFiles('pyproject.toml') }}
