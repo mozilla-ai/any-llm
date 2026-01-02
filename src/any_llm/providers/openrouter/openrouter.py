@@ -15,7 +15,7 @@ class OpenrouterProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
-    SUPPORTS_EMBEDDING = False
+    SUPPORTS_EMBEDDING = True
 
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
