@@ -116,6 +116,7 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.VOYAGE: "voyage-3.5-lite",
         LLMProvider.LLAMACPP: "N/A",
         LLMProvider.GATEWAY: "text-embedding-ada-002",
+        LLMProvider.OPENROUTER: "qwen/qwen3-embedding-8b",
     }
 
 
