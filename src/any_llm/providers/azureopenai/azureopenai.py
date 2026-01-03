@@ -1,7 +1,6 @@
 from typing import Any
 
 from openai import AsyncAzureOpenAI
-
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
 
@@ -17,14 +16,8 @@ class AzureopenaiProvider(BaseOpenAIProvider):
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         if not kwargs:
             kwargs = {}
-        #kwargs["default_query"] = {"api-version": "preview"}
         client: AsyncAzureOpenAI = AsyncAzureOpenAI(azure_endpoint=api_base,
                                                     api_key=api_key,
-                                                    api_version=kwargs.pop('api-version', 'preview')
+                                                    api_version=kwargs.pop('api-version', 'preview'),
                                                     **kwargs)
         self.client = client
-        return client
-        # kwargs["default_query"] = {"api-version": "preview"}
-        # return super()._init_client(api_key=api_key, api_base=api_base, **kwargs)
-
-        #return super()._init_client(api_key=api_key, api_base=api_base, **kwargs)
