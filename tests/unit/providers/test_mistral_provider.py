@@ -207,6 +207,34 @@ async def test_user_parameter_excluded() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("reasoning_effort", ["auto", "none"])
+async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
+    """Test that reasoning_effort 'auto' and 'none' are filtered from Mistral API calls."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    with (
+        patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral,
+        patch("any_llm.providers.mistral.mistral._create_mistral_completion_from_response") as mock_converter,
+    ):
+        provider = MistralProvider(api_key="test-api-key")
+
+        mocked_mistral.return_value.chat.complete_async = AsyncMock(return_value=Mock())
+        mock_converter.return_value = Mock()
+
+        await provider._acompletion(
+            CompletionParams(
+                model_id="mistral-small-latest",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort=reasoning_effort,  # type: ignore[arg-type]
+            ),
+        )
+
+        completion_call_kwargs = mocked_mistral.return_value.chat.complete_async.call_args[1]
+        assert "reasoning_effort" not in completion_call_kwargs
+
+
+@pytest.mark.asyncio
 async def test_user_parameter_excluded_streaming() -> None:
     """Test that the 'user' parameter is excluded in streaming mode."""
     pytest.importorskip("mistralai")

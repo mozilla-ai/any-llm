@@ -89,6 +89,41 @@ async def test_reasoning_auto_excludes_reasoning() -> None:
 
 
 @pytest.mark.asyncio
+async def test_reasoning_none_excludes_reasoning() -> None:
+    """Test that reasoning_effort='none' does not include reasoning - no extra_body at all."""
+    mock_completion = ChatCompletion(
+        id="test-none",
+        object="chat.completion",
+        created=1234567890,
+        model="gpt-4",
+        choices=[
+            Choice(
+                index=0,
+                finish_reason="stop",
+                message=ChatCompletionMessage(role="assistant", content="Hello!"),
+            )
+        ],
+    )
+
+    with patch("any_llm.providers.openai.base.AsyncOpenAI") as mock_client_class:
+        mock_client = mock_client_class.return_value
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_completion)
+
+        provider = OpenrouterProvider(api_key="sk-test")
+        params = CompletionParams(
+            model_id="gpt-4",
+            messages=[{"role": "user", "content": "Hello"}],
+            reasoning_effort="none",
+        )
+
+        await provider._acompletion(params)
+
+        call_args = mock_client.chat.completions.create.call_args
+        # Should not have extra_body at all when "none"
+        assert "extra_body" not in call_args.kwargs
+
+
+@pytest.mark.asyncio
 async def test_reasoning_with_custom_reasoning_object() -> None:
     """Test that custom reasoning object overrides reasoning_effort."""
     mock_completion = ChatCompletion(

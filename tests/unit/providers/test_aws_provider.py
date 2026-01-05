@@ -74,6 +74,45 @@ def test_completion_with_kwargs() -> None:
         )
 
 
+def test_completion_reasoning_effort_none_excludes_reasoning() -> None:
+    """Test that reasoning_effort='none' does not enable reasoning."""
+    model_id = "model-id"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_aws_provider() as mock_boto3_client:
+        provider = BedrockProvider(api_key="test_key")
+        provider._completion(
+            CompletionParams(
+                model_id=model_id,
+                messages=messages,
+                reasoning_effort="none",
+            ),
+        )
+
+        call_kwargs = mock_boto3_client.return_value.converse.call_args[1]
+        assert "additionalModelRequestFields" not in call_kwargs
+
+
+def test_completion_reasoning_effort_low_enables_reasoning() -> None:
+    """Test that reasoning_effort='low' enables reasoning with budget."""
+    model_id = "model-id"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_aws_provider() as mock_boto3_client:
+        provider = BedrockProvider(api_key="test_key")
+        provider._completion(
+            CompletionParams(
+                model_id=model_id,
+                messages=messages,
+                reasoning_effort="low",
+            ),
+        )
+
+        call_kwargs = mock_boto3_client.return_value.converse.call_args[1]
+        assert "additionalModelRequestFields" in call_kwargs
+        assert call_kwargs["additionalModelRequestFields"]["reasoning_config"]["type"] == "enabled"
+
+
 @contextmanager
 def mock_aws_embedding_provider():  # type: ignore[no-untyped-def]
     """Mock AWS provider specifically for embedding tests."""

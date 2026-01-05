@@ -102,3 +102,21 @@ def test_watsonx_SUPPORTS_COMPLETION_STREAMING() -> None:
     """Test that WatsonxProvider correctly advertises streaming support."""
     provider = WatsonxProvider(api_key="test-key")
     assert provider.SUPPORTS_COMPLETION_STREAMING is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reasoning_effort", ["auto", "none"])
+async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
+    """Test that reasoning_effort 'auto' and 'none' are filtered from Watsonx API calls."""
+    with mock_watsonx_provider() as (mock_model_instance, _mock_convert_response, _mock_model_inference):
+        provider = WatsonxProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="test-model",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort=reasoning_effort,  # type: ignore[arg-type]
+            ),
+        )
+
+        call_kwargs = mock_model_instance.achat.call_args[1]
+        assert "reasoning_effort" not in call_kwargs.get("params", {})
