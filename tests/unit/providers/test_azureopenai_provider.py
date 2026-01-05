@@ -41,7 +41,7 @@ async def test_azureopenai_default_query_with_existing_kwargs() -> None:
         assert call_args is not None
         _, kwargs = call_args
         assert "default_query" in kwargs
-        assert kwargs["default_query"] == {"api-version": "preview"}
+        assert kwargs["default_query"] == {"api_version": "preview"}
         assert kwargs["timeout"] == custom_timeout
 
         mock_client.chat.completions.create.assert_called_once()
@@ -58,7 +58,7 @@ async def test_init_client_with_api_version():
         mock_instance = MagicMock()
         mock_async_azure.return_value = mock_instance
 
-        provider = AzureopenaiProvider(api_key=api_key, api_base=api_base, **{"api-version": api_version})
+        provider = AzureopenaiProvider(api_key=api_key, api_base=api_base, **{"api_version": api_version})
 
         # Check AsyncAzureOpenAI was called with expected kwargs
         mock_async_azure.assert_called_once()
@@ -74,7 +74,7 @@ async def test_init_client_with_api_version():
 @pytest.mark.asyncio
 async def test_init_client_default_api_version():
     """
-    Verifies fallback to "preview" when api-version is not provided.
+    Verifies fallback to "preview" when api_version is not provided.
     """
     api_key = "test-api-key"
     api_base = "https://test.openai.azure.com"
