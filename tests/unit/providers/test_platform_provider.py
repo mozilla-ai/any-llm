@@ -1,7 +1,10 @@
+from datetime import datetime
 from unittest.mock import AsyncMock, Mock, patch
+from uuid import UUID
 
 import httpx
 import pytest
+from any_llm_platform_client import DecryptedProviderKey
 from pydantic import ValidationError
 
 from any_llm.exceptions import MissingApiKeyError
@@ -19,6 +22,61 @@ from any_llm.types.completion import (
     CompletionUsage,
 )
 from any_llm.types.provider import PlatformKey
+
+
+# Fixtures
+@pytest.fixture
+def any_llm_key() -> str:
+    """Fixture for a valid ANY_LLM_KEY."""
+    return "ANY.v1.kid123.fingerprint456-base64key"
+
+
+@pytest.fixture
+def mock_decrypted_provider_key() -> DecryptedProviderKey:
+    """Fixture for a mock DecryptedProviderKey."""
+    return DecryptedProviderKey(
+        api_key="mock-provider-api-key",
+        provider_key_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
+        project_id=UUID("550e8400-e29b-41d4-a716-446655440001"),
+        provider="openai",
+        created_at=datetime.now(),
+    )
+
+
+@pytest.fixture
+def mock_platform_provider(
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> PlatformProvider:
+    """Fixture to create a mock platform provider with OpenAI."""
+    with patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key") as mock_get_key:
+        mock_get_key.return_value = mock_decrypted_provider_key
+        provider = PlatformProvider(api_key=any_llm_key)
+        provider.provider = OpenaiProvider
+        return provider
+
+
+@pytest.fixture
+def mock_completion() -> ChatCompletion:
+    """Fixture for a mock ChatCompletion."""
+    return ChatCompletion(
+        id="chatcmpl-123",
+        model="gpt-4",
+        created=1234567890,
+        object="chat.completion",
+        choices=[
+            Choice(
+                index=0,
+                message=ChatCompletionMessage(role="assistant", content="Hello, world!"),
+                finish_reason="stop",
+            )
+        ],
+        usage=CompletionUsage(
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        ),
+    )
 
 
 def test_platform_key_valid_format() -> None:
@@ -127,33 +185,22 @@ def test_platform_key_completely_invalid() -> None:
 
 
 @patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
-def test_prepare_creates_provider(mock_get_decrypted_provider_key: Mock) -> None:
+def test_prepare_creates_provider(
+    mock_get_decrypted_provider_key: Mock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
     """Test proper initialization with an API key."""
-    from datetime import datetime
-    from uuid import UUID
+    mock_get_decrypted_provider_key.return_value = mock_decrypted_provider_key
 
-    from any_llm_platform_client import DecryptedProviderKey
-
-    mock_provider_key = "mock-provider-api-key"
-    mock_result = DecryptedProviderKey(
-        api_key=mock_provider_key,
-        provider_key_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
-        project_id=UUID("550e8400-e29b-41d4-a716-446655440001"),
-        provider="openai",
-        created_at=datetime.now(),
-    )
-    mock_get_decrypted_provider_key.return_value = mock_result
-    any_llm_key = "ANY.v1.kid123.fingerprint456-base64key"
-
-    provider_instance = PlatformProvider(
-        api_key=any_llm_key,
-    )
+    provider_instance = PlatformProvider(api_key=any_llm_key)
     provider_instance.provider = OpenaiProvider
 
     assert provider_instance.PROVIDER_NAME == "platform"
     assert provider_instance.provider.PROVIDER_NAME == "openai"
     assert provider_instance.provider_key_id == "550e8400-e29b-41d4-a716-446655440000"
     assert provider_instance.project_id == "550e8400-e29b-41d4-a716-446655440001"
+
     # Verify get_decrypted_provider_key was called
     call_args = mock_get_decrypted_provider_key.call_args
     assert call_args.kwargs["any_llm_key"] == any_llm_key
@@ -172,48 +219,15 @@ def test_prepare_creates_provider_without_api_key() -> None:
 async def test_acompletion_non_streaming_success(
     mock_post_usage: AsyncMock,
     mock_get_decrypted_provider_key: Mock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+    mock_completion: ChatCompletion,
 ) -> None:
     """Test that non-streaming completions correctly call the provider and post usage events."""
-    from datetime import datetime
-    from uuid import UUID
+    mock_get_decrypted_provider_key.return_value = mock_decrypted_provider_key
 
-    from any_llm_platform_client import DecryptedProviderKey
-
-    mock_provider_key = "mock-provider-api-key"
-    mock_result = DecryptedProviderKey(
-        api_key=mock_provider_key,
-        provider_key_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
-        project_id=UUID("550e8400-e29b-41d4-a716-446655440001"),
-        provider="openai",
-        created_at=datetime.now(),
-    )
-    mock_get_decrypted_provider_key.return_value = mock_result
-    any_llm_key = "ANY.v1.kid123.fingerprint456-base64key"
-
-    mock_completion = ChatCompletion(
-        id="chatcmpl-123",
-        model="gpt-4",
-        created=1234567890,
-        object="chat.completion",
-        choices=[
-            Choice(
-                index=0,
-                message=ChatCompletionMessage(role="assistant", content="Hello, world!"),
-                finish_reason="stop",
-            )
-        ],
-        usage=CompletionUsage(
-            prompt_tokens=10,
-            completion_tokens=5,
-            total_tokens=15,
-        ),
-    )
-
-    provider_instance = PlatformProvider(
-        api_key=any_llm_key,
-    )
+    provider_instance = PlatformProvider(api_key=any_llm_key)
     provider_instance.provider = OpenaiProvider
-
     provider_instance.provider._acompletion = AsyncMock(return_value=mock_completion)  # type: ignore[method-assign]
 
     # Create completion params
@@ -229,6 +243,7 @@ async def test_acompletion_non_streaming_success(
     # Assertions
     assert result == mock_completion
     provider_instance.provider._acompletion.assert_called_once_with(params=params)
+
     # Verify post_completion_usage_event was called with the platform_client instance
     call_args = mock_post_usage.call_args
     assert call_args.kwargs["client"] == provider_instance.client
@@ -245,23 +260,11 @@ async def test_acompletion_non_streaming_success(
 async def test_acompletion_streaming_success(
     mock_post_usage: AsyncMock,
     mock_get_decrypted_provider_key: Mock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
 ) -> None:
     """Test that streaming completions correctly wrap the iterator and track usage."""
-    from datetime import datetime
-    from uuid import UUID
-
-    from any_llm_platform_client import DecryptedProviderKey
-
-    mock_provider_key = "mock-provider-api-key"
-    mock_result = DecryptedProviderKey(
-        api_key=mock_provider_key,
-        provider_key_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
-        project_id=UUID("550e8400-e29b-41d4-a716-446655440001"),
-        provider="openai",
-        created_at=datetime.now(),
-    )
-    mock_get_decrypted_provider_key.return_value = mock_result
-    any_llm_key = "ANY.v1.kid123.fingerprint456-base64key"
+    mock_get_decrypted_provider_key.return_value = mock_decrypted_provider_key
 
     # Create mock streaming chunks
     mock_chunks = [
@@ -858,23 +861,11 @@ async def test_post_completion_usage_event_skips_when_no_usage() -> None:
 async def test_streaming_performance_metrics_tracking(
     mock_post_usage: AsyncMock,
     mock_get_decrypted_provider_key: Mock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
 ) -> None:
     """Test that streaming completions correctly track performance metrics."""
-    from datetime import datetime
-    from uuid import UUID
-
-    from any_llm_platform_client import DecryptedProviderKey
-
-    mock_provider_key = "mock-provider-api-key"
-    mock_result = DecryptedProviderKey(
-        api_key=mock_provider_key,
-        provider_key_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
-        project_id=UUID("550e8400-e29b-41d4-a716-446655440001"),
-        provider="openai",
-        created_at=datetime.now(),
-    )
-    mock_get_decrypted_provider_key.return_value = mock_result
-    any_llm_key = "ANY.v1.kid123.fingerprint456-base64key"
+    mock_get_decrypted_provider_key.return_value = mock_decrypted_provider_key
 
     # Create mock streaming chunks with content
     mock_chunks = [
@@ -985,42 +976,12 @@ async def test_streaming_performance_metrics_tracking(
 async def test_non_streaming_includes_total_duration(
     mock_post_usage: AsyncMock,
     mock_get_decrypted_provider_key: Mock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+    mock_completion: ChatCompletion,
 ) -> None:
     """Test that non-streaming completions include total_duration_ms metric."""
-    from datetime import datetime
-    from uuid import UUID
-
-    from any_llm_platform_client import DecryptedProviderKey
-
-    mock_provider_key = "mock-provider-api-key"
-    mock_result = DecryptedProviderKey(
-        api_key=mock_provider_key,
-        provider_key_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
-        project_id=UUID("550e8400-e29b-41d4-a716-446655440001"),
-        provider="openai",
-        created_at=datetime.now(),
-    )
-    mock_get_decrypted_provider_key.return_value = mock_result
-    any_llm_key = "ANY.v1.kid123.fingerprint456-base64key"
-
-    mock_completion = ChatCompletion(
-        id="chatcmpl-123",
-        model="gpt-4",
-        created=1234567890,
-        object="chat.completion",
-        choices=[
-            Choice(
-                index=0,
-                message=ChatCompletionMessage(role="assistant", content="Hello, world!"),
-                finish_reason="stop",
-            )
-        ],
-        usage=CompletionUsage(
-            prompt_tokens=10,
-            completion_tokens=5,
-            total_tokens=15,
-        ),
-    )
+    mock_get_decrypted_provider_key.return_value = mock_decrypted_provider_key
 
     provider_instance = PlatformProvider(
         api_key=any_llm_key,

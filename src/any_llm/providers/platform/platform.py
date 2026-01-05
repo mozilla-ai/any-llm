@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import statistics
 import time
 from typing import TYPE_CHECKING, Any, cast
 
@@ -125,7 +126,6 @@ class PlatformProvider(AnyLLM):
         chunks: list[ChatCompletionChunk] = []
         time_to_first_token_ms: float | None = None
         time_to_last_content_token_ms: float | None = None
-        output_tokens = 0
         chunk_latencies: list[float] = []
         previous_chunk_time: float | None = None
 
@@ -146,7 +146,6 @@ class PlatformProvider(AnyLLM):
 
             # Count tokens as we stream and track last content token time
             if chunk.choices and chunk.choices[0].delta.content:
-                output_tokens += 1
                 time_to_last_content_token_ms = (current_time - start_time) * 1000
 
             yield chunk
@@ -189,9 +188,7 @@ class PlatformProvider(AnyLLM):
 
             # Calculate inter-chunk latency variance
             if len(chunk_latencies) > 1:
-                mean_latency = sum(chunk_latencies) / len(chunk_latencies)
-                variance = sum((x - mean_latency) ** 2 for x in chunk_latencies) / len(chunk_latencies)
-                inter_chunk_latency_variance_ms = variance
+                inter_chunk_latency_variance_ms = statistics.variance(chunk_latencies)
             await post_completion_usage_event(
                 platform_client=self.platform_client,
                 client=self.client,
