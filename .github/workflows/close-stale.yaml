@@ -1,0 +1,23 @@
+name: 'Close stale PRs'
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v10
+        with:
+          stale-pr-message: 'This PR is stale because it has been open 7 days with no activity. Remove stale label or comment or this will be closed in 3 days.'
+          close-pr-message: 'This PR was closed because it has been stalled for 3 days with no activity.'
+          days-before-issue-stale: -1
+          days-before-issue-close: -1
+          days-before-pr-stale: 10
+          days-before-pr-close: 5
