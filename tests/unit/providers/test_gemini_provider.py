@@ -603,3 +603,38 @@ def test_convert_messages_parallel_tool_calls_only_first_gets_skip_sentinel() ->
     assert assistant_message.parts[0].thought_signature is not None
     # Second tool call should have None (no sentinel)
     assert assistant_message.parts[1].thought_signature is None
+
+
+def test_streaming_chunk_includes_tool_calls() -> None:
+    """Test that streaming chunks correctly include tool calls when present."""
+    from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
+
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    # Create a mock function call
+    mock_function_call = Mock()
+    mock_function_call.name = "get_weather"
+    mock_function_call.args = {"location": "Tokyo"}
+
+    mock_part = Mock()
+    mock_part.function_call = mock_function_call
+    mock_part.thought = None
+    mock_part.text = None
+
+    mock_response.candidates[0].content.parts = [mock_part]
+    mock_response.candidates[0].finish_reason = Mock()
+    mock_response.candidates[0].finish_reason.value = None
+    mock_response.model_version = "gemini-2.0-flash"
+    mock_response.usage_metadata = None
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    # Verify tool calls are present in the streaming chunk
+    assert chunk.choices[0].delta.tool_calls is not None
+    assert len(chunk.choices[0].delta.tool_calls) == 1
+    assert chunk.choices[0].delta.tool_calls[0].function.name == "get_weather"
+    assert chunk.choices[0].delta.tool_calls[0].function.arguments == '{"location": "Tokyo"}'
+    assert chunk.choices[0].finish_reason == "tool_calls"
+
