@@ -18,6 +18,6 @@ class AzureopenaiProvider(BaseOpenAIProvider):
             kwargs = {}
         client: AsyncAzureOpenAI = AsyncAzureOpenAI(azure_endpoint=api_base,
                                                     api_key=api_key,
-                                                    api_version=kwargs.pop('api-version', 'preview'),
+                                                    api_version=kwargs.pop('api_version', 'preview'),
                                                     **kwargs)
         self.client = client
