@@ -56,7 +56,7 @@ class WatsonxProvider(AnyLLM):
         converted_params = params.model_dump(
             exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}
         )
-        if converted_params.get("reasoning_effort") == "auto":
+        if converted_params.get("reasoning_effort") in ("auto", "none"):
             converted_params.pop("reasoning_effort")
         converted_params.update(kwargs)
         return converted_params
@@ -127,7 +127,7 @@ class WatsonxProvider(AnyLLM):
         if isinstance(response_format, type) and issubclass(response_format, BaseModel):
             params.messages = _convert_pydantic_to_watsonx_json(response_format, params.messages)
 
-        if params.reasoning_effort == "auto":
+        if params.reasoning_effort in ("auto", "none"):
             params.reasoning_effort = None
 
         completion_kwargs = self._convert_completion_params(params, **kwargs)

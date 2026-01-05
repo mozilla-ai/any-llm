@@ -79,6 +79,8 @@ Usage = OpenAIUsage
 ChoiceDeltaToolCall = OpenAIChoiceDeltaToolCall
 ChoiceDeltaToolCallFunction = OpenAIChoiceDeltaToolCallFunction
 
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "auto"]
+
 
 class CompletionParams(BaseModel):
     """Normalized parameters for chat completions.
@@ -160,5 +162,5 @@ class CompletionParams(BaseModel):
     max_completion_tokens: int | None = None
     """Maximum number of tokens for the completion (provider-dependent)"""
 
-    reasoning_effort: Literal["minimal", "low", "medium", "high", "auto"] | None = "auto"
+    reasoning_effort: ReasoningEffort | None = "auto"
     """Reasoning effort level for models that support it. "auto" will map to each provider's default."""

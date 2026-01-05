@@ -57,7 +57,7 @@ class TogetherProvider(AnyLLM):
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Together API."""
         converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
-        if converted_params.get("reasoning_effort") == "auto":
+        if converted_params.get("reasoning_effort") in ("auto", "none"):
             converted_params.pop("reasoning_effort")
         if (
             params.response_format is not None

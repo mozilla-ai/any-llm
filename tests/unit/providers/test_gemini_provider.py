@@ -185,6 +185,7 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
     "reasoning_effort",
     [
         None,
+        "none",
         "low",
         "medium",
         "high",
@@ -192,7 +193,7 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
 )
 @pytest.mark.asyncio
 async def test_completion_with_custom_reasoning_effort(
-    reasoning_effort: Literal["low", "medium", "high"] | None,
+    reasoning_effort: Literal["none", "low", "medium", "high"] | None,
 ) -> None:
     api_key = "test-api-key"
     model = "model-id"
@@ -204,7 +205,7 @@ async def test_completion_with_custom_reasoning_effort(
             CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort)
         )
 
-        if reasoning_effort is None:
+        if reasoning_effort is None or reasoning_effort == "none":
             expected_thinking = types.ThinkingConfig(include_thoughts=False)
         else:
             expected_thinking = types.ThinkingConfig(

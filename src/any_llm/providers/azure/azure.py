@@ -133,7 +133,7 @@ class AzureProvider(AnyLLM):
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to Azure AI Inference format."""
-        if params.reasoning_effort == "auto":
+        if params.reasoning_effort in ("auto", "none"):
             params.reasoning_effort = None
 
         azure_response_format = None

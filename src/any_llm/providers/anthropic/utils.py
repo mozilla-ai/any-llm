@@ -350,9 +350,8 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
     if params.tool_choice or params.parallel_tool_calls:
         params.tool_choice = _convert_tool_choice(params)
 
-    if params.reasoning_effort is None:
+    if params.reasoning_effort is None or params.reasoning_effort == "none":
         result_kwargs["thinking"] = {"type": "disabled"}
-    # in "auto" mode, we just don't pass `thinking`
     elif params.reasoning_effort != "auto":
         result_kwargs["thinking"] = {
             "type": "enabled",

@@ -99,7 +99,7 @@ def _convert_params(params: CompletionParams, **kwargs: dict[str, Any]) -> dict[
     # timeout is passed to the client instantiation, should not reach the `client.chat_completion` call.
     result_kwargs.pop("timeout", None)
 
-    if params.reasoning_effort == "auto":
+    if params.reasoning_effort in ("auto", "none"):
         params.reasoning_effort = None
 
     if params.response_format is not None:
