@@ -30,4 +30,3 @@
 [ ] I have run and verified that any AI created tests pass locally
 
 Optional: We're interested in hearing about your setup! What LLM are you using (e.g. Opus 4.5, GPT-5, Minimax), and inside of which IDE (Claude Code, VsCode, OpenCode, etc)
-
