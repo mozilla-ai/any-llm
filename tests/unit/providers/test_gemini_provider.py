@@ -637,4 +637,3 @@ def test_streaming_chunk_includes_tool_calls() -> None:
     assert chunk.choices[0].delta.tool_calls[0].function.name == "get_weather"
     assert chunk.choices[0].delta.tool_calls[0].function.arguments == '{"location": "Tokyo"}'
     assert chunk.choices[0].finish_reason == "tool_calls"
-
