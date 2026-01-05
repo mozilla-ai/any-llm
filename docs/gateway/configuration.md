@@ -25,7 +25,7 @@ database_url: "postgresql://gateway:gateway@localhost:5432/gateway_db"
 #Master key for admin access
 master_key: "your-secure-master-key"
 
-## LLM Provider Credentials 
+## LLM Provider Credentials
 providers:
   openai:
     api_key: "${OPENAI_API_KEY}"
@@ -93,14 +93,35 @@ curl -X POST http://localhost:8000/v1/pricing \
   }'
 ```
 
-This is useful for:  
-- Updating pricing without restarting the gateway  
-- Managing pricing in production environments  
-- Adjusting rates as provider pricing changes  
+This is useful for:
+- Updating pricing without restarting the gateway
+- Managing pricing in production environments
+- Adjusting rates as provider pricing changes
 
-**Important notes:**  
-- Database pricing takes precedence - config only sets initial values  
+**Important notes:**
+- Database pricing takes precedence - config only sets initial values
 - If pricing for the model already exists in the database, config values are ignored (with a warning logged)
+
+## Provider Client Args
+
+You can set additional arguments to provider clients via the `client_args` configuration. These arguments are passed directly to the provider's client initialization, enabling custom headers, timeouts, and other provider-specific options.
+
+```yaml
+providers:
+  openai:
+    api_key: "${OPENAI_API_KEY}"
+    client_args:
+      custom_headers:
+        X-Custom-Header: "custom-value"
+      timeout: 60
+```
+
+Common use cases:
+- **Custom headers**: Pass additional headers to the provider (e.g., for proxy authentication or request tracing)
+- **Timeouts**: Configure connection and request timeouts
+- **Provider-specific options**: Pass any additional arguments supported by the provider's client
+
+The available `client_args` options depend on the provider. See the [any-llm provider documentation](https://mozilla-ai.github.io/any-llm/providers/) for provider-specific options.
 
 ## Next Steps
 
