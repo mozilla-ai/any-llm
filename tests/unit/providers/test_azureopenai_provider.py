@@ -49,8 +49,8 @@ async def test_azureopenai_default_query_with_existing_kwargs() -> None:
 
 @pytest.mark.asyncio
 async def test_init_client_with_api_version():
-    api_key = "test-azure-api-key"
-    api_base = "https://example.openai.azure.com/"
+    api_key = "test-api-key"
+    api_base = "https://test.openai.azure.com"
     api_version = "2024-02-01"
 
     # Patch AsyncAzureOpenAI, because _init_client instantiates it
@@ -127,7 +127,7 @@ async def verify_model_response(generator, expected_chunks: List[dict]) -> None:
 @pytest.mark.asyncio
 async def test_acompletion_with_valid_mocked_chunk():
     api_key = "test-api-key"
-    api_base = "https://example.openai.azure.com/"
+    api_base = "https://test.openai.azure.com"
     messages = [{"role": "user", "content": "Hello"}]
 
     # Correct mock chunk
