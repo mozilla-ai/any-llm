@@ -79,6 +79,17 @@ def mock_completion() -> ChatCompletion:
     )
 
 
+@pytest.fixture
+def mock_platform_client() -> Mock:
+    """Fixture for a mock AnyLLMPlatformClient."""
+    from any_llm_platform_client import AnyLLMPlatformClient
+
+    mock_client = Mock(spec=AnyLLMPlatformClient)
+    mock_client.aget_solved_challenge = AsyncMock(return_value=UUID("550e8400-e29b-41d4-a716-446655440000"))
+    mock_client.get_public_key = Mock(return_value="mock-public-key")
+    return mock_client
+
+
 def test_platform_key_valid_format() -> None:
     """Test that PlatformKey accepts valid API key formats."""
     valid_keys = [
@@ -360,42 +371,13 @@ async def test_acompletion_streaming_success(
 
 
 @pytest.mark.asyncio
-async def test_post_completion_usage_event_success() -> None:
+async def test_post_completion_usage_event_success(
+    mock_platform_client: Mock,
+    mock_completion: ChatCompletion,
+) -> None:
     """Test successful posting of completion usage event."""
-    from uuid import UUID
-
-    from any_llm_platform_client import AnyLLMPlatformClient
-
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
-    solved_challenge_uuid = "550e8400-e29b-41d4-a716-446655440000"
     provider_key_id = UUID("550e8400-e29b-41d4-a716-446655440002")
-
-    # Create mock completion
-    completion = ChatCompletion(
-        id="chatcmpl-123",
-        model="gpt-4",
-        created=1234567890,
-        object="chat.completion",
-        choices=[
-            Choice(
-                index=0,
-                message=ChatCompletionMessage(role="assistant", content="Hello, world!"),
-                finish_reason="stop",
-            )
-        ],
-        usage=CompletionUsage(
-            prompt_tokens=10,
-            completion_tokens=5,
-            total_tokens=15,
-        ),
-    )
-
-    # Create mock client instance
-    mock_platform_client = Mock(spec=AnyLLMPlatformClient)
-
-    # Mock async methods with AsyncMock
-    mock_platform_client.aget_solved_challenge = AsyncMock(return_value=UUID(solved_challenge_uuid))
-    mock_platform_client.get_public_key = Mock(return_value="mock-public-key")
 
     # Create mock httpx client
     mock_response = Mock()
@@ -410,7 +392,7 @@ async def test_post_completion_usage_event_success() -> None:
         client=client,
         any_llm_key=any_llm_key,
         provider="openai",
-        completion=completion,
+        completion=mock_completion,
         provider_key_id=str(provider_key_id),
     )
 
@@ -436,43 +418,14 @@ async def test_post_completion_usage_event_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_post_completion_usage_event_with_client_name() -> None:
+async def test_post_completion_usage_event_with_client_name(
+    mock_platform_client: Mock,
+    mock_completion: ChatCompletion,
+) -> None:
     """Test posting completion usage event with client_name included."""
-    from uuid import UUID
-
-    from any_llm_platform_client import AnyLLMPlatformClient
-
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
-    solved_challenge_uuid = "550e8400-e29b-41d4-a716-446655440000"
     provider_key_id = UUID("550e8400-e29b-41d4-a716-446655440002")
     client_name = "my-test-client"
-
-    # Create mock completion
-    completion = ChatCompletion(
-        id="chatcmpl-123",
-        model="gpt-4",
-        created=1234567890,
-        object="chat.completion",
-        choices=[
-            Choice(
-                index=0,
-                message=ChatCompletionMessage(role="assistant", content="Hello!"),
-                finish_reason="stop",
-            )
-        ],
-        usage=CompletionUsage(
-            prompt_tokens=10,
-            completion_tokens=5,
-            total_tokens=15,
-        ),
-    )
-
-    # Create mock client instance
-    mock_platform_client = Mock(spec=AnyLLMPlatformClient)
-
-    # Mock async methods with AsyncMock
-    mock_platform_client.aget_solved_challenge = AsyncMock(return_value=UUID(solved_challenge_uuid))
-    mock_platform_client.get_public_key = Mock(return_value="mock-public-key")
 
     # Create mock httpx client
     mock_response = Mock()
@@ -487,7 +440,7 @@ async def test_post_completion_usage_event_with_client_name() -> None:
         client=client,
         any_llm_key=any_llm_key,
         provider="openai",
-        completion=completion,
+        completion=mock_completion,
         provider_key_id=str(provider_key_id),
         client_name=client_name,
     )
@@ -608,40 +561,13 @@ def test_anyllm_instantiation_with_non_platform_key(
 
 
 @pytest.mark.asyncio
-async def test_post_completion_usage_event_with_performance_metrics() -> None:
+async def test_post_completion_usage_event_with_performance_metrics(
+    mock_platform_client: Mock,
+    mock_completion: ChatCompletion,
+) -> None:
     """Test posting completion usage event with performance metrics included."""
-    from uuid import UUID
-
-    from any_llm_platform_client import AnyLLMPlatformClient
-
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
-    solved_challenge_uuid = "550e8400-e29b-41d4-a716-446655440000"
     provider_key_id = UUID("550e8400-e29b-41d4-a716-446655440002")
-
-    # Create mock completion
-    completion = ChatCompletion(
-        id="chatcmpl-123",
-        model="gpt-4",
-        created=1234567890,
-        object="chat.completion",
-        choices=[
-            Choice(
-                index=0,
-                message=ChatCompletionMessage(role="assistant", content="Hello, world!"),
-                finish_reason="stop",
-            )
-        ],
-        usage=CompletionUsage(
-            prompt_tokens=10,
-            completion_tokens=5,
-            total_tokens=15,
-        ),
-    )
-
-    # Create mock client instance
-    mock_platform_client = Mock(spec=AnyLLMPlatformClient)
-    mock_platform_client.aget_solved_challenge = AsyncMock(return_value=UUID(solved_challenge_uuid))
-    mock_platform_client.get_public_key = Mock(return_value="mock-public-key")
 
     # Create mock httpx client
     mock_response = Mock()
@@ -656,7 +582,7 @@ async def test_post_completion_usage_event_with_performance_metrics() -> None:
         client=client,
         any_llm_key=any_llm_key,
         provider="openai",
-        completion=completion,
+        completion=mock_completion,
         provider_key_id=str(provider_key_id),
         time_to_first_token_ms=50.0,
         time_to_last_token_ms=200.0,
@@ -687,38 +613,13 @@ async def test_post_completion_usage_event_with_performance_metrics() -> None:
 
 
 @pytest.mark.asyncio
-async def test_post_completion_usage_event_with_partial_performance_metrics() -> None:
+async def test_post_completion_usage_event_with_partial_performance_metrics(
+    mock_platform_client: Mock,
+    mock_completion: ChatCompletion,
+) -> None:
     """Test posting completion usage event with only some performance metrics."""
-    from uuid import UUID
-
-    from any_llm_platform_client import AnyLLMPlatformClient
-
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
-    solved_challenge_uuid = "550e8400-e29b-41d4-a716-446655440000"
     provider_key_id = UUID("550e8400-e29b-41d4-a716-446655440002")
-
-    completion = ChatCompletion(
-        id="chatcmpl-123",
-        model="gpt-4",
-        created=1234567890,
-        object="chat.completion",
-        choices=[
-            Choice(
-                index=0,
-                message=ChatCompletionMessage(role="assistant", content="Hello"),
-                finish_reason="stop",
-            )
-        ],
-        usage=CompletionUsage(
-            prompt_tokens=10,
-            completion_tokens=5,
-            total_tokens=15,
-        ),
-    )
-
-    mock_platform_client = Mock(spec=AnyLLMPlatformClient)
-    mock_platform_client.aget_solved_challenge = AsyncMock(return_value=UUID(solved_challenge_uuid))
-    mock_platform_client.get_public_key = Mock(return_value="mock-public-key")
 
     mock_response = Mock()
     mock_response.raise_for_status = Mock()
@@ -732,7 +633,7 @@ async def test_post_completion_usage_event_with_partial_performance_metrics() ->
         client=client,
         any_llm_key=any_llm_key,
         provider="openai",
-        completion=completion,
+        completion=mock_completion,
         provider_key_id=str(provider_key_id),
         total_duration_ms=250.0,
         tokens_per_second=25.0,
@@ -751,38 +652,13 @@ async def test_post_completion_usage_event_with_partial_performance_metrics() ->
 
 
 @pytest.mark.asyncio
-async def test_post_completion_usage_event_without_performance_metrics() -> None:
+async def test_post_completion_usage_event_without_performance_metrics(
+    mock_platform_client: Mock,
+    mock_completion: ChatCompletion,
+) -> None:
     """Test posting completion usage event without any performance metrics."""
-    from uuid import UUID
-
-    from any_llm_platform_client import AnyLLMPlatformClient
-
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
-    solved_challenge_uuid = "550e8400-e29b-41d4-a716-446655440000"
     provider_key_id = UUID("550e8400-e29b-41d4-a716-446655440002")
-
-    completion = ChatCompletion(
-        id="chatcmpl-123",
-        model="gpt-4",
-        created=1234567890,
-        object="chat.completion",
-        choices=[
-            Choice(
-                index=0,
-                message=ChatCompletionMessage(role="assistant", content="Hello"),
-                finish_reason="stop",
-            )
-        ],
-        usage=CompletionUsage(
-            prompt_tokens=10,
-            completion_tokens=5,
-            total_tokens=15,
-        ),
-    )
-
-    mock_platform_client = Mock(spec=AnyLLMPlatformClient)
-    mock_platform_client.aget_solved_challenge = AsyncMock(return_value=UUID(solved_challenge_uuid))
-    mock_platform_client.get_public_key = Mock(return_value="mock-public-key")
 
     mock_response = Mock()
     mock_response.raise_for_status = Mock()
@@ -796,7 +672,7 @@ async def test_post_completion_usage_event_without_performance_metrics() -> None
         client=client,
         any_llm_key=any_llm_key,
         provider="openai",
-        completion=completion,
+        completion=mock_completion,
         provider_key_id=str(provider_key_id),
     )
 
@@ -807,14 +683,11 @@ async def test_post_completion_usage_event_without_performance_metrics() -> None
 
 
 @pytest.mark.asyncio
-async def test_post_completion_usage_event_skips_when_no_usage() -> None:
+async def test_post_completion_usage_event_skips_when_no_usage(
+    mock_platform_client: Mock,
+) -> None:
     """Test that post_completion_usage_event returns early when completion has no usage data."""
-    from uuid import UUID
-
-    from any_llm_platform_client import AnyLLMPlatformClient
-
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
-    solved_challenge_uuid = "550e8400-e29b-41d4-a716-446655440000"
 
     # Create completion without usage data
     completion = ChatCompletion(
@@ -831,10 +704,6 @@ async def test_post_completion_usage_event_skips_when_no_usage() -> None:
         ],
         usage=None,
     )
-
-    mock_platform_client = Mock(spec=AnyLLMPlatformClient)
-    mock_platform_client.aget_solved_challenge = AsyncMock(return_value=UUID(solved_challenge_uuid))
-    mock_platform_client.get_public_key = Mock(return_value="mock-public-key")
 
     client = AsyncMock(spec=httpx.AsyncClient)
     client.post = AsyncMock()
