@@ -121,6 +121,8 @@ async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
 
         call_kwargs = mock_model_instance.achat.call_args[1]
         assert "reasoning_effort" not in call_kwargs.get("params", {})
+
+
 def test_convert_streaming_chunk_with_tool_calls() -> None:
     """Test streaming chunk conversion with tool calls."""
     chunk = {

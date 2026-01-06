@@ -75,3 +75,32 @@ async def test_completion_with_response_format_basemodel() -> None:
                 },
             },
         }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reasoning_effort", ["auto", "none"])
+async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
+    """Test that reasoning_effort 'auto' and 'none' are filtered from Groq API calls."""
+    pytest.importorskip("groq")
+    from any_llm.providers.groq.groq import GroqProvider
+
+    with (
+        patch("any_llm.providers.groq.groq.AsyncGroq") as mocked_groq,
+        patch("any_llm.providers.groq.groq.to_chat_completion") as mocked_to_chat_completion,
+    ):
+        provider = GroqProvider(api_key="test-api-key")
+
+        mock_response = Mock()
+        mocked_groq.return_value.chat.completions.create = AsyncMock(return_value=mock_response)
+        mocked_to_chat_completion.return_value = mock_response
+
+        await provider._acompletion(
+            CompletionParams(
+                model_id="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort=reasoning_effort,  # type: ignore[arg-type]
+            ),
+        )
+
+        call_kwargs = mocked_groq.return_value.chat.completions.create.call_args[1]
+        assert "reasoning_effort" not in call_kwargs

@@ -1,6 +1,6 @@
 from datetime import datetime
-from unittest.mock import AsyncMock, Mock, patch
 from typing import Any
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
@@ -112,6 +112,8 @@ async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
 
         call_kwargs = mock_client.chat.completions.create.call_args[1]
         assert "reasoning_effort" not in call_kwargs
+
+
 def test_create_openai_chunk_with_tool_calls_dict_format() -> None:
     """Test handling tool calls in dict format."""
     tool_call_dict = {
