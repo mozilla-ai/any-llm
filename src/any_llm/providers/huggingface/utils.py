@@ -64,7 +64,7 @@ def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletion
             openai_tool_calls = []
             for idx, tc in enumerate(hf_delta.tool_calls):
                 tc_id = tc.id or f"call_{uuid.uuid4()}"
-                tc_index = tc.index or idx
+                tc_index = tc.index if tc.index is not None else idx
                 func = tc.function
                 name = func.name if func else ""
                 arguments = func.arguments if func else ""
