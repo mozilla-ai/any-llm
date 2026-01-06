@@ -80,7 +80,7 @@ def _convert_streaming_chunk(chunk: dict[str, Any]) -> ChatCompletionChunk:
             for idx, tc in enumerate(tool_calls_data):
                 tc_id = tc.get("id") or f"call_{uuid.uuid4()}"
                 tc_index = tc.get("index") if tc.get("index") is not None else idx
-                func = tc.get("function", {})
+                func = tc.get("function") or {}
                 openai_tool_calls.append(
                     ChoiceDeltaToolCall(
                         index=tc_index,

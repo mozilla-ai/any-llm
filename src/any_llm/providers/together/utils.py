@@ -44,12 +44,14 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
                 if isinstance(tool_call, dict):
                     func = tool_call.get("function", {})
                     tc_id = tool_call.get("id") or str(uuid.uuid4())
-                    tc_index = tool_call.get("index", idx)
+                    raw_index = tool_call.get("index")
+                    tc_index = raw_index if raw_index is not None else idx
                     name = func.get("name", "")
                     arguments = func.get("arguments", "")
                 else:
                     tc_id = getattr(tool_call, "id", None) or str(uuid.uuid4())
-                    tc_index = getattr(tool_call, "index", idx)
+                    raw_index = getattr(tool_call, "index", None)
+                    tc_index = raw_index if raw_index is not None else idx
                     func = getattr(tool_call, "function", None)
                     name = getattr(func, "name", "") if func else ""
                     arguments = getattr(func, "arguments", "") if func else ""
