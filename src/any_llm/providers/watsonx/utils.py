@@ -10,6 +10,8 @@ from any_llm.types.completion import (
     ChatCompletionMessage,
     Choice,
     ChoiceDelta,
+    ChoiceDeltaToolCall,
+    ChoiceDeltaToolCallFunction,
     ChunkChoice,
     CompletionUsage,
 )
@@ -71,6 +73,26 @@ def _convert_streaming_chunk(chunk: dict[str, Any]) -> ChatCompletionChunk:
             openai_role = cast("Literal['developer', 'system', 'user', 'assistant', 'tool']", role)
 
         delta = ChoiceDelta(content=content, role=openai_role)
+
+        tool_calls_data = delta_data.get("tool_calls")
+        if tool_calls_data:
+            openai_tool_calls = []
+            for idx, tc in enumerate(tool_calls_data):
+                tc_id = tc.get("id", f"call_{uuid.uuid4()}")
+                tc_index = tc.get("index", idx)
+                func = tc.get("function", {})
+                openai_tool_calls.append(
+                    ChoiceDeltaToolCall(
+                        index=tc_index,
+                        id=tc_id,
+                        type="function",
+                        function=ChoiceDeltaToolCallFunction(
+                            name=func.get("name", ""),
+                            arguments=func.get("arguments", ""),
+                        ),
+                    )
+                )
+            delta.tool_calls = openai_tool_calls
 
         choice = ChunkChoice(
             index=i,

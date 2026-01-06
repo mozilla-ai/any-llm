@@ -1,7 +1,7 @@
 import base64
 import json
 from time import time
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from google.genai import types
 from google.genai.pagers import Pager
@@ -274,7 +274,6 @@ def _create_openai_chunk_from_google_chunk(
         if part.thought:
             reasoning_content += part.text or ""
         elif function_call := getattr(part, "function_call", None):
-            # Build tool call similar to non-streaming version
             args_dict = {}
             if args := getattr(function_call, "args", None):
                 for key, value in args.items():
@@ -291,11 +290,11 @@ def _create_openai_chunk_from_google_chunk(
                     ),
                 )
             )
-        else:
-            content += part.text or ""
+        elif part.text:
+            content += part.text
 
     # Determine finish_reason based on what we found
-    finish_reason = None
+    finish_reason: Literal["stop", "length", "tool_calls", "content_filter", "function_call"] | None = None
     if tool_calls_list:
         finish_reason = "tool_calls"
     elif getattr(candidate.finish_reason, "value", None) == "STOP":
@@ -308,13 +307,13 @@ def _create_openai_chunk_from_google_chunk(
         tool_calls=tool_calls_list if tool_calls_list else None,
     )
 
+    if tool_calls_list:
+        delta.tool_calls = tool_calls_list
+
     choice = ChunkChoice(
         index=0,
         delta=delta,
-        finish_reason=cast(
-            "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call'] | None",
-            finish_reason,
-        ),
+        finish_reason=finish_reason,
     )
 
     usage = None

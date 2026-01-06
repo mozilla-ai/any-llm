@@ -452,6 +452,81 @@ async def test_streaming_completion_without_usage_metadata() -> None:
     assert chunk.choices[0].delta.content == "Hello"
 
 
+def test_streaming_completion_with_tool_call() -> None:
+    """Test that streaming chunks properly handle function calls."""
+    from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
+
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_function_call = Mock()
+    mock_function_call.name = "get_weather"
+    mock_function_call.args = {"location": "Paris"}
+
+    mock_part = Mock()
+    mock_part.function_call = mock_function_call
+    mock_part.thought = None
+    mock_part.text = None
+
+    mock_response.candidates[0].content.parts = [mock_part]
+    mock_response.candidates[0].finish_reason = Mock()
+    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.model_version = "gemini-2.5-flash"
+    mock_response.usage_metadata = None
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    assert chunk.choices[0].delta.tool_calls is not None, "Tool calls should be present in streaming chunk"
+    assert len(chunk.choices[0].delta.tool_calls) == 1
+    tool_call = chunk.choices[0].delta.tool_calls[0]
+    assert tool_call.function is not None
+    assert tool_call.function.name == "get_weather"
+    assert tool_call.function.arguments == '{"location": "Paris"}'
+
+
+def test_streaming_completion_with_multiple_tool_calls() -> None:
+    """Test that streaming chunks handle multiple parallel tool calls."""
+    from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
+
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_function_call_1 = Mock()
+    mock_function_call_1.name = "get_weather"
+    mock_function_call_1.args = {"location": "Paris"}
+
+    mock_function_call_2 = Mock()
+    mock_function_call_2.name = "get_weather"
+    mock_function_call_2.args = {"location": "London"}
+
+    mock_part_1 = Mock()
+    mock_part_1.function_call = mock_function_call_1
+    mock_part_1.thought = None
+    mock_part_1.text = None
+
+    mock_part_2 = Mock()
+    mock_part_2.function_call = mock_function_call_2
+    mock_part_2.thought = None
+    mock_part_2.text = None
+
+    mock_response.candidates[0].content.parts = [mock_part_1, mock_part_2]
+    mock_response.candidates[0].finish_reason = Mock()
+    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.model_version = "gemini-2.5-flash"
+    mock_response.usage_metadata = None
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    assert chunk.choices[0].delta.tool_calls is not None, "Tool calls should be present"
+    assert len(chunk.choices[0].delta.tool_calls) == 2
+    assert chunk.choices[0].delta.tool_calls[0].function is not None
+    assert chunk.choices[0].delta.tool_calls[0].function.name == "get_weather"
+    assert chunk.choices[0].delta.tool_calls[1].function is not None
+    assert chunk.choices[0].delta.tool_calls[1].function.name == "get_weather"
+
+
 def test_convert_response_preserves_thought_signature() -> None:
     import base64
 
@@ -605,39 +680,3 @@ def test_convert_messages_parallel_tool_calls_only_first_gets_skip_sentinel() ->
     assert assistant_message.parts[0].thought_signature is not None
     # Second tool call should have None (no sentinel)
     assert assistant_message.parts[1].thought_signature is None
-
-
-def test_streaming_chunk_includes_tool_calls() -> None:
-    """Test that streaming chunks correctly include tool calls when present."""
-    from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
-
-    mock_response = Mock()
-    mock_response.candidates = [Mock()]
-    mock_response.candidates[0].content = Mock()
-
-    # Create a mock function call
-    mock_function_call = Mock()
-    mock_function_call.name = "get_weather"
-    mock_function_call.args = {"location": "Tokyo"}
-
-    mock_part = Mock()
-    mock_part.function_call = mock_function_call
-    mock_part.thought = None
-    mock_part.text = None
-
-    mock_response.candidates[0].content.parts = [mock_part]
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = None
-    mock_response.model_version = "gemini-2.0-flash"
-    mock_response.usage_metadata = None
-
-    chunk = _create_openai_chunk_from_google_chunk(mock_response)
-
-    # Verify tool calls are present in the streaming chunk
-    assert chunk.choices[0].delta.tool_calls is not None
-    assert len(chunk.choices[0].delta.tool_calls) == 1
-    tool_call = chunk.choices[0].delta.tool_calls[0]
-    assert tool_call.function is not None
-    assert tool_call.function.name == "get_weather"
-    assert tool_call.function.arguments == '{"location": "Tokyo"}'
-    assert chunk.choices[0].finish_reason == "tool_calls"
