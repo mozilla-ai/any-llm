@@ -1,16 +1,39 @@
-## Quickstart
+---
+schema:
+  type: "HowTo"
+  name: "How to Install and Use any-llm"
+  description: "Step-by-step guide to installing any-llm and making your first API call with Python"
+  totalTime: "PT5M"
+  tool:
+    - "Python 3.11 or newer"
+    - "pip package manager"
+  supply:
+    - "API key from your chosen LLM provider"
+  steps:
+    - name: "Install any-llm"
+      text: "Install any-llm with your chosen providers using pip. Use the all option to install support for all providers."
+      url: "https://mozilla-ai.github.io/any-llm/quickstart/#installation"
+    - name: "Set up API keys"
+      text: "Configure your provider's API key as an environment variable. Make sure you have the appropriate environment variable set for your chosen provider."
+      url: "https://mozilla-ai.github.io/any-llm/quickstart/#api-keys"
+    - name: "Make your first completion call"
+      text: "Import the completion function from any-llm and create your first API call with your chosen model and provider"
+      url: "https://mozilla-ai.github.io/any-llm/quickstart/#your-first-api-call"
+---
 
-### Requirements
+
+## Requirements
 
 - Python 3.11 or newer
 - API keys for your chosen LLM provider
 
-### Installation
+## Installation
+
 ```bash
 pip install any-llm-sdk[all]  # Install with all provider support
 ```
 
-#### Installing Specific Providers
+### Installing Specific Providers
 
 If you want to install a specific provider from our [supported providers](./providers.md):
 
@@ -21,34 +44,15 @@ pip install any-llm-sdk[ollama]   # For Ollama provider
 pip install any-llm-sdk[mistral,ollama]
 ```
 
-#### Library Integration
+### Library Integration
 
 If you're building a library, install just the base package (`pip install any-llm-sdk`) and let your users install provider dependencies.
 
 > **API Keys:** Set your provider's API key as an environment variable (e.g., `export MISTRAL_API_KEY="your-key"`) or pass it directly using the `api_key` parameter.
 
-### Your First API Call 
+## APIs
 
-```python
-import os
-
-from any_llm import completion
-
-# Make sure you have the appropriate API key set
-api_key = os.environ.get('MISTRAL_API_KEY')
-if not api_key:
-    raise ValueError("Please set MISTRAL_API_KEY environment variable")
-
-# Recommended: separate provider and model parameters
-response = completion(
-    model="mistral-small-latest",
-    provider="mistral",
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-print(response.choices[0].message.content)
-```
-
-### Advanced: Using the AnyLLM Class
+### Using the AnyLLM Class
 
 For applications making multiple requests with the same provider, use the `AnyLLM` class to avoid repeated provider instantiation:
 
@@ -75,7 +79,28 @@ print(f"Supports streaming: {metadata.streaming}")
 print(f"Supports tools: {metadata.completion}")
 ```
 
-#### When to Choose Which Approach
+### API Call 
+
+```python
+import os
+
+from any_llm import completion
+
+# Make sure you have the appropriate API key set
+api_key = os.environ.get('MISTRAL_API_KEY')
+if not api_key:
+    raise ValueError("Please set MISTRAL_API_KEY environment variable")
+
+# Recommended: separate provider and model parameters
+response = completion(
+    model="mistral-small-latest",
+    provider="mistral",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+print(response.choices[0].message.content)
+```
+
+### When to Choose Which Approach
 
 **Use Direct API Functions (`completion`, `acompletion`) when:**
 
@@ -90,7 +115,7 @@ print(f"Supports tools: {metadata.completion}")
 
 **Finding model names:** Check the [providers page](./providers.md) for provider IDs, or use the [`list_models`](./api/list_models.md) API to see available models for your provider.
 
-### Streaming
+## Streaming
 
 For the [providers that support streaming](./providers.md), you can enable it by passing `stream=True`:
 
@@ -107,7 +132,7 @@ for chunk in completion(
     output += chunk_content
 ```
 
-### Embeddings
+## Embeddings
 
 [`embedding`][any_llm.embedding] and [`aembedding`][any_llm.aembedding] allow you to create vector embeddings from text using the same unified interface across providers.
 
@@ -128,7 +153,7 @@ print(f"Embedding vector length: {len(embedding_vector)}")
 print(f"Tokens used: {result.usage.total_tokens}")
 ```
 
-### Tools
+## Tools
 
 `any-llm` supports tool calling for providers that support it. You can pass a list of tools where each tool is either:
 
@@ -162,3 +187,61 @@ any-llm automatically converts your Python functions to OpenAI tools format. Fun
 - A docstring describing what the function does
 - Type annotations for all parameters
 - A return type annotation
+
+## Exception Handling
+
+The `any-llm` package provides a unified exception hierarchy that works consistently across all LLM providers.
+
+### Enabling Unified Exceptions
+
+!!! info "Opt-in Feature"
+    Unified exception handling is currently **opt-in**. Set the `ANY_LLM_UNIFIED_EXCEPTIONS` environment variable to enable it:
+
+```bash
+export ANY_LLM_UNIFIED_EXCEPTIONS=1
+```
+
+When enabled, provider-specific exceptions are automatically converted to `any-llm` exception types. When disabled (default), the original provider exceptions are raised with a deprecation warning.
+
+### Basic Usage
+
+```python
+from any_llm import completion
+from any_llm.exceptions import (
+    RateLimitError,
+    AuthenticationError,
+    ProviderError,
+    AnyLLMError,
+)
+
+try:
+    response = completion(
+        model="gpt-4",
+        provider="openai",
+        messages=[{"role": "user", "content": "Hello!"}]
+    )
+except RateLimitError as e:
+    print(f"Rate limited: {e.message}")
+except AuthenticationError as e:
+    print(f"Auth failed: {e.message}")
+except ProviderError as e:
+    print(f"Provider error: {e.message}")
+except AnyLLMError as e:
+    print(f"Error: {e.message}")
+```
+
+### Accessing Original Exceptions
+
+All unified exceptions preserve the original provider exception for debugging:
+
+```python
+from any_llm.exceptions import RateLimitError
+
+messages = [{"role": "user", "content": "Hello!"}]
+
+try:
+    response = completion(model="gpt-4", provider="openai", messages=messages)
+except RateLimitError as e:
+    print(f"Provider: {e.provider_name}")
+    print(f"Original exception: {type(e.original_exception)}")
+```

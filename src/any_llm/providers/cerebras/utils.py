@@ -1,4 +1,4 @@
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from cerebras.cloud.sdk.types import ModelListResponse as CerebrasModelListResponse
 from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponse
@@ -15,6 +15,18 @@ from any_llm.types.completion import (
     Reasoning,
 )
 from any_llm.types.model import Model
+
+if TYPE_CHECKING:
+    from openai.types.chat.chat_completion_message_custom_tool_call import (
+        ChatCompletionMessageCustomToolCall,
+    )
+    from openai.types.chat.chat_completion_message_function_tool_call import (
+        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
+    )
+
+    ChatCompletionMessageToolCallType = (
+        OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
+    )
 
 
 def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCompletionChunk:
@@ -127,10 +139,9 @@ def _convert_response(response_data: dict[str, Any]) -> ChatCompletion:
         message = ChatCompletionMessage(
             role=message_data.get("role", "assistant"),
             content=message_data.get("content"),
-            tool_calls=tool_calls,
+            tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls),
             reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
         )
-        from typing import Literal, cast
 
         choices_out.append(
             Choice(

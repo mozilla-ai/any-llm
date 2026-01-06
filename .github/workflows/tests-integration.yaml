@@ -36,7 +36,7 @@ jobs:
       should_run_integration: ${{ steps.determine.outputs.should_run_integration }}
       should_run_local: ${{ steps.determine.outputs.should_run_local }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Determine which jobs should run based on filter
         id: determine
@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - uses: astral-sh/setup-uv@v7
         with:
@@ -118,7 +118,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - uses: astral-sh/setup-uv@v7
         with:
@@ -129,7 +129,7 @@ jobs:
         run: |
           uv sync --group tests --extra all
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
         with:
           path: ~/.ollama
@@ -137,7 +137,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ollama-models-
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: ~/.llamafile
           key: ${{ runner.os }}-llamafile-${{ hashFiles('tests/conftest.py') }}
@@ -146,7 +146,7 @@ jobs:
 
       - name: Setup Ollama
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
-        uses: ai-action/setup-ollama@v1
+        uses: ai-action/setup-ollama@v2
 
       - name: Run ollama
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
@@ -154,7 +154,7 @@ jobs:
           ollama serve &
           ollama pull llama3.2:1b
           ollama pull qwen3:0.6b
-          ollama pull qwen3-vl:2b
+          ollama pull llava-phi3
 
       - name: Wait for Ollama to be ready
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')

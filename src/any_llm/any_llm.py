@@ -15,6 +15,7 @@ from any_llm.types.provider import PlatformKey, ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
 from any_llm.utils.decorators import BATCH_API_EXPERIMENTAL_MESSAGE, experimental
+from any_llm.utils.exception_handler import handle_exceptions
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator, Sequence
@@ -355,6 +356,7 @@ class AnyLLM(ABC):
 
         return async_iter_to_sync_iter(response)
 
+    @handle_exceptions(wrap_streaming=True)
     async def acompletion(
         self,
         model: str,
@@ -413,21 +415,44 @@ class AnyLLM(ABC):
             The completion response from the provider
 
         """
-        all_args = locals()
-        all_args.pop("self")
-        all_args["model_id"] = all_args.pop("model")
-        kwargs = all_args.pop("kwargs")
-
+        prepared_tools = None
         if tools:
-            all_args["tools"] = prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
+            prepared_tools = prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
 
-        for i, message in enumerate(messages):
+        processed_messages: list[dict[str, Any]] = []
+        for message in messages:
             if isinstance(message, ChatCompletionMessage):
                 # Dump the message but exclude the extra field that we extend from OpenAI Spec
-                messages[i] = message.model_dump(exclude_none=True, exclude={"reasoning"})
-        all_args["messages"] = messages
+                processed_messages.append(message.model_dump(exclude_none=True, exclude={"reasoning"}))
+            else:
+                processed_messages.append(message)
 
-        return await self._acompletion(CompletionParams(**all_args), **kwargs)
+        params = CompletionParams(
+            model_id=model,
+            messages=processed_messages,
+            tools=prepared_tools,
+            tool_choice=tool_choice,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+            response_format=response_format,
+            stream=stream,
+            n=n,
+            stop=stop,
+            presence_penalty=presence_penalty,
+            frequency_penalty=frequency_penalty,
+            seed=seed,
+            user=user,
+            parallel_tool_calls=parallel_tool_calls,
+            logprobs=logprobs,
+            top_logprobs=top_logprobs,
+            logit_bias=logit_bias,
+            stream_options=stream_options,
+            max_completion_tokens=max_completion_tokens,
+            reasoning_effort=reasoning_effort,
+        )
+
+        return await self._acompletion(params, **kwargs)
 
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
@@ -449,6 +474,7 @@ class AnyLLM(ABC):
             return response
         return async_iter_to_sync_iter(response)
 
+    @handle_exceptions(wrap_streaming=True)
     async def aresponses(
         self,
         model: str,
@@ -499,15 +525,28 @@ class AnyLLM(ABC):
             NotImplementedError: If the selected provider does not support the Responses API.
 
         """
-        all_args = locals()
-        all_args.pop("self")
-        all_args["input"] = all_args.pop("input_data")
-        kwargs = all_args.pop("kwargs")
-
+        prepared_tools = None
         if tools:
-            all_args["tools"] = prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
+            prepared_tools = prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
 
-        return await self._aresponses(ResponsesParams(**all_args, **kwargs))
+        params = ResponsesParams(
+            model=model,
+            input=input_data,
+            tools=prepared_tools,
+            tool_choice=tool_choice,
+            max_output_tokens=max_output_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            stream=stream,
+            instructions=instructions,
+            max_tool_calls=max_tool_calls,
+            parallel_tool_calls=bool(parallel_tool_calls),
+            reasoning=reasoning,
+            text=text,
+            **kwargs,
+        )
+
+        return await self._aresponses(params)
 
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
@@ -522,6 +561,7 @@ class AnyLLM(ABC):
         allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
         return run_async_in_sync(self.aembedding(model, inputs, **kwargs), allow_running_loop=allow_running_loop)
 
+    @handle_exceptions()
     async def aembedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:
         return await self._aembedding(model, inputs, **kwargs)
 
@@ -536,6 +576,7 @@ class AnyLLM(ABC):
         allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
         return run_async_in_sync(self.alist_models(**kwargs), allow_running_loop=allow_running_loop)
 
+    @handle_exceptions()
     async def alist_models(self, **kwargs: Any) -> Sequence[Model]:
         return await self._alist_models(**kwargs)
 
@@ -555,6 +596,7 @@ class AnyLLM(ABC):
         allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
         return run_async_in_sync(self.acreate_batch(**kwargs), allow_running_loop=allow_running_loop)
 
+    @handle_exceptions()
     @experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
     async def acreate_batch(
         self,
@@ -608,6 +650,7 @@ class AnyLLM(ABC):
         allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
         return run_async_in_sync(self.aretrieve_batch(batch_id, **kwargs), allow_running_loop=allow_running_loop)
 
+    @handle_exceptions()
     @experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
     async def aretrieve_batch(self, batch_id: str, **kwargs: Any) -> Batch:
         """Retrieve a batch job asynchronously.
@@ -638,6 +681,7 @@ class AnyLLM(ABC):
         allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
         return run_async_in_sync(self.acancel_batch(batch_id, **kwargs), allow_running_loop=allow_running_loop)
 
+    @handle_exceptions()
     @experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
     async def acancel_batch(self, batch_id: str, **kwargs: Any) -> Batch:
         """Cancel a batch job asynchronously.
@@ -675,6 +719,7 @@ class AnyLLM(ABC):
             self.alist_batches(after=after, limit=limit, **kwargs), allow_running_loop=allow_running_loop
         )
 
+    @handle_exceptions()
     @experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
     async def alist_batches(
         self,

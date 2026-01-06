@@ -44,9 +44,9 @@ async def test_completion_reasoning(
                 LLMProvider.PORTKEY,
             )
             else "auto",
-            max_tokens=4999
+            max_tokens=4096
             if LLMProvider.FIREWORKS == provider
-            else DEFAULT_MAX_TOKENS,  # Fireworks forces streaming if max_tokens is 5000+, Portkey with anthropic needed a max tokens value to be set (because it's an anthropic model)
+            else DEFAULT_MAX_TOKENS,  # Fireworks forces streaming if max_tokens is 4096+, Portkey with anthropic needed a max tokens value to be set (because it's an anthropic model)
         )
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:

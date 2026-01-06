@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 
 from any_llm.constants import LLMProvider
-from tests.constants import INCLUDE_LOCAL_PROVIDERS, INCLUDE_NON_LOCAL_PROVIDERS, LOCAL_PROVIDERS
+from tests.constants import CI_EXCLUDED_PROVIDERS, INCLUDE_LOCAL_PROVIDERS, INCLUDE_NON_LOCAL_PROVIDERS, LOCAL_PROVIDERS
 
 
 @pytest.fixture
@@ -23,6 +23,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
         LLMProvider.LLAMAFILE: "N/A",
         LLMProvider.LLAMACPP: "N/A",
+        LLMProvider.VLLM: "N/A",
         LLMProvider.LMSTUDIO: "openai/gpt-oss-20b",  # You must have LM Studio running and the server enabled
         LLMProvider.AZUREOPENAI: "azure/<your_deployment_name>",
         LLMProvider.CEREBRAS: "gpt-oss-120b",
@@ -33,7 +34,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.HUGGINGFACE: "huggingface/tgi",
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
         LLMProvider.SAMBANOVA: "DeepSeek-R1-Distill-Llama-70B",
-        LLMProvider.TOGETHER: "OpenAI/gpt-oss-20B",
+        LLMProvider.TOGETHER: "openai/gpt-oss-20b",
         LLMProvider.PORTKEY: "@nebius-any-llm/Qwen/Qwen3-32B",
         LLMProvider.MINIMAX: "MiniMax-M2",
         LLMProvider.ZAI: "glm-4.5-flash",
@@ -49,24 +50,25 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.DEEPSEEK: "deepseek-chat",
         LLMProvider.OPENAI: "gpt-5-nano",
         LLMProvider.GATEWAY: "gpt-5-nano",
-        LLMProvider.GEMINI: "gemini-2.5-flash",
-        LLMProvider.VERTEXAI: "gemini-2.5-flash",
+        LLMProvider.GEMINI: "gemini-3-flash-preview",
+        LLMProvider.VERTEXAI: "gemini-3-flash-preview",
         LLMProvider.MOONSHOT: "moonshot-v1-8k",
-        LLMProvider.SAMBANOVA: "Meta-Llama-3.1-8B-Instruct",
-        LLMProvider.TOGETHER: "OpenAI/gpt-oss-20B",
+        LLMProvider.SAMBANOVA: "gpt-oss-120b",
+        LLMProvider.TOGETHER: "openai/gpt-oss-20b",
         LLMProvider.XAI: "grok-3-mini-latest",
         LLMProvider.INCEPTION: "mercury",
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
         LLMProvider.OLLAMA: "llama3.2:1b",
         LLMProvider.LLAMAFILE: "N/A",
         LLMProvider.LMSTUDIO: "google/gemma-3n-e4b",  # You must have LM Studio running and the server enabled
+        LLMProvider.VLLM: "Qwen/Qwen2.5-0.5B-Instruct",
         LLMProvider.COHERE: "command-a-03-2025",
         LLMProvider.CEREBRAS: "llama-3.3-70b",
         LLMProvider.HUGGINGFACE: "huggingface/tgi",  # This is the syntax used in `litellm` when using HF Inference Endpoints (https://docs.litellm.ai/docs/providers/huggingface#dedicated-inference-endpoints)
         LLMProvider.BEDROCK: "amazon.nova-lite-v1:0",
         LLMProvider.SAGEMAKER: "<sagemaker_endpoint_name>",
         LLMProvider.WATSONX: "ibm/granite-3-8b-instruct",
-        LLMProvider.FIREWORKS: "accounts/fireworks/models/llama4-scout-instruct-basic",
+        LLMProvider.FIREWORKS: "accounts/fireworks/models/gpt-oss-20b",
         LLMProvider.GROQ: "openai/gpt-oss-20b",
         LLMProvider.PORTKEY: "@any-llm-test/gpt-4.1-mini",
         LLMProvider.LLAMA: "Llama-4-Maverick-17B-128E-Instruct-FP8",
@@ -89,7 +91,8 @@ def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict
         LLMProvider.SAMBANOVA: "Llama-4-Maverick-17B-128E-Instruct",
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
         LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
-        LLMProvider.OLLAMA: "qwen3-vl:2b",
+        LLMProvider.OLLAMA: "llava-phi3",  # Fast vision model compatible with OpenAI format
+        LLMProvider.FIREWORKS: "accounts/fireworks/models/qwen2p5-vl-32b-instruct",
     }
 
 
@@ -113,6 +116,7 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.VOYAGE: "voyage-3.5-lite",
         LLMProvider.LLAMACPP: "N/A",
         LLMProvider.GATEWAY: "text-embedding-ada-002",
+        LLMProvider.OPENROUTER: "qwen/qwen3-embedding-8b",
     }
 
 
@@ -129,8 +133,9 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.GATEWAY: {"api_base": "http://127.0.0.1:3000", "timeout": 1},
         LLMProvider.GROQ: {"timeout": 10},
         LLMProvider.OPENAI: {"timeout": 100},
-        LLMProvider.HUGGINGFACE: {"api_base": "https://y0okp71n85ezo5nr.us-east-1.aws.endpoints.huggingface.cloud/v1/"},
+        LLMProvider.HUGGINGFACE: {"api_base": "https://oze7k8n86bjfzgjk.us-east-1.aws.endpoints.huggingface.cloud/v1"},
         LLMProvider.LLAMACPP: {"api_base": "http://127.0.0.1:8090/v1"},
+        LLMProvider.VLLM: {"api_base": "http://127.0.0.1:8080/v1"},
         LLMProvider.MISTRAL: {"timeout_ms": 100000},
         LLMProvider.NEBIUS: {"api_base": "https://api.studio.nebius.com/v1/"},
         LLMProvider.OPENAI: {"timeout": 10},
@@ -154,7 +159,7 @@ def _get_providers_for_testing() -> list[LLMProvider]:
     if INCLUDE_NON_LOCAL_PROVIDERS:
         filtered.extend([provider for provider in all_providers if provider not in LOCAL_PROVIDERS])
 
-    return filtered
+    return [provider for provider in filtered if provider not in CI_EXCLUDED_PROVIDERS]
 
 
 @pytest.fixture(params=_get_providers_for_testing(), ids=lambda x: x.value)

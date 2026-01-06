@@ -1,9 +1,14 @@
 import os
+import socket
+import threading
+import time
 from collections.abc import Generator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
+import uvicorn
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
@@ -169,3 +174,41 @@ def model_pricing(client: TestClient, master_key_header: dict[str, str]) -> dict
     assert response.status_code == 200
     result: dict[str, Any] = response.json()
     return result
+
+
+@dataclass
+class LiveServer:
+    """Holds information about a running test server."""
+
+    url: str
+    api_key: str
+
+
+@pytest.fixture
+def live_server(test_config: GatewayConfig, api_key_obj: dict[str, Any]) -> Generator[LiveServer]:
+    """Start a live uvicorn server and yield its URL and API key."""
+    # Find an available port
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+
+    app = create_app(test_config)
+
+    server_config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
+    server = uvicorn.Server(server_config)
+
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+
+    for _ in range(50):
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.1):
+                break
+        except OSError:
+            time.sleep(0.1)
+
+    try:
+        yield LiveServer(url=f"http://127.0.0.1:{port}", api_key=api_key_obj["key"])
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)

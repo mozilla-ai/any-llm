@@ -22,6 +22,9 @@ async def test_response_format(
     if provider == LLMProvider.LLAMAFILE:
         pytest.skip("Llamafile does not support response_format, skipping")
 
+    if provider == LLMProvider.HUGGINGFACE:
+        pytest.skip("HuggingFace TGI does not support response_format, skipping")
+
     class ResponseFormat(BaseModel):
         city_name: str
 

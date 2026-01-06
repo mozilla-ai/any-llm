@@ -24,7 +24,6 @@ def mock_anthropic_provider():  # type: ignore[no-untyped-def]
 
 @pytest.mark.asyncio
 async def test_anthropic_client_created_with_api_key_and_api_base() -> None:
-    """Test that Anthropic client is created with api_key and api_base as base_url when provided."""
     api_key = "test-api-key"
     custom_endpoint = "https://custom-anthropic-endpoint"
 
@@ -39,7 +38,6 @@ async def test_anthropic_client_created_with_api_key_and_api_base() -> None:
 
 @pytest.mark.asyncio
 async def test_anthropic_client_created_without_api_base() -> None:
-    """Test that Anthropic client is created with None base_url when api_base is not provided."""
     api_key = "test-api-key"
 
     with mock_anthropic_provider() as mock_anthropic:
@@ -53,7 +51,6 @@ async def test_anthropic_client_created_without_api_base() -> None:
 
 @pytest.mark.asyncio
 async def test_completion_with_system_message() -> None:
-    """Test that completion correctly processes a system message."""
     api_key = "test-api-key"
     model = "model-id"
     messages = [
@@ -75,7 +72,6 @@ async def test_completion_with_system_message() -> None:
 
 @pytest.mark.asyncio
 async def test_completion_with_multiple_system_messages() -> None:
-    """Test that completion concatenates multiple system messages."""
     api_key = "test-api-key"
     model = "model-id"
     messages = [
@@ -98,7 +94,6 @@ async def test_completion_with_multiple_system_messages() -> None:
 
 @pytest.mark.asyncio
 async def test_completion_with_kwargs() -> None:
-    """Test that completion passes kwargs to the Anthropic client."""
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
@@ -116,7 +111,6 @@ async def test_completion_with_kwargs() -> None:
 
 @pytest.mark.asyncio
 async def test_completion_with_tool_choice_required() -> None:
-    """Test that completion correctly processes tool_choice='required'."""
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
@@ -132,6 +126,45 @@ async def test_completion_with_tool_choice_required() -> None:
             messages=messages,
             max_tokens=DEFAULT_MAX_TOKENS,
             **expected_kwargs,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "tool_choice",
+    [
+        {"type": "function", "function": {"name": "FOO"}},
+        {"type": "custom", "custom": {"name": "FOO"}},
+    ],
+)
+async def test_completion_with_tool_choice_specific_tool(tool_choice: dict[str, Any]) -> None:
+    api_key = "test-api-key"
+    model = "model-id"
+    messages = [{"role": "user", "content": "Hello"}]
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key=api_key)
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages, tool_choice=tool_choice))
+
+        expected_kwargs = {"tool_choice": {"type": "tool", "name": "FOO"}}
+
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
+            model=model,
+            messages=messages,
+            max_tokens=DEFAULT_MAX_TOKENS,
+            **expected_kwargs,
+        )
+
+
+@pytest.mark.asyncio
+async def test_completion_with_tool_choice_invalid_format() -> None:
+    api_key = "test-api-key"
+    model = "model-id"
+    messages = [{"role": "user", "content": "Hello"}]
+    invalid_tool_choice = {"type": "unknown_type", "unknown": {"name": "FOO"}}
+    provider = AnthropicProvider(api_key=api_key)
+    with pytest.raises(ValueError, match="Unsupported tool_choice format:"):
+        await provider._acompletion(
+            CompletionParams(model_id=model, messages=messages, tool_choice=invalid_tool_choice)
         )
 
 
@@ -261,6 +294,96 @@ async def test_completion_with_images() -> None:
                     ],
                 }
             ],
+            max_tokens=DEFAULT_MAX_TOKENS,
+        )
+
+
+@pytest.mark.asyncio
+async def test_completion_with_parallel_tool_calls() -> None:
+    """Test that parallel tool calls are correctly converted to Anthropic format.
+
+    When an assistant message contains multiple tool calls and their results
+    come in consecutive tool messages, each tool result should correctly
+    reference its corresponding tool_use_id from the tool message's tool_call_id field.
+    """
+    api_key = "test-api-key"
+    model = "model-id"
+
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Call first and second tool."},
+        {
+            "content": "",
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "toolu_014vbRyMX81AhxfBMNYRma3A",
+                    "function": {"arguments": "{}", "name": "first_tool"},
+                    "type": "function",
+                },
+                {
+                    "id": "toolu_01WhTsYUFmDbsbSZbs9WDciT",
+                    "function": {"arguments": '{"query": "test"}', "name": "second_tool"},
+                    "type": "function",
+                },
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "toolu_014vbRyMX81AhxfBMNYRma3A",
+            "content": "First Result",
+            "name": "first_tool",
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "toolu_01WhTsYUFmDbsbSZbs9WDciT",
+            "content": "Second Result",
+            "name": "second_tool",
+        },
+    ]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key=api_key)
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages))
+
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
+            model=model,
+            messages=[
+                {"role": "user", "content": "Call first and second tool."},
+                {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_014vbRyMX81AhxfBMNYRma3A",
+                            "name": "first_tool",
+                            "input": {},
+                        },
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_01WhTsYUFmDbsbSZbs9WDciT",
+                            "name": "second_tool",
+                            "input": {"query": "test"},
+                        },
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_014vbRyMX81AhxfBMNYRma3A",
+                            "content": "First Result",
+                        },
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_01WhTsYUFmDbsbSZbs9WDciT",
+                            "content": "Second Result",
+                        },
+                    ],
+                },
+            ],
+            system="You are a helpful assistant.",
             max_tokens=DEFAULT_MAX_TOKENS,
         )
 

@@ -1,3 +1,4 @@
+import base64
 from contextlib import contextmanager
 from typing import Any, Literal
 from unittest.mock import AsyncMock, Mock, patch
@@ -8,7 +9,7 @@ from google.genai import types
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.gemini import GeminiProvider
 from any_llm.providers.gemini.base import REASONING_EFFORT_TO_THINKING_BUDGETS
-from any_llm.providers.gemini.utils import _convert_response_to_response_dict, _convert_tool_spec
+from any_llm.providers.gemini.utils import _convert_messages, _convert_response_to_response_dict, _convert_tool_spec
 from any_llm.types.completion import CompletionParams
 
 
@@ -447,3 +448,158 @@ async def test_streaming_completion_without_usage_metadata() -> None:
 
     assert chunk.usage is None, "Usage should be None when metadata is not available"
     assert chunk.choices[0].delta.content == "Hello"
+
+
+def test_convert_response_preserves_thought_signature() -> None:
+    import base64
+
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_function_call = Mock()
+    mock_function_call.name = "get_weather"
+    mock_function_call.args = {"location": "Paris"}
+
+    mock_part = Mock()
+    mock_part.function_call = mock_function_call
+    mock_part.thought = None
+    mock_part.text = None
+    # Gemini returns thought_signature as bytes
+    mock_part.thought_signature = b"test-signature-bytes"
+
+    mock_response.candidates[0].content.parts = [mock_part]
+    mock_response.usage_metadata = Mock()
+    mock_response.usage_metadata.prompt_token_count = 10
+    mock_response.usage_metadata.candidates_token_count = 15
+    mock_response.usage_metadata.total_token_count = 25
+
+    response_dict = _convert_response_to_response_dict(mock_response)
+
+    tool_calls = response_dict["choices"][0]["message"]["tool_calls"]
+    assert len(tool_calls) == 1
+    assert "extra_content" in tool_calls[0]
+    assert tool_calls[0]["extra_content"]["google"]["thought_signature"] == base64.b64encode(
+        b"test-signature-bytes"
+    ).decode("utf-8")
+
+
+def test_convert_response_no_thought_signature() -> None:
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_function_call = Mock()
+    mock_function_call.name = "get_weather"
+    mock_function_call.args = {"location": "Paris"}
+
+    mock_part = Mock()
+    mock_part.function_call = mock_function_call
+    mock_part.thought = None
+    mock_part.text = None
+    mock_part.thought_signature = None
+
+    mock_response.candidates[0].content.parts = [mock_part]
+    mock_response.usage_metadata = Mock()
+    mock_response.usage_metadata.prompt_token_count = 10
+    mock_response.usage_metadata.candidates_token_count = 15
+    mock_response.usage_metadata.total_token_count = 25
+
+    response_dict = _convert_response_to_response_dict(mock_response)
+
+    tool_calls = response_dict["choices"][0]["message"]["tool_calls"]
+    assert len(tool_calls) == 1
+    assert "extra_content" not in tool_calls[0] or tool_calls[0].get("extra_content") is None
+
+
+def test_convert_messages_with_thought_signature_in_extra_content() -> None:
+    # Use valid base64 that round-trips correctly
+    original_bytes = b"test-signature-bytes"
+    base64_signature = base64.b64encode(original_bytes).decode("utf-8")
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "What is the weather?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_123",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": '{"location": "Paris"}'},
+                    "extra_content": {"google": {"thought_signature": base64_signature}},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_123", "name": "get_weather", "content": '{"temp": "20C"}'},
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    # The assistant message with tool_calls should have the thought_signature
+    # SDK decodes base64 string to bytes
+    assistant_message = formatted_messages[1]
+    assert assistant_message.role == "model"
+    assert assistant_message.parts is not None
+    assert len(assistant_message.parts) == 1
+    assert assistant_message.parts[0].thought_signature == original_bytes
+
+
+def test_convert_messages_without_thought_signature_uses_skip_sentinel() -> None:
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "What is the weather?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_123",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": '{"location": "Paris"}'},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_123", "name": "get_weather", "content": '{"temp": "20C"}'},
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    # The assistant message should use skip sentinel for first tool call
+    # SDK may decode the sentinel string, so just verify it's set (not None)
+    assistant_message = formatted_messages[1]
+    assert assistant_message.role == "model"
+    assert assistant_message.parts is not None
+    assert len(assistant_message.parts) == 1
+    assert assistant_message.parts[0].thought_signature is not None
+
+
+def test_convert_messages_parallel_tool_calls_only_first_gets_skip_sentinel() -> None:
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Get weather for Paris and London"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": '{"location": "Paris"}'},
+                },
+                {
+                    "id": "call_2",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": '{"location": "London"}'},
+                },
+            ],
+        },
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    assistant_message = formatted_messages[1]
+    assert assistant_message.parts is not None
+    assert len(assistant_message.parts) == 2
+    # First tool call should have skip sentinel set (SDK decodes to bytes)
+    assert assistant_message.parts[0].thought_signature is not None
+    # Second tool call should have None (no sentinel)
+    assert assistant_message.parts[1].thought_signature is None

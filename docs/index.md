@@ -1,8 +1,18 @@
+---
+schema:
+  type: "SoftwareSourceCode"
+  name: "any-llm"
+  description: "A Python library providing a single interface to different LLM providers including OpenAI, Anthropic, Mistral, and more"
+  programmingLanguage: "Python"
+  codeRepository: "https://github.com/mozilla-ai/any-llm"
+  license: "https://github.com/mozilla-ai/any-llm/blob/main/LICENSE"
+---
+
 <p align="center">
   <picture>
     <img src="./images/any-llm-logo.png" width="20%" alt="any-llm logo"/>
   </picture>
-      <p align="center">  <b>Stop rewriting code for every LLM provider </b></p>
+      <p align="center">  <b>One interface. Every LLM. </b></p>
 </p>
 
 `any-llm` is a Python library providing a single interface to different llm providers.
@@ -29,7 +39,7 @@ print(response)
 
 ### Why any-llm
   - Switch providers in one line
-  - Consistent error handling across providers
+  - Unified exception handling across providers
   - Simple API, powerful features
 
 [View supported providers →](./providers.md)
@@ -58,13 +68,6 @@ Features: real-time streaming responses, multiple provider support, and collapsi
 
 **AnyLLM Class** (recommended for advanced use cases):
 - [Provider API](./api/any_llm.md) - Lower-level provider interface with metadata access and reusability
-
-### Error Handling
-
-`any-llm` provides custom exceptions to indicate common errors like missing API keys
-and parameters that are unsupported by a specific provider.
-
-For more details on exceptions, see the [exceptions API documentation](./api/exceptions.md).
 
 ## For AI Systems
 

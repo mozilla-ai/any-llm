@@ -1,4 +1,4 @@
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from groq.types import ModelListResponse as GroqModelListResponse
 from groq.types.chat import ChatCompletion as GroqChatCompletion
@@ -20,6 +20,18 @@ from any_llm.types.completion import (
     Reasoning,
 )
 from any_llm.types.model import Model
+
+if TYPE_CHECKING:
+    from openai.types.chat.chat_completion_message_custom_tool_call import (
+        ChatCompletionMessageCustomToolCall,
+    )
+    from openai.types.chat.chat_completion_message_function_tool_call import (
+        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
+    )
+
+    ChatCompletionMessageToolCallType = (
+        OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
+    )
 
 
 def to_chat_completion(response: GroqChatCompletion) -> ChatCompletion:
@@ -60,7 +72,7 @@ def to_chat_completion(response: GroqChatCompletion) -> ChatCompletion:
         msg = ChatCompletionMessage(
             role="assistant",
             content=message.content,
-            tool_calls=tool_calls,
+            tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls),
             reasoning=Reasoning(content=cast("str", message.reasoning))
             if getattr(message, "reasoning", None)
             else None,
