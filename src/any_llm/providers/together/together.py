@@ -132,28 +132,14 @@ class TogetherProvider(AnyLLM):
         async for chunk in response:
             yield self._convert_completion_chunk_response(chunk)
 
-    @staticmethod
-    def _clean_messages_for_api(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Clean messages before sending to Together API.
-
-        Together API rejects messages with empty tool_calls arrays,
-        so we need to remove them.
-        """
-        cleaned = []
-        for msg in messages:
-            msg_copy = dict(msg)
-            if "tool_calls" in msg_copy and not msg_copy["tool_calls"]:
-                del msg_copy["tool_calls"]
-            cleaned.append(msg_copy)
-        return cleaned
-
     async def _acompletion(
         self,
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         completion_kwargs = self._convert_completion_params(params, **kwargs)
-        cleaned_messages = self._clean_messages_for_api(params.messages)
+        # Together API rejects empty tool_calls arrays
+        cleaned_messages = [{k: v for k, v in msg.items() if k != "tool_calls" or v} for msg in params.messages]
 
         if params.stream:
             return self._stream_completion_async(
