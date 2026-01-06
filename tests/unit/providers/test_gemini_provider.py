@@ -410,6 +410,7 @@ async def test_streaming_completion_includes_usage_data() -> None:
     mock_response.candidates[0].content.parts = [Mock()]
     mock_response.candidates[0].content.parts[0].text = "Hello"
     mock_response.candidates[0].content.parts[0].thought = None
+    mock_response.candidates[0].content.parts[0].function_call = None
     mock_response.candidates[0].finish_reason = Mock()
     mock_response.candidates[0].finish_reason.value = "STOP"
     mock_response.model_version = "gemini-2.5-flash"
@@ -438,6 +439,7 @@ async def test_streaming_completion_without_usage_metadata() -> None:
     mock_response.candidates[0].content.parts = [Mock()]
     mock_response.candidates[0].content.parts[0].text = "Hello"
     mock_response.candidates[0].content.parts[0].thought = None
+    mock_response.candidates[0].content.parts[0].function_call = None
     mock_response.candidates[0].finish_reason = Mock()
     mock_response.candidates[0].finish_reason.value = None
     mock_response.model_version = "gemini-2.5-flash"
