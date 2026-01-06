@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal, cast
 
-from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
+from together.types.chat import ChatCompletionChunk as TogetherChatCompletionChunk
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -31,8 +31,8 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
 
         if delta_content:
             content = delta_content.content
-            if delta_content.role:  # type: ignore[attr-defined]
-                role = cast("Literal['assistant', 'user', 'system']", delta_content.role)  # type: ignore[attr-defined]
+            if delta_content.role:
+                role = cast("Literal['assistant', 'user', 'system']", delta_content.role)
             if hasattr(delta_content, "reasoning") and delta_content.reasoning:
                 reasoning = Reasoning(content=delta_content.reasoning)
 
