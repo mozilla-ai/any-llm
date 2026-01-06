@@ -131,7 +131,7 @@ async def test_huggingface_extracts_think_tags_streaming() -> None:
                 choices=[
                     ChatCompletionStreamOutputChoice(
                         index=0,
-                        delta=ChatCompletionStreamOutputDelta(content=chunk_text, role="assistant" if i == 0 else None),
+                        delta=ChatCompletionStreamOutputDelta(content=chunk_text, role="assistant"),
                         finish_reason="stop" if i == len(chunks) - 1 else None,
                     )
                 ],
