@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from any_llm.providers.watsonx.utils import _convert_streaming_chunk
 from any_llm.providers.watsonx.watsonx import WatsonxProvider
 from any_llm.types.completion import CompletionParams
 
@@ -120,3 +121,150 @@ async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
 
         call_kwargs = mock_model_instance.achat.call_args[1]
         assert "reasoning_effort" not in call_kwargs.get("params", {})
+def test_convert_streaming_chunk_with_tool_calls() -> None:
+    """Test streaming chunk conversion with tool calls."""
+    chunk = {
+        "created": 123456,
+        "model": "test-model",
+        "choices": [
+            {
+                "delta": {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "call-123",
+                            "index": 0,
+                            "function": {"name": "get_weather", "arguments": '{"location": "Paris"}'},
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ],
+    }
+
+    result = _convert_streaming_chunk(chunk)
+
+    assert len(result.choices) == 1
+    assert result.choices[0].delta.tool_calls is not None
+    assert len(result.choices[0].delta.tool_calls) == 1
+    tool_call = result.choices[0].delta.tool_calls[0]
+    assert tool_call.id == "call-123"
+    assert tool_call.index == 0
+    assert tool_call.function is not None
+    assert tool_call.function.name == "get_weather"
+    assert tool_call.function.arguments == '{"location": "Paris"}'
+
+
+def test_convert_streaming_chunk_with_multiple_tool_calls() -> None:
+    """Test streaming chunk conversion with multiple tool calls."""
+    chunk = {
+        "created": 123456,
+        "model": "test-model",
+        "choices": [
+            {
+                "delta": {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {"id": "call-1", "index": 0, "function": {"name": "func_a", "arguments": "{}"}},
+                        {"id": "call-2", "index": 1, "function": {"name": "func_b", "arguments": "{}"}},
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ],
+    }
+
+    result = _convert_streaming_chunk(chunk)
+
+    assert result.choices[0].delta.tool_calls is not None
+    assert len(result.choices[0].delta.tool_calls) == 2
+    assert result.choices[0].delta.tool_calls[0].function is not None
+    assert result.choices[0].delta.tool_calls[0].function.name == "func_a"
+    assert result.choices[0].delta.tool_calls[1].function is not None
+    assert result.choices[0].delta.tool_calls[1].function.name == "func_b"
+
+
+def test_convert_streaming_chunk_with_tool_calls_missing_fields() -> None:
+    """Test streaming chunk handles tool calls with missing optional fields."""
+    chunk = {
+        "created": 123456,
+        "model": "test-model",
+        "choices": [
+            {
+                "delta": {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {"function": {"name": "func", "arguments": "{}"}},
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ],
+    }
+
+    result = _convert_streaming_chunk(chunk)
+
+    assert result.choices[0].delta.tool_calls is not None
+    tool_call = result.choices[0].delta.tool_calls[0]
+    assert tool_call.id is not None
+    assert tool_call.id.startswith("call_")
+
+
+def test_convert_streaming_chunk_with_text_content() -> None:
+    """Test streaming chunk conversion with text content."""
+    chunk = {
+        "created": 123456,
+        "model": "test-model",
+        "choices": [
+            {
+                "delta": {"content": "Hello world", "role": "assistant"},
+                "finish_reason": "stop",
+            }
+        ],
+    }
+
+    result = _convert_streaming_chunk(chunk)
+
+    assert result.choices[0].delta.content == "Hello world"
+    assert result.choices[0].delta.role == "assistant"
+    assert result.choices[0].finish_reason == "stop"
+
+
+def test_convert_streaming_chunk_with_usage() -> None:
+    """Test streaming chunk conversion with usage metadata."""
+    chunk = {
+        "created": 123456,
+        "model": "test-model",
+        "choices": [{"delta": {"content": "Hi"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+    }
+
+    result = _convert_streaming_chunk(chunk)
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 10
+    assert result.usage.completion_tokens == 5
+    assert result.usage.total_tokens == 15
+
+
+def test_convert_streaming_chunk_without_usage() -> None:
+    """Test streaming chunk conversion without usage metadata."""
+    chunk = {
+        "created": 123456,
+        "model": "test-model",
+        "choices": [{"delta": {"content": "Hi"}, "finish_reason": "stop"}],
+    }
+
+    result = _convert_streaming_chunk(chunk)
+
+    assert result.usage is None
+
+
+def test_convert_streaming_chunk_empty_choices() -> None:
+    """Test streaming chunk conversion with empty choices."""
+    chunk = {"created": 123456, "model": "test-model", "choices": []}
+
+    result = _convert_streaming_chunk(chunk)
+
+    assert result.choices == []

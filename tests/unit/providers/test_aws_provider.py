@@ -1,8 +1,10 @@
 import json
 from contextlib import contextmanager
+from typing import Any
 from unittest.mock import Mock, patch
 
 from any_llm.providers.bedrock import BedrockProvider
+from any_llm.providers.bedrock.utils import _create_openai_chunk_from_aws_chunk
 from any_llm.types.completion import CompletionParams
 
 
@@ -189,3 +191,185 @@ def test_embedding_list_of_strings() -> None:
         assert response.data[1].index == 1
         assert response.usage.prompt_tokens == 11
         assert response.usage.total_tokens == 11
+
+
+def test_streaming_chunk_with_tool_use_start() -> None:
+    """Test streaming chunk with tool use in contentBlockStart."""
+    chunk = {
+        "contentBlockStart": {
+            "contentBlockIndex": 0,
+            "start": {
+                "toolUse": {
+                    "toolUseId": "tool-123",
+                    "name": "get_weather",
+                }
+            },
+        }
+    }
+    tool_index_map: dict[int, int] = {}
+    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model", tool_index_map)
+
+    assert result is not None
+    assert len(result.choices) == 1
+    assert result.choices[0].delta.tool_calls is not None
+    assert len(result.choices[0].delta.tool_calls) == 1
+    tool_call = result.choices[0].delta.tool_calls[0]
+    assert tool_call.id == "tool-123"
+    assert tool_call.function is not None
+    assert tool_call.function.name == "get_weather"
+    assert tool_call.function.arguments == ""
+    assert tool_index_map[0] == 0
+
+
+def test_streaming_chunk_with_tool_use_delta() -> None:
+    """Test streaming chunk with tool use in contentBlockDelta."""
+    tool_index_map: dict[int, int] = {0: 0}
+    chunk = {
+        "contentBlockDelta": {
+            "contentBlockIndex": 0,
+            "delta": {
+                "toolUse": {
+                    "input": '{"location": "Paris"}',
+                }
+            },
+        }
+    }
+    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model", tool_index_map)
+
+    assert result is not None
+    assert result.choices[0].delta.tool_calls is not None
+    assert len(result.choices[0].delta.tool_calls) == 1
+    tool_call = result.choices[0].delta.tool_calls[0]
+    assert tool_call.function is not None
+    assert tool_call.function.arguments == '{"location": "Paris"}'
+
+
+def test_streaming_chunk_with_multiple_tool_calls() -> None:
+    """Test streaming with multiple tool calls tracks indices correctly."""
+    tool_index_map: dict[int, int] = {}
+
+    chunk1 = {
+        "contentBlockStart": {
+            "contentBlockIndex": 0,
+            "start": {"toolUse": {"toolUseId": "tool-1", "name": "func_a"}},
+        }
+    }
+    result1 = _create_openai_chunk_from_aws_chunk(chunk1, "test-model", tool_index_map)
+    assert result1 is not None
+    assert result1.choices[0].delta.tool_calls is not None
+    assert result1.choices[0].delta.tool_calls[0].index == 0
+
+    chunk2 = {
+        "contentBlockStart": {
+            "contentBlockIndex": 1,
+            "start": {"toolUse": {"toolUseId": "tool-2", "name": "func_b"}},
+        }
+    }
+    result2 = _create_openai_chunk_from_aws_chunk(chunk2, "test-model", tool_index_map)
+    assert result2 is not None
+    assert result2.choices[0].delta.tool_calls is not None
+    assert result2.choices[0].delta.tool_calls[0].index == 1
+
+    assert tool_index_map == {0: 0, 1: 1}
+
+
+def test_streaming_chunk_with_reasoning_content_start() -> None:
+    """Test streaming chunk with reasoning content in contentBlockStart."""
+    chunk = {
+        "contentBlockStart": {
+            "contentBlockIndex": 0,
+            "start": {"reasoningContent": {}},
+        }
+    }
+    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model")
+
+    assert result is not None
+    assert result.choices[0].delta.reasoning is not None
+    assert result.choices[0].delta.reasoning.content == ""
+
+
+def test_streaming_chunk_with_reasoning_content_delta() -> None:
+    """Test streaming chunk with reasoning content in contentBlockDelta."""
+    chunk = {
+        "contentBlockDelta": {
+            "contentBlockIndex": 0,
+            "delta": {"reasoningContent": {"text": "Let me think..."}},
+        }
+    }
+    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model")
+
+    assert result is not None
+    assert result.choices[0].delta.reasoning is not None
+    assert result.choices[0].delta.reasoning.content == "Let me think..."
+
+
+def test_streaming_chunk_with_text_content() -> None:
+    """Test streaming chunk with text content."""
+    chunk = {
+        "contentBlockDelta": {
+            "contentBlockIndex": 0,
+            "delta": {"text": "Hello world"},
+        }
+    }
+    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model")
+
+    assert result is not None
+    assert result.choices[0].delta.content == "Hello world"
+
+
+def test_streaming_chunk_message_stop_tool_use() -> None:
+    """Test streaming chunk with messageStop for tool_use."""
+    chunk = {"messageStop": {"stopReason": "tool_use"}}
+    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model")
+
+    assert result is not None
+    assert result.choices[0].finish_reason == "tool_calls"
+
+
+def test_streaming_chunk_message_stop_max_tokens() -> None:
+    """Test streaming chunk with messageStop for max_tokens."""
+    chunk = {"messageStop": {"stopReason": "max_tokens"}}
+    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model")
+
+    assert result is not None
+    assert result.choices[0].finish_reason == "length"
+
+
+def test_streaming_chunk_message_stop_end_turn() -> None:
+    """Test streaming chunk with messageStop for end_turn."""
+    chunk = {"messageStop": {"stopReason": "end_turn"}}
+    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model")
+
+    assert result is not None
+    assert result.choices[0].finish_reason == "stop"
+
+
+def test_streaming_chunk_message_start() -> None:
+    """Test streaming chunk with messageStart."""
+    chunk = {"messageStart": {"role": "assistant"}}
+    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model")
+
+    assert result is not None
+    assert result.choices[0].delta.content == ""
+
+
+def test_streaming_chunk_unknown_type_returns_none() -> None:
+    """Test streaming chunk with unknown type returns None."""
+    chunk: dict[str, Any] = {"unknownField": {}}
+    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model")
+
+    assert result is None
+
+
+def test_streaming_chunk_content_block_start_text() -> None:
+    """Test streaming chunk with contentBlockStart for text (no special block)."""
+    chunk = {
+        "contentBlockStart": {
+            "contentBlockIndex": 0,
+            "start": {},
+        }
+    }
+    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model")
+
+    assert result is not None
+    assert result.choices[0].delta.content == ""
