@@ -307,9 +307,6 @@ def _create_openai_chunk_from_google_chunk(
         tool_calls=tool_calls_list if tool_calls_list else None,
     )
 
-    if tool_calls_list:
-        delta.tool_calls = tool_calls_list
-
     choice = ChunkChoice(
         index=0,
         delta=delta,
