@@ -273,9 +273,9 @@ def _create_openai_chunk_from_google_chunk(
     for part in candidate.content.parts:
         if part.thought:
             reasoning_content += part.text or ""
-        elif function_call := getattr(part, "function_call", None):
+        elif function_call := part.function_call:
             args_dict = {}
-            if args := getattr(function_call, "args", None):
+            if args := function_call.args:
                 for key, value in args.items():
                     args_dict[key] = value
 
@@ -297,7 +297,7 @@ def _create_openai_chunk_from_google_chunk(
     finish_reason: Literal["stop", "length", "tool_calls", "content_filter", "function_call"] | None = None
     if tool_calls_list:
         finish_reason = "tool_calls"
-    elif getattr(candidate.finish_reason, "value", None) == "STOP":
+    elif candidate.finish_reason and candidate.finish_reason.value == "STOP":
         finish_reason = "stop"
 
     delta = ChoiceDelta(
