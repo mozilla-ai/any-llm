@@ -1,10 +1,48 @@
 from datetime import datetime
+from typing import Any
 from unittest.mock import Mock
 
 from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
 
 from any_llm.providers.together.utils import _create_openai_chunk_from_together_chunk
 from any_llm.types.completion import ChatCompletionChunk
+
+
+def make_together_chunk(
+    content: str | None = None,
+    role: str = "assistant",
+    reasoning: str | None = None,
+    tool_calls: list[Any] | None = None,
+    finish_reason: str = "stop",
+    usage: dict[str, int] | None = None,
+) -> Mock:
+    """Create a mock TogetherChatCompletionChunk for testing."""
+    delta_mock = Mock()
+    delta_mock.content = content
+    delta_mock.role = role
+    delta_mock.reasoning = reasoning
+    delta_mock.tool_calls = tool_calls
+
+    choice_mock = Mock()
+    choice_mock.delta = delta_mock
+    choice_mock.index = 0
+    choice_mock.finish_reason = finish_reason
+
+    usage_mock = None
+    if usage:
+        usage_mock = Mock()
+        usage_mock.prompt_tokens = usage.get("prompt_tokens", 0)
+        usage_mock.completion_tokens = usage.get("completion_tokens", 0)
+        usage_mock.total_tokens = usage.get("total_tokens", 0)
+
+    together_chunk = Mock(spec=TogetherChatCompletionChunk)
+    together_chunk.choices = [choice_mock]
+    together_chunk.id = "test-id"
+    together_chunk.created = int(datetime.now().timestamp())
+    together_chunk.model = "test-model"
+    together_chunk.usage = usage_mock
+
+    return together_chunk
 
 
 def test_create_openai_chunk_handles_empty_choices() -> None:
@@ -56,24 +94,7 @@ def test_create_openai_chunk_with_tool_calls_dict_format() -> None:
         "function": {"name": "get_weather", "arguments": '{"location": "Paris"}'},
     }
 
-    delta_mock = Mock()
-    delta_mock.content = None
-    delta_mock.role = "assistant"
-    delta_mock.reasoning = None
-    delta_mock.tool_calls = [tool_call_dict]
-
-    choice_mock = Mock()
-    choice_mock.delta = delta_mock
-    choice_mock.index = 0
-    choice_mock.finish_reason = "tool_calls"
-
-    together_chunk = Mock(spec=TogetherChatCompletionChunk)
-    together_chunk.choices = [choice_mock]
-    together_chunk.id = "test-id"
-    together_chunk.created = int(datetime.now().timestamp())
-    together_chunk.model = "test-model"
-    together_chunk.usage = None
-
+    together_chunk = make_together_chunk(tool_calls=[tool_call_dict], finish_reason="tool_calls")
     result = _create_openai_chunk_from_together_chunk(together_chunk)
 
     assert len(result.choices) == 1
@@ -98,24 +119,7 @@ def test_create_openai_chunk_with_tool_calls_object_format() -> None:
     tool_call_mock.index = 0
     tool_call_mock.function = func_mock
 
-    delta_mock = Mock()
-    delta_mock.content = None
-    delta_mock.role = "assistant"
-    delta_mock.reasoning = None
-    delta_mock.tool_calls = [tool_call_mock]
-
-    choice_mock = Mock()
-    choice_mock.delta = delta_mock
-    choice_mock.index = 0
-    choice_mock.finish_reason = "tool_calls"
-
-    together_chunk = Mock(spec=TogetherChatCompletionChunk)
-    together_chunk.choices = [choice_mock]
-    together_chunk.id = "test-id"
-    together_chunk.created = int(datetime.now().timestamp())
-    together_chunk.model = "test-model"
-    together_chunk.usage = None
-
+    together_chunk = make_together_chunk(tool_calls=[tool_call_mock], finish_reason="tool_calls")
     result = _create_openai_chunk_from_together_chunk(together_chunk)
 
     assert result.choices[0].delta.tool_calls is not None
@@ -133,24 +137,7 @@ def test_create_openai_chunk_with_tool_calls_missing_id() -> None:
         "function": {"name": "func", "arguments": "{}"},
     }
 
-    delta_mock = Mock()
-    delta_mock.content = None
-    delta_mock.role = "assistant"
-    delta_mock.reasoning = None
-    delta_mock.tool_calls = [tool_call_dict]
-
-    choice_mock = Mock()
-    choice_mock.delta = delta_mock
-    choice_mock.index = 0
-    choice_mock.finish_reason = "tool_calls"
-
-    together_chunk = Mock(spec=TogetherChatCompletionChunk)
-    together_chunk.choices = [choice_mock]
-    together_chunk.id = "test-id"
-    together_chunk.created = int(datetime.now().timestamp())
-    together_chunk.model = "test-model"
-    together_chunk.usage = None
-
+    together_chunk = make_together_chunk(tool_calls=[tool_call_dict], finish_reason="tool_calls")
     result = _create_openai_chunk_from_together_chunk(together_chunk)
 
     assert result.choices[0].delta.tool_calls is not None
@@ -166,24 +153,7 @@ def test_create_openai_chunk_with_tool_calls_object_missing_function() -> None:
     tool_call_mock.index = 0
     tool_call_mock.function = None
 
-    delta_mock = Mock()
-    delta_mock.content = None
-    delta_mock.role = "assistant"
-    delta_mock.reasoning = None
-    delta_mock.tool_calls = [tool_call_mock]
-
-    choice_mock = Mock()
-    choice_mock.delta = delta_mock
-    choice_mock.index = 0
-    choice_mock.finish_reason = "tool_calls"
-
-    together_chunk = Mock(spec=TogetherChatCompletionChunk)
-    together_chunk.choices = [choice_mock]
-    together_chunk.id = "test-id"
-    together_chunk.created = int(datetime.now().timestamp())
-    together_chunk.model = "test-model"
-    together_chunk.usage = None
-
+    together_chunk = make_together_chunk(tool_calls=[tool_call_mock], finish_reason="tool_calls")
     result = _create_openai_chunk_from_together_chunk(together_chunk)
 
     assert result.choices[0].delta.tool_calls is not None
@@ -195,24 +165,7 @@ def test_create_openai_chunk_with_tool_calls_object_missing_function() -> None:
 
 def test_create_openai_chunk_with_reasoning() -> None:
     """Test handling reasoning content."""
-    delta_mock = Mock()
-    delta_mock.content = "The answer is 42"
-    delta_mock.role = "assistant"
-    delta_mock.reasoning = "Let me think about this..."
-    delta_mock.tool_calls = None
-
-    choice_mock = Mock()
-    choice_mock.delta = delta_mock
-    choice_mock.index = 0
-    choice_mock.finish_reason = "stop"
-
-    together_chunk = Mock(spec=TogetherChatCompletionChunk)
-    together_chunk.choices = [choice_mock]
-    together_chunk.id = "test-id"
-    together_chunk.created = int(datetime.now().timestamp())
-    together_chunk.model = "test-model"
-    together_chunk.usage = None
-
+    together_chunk = make_together_chunk(content="The answer is 42", reasoning="Let me think about this...")
     result = _create_openai_chunk_from_together_chunk(together_chunk)
 
     assert result.choices[0].delta.content == "The answer is 42"
@@ -222,29 +175,10 @@ def test_create_openai_chunk_with_reasoning() -> None:
 
 def test_create_openai_chunk_with_usage() -> None:
     """Test handling usage metadata."""
-    delta_mock = Mock()
-    delta_mock.content = "Hello"
-    delta_mock.role = "assistant"
-    delta_mock.reasoning = None
-    delta_mock.tool_calls = None
-
-    choice_mock = Mock()
-    choice_mock.delta = delta_mock
-    choice_mock.index = 0
-    choice_mock.finish_reason = "stop"
-
-    usage_mock = Mock()
-    usage_mock.prompt_tokens = 10
-    usage_mock.completion_tokens = 5
-    usage_mock.total_tokens = 15
-
-    together_chunk = Mock(spec=TogetherChatCompletionChunk)
-    together_chunk.choices = [choice_mock]
-    together_chunk.id = "test-id"
-    together_chunk.created = int(datetime.now().timestamp())
-    together_chunk.model = "test-model"
-    together_chunk.usage = usage_mock
-
+    together_chunk = make_together_chunk(
+        content="Hello",
+        usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+    )
     result = _create_openai_chunk_from_together_chunk(together_chunk)
 
     assert result.usage is not None

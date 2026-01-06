@@ -165,30 +165,32 @@ async def test_huggingface_extracts_think_tags_streaming() -> None:
         assert full_reasoning == "Let me calculate this."
 
 
-def test_create_openai_chunk_with_tool_calls() -> None:
-    """Test streaming chunk handles tool calls correctly."""
-    func_mock = Mock()
-    func_mock.name = "get_weather"
-    func_mock.arguments = '{"location": "Paris"}'
-
-    tool_call_mock = Mock()
-    tool_call_mock.id = "call-123"
-    tool_call_mock.index = 0
-    tool_call_mock.function = func_mock
-
+def make_hf_chunk(
+    content: str | None = None,
+    role: str = "assistant",
+    tool_calls: list[Any] | None = None,
+    reasoning: dict[str, str] | None = None,
+    finish_reason: str = "stop",
+    usage: dict[str, int] | None = None,
+) -> Mock:
+    """Create a mock HuggingFace streaming chunk for testing."""
     delta_mock = Mock()
-    delta_mock.content = None
-    delta_mock.role = "assistant"
-    delta_mock.tool_calls = [tool_call_mock]
+    delta_mock.content = content
+    delta_mock.role = role
+    delta_mock.tool_calls = tool_calls
+    if reasoning is not None:
+        delta_mock.reasoning = reasoning
 
     choice_mock = Mock()
     choice_mock.delta = delta_mock
-    choice_mock.finish_reason = "tool_calls"
+    choice_mock.finish_reason = finish_reason
 
-    usage_mock = Mock()
-    usage_mock.prompt_tokens = 10
-    usage_mock.completion_tokens = 5
-    usage_mock.total_tokens = 15
+    usage_mock = None
+    if usage:
+        usage_mock = Mock()
+        usage_mock.prompt_tokens = usage.get("prompt_tokens", 0)
+        usage_mock.completion_tokens = usage.get("completion_tokens", 0)
+        usage_mock.total_tokens = usage.get("total_tokens", 0)
 
     chunk_mock = Mock()
     chunk_mock.choices = [choice_mock]
@@ -196,103 +198,84 @@ def test_create_openai_chunk_with_tool_calls() -> None:
     chunk_mock.model = "test-model"
     chunk_mock.usage = usage_mock
 
-    result = _create_openai_chunk_from_huggingface_chunk(chunk_mock)
+    return chunk_mock
+
+
+def make_tool_call_mock(
+    tc_id: str | None = "call-123",
+    index: int | None = 0,
+    name: str = "function",
+    arguments: str = "{}",
+    has_function: bool = True,
+) -> Mock:
+    """Create a mock tool call for testing."""
+    tool_call_mock = Mock()
+    tool_call_mock.id = tc_id
+    tool_call_mock.index = index
+    if has_function:
+        func_mock = Mock()
+        func_mock.name = name
+        func_mock.arguments = arguments
+        tool_call_mock.function = func_mock
+    else:
+        tool_call_mock.function = None
+    return tool_call_mock
+
+
+def test_create_openai_chunk_with_tool_calls() -> None:
+    """Test streaming chunk handles tool calls correctly."""
+    tool_call = make_tool_call_mock(tc_id="call-123", index=0, name="get_weather", arguments='{"location": "Paris"}')
+    chunk = make_hf_chunk(
+        tool_calls=[tool_call],
+        finish_reason="tool_calls",
+        usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+    )
+
+    result = _create_openai_chunk_from_huggingface_chunk(chunk)
 
     assert len(result.choices) == 1
     assert result.choices[0].delta.tool_calls is not None
     assert len(result.choices[0].delta.tool_calls) == 1
-    tool_call = result.choices[0].delta.tool_calls[0]
-    assert tool_call.id == "call-123"
-    assert tool_call.index == 0
-    assert tool_call.function is not None
-    assert tool_call.function.name == "get_weather"
-    assert tool_call.function.arguments == '{"location": "Paris"}'
+    tc = result.choices[0].delta.tool_calls[0]
+    assert tc.id == "call-123"
+    assert tc.index == 0
+    assert tc.function is not None
+    assert tc.function.name == "get_weather"
+    assert tc.function.arguments == '{"location": "Paris"}'
 
 
 def test_create_openai_chunk_with_tool_calls_missing_id() -> None:
     """Test streaming chunk generates id when tool call id is missing."""
-    func_mock = Mock()
-    func_mock.name = "search"
-    func_mock.arguments = "{}"
+    tool_call = make_tool_call_mock(tc_id=None, index=None, name="search", arguments="{}")
+    chunk = make_hf_chunk(tool_calls=[tool_call], finish_reason="tool_calls")
 
-    tool_call_mock = Mock()
-    tool_call_mock.id = None
-    tool_call_mock.index = None
-    tool_call_mock.function = func_mock
-
-    delta_mock = Mock()
-    delta_mock.content = None
-    delta_mock.role = "assistant"
-    delta_mock.tool_calls = [tool_call_mock]
-
-    choice_mock = Mock()
-    choice_mock.delta = delta_mock
-    choice_mock.finish_reason = "tool_calls"
-
-    chunk_mock = Mock()
-    chunk_mock.choices = [choice_mock]
-    chunk_mock.created = 123456
-    chunk_mock.model = "test-model"
-    chunk_mock.usage = None
-
-    result = _create_openai_chunk_from_huggingface_chunk(chunk_mock)
+    result = _create_openai_chunk_from_huggingface_chunk(chunk)
 
     assert result.choices[0].delta.tool_calls is not None
-    tool_call = result.choices[0].delta.tool_calls[0]
-    assert tool_call.id is not None
-    assert tool_call.id.startswith("call_")
+    tc = result.choices[0].delta.tool_calls[0]
+    assert tc.id is not None
+    assert tc.id.startswith("call_")
 
 
 def test_create_openai_chunk_with_tool_calls_missing_function() -> None:
     """Test streaming chunk handles tool call without function."""
-    tool_call_mock = Mock()
-    tool_call_mock.id = "call-456"
-    tool_call_mock.index = 0
-    tool_call_mock.function = None
+    tool_call = make_tool_call_mock(tc_id="call-456", index=0, has_function=False)
+    chunk = make_hf_chunk(tool_calls=[tool_call], finish_reason="tool_calls")
 
-    delta_mock = Mock()
-    delta_mock.content = None
-    delta_mock.role = "assistant"
-    delta_mock.tool_calls = [tool_call_mock]
-
-    choice_mock = Mock()
-    choice_mock.delta = delta_mock
-    choice_mock.finish_reason = "tool_calls"
-
-    chunk_mock = Mock()
-    chunk_mock.choices = [choice_mock]
-    chunk_mock.created = 123456
-    chunk_mock.model = "test-model"
-    chunk_mock.usage = None
-
-    result = _create_openai_chunk_from_huggingface_chunk(chunk_mock)
+    result = _create_openai_chunk_from_huggingface_chunk(chunk)
 
     assert result.choices[0].delta.tool_calls is not None
-    tool_call = result.choices[0].delta.tool_calls[0]
-    assert tool_call.function is not None
-    assert tool_call.function.name == ""
-    assert tool_call.function.arguments == ""
+    tc = result.choices[0].delta.tool_calls[0]
+    assert tc.function is not None
+    assert tc.function.name == ""
+    assert tc.function.arguments == ""
 
 
 def test_create_openai_chunk_with_reasoning_dict() -> None:
     """Test streaming chunk handles reasoning as dict format."""
-    delta_mock = Mock()
-    delta_mock.content = "Answer"
-    delta_mock.role = "assistant"
-    delta_mock.tool_calls = None
-    delta_mock.reasoning = {"content": "Thinking..."}
+    chunk = make_hf_chunk(content="Answer", reasoning={"content": "Thinking..."})
 
-    choice_mock = Mock()
-    choice_mock.delta = delta_mock
-    choice_mock.finish_reason = "stop"
-
-    chunk_mock = Mock()
-    chunk_mock.choices = [choice_mock]
-    chunk_mock.created = 123456
-    chunk_mock.model = "test-model"
-    chunk_mock.usage = None
-
-    result = _create_openai_chunk_from_huggingface_chunk(chunk_mock)
+    result = _create_openai_chunk_from_huggingface_chunk(chunk)
 
     assert result.choices[0].delta.content == "Answer"
     assert result.choices[0].delta.reasoning is not None
@@ -301,22 +284,9 @@ def test_create_openai_chunk_with_reasoning_dict() -> None:
 
 def test_create_openai_chunk_without_usage() -> None:
     """Test streaming chunk handles missing usage metadata."""
-    delta_mock = Mock()
-    delta_mock.content = "Hello"
-    delta_mock.role = "assistant"
-    delta_mock.tool_calls = None
+    chunk = make_hf_chunk(content="Hello")
 
-    choice_mock = Mock()
-    choice_mock.delta = delta_mock
-    choice_mock.finish_reason = "stop"
-
-    chunk_mock = Mock()
-    chunk_mock.choices = [choice_mock]
-    chunk_mock.created = 123456
-    chunk_mock.model = "test-model"
-    chunk_mock.usage = None
-
-    result = _create_openai_chunk_from_huggingface_chunk(chunk_mock)
+    result = _create_openai_chunk_from_huggingface_chunk(chunk)
 
     assert result.usage is None
     assert result.choices[0].delta.content == "Hello"
