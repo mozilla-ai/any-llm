@@ -1,7 +1,7 @@
 import base64
 import json
 from time import time
-from typing import Any
+from typing import Any, Literal, cast
 
 from google.genai import types
 from google.genai.pagers import Pager
@@ -311,7 +311,10 @@ def _create_openai_chunk_from_google_chunk(
     choice = ChunkChoice(
         index=0,
         delta=delta,
-        finish_reason=finish_reason,
+        finish_reason=cast(
+            "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call'] | None",
+            finish_reason,
+        ),
     )
 
     usage = None

@@ -636,6 +636,8 @@ def test_streaming_chunk_includes_tool_calls() -> None:
     # Verify tool calls are present in the streaming chunk
     assert chunk.choices[0].delta.tool_calls is not None
     assert len(chunk.choices[0].delta.tool_calls) == 1
-    assert chunk.choices[0].delta.tool_calls[0].function.name == "get_weather"
-    assert chunk.choices[0].delta.tool_calls[0].function.arguments == '{"location": "Tokyo"}'
+    tool_call = chunk.choices[0].delta.tool_calls[0]
+    assert tool_call.function is not None
+    assert tool_call.function.name == "get_weather"
+    assert tool_call.function.arguments == '{"location": "Tokyo"}'
     assert chunk.choices[0].finish_reason == "tool_calls"
