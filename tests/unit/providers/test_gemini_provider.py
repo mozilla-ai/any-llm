@@ -680,3 +680,115 @@ def test_convert_messages_parallel_tool_calls_only_first_gets_skip_sentinel() ->
     assert assistant_message.parts[0].thought_signature is not None
     # Second tool call should have None (no sentinel)
     assert assistant_message.parts[1].thought_signature is None
+
+
+def test_streaming_completion_with_tool_call_without_args() -> None:
+    """Test streaming chunks handle function calls with args=None."""
+    from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
+
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_function_call = Mock()
+    mock_function_call.name = "no_args_function"
+    mock_function_call.args = None
+
+    mock_part = Mock()
+    mock_part.function_call = mock_function_call
+    mock_part.thought = None
+    mock_part.text = None
+
+    mock_response.candidates[0].content.parts = [mock_part]
+    mock_response.candidates[0].finish_reason = None
+    mock_response.model_version = "gemini-2.5-flash"
+    mock_response.usage_metadata = None
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    assert chunk.choices[0].delta.tool_calls is not None
+    assert len(chunk.choices[0].delta.tool_calls) == 1
+    tool_call = chunk.choices[0].delta.tool_calls[0]
+    assert tool_call.function is not None
+    assert tool_call.function.name == "no_args_function"
+    assert tool_call.function.arguments == "{}"
+    assert chunk.choices[0].finish_reason == "tool_calls"
+
+
+def test_streaming_completion_with_finish_reason_none() -> None:
+    """Test streaming chunks handle finish_reason=None properly."""
+    from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
+
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+    mock_response.candidates[0].content.parts = [Mock()]
+    mock_response.candidates[0].content.parts[0].text = "Hello"
+    mock_response.candidates[0].content.parts[0].thought = None
+    mock_response.candidates[0].content.parts[0].function_call = None
+    mock_response.candidates[0].finish_reason = None
+    mock_response.model_version = "gemini-2.5-flash"
+    mock_response.usage_metadata = None
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    assert chunk.choices[0].delta.content == "Hello"
+    assert chunk.choices[0].finish_reason is None
+
+
+def test_streaming_completion_with_reasoning_content() -> None:
+    """Test streaming chunks handle reasoning/thought content."""
+    from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
+
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_thought_part = Mock()
+    mock_thought_part.thought = True
+    mock_thought_part.text = "Let me think about this..."
+    mock_thought_part.function_call = None
+
+    mock_text_part = Mock()
+    mock_text_part.thought = None
+    mock_text_part.text = "The answer is 42."
+    mock_text_part.function_call = None
+
+    mock_response.candidates[0].content.parts = [mock_thought_part, mock_text_part]
+    mock_response.candidates[0].finish_reason = Mock()
+    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.model_version = "gemini-2.5-flash"
+    mock_response.usage_metadata = None
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    assert chunk.choices[0].delta.content == "The answer is 42."
+    assert chunk.choices[0].delta.reasoning is not None
+    assert chunk.choices[0].delta.reasoning.content == "Let me think about this..."
+    assert chunk.choices[0].finish_reason == "stop"
+
+
+def test_streaming_completion_with_function_call_none() -> None:
+    """Test streaming chunks handle parts where function_call is None (falsy path)."""
+    from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
+
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_part = Mock()
+    mock_part.thought = None
+    mock_part.function_call = None
+    mock_part.text = "Just text content"
+
+    mock_response.candidates[0].content.parts = [mock_part]
+    mock_response.candidates[0].finish_reason = Mock()
+    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.model_version = "gemini-2.5-flash"
+    mock_response.usage_metadata = None
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    assert chunk.choices[0].delta.content == "Just text content"
+    assert chunk.choices[0].delta.tool_calls is None
+    assert chunk.choices[0].finish_reason == "stop"
