@@ -3,7 +3,7 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
+from together.types.chat import ChatCompletionChunk as TogetherChatCompletionChunk
 
 from any_llm.providers.together.utils import _create_openai_chunk_from_together_chunk
 from any_llm.types.completion import ChatCompletionChunk, CompletionParams
