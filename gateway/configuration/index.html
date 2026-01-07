@@ -1074,6 +1074,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#provider-client-args" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provider Client Args
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#next-steps" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1356,6 +1367,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#provider-client-args" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provider Client Args
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#next-steps" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1412,7 +1434,7 @@
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1">#Master key for admin access</span>
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="nt">master_key</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;your-secure-master-key&quot;</span>
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1">## LLM Provider Credentials </span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1">## LLM Provider Credentials</span>
 </span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="nt">providers</span><span class="p">:</span>
 </span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="nt">openai</span><span class="p">:</span>
 </span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;${OPENAI_API_KEY}&quot;</span>
@@ -1465,13 +1487,28 @@
 </span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="s1">    &quot;output_price_per_million&quot;: 60.0</span>
 </span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="s1">  }&#39;</span>
 </span></code></pre></div></p>
-<p>This is useful for:<br />
-- Updating pricing without restarting the gateway<br />
-- Managing pricing in production environments<br />
-- Adjusting rates as provider pricing changes  </p>
-<p><strong>Important notes:</strong><br />
-- Database pricing takes precedence - config only sets initial values<br />
+<p>This is useful for:
+- Updating pricing without restarting the gateway
+- Managing pricing in production environments
+- Adjusting rates as provider pricing changes</p>
+<p><strong>Important notes:</strong>
+- Database pricing takes precedence - config only sets initial values
 - If pricing for the model already exists in the database, config values are ignored (with a warning logged)</p>
+<h2 id="provider-client-args">Provider Client Args</h2>
+<p>You can set additional arguments to provider clients via the <code>client_args</code> configuration. These arguments are passed directly to the provider's client initialization, enabling custom headers, timeouts, and other provider-specific options.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">providers</span><span class="p">:</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">openai</span><span class="p">:</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;${OPENAI_API_KEY}&quot;</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="nt">client_args</span><span class="p">:</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">      </span><span class="nt">custom_headers</span><span class="p">:</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">        </span><span class="nt">X-Custom-Header</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;custom-value&quot;</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">      </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
+</span></code></pre></div>
+<p>Common use cases:
+- <strong>Custom headers</strong>: Pass additional headers to the provider (e.g., for proxy authentication or request tracing)
+- <strong>Timeouts</strong>: Configure connection and request timeouts
+- <strong>Provider-specific options</strong>: Pass any additional arguments supported by the provider's client</p>
+<p>The available <code>client_args</code> options depend on the provider. See the <a href="https://mozilla-ai.github.io/any-llm/providers/">any-llm provider documentation</a> for provider-specific options.</p>
 <h2 id="next-steps">Next Steps</h2>
 <ul>
 <li>See <a href="https://mozilla-ai.github.io/any-llm/providers/">supported providers</a> for provider-specific configuration</li>
