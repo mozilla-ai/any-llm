@@ -25,7 +25,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.LLAMACPP: "N/A",
         LLMProvider.VLLM: "N/A",
         LLMProvider.LMSTUDIO: "openai/gpt-oss-20b",  # You must have LM Studio running and the server enabled
-        LLMProvider.AZUREOPENAI: "azure/<your_deployment_name>",
+        LLMProvider.AZUREOPENAI: "gpt-4.1-nano",
         LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.COHERE: "command-a-reasoning-08-2025",
         LLMProvider.DEEPSEEK: "deepseek-reasoner",
@@ -73,7 +73,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.PORTKEY: "@any-llm-test/gpt-4.1-mini",
         LLMProvider.LLAMA: "Llama-4-Maverick-17B-128E-Instruct-FP8",
         LLMProvider.AZURE: "openai/gpt-4.1-nano",
-        LLMProvider.AZUREOPENAI: "azure/<your_deployment_name>",
+        LLMProvider.AZUREOPENAI: "gpt-4.1-nano",
         LLMProvider.PERPLEXITY: "sonar",
         LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
         LLMProvider.LLAMACPP: "N/A",
@@ -112,7 +112,7 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.GEMINI: "gemini-embedding-001",
         LLMProvider.VERTEXAI: "gemini-embedding-001",
         LLMProvider.AZURE: "openai/text-embedding-3-small",
-        LLMProvider.AZUREOPENAI: "azure/<your_deployment_name>",
+        LLMProvider.AZUREOPENAI: "gpt-4.1-nano",
         LLMProvider.VOYAGE: "voyage-3.5-lite",
         LLMProvider.LLAMACPP: "N/A",
         LLMProvider.GATEWAY: "text-embedding-ada-002",
@@ -146,6 +146,10 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
             "project_id": "5b083ace-95a6-4f95-a0a0-d4c5d9e98ca0",
         },
         LLMProvider.XAI: {"timeout": 100},
+        LLMProvider.AZUREOPENAI: {
+            "api_base": "https://mlrun-me8bof5t-eastus2.cognitiveservices.azure.com/",
+            "api_version": "2025-03-01-preview",
+        },
     }
 
 

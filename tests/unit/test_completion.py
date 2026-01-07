@@ -143,7 +143,7 @@ async def test_all_providers_can_be_loaded(provider: str) -> None:
     without requiring any code changes.
     """
     kwargs: dict[str, Any] = {"api_key": "test_key"}
-    if provider == "azure":
+    if provider in ("azure", "azureopenai"):
         kwargs["api_base"] = "test_api_base"
     if provider == "bedrock":
         kwargs["region_name"] = "us-east-1"
@@ -199,7 +199,7 @@ async def test_provider_factory_can_create_all_supported_providers() -> None:
         kwargs: dict[str, Any] = {"api_key": "test_key"}
         if provider_name == "platform":
             pytest.skip("ValueError: Invalid ANY_API_KEY format. Expected: ANY.v1.<kid>.<fingerprint>-<base64_key>")
-        if provider_name == "azure":
+        if provider_name in ("azure", "azureopenai"):
             kwargs["api_base"] = "test_api_base"
         if provider_name == "bedrock":
             kwargs["region_name"] = "us-east-1"
