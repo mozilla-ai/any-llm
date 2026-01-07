@@ -1,4 +1,5 @@
 from typing import Any
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from pydantic import BaseModel
@@ -137,3 +138,29 @@ def test_patch_messages_with_invalid_tool_sequence_raises_error() -> None:
     ]
     with pytest.raises(ValueError, match=r"A tool message must be preceded by an assistant message with tool_calls."):
         _patch_messages(messages)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reasoning_effort", ["auto", "none"])
+async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
+    """Test that reasoning_effort 'auto' and 'none' are filtered from Cohere API calls."""
+    pytest.importorskip("cohere")
+    from any_llm.providers.cohere.cohere import CohereProvider
+
+    with patch("any_llm.providers.cohere.cohere.cohere") as mock_cohere:
+        mock_client = Mock()
+        mock_cohere.AsyncClientV2.return_value = mock_client
+        mock_client.chat = AsyncMock(return_value=Mock())
+
+        with patch("any_llm.providers.cohere.cohere._convert_response", return_value=Mock()):
+            provider = CohereProvider(api_key="test-api-key")
+            await provider._acompletion(
+                CompletionParams(
+                    model_id="command-r-plus",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    reasoning_effort=reasoning_effort,  # type: ignore[arg-type]
+                ),
+            )
+
+            call_kwargs = mock_client.chat.call_args[1]
+            assert "reasoning_effort" not in call_kwargs

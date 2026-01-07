@@ -14,7 +14,13 @@ from any_llm.any_llm import AnyLLM
 from any_llm.logging import logger
 from any_llm.providers.openai.utils import _convert_chat_completion, _normalize_openai_dict_response
 from any_llm.types.batch import Batch
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    CompletionParams,
+    CreateEmbeddingResponse,
+    ReasoningEffort,
+)
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
@@ -40,7 +46,7 @@ class BaseOpenAIProvider(AnyLLM):
 
     PACKAGES_INSTALLED = True
 
-    _DEFAULT_REASONING_EFFORT: Literal["minimal", "low", "medium", "high", "auto"] | None = None
+    _DEFAULT_REASONING_EFFORT: ReasoningEffort | None = None
 
     client: AsyncOpenAI
 

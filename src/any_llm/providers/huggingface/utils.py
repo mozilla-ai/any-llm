@@ -11,6 +11,8 @@ from openai.lib._parsing import type_to_response_format_param
 from any_llm.types.completion import (
     ChatCompletionChunk,
     ChoiceDelta,
+    ChoiceDeltaToolCall,
+    ChoiceDeltaToolCallFunction,
     ChunkChoice,
     CompletionParams,
     CompletionUsage,
@@ -58,6 +60,28 @@ def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletion
             reasoning=reasoning_obj,
         )
 
+        if hf_delta.tool_calls:
+            openai_tool_calls = []
+            for idx, tc in enumerate(hf_delta.tool_calls):
+                tc_id = tc.id or f"call_{uuid.uuid4()}"
+                tc_index = tc.index if tc.index is not None else idx
+                func = tc.function
+                name = func.name if func else ""
+                arguments = func.arguments if func else ""
+
+                openai_tool_calls.append(
+                    ChoiceDeltaToolCall(
+                        index=tc_index,
+                        id=tc_id,
+                        type="function",
+                        function=ChoiceDeltaToolCallFunction(
+                            name=name,
+                            arguments=arguments,
+                        ),
+                    )
+                )
+            delta.tool_calls = openai_tool_calls
+
         choice = ChunkChoice(
             index=i,
             delta=delta,
@@ -99,7 +123,7 @@ def _convert_params(params: CompletionParams, **kwargs: dict[str, Any]) -> dict[
     # timeout is passed to the client instantiation, should not reach the `client.chat_completion` call.
     result_kwargs.pop("timeout", None)
 
-    if params.reasoning_effort == "auto":
+    if params.reasoning_effort in ("auto", "none"):
         params.reasoning_effort = None
 
     if params.response_format is not None:

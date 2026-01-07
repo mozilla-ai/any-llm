@@ -28,7 +28,7 @@ def build_reasoning_directive(
         return _normalize_reasoning_obj(reasoning)
 
     # Priority 2: Standard reasoning_effort parameter
-    if reasoning_effort and reasoning_effort != "auto":
+    if reasoning_effort and reasoning_effort not in ("auto", "none"):
         level = str(reasoning_effort).lower()
         if level in {"low", "medium", "high"}:
             return {"effort": level}

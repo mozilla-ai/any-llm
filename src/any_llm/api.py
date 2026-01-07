@@ -1,12 +1,18 @@
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel
 
 from any_llm import AnyLLM
 from any_llm.constants import LLMProvider
 from any_llm.types.batch import Batch
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, CreateEmbeddingResponse
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    CreateEmbeddingResponse,
+    ReasoningEffort,
+)
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
 from any_llm.utils.decorators import BATCH_API_EXPERIMENTAL_MESSAGE, experimental
@@ -38,7 +44,7 @@ def completion(
     logit_bias: dict[str, float] | None = None,
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
-    reasoning_effort: Literal["minimal", "low", "medium", "high", "auto"] | None = "auto",
+    reasoning_effort: ReasoningEffort | None = "auto",
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
@@ -145,7 +151,7 @@ async def acompletion(
     logit_bias: dict[str, float] | None = None,
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
-    reasoning_effort: Literal["minimal", "low", "medium", "high", "auto"] | None = "auto",
+    reasoning_effort: ReasoningEffort | None = "auto",
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:

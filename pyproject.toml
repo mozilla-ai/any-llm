@@ -72,7 +72,7 @@ watsonx = [
 ]
 
 together = [
-  "together",
+  "together>=2.0.0a1",
 ]
 
 ollama = [

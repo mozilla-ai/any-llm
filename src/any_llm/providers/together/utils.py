@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal, cast
 
-from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
+from together.types.chat import ChatCompletionChunk as TogetherChatCompletionChunk
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -31,8 +31,8 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
 
         if delta_content:
             content = delta_content.content
-            if delta_content.role:  # type: ignore[attr-defined]
-                role = cast("Literal['assistant', 'user', 'system']", delta_content.role)  # type: ignore[attr-defined]
+            if delta_content.role:
+                role = cast("Literal['assistant', 'user', 'system']", delta_content.role)
             if hasattr(delta_content, "reasoning") and delta_content.reasoning:
                 reasoning = Reasoning(content=delta_content.reasoning)
 
@@ -40,14 +40,29 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
 
         if delta_content and hasattr(delta_content, "tool_calls") and delta_content.tool_calls:
             openai_tool_calls = []
-            for tool_call in delta_content.tool_calls:
+            for idx, tool_call in enumerate(delta_content.tool_calls):
+                if isinstance(tool_call, dict):
+                    func = tool_call.get("function", {})
+                    tc_id = tool_call.get("id") or str(uuid.uuid4())
+                    raw_index = tool_call.get("index")
+                    tc_index = raw_index if raw_index is not None else idx
+                    name = func.get("name", "")
+                    arguments = func.get("arguments", "")
+                else:
+                    tc_id = getattr(tool_call, "id", None) or str(uuid.uuid4())
+                    raw_index = getattr(tool_call, "index", None)
+                    tc_index = raw_index if raw_index is not None else idx
+                    func = getattr(tool_call, "function", None)
+                    name = getattr(func, "name", "") if func else ""
+                    arguments = getattr(func, "arguments", "") if func else ""
+
                 openai_tool_call = ChoiceDeltaToolCall(
-                    index=0,
-                    id=str(uuid.uuid4()),
+                    index=tc_index,
+                    id=tc_id,
                     type="function",
                     function=ChoiceDeltaToolCallFunction(
-                        name=tool_call.function.name,
-                        arguments=tool_call.function.arguments,
+                        name=name,
+                        arguments=arguments,
                     ),
                 )
                 openai_tool_calls.append(openai_tool_call)

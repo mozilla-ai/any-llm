@@ -61,7 +61,7 @@ class GroqProvider(AnyLLM):
         """Convert CompletionParams to kwargs for Groq API."""
         # Groq does not support providing reasoning effort
         converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
-        if converted_params.get("reasoning_effort") == "auto":
+        if converted_params.get("reasoning_effort") in ("auto", "none"):
             converted_params.pop("reasoning_effort")
         converted_params.update(kwargs)
         return converted_params

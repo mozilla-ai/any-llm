@@ -94,7 +94,7 @@ class GoogleProvider(AnyLLM):
         if params.presence_penalty is not None:
             kwargs["presence_penalty"] = params.presence_penalty
         if params.reasoning_effort != "auto":
-            if params.reasoning_effort is None:
+            if params.reasoning_effort is None or params.reasoning_effort == "none":
                 kwargs["thinking_config"] = types.ThinkingConfig(include_thoughts=False)
             else:
                 kwargs["thinking_config"] = types.ThinkingConfig(

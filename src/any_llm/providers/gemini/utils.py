@@ -1,7 +1,7 @@
 import base64
 import json
 from time import time
-from typing import Any
+from typing import Any, Literal
 
 from google.genai import types
 from google.genai.pagers import Pager
@@ -9,6 +9,8 @@ from google.genai.pagers import Pager
 from any_llm.types.completion import (
     ChatCompletionChunk,
     ChoiceDelta,
+    ChoiceDeltaToolCall,
+    ChoiceDeltaToolCallFunction,
     ChunkChoice,
     CompletionUsage,
     CreateEmbeddingResponse,
@@ -266,23 +268,49 @@ def _create_openai_chunk_from_google_chunk(
 
     content = ""
     reasoning_content = ""
+    tool_calls_list: list[ChoiceDeltaToolCall] = []
 
     for part in candidate.content.parts:
         if part.thought:
             reasoning_content += part.text or ""
-        else:
-            content += part.text or ""
+        elif function_call := part.function_call:
+            args_dict = {}
+            if args := function_call.args:
+                for key, value in args.items():
+                    args_dict[key] = value
+
+            tool_calls_list.append(
+                ChoiceDeltaToolCall(
+                    index=len(tool_calls_list),
+                    id=f"call_{hash(function_call.name)}_{len(tool_calls_list)}",
+                    type="function",
+                    function=ChoiceDeltaToolCallFunction(
+                        name=function_call.name,
+                        arguments=json.dumps(args_dict),
+                    ),
+                )
+            )
+        elif part.text:
+            content += part.text
+
+    # Determine finish_reason based on what we found
+    finish_reason: Literal["stop", "length", "tool_calls", "content_filter", "function_call"] | None = None
+    if tool_calls_list:
+        finish_reason = "tool_calls"
+    elif candidate.finish_reason and candidate.finish_reason.value == "STOP":
+        finish_reason = "stop"
 
     delta = ChoiceDelta(
         content=content or None,
         role="assistant",
         reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
+        tool_calls=tool_calls_list if tool_calls_list else None,
     )
 
     choice = ChunkChoice(
         index=0,
         delta=delta,
-        finish_reason="stop" if getattr(candidate.finish_reason, "value", None) == "STOP" else None,
+        finish_reason=finish_reason,
     )
 
     usage = None

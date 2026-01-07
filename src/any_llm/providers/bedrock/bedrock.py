@@ -59,7 +59,8 @@ class BedrockProvider(AnyLLM):
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert AWS Bedrock chunk response to OpenAI format."""
         model = kwargs.get("model", "")
-        chunk = _create_openai_chunk_from_aws_chunk(response, model)
+        tool_index_map = kwargs.get("tool_index_map")
+        chunk = _create_openai_chunk_from_aws_chunk(response, model, tool_index_map)
         if chunk is None:
             msg = "Failed to convert AWS chunk to OpenAI format"
             raise ValueError(msg)
@@ -140,11 +141,15 @@ class BedrockProvider(AnyLLM):
                 **completion_kwargs,
             )
             stream_generator = response_stream["stream"]
-            return (
-                self._convert_completion_chunk_response(item, model=params.model_id)
-                for item in stream_generator
-                if _create_openai_chunk_from_aws_chunk(item, model=params.model_id) is not None
-            )
+
+            def _stream_with_state() -> Iterator[ChatCompletionChunk]:
+                tool_index_map: dict[int, int] = {}
+                for item in stream_generator:
+                    chunk = _create_openai_chunk_from_aws_chunk(item, params.model_id, tool_index_map)
+                    if chunk is not None:
+                        yield chunk
+
+            return _stream_with_state()
         response = self.client.converse(**completion_kwargs)
 
         return self._convert_completion_response(response)

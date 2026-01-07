@@ -55,3 +55,22 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
         _, call_kwargs = mock_xai.return_value.chat.create.call_args
 
         assert len(call_kwargs["messages"]) == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reasoning_effort", ["auto", "none"])
+async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
+    """Test that reasoning_effort 'auto' and 'none' are filtered from xAI API calls."""
+    from any_llm.providers.xai.xai import XaiProvider
+
+    with mock_xai_provider() as (mock_xai, _):
+        provider = XaiProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="model",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort=reasoning_effort,  # type: ignore[arg-type]
+            )
+        )
+        _, call_kwargs = mock_xai.return_value.chat.create.call_args
+        assert "reasoning_effort" not in call_kwargs

@@ -20,10 +20,12 @@ except ImportError as e:
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
-    from together.types import (
-        ChatCompletionResponse,
+    from together.types.chat import (
+        ChatCompletion as TogetherChatCompletion,
     )
-    from together.types.chat_completions import ChatCompletionChunk as TogetherChatCompletionChunk
+    from together.types.chat import (
+        ChatCompletionChunk as TogetherChatCompletionChunk,
+    )
 
     from any_llm.types.completion import (
         ChatCompletion,
@@ -57,7 +59,7 @@ class TogetherProvider(AnyLLM):
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Together API."""
         converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
-        if converted_params.get("reasoning_effort") == "auto":
+        if converted_params.get("reasoning_effort") in ("auto", "none"):
             converted_params.pop("reasoning_effort")
         if (
             params.response_format is not None
@@ -122,7 +124,7 @@ class TogetherProvider(AnyLLM):
             "AsyncIterator[TogetherChatCompletionChunk]",
             await self.client.chat.completions.create(
                 model=model,
-                messages=messages,
+                messages=cast("Any", messages),
                 **kwargs,
             ),
         )
@@ -136,19 +138,21 @@ class TogetherProvider(AnyLLM):
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         completion_kwargs = self._convert_completion_params(params, **kwargs)
+        # Together API rejects empty tool_calls arrays
+        cleaned_messages = [{k: v for k, v in msg.items() if k != "tool_calls" or v} for msg in params.messages]
 
         if params.stream:
             return self._stream_completion_async(
                 params.model_id,
-                params.messages,
+                cleaned_messages,
                 **completion_kwargs,
             )
 
         response = cast(
-            "ChatCompletionResponse",
+            "TogetherChatCompletion",
             await self.client.chat.completions.create(
                 model=params.model_id,
-                messages=cast("Any", params.messages),
+                messages=cast("Any", cleaned_messages),
                 **completion_kwargs,
             ),
         )
