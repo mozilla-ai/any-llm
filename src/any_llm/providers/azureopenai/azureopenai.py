@@ -21,6 +21,9 @@ class AzureopenaiProvider(BaseOpenAIProvider):
 
     client: AsyncAzureOpenAI
 
+    def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
+        return api_key or os.getenv("AZURE_OPENAI_API_KEY")
+
     def _init_client(
         self,
         api_key: str | None = None,
