@@ -42,7 +42,9 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
     if params.tools:
         result_kwargs["toolConfig"] = _convert_tool_spec(params.tools, params.tool_choice)
 
-    reasoning_enabled = params.reasoning_effort is not None and params.reasoning_effort != "auto"
+    reasoning_enabled = (
+        params.reasoning_effort is not None and params.reasoning_effort != "auto" and params.reasoning_effort != "none"
+    )
 
     inference_config: dict[str, Any] = {}
     if params.max_tokens:

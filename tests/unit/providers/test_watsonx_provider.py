@@ -105,6 +105,36 @@ def test_watsonx_SUPPORTS_COMPLETION_STREAMING() -> None:
     assert provider.SUPPORTS_COMPLETION_STREAMING is True
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reasoning_effort", ["auto", "none"])
+async def test_reasoning_effort_filtered_out_in_acompletion(reasoning_effort: str) -> None:
+    """Test that reasoning_effort 'auto' and 'none' are set to None in _acompletion."""
+    with mock_watsonx_provider() as (mock_model_instance, _mock_convert_response, _mock_model_inference):
+        provider = WatsonxProvider(api_key="test-api-key")
+        params = CompletionParams(
+            model_id="test-model",
+            messages=[{"role": "user", "content": "Hello"}],
+            reasoning_effort=reasoning_effort,  # type: ignore[arg-type]
+        )
+        await provider._acompletion(params)
+
+        assert params.reasoning_effort is None
+        call_kwargs = mock_model_instance.achat.call_args[1]
+        assert "reasoning_effort" not in call_kwargs.get("params", {})
+
+
+@pytest.mark.parametrize("reasoning_effort", ["auto", "none"])
+def test_convert_completion_params_filters_reasoning_effort(reasoning_effort: str) -> None:
+    """Test that _convert_completion_params filters out reasoning_effort 'auto' and 'none'."""
+    params = CompletionParams(
+        model_id="test-model",
+        messages=[{"role": "user", "content": "Hello"}],
+        reasoning_effort=reasoning_effort,  # type: ignore[arg-type]
+    )
+    result = WatsonxProvider._convert_completion_params(params)
+    assert "reasoning_effort" not in result
+
+
 def test_convert_streaming_chunk_with_tool_calls() -> None:
     """Test streaming chunk conversion with tool calls."""
     chunk = {

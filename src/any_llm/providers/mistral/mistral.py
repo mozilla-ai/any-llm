@@ -68,7 +68,7 @@ class MistralProvider(AnyLLM):
             elif isinstance(params.response_format, dict):
                 converted_params["response_format"] = ResponseFormat.model_validate(params.response_format)
 
-        if converted_params.get("reasoning_effort") == "auto":
+        if converted_params.get("reasoning_effort") in ("auto", "none"):
             converted_params.pop("reasoning_effort")
 
         converted_params.update(kwargs)

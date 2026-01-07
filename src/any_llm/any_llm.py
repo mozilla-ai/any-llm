@@ -5,12 +5,12 @@ import importlib
 import os
 import warnings
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
 from any_llm.tools import prepare_tools
-from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, CompletionParams
+from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, CompletionParams, ReasoningEffort
 from any_llm.types.provider import PlatformKey, ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
@@ -381,7 +381,7 @@ class AnyLLM(ABC):
         logit_bias: dict[str, float] | None = None,
         stream_options: dict[str, Any] | None = None,
         max_completion_tokens: int | None = None,
-        reasoning_effort: Literal["minimal", "low", "medium", "high", "auto"] | None = "auto",
+        reasoning_effort: ReasoningEffort | None = "auto",
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion asynchronously.

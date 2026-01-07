@@ -1,8 +1,11 @@
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.cerebras.cerebras import CerebrasProvider
 from any_llm.providers.cerebras.utils import _convert_response, _create_openai_chunk_from_cerebras_chunk
+from any_llm.types.completion import CompletionParams
 
 
 @pytest.mark.asyncio
@@ -131,3 +134,34 @@ def test_convert_chunk_without_reasoning() -> None:
 
     assert result.choices[0].delta.content == "Hello!"
     assert "reasoning" not in result.choices[0].delta.model_dump(exclude_none=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reasoning_effort", ["auto", "none"])
+async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
+    """Test that reasoning_effort 'auto' and 'none' are filtered from Cerebras API calls."""
+    with patch("any_llm.providers.cerebras.cerebras.cerebras") as mock_cerebras:
+        mock_client = Mock()
+        mock_cerebras.AsyncCerebras.return_value = mock_client
+
+        mock_response = Mock()
+        mock_response.model_dump.return_value = {
+            "id": "test-id",
+            "model": "llama-3.3-70b",
+            "created": 1234567890,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hi"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        provider = CerebrasProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="llama-3.3-70b",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort=reasoning_effort,  # type: ignore[arg-type]
+            ),
+        )
+
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert "reasoning_effort" not in call_kwargs
