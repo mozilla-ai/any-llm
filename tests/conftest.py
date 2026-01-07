@@ -112,7 +112,6 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.GEMINI: "gemini-embedding-001",
         LLMProvider.VERTEXAI: "gemini-embedding-001",
         LLMProvider.AZURE: "openai/text-embedding-3-small",
-        LLMProvider.AZUREOPENAI: "azure/<your_deployment_name>",
         LLMProvider.VOYAGE: "voyage-3.5-lite",
         LLMProvider.LLAMACPP: "N/A",
         LLMProvider.GATEWAY: "text-embedding-ada-002",
