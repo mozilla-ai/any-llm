@@ -36,24 +36,21 @@ class ChatCompletionRequest(BaseModel):
     response_format: dict[str, Any] | None = None
 
 
-def _get_provider_credentials(
+def _get_provider_kwargs(
     config: GatewayConfig,
     provider: LLMProvider,
 ) -> dict[str, Any]:
-    """Get provider credentials from config.
+    """Get provider kwargs from config for acompletion calls.
 
     Args:
         config: Gateway configuration
         provider: Provider name
 
     Returns:
-        Dictionary of provider credentials
-
-    Raises:
-        HTTPException: If credentials not found
+        Dictionary of provider kwargs (credentials, client_args, etc.)
 
     """
-    credentials: dict[str, Any] = {}
+    kwargs: dict[str, Any] = {}
     if provider.value in config.providers:
         provider_config = config.providers[provider.value]
 
@@ -67,10 +64,14 @@ def _get_provider_credentials(
                 project=vertex_project,
                 location=vertex_location,
             )
+            if "client_args" in provider_config:
+                kwargs["client_args"] = provider_config["client_args"]
         else:
-            credentials = provider_config
+            kwargs = {k: v for k, v in provider_config.items() if k != "client_args"}
+            if "client_args" in provider_config:
+                kwargs["client_args"] = provider_config["client_args"]
 
-    return credentials
+    return kwargs
 
 
 async def _log_usage(
@@ -189,10 +190,10 @@ async def chat_completions(
 
     provider, model = AnyLLM.split_model_provider(request.model)
 
-    credentials = _get_provider_credentials(config, provider)
+    provider_kwargs = _get_provider_kwargs(config, provider)
 
     completion_kwargs = request.model_dump()
-    completion_kwargs.update(credentials)
+    completion_kwargs.update(provider_kwargs)
 
     try:
         if request.stream:

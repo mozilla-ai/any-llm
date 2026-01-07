@@ -21,6 +21,11 @@ providers:
   openai:
     api_key: YOUR_OPENAI_API_KEY_HERE
     api_base: "https://api.openai.com/v1"  # optional
+    # client_args are passed to the provider's client initialization (e.g. custom headers, timeouts)
+    # client_args:
+    #   custom_headers:
+    #     X-Custom-Header: "custom-value"
+    #   timeout: 60
 
   anthropic:
     api_key: YOUR_ANTHROPIC_API_KEY_HERE
