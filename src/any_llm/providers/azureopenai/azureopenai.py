@@ -34,7 +34,7 @@ class AzureopenaiProvider(BaseOpenAIProvider):
         azure_ad_token = kwargs.pop("azure_ad_token", None) or os.getenv("AZURE_OPENAI_AD_TOKEN")
         azure_ad_token_provider = kwargs.pop("azure_ad_token_provider", None)
 
-        azure_endpoint = api_base or os.getenv("AZURE_OPENAI_ENDPOINT")
+        azure_endpoint = api_base or kwargs.pop("azure_endpoint", None) or os.getenv("AZURE_OPENAI_ENDPOINT")
         if not azure_endpoint:
             raise MissingApiKeyError(self.PROVIDER_NAME, "AZURE_OPENAI_ENDPOINT")
 
