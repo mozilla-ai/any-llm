@@ -17,12 +17,12 @@ class AzureopenaiProvider(BaseOpenAIProvider):
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_COMPLETION_PDF = False
 
-    DEFAULT_API_VERSION = "2024-02-01"
+    DEFAULT_API_VERSION = "preview"
 
     client: AsyncAzureOpenAI
 
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
-        return api_key or os.getenv("AZURE_OPENAI_API_KEY")
+        return api_key or os.getenv(self.ENV_API_KEY_NAME)
 
     def _init_client(
         self,
@@ -32,7 +32,6 @@ class AzureopenaiProvider(BaseOpenAIProvider):
     ) -> None:
         api_version = kwargs.pop("api_version", None) or os.getenv("OPENAI_API_VERSION", self.DEFAULT_API_VERSION)
         azure_ad_token = kwargs.pop("azure_ad_token", None) or os.getenv("AZURE_OPENAI_AD_TOKEN")
-        azure_ad_token_provider = kwargs.pop("azure_ad_token_provider", None)
 
         azure_endpoint = api_base or kwargs.pop("azure_endpoint", None) or os.getenv("AZURE_OPENAI_ENDPOINT")
         if not azure_endpoint:
@@ -43,6 +42,5 @@ class AzureopenaiProvider(BaseOpenAIProvider):
             azure_endpoint=azure_endpoint,
             api_version=api_version,
             azure_ad_token=azure_ad_token,
-            azure_ad_token_provider=azure_ad_token_provider,
             **kwargs,
         )

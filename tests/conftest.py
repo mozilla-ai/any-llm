@@ -115,6 +115,7 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.VOYAGE: "voyage-3.5-lite",
         LLMProvider.LLAMACPP: "N/A",
         LLMProvider.GATEWAY: "text-embedding-ada-002",
+        LLMProvider.AZUREOPENAI: "gpt-4.1-nano",  # Not an embedding model but it's the only one we have deployed in Azure OpenAI
         LLMProvider.OPENROUTER: "qwen/qwen3-embedding-8b",
     }
 

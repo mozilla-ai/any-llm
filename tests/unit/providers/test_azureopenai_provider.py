@@ -54,7 +54,7 @@ async def test_azureopenai_api_version_default() -> None:
         call_args = mock_azure_client.call_args
         assert call_args is not None
         _, kwargs = call_args
-        assert kwargs["api_version"] == "2024-02-01"
+        assert kwargs["api_version"] == "preview"
 
 
 @pytest.mark.asyncio
