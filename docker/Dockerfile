@@ -9,6 +9,8 @@ ARG VERSION=0.0.0+docker
 
 RUN pip install --no-cache-dir --upgrade pip && \
     sed -i "s/version = \"0.0.0-dev\"/version = \"${VERSION}\"/" pyproject.toml && \
+    grep -q "version = \"${VERSION}\"" pyproject.toml || \
+        (echo "ERROR: Version substitution failed. Expected version '${VERSION}' not found in pyproject.toml" && exit 1) && \
     pip install --no-cache-dir .[all,gateway]
 
 RUN useradd -m -u 1000 gateway && \
