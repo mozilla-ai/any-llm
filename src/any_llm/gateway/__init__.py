@@ -1,5 +1,3 @@
-from importlib.metadata import version
-
-__version__ = version("any-llm-sdk")
+from any_llm import __version__
 
 __all__ = ["__version__"]
