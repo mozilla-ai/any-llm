@@ -1,6 +1,5 @@
-try:
-    from any_llm._version import version as __version__
-except ImportError:
-    __version__ = "0.0.0-dev"
+from importlib.metadata import version
+
+__version__ = version("any-llm-sdk")
 
 __all__ = ["__version__"]
