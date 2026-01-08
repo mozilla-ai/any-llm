@@ -34,7 +34,10 @@ jobs:
       - name: Set version from tag
         if: github.event_name == 'release'
         # This regex looks for the version string in the pyproject.toml file and replaces it with the version from the release tag. Do not change this regex without updating the version string in the pyproject.toml file.
-        run: sed -i "s/version = \"0.0.0-dev\"/version = \"${{ github.ref_name }}\"/" pyproject.toml
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          sed -i "s/version = \"0.0.0-dev\"/version = \"${VERSION}\"/" pyproject.toml
 
       - name: Build package
         run: python -m build
@@ -43,6 +46,7 @@ jobs:
         if: github.event_name == 'release'
         run: |
           EXPECTED_VERSION="${{ github.ref_name }}"
+          EXPECTED_VERSION="${EXPECTED_VERSION#v}"
           WHEEL_FILE=$(ls dist/*.whl)
           ACTUAL_VERSION=$(unzip -p "$WHEEL_FILE" "*/METADATA" | grep "^Version:" | cut -d' ' -f2)
           if [ "$ACTUAL_VERSION" != "$EXPECTED_VERSION" ]; then

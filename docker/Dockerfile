@@ -6,9 +6,9 @@ COPY pyproject.toml ./
 COPY src/ ./src/
 
 ARG VERSION=0.0.0+docker
-ENV SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION}"
 
 RUN pip install --no-cache-dir --upgrade pip && \
+    sed -i "s/version = \"0.0.0-dev\"/version = \"${VERSION}\"/" pyproject.toml && \
     pip install --no-cache-dir .[all,gateway]
 
 RUN useradd -m -u 1000 gateway && \

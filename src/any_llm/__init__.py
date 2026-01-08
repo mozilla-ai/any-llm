@@ -1,4 +1,4 @@
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 
 from any_llm.any_llm import AnyLLM
 from any_llm.api import acompletion, aembedding, alist_models, aresponses, completion, embedding, list_models, responses
@@ -17,7 +17,10 @@ from any_llm.exceptions import (
     UnsupportedProviderError,
 )
 
-__version__ = version("any-llm-sdk")
+try:
+    __version__ = version("any-llm-sdk")
+except PackageNotFoundError:
+    __version__ = "0.0.0-dev"
 
 
 __all__ = [
