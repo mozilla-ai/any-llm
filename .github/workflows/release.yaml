@@ -39,6 +39,18 @@ jobs:
       - name: Build package
         run: python -m build
 
+      - name: Verify package version
+        if: github.event_name == 'release'
+        run: |
+          EXPECTED_VERSION="${{ github.ref_name }}"
+          WHEEL_FILE=$(ls dist/*.whl)
+          ACTUAL_VERSION=$(unzip -p "$WHEEL_FILE" "*/METADATA" | grep "^Version:" | cut -d' ' -f2)
+          if [ "$ACTUAL_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "Version mismatch! Expected: $EXPECTED_VERSION, Got: $ACTUAL_VERSION"
+            exit 1
+          fi
+          echo "Version verified: $ACTUAL_VERSION"
+
       - name: Upload package
         if: github.event_name == 'release'
         uses: pypa/gh-action-pypi-publish@release/v1
