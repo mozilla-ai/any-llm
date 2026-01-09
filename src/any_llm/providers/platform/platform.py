@@ -8,6 +8,7 @@ from any_llm_platform_client import AnyLLMPlatformClient
 from httpx import AsyncClient
 
 from any_llm.any_llm import AnyLLM
+from any_llm.constants import LLMProvider
 from any_llm.logging import logger
 from any_llm.types.completion import (
     ChatCompletion,
@@ -94,11 +95,37 @@ class PlatformProvider(AnyLLM):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         start_time = time.perf_counter()
 
-        # Enable usage data in streaming responses
-        if params.stream and params.stream_options is None:
-            params.stream_options = {"include_usage": True}
+        # List of providers that don't support stream_options and automatically return token usage.
+        # This list may need to be updated if a provider updates its usage of stream options.
+        providers_without_stream_options = {
+            LLMProvider.ANTHROPIC,
+            LLMProvider.CEREBRAS,
+            LLMProvider.COHERE,
+            LLMProvider.GEMINI,
+            LLMProvider.MISTRAL,
+            LLMProvider.OLLAMA,
+            LLMProvider.TOGETHER,
+        }
 
-        completion = await self.provider._acompletion(params=params, **kwargs)
+        if params.stream:
+            if self.provider.PROVIDER_NAME in providers_without_stream_options:
+                if params.stream_options is not None:
+                    logger.warning(
+                        f"stream_options was set but {self.provider.PROVIDER_NAME} does not support it. "
+                        "The parameter will be ignored for this request."
+                    )
+                params_copy = params.model_copy()
+                params_copy.stream_options = None
+                completion = await self.provider._acompletion(params=params_copy, **kwargs)
+            else:
+                if params.stream_options is None:
+                    params_copy = params.model_copy()
+                    params_copy.stream_options = {"include_usage": True}
+                    completion = await self.provider._acompletion(params=params_copy, **kwargs)
+                else:
+                    completion = await self.provider._acompletion(params=params, **kwargs)
+        else:
+            completion = await self.provider._acompletion(params=params, **kwargs)
 
         if not params.stream:
             end_time = time.perf_counter()
