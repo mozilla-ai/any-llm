@@ -32,6 +32,7 @@ This repo uses `uv` for local dev (Python 3.11+). For the full, up-to-date comma
 - Python indentation: 4 spaces; formatting/linting via `ruff` (line length 120) and `pre-commit`.
 - Type hints: required; `mypy` runs in strict mode for library code (see `pyproject.toml`).
 - Provider code lives under `src/any_llm/providers/<provider>/` (keep provider-specific behavior isolated there).
+- Please add code comments if you find them helpful to accomplish your objective. However, please remove any comments you added that describe obvious behavior before finishing your task.
 
 ## Testing Guidelines
 
