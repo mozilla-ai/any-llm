@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from openai._streaming import AsyncStream
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
@@ -12,6 +14,15 @@ from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, Comple
 from any_llm.utils.reasoning import (
     process_streaming_reasoning_chunks,
 )
+
+MISSING_PACKAGES_ERROR = None
+try:
+    from portkey_ai import AsyncPortkey
+except ImportError as e:
+    MISSING_PACKAGES_ERROR = e
+
+if TYPE_CHECKING:
+    from portkey_ai import AsyncPortkey
 
 
 class PortkeyProvider(BaseOpenAIProvider):
@@ -29,7 +40,18 @@ class PortkeyProvider(BaseOpenAIProvider):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
 
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
+
     _DEFAULT_REASONING_EFFORT = None
+
+    client: AsyncPortkey  # type: ignore[assignment]
+
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        self.client = AsyncPortkey(
+            api_key=api_key,
+            base_url=api_base or self.API_BASE,
+            **kwargs,
+        )
 
     @staticmethod
     def _convert_completion_response(response: Any) -> ChatCompletion:
