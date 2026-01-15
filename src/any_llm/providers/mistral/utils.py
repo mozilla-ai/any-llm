@@ -468,6 +468,44 @@ class MixedModelError(ValueError):
         )
 
 
+def _parse_completion_window_to_hours(completion_window: str) -> int:
+    """
+    Convert OpenAI-style completion_window string to Mistral timeout_hours integer.
+
+    OpenAI currently only supports "24h" as the completion_window value.
+    This function parses that format (e.g., "24h", "48h") and returns the integer hours.
+
+    Args:
+        completion_window: OpenAI-style completion window string (e.g., "24h").
+
+    Returns:
+        Integer number of hours for Mistral's timeout_hours parameter.
+
+    Raises:
+        ValueError: If the format is not recognized.
+    """
+    window = completion_window.strip().lower()
+
+    if not window:
+        return 24  # Default
+
+    if not window.endswith("h"):
+        msg = f"Invalid completion_window format: '{completion_window}'. Expected format like '24h'."
+        raise ValueError(msg)
+
+    try:
+        hours = int(window[:-1])
+    except ValueError:
+        msg = f"Invalid completion_window format: '{completion_window}'. Expected format like '24h'."
+        raise ValueError(msg) from None
+
+    if hours <= 0:
+        msg = f"completion_window must be positive, got: '{completion_window}'"
+        raise ValueError(msg)
+
+    return hours
+
+
 def _validate_batch_file_models(file_content: str) -> str | None:
     """
     Validate that all requests in a JSONL batch file use the same model.

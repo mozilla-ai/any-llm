@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel
 
 from any_llm.any_llm import AnyLLM
-from any_llm.logging import logger
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -22,6 +21,7 @@ try:
         _create_mistral_completion_from_response,
         _create_openai_chunk_from_mistral_chunk,
         _create_openai_embedding_response_from_mistral,
+        _parse_completion_window_to_hours,
         _patch_messages,
         _validate_batch_file_models,
     )
@@ -177,9 +177,7 @@ class MistralProvider(AnyLLM):
             purpose="batch",
         )
 
-        timeout_hours = 24
-        if completion_window.endswith("h"):
-            timeout_hours = int(completion_window[:-1])
+        timeout_hours = _parse_completion_window_to_hours(completion_window)
 
         model = kwargs.pop("model", None)
         file_text = file_content.decode("utf-8")
@@ -230,14 +228,31 @@ class MistralProvider(AnyLLM):
         limit: int | None = None,
         **kwargs: Any,
     ) -> Sequence[Batch]:
-        """List batch jobs using the Mistral Batch API."""
-        if after is not None:
-            logger.warning(
-                "Mistral batch API uses page-based pagination, not cursor-based. "
-                "The 'after' parameter is not supported and will be ignored."
-            )
+        """List batch jobs using the Mistral Batch API.
 
-        page = 0
+        Note: Mistral uses page-based pagination, not cursor-based.
+        Use `page` kwarg (0-indexed) instead of `after`, and `limit` for page size.
+
+        Args:
+            after: Not supported for Mistral. Raises ValueError if provided.
+            limit: Page size (number of results per page). Defaults to 100.
+            **kwargs: Additional arguments, including `page` (0-indexed page number).
+
+        Returns:
+            Sequence of Batch objects for the requested page.
+
+        Raises:
+            ValueError: If `after` parameter is provided.
+        """
+        if after is not None:
+            msg = (
+                "Mistral batch API uses page-based pagination, not cursor-based. "
+                "The 'after' parameter is not supported. "
+                "Use 'page' kwarg for pagination and 'limit' for page size. "
+            )
+            raise ValueError(msg)
+
+        page = kwargs.pop("page", 0)
         page_size = limit if limit is not None else 100
 
         batch_jobs = await self.client.batch.jobs.list_async(
