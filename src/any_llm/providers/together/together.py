@@ -21,10 +21,10 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
     from together.types import (
-        ChatCompletionResponse as TogetherChatCompletion,
+        ChatCompletionChunk as TogetherChatCompletionChunk,
     )
     from together.types import (
-        ChatCompletionChunk as TogetherChatCompletionChunk,
+        ChatCompletionResponse as TogetherChatCompletion,
     )
 
     from any_llm.types.completion import (
