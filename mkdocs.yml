@@ -21,6 +21,7 @@ nav:
       - Model: api/types/model.md
       - Provider: api/types/provider.md
       - Batch: api/types/batch.md
+  - Managed Platform: platform/overview.md
   - Gateway:
     - Overview: gateway/overview.md
     - Quick Start: gateway/quickstart.md
