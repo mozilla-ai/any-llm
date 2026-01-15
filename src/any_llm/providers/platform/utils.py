@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import uuid
 from typing import TYPE_CHECKING, Any
 
@@ -9,13 +8,77 @@ from any_llm_platform_client import (
     AnyLLMPlatformClient,  # noqa: TC002
 )
 
+from .batch_queue import ANY_LLM_PLATFORM_API_URL, get_global_batch_queue
+
 if TYPE_CHECKING:
     from any_llm.types.completion import ChatCompletion
 
 
-ANY_LLM_PLATFORM_URL = os.getenv("ANY_LLM_PLATFORM_URL", "https://platform-api.any-llm.ai")
-API_V1_STR = "/api/v1"
-ANY_LLM_PLATFORM_API_URL = f"{ANY_LLM_PLATFORM_URL}{API_V1_STR}"
+async def queue_completion_usage_event(
+    platform_client: AnyLLMPlatformClient,
+    client: httpx.AsyncClient,
+    any_llm_key: str,
+    provider: str,
+    completion: ChatCompletion,
+    provider_key_id: str,
+    client_name: str | None = None,
+    time_to_first_token_ms: float | None = None,
+    time_to_last_token_ms: float | None = None,
+    total_duration_ms: float | None = None,
+    tokens_per_second: float | None = None,
+    chunks_received: int | None = None,
+    avg_chunk_size: float | None = None,
+    inter_chunk_latency_variance_ms: float | None = None,
+    batch_size: int = 50,
+    flush_interval: float = 5.0,
+) -> None:
+    """Queues completion usage events for batch sending (recommended).
+
+    This function adds the event to a batch queue that automatically flushes
+    either when the batch size is reached or after the flush interval expires.
+    This significantly reduces HTTP overhead compared to sending each event individually.
+
+    Uses JWT Bearer token authentication to authenticate with the platform API.
+
+    Args:
+        platform_client: The AnyLLMPlatformClient instance to use for authentication.
+        client: An httpx client to perform post request.
+        any_llm_key: The Any LLM platform key, tied to a specific project.
+        provider: The name of the LLM provider.
+        completion: The LLM response.
+        provider_key_id: The unique identifier for the provider key.
+        client_name: Optional name of the client for per-client usage tracking.
+        time_to_first_token_ms: Time to first token in milliseconds (streaming only).
+        time_to_last_token_ms: Time to last token in milliseconds (streaming only).
+        total_duration_ms: Total request duration in milliseconds.
+        tokens_per_second: Average token generation throughput.
+        chunks_received: Number of chunks received (streaming only).
+        avg_chunk_size: Average tokens per chunk (streaming only).
+        inter_chunk_latency_variance_ms: Inter-chunk latency variance (streaming only).
+        batch_size: Maximum number of events per batch (default: 50).
+        flush_interval: Maximum seconds to wait before flushing (default: 5.0).
+    """
+    batch_queue = get_global_batch_queue(
+        platform_client=platform_client,
+        http_client=client,
+        batch_size=batch_size,
+        flush_interval=flush_interval,
+    )
+
+    await batch_queue.enqueue(
+        any_llm_key=any_llm_key,
+        provider=provider,
+        completion=completion,
+        provider_key_id=provider_key_id,
+        client_name=client_name,
+        time_to_first_token_ms=time_to_first_token_ms,
+        time_to_last_token_ms=time_to_last_token_ms,
+        total_duration_ms=total_duration_ms,
+        tokens_per_second=tokens_per_second,
+        chunks_received=chunks_received,
+        avg_chunk_size=avg_chunk_size,
+        inter_chunk_latency_variance_ms=inter_chunk_latency_variance_ms,
+    )
 
 
 async def post_completion_usage_event(
@@ -34,7 +97,10 @@ async def post_completion_usage_event(
     avg_chunk_size: float | None = None,
     inter_chunk_latency_variance_ms: float | None = None,
 ) -> None:
-    """Posts completion usage events.
+    """Posts completion usage events immediately (not recommended for high throughput).
+
+    DEPRECATED: Use `queue_completion_usage_event` instead for better performance.
+    This function sends each event individually which creates significant HTTP overhead.
 
     Uses JWT Bearer token authentication to authenticate with the platform API.
 
