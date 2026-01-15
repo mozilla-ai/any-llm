@@ -1,10 +1,10 @@
-import logging
 import uuid
 from datetime import datetime
 from typing import Any, Literal, cast
 
 from together.types import ChatCompletionChunk as TogetherChatCompletionChunk
 
+from any_llm.logging import logger
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -18,8 +18,6 @@ from any_llm.types.completion import (
     Reasoning,
 )
 from any_llm.utils.reasoning import normalize_reasoning_from_provider_fields_and_xml_tags
-
-logger = logging.getLogger(__name__)
 
 
 def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatCompletionChunk) -> ChatCompletionChunk:
