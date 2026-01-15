@@ -119,9 +119,6 @@ async def test_performance_comparison(
 
     # Calculate improvements
     request_reduction = ((individual_requests - batched_requests) / individual_requests) * 100
-    time_improvement = (
-        ((individual_duration - batched_duration) / individual_duration) * 100 if individual_duration > 0 else 0
-    )
 
     print(f"\n{'INDIVIDUAL REQUESTS (OLD)':<40} {'BATCHED REQUESTS (NEW)':<40}")
     print("-" * 80)

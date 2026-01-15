@@ -186,6 +186,7 @@ extend-select = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D", "N802"]
+"tests/unit/test_batch_queue_performance.py" = ["D", "N802", "T201"]  # Allow print in performance tests
 "src/any_llm/providers/**" = ["D"]
 "src/any_llm/any_llm.py" = ["D"]
 "src/any_llm/types/**" = ["A005", "D"]

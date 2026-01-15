@@ -41,17 +41,19 @@ Based on testing with various workloads:
 Batching is enabled by default with sensible defaults:
 
 ```python
-from any_llm import completion
-
-# Events are automatically batched with default settings:
-# - batch_size: 50 events
-# - flush_interval: 5.0 seconds
-response = completion(
-    provider="platform",
-    model="gpt-4",
-    messages=[{"role": "user", "content": "Hello!"}],
-    api_key="your-any-llm-platform-key"
-)
+# Example usage with the platform provider:
+# from any_llm import completion
+# 
+# # Events are automatically batched with default settings:
+# # - batch_size: 50 events
+# # - flush_interval: 5.0 seconds
+# response = completion(
+#     provider="platform",
+#     model="gpt-4",
+#     messages=[{"role": "user", "content": "Hello!"}],
+#     api_key="your-any-llm-platform-key"
+# )
+pass
 ```
 
 ### Custom Configuration
@@ -61,17 +63,18 @@ You can customize batching behavior if needed, though the defaults work well for
 ```python
 from any_llm.providers.platform import queue_completion_usage_event
 
-# Smaller batches, more frequent flushes
-await queue_completion_usage_event(
-    platform_client=platform_client,
-    client=http_client,
-    any_llm_key="your-key",
-    provider="openai",
-    completion=response,
-    provider_key_id="key-id",
-    batch_size=25,           # Flush every 25 events (instead of 50)
-    flush_interval=2.0,      # Flush every 2 seconds (instead of 5)
-)
+# Example: Smaller batches, more frequent flushes
+# async def custom_batching():
+#     await queue_completion_usage_event(
+#         platform_client=platform_client,
+#         client=http_client,
+#         any_llm_key="your-key",
+#         provider="openai",
+#         completion=response,
+#         provider_key_id="key-id",
+#         batch_size=25,           # Flush every 25 events (instead of 50)
+#         flush_interval=2.0,      # Flush every 2 seconds (instead of 5)
+#     )
 ```
 
 ## Manual Control
@@ -83,8 +86,9 @@ Force immediate sending of all queued events:
 ```python
 from any_llm.providers.platform import shutdown_global_batch_queue
 
-# Flush all pending events immediately
-await shutdown_global_batch_queue()
+# Example: Flush all pending events immediately
+# async def manual_flush():
+#     await shutdown_global_batch_queue()
 ```
 
 ### When to Manual Flush
@@ -102,9 +106,10 @@ Manual flushing is rarely needed since automatic cleanup handles most cases, but
 Use larger batch sizes to maximize efficiency:
 
 ```python
-# Process thousands of requests efficiently
-batch_size = 100        # Larger batches
-flush_interval = 10.0   # Longer wait time
+# Example configuration for high throughput:
+# batch_size = 100        # Larger batches
+# flush_interval = 10.0   # Longer wait time
+pass  # Configuration would be passed to queue_completion_usage_event()
 ```
 
 ### For Real-Time Applications
@@ -112,9 +117,10 @@ flush_interval = 10.0   # Longer wait time
 Use smaller batches for lower latency:
 
 ```python
-# Balance between efficiency and latency
-batch_size = 10         # Smaller batches
-flush_interval = 1.0    # More frequent flushes
+# Example configuration for real-time applications:
+# batch_size = 10         # Smaller batches
+# flush_interval = 1.0    # More frequent flushes
+pass  # Configuration would be passed to queue_completion_usage_event()
 ```
 
 ### For Long-Running Services
@@ -122,14 +128,19 @@ flush_interval = 1.0    # More frequent flushes
 While automatic cleanup handles graceful shutdowns, explicitly call shutdown for cleaner logs:
 
 ```python
-async def shutdown_handler():
-    """Graceful shutdown for long-running services."""
-    logger.info("Shutting down...")
-
-    # Flush remaining usage events
-    await shutdown_global_batch_queue()
-
-    # Other cleanup...
+# Example shutdown handler:
+# import logging
+# logger = logging.getLogger(__name__)
+# 
+# async def shutdown_handler():
+#     """Graceful shutdown for long-running services."""
+#     logger.info("Shutting down...")
+#     
+#     # Flush remaining usage events
+#     await shutdown_global_batch_queue()
+#     
+#     # Other cleanup...
+pass
 ```
 
 ## Monitoring
@@ -148,17 +159,26 @@ INFO: Successfully flushed remaining usage events
 If you were previously using `post_completion_usage_event()` (now deprecated), simply replace it with `queue_completion_usage_event()`:
 
 ```python
-# Old (deprecated) - sends immediately
-await post_completion_usage_event(
-    platform_client=client,
-    # ...
-)
+# Old (deprecated) - sends immediately:
+# await post_completion_usage_event(
+#     platform_client=client,
+#     client=http_client,
+#     any_llm_key="key",
+#     provider="openai",
+#     completion=response,
+#     provider_key_id="key-id"
+# )
 
-# New (recommended) - uses batching
-await queue_completion_usage_event(
-    platform_client=client,
-    # ...
-)
+# New (recommended) - uses batching:
+# await queue_completion_usage_event(
+#     platform_client=client,
+#     client=http_client,
+#     any_llm_key="key",
+#     provider="openai",
+#     completion=response,
+#     provider_key_id="key-id"
+# )
+pass
 ```
 
 The `platform` provider automatically uses batching, so no code changes are needed if you're using the high-level `completion()` API.
