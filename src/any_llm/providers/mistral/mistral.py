@@ -189,8 +189,14 @@ class MistralProvider(AnyLLM):
         validated_model = _validate_batch_file_models(file_text)
 
         if model is None:
+            if validated_model is None:
+                msg = (
+                    "Model not found in JSONL body and not provided via 'model' kwarg. "
+                    "Mistral batch API requires model at job level."
+                )
+                raise ValueError(msg)
             model = validated_model
-        elif model != validated_model:
+        elif validated_model is not None and model != validated_model:
             msg = (
                 f"Model mismatch: 'model' kwarg is '{model}' but batch file "
                 f"contains requests for model '{validated_model}'"

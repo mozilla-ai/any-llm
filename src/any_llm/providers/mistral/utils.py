@@ -468,7 +468,7 @@ class MixedModelError(ValueError):
         )
 
 
-def _validate_batch_file_models(file_content: str) -> str:
+def _validate_batch_file_models(file_content: str) -> str | None:
     """
     Validate that all requests in a JSONL batch file use the same model.
 
@@ -479,17 +479,17 @@ def _validate_batch_file_models(file_content: str) -> str:
         file_content: The content of the JSONL batch file as a string.
 
     Returns:
-        The model ID used across all requests.
+        The model ID used across all requests, or None if no models are specified.
 
     Raises:
         MixedModelError: If different models are found in the batch file.
-        ValueError: If the file is empty or contains no valid model specifications.
+        ValueError: If the file is empty or contains invalid JSON.
     """
-    lines = [line.strip() for line in file_content.strip().split("\n") if line.strip()]
-
-    if not lines:
-        msg = "Batch file is empty"
+    if not file_content.strip():
+        msg = "Input file is empty"
         raise ValueError(msg)
+
+    lines = [line.strip() for line in file_content.strip().split("\n") if line.strip()]
 
     models_found: set[str] = set()
 
@@ -497,7 +497,8 @@ def _validate_batch_file_models(file_content: str) -> str:
         try:
             request = json.loads(line)
         except json.JSONDecodeError as e:
-            msg = f"Invalid JSON on line {line_num}: {e}"
+            line_desc = "first line" if line_num == 1 else f"line {line_num}"
+            msg = f"Invalid JSONL format in {line_desc}: {e}"
             raise ValueError(msg) from e
 
         body = request.get("body", {})
@@ -506,11 +507,7 @@ def _validate_batch_file_models(file_content: str) -> str:
         if model:
             models_found.add(model)
 
-    if not models_found:
-        msg = "No model specified in any request in the batch file"
-        raise ValueError(msg)
-
     if len(models_found) > 1:
         raise MixedModelError(models_found)
 
-    return models_found.pop()
+    return models_found.pop() if models_found else None
