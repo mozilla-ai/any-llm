@@ -14,7 +14,7 @@ class MockCompletion:
         self.model = "gpt-4"
         self.object = "chat.completion"
         self.created = int(time.time())
-        self.choices = []
+        self.choices: list[dict[str, str]] = []
         self.usage = MockUsage()
 
 
@@ -89,7 +89,7 @@ async def simulate_batched_requests(num_events: int, batch_size: int, mock_clien
 
 
 @pytest.mark.asyncio
-async def test_performance_comparison(mock_completion: MockCompletion, mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:) -> None:
+async def test_performance_comparison(mock_completion: MockCompletion, mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:
     """Compare performance of individual vs batched requests."""
     num_events = 100
     batch_size = 50
@@ -146,7 +146,7 @@ async def test_performance_comparison(mock_completion: MockCompletion, mock_plat
 
 
 @pytest.mark.asyncio
-async def test_performance_with_different_batch_sizes(mock_completion: MockCompletion, mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:) -> None:
+async def test_performance_with_different_batch_sizes(mock_completion: MockCompletion, mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:
     """Test performance with different batch sizes."""
     num_events = 100
     batch_sizes = [10, 25, 50, 100]
@@ -176,7 +176,7 @@ async def test_performance_with_different_batch_sizes(mock_completion: MockCompl
 
 
 @pytest.mark.asyncio
-async def test_scalability_comparison(mock_completion: MockCompletion, mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:) -> None:
+async def test_scalability_comparison(mock_completion: MockCompletion, mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:
     """Test how batching scales with increasing event counts."""
     event_counts = [50, 100, 500, 1000]
     batch_size = 50
