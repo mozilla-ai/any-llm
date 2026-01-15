@@ -265,7 +265,7 @@ def test_prepare_creates_provider_without_api_key() -> None:
 
 @pytest.mark.asyncio
 @patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.queue_completion_usage_event")
 async def test_acompletion_non_streaming_success(
     mock_post_usage: AsyncMock,
     mock_get_decrypted_provider_key: Mock,
@@ -306,7 +306,7 @@ async def test_acompletion_non_streaming_success(
 
 @pytest.mark.asyncio
 @patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.queue_completion_usage_event")
 async def test_acompletion_streaming_success(
     mock_post_usage: AsyncMock,
     mock_get_decrypted_provider_key: Mock,
@@ -760,7 +760,7 @@ async def test_post_completion_usage_event_skips_when_no_usage(
 
 @pytest.mark.asyncio
 @patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.queue_completion_usage_event")
 async def test_streaming_performance_metrics_tracking(
     mock_post_usage: AsyncMock,
     mock_get_decrypted_provider_key: Mock,
@@ -875,7 +875,7 @@ async def test_streaming_performance_metrics_tracking(
 
 @pytest.mark.asyncio
 @patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.queue_completion_usage_event")
 async def test_non_streaming_includes_total_duration(
     mock_post_usage: AsyncMock,
     mock_get_decrypted_provider_key: Mock,
@@ -910,7 +910,7 @@ async def test_non_streaming_includes_total_duration(
 
 @pytest.mark.asyncio
 @patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.queue_completion_usage_event")
 @pytest.mark.parametrize(
     "provider_name",
     [
@@ -1003,7 +1003,7 @@ async def test_stream_options_handling_by_provider(
 
 @pytest.mark.asyncio
 @patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.queue_completion_usage_event")
 async def test_stream_options_preserved_when_user_specifies_it(
     mock_post_usage: AsyncMock,
     mock_get_decrypted_provider_key: Mock,

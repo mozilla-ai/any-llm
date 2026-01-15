@@ -1,14 +1,11 @@
 """Tests for usage event batch queue functionality."""
 
 import asyncio
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-# Mock the any_llm_platform_client module before importing any_llm modules
-mock_platform_module = MagicMock()
-sys.modules["any_llm_platform_client"] = mock_platform_module
+pytest.importorskip("any_llm_platform_client", reason="any_llm_platform_client not installed")
 
 
 class MockCompletion:
@@ -30,7 +27,7 @@ class MockUsage:
 
 
 @pytest.fixture
-def mock_platform_client():
+def mock_platform_client() -> MagicMock:
     """Create a mock platform client."""
     client = MagicMock()
     client._aensure_valid_token = AsyncMock(return_value="test-token")
@@ -38,7 +35,7 @@ def mock_platform_client():
 
 
 @pytest.fixture
-def mock_http_client():
+def mock_http_client() -> MagicMock:
     """Create a mock HTTP client that tracks calls."""
     client = MagicMock()
     response = MagicMock()
@@ -48,7 +45,7 @@ def mock_http_client():
 
 
 @pytest.mark.asyncio
-async def test_batch_size_triggers_flush(mock_platform_client, mock_http_client):
+async def test_batch_size_triggers_flush(mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:
     """Test that reaching batch size triggers automatic flush."""
     from any_llm.providers.platform.batch_queue import UsageEventBatchQueue
 
@@ -65,7 +62,7 @@ async def test_batch_size_triggers_flush(mock_platform_client, mock_http_client)
         await queue.enqueue(
             any_llm_key="test-key",
             provider="openai",
-            completion=MockCompletion(),
+            completion=MockCompletion(),  # type: ignore[arg-type]
             provider_key_id=f"key-{i}",
         )
 
@@ -76,7 +73,7 @@ async def test_batch_size_triggers_flush(mock_platform_client, mock_http_client)
     await queue.enqueue(
         any_llm_key="test-key",
         provider="openai",
-        completion=MockCompletion(),
+        completion=MockCompletion(),  # type: ignore[arg-type]
         provider_key_id="key-final",
     )
 
@@ -93,7 +90,7 @@ async def test_batch_size_triggers_flush(mock_platform_client, mock_http_client)
 
 
 @pytest.mark.asyncio
-async def test_time_window_triggers_flush(mock_platform_client, mock_http_client):
+async def test_time_window_triggers_flush(mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:
     """Test that time window expiration triggers flush."""
     from any_llm.providers.platform.batch_queue import UsageEventBatchQueue
 
@@ -111,7 +108,7 @@ async def test_time_window_triggers_flush(mock_platform_client, mock_http_client
         await queue.enqueue(
             any_llm_key="test-key",
             provider="openai",
-            completion=MockCompletion(),
+            completion=MockCompletion(),  # type: ignore[arg-type]
             provider_key_id=f"key-{i}",
         )
 
@@ -133,7 +130,7 @@ async def test_time_window_triggers_flush(mock_platform_client, mock_http_client
 
 
 @pytest.mark.asyncio
-async def test_queue_groups_by_api_key(mock_platform_client, mock_http_client):
+async def test_queue_groups_by_api_key(mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:
     """Test that events are grouped by API key for separate batches."""
     from any_llm.providers.platform.batch_queue import UsageEventBatchQueue
 
@@ -149,13 +146,13 @@ async def test_queue_groups_by_api_key(mock_platform_client, mock_http_client):
     await queue.enqueue(
         any_llm_key="key-1",
         provider="openai",
-        completion=MockCompletion(),
+        completion=MockCompletion(),  # type: ignore[arg-type]
         provider_key_id="provider-key-1",
     )
     await queue.enqueue(
         any_llm_key="key-2",
         provider="openai",
-        completion=MockCompletion(),
+        completion=MockCompletion(),  # type: ignore[arg-type]
         provider_key_id="provider-key-2",
     )
 
@@ -166,7 +163,7 @@ async def test_queue_groups_by_api_key(mock_platform_client, mock_http_client):
 
 
 @pytest.mark.asyncio
-async def test_manual_flush(mock_platform_client, mock_http_client):
+async def test_manual_flush(mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:
     """Test manual flush works correctly."""
     from any_llm.providers.platform.batch_queue import UsageEventBatchQueue
 
@@ -183,7 +180,7 @@ async def test_manual_flush(mock_platform_client, mock_http_client):
         await queue.enqueue(
             any_llm_key="test-key",
             provider="openai",
-            completion=MockCompletion(),
+            completion=MockCompletion(),  # type: ignore[arg-type]
             provider_key_id=f"key-{i}",
         )
 
@@ -203,7 +200,7 @@ async def test_manual_flush(mock_platform_client, mock_http_client):
 
 
 @pytest.mark.asyncio
-async def test_shutdown_flushes_remaining_events(mock_platform_client, mock_http_client):
+async def test_shutdown_flushes_remaining_events(mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:
     """Test that shutdown flushes remaining events."""
     from any_llm.providers.platform.batch_queue import UsageEventBatchQueue
 
@@ -220,7 +217,7 @@ async def test_shutdown_flushes_remaining_events(mock_platform_client, mock_http
         await queue.enqueue(
             any_llm_key="test-key",
             provider="openai",
-            completion=MockCompletion(),
+            completion=MockCompletion(),  # type: ignore[arg-type]
             provider_key_id=f"key-{i}",
         )
 
@@ -238,7 +235,7 @@ async def test_shutdown_flushes_remaining_events(mock_platform_client, mock_http
 
 
 @pytest.mark.asyncio
-async def test_empty_queue_does_not_send_request(mock_platform_client, mock_http_client):
+async def test_empty_queue_does_not_send_request(mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:
     """Test that empty queue doesn't send unnecessary requests."""
     from any_llm.providers.platform.batch_queue import UsageEventBatchQueue
 
@@ -259,7 +256,7 @@ async def test_empty_queue_does_not_send_request(mock_platform_client, mock_http
 
 
 @pytest.mark.asyncio
-async def test_events_without_usage_are_skipped(mock_platform_client, mock_http_client):
+async def test_events_without_usage_are_skipped(mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:
     """Test that events without usage data are skipped."""
     from any_llm.providers.platform.batch_queue import UsageEventBatchQueue
 
@@ -272,13 +269,13 @@ async def test_events_without_usage_are_skipped(mock_platform_client, mock_http_
 
     # Create completion without usage
     completion_no_usage = MockCompletion()
-    completion_no_usage.usage = None
+    completion_no_usage.usage = None  # type: ignore[assignment]
 
     # Try to enqueue
     await queue.enqueue(
         any_llm_key="test-key",
         provider="openai",
-        completion=completion_no_usage,
+        completion=completion_no_usage,  # type: ignore[arg-type]
         provider_key_id="key-1",
     )
 
@@ -292,7 +289,7 @@ async def test_events_without_usage_are_skipped(mock_platform_client, mock_http_
 
 
 @pytest.mark.asyncio
-async def test_multiple_batches_from_size(mock_platform_client, mock_http_client):
+async def test_multiple_batches_from_size(mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:
     """Test that multiple batches are sent when events exceed batch size."""
     from any_llm.providers.platform.batch_queue import UsageEventBatchQueue
 
@@ -310,7 +307,7 @@ async def test_multiple_batches_from_size(mock_platform_client, mock_http_client
         await queue.enqueue(
             any_llm_key="test-key",
             provider="openai",
-            completion=MockCompletion(),
+            completion=MockCompletion(),  # type: ignore[arg-type]
             provider_key_id=f"key-{i}",
         )
 
@@ -326,7 +323,7 @@ async def test_multiple_batches_from_size(mock_platform_client, mock_http_client
 
 
 @pytest.mark.asyncio
-async def test_background_flush_task_runs(mock_platform_client, mock_http_client):
+async def test_background_flush_task_runs(mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:
     """Test that background flush task is created and runs."""
     from any_llm.providers.platform.batch_queue import UsageEventBatchQueue
 
@@ -342,7 +339,7 @@ async def test_background_flush_task_runs(mock_platform_client, mock_http_client
     await queue.enqueue(
         any_llm_key="test-key",
         provider="openai",
-        completion=MockCompletion(),
+        completion=MockCompletion(),  # type: ignore[arg-type]
         provider_key_id="key-1",
     )
 
@@ -360,7 +357,9 @@ async def test_background_flush_task_runs(mock_platform_client, mock_http_client
 
 
 @pytest.mark.asyncio
-async def test_payload_includes_performance_metrics(mock_platform_client, mock_http_client):
+async def test_payload_includes_performance_metrics(
+    mock_platform_client: MagicMock, mock_http_client: MagicMock
+) -> None:
     """Test that performance metrics are included in payload."""
     from any_llm.providers.platform.batch_queue import UsageEventBatchQueue
 
@@ -375,7 +374,7 @@ async def test_payload_includes_performance_metrics(mock_platform_client, mock_h
     await queue.enqueue(
         any_llm_key="test-key",
         provider="openai",
-        completion=MockCompletion(),
+        completion=MockCompletion(),  # type: ignore[arg-type]
         provider_key_id="key-1",
         time_to_first_token_ms=150.5,
         time_to_last_token_ms=2500.0,
@@ -408,7 +407,7 @@ async def test_payload_includes_performance_metrics(mock_platform_client, mock_h
 
 
 @pytest.mark.asyncio
-async def test_payload_includes_client_name(mock_platform_client, mock_http_client):
+async def test_payload_includes_client_name(mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:
     """Test that client name is included in payload when provided."""
     from any_llm.providers.platform.batch_queue import UsageEventBatchQueue
 
@@ -423,7 +422,7 @@ async def test_payload_includes_client_name(mock_platform_client, mock_http_clie
     await queue.enqueue(
         any_llm_key="test-key",
         provider="openai",
-        completion=MockCompletion(),
+        completion=MockCompletion(),  # type: ignore[arg-type]
         provider_key_id="key-1",
         client_name="test-client",
     )
@@ -442,7 +441,7 @@ async def test_payload_includes_client_name(mock_platform_client, mock_http_clie
 
 
 @pytest.mark.asyncio
-async def test_concurrent_enqueue_operations(mock_platform_client, mock_http_client):
+async def test_concurrent_enqueue_operations(mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:
     """Test that concurrent enqueue operations are handled safely."""
     from any_llm.providers.platform.batch_queue import UsageEventBatchQueue
 
@@ -459,7 +458,7 @@ async def test_concurrent_enqueue_operations(mock_platform_client, mock_http_cli
         queue.enqueue(
             any_llm_key="test-key",
             provider="openai",
-            completion=MockCompletion(),
+            completion=MockCompletion(),  # type: ignore[arg-type]
             provider_key_id=f"key-{i}",
         )
         for i in range(num_events)
