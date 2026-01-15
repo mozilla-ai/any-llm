@@ -12,6 +12,7 @@ from mistralai.models.chatcompletionresponse import ChatCompletionResponse as Mi
 from mistralai.models.toolcall import ToolCall as MistralToolCall
 from mistralai.types.basemodel import Unset
 
+from any_llm.logging import logger
 from any_llm.types.batch import Batch, BatchRequestCounts
 from any_llm.types.completion import (
     ChatCompletion,
@@ -390,7 +391,10 @@ def _convert_batch_job_to_openai(batch_job: "BatchJobOut") -> Batch:
     """Convert a Mistral BatchJobOut to OpenAI Batch format."""
     status = batch_job.status
     status_str = str(status.value if hasattr(status, "value") else status)  # type: ignore[union-attr]
-    openai_status = _MISTRAL_TO_OPENAI_STATUS_MAP.get(status_str, "in_progress")
+    openai_status = _MISTRAL_TO_OPENAI_STATUS_MAP.get(status_str)
+    if openai_status is None:
+        logger.warning(f"Unknown Mistral batch status: {status_str}, defaulting to 'in_progress'")
+        openai_status = "in_progress"
 
     request_counts = BatchRequestCounts(
         total=batch_job.total_requests,
@@ -420,12 +424,18 @@ def _convert_batch_job_to_openai(batch_job: "BatchJobOut") -> Batch:
     if batch_job.completed_at is not None and not isinstance(batch_job.completed_at, Unset):
         completed_at = batch_job.completed_at
 
+    # Try to get timeout_hours from Mistral response, default to 24h
+    completion_window = "24h"
+    if hasattr(batch_job, "timeout_hours") and batch_job.timeout_hours is not None:
+        if not isinstance(batch_job.timeout_hours, Unset):
+            completion_window = f"{batch_job.timeout_hours}h"
+
     return Batch(
         id=batch_job.id,
         object="batch",
         endpoint=batch_job.endpoint,
         input_file_id=input_file_id,
-        completion_window="24h",
+        completion_window=completion_window,
         status=cast(
             "Literal['validating', 'failed', 'in_progress', 'finalizing', 'completed', 'expired', 'cancelling', 'cancelled']",
             openai_status,

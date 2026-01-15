@@ -449,6 +449,210 @@ class TestBatchConversion:
 
         assert result == []
 
+    def test_convert_batch_job_unknown_status_logs_warning(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Test that unknown Mistral status logs a warning."""
+        pytest.importorskip("mistralai")
+        from any_llm.providers.mistral.utils import _convert_batch_job_to_openai
+
+        mock_batch_job = Mock()
+        mock_batch_job.id = "batch-unknown"
+        mock_batch_job.input_files = ["file-abc"]
+        mock_batch_job.endpoint = "/v1/chat/completions"
+        mock_batch_job.status = Mock(value="UNKNOWN_STATUS")  # Unknown status
+        mock_batch_job.created_at = 1700000000
+        mock_batch_job.total_requests = 5
+        mock_batch_job.completed_requests = 0
+        mock_batch_job.succeeded_requests = 0
+        mock_batch_job.failed_requests = 0
+        mock_batch_job.errors = []
+        mock_batch_job.metadata = None
+        mock_batch_job.output_file = None
+        mock_batch_job.error_file = None
+        mock_batch_job.started_at = None
+        mock_batch_job.completed_at = None
+
+        result = _convert_batch_job_to_openai(mock_batch_job)
+
+        assert result.status == "in_progress"  # Falls back to in_progress
+        captured = capsys.readouterr()
+        assert "Unknown Mistral batch status" in captured.out
+        assert "UNKNOWN_STATUS" in captured.out
+
+    def test_convert_batch_job_with_timeout_hours(self) -> None:
+        """Test that timeout_hours is converted to completion_window."""
+        pytest.importorskip("mistralai")
+        from any_llm.providers.mistral.utils import _convert_batch_job_to_openai
+
+        mock_batch_job = Mock()
+        mock_batch_job.id = "batch-timeout"
+        mock_batch_job.input_files = ["file-abc"]
+        mock_batch_job.endpoint = "/v1/chat/completions"
+        mock_batch_job.status = Mock(value="SUCCESS")
+        mock_batch_job.created_at = 1700000000
+        mock_batch_job.total_requests = 5
+        mock_batch_job.completed_requests = 5
+        mock_batch_job.succeeded_requests = 5
+        mock_batch_job.failed_requests = 0
+        mock_batch_job.errors = []
+        mock_batch_job.metadata = None
+        mock_batch_job.output_file = None
+        mock_batch_job.error_file = None
+        mock_batch_job.started_at = None
+        mock_batch_job.completed_at = None
+        mock_batch_job.timeout_hours = 48  # Custom timeout
+
+        result = _convert_batch_job_to_openai(mock_batch_job)
+
+        assert result.completion_window == "48h"
+
+
+@pytest.mark.asyncio
+async def test_create_batch_empty_file() -> None:
+    """Test creating a batch job with an empty file raises ValueError."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    with patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral:
+        provider = MistralProvider(api_key="test-api-key")
+
+        mock_upload_response = Mock()
+        mock_upload_response.id = "uploaded-file-123"
+        mocked_mistral.return_value.files.upload_async = AsyncMock(return_value=mock_upload_response)
+
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+            f.write("")  # Empty file
+            tmp_path = f.name
+
+        try:
+            with pytest.raises(ValueError, match="Input file is empty"):
+                await provider._acreate_batch(
+                    input_file_path=tmp_path,
+                    endpoint="/v1/chat/completions",
+                )
+        finally:
+            import os
+
+            os.unlink(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_create_batch_invalid_json() -> None:
+    """Test creating a batch job with invalid JSON raises ValueError."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    with patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral:
+        provider = MistralProvider(api_key="test-api-key")
+
+        mock_upload_response = Mock()
+        mock_upload_response.id = "uploaded-file-123"
+        mocked_mistral.return_value.files.upload_async = AsyncMock(return_value=mock_upload_response)
+
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+            f.write("not valid json {{{")
+            tmp_path = f.name
+
+        try:
+            with pytest.raises(ValueError, match="Invalid JSONL format in first line"):
+                await provider._acreate_batch(
+                    input_file_path=tmp_path,
+                    endpoint="/v1/chat/completions",
+                )
+        finally:
+            import os
+
+            os.unlink(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_create_batch_missing_model() -> None:
+    """Test creating a batch job without model in JSONL raises ValueError."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    with patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral:
+        provider = MistralProvider(api_key="test-api-key")
+
+        mock_upload_response = Mock()
+        mock_upload_response.id = "uploaded-file-123"
+        mocked_mistral.return_value.files.upload_async = AsyncMock(return_value=mock_upload_response)
+
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+            f.write('{"custom_id": "1", "body": {"messages": []}}\n')  # No model in body
+            tmp_path = f.name
+
+        try:
+            with pytest.raises(ValueError, match="Model not found in JSONL body"):
+                await provider._acreate_batch(
+                    input_file_path=tmp_path,
+                    endpoint="/v1/chat/completions",
+                )
+        finally:
+            import os
+
+            os.unlink(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_create_batch_with_explicit_model() -> None:
+    """Test creating a batch job with explicit model kwarg bypasses JSONL extraction."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    with patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral:
+        provider = MistralProvider(api_key="test-api-key")
+
+        mock_upload_response = Mock()
+        mock_upload_response.id = "uploaded-file-123"
+
+        mock_batch_job = Mock()
+        mock_batch_job.id = "batch-789"
+        mock_batch_job.input_files = ["uploaded-file-123"]
+        mock_batch_job.endpoint = "/v1/chat/completions"
+        mock_batch_job.status = Mock(value="QUEUED")
+        mock_batch_job.created_at = 1700000000
+        mock_batch_job.total_requests = 1
+        mock_batch_job.completed_requests = 0
+        mock_batch_job.succeeded_requests = 0
+        mock_batch_job.failed_requests = 0
+        mock_batch_job.errors = []
+        mock_batch_job.metadata = None
+        mock_batch_job.output_file = None
+        mock_batch_job.error_file = None
+        mock_batch_job.started_at = None
+        mock_batch_job.completed_at = None
+
+        mocked_mistral.return_value.files.upload_async = AsyncMock(return_value=mock_upload_response)
+        mocked_mistral.return_value.batch.jobs.create_async = AsyncMock(return_value=mock_batch_job)
+
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+            f.write('{"custom_id": "1", "body": {"messages": []}}\n')  # No model, but we pass it explicitly
+            tmp_path = f.name
+
+        try:
+            result = await provider._acreate_batch(
+                input_file_path=tmp_path,
+                endpoint="/v1/chat/completions",
+                model="mistral-small-latest",  # Explicit model
+            )
+
+            assert result.id == "batch-789"
+            # Verify model was passed to create_async
+            create_call_kwargs = mocked_mistral.return_value.batch.jobs.create_async.call_args[1]
+            assert create_call_kwargs["model"] == "mistral-small-latest"
+        finally:
+            import os
+
+            os.unlink(tmp_path)
+
 
 @pytest.mark.asyncio
 async def test_create_batch() -> None:
@@ -485,7 +689,7 @@ async def test_create_batch() -> None:
         import tempfile
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
-            f.write('{"custom_id": "1", "body": {"messages": []}}\n')
+            f.write('{"custom_id": "1", "body": {"model": "mistral-small-latest", "messages": []}}\n')
             tmp_path = f.name
 
         try:
@@ -502,6 +706,10 @@ async def test_create_batch() -> None:
 
             mocked_mistral.return_value.files.upload_async.assert_called_once()
             mocked_mistral.return_value.batch.jobs.create_async.assert_called_once()
+
+            # Verify model was extracted from JSONL
+            create_call_kwargs = mocked_mistral.return_value.batch.jobs.create_async.call_args[1]
+            assert create_call_kwargs["model"] == "mistral-small-latest"
         finally:
             import os
 
@@ -615,3 +823,25 @@ async def test_list_batches() -> None:
         assert result[0].id == "batch-list-1"
         assert result[0].status == "completed"
         mocked_mistral.return_value.batch.jobs.list_async.assert_called_once_with(page=0, page_size=10)
+
+
+@pytest.mark.asyncio
+async def test_list_batches_after_param_logs_warning(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test that using 'after' parameter logs a warning since Mistral doesn't support cursor pagination."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    with patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral:
+        provider = MistralProvider(api_key="test-api-key")
+
+        mock_batch_jobs = Mock()
+        mock_batch_jobs.data = []
+
+        mocked_mistral.return_value.batch.jobs.list_async = AsyncMock(return_value=mock_batch_jobs)
+
+        await provider._alist_batches(after="batch-123", limit=10)
+
+        captured = capsys.readouterr()
+        # RichHandler wraps text, so check for key parts separately
+        assert "Mistral batch API uses page-based" in captured.out
+        assert "'after' parameter is not supported" in captured.out

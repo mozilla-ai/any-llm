@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel
 
 from any_llm.any_llm import AnyLLM
+from any_llm.logging import logger
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -185,9 +186,21 @@ class MistralProvider(AnyLLM):
         # Mistral requires model at job level. Extract from JSONL if not provided.
         if model is None:
             file_text = file_content.decode("utf-8")
+            if not file_text.strip():
+                msg = "Input file is empty"
+                raise ValueError(msg)
+
             first_line = file_text.strip().split("\n")[0]
-            first_request = json.loads(first_line)
+            try:
+                first_request = json.loads(first_line)
+            except json.JSONDecodeError as e:
+                msg = f"Invalid JSONL format in first line: {e}"
+                raise ValueError(msg) from e
+
             model = first_request.get("body", {}).get("model")
+            if model is None:
+                msg = "Model not found in JSONL body and not provided via 'model' kwarg. Mistral batch API requires model at job level."
+                raise ValueError(msg)
 
         batch_job = await self.client.batch.jobs.create_async(
             input_files=[uploaded_file.id],
@@ -217,6 +230,12 @@ class MistralProvider(AnyLLM):
         **kwargs: Any,
     ) -> Sequence[Batch]:
         """List batch jobs using the Mistral Batch API."""
+        if after is not None:
+            logger.warning(
+                "Mistral batch API uses page-based pagination, not cursor-based. "
+                "The 'after' parameter is not supported and will be ignored."
+            )
+
         page = 0
         page_size = limit if limit is not None else 100
 
