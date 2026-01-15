@@ -131,8 +131,3 @@ Ready to try the managed platform?
 2. Add your provider API keys
 3. Get your virtual key
 4. Make your first request
-
-## Next Steps
-
-- **[Authentication](authentication.md)** - Understand key formats and encryption
-- **[Usage Tracking](usage-tracking.md)** - Learn about analytics and performance metrics
