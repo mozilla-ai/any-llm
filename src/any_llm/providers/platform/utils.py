@@ -8,14 +8,13 @@ from any_llm_platform_client import (
     AnyLLMPlatformClient,  # noqa: TC002
 )
 
-from .batch_queue import ANY_LLM_PLATFORM_API_URL, get_global_batch_queue
+from .batch_queue import get_global_batch_queue
 
 if TYPE_CHECKING:
     from any_llm.types.completion import ChatCompletion
 
 
 __all__ = [
-    "ANY_LLM_PLATFORM_API_URL",
     "get_global_batch_queue",
     "post_completion_usage_event",
     "queue_completion_usage_event",
@@ -170,7 +169,7 @@ async def post_completion_usage_event(
         payload["client_name"] = client_name
 
     response = await client.post(
-        f"{ANY_LLM_PLATFORM_API_URL}/usage-events/",
+        f"{platform_client.any_llm_platform_url}/usage-events/",
         json=payload,
         headers={"Authorization": f"Bearer {access_token}"},
     )

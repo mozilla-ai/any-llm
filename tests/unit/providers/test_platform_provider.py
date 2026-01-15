@@ -88,6 +88,7 @@ def mock_platform_client() -> Mock:
 
     mock_client = Mock(spec=AnyLLMPlatformClient)
     mock_client._aensure_valid_token = AsyncMock(return_value="mock-jwt-token-12345")
+    mock_client.any_llm_platform_url = "http://localhost:8000/api/v1"
     return mock_client
 
 

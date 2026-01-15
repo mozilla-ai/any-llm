@@ -125,10 +125,10 @@ While automatic cleanup handles graceful shutdowns, explicitly call shutdown for
 async def shutdown_handler():
     """Graceful shutdown for long-running services."""
     logger.info("Shutting down...")
-    
+
     # Flush remaining usage events
     await shutdown_global_batch_queue()
-    
+
     # Other cleanup...
 ```
 

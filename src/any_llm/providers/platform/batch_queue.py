@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import atexit
-import os
 import time
 import uuid
 from typing import TYPE_CHECKING, Any
@@ -13,11 +12,6 @@ import httpx  # noqa: TC002
 from any_llm_platform_client import AnyLLMPlatformClient  # noqa: TC002
 
 from any_llm.logging import logger
-
-# Platform API configuration
-ANY_LLM_PLATFORM_URL = os.getenv("ANY_LLM_PLATFORM_URL", "https://platform-api.any-llm.ai")
-API_V1_STR = "/api/v1"
-ANY_LLM_PLATFORM_API_URL = f"{ANY_LLM_PLATFORM_URL}{API_V1_STR}"
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -243,7 +237,7 @@ class UsageEventBatchQueue:
                 return
 
             response = await self.http_client.post(
-                f"{ANY_LLM_PLATFORM_API_URL}/usage-events/bulk",
+                f"{self.platform_client.any_llm_platform_url}/usage-events/bulk",
                 json={"events": payloads},
                 headers={"Authorization": f"Bearer {access_token}"},
             )
