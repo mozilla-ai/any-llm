@@ -475,3 +475,124 @@ async def test_concurrent_enqueue_operations(mock_platform_client: MagicMock, mo
     assert len(payload["events"]) == num_events
 
     await queue.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_completion_without_usage_returns_empty_payload(
+    mock_platform_client: MagicMock, mock_http_client: MagicMock
+) -> None:
+    """Test that completion without usage returns empty payload."""
+    from any_llm.providers.platform.batch_queue import UsageEventBatch
+
+    # Create completion without usage
+    completion_no_usage = MagicMock()
+    completion_no_usage.id = "test-id"
+    completion_no_usage.model = "gpt-4"
+    completion_no_usage.usage = None
+
+    event = UsageEventBatch(
+        any_llm_key="test-key",
+        provider="openai",
+        completion=completion_no_usage,
+        provider_key_id="key-1",
+    )
+
+    payload = event.to_payload()
+    assert payload == {}
+
+
+@pytest.mark.asyncio
+async def test_batch_send_with_empty_payloads_skips_request(
+    mock_platform_client: MagicMock, mock_http_client: MagicMock
+) -> None:
+    """Test that batch with only empty payloads skips HTTP request."""
+    from any_llm.providers.platform.batch_queue import UsageEventBatchQueue
+
+    queue = UsageEventBatchQueue(
+        platform_client=mock_platform_client,
+        http_client=mock_http_client,
+        batch_size=10,
+        flush_interval=100.0,
+    )
+
+    # Create completions without usage
+    for i in range(3):
+        completion_no_usage = MagicMock()
+        completion_no_usage.id = f"test-{i}"
+        completion_no_usage.model = "gpt-4"
+        completion_no_usage.usage = None
+
+        await queue.enqueue(
+            any_llm_key="test-key",
+            provider="openai",
+            completion=completion_no_usage,
+            provider_key_id=f"key-{i}",
+        )
+
+    await queue.flush()
+
+    # Should not have made any HTTP requests since all payloads were empty
+    assert mock_http_client.post.call_count == 0
+
+    await queue.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_send_batch_error_handling(mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:
+    """Test error handling when sending batch fails."""
+    from any_llm.providers.platform.batch_queue import UsageEventBatchQueue
+
+    # Make HTTP client raise an error
+    mock_http_client.post = AsyncMock(side_effect=Exception("Network error"))
+
+    queue = UsageEventBatchQueue(
+        platform_client=mock_platform_client,
+        http_client=mock_http_client,
+        batch_size=2,
+        flush_interval=100.0,
+    )
+
+    await queue.enqueue(
+        any_llm_key="test-key",
+        provider="openai",
+        completion=MockCompletion(),  # type: ignore[arg-type]
+        provider_key_id="key-1",
+    )
+
+    await queue.enqueue(
+        any_llm_key="test-key",
+        provider="openai",
+        completion=MockCompletion(),  # type: ignore[arg-type]
+        provider_key_id="key-2",
+    )
+
+    # Should reach batch size and attempt to send (which will fail)
+    # The error should be logged but not raised
+    await asyncio.sleep(0.1)  # Give time for background flush
+
+    await queue.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_global_queue_initialization() -> None:
+    """Test global queue initialization and singleton pattern."""
+    from any_llm.providers.platform.batch_queue import get_global_batch_queue
+
+    mock_client = MagicMock()
+    mock_client._aensure_valid_token = AsyncMock(return_value="test-token")
+    mock_client.any_llm_platform_url = "http://localhost:8000/api/v1"
+
+    mock_http = MagicMock()
+    response = MagicMock()
+    response.raise_for_status = MagicMock()
+    mock_http.post = AsyncMock(return_value=response)
+
+    # First call creates the queue
+    queue1 = get_global_batch_queue(mock_client, mock_http)
+    assert queue1 is not None
+
+    # Second call returns the same instance
+    queue2 = get_global_batch_queue(mock_client, mock_http)
+    assert queue1 is queue2
+
+    await queue1.shutdown()

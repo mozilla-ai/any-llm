@@ -61,7 +61,7 @@ pass
 You can customize batching behavior if needed, though the defaults work well for most use cases:
 
 ```python
-from any_llm.providers.platform import queue_completion_usage_event
+# from any_llm.providers.platform import queue_completion_usage_event
 
 # Example: Smaller batches, more frequent flushes
 # async def custom_batching():
@@ -75,6 +75,7 @@ from any_llm.providers.platform import queue_completion_usage_event
 #         batch_size=25,           # Flush every 25 events (instead of 50)
 #         flush_interval=2.0,      # Flush every 2 seconds (instead of 5)
 #     )
+pass
 ```
 
 ## Manual Control
@@ -84,11 +85,12 @@ from any_llm.providers.platform import queue_completion_usage_event
 Force immediate sending of all queued events:
 
 ```python
-from any_llm.providers.platform import shutdown_global_batch_queue
+# from any_llm.providers.platform import shutdown_global_batch_queue
 
 # Example: Flush all pending events immediately
 # async def manual_flush():
 #     await shutdown_global_batch_queue()
+pass
 ```
 
 ### When to Manual Flush
@@ -234,5 +236,4 @@ If batching uses too much memory:
 ## Related
 
 - [Platform Provider Documentation](providers.md)
-- [Performance Optimization Guide](docs/performance.md)
 - [any-llm-gateway Overview](gateway/overview.md)
