@@ -43,7 +43,7 @@ Batching is enabled by default with sensible defaults:
 ```python
 # Example usage with the platform provider:
 # from any_llm import completion
-# 
+#
 # # Events are automatically batched with default settings:
 # # - batch_size: 50 events
 # # - flush_interval: 5.0 seconds
@@ -131,14 +131,14 @@ While automatic cleanup handles graceful shutdowns, explicitly call shutdown for
 # Example shutdown handler:
 # import logging
 # logger = logging.getLogger(__name__)
-# 
+#
 # async def shutdown_handler():
 #     """Graceful shutdown for long-running services."""
 #     logger.info("Shutting down...")
-#     
+#
 #     # Flush remaining usage events
 #     await shutdown_global_batch_queue()
-#     
+#
 #     # Other cleanup...
 pass
 ```
