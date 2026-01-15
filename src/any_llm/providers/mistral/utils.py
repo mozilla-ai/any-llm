@@ -455,3 +455,62 @@ def _convert_batch_jobs_list(batch_jobs: "BatchJobsOut") -> Sequence[Batch]:
     if batch_jobs.data is None:
         return []
     return [_convert_batch_job_to_openai(job) for job in batch_jobs.data]
+
+
+class MixedModelError(ValueError):
+    """Raised when a batch file contains requests with different model IDs."""
+
+    def __init__(self, models_found: set[str]) -> None:
+        self.models_found = models_found
+        super().__init__(
+            f"Mistral batch API requires all requests to use the same model. "
+            f"Found {len(models_found)} different models: {sorted(models_found)}"
+        )
+
+
+def _validate_batch_file_models(file_content: str) -> str:
+    """
+    Validate that all requests in a JSONL batch file use the same model.
+
+    Mistral's batch API requires specifying the model at the job level, not per-request.
+    This function ensures all requests target the same model and returns that model ID.
+
+    Args:
+        file_content: The content of the JSONL batch file as a string.
+
+    Returns:
+        The model ID used across all requests.
+
+    Raises:
+        MixedModelError: If different models are found in the batch file.
+        ValueError: If the file is empty or contains no valid model specifications.
+    """
+    lines = [line.strip() for line in file_content.strip().split("\n") if line.strip()]
+
+    if not lines:
+        msg = "Batch file is empty"
+        raise ValueError(msg)
+
+    models_found: set[str] = set()
+
+    for line_num, line in enumerate(lines, start=1):
+        try:
+            request = json.loads(line)
+        except json.JSONDecodeError as e:
+            msg = f"Invalid JSON on line {line_num}: {e}"
+            raise ValueError(msg) from e
+
+        body = request.get("body", {})
+        model = body.get("model")
+
+        if model:
+            models_found.add(model)
+
+    if not models_found:
+        msg = "No model specified in any request in the batch file"
+        raise ValueError(msg)
+
+    if len(models_found) > 1:
+        raise MixedModelError(models_found)
+
+    return models_found.pop()

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -24,6 +23,7 @@ try:
         _create_openai_chunk_from_mistral_chunk,
         _create_openai_embedding_response_from_mistral,
         _patch_messages,
+        _validate_batch_file_models,
     )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
@@ -182,25 +182,20 @@ class MistralProvider(AnyLLM):
             timeout_hours = int(completion_window[:-1])
 
         model = kwargs.pop("model", None)
+        file_text = file_content.decode("utf-8")
 
-        # Mistral requires model at job level. Extract from JSONL if not provided.
+        # Mistral requires model at job level and all requests must use the same model.
+        # Validate consistency and extract model from JSONL if not provided.
+        validated_model = _validate_batch_file_models(file_text)
+
         if model is None:
-            file_text = file_content.decode("utf-8")
-            if not file_text.strip():
-                msg = "Input file is empty"
-                raise ValueError(msg)
-
-            first_line = file_text.strip().split("\n")[0]
-            try:
-                first_request = json.loads(first_line)
-            except json.JSONDecodeError as e:
-                msg = f"Invalid JSONL format in first line: {e}"
-                raise ValueError(msg) from e
-
-            model = first_request.get("body", {}).get("model")
-            if model is None:
-                msg = "Model not found in JSONL body and not provided via 'model' kwarg. Mistral batch API requires model at job level."
-                raise ValueError(msg)
+            model = validated_model
+        elif model != validated_model:
+            msg = (
+                f"Model mismatch: 'model' kwarg is '{model}' but batch file "
+                f"contains requests for model '{validated_model}'"
+            )
+            raise ValueError(msg)
 
         batch_job = await self.client.batch.jobs.create_async(
             input_files=[uploaded_file.id],
