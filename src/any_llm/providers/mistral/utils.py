@@ -12,6 +12,7 @@ from mistralai.models.chatcompletionresponse import ChatCompletionResponse as Mi
 from mistralai.models.toolcall import ToolCall as MistralToolCall
 from mistralai.types.basemodel import Unset
 
+from any_llm.types.batch import Batch, BatchRequestCounts
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -33,6 +34,7 @@ from any_llm.types.completion import (
 from any_llm.types.model import Model
 
 if TYPE_CHECKING:
+    from mistralai.models import BatchJobOut, BatchJobsOut
     from mistralai.models.embeddingresponse import EmbeddingResponse
     from openai.types.chat.chat_completion_message_custom_tool_call import (
         ChatCompletionMessageCustomToolCall,
@@ -371,3 +373,75 @@ def _convert_models_list(response: MistralModelList) -> Sequence[Model]:
                 )
             )
     return models
+
+
+_MISTRAL_TO_OPENAI_STATUS_MAP: dict[str, str] = {
+    "QUEUED": "validating",
+    "RUNNING": "in_progress",
+    "SUCCESS": "completed",
+    "FAILED": "failed",
+    "TIMEOUT_EXCEEDED": "expired",
+    "CANCELLATION_REQUESTED": "cancelling",
+    "CANCELLED": "cancelled",
+}
+
+
+def _convert_batch_job_to_openai(batch_job: "BatchJobOut") -> Batch:
+    """Convert a Mistral BatchJobOut to OpenAI Batch format."""
+    status = batch_job.status
+    status_str = str(status.value if hasattr(status, "value") else status)  # type: ignore[union-attr]
+    openai_status = _MISTRAL_TO_OPENAI_STATUS_MAP.get(status_str, "in_progress")
+
+    request_counts = BatchRequestCounts(
+        total=batch_job.total_requests,
+        completed=batch_job.completed_requests,
+        failed=batch_job.failed_requests,
+    )
+
+    input_file_id = batch_job.input_files[0] if batch_job.input_files else ""
+
+    metadata: dict[str, str] | None = None
+    if batch_job.metadata is not None and not isinstance(batch_job.metadata, Unset):
+        metadata = {k: str(v) for k, v in batch_job.metadata.items()}
+
+    output_file_id: str | None = None
+    if batch_job.output_file is not None and not isinstance(batch_job.output_file, Unset):
+        output_file_id = batch_job.output_file
+
+    error_file_id: str | None = None
+    if batch_job.error_file is not None and not isinstance(batch_job.error_file, Unset):
+        error_file_id = batch_job.error_file
+
+    started_at: int | None = None
+    if batch_job.started_at is not None and not isinstance(batch_job.started_at, Unset):
+        started_at = batch_job.started_at
+
+    completed_at: int | None = None
+    if batch_job.completed_at is not None and not isinstance(batch_job.completed_at, Unset):
+        completed_at = batch_job.completed_at
+
+    return Batch(
+        id=batch_job.id,
+        object="batch",
+        endpoint=batch_job.endpoint,
+        input_file_id=input_file_id,
+        completion_window="24h",
+        status=cast(
+            "Literal['validating', 'failed', 'in_progress', 'finalizing', 'completed', 'expired', 'cancelling', 'cancelled']",
+            openai_status,
+        ),
+        created_at=batch_job.created_at,
+        in_progress_at=started_at,
+        completed_at=completed_at,
+        output_file_id=output_file_id,
+        error_file_id=error_file_id,
+        request_counts=request_counts,
+        metadata=metadata,
+    )
+
+
+def _convert_batch_jobs_list(batch_jobs: "BatchJobsOut") -> Sequence[Batch]:
+    """Convert a Mistral BatchJobsOut to a sequence of OpenAI Batch objects."""
+    if batch_jobs.data is None:
+        return []
+    return [_convert_batch_job_to_openai(job) for job in batch_jobs.data]

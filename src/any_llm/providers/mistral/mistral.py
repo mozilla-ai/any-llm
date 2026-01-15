@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
@@ -13,6 +16,8 @@ try:
     from mistralai.models.responseformat import ResponseFormat
 
     from .utils import (
+        _convert_batch_job_to_openai,
+        _convert_batch_jobs_list,
         _convert_models_list,
         _create_mistral_completion_from_response,
         _create_openai_chunk_from_mistral_chunk,
@@ -28,6 +33,7 @@ if TYPE_CHECKING:
     from mistralai import Mistral  # noqa: TC004
     from mistralai.models.embeddingresponse import EmbeddingResponse
 
+    from any_llm.types.batch import Batch
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
 
@@ -47,7 +53,7 @@ class MistralProvider(AnyLLM):
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
-    SUPPORTS_BATCH = False
+    SUPPORTS_BATCH = True
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -152,3 +158,72 @@ class MistralProvider(AnyLLM):
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.models.list_async(**kwargs)
         return self._convert_list_models_response(models_list)
+
+    async def _acreate_batch(
+        self,
+        input_file_path: str,
+        endpoint: str,
+        completion_window: str = "24h",
+        metadata: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> Batch:
+        """Create a batch job using the Mistral Batch API."""
+        file_path = Path(input_file_path)
+        file_content = await asyncio.to_thread(file_path.read_bytes)
+
+        uploaded_file = await self.client.files.upload_async(
+            file={"file_name": file_path.name, "content": file_content},
+            purpose="batch",
+        )
+
+        timeout_hours = 24
+        if completion_window.endswith("h"):
+            timeout_hours = int(completion_window[:-1])
+
+        model = kwargs.pop("model", None)
+
+        # Mistral requires model at job level. Extract from JSONL if not provided.
+        if model is None:
+            file_text = file_content.decode("utf-8")
+            first_line = file_text.strip().split("\n")[0]
+            first_request = json.loads(first_line)
+            model = first_request.get("body", {}).get("model")
+
+        batch_job = await self.client.batch.jobs.create_async(
+            input_files=[uploaded_file.id],
+            endpoint=endpoint,
+            model=model,
+            metadata=metadata,
+            timeout_hours=timeout_hours,
+            **kwargs,
+        )
+
+        return _convert_batch_job_to_openai(batch_job)
+
+    async def _aretrieve_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Retrieve a batch job using the Mistral Batch API."""
+        batch_job = await self.client.batch.jobs.get_async(job_id=batch_id, **kwargs)
+        return _convert_batch_job_to_openai(batch_job)
+
+    async def _acancel_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Cancel a batch job using the Mistral Batch API."""
+        batch_job = await self.client.batch.jobs.cancel_async(job_id=batch_id, **kwargs)
+        return _convert_batch_job_to_openai(batch_job)
+
+    async def _alist_batches(
+        self,
+        after: str | None = None,
+        limit: int | None = None,
+        **kwargs: Any,
+    ) -> Sequence[Batch]:
+        """List batch jobs using the Mistral Batch API."""
+        page = 0
+        page_size = limit if limit is not None else 100
+
+        batch_jobs = await self.client.batch.jobs.list_async(
+            page=page,
+            page_size=page_size,
+            **kwargs,
+        )
+
+        return _convert_batch_jobs_list(batch_jobs)

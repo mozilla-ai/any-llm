@@ -293,3 +293,325 @@ async def test_user_parameter_excluded_streaming() -> None:
 
         # Assert 'user' parameter is NOT passed to Mistral API
         assert "user" not in stream_call_kwargs, "The 'user' parameter should be excluded in streaming mode"
+
+
+class TestBatchConversion:
+    """Tests for Mistral batch conversion utilities."""
+
+    def test_convert_batch_job_to_openai_success_status(self) -> None:
+        """Test converting a successful Mistral batch job to OpenAI format."""
+        pytest.importorskip("mistralai")
+        from any_llm.providers.mistral.utils import _convert_batch_job_to_openai
+
+        mock_batch_job = Mock()
+        mock_batch_job.id = "batch-123"
+        mock_batch_job.input_files = ["file-abc"]
+        mock_batch_job.endpoint = "/v1/chat/completions"
+        mock_batch_job.status = Mock(value="SUCCESS")
+        mock_batch_job.created_at = 1700000000
+        mock_batch_job.total_requests = 10
+        mock_batch_job.completed_requests = 10
+        mock_batch_job.succeeded_requests = 9
+        mock_batch_job.failed_requests = 1
+        mock_batch_job.errors = []
+        mock_batch_job.metadata = {"test": "value"}
+        mock_batch_job.output_file = "output-file-123"
+        mock_batch_job.error_file = None
+        mock_batch_job.started_at = 1700000100
+        mock_batch_job.completed_at = 1700000200
+
+        result = _convert_batch_job_to_openai(mock_batch_job)
+
+        assert result.id == "batch-123"
+        assert result.input_file_id == "file-abc"
+        assert result.endpoint == "/v1/chat/completions"
+        assert result.status == "completed"
+        assert result.created_at == 1700000000
+        assert result.request_counts is not None
+        assert result.request_counts.total == 10
+        assert result.request_counts.completed == 10
+        assert result.request_counts.failed == 1
+        assert result.output_file_id == "output-file-123"
+        assert result.in_progress_at == 1700000100
+        assert result.completed_at == 1700000200
+        assert result.metadata == {"test": "value"}
+
+    def test_convert_batch_job_to_openai_queued_status(self) -> None:
+        """Test converting a queued Mistral batch job to OpenAI format."""
+        pytest.importorskip("mistralai")
+        from mistralai.types.basemodel import Unset
+
+        from any_llm.providers.mistral.utils import _convert_batch_job_to_openai
+
+        mock_batch_job = Mock()
+        mock_batch_job.id = "batch-456"
+        mock_batch_job.input_files = ["file-xyz"]
+        mock_batch_job.endpoint = "/v1/embeddings"
+        mock_batch_job.status = Mock(value="QUEUED")
+        mock_batch_job.created_at = 1700000000
+        mock_batch_job.total_requests = 5
+        mock_batch_job.completed_requests = 0
+        mock_batch_job.succeeded_requests = 0
+        mock_batch_job.failed_requests = 0
+        mock_batch_job.errors = []
+        mock_batch_job.metadata = Unset()
+        mock_batch_job.output_file = Unset()
+        mock_batch_job.error_file = Unset()
+        mock_batch_job.started_at = Unset()
+        mock_batch_job.completed_at = Unset()
+
+        result = _convert_batch_job_to_openai(mock_batch_job)
+
+        assert result.id == "batch-456"
+        assert result.status == "validating"
+        assert result.output_file_id is None
+        assert result.in_progress_at is None
+        assert result.completed_at is None
+        assert result.metadata is None
+
+    def test_convert_batch_job_status_mapping(self) -> None:
+        """Test all status mappings from Mistral to OpenAI."""
+        pytest.importorskip("mistralai")
+        from any_llm.providers.mistral.utils import _MISTRAL_TO_OPENAI_STATUS_MAP
+
+        expected_mappings = {
+            "QUEUED": "validating",
+            "RUNNING": "in_progress",
+            "SUCCESS": "completed",
+            "FAILED": "failed",
+            "TIMEOUT_EXCEEDED": "expired",
+            "CANCELLATION_REQUESTED": "cancelling",
+            "CANCELLED": "cancelled",
+        }
+
+        for mistral_status, openai_status in expected_mappings.items():
+            assert _MISTRAL_TO_OPENAI_STATUS_MAP[mistral_status] == openai_status
+
+    def test_convert_batch_jobs_list(self) -> None:
+        """Test converting a list of Mistral batch jobs."""
+        pytest.importorskip("mistralai")
+        from any_llm.providers.mistral.utils import _convert_batch_jobs_list
+
+        mock_job1 = Mock()
+        mock_job1.id = "batch-1"
+        mock_job1.input_files = ["file-1"]
+        mock_job1.endpoint = "/v1/chat/completions"
+        mock_job1.status = Mock(value="SUCCESS")
+        mock_job1.created_at = 1700000000
+        mock_job1.total_requests = 5
+        mock_job1.completed_requests = 5
+        mock_job1.succeeded_requests = 5
+        mock_job1.failed_requests = 0
+        mock_job1.errors = []
+        mock_job1.metadata = None
+        mock_job1.output_file = None
+        mock_job1.error_file = None
+        mock_job1.started_at = None
+        mock_job1.completed_at = None
+
+        mock_job2 = Mock()
+        mock_job2.id = "batch-2"
+        mock_job2.input_files = ["file-2"]
+        mock_job2.endpoint = "/v1/embeddings"
+        mock_job2.status = Mock(value="RUNNING")
+        mock_job2.created_at = 1700001000
+        mock_job2.total_requests = 10
+        mock_job2.completed_requests = 3
+        mock_job2.succeeded_requests = 3
+        mock_job2.failed_requests = 0
+        mock_job2.errors = []
+        mock_job2.metadata = None
+        mock_job2.output_file = None
+        mock_job2.error_file = None
+        mock_job2.started_at = None
+        mock_job2.completed_at = None
+
+        mock_batch_jobs = Mock()
+        mock_batch_jobs.data = [mock_job1, mock_job2]
+
+        result = _convert_batch_jobs_list(mock_batch_jobs)
+
+        assert len(result) == 2
+        assert result[0].id == "batch-1"
+        assert result[0].status == "completed"
+        assert result[1].id == "batch-2"
+        assert result[1].status == "in_progress"
+
+    def test_convert_batch_jobs_list_empty(self) -> None:
+        """Test converting an empty batch jobs list."""
+        pytest.importorskip("mistralai")
+        from any_llm.providers.mistral.utils import _convert_batch_jobs_list
+
+        mock_batch_jobs = Mock()
+        mock_batch_jobs.data = None
+
+        result = _convert_batch_jobs_list(mock_batch_jobs)
+
+        assert result == []
+
+
+@pytest.mark.asyncio
+async def test_create_batch() -> None:
+    """Test creating a batch job with Mistral provider."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    with patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral:
+        provider = MistralProvider(api_key="test-api-key")
+
+        mock_upload_response = Mock()
+        mock_upload_response.id = "uploaded-file-123"
+
+        mock_batch_job = Mock()
+        mock_batch_job.id = "batch-789"
+        mock_batch_job.input_files = ["uploaded-file-123"]
+        mock_batch_job.endpoint = "/v1/chat/completions"
+        mock_batch_job.status = Mock(value="QUEUED")
+        mock_batch_job.created_at = 1700000000
+        mock_batch_job.total_requests = 2
+        mock_batch_job.completed_requests = 0
+        mock_batch_job.succeeded_requests = 0
+        mock_batch_job.failed_requests = 0
+        mock_batch_job.errors = []
+        mock_batch_job.metadata = {"test": "batch"}
+        mock_batch_job.output_file = None
+        mock_batch_job.error_file = None
+        mock_batch_job.started_at = None
+        mock_batch_job.completed_at = None
+
+        mocked_mistral.return_value.files.upload_async = AsyncMock(return_value=mock_upload_response)
+        mocked_mistral.return_value.batch.jobs.create_async = AsyncMock(return_value=mock_batch_job)
+
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+            f.write('{"custom_id": "1", "body": {"messages": []}}\n')
+            tmp_path = f.name
+
+        try:
+            result = await provider._acreate_batch(
+                input_file_path=tmp_path,
+                endpoint="/v1/chat/completions",
+                completion_window="24h",
+                metadata={"test": "batch"},
+            )
+
+            assert result.id == "batch-789"
+            assert result.status == "validating"
+            assert result.input_file_id == "uploaded-file-123"
+
+            mocked_mistral.return_value.files.upload_async.assert_called_once()
+            mocked_mistral.return_value.batch.jobs.create_async.assert_called_once()
+        finally:
+            import os
+
+            os.unlink(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_retrieve_batch() -> None:
+    """Test retrieving a batch job with Mistral provider."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    with patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral:
+        provider = MistralProvider(api_key="test-api-key")
+
+        mock_batch_job = Mock()
+        mock_batch_job.id = "batch-retrieve-123"
+        mock_batch_job.input_files = ["file-abc"]
+        mock_batch_job.endpoint = "/v1/chat/completions"
+        mock_batch_job.status = Mock(value="RUNNING")
+        mock_batch_job.created_at = 1700000000
+        mock_batch_job.total_requests = 10
+        mock_batch_job.completed_requests = 5
+        mock_batch_job.succeeded_requests = 5
+        mock_batch_job.failed_requests = 0
+        mock_batch_job.errors = []
+        mock_batch_job.metadata = None
+        mock_batch_job.output_file = None
+        mock_batch_job.error_file = None
+        mock_batch_job.started_at = 1700000100
+        mock_batch_job.completed_at = None
+
+        mocked_mistral.return_value.batch.jobs.get_async = AsyncMock(return_value=mock_batch_job)
+
+        result = await provider._aretrieve_batch("batch-retrieve-123")
+
+        assert result.id == "batch-retrieve-123"
+        assert result.status == "in_progress"
+        mocked_mistral.return_value.batch.jobs.get_async.assert_called_once_with(job_id="batch-retrieve-123")
+
+
+@pytest.mark.asyncio
+async def test_cancel_batch() -> None:
+    """Test cancelling a batch job with Mistral provider."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    with patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral:
+        provider = MistralProvider(api_key="test-api-key")
+
+        mock_batch_job = Mock()
+        mock_batch_job.id = "batch-cancel-123"
+        mock_batch_job.input_files = ["file-abc"]
+        mock_batch_job.endpoint = "/v1/chat/completions"
+        mock_batch_job.status = Mock(value="CANCELLATION_REQUESTED")
+        mock_batch_job.created_at = 1700000000
+        mock_batch_job.total_requests = 10
+        mock_batch_job.completed_requests = 3
+        mock_batch_job.succeeded_requests = 3
+        mock_batch_job.failed_requests = 0
+        mock_batch_job.errors = []
+        mock_batch_job.metadata = None
+        mock_batch_job.output_file = None
+        mock_batch_job.error_file = None
+        mock_batch_job.started_at = 1700000100
+        mock_batch_job.completed_at = None
+
+        mocked_mistral.return_value.batch.jobs.cancel_async = AsyncMock(return_value=mock_batch_job)
+
+        result = await provider._acancel_batch("batch-cancel-123")
+
+        assert result.id == "batch-cancel-123"
+        assert result.status == "cancelling"
+        mocked_mistral.return_value.batch.jobs.cancel_async.assert_called_once_with(job_id="batch-cancel-123")
+
+
+@pytest.mark.asyncio
+async def test_list_batches() -> None:
+    """Test listing batch jobs with Mistral provider."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    with patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral:
+        provider = MistralProvider(api_key="test-api-key")
+
+        mock_job1 = Mock()
+        mock_job1.id = "batch-list-1"
+        mock_job1.input_files = ["file-1"]
+        mock_job1.endpoint = "/v1/chat/completions"
+        mock_job1.status = Mock(value="SUCCESS")
+        mock_job1.created_at = 1700000000
+        mock_job1.total_requests = 5
+        mock_job1.completed_requests = 5
+        mock_job1.succeeded_requests = 5
+        mock_job1.failed_requests = 0
+        mock_job1.errors = []
+        mock_job1.metadata = None
+        mock_job1.output_file = "output-1"
+        mock_job1.error_file = None
+        mock_job1.started_at = 1700000100
+        mock_job1.completed_at = 1700000200
+
+        mock_batch_jobs = Mock()
+        mock_batch_jobs.data = [mock_job1]
+
+        mocked_mistral.return_value.batch.jobs.list_async = AsyncMock(return_value=mock_batch_jobs)
+
+        result = await provider._alist_batches(limit=10)
+
+        assert len(result) == 1
+        assert result[0].id == "batch-list-1"
+        assert result[0].status == "completed"
+        mocked_mistral.return_value.batch.jobs.list_async.assert_called_once_with(page=0, page_size=10)
