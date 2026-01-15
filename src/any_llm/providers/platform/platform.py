@@ -60,7 +60,9 @@ class PlatformProvider(AnyLLM):
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = AsyncClient(**kwargs)
         # Initialize the platform client for authentication and usage tracking
-        self.platform_client = AnyLLMPlatformClient()
+        from .utils import ANY_LLM_PLATFORM_API_URL
+
+        self.platform_client = AnyLLMPlatformClient(any_llm_platform_url=ANY_LLM_PLATFORM_API_URL)
 
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:

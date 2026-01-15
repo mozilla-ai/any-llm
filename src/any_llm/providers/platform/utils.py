@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import uuid
 from typing import TYPE_CHECKING, Any
 
@@ -13,6 +14,9 @@ from .batch_queue import get_global_batch_queue
 if TYPE_CHECKING:
     from any_llm.types.completion import ChatCompletion
 
+ANY_LLM_PLATFORM_URL = os.getenv("ANY_LLM_PLATFORM_URL", "https://platform-api.any-llm.ai")
+API_V1_STR = "/api/v1"
+ANY_LLM_PLATFORM_API_URL = f"{ANY_LLM_PLATFORM_URL}{API_V1_STR}"
 
 __all__ = [
     "get_global_batch_queue",
@@ -169,7 +173,7 @@ async def post_completion_usage_event(
         payload["client_name"] = client_name
 
     response = await client.post(
-        f"{platform_client.any_llm_platform_url}/usage-events/",
+        f"{ANY_LLM_PLATFORM_API_URL}/usage-events/",
         json=payload,
         headers={"Authorization": f"Bearer {access_token}"},
     )
