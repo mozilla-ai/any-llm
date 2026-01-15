@@ -1,7 +1,5 @@
 # _version file
 src/any_llm/_version.py
-# Claude Code generated file
-CLAUDE.md
 uv.lock
 .DS_Store
 # Byte-compiled / optimized / DLL files
