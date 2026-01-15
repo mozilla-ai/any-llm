@@ -34,6 +34,9 @@ from any_llm.types.completion import (
 )
 from any_llm.types.model import Model
 
+DEFAULT_TIMEOUT_HOURS = 24
+DEFAULT_COMPLETION_WINDOW = f"{DEFAULT_TIMEOUT_HOURS}h"
+
 if TYPE_CHECKING:
     from mistralai.models import BatchJobOut, BatchJobsOut
     from mistralai.models.embeddingresponse import EmbeddingResponse
@@ -424,8 +427,7 @@ def _convert_batch_job_to_openai(batch_job: "BatchJobOut") -> Batch:
     if batch_job.completed_at is not None and not isinstance(batch_job.completed_at, Unset):
         completed_at = batch_job.completed_at
 
-    # Try to get timeout_hours from Mistral response, default to 24h
-    completion_window = "24h"
+    completion_window = DEFAULT_COMPLETION_WINDOW
     if hasattr(batch_job, "timeout_hours") and batch_job.timeout_hours is not None:
         if not isinstance(batch_job.timeout_hours, Unset):
             completion_window = f"{batch_job.timeout_hours}h"
@@ -487,7 +489,7 @@ def _parse_completion_window_to_hours(completion_window: str) -> int:
     window = completion_window.strip().lower()
 
     if not window:
-        return 24  # Default
+        return DEFAULT_TIMEOUT_HOURS
 
     if not window.endswith("h"):
         msg = f"Invalid completion_window format: '{completion_window}'. Expected format like '24h'."
