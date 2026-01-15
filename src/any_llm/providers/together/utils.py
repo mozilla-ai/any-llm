@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal, cast
 
-from together.types.chat import ChatCompletionChunk as TogetherChatCompletionChunk
+from together.types import ChatCompletionChunk as TogetherChatCompletionChunk
 
 from any_llm.types.completion import (
     ChatCompletion,
