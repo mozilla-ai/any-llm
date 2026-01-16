@@ -67,7 +67,6 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: false # TMP FOR TESTING - REMOVE BEFORE PUSHING
           file: docker/Dockerfile
           load: true
           tags: gateway-test:${{ github.sha }}
@@ -75,85 +74,14 @@ jobs:
             VERSION=${{ steps.version.outputs.version }}
 
       - name: Run container liveness check
-        run: |
-          # Start PostgreSQL container
-          docker run -d --name test-postgres \
-            -e POSTGRES_USER=gateway \
-            -e POSTGRES_PASSWORD=gateway \
-            -e POSTGRES_DB=gateway \
-            -p 5432:5432 \
-            postgres:16-alpine
-
-          # Wait for Postgres to be ready
-          echo "Waiting for PostgreSQL to be ready..."
-          for i in {1..30}; do
-            if docker exec test-postgres pg_isready -U gateway > /dev/null 2>&1; then
-              echo "PostgreSQL is ready"
-              break
-            fi
-            if [ $i -eq 30 ]; then
-              echo "PostgreSQL failed to become ready"
-              docker logs test-postgres
-              exit 1
-            fi
-            sleep 1
-          done
-
-          # Create minimal gateway config
-          cat > /tmp/gateway-config.yml << 'EOF'
-          database_url: "postgresql://gateway:gateway@host.docker.internal:5432/gateway"
-          host: "0.0.0.0"
-          port: 8000
-          master_key: "test-master-key"
-          EOF
-
-          # Run gateway container
-          docker run -d --name test-gateway \
-            --add-host=host.docker.internal:host-gateway \
-            -p 8000:8000 \
-            -v /tmp/gateway-config.yml:/app/config.yml \
-            gateway-test:${{ github.sha }} \
-            any-llm-gateway serve --config /app/config.yml
-
-          # Wait for gateway to be healthy
-          echo "Waiting for gateway to be healthy..."
-          for i in {1..60}; do
-            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
-              echo "Gateway is responding"
-              break
-            fi
-            if [ $i -eq 60 ]; then
-              echo "Gateway failed to become healthy within 60 seconds"
-              echo "=== Gateway logs ==="
-              docker logs test-gateway
-              exit 1
-            fi
-            sleep 1
-          done
-
-          # Test all health endpoints
-          echo "Testing /health endpoint..."
-          curl -sf http://localhost:8000/health
-
-          echo "Testing /health/liveness endpoint..."
-          curl -sf http://localhost:8000/health/liveness
-
-          echo "Testing /health/readiness endpoint..."
-          curl -sf http://localhost:8000/health/readiness
-
-          echo "All liveness checks passed!"
-
-      - name: Cleanup test containers
-        if: always()
-        run: |
-          docker rm -f test-gateway test-postgres 2>/dev/null || true
+        run: ./scripts/docker_liveness_check.sh gateway-test:${{ github.sha }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
-          push: false # TMP FOR TESTING - REMOVE BEFORE PUSHING
+          push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
