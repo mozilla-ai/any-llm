@@ -17,7 +17,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
 )
 
-from .utils import post_completion_usage_event
+from .utils import queue_completion_usage_event
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
@@ -131,7 +131,7 @@ class PlatformProvider(AnyLLM):
             end_time = time.perf_counter()
             total_duration_ms = (end_time - start_time) * 1000
 
-            await post_completion_usage_event(
+            await queue_completion_usage_event(
                 platform_client=self.platform_client,
                 client=self.client,
                 any_llm_key=self.any_llm_key,  # type: ignore[arg-type]
@@ -216,7 +216,7 @@ class PlatformProvider(AnyLLM):
             # Calculate inter-chunk latency variance
             if len(chunk_latencies) > 1:
                 inter_chunk_latency_variance_ms = statistics.variance(chunk_latencies)
-            await post_completion_usage_event(
+            await queue_completion_usage_event(
                 platform_client=self.platform_client,
                 client=self.client,
                 any_llm_key=self.any_llm_key,  # type: ignore [arg-type]
