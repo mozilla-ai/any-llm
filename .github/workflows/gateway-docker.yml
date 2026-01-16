@@ -69,7 +69,6 @@ jobs:
           context: .
           file: docker/Dockerfile
           load: true
-          push: false # TMP FOR TESTING - REMOVE BEFORE PUSHING
           tags: gateway-test:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -84,7 +83,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
-          push: false # TMP FOR TESTING - REMOVE BEFORE PUSHING
+          push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
