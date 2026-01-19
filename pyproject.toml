@@ -91,6 +91,10 @@ sagemaker = [
   "boto3",
 ]
 
+llama = [
+    "llama-api-client>=0.6.0",
+]
+
 
 # These providers don't require any additional dependencies, but are included for completeness.
 azureopenai = []
@@ -98,7 +102,6 @@ databricks = []
 deepseek = []
 fireworks = []
 inception = []
-llama = []
 llamacpp = []
 llamafile = []
 lmstudio = []
