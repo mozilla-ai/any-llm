@@ -214,14 +214,18 @@ If you were previously using `post_completion_usage_event()` (now deprecated), t
 If you need direct access to the batching queue (advanced usage):
 
 ```python
-from any_llm.providers.platform import PlatformProvider, UsageEventBatchQueue
+from any_llm.providers.platform import PlatformProvider
 
 # The provider creates and manages its own queue
 provider = PlatformProvider(api_key="your-key")
 # Access the queue directly if needed
 batch_queue = provider.batch_queue
+```
 
-# Or create a standalone queue (advanced)
+Or create a standalone queue (advanced - requires any-llm-platform-client):
+
+```text
+from any_llm.providers.platform import UsageEventBatchQueue
 from any_llm_platform_client import AnyLLMPlatformClient
 import httpx
 
