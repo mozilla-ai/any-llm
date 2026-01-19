@@ -8,7 +8,7 @@ By default, every LLM completion generates a usage event that tracks tokens, cos
 
 ## How It Works
 
-The batching system uses a queue that automatically flushes based on two triggers:
+Each `PlatformProvider` instance maintains its own batching queue that automatically flushes based on two triggers:
 
 - **Batch size**: When the queue reaches a certain number of events (default: 50)
 - **Time window**: After a certain time period has elapsed (default: 5 seconds)
@@ -17,11 +17,29 @@ Whichever trigger fires first will cause the queued events to be sent to the pla
 
 ### Automatic Cleanup
 
-The batching system automatically flushes remaining events when your process exits, ensuring no data loss. This happens via Python's `atexit` handler, which runs on:
+The `PlatformProvider` supports async context managers for automatic cleanup:
 
-- Normal process exit
-- Keyboard interrupt (Ctrl+C)
-- Most graceful shutdowns
+```python
+from any_llm.providers.platform import PlatformProvider
+
+async with PlatformProvider(api_key="your-key") as provider:
+    provider.provider = OpenAIProvider
+    # Use provider for completions
+    # Events are automatically flushed when exiting the context
+```
+
+You can also manually flush or shutdown:
+
+```python
+provider = PlatformProvider(api_key="your-key")
+# ... use provider ...
+
+# Flush pending events without shutting down
+await provider.flush_usage_events()
+
+# Or shutdown completely (flushes and stops background tasks)
+await provider.shutdown()
+```
 
 ## Performance Impact
 
@@ -38,68 +56,77 @@ Based on testing with various workloads:
 
 ### Default Behavior
 
-Batching is enabled by default with sensible defaults:
+Batching is enabled by default when you create a `PlatformProvider`:
 
 ```python
-# Example usage with the platform provider:
-# from any_llm import completion
-#
-# # Events are automatically batched with default settings:
-# # - batch_size: 50 events
-# # - flush_interval: 5.0 seconds
-# response = completion(
-#     provider="platform",
-#     model="gpt-4",
-#     messages=[{"role": "user", "content": "Hello!"}],
-#     api_key="your-any-llm-platform-key"
-# )
-pass
+from any_llm.providers.platform import PlatformProvider
+
+# Events are automatically batched with default settings:
+# - batch_size: 50 events
+# - flush_interval: 5.0 seconds
+provider = PlatformProvider(api_key="your-any-llm-platform-key")
+provider.provider = OpenAIProvider
+
+# Use the provider normally
+response = await provider.acompletion(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
 ```
 
 ### Custom Configuration
 
-You can customize batching behavior if needed, though the defaults work well for most use cases:
+You can customize batching behavior per provider instance:
 
 ```python
-# from any_llm.providers.platform import queue_completion_usage_event
+from any_llm.providers.platform import PlatformProvider
 
-# Example: Smaller batches, more frequent flushes
-# async def custom_batching():
-#     await queue_completion_usage_event(
-#         platform_client=platform_client,
-#         client=http_client,
-#         any_llm_key="your-key",
-#         provider="openai",
-#         completion=response,
-#         provider_key_id="key-id",
-#         batch_size=25,           # Flush every 25 events (instead of 50)
-#         flush_interval=2.0,      # Flush every 2 seconds (instead of 5)
-#     )
-pass
+# Smaller batches, more frequent flushes
+provider = PlatformProvider(
+    api_key="your-key",
+    batch_size=25,         # Flush every 25 events (instead of 50)
+    flush_interval=2.0,    # Flush every 2 seconds (instead of 5)
+)
 ```
 
 ## Manual Control
 
 ### Manual Flush
 
-Force immediate sending of all queued events:
+Force immediate sending of all queued events for a specific provider:
 
 ```python
-# from any_llm.providers.platform import shutdown_global_batch_queue
+from any_llm.providers.platform import PlatformProvider
 
-# Example: Flush all pending events immediately
-# async def manual_flush():
-#     await shutdown_global_batch_queue()
-pass
+provider = PlatformProvider(api_key="your-key")
+# ... use provider ...
+
+# Flush all pending events immediately
+await provider.flush_usage_events()
+```
+
+### Graceful Shutdown
+
+For long-running applications, explicitly shutdown the provider:
+
+```python
+provider = PlatformProvider(api_key="your-key")
+try:
+    # ... use provider ...
+    pass
+finally:
+    # Flush remaining events and stop background tasks
+    await provider.shutdown()
 ```
 
 ### When to Manual Flush
 
-Manual flushing is rarely needed since automatic cleanup handles most cases, but consider it for:
+Manual flushing is useful for:
 
 - **End of batch jobs**: After processing a large batch of requests
-- **Critical checkpoints**: Before important state transitions
+- **Critical checkpoints**: Before important state transitions  
 - **Testing/debugging**: To see usage events immediately
+- **Graceful shutdown**: To ensure all events are sent before exit
 
 ## Best Practices
 
@@ -108,10 +135,14 @@ Manual flushing is rarely needed since automatic cleanup handles most cases, but
 Use larger batch sizes to maximize efficiency:
 
 ```python
-# Example configuration for high throughput:
-# batch_size = 100        # Larger batches
-# flush_interval = 10.0   # Longer wait time
-pass  # Configuration would be passed to queue_completion_usage_event()
+from any_llm.providers.platform import PlatformProvider
+
+# Configuration for high throughput
+provider = PlatformProvider(
+    api_key="your-key",
+    batch_size=100,        # Larger batches
+    flush_interval=10.0,   # Longer wait time
+)
 ```
 
 ### For Real-Time Applications
@@ -119,73 +150,92 @@ pass  # Configuration would be passed to queue_completion_usage_event()
 Use smaller batches for lower latency:
 
 ```python
-# Example configuration for real-time applications:
-# batch_size = 10         # Smaller batches
-# flush_interval = 1.0    # More frequent flushes
-pass  # Configuration would be passed to queue_completion_usage_event()
+from any_llm.providers.platform import PlatformProvider
+
+# Configuration for real-time applications
+provider = PlatformProvider(
+    api_key="your-key",
+    batch_size=10,         # Smaller batches
+    flush_interval=1.0,    # More frequent flushes
+)
 ```
 
 ### For Long-Running Services
 
-While automatic cleanup handles graceful shutdowns, explicitly call shutdown for cleaner logs:
+Use async context managers or explicit shutdown for cleaner cleanup:
 
 ```python
-# Example shutdown handler:
-# import logging
-# logger = logging.getLogger(__name__)
-#
-# async def shutdown_handler():
-#     """Graceful shutdown for long-running services."""
-#     logger.info("Shutting down...")
-#
-#     # Flush remaining usage events
-#     await shutdown_global_batch_queue()
-#
-#     # Other cleanup...
-pass
+from any_llm.providers.platform import PlatformProvider
+
+# Option 1: Context manager (recommended)
+async with PlatformProvider(api_key="your-key") as provider:
+    provider.provider = OpenAIProvider
+    # ... use provider ...
+    # Automatically flushes on exit
+
+# Option 2: Manual shutdown
+provider = PlatformProvider(api_key="your-key")
+try:
+    provider.provider = OpenAIProvider
+    # ... use provider ...
+finally:
+    await provider.shutdown()
 ```
 
 ## Monitoring
 
-The batching system logs important events:
+Each provider instance logs batching events:
 
 ```
-DEBUG: Registered automatic cleanup handler for usage event batching
 DEBUG: Successfully sent batch of 50 usage events
-INFO: Flushing remaining usage events on process exit...
-INFO: Successfully flushed remaining usage events
+```
+
+You can also inspect the queue directly if needed:
+
+```python
+provider = PlatformProvider(api_key="your-key")
+# Check queue size
+queue_size = len(provider.batch_queue._queue)
 ```
 
 ## Migration from Individual Events
 
-If you were previously using `post_completion_usage_event()` (now deprecated), simply replace it with `queue_completion_usage_event()`:
+If you were previously using `post_completion_usage_event()` (now deprecated), the batching is now automatic when using `PlatformProvider`. No code changes needed - batching happens transparently.
+
+If you need direct access to the batching queue (advanced usage):
 
 ```python
-# Old (deprecated) - sends immediately:
-# await post_completion_usage_event(
-#     platform_client=client,
-#     client=http_client,
-#     any_llm_key="key",
-#     provider="openai",
-#     completion=response,
-#     provider_key_id="key-id"
-# )
+from any_llm.providers.platform import PlatformProvider, UsageEventBatchQueue
 
-# New (recommended) - uses batching:
-# await queue_completion_usage_event(
-#     platform_client=client,
-#     client=http_client,
-#     any_llm_key="key",
-#     provider="openai",
-#     completion=response,
-#     provider_key_id="key-id"
-# )
-pass
+# The provider creates and manages its own queue
+provider = PlatformProvider(api_key="your-key")
+# Access the queue directly if needed
+batch_queue = provider.batch_queue
+
+# Or create a standalone queue (advanced)
+from any_llm_platform_client import AnyLLMPlatformClient
+import httpx
+
+platform_client = AnyLLMPlatformClient(any_llm_platform_url="...")
+http_client = httpx.AsyncClient()
+queue = UsageEventBatchQueue(
+    platform_client=platform_client,
+    http_client=http_client,
+    batch_size=50,
+    flush_interval=5.0
+)
 ```
 
-The `platform` provider automatically uses batching, so no code changes are needed if you're using the high-level `completion()` API.
-
 ## Technical Details
+
+### Instance-Based Queues
+
+Each `PlatformProvider` instance maintains its own `UsageEventBatchQueue`. This means:
+
+- Different provider instances have independent queues
+- Each queue authenticates with its own credentials
+- No shared global state between providers
+- Predictable lifecycle management
 
 ### Thread Safety
 
@@ -213,7 +263,7 @@ With default settings (50 events per batch, 5-second flush):
 
 ### Events Not Appearing in Platform
 
-1. **Check flush timing**: Events may still be queued. Wait for flush interval or call `shutdown_global_batch_queue()`
+1. **Check flush timing**: Events may still be queued. Manually flush with `await provider.flush_usage_events()`
 2. **Verify API key**: Ensure your `ANY_LLM_KEY` is valid and has proper permissions
 3. **Check logs**: Look for error messages about failed batch sends
 
@@ -221,7 +271,7 @@ With default settings (50 events per batch, 5-second flush):
 
 If you're seeing delays in usage analytics:
 
-- Reduce `flush_interval` for more frequent updates
+- Reduce `flush_interval` when creating the provider for more frequent updates
 - Reduce `batch_size` if you have low request volume
 - Consider if 5-second delay is acceptable for your use case
 
@@ -229,9 +279,9 @@ If you're seeing delays in usage analytics:
 
 If batching uses too much memory:
 
-- Reduce `batch_size` to limit queue size
+- Reduce `batch_size` when creating the provider to limit queue size
 - Reduce `flush_interval` to clear queue more frequently
-- Monitor with `len(queue._queue)` if needed
+- Monitor with `len(provider.batch_queue._queue)` if needed
 
 ## Related
 

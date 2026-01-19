@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import statistics
 import time
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Self, cast
 
 from any_llm_platform_client import AnyLLMPlatformClient
 from httpx import AsyncClient
@@ -17,10 +17,12 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
 )
 
+from .batch_queue import UsageEventBatchQueue
 from .utils import queue_completion_usage_event
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
+    from types import TracebackType
 
     from any_llm.types.model import Model
 
@@ -46,11 +48,15 @@ class PlatformProvider(AnyLLM):
         api_key: str | None = None,
         api_base: str | None = None,
         client_name: str | None = None,
+        batch_size: int = 50,
+        flush_interval: float = 5.0,
         **kwargs: Any,
     ):
         self.any_llm_key = self._verify_and_set_api_key(api_key)
         self.api_base = api_base
         self.client_name = client_name
+        self.batch_size = batch_size
+        self.flush_interval = flush_interval
         self.kwargs = kwargs
         self.provider_key_id: str | None = None
         self.project_id: str | None = None
@@ -63,6 +69,14 @@ class PlatformProvider(AnyLLM):
         from .utils import ANY_LLM_PLATFORM_API_URL
 
         self.platform_client = AnyLLMPlatformClient(any_llm_platform_url=ANY_LLM_PLATFORM_API_URL)
+
+        # Initialize the batch queue for this provider instance
+        self.batch_queue = UsageEventBatchQueue(
+            platform_client=self.platform_client,
+            http_client=self.client,
+            batch_size=self.batch_size,
+            flush_interval=self.flush_interval,
+        )
 
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
@@ -132,8 +146,7 @@ class PlatformProvider(AnyLLM):
             total_duration_ms = (end_time - start_time) * 1000
 
             await queue_completion_usage_event(
-                platform_client=self.platform_client,
-                client=self.client,
+                batch_queue=self.batch_queue,
                 any_llm_key=self.any_llm_key,  # type: ignore[arg-type]
                 provider=self.provider.PROVIDER_NAME,
                 completion=cast("ChatCompletion", completion),
@@ -217,8 +230,7 @@ class PlatformProvider(AnyLLM):
             if len(chunk_latencies) > 1:
                 inter_chunk_latency_variance_ms = statistics.variance(chunk_latencies)
             await queue_completion_usage_event(
-                platform_client=self.platform_client,
-                client=self.client,
+                batch_queue=self.batch_queue,
                 any_llm_key=self.any_llm_key,  # type: ignore [arg-type]
                 provider=self.provider.PROVIDER_NAME,
                 completion=final_completion,
@@ -281,3 +293,31 @@ class PlatformProvider(AnyLLM):
         self.provider_key_id = str(provider_key_result.provider_key_id)
         self.project_id = str(provider_key_result.project_id)
         self._provider = provider_class(api_key=provider_key_result.api_key, api_base=self.api_base, **self.kwargs)
+
+    async def flush_usage_events(self) -> None:
+        """Manually flush any pending usage events in the batch queue.
+
+        This is useful for ensuring all events are sent before shutting down.
+        """
+        await self.batch_queue.flush()
+
+    async def shutdown(self) -> None:
+        """Shutdown the provider and flush remaining usage events.
+
+        This should be called when you're done using the provider to ensure
+        all pending usage events are sent to the platform.
+        """
+        await self.batch_queue.shutdown()
+
+    async def __aenter__(self) -> Self:
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """Async context manager exit - flushes remaining events."""
+        await self.shutdown()

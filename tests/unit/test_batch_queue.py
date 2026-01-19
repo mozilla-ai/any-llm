@@ -482,7 +482,7 @@ async def test_completion_without_usage_returns_empty_payload(
     mock_platform_client: MagicMock, mock_http_client: MagicMock
 ) -> None:
     """Test that completion without usage returns empty payload."""
-    from any_llm.providers.platform.batch_queue import UsageEventBatch
+    from any_llm.providers.platform.utils import build_usage_event_payload
 
     # Create completion without usage
     completion_no_usage = MagicMock()
@@ -490,14 +490,12 @@ async def test_completion_without_usage_returns_empty_payload(
     completion_no_usage.model = "gpt-4"
     completion_no_usage.usage = None
 
-    event = UsageEventBatch(
-        any_llm_key="test-key",
+    payload = build_usage_event_payload(
         provider="openai",
         completion=completion_no_usage,
         provider_key_id="key-1",
     )
 
-    payload = event.to_payload()
     assert payload == {}
 
 
@@ -572,27 +570,3 @@ async def test_send_batch_error_handling(mock_platform_client: MagicMock, mock_h
 
     await queue.shutdown()
 
-
-@pytest.mark.asyncio
-async def test_global_queue_initialization() -> None:
-    """Test global queue initialization and singleton pattern."""
-    from any_llm.providers.platform.batch_queue import get_global_batch_queue
-
-    mock_client = MagicMock()
-    mock_client._aensure_valid_token = AsyncMock(return_value="test-token")
-    mock_client.any_llm_platform_url = "http://localhost:8000/api/v1"
-
-    mock_http = MagicMock()
-    response = MagicMock()
-    response.raise_for_status = MagicMock()
-    mock_http.post = AsyncMock(return_value=response)
-
-    # First call creates the queue
-    queue1 = get_global_batch_queue(mock_client, mock_http)
-    assert queue1 is not None
-
-    # Second call returns the same instance
-    queue2 = get_global_batch_queue(mock_client, mock_http)
-    assert queue1 is queue2
-
-    await queue1.shutdown()
