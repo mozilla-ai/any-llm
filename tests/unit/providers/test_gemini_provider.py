@@ -1,6 +1,6 @@
 import base64
 from contextlib import contextmanager
-from typing import Any, Literal
+from typing import Any, get_args
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -10,7 +10,7 @@ from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.gemini import GeminiProvider
 from any_llm.providers.gemini.base import REASONING_EFFORT_TO_THINKING_BUDGETS
 from any_llm.providers.gemini.utils import _convert_messages, _convert_response_to_response_dict, _convert_tool_spec
-from any_llm.types.completion import CompletionParams
+from any_llm.types.completion import CompletionParams, ReasoningEffort
 
 
 @contextmanager
@@ -181,20 +181,9 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
         assert contents[2].role == "function"
 
 
-@pytest.mark.parametrize(
-    "reasoning_effort",
-    [
-        None,
-        "none",
-        "low",
-        "medium",
-        "high",
-    ],
-)
+@pytest.mark.parametrize("reasoning_effort", [None, *get_args(ReasoningEffort)])
 @pytest.mark.asyncio
-async def test_completion_with_custom_reasoning_effort(
-    reasoning_effort: Literal["none", "low", "medium", "high"] | None,
-) -> None:
+async def test_completion_with_custom_reasoning_effort(reasoning_effort: ReasoningEffort | None) -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
@@ -205,14 +194,17 @@ async def test_completion_with_custom_reasoning_effort(
             CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort)
         )
 
-        if reasoning_effort is None or reasoning_effort == "none":
-            expected_thinking = types.ThinkingConfig(include_thoughts=False)
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        thinking_config = call_kwargs["config"].thinking_config
+
+        if reasoning_effort == "auto":
+            assert thinking_config is None
+        elif reasoning_effort is None or reasoning_effort == "none":
+            assert thinking_config == types.ThinkingConfig(include_thoughts=False)
         else:
-            expected_thinking = types.ThinkingConfig(
+            assert thinking_config == types.ThinkingConfig(
                 include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[reasoning_effort]
             )
-        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
-        assert call_kwargs["config"].thinking_config == expected_thinking
 
 
 @pytest.mark.asyncio

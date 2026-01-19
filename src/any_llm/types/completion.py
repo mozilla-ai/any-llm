@@ -79,7 +79,7 @@ Usage = OpenAIUsage
 ChoiceDeltaToolCall = OpenAIChoiceDeltaToolCall
 ChoiceDeltaToolCallFunction = OpenAIChoiceDeltaToolCallFunction
 
-ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "auto"]
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "auto"]
 
 
 class CompletionParams(BaseModel):
