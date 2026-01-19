@@ -24,7 +24,7 @@ from any_llm.types.completion import (
 
 INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
 
-REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 1024, "low": 2048, "medium": 8192, "high": 24576}
+REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 1024, "low": 2048, "medium": 8192, "high": 24576, "xhigh": 32768}
 
 
 def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[str, Any]:

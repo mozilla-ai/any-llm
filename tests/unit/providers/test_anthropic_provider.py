@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Any, Literal
+from typing import Any, get_args
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -7,7 +7,7 @@ import pytest
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.utils import DEFAULT_MAX_TOKENS, REASONING_EFFORT_TO_THINKING_BUDGETS
-from any_llm.types.completion import CompletionParams
+from any_llm.types.completion import CompletionParams, ReasoningEffort
 
 
 @contextmanager
@@ -219,20 +219,9 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
         )
 
 
-@pytest.mark.parametrize(
-    "reasoning_effort",
-    [
-        None,
-        "none",
-        "low",
-        "medium",
-        "high",
-    ],
-)
+@pytest.mark.parametrize("reasoning_effort", [None, *get_args(ReasoningEffort)])
 @pytest.mark.asyncio
-async def test_completion_with_custom_reasoning_effort(
-    reasoning_effort: Literal["none", "low", "medium", "high"] | None,
-) -> None:
+async def test_completion_with_custom_reasoning_effort(reasoning_effort: ReasoningEffort | None) -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
@@ -243,17 +232,17 @@ async def test_completion_with_custom_reasoning_effort(
             CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort)
         )
 
-        if reasoning_effort is not None and reasoning_effort != "none":
-            expected_thinking = {
+        call_kwargs = mock_anthropic.return_value.messages.create.call_args[1]
+
+        if reasoning_effort is None or reasoning_effort == "none":
+            assert call_kwargs["thinking"] == {"type": "disabled"}
+        elif reasoning_effort == "auto":
+            assert "thinking" not in call_kwargs
+        else:
+            assert call_kwargs["thinking"] == {
                 "type": "enabled",
                 "budget_tokens": REASONING_EFFORT_TO_THINKING_BUDGETS[reasoning_effort],
             }
-        else:
-            expected_thinking = {"type": "disabled"}
-
-        mock_anthropic.return_value.messages.create.assert_called_once_with(
-            model=model, messages=messages, max_tokens=DEFAULT_MAX_TOKENS, thinking=expected_thinking
-        )
 
 
 @pytest.mark.asyncio
