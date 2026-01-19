@@ -295,14 +295,13 @@ async def test_acompletion_non_streaming_success(
     assert result == mock_completion
     provider_instance.provider._acompletion.assert_called_once_with(params=params)
 
-    # Verify post_completion_usage_event was called with the platform_client instance
+    # Verify post_completion_usage_event was called with the batch_queue instance
     call_args = mock_post_usage.call_args
-    assert call_args.kwargs["client"] == provider_instance.client
+    assert call_args.kwargs["batch_queue"] == provider_instance.batch_queue
     assert call_args.kwargs["any_llm_key"] == any_llm_key
     assert call_args.kwargs["provider"] == "openai"
     assert call_args.kwargs["completion"] == mock_completion
     assert call_args.kwargs["provider_key_id"] == "550e8400-e29b-41d4-a716-446655440000"
-    assert "platform_client" in call_args.kwargs
 
 
 @pytest.mark.asyncio
@@ -401,7 +400,7 @@ async def test_acompletion_streaming_success(
     # Verify usage event was posted with correct data
     mock_post_usage.assert_called_once()
     call_args = mock_post_usage.call_args
-    assert call_args.kwargs["client"] == provider_instance.client
+    assert call_args.kwargs["batch_queue"] == provider_instance.batch_queue
     assert call_args.kwargs["any_llm_key"] == any_llm_key
     assert call_args.kwargs["provider"] == "openai"
     assert call_args.kwargs["completion"].usage.prompt_tokens == 10

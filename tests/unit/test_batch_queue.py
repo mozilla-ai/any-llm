@@ -569,4 +569,3 @@ async def test_send_batch_error_handling(mock_platform_client: MagicMock, mock_h
     await asyncio.sleep(0.1)  # Give time for background flush
 
     await queue.shutdown()
-

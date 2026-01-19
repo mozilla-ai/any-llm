@@ -21,24 +21,27 @@ The `PlatformProvider` supports async context managers for automatic cleanup:
 
 ```python
 from any_llm.providers.platform import PlatformProvider
+from any_llm.providers.openai import OpenaiProvider
 
-async with PlatformProvider(api_key="your-key") as provider:
-    provider.provider = OpenAIProvider
-    # Use provider for completions
-    # Events are automatically flushed when exiting the context
+async def example():
+    async with PlatformProvider(api_key="your-key") as provider:
+        provider.provider = OpenaiProvider
+        # Use provider for completions
+        # Events are automatically flushed when exiting the context
 ```
 
 You can also manually flush or shutdown:
 
 ```python
-provider = PlatformProvider(api_key="your-key")
-# ... use provider ...
+async def example():
+    provider = PlatformProvider(api_key="your-key")
+    # ... use provider ...
 
-# Flush pending events without shutting down
-await provider.flush_usage_events()
+    # Flush pending events without shutting down
+    await provider.flush_usage_events()
 
-# Or shutdown completely (flushes and stops background tasks)
-await provider.shutdown()
+    # Or shutdown completely (flushes and stops background tasks)
+    await provider.shutdown()
 ```
 
 ## Performance Impact
@@ -60,18 +63,20 @@ Batching is enabled by default when you create a `PlatformProvider`:
 
 ```python
 from any_llm.providers.platform import PlatformProvider
+from any_llm.providers.openai import OpenaiProvider
 
-# Events are automatically batched with default settings:
-# - batch_size: 50 events
-# - flush_interval: 5.0 seconds
-provider = PlatformProvider(api_key="your-any-llm-platform-key")
-provider.provider = OpenAIProvider
+async def example():
+    # Events are automatically batched with default settings:
+    # - batch_size: 50 events
+    # - flush_interval: 5.0 seconds
+    provider = PlatformProvider(api_key="your-any-llm-platform-key")
+    provider.provider = OpenaiProvider
 
-# Use the provider normally
-response = await provider.acompletion(
-    model="gpt-4",
-    messages=[{"role": "user", "content": "Hello!"}]
-)
+    # Use the provider normally
+    response = await provider.acompletion(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello!"}]
+    )
 ```
 
 ### Custom Configuration
@@ -98,11 +103,12 @@ Force immediate sending of all queued events for a specific provider:
 ```python
 from any_llm.providers.platform import PlatformProvider
 
-provider = PlatformProvider(api_key="your-key")
-# ... use provider ...
+async def example():
+    provider = PlatformProvider(api_key="your-key")
+    # ... use provider ...
 
-# Flush all pending events immediately
-await provider.flush_usage_events()
+    # Flush all pending events immediately
+    await provider.flush_usage_events()
 ```
 
 ### Graceful Shutdown
@@ -110,13 +116,14 @@ await provider.flush_usage_events()
 For long-running applications, explicitly shutdown the provider:
 
 ```python
-provider = PlatformProvider(api_key="your-key")
-try:
-    # ... use provider ...
-    pass
-finally:
-    # Flush remaining events and stop background tasks
-    await provider.shutdown()
+async def example():
+    provider = PlatformProvider(api_key="your-key")
+    try:
+        # ... use provider ...
+        pass
+    finally:
+        # Flush remaining events and stop background tasks
+        await provider.shutdown()
 ```
 
 ### When to Manual Flush
@@ -166,20 +173,22 @@ Use async context managers or explicit shutdown for cleaner cleanup:
 
 ```python
 from any_llm.providers.platform import PlatformProvider
+from any_llm.providers.openai import OpenaiProvider
 
-# Option 1: Context manager (recommended)
-async with PlatformProvider(api_key="your-key") as provider:
-    provider.provider = OpenAIProvider
-    # ... use provider ...
-    # Automatically flushes on exit
+async def example():
+    # Option 1: Context manager (recommended)
+    async with PlatformProvider(api_key="your-key") as provider:
+        provider.provider = OpenaiProvider
+        # ... use provider ...
+        # Automatically flushes on exit
 
-# Option 2: Manual shutdown
-provider = PlatformProvider(api_key="your-key")
-try:
-    provider.provider = OpenAIProvider
-    # ... use provider ...
-finally:
-    await provider.shutdown()
+    # Option 2: Manual shutdown
+    provider = PlatformProvider(api_key="your-key")
+    try:
+        provider.provider = OpenaiProvider
+        # ... use provider ...
+    finally:
+        await provider.shutdown()
 ```
 
 ## Monitoring
