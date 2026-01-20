@@ -270,14 +270,14 @@ class OpenAIProvider(AnyLLM):
         return response
 
     @staticmethod
-    def _convert_completion_chunk_response(response: ChatCompletionChunk, **kwargs: Any) -> ChatCompletionChunk:
+    def _convert_completion_chunk_response(response: ChatCompletionChunk, **_kwargs: Any) -> ChatCompletionChunk:
         """Convert OpenAI streaming chunk to ChatCompletionChunk format.
 
         For OpenAI, this is a pass-through since the chunk is already in the correct format.
 
         Args:
             response: The OpenAI streaming chunk.
-            **kwargs: Additional arguments (unused).
+            **_kwargs: Additional arguments (unused, kept for interface compatibility).
 
         Returns:
             ChatCompletionChunk object.

@@ -273,15 +273,9 @@ class AnyLLM(ABC):
             ChatCompletionChunk objects.
 
         """
-        # This yield is required for abstract async generators
-        if False:
-            yield ChatCompletionChunk(
-                id="",
-                choices=[],
-                created=0,
-                model="",
-                object="chat.completion.chunk",
-            )
+        # Abstract async generator - subclasses must implement
+        return
+        yield  # pragma: no cover
 
     def completion_stream(
         self,
