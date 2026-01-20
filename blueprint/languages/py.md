@@ -5,3 +5,4 @@
     Use the existing wrappers in `py/src/utils/aio.py`.
 - Don't write module-level docstrings.
 - Use https://github.com/openai/openai-python
+- Use https://github.com/anthropics/anthropic-sdk-python

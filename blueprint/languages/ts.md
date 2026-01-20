@@ -4,3 +4,4 @@
 - Implement lazy loading of providers using dynamic imports (`await import()`).
 - Use TypeScript's `AsyncIterable` and `async *` generator syntax for streaming responses.
 - Use https://github.com/openai/openai-node
+- Use https://github.com/anthropics/anthropic-sdk-typescript
