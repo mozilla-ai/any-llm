@@ -9,6 +9,7 @@ from anthropic.types import (
     MessageStopEvent,
 )
 from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
+from openai.types.completion_usage import PromptTokensDetails
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.logging import logger
@@ -195,15 +196,15 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
     elif isinstance(chunk, MessageStopEvent):
         finish_reason = "stop"
         if hasattr(chunk, "message") and chunk.message.usage:
-            usage = chunk.message.usage
-            cache_read = usage.cache_read_input_tokens or 0
-            cache_creation = usage.cache_creation_input_tokens or 0
-            total_prompt_tokens = usage.input_tokens + cache_read + cache_creation
+            anthropic_usage = chunk.message.usage
+            cache_read = anthropic_usage.cache_read_input_tokens or 0
+            cache_creation = anthropic_usage.cache_creation_input_tokens or 0
+            total_prompt_tokens = anthropic_usage.input_tokens + cache_read + cache_creation
             chunk_dict["usage"] = {
                 "prompt_tokens": total_prompt_tokens,
-                "completion_tokens": usage.output_tokens,
-                "total_tokens": total_prompt_tokens + usage.output_tokens,
-                "prompt_tokens_details": {"cached_tokens": cache_read} if cache_read else None,
+                "completion_tokens": anthropic_usage.output_tokens,
+                "total_tokens": total_prompt_tokens + anthropic_usage.output_tokens,
+                "prompt_tokens_details": PromptTokensDetails(cached_tokens=cache_read) if cache_read else None,
             }
 
     choice = {
@@ -265,7 +266,7 @@ def _convert_response(response: Message) -> ChatCompletion:
         completion_tokens=response.usage.output_tokens,
         prompt_tokens=total_prompt_tokens,
         total_tokens=total_prompt_tokens + response.usage.output_tokens,
-        prompt_tokens_details={"cached_tokens": cache_read} if cache_read else None,
+        prompt_tokens_details=PromptTokensDetails(cached_tokens=cache_read) if cache_read else None,
     )
 
     from typing import Literal
