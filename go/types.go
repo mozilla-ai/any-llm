@@ -37,7 +37,7 @@ const (
 	ProviderVoyage     Provider = "voyage"
 	ProviderPerplexity Provider = "perplexity"
 	ProviderFireworks  Provider = "fireworks"
-	ProviderHuggingFce Provider = "huggingface"
+	ProviderHuggingFace Provider = "huggingface"
 	ProviderLlamafile  Provider = "llamafile"
 	ProviderLlamaCpp   Provider = "llamacpp"
 	ProviderSageMaker  Provider = "sagemaker"
