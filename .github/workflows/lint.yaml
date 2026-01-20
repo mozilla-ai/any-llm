@@ -109,14 +109,6 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Install golangci-lint
-        if: steps.changes.outputs.changed == 'true'
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          working-directory: go
-          args: --timeout=5m
-
       - name: Lint Go
         if: steps.changes.outputs.changed == 'true'
         working-directory: go
