@@ -63,9 +63,9 @@ for await (const chunk of stream) {
 All provider-specific errors are mapped to unified error types:
 
 ```typescript
-import { 
+import {
   AnyLLMError,
-  RateLimitError, 
+  RateLimitError,
   AuthenticationError,
   InvalidRequestError,
   ModelNotFoundError,
@@ -90,20 +90,22 @@ try {
 const response = await llm.completion({
   model: "gpt-4o",
   messages: [{ role: "user", content: "What's the weather in Paris?" }],
-  tools: [{
-    type: "function",
-    function: {
-      name: "get_weather",
-      description: "Get current weather for a location",
-      parameters: {
-        type: "object",
-        properties: {
-          location: { type: "string", description: "City name" }
+  tools: [
+    {
+      type: "function",
+      function: {
+        name: "get_weather",
+        description: "Get current weather for a location",
+        parameters: {
+          type: "object",
+          properties: {
+            location: { type: "string", description: "City name" },
+          },
+          required: ["location"],
         },
-        required: ["location"]
-      }
-    }
-  }]
+      },
+    },
+  ],
 });
 
 if (response.choices[0].message.tool_calls) {
@@ -125,11 +127,11 @@ const response = await llm.completion({
         type: "object",
         properties: {
           name: { type: "string" },
-          age: { type: "number" }
+          age: { type: "number" },
         },
-        required: ["name", "age"]
-      }
-    }
-  }
+        required: ["name", "age"],
+      },
+    },
+  },
 });
 ```

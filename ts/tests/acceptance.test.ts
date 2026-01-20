@@ -1,14 +1,3 @@
-/**
- * Acceptance tests for any-llm TypeScript implementation.
- * Validates the client against the acceptance test server.
- *
- * Run with: npm test
- *
- * Prerequisites:
- * - Acceptance test server running at http://localhost:8080
- * - Start with: uv run acceptance-tests-server/server.py
- */
-
 import { describe, it, expect, beforeAll } from "vitest";
 import { AnyLLM } from "../src/index.js";
 import type { ChatCompletionChunk } from "../src/index.js";
@@ -17,29 +6,27 @@ const BASE_URL = process.env.TEST_SERVER_URL ?? "http://localhost:8080/v1";
 const DUMMY_API_KEY = "test-key";
 const PROVIDERS_TO_TEST = ["openai"];
 
-// Shared state
 let testRunId: string;
 let scenarios: Record<string, any>;
 
-// Setup fixtures
 beforeAll(async () => {
   testRunId = `ts-${Date.now()}`;
 
-  // Load scenarios from server
   const serverBase = BASE_URL.replace("/v1", "");
   const scenariosResponse = await fetch(`${serverBase}/v1/test-data`);
   if (!scenariosResponse.ok) {
-    throw new Error(`Failed to load test scenarios: ${scenariosResponse.status}`);
+    throw new Error(
+      `Failed to load test scenarios: ${scenariosResponse.status}`,
+    );
   }
   const data = await scenariosResponse.json();
   scenarios = data.scenarios;
 
-  // Create test run
   const testRunResponse = await fetch(
     `${serverBase}/v1/test-runs?test_run_id=${encodeURIComponent(
-      testRunId
+      testRunId,
     )}&description=TypeScript%20acceptance%20tests`,
-    { method: "POST" }
+    { method: "POST" },
   );
 
   if (!testRunResponse.ok && testRunResponse.status !== 409) {
@@ -47,7 +34,6 @@ beforeAll(async () => {
   }
 });
 
-// Parametrized tests
 describe.each(PROVIDERS_TO_TEST)("Provider: %s", (provider) => {
   describe.each(Object.entries(scenarios ?? {}))(
     "Scenario: %s",
@@ -64,7 +50,7 @@ describe.each(PROVIDERS_TO_TEST)("Provider: %s", (provider) => {
           for await (const chunk of llm.completionStream(
             scenario.model,
             scenario.messages,
-            options
+            options,
           )) {
             chunks.push(chunk);
           }
@@ -75,13 +61,13 @@ describe.each(PROVIDERS_TO_TEST)("Provider: %s", (provider) => {
           const response = await llm.completion(
             scenario.model,
             scenario.messages,
-            options
+            options,
           );
 
           expect(response.choices).toBeDefined();
           expect(response.choices.length).toBeGreaterThan(0);
         }
       });
-    }
+    },
   );
 });
