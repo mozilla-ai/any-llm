@@ -39,6 +39,7 @@ This repo uses `uv` for local dev (Python 3.11+). For the full, up-to-date comma
 - Framework: `pytest` (+ `pytest-asyncio`, `pytest-xdist`).
 - Add/adjust tests with every change (happy path + error cases). Integration tests should `pytest.skip(...)` when credentials/services aren’t available.
 - New code should target ~85%+ coverage (see `CONTRIBUTING.md`).
+- Do not use class-based test grouping (`class TestFoo:`). All tests should be standalone functions.
 
 ## Commit & Pull Request Guidelines
 

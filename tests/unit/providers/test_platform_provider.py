@@ -87,8 +87,7 @@ def mock_platform_client() -> Mock:
     from any_llm_platform_client import AnyLLMPlatformClient
 
     mock_client = Mock(spec=AnyLLMPlatformClient)
-    mock_client.aget_solved_challenge = AsyncMock(return_value=UUID("550e8400-e29b-41d4-a716-446655440000"))
-    mock_client.get_public_key = Mock(return_value="mock-public-key")
+    mock_client._aensure_valid_token = AsyncMock(return_value="mock-jwt-token-12345")
     return mock_client
 
 
@@ -437,9 +436,7 @@ async def test_post_completion_usage_event_success(
     )
 
     # Assertions
-    # Convenience method should be called once
-    mock_platform_client.aget_solved_challenge.assert_called_once_with(any_llm_key=any_llm_key)
-    mock_platform_client.get_public_key.assert_called_once_with(any_llm_key)
+    mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
 
     # Usage event POST should be called once
     client.post.assert_called_once()
@@ -521,8 +518,8 @@ async def test_post_completion_usage_event_invalid_key_format() -> None:
 
     mock_platform_client = Mock(spec=AnyLLMPlatformClient)
 
-    # Mock the platform client methods to raise ValueError for invalid key
-    mock_platform_client.aget_solved_challenge = AsyncMock(side_effect=ValueError("Invalid ANY_LLM_KEY format"))
+    # Mock the token management method to raise ValueError for invalid key
+    mock_platform_client._aensure_valid_token = AsyncMock(side_effect=ValueError("Invalid ANY_LLM_KEY format"))
 
     client = AsyncMock(spec=httpx.AsyncClient)
 
@@ -634,8 +631,7 @@ async def test_post_completion_usage_event_with_performance_metrics(
     )
 
     # Assertions
-    mock_platform_client.aget_solved_challenge.assert_called_once_with(any_llm_key=any_llm_key)
-    mock_platform_client.get_public_key.assert_called_once_with(any_llm_key)
+    mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
     client.post.assert_called_once()
 
     # Verify the payload includes performance metrics
@@ -758,9 +754,7 @@ async def test_post_completion_usage_event_skips_when_no_usage(
         provider_key_id="550e8400-e29b-41d4-a716-446655440000",
     )
 
-    # Verify authentication calls were made but POST was not (early return after usage check)
-    mock_platform_client.aget_solved_challenge.assert_called_once_with(any_llm_key=any_llm_key)
-    mock_platform_client.get_public_key.assert_called_once_with(any_llm_key)
+    mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
     client.post.assert_not_called()
 
 
@@ -1061,3 +1055,38 @@ async def test_stream_options_preserved_when_user_specifies_it(
     # Verify that user-specified stream_options are preserved
     assert captured_params is not None
     assert captured_params.stream_options == custom_stream_options
+
+
+@pytest.mark.asyncio
+async def test_usage_event_uses_bearer_token(
+    mock_platform_client: Mock,
+    any_llm_key: str,
+    mock_completion: ChatCompletion,
+) -> None:
+    """Test that usage events use Bearer token authentication (v3.0)."""
+    mock_http_client = AsyncMock(spec=httpx.AsyncClient)
+    mock_response = Mock()
+    mock_response.raise_for_status = Mock()
+    mock_http_client.post = AsyncMock(return_value=mock_response)
+
+    await post_completion_usage_event(
+        platform_client=mock_platform_client,
+        client=mock_http_client,
+        any_llm_key=any_llm_key,
+        provider="openai",
+        completion=mock_completion,
+        provider_key_id="550e8400-e29b-41d4-a716-446655440000",
+        client_name="test-client",
+        total_duration_ms=100.0,
+    )
+
+    mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
+
+    mock_http_client.post.assert_called_once()
+    call_args = mock_http_client.post.call_args
+    headers = call_args.kwargs["headers"]
+
+    assert "Authorization" in headers
+    assert headers["Authorization"] == "Bearer mock-jwt-token-12345"
+    assert "encryption-key" not in headers
+    assert "AnyLLM-Challenge-Response" not in headers
