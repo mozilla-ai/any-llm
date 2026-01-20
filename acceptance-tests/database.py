@@ -1,4 +1,4 @@
-"""SQLite database for storing validation results."""
+"""SQLite database for storing request tracking."""
 
 import json
 import sqlite3
@@ -7,13 +7,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from models import ScenarioID, ValidationError, ValidationResult
+from models import ScenarioID
 
 DEFAULT_DB_PATH = Path(__file__).parent / "results.db"
 
 
 class ResultsDB:
-    """SQLite-based storage for validation results."""
+    """SQLite-based storage for request tracking."""
 
     def __init__(self, db_path: Path | str = DEFAULT_DB_PATH):
         self.db_path = Path(db_path)
@@ -31,25 +31,23 @@ class ResultsDB:
                 )
             """)
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS validation_results (
+                CREATE TABLE IF NOT EXISTS requests (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     test_run_id TEXT NOT NULL,
                     request_id TEXT,
                     scenario TEXT NOT NULL,
-                    passed INTEGER NOT NULL,
-                    errors TEXT NOT NULL,
                     timestamp REAL NOT NULL,
                     request_body TEXT,
                     FOREIGN KEY (test_run_id) REFERENCES test_runs(id)
                 )
             """)
             conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_results_test_run 
-                ON validation_results(test_run_id)
+                CREATE INDEX IF NOT EXISTS idx_requests_test_run 
+                ON requests(test_run_id)
             """)
             conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_results_scenario 
-                ON validation_results(scenario)
+                CREATE INDEX IF NOT EXISTS idx_requests_scenario 
+                ON requests(scenario)
             """)
             conn.commit()
 
@@ -105,20 +103,21 @@ class ResultsDB:
             ]
 
     def delete_test_run(self, test_run_id: str) -> bool:
-        """Delete a test run and its results."""
+        """Delete a test run and its requests."""
         with self._get_connection() as conn:
-            conn.execute("DELETE FROM validation_results WHERE test_run_id = ?", (test_run_id,))
+            conn.execute("DELETE FROM requests WHERE test_run_id = ?", (test_run_id,))
             cursor = conn.execute("DELETE FROM test_runs WHERE id = ?", (test_run_id,))
             conn.commit()
             return cursor.rowcount > 0
 
-    def store_result(
+    def store_request(
         self,
         test_run_id: str,
-        result: ValidationResult,
+        scenario: ScenarioID,
+        request_id: str,
         request_body: dict[str, Any] | None = None,
     ) -> None:
-        """Store a validation result."""
+        """Store a request."""
         with self._get_connection() as conn:
             run_exists = conn.execute(
                 "SELECT 1 FROM test_runs WHERE id = ?", (test_run_id,)
@@ -129,34 +128,30 @@ class ResultsDB:
                     (test_run_id, time.time(), None, None),
                 )
 
-            errors_json = json.dumps([e.model_dump() for e in result.errors])
             conn.execute(
                 """
-                INSERT INTO validation_results 
-                (test_run_id, request_id, scenario, passed, errors, timestamp, request_body)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO requests 
+                (test_run_id, request_id, scenario, timestamp, request_body)
+                VALUES (?, ?, ?, ?, ?)
                 """,
                 (
                     test_run_id,
-                    result.request_id,
-                    result.scenario.value,
-                    1 if result.passed else 0,
-                    errors_json,
-                    result.timestamp or time.time(),
+                    request_id,
+                    scenario.value,
+                    time.time(),
                     json.dumps(request_body) if request_body else None,
                 ),
             )
             conn.commit()
 
-    def get_results(
+    def get_requests(
         self,
         test_run_id: str | None = None,
         scenario: ScenarioID | None = None,
-        passed: bool | None = None,
         limit: int = 1000,
-    ) -> list[ValidationResult]:
-        """Query validation results with optional filters."""
-        query = "SELECT * FROM validation_results WHERE 1=1"
+    ) -> list[dict[str, Any]]:
+        """Query requests with optional filters."""
+        query = "SELECT * FROM requests WHERE 1=1"
         params: list[Any] = []
 
         if test_run_id is not None:
@@ -167,10 +162,6 @@ class ResultsDB:
             query += " AND scenario = ?"
             params.append(scenario.value)
 
-        if passed is not None:
-            query += " AND passed = ?"
-            params.append(1 if passed else 0)
-
         query += " ORDER BY timestamp DESC LIMIT ?"
         params.append(limit)
 
@@ -178,60 +169,50 @@ class ResultsDB:
             rows = conn.execute(query, params).fetchall()
             results = []
             for row in rows:
-                errors = [ValidationError(**e) for e in json.loads(row["errors"])]
                 results.append(
-                    ValidationResult(
-                        scenario=ScenarioID(row["scenario"]),
-                        passed=bool(row["passed"]),
-                        errors=errors,
-                        request_id=row["request_id"],
-                        timestamp=row["timestamp"],
-                        test_run_id=row["test_run_id"],
-                    )
+                    {
+                        "id": row["id"],
+                        "test_run_id": row["test_run_id"],
+                        "request_id": row["request_id"],
+                        "scenario": row["scenario"],
+                        "timestamp": row["timestamp"],
+                        "request_body": json.loads(row["request_body"]) if row["request_body"] else None,
+                    }
                 )
             return results
 
     def get_summary(self, test_run_id: str | None = None) -> dict[str, Any]:
-        """Get a summary of results, optionally filtered by test run."""
-        query_base = "SELECT scenario, passed, COUNT(*) as count FROM validation_results"
+        """Get a summary of requests, optionally filtered by test run."""
+        query_base = "SELECT scenario, COUNT(*) as count FROM requests"
         params: list[Any] = []
 
         if test_run_id:
             query_base += " WHERE test_run_id = ?"
             params.append(test_run_id)
 
-        query_base += " GROUP BY scenario, passed"
+        query_base += " GROUP BY scenario"
 
         with self._get_connection() as conn:
             rows = conn.execute(query_base, params).fetchall()
 
-            summary: dict[str, dict[str, int]] = {}
-            total_passed = 0
-            total_failed = 0
+            summary: dict[str, int] = {}
+            total = 0
 
             for row in rows:
                 scenario = row["scenario"]
-                if scenario not in summary:
-                    summary[scenario] = {"passed": 0, "failed": 0}
-
-                if row["passed"]:
-                    summary[scenario]["passed"] = row["count"]
-                    total_passed += row["count"]
-                else:
-                    summary[scenario]["failed"] = row["count"]
-                    total_failed += row["count"]
+                count = row["count"]
+                summary[scenario] = count
+                total += count
 
             return {
-                "total": total_passed + total_failed,
-                "passed": total_passed,
-                "failed": total_failed,
+                "total": total,
                 "by_scenario": summary,
             }
 
     def clear_all(self) -> None:
         """Clear all data from the database."""
         with self._get_connection() as conn:
-            conn.execute("DELETE FROM validation_results")
+            conn.execute("DELETE FROM requests")
             conn.execute("DELETE FROM test_runs")
             conn.commit()
 

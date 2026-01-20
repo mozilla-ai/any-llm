@@ -16,7 +16,6 @@ from models import (
     ScenarioID,
     ToolCall,
     UsageInfo,
-    ValidationResult,
 )
 
 
@@ -28,22 +27,16 @@ def generate_completion_id() -> str:
 def create_mock_response(
     request: ChatCompletionRequest,
     scenario: ScenarioID,
-    validation: ValidationResult,
 ) -> ChatCompletionResponse:
     """Create a mock completion response based on the scenario."""
     completion_id = generate_completion_id()
     created = int(time.time())
 
-    if validation.passed:
-        content = f"Validation passed for scenario: {scenario.value}"
-    else:
-        error_summary = "; ".join(e.message for e in validation.errors[:3])
-        content = f"Validation failed: {error_summary}"
-
+    content = f"Mock response for scenario: {scenario.value}"
     finish_reason: str = "stop"
     tool_calls = None
 
-    if scenario == ScenarioID.TOOL_CALLS and validation.passed and request.tools:
+    if scenario == ScenarioID.TOOL_CALLS and request.tools:
         finish_reason = "tool_calls"
         content = None
         tool_calls = [
@@ -77,24 +70,18 @@ def create_mock_response(
             completion_tokens=15,
             total_tokens=25,
         ),
-        **{"_validation": validation},
     )
 
 
 async def create_streaming_response(
     request: ChatCompletionRequest,
     scenario: ScenarioID,
-    validation: ValidationResult,
 ) -> AsyncIterator[ChatCompletionChunk]:
     """Create a streaming response as an async iterator of chunks."""
     completion_id = generate_completion_id()
     created = int(time.time())
 
-    if validation.passed:
-        content = f"Validation passed for scenario: {scenario.value}"
-    else:
-        error_summary = "; ".join(e.message for e in validation.errors[:3])
-        content = f"Validation failed: {error_summary}"
+    content = f"Mock streaming response for scenario: {scenario.value}"
 
     yield ChatCompletionChunk(
         id=completion_id,

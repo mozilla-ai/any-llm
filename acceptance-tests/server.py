@@ -6,9 +6,7 @@
 #     "uvicorn>=0.30.0",
 # ]
 # ///
-"""FastAPI acceptance test server for any-llm client validation."""
 
-import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
@@ -25,9 +23,9 @@ from models import (
     TestRun,
     TestRunSummary,
 )
+import models
 from responses import create_mock_response, create_streaming_response
 from scenarios import get_all_scenarios, get_scenario_for_model
-from validators import validate_request
 
 
 @asynccontextmanager
@@ -54,6 +52,17 @@ async def health() -> dict[str, str]:
 async def list_scenarios() -> list[dict[str, Any]]:
     """List all available test scenarios."""
     return [s.model_dump() for s in get_all_scenarios()]
+
+
+@app.get("/v1/test-data")
+async def get_test_data() -> dict[str, Any]:
+    """Get complete test scenario data for acceptance tests."""
+    import json
+    from pathlib import Path
+    
+    scenarios_file = Path(__file__).parent / "test-scenarios.json"
+    with open(scenarios_file) as f:
+        return json.load(f)
 
 
 @app.post("/v1/test-runs")
@@ -114,22 +123,19 @@ async def get_test_run_summary(test_run_id: str) -> TestRunSummary:
 async def get_test_run_results(
     test_run_id: str,
     scenario: ScenarioID | None = Query(default=None, description="Filter by scenario"),
-    passed: bool | None = Query(default=None, description="Filter by pass/fail status"),
     limit: int = Query(default=1000, description="Maximum number of results to return"),
 ) -> ResultsResponse:
-    """Get validation results for a specific test run."""
+    """Get request tracking results for a specific test run."""
     run = db.get_test_run(test_run_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Test run '{test_run_id}' not found")
 
-    results = db.get_results(test_run_id=test_run_id, scenario=scenario, passed=passed, limit=limit)
+    requests = db.get_requests(test_run_id=test_run_id, scenario=scenario, limit=limit)
 
     return ResultsResponse(
         test_run_id=test_run_id,
-        total=len(results),
-        passed=sum(1 for r in results if r.passed),
-        failed=sum(1 for r in results if not r.passed),
-        results=results,
+        total=len(requests),
+        requests=[models.RequestInfo(**r) for r in requests],
     )
 
 
@@ -137,18 +143,15 @@ async def get_test_run_results(
 async def get_results(
     test_run_id: str | None = Query(default=None, description="Filter by test run ID"),
     scenario: ScenarioID | None = Query(default=None, description="Filter by scenario"),
-    passed: bool | None = Query(default=None, description="Filter by pass/fail status"),
     limit: int = Query(default=1000, description="Maximum number of results to return"),
 ) -> ResultsResponse:
-    """Get validation results with optional filters."""
-    results = db.get_results(test_run_id=test_run_id, scenario=scenario, passed=passed, limit=limit)
+    """Get request tracking results with optional filters."""
+    requests = db.get_requests(test_run_id=test_run_id, scenario=scenario, limit=limit)
 
     return ResultsResponse(
         test_run_id=test_run_id,
-        total=len(results),
-        passed=sum(1 for r in results if r.passed),
-        failed=sum(1 for r in results if not r.passed),
-        results=results,
+        total=len(requests),
+        requests=[models.RequestInfo(**r) for r in requests],
     )
 
 
@@ -163,7 +166,7 @@ async def get_summary(
 
 @app.delete("/v1/results")
 async def clear_results() -> dict[str, str]:
-    """Clear all validation results and test runs."""
+    """Clear all request tracking data and test runs."""
     db.clear_all()
     return {"status": "cleared"}
 
@@ -173,7 +176,7 @@ async def chat_completions(
     request: Request,
     x_test_run_id: str | None = Header(default=None, description="Test run ID to associate this request with"),
 ) -> ChatCompletionResponse | StreamingResponse:
-    """OpenAI-compatible chat completions endpoint with validation.
+    """OpenAI-compatible chat completions endpoint.
 
     Pass X-Test-Run-Id header to associate this request with a test run.
     If the test run doesn't exist, it will be created automatically.
@@ -196,16 +199,13 @@ async def chat_completions(
 
     request_id = f"req-{uuid.uuid4().hex[:8]}"
 
-    validation = validate_request(scenario, completion_request, request_id)
-    validation.timestamp = time.time()
-    validation.test_run_id = test_run_id
-
-    db.store_result(test_run_id, validation, body)
+    # Store request for results tracking
+    db.store_request(test_run_id, scenario, request_id, body)
 
     if completion_request.stream:
 
         async def stream_generator():  # noqa: ANN202
-            async for chunk in create_streaming_response(completion_request, scenario, validation):
+            async for chunk in create_streaming_response(completion_request, scenario):
                 yield f"data: {chunk.model_dump_json()}\n\n"
             yield "data: [DONE]\n\n"
 
@@ -215,14 +215,13 @@ async def chat_completions(
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "X-Validation-Passed": str(validation.passed).lower(),
                 "X-Scenario": scenario.value,
                 "X-Test-Run-Id": test_run_id,
                 "X-Request-Id": request_id,
             },
         )
 
-    return create_mock_response(completion_request, scenario, validation)
+    return create_mock_response(completion_request, scenario)
 
 
 @app.get("/v1/models")

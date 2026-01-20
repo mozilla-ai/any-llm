@@ -211,9 +211,6 @@ class ChatCompletionResponse(BaseModel):
     model: str
     choices: list[Choice]
     usage: UsageInfo
-    validation_: ValidationResult | None = Field(default=None, alias="_validation")
-
-    model_config = {"populate_by_name": True}
 
 
 class ChunkDelta(BaseModel):
@@ -263,21 +260,28 @@ class TestRun(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
+class RequestInfo(BaseModel):
+    """Information about a stored request."""
+
+    id: int
+    test_run_id: str
+    request_id: str
+    scenario: str
+    timestamp: float
+    request_body: dict[str, Any] | None = None
+
+
 class TestRunSummary(BaseModel):
     """Summary of a test run."""
 
     test_run_id: str | None = None
     total: int
-    passed: int
-    failed: int
-    by_scenario: dict[str, dict[str, int]]
+    by_scenario: dict[str, int]
 
 
 class ResultsResponse(BaseModel):
-    """Response containing validation results."""
+    """Response containing request tracking results."""
 
     test_run_id: str | None = None
     total: int
-    passed: int
-    failed: int
-    results: list[ValidationResult]
+    requests: list[RequestInfo]
