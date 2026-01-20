@@ -7,10 +7,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  run-linter:
+  pre-commit:
     timeout-minutes: 30
     runs-on: ubuntu-latest
-
     steps:
       - name: Check out the repository
         uses: actions/checkout@v6
@@ -19,20 +18,69 @@ jobs:
         with:
           python-version: 3.13
 
-      - run: uv run pre-commit run --all-files
+      - name: Install pre-commit
+        run: uv pip install pre-commit
+
+      - name: Run pre-commit
+        run: uv run pre-commit run --all-files
+
+  lint-python:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check for changes in py/
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^py/' && echo "changed=true" >> $GITHUB_OUTPUT || echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: astral-sh/setup-uv@v7
+        if: steps.changes.outputs.changed == 'true'
+        with:
+          python-version: 3.13
+
+      - name: Lint Python
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: py
+        run: bash lint.sh
+
+  lint-typescript:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check for changes in ts/
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^ts/' && echo "changed=true" >> $GITHUB_OUTPUT || echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
 
       - uses: actions/setup-node@v4
+        if: steps.changes.outputs.changed == 'true'
         with:
           node-version: '20'
 
       - uses: pnpm/action-setup@v4
+        if: steps.changes.outputs.changed == 'true'
         with:
           version: 8
 
-      - name: Lint Python
-        working-directory: py
-        run: bash lint.sh
-
       - name: Lint TypeScript
+        if: steps.changes.outputs.changed == 'true'
         working-directory: ts
         run: bash lint.sh
