@@ -59,7 +59,7 @@ async def get_test_data() -> dict[str, Any]:
     """Get complete test scenario data for acceptance tests."""
     import json
     from pathlib import Path
-    
+
     scenarios_file = Path(__file__).parent / "test-scenarios.json"
     with open(scenarios_file) as f:
         return json.load(f)
@@ -67,15 +67,21 @@ async def get_test_data() -> dict[str, Any]:
 
 @app.post("/v1/test-runs")
 async def create_test_run(
-    test_run_id: str | None = Query(default=None, description="Custom test run ID (auto-generated if not provided)"),
-    description: str | None = Query(default=None, description="Description of the test run"),
+    test_run_id: str | None = Query(
+        default=None, description="Custom test run ID (auto-generated if not provided)"
+    ),
+    description: str | None = Query(
+        default=None, description="Description of the test run"
+    ),
 ) -> TestRun:
     """Create a new test run to group validation results."""
     run_id = test_run_id or f"run-{uuid.uuid4().hex[:12]}"
 
     existing = db.get_test_run(run_id)
     if existing:
-        raise HTTPException(status_code=409, detail=f"Test run '{run_id}' already exists")
+        raise HTTPException(
+            status_code=409, detail=f"Test run '{run_id}' already exists"
+        )
 
     result = db.create_test_run(run_id, description)
     return TestRun(**result)
@@ -83,7 +89,9 @@ async def create_test_run(
 
 @app.get("/v1/test-runs")
 async def list_test_runs(
-    limit: int = Query(default=100, description="Maximum number of test runs to return"),
+    limit: int = Query(
+        default=100, description="Maximum number of test runs to return"
+    ),
 ) -> list[TestRun]:
     """List all test runs."""
     runs = db.list_test_runs(limit)
@@ -95,7 +103,9 @@ async def get_test_run(test_run_id: str) -> TestRun:
     """Get a specific test run."""
     run = db.get_test_run(test_run_id)
     if not run:
-        raise HTTPException(status_code=404, detail=f"Test run '{test_run_id}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"Test run '{test_run_id}' not found"
+        )
     return TestRun(**run)
 
 
@@ -104,7 +114,9 @@ async def delete_test_run(test_run_id: str) -> dict[str, str]:
     """Delete a test run and all its results."""
     deleted = db.delete_test_run(test_run_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail=f"Test run '{test_run_id}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"Test run '{test_run_id}' not found"
+        )
     return {"status": "deleted", "test_run_id": test_run_id}
 
 
@@ -113,7 +125,9 @@ async def get_test_run_summary(test_run_id: str) -> TestRunSummary:
     """Get a summary of results for a specific test run."""
     run = db.get_test_run(test_run_id)
     if not run:
-        raise HTTPException(status_code=404, detail=f"Test run '{test_run_id}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"Test run '{test_run_id}' not found"
+        )
 
     summary = db.get_summary(test_run_id)
     return TestRunSummary(test_run_id=test_run_id, **summary)
@@ -128,7 +142,9 @@ async def get_test_run_results(
     """Get request tracking results for a specific test run."""
     run = db.get_test_run(test_run_id)
     if not run:
-        raise HTTPException(status_code=404, detail=f"Test run '{test_run_id}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"Test run '{test_run_id}' not found"
+        )
 
     requests = db.get_requests(test_run_id=test_run_id, scenario=scenario, limit=limit)
 
@@ -174,7 +190,9 @@ async def clear_results() -> dict[str, str]:
 @app.post("/v1/chat/completions", response_model=None)
 async def chat_completions(
     request: Request,
-    x_test_run_id: str | None = Header(default=None, description="Test run ID to associate this request with"),
+    x_test_run_id: str | None = Header(
+        default=None, description="Test run ID to associate this request with"
+    ),
 ) -> ChatCompletionResponse | StreamingResponse:
     """OpenAI-compatible chat completions endpoint.
 

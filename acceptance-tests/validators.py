@@ -10,7 +10,9 @@ from models import (
 )
 
 
-def validate_basic_completion(request: ChatCompletionRequest, request_id: str) -> ValidationResult:
+def validate_basic_completion(
+    request: ChatCompletionRequest, request_id: str
+) -> ValidationResult:
     """Validate a basic completion request."""
     errors: list[ValidationError] = []
 
@@ -18,9 +20,13 @@ def validate_basic_completion(request: ChatCompletionRequest, request_id: str) -
         errors.append(ValidationError(field="model", message="Model is required"))
 
     if not request.messages:
-        errors.append(ValidationError(field="messages", message="Messages array is required"))
+        errors.append(
+            ValidationError(field="messages", message="Messages array is required")
+        )
     elif len(request.messages) == 0:
-        errors.append(ValidationError(field="messages", message="Messages array cannot be empty"))
+        errors.append(
+            ValidationError(field="messages", message="Messages array cannot be empty")
+        )
     else:
         last_message = request.messages[-1]
         if last_message.role not in ("user", "system"):
@@ -41,12 +47,18 @@ def validate_basic_completion(request: ChatCompletionRequest, request_id: str) -
     )
 
 
-def validate_tool_calls(request: ChatCompletionRequest, request_id: str) -> ValidationResult:
+def validate_tool_calls(
+    request: ChatCompletionRequest, request_id: str
+) -> ValidationResult:
     """Validate a tool calls request."""
     errors: list[ValidationError] = []
 
     if not request.tools:
-        errors.append(ValidationError(field="tools", message="Tools array is required for this scenario"))
+        errors.append(
+            ValidationError(
+                field="tools", message="Tools array is required for this scenario"
+            )
+        )
     else:
         for i, tool in enumerate(request.tools):
             if tool.type != "function":
@@ -60,7 +72,10 @@ def validate_tool_calls(request: ChatCompletionRequest, request_id: str) -> Vali
                 )
             if not tool.function.name:
                 errors.append(
-                    ValidationError(field=f"tools[{i}].function.name", message="Function name is required")
+                    ValidationError(
+                        field=f"tools[{i}].function.name",
+                        message="Function name is required",
+                    )
                 )
 
     if request.tool_choice is not None:
@@ -83,7 +98,9 @@ def validate_tool_calls(request: ChatCompletionRequest, request_id: str) -> Vali
     )
 
 
-def validate_tool_response(request: ChatCompletionRequest, request_id: str) -> ValidationResult:
+def validate_tool_response(
+    request: ChatCompletionRequest, request_id: str
+) -> ValidationResult:
     """Validate a tool response request (multi-turn with tool results)."""
     errors: list[ValidationError] = []
 
@@ -153,7 +170,9 @@ def validate_tool_response(request: ChatCompletionRequest, request_id: str) -> V
     )
 
 
-def validate_streaming(request: ChatCompletionRequest, request_id: str) -> ValidationResult:
+def validate_streaming(
+    request: ChatCompletionRequest, request_id: str
+) -> ValidationResult:
     """Validate a streaming request."""
     errors: list[ValidationError] = []
 
@@ -184,7 +203,9 @@ def validate_streaming(request: ChatCompletionRequest, request_id: str) -> Valid
     )
 
 
-def validate_structured_output(request: ChatCompletionRequest, request_id: str) -> ValidationResult:
+def validate_structured_output(
+    request: ChatCompletionRequest, request_id: str
+) -> ValidationResult:
     """Validate a structured output request."""
     errors: list[ValidationError] = []
 
@@ -230,7 +251,9 @@ def validate_structured_output(request: ChatCompletionRequest, request_id: str) 
     )
 
 
-def validate_multi_turn(request: ChatCompletionRequest, request_id: str) -> ValidationResult:
+def validate_multi_turn(
+    request: ChatCompletionRequest, request_id: str
+) -> ValidationResult:
     """Validate a multi-turn conversation request."""
     errors: list[ValidationError] = []
 
@@ -268,10 +291,18 @@ def validate_multi_turn(request: ChatCompletionRequest, request_id: str) -> Vali
             prev_role = msg.role
 
     if not has_user:
-        errors.append(ValidationError(field="messages", message="Must have at least one user message"))
+        errors.append(
+            ValidationError(
+                field="messages", message="Must have at least one user message"
+            )
+        )
 
     if not has_assistant:
-        errors.append(ValidationError(field="messages", message="Must have at least one assistant message"))
+        errors.append(
+            ValidationError(
+                field="messages", message="Must have at least one assistant message"
+            )
+        )
 
     return ValidationResult(
         scenario=ScenarioID.MULTI_TURN,
@@ -281,7 +312,9 @@ def validate_multi_turn(request: ChatCompletionRequest, request_id: str) -> Vali
     )
 
 
-def validate_system_message(request: ChatCompletionRequest, request_id: str) -> ValidationResult:
+def validate_system_message(
+    request: ChatCompletionRequest, request_id: str
+) -> ValidationResult:
     """Validate system message handling."""
     errors: list[ValidationError] = []
 
@@ -319,7 +352,9 @@ def validate_system_message(request: ChatCompletionRequest, request_id: str) -> 
     )
 
 
-def validate_image_content(request: ChatCompletionRequest, request_id: str) -> ValidationResult:
+def validate_image_content(
+    request: ChatCompletionRequest, request_id: str
+) -> ValidationResult:
     """Validate image content in messages."""
     errors: list[ValidationError] = []
 
@@ -374,7 +409,9 @@ def validate_image_content(request: ChatCompletionRequest, request_id: str) -> V
     )
 
 
-def validate_temperature_params(request: ChatCompletionRequest, request_id: str) -> ValidationResult:
+def validate_temperature_params(
+    request: ChatCompletionRequest, request_id: str
+) -> ValidationResult:
     """Validate temperature and other generation parameters."""
     errors: list[ValidationError] = []
 

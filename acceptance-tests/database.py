@@ -42,11 +42,11 @@ class ResultsDB:
                 )
             """)
             conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_requests_test_run 
+                CREATE INDEX IF NOT EXISTS idx_requests_test_run
                 ON requests(test_run_id)
             """)
             conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_requests_scenario 
+                CREATE INDEX IF NOT EXISTS idx_requests_scenario
                 ON requests(scenario)
             """)
             conn.commit()
@@ -62,27 +62,43 @@ class ResultsDB:
             conn.close()
 
     def create_test_run(
-        self, test_run_id: str, description: str | None = None, metadata: dict[str, Any] | None = None
+        self,
+        test_run_id: str,
+        description: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create a new test run."""
         with self._get_connection() as conn:
             conn.execute(
                 "INSERT INTO test_runs (id, created_at, description, metadata) VALUES (?, ?, ?, ?)",
-                (test_run_id, time.time(), description, json.dumps(metadata) if metadata else None),
+                (
+                    test_run_id,
+                    time.time(),
+                    description,
+                    json.dumps(metadata) if metadata else None,
+                ),
             )
             conn.commit()
-        return {"id": test_run_id, "created_at": time.time(), "description": description}
+        return {
+            "id": test_run_id,
+            "created_at": time.time(),
+            "description": description,
+        }
 
     def get_test_run(self, test_run_id: str) -> dict[str, Any] | None:
         """Get a test run by ID."""
         with self._get_connection() as conn:
-            row = conn.execute("SELECT * FROM test_runs WHERE id = ?", (test_run_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM test_runs WHERE id = ?", (test_run_id,)
+            ).fetchone()
             if row:
                 return {
                     "id": row["id"],
                     "created_at": row["created_at"],
                     "description": row["description"],
-                    "metadata": json.loads(row["metadata"]) if row["metadata"] else None,
+                    "metadata": json.loads(row["metadata"])
+                    if row["metadata"]
+                    else None,
                 }
         return None
 
@@ -97,7 +113,9 @@ class ResultsDB:
                     "id": row["id"],
                     "created_at": row["created_at"],
                     "description": row["description"],
-                    "metadata": json.loads(row["metadata"]) if row["metadata"] else None,
+                    "metadata": json.loads(row["metadata"])
+                    if row["metadata"]
+                    else None,
                 }
                 for row in rows
             ]
@@ -130,7 +148,7 @@ class ResultsDB:
 
             conn.execute(
                 """
-                INSERT INTO requests 
+                INSERT INTO requests
                 (test_run_id, request_id, scenario, timestamp, request_body)
                 VALUES (?, ?, ?, ?, ?)
                 """,
@@ -176,7 +194,9 @@ class ResultsDB:
                         "request_id": row["request_id"],
                         "scenario": row["scenario"],
                         "timestamp": row["timestamp"],
-                        "request_body": json.loads(row["request_body"]) if row["request_body"] else None,
+                        "request_body": json.loads(row["request_body"])
+                        if row["request_body"]
+                        else None,
                     }
                 )
             return results

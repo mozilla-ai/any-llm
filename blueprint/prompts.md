@@ -11,4 +11,3 @@ based on the given blueprint. You must:
 Put the generated code at {output_folder}. 
 
 Do not check other folders. If there is any ambiguous or missing information, add a note to clarifications.md but progress as much as you can by making assumptions.
-

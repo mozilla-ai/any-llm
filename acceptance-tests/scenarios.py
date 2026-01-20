@@ -73,7 +73,14 @@ SCENARIOS: dict[ScenarioID, ScenarioInfo] = {
         description="Validates generation parameters like temperature, top_p, etc.",
         model_name="test-params",
         required_fields=["model", "messages"],
-        optional_fields=["temperature", "top_p", "max_tokens", "max_completion_tokens", "presence_penalty", "frequency_penalty"],
+        optional_fields=[
+            "temperature",
+            "top_p",
+            "max_tokens",
+            "max_completion_tokens",
+            "presence_penalty",
+            "frequency_penalty",
+        ],
     ),
 }
 
