@@ -3,7 +3,7 @@ import json
 from time import time
 from typing import Any, Literal, cast
 
-from any_llm.exceptions import UnsupportedParameterError
+from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -98,41 +98,68 @@ def _convert_tool_spec(tools: list[dict[str, Any]], tool_choice: str | dict[str,
     return tool_config
 
 
+SUPPORTED_IMAGE_FORMATS = {"png", "jpeg", "jpg", "gif", "webp"}
+
+
 def _convert_images_for_bedrock(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Convert images from OpenAI format to AWS Bedrock format.
 
     OpenAI format: {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}
     Bedrock format: {"image": {"format": "png", "source": {"bytes": "..."}}}
+
+    Raises:
+        InvalidRequestError: If the image URL is not a base64 data URI, if the data URI
+            is malformed, if the image format is unsupported, or if the base64 data is invalid.
     """
-    converted_content = []
+    converted_content: list[dict[str, Any]] = []
     for block in content:
         if block.get("type") == "image_url":
             url = block.get("image_url", {}).get("url", "")
-            if url.startswith("data:"):
-                # Parse data URI: data:image/png;base64,<data>
-                mime_part = url[5:]  # Remove "data:"
-                semi_idx = mime_part.find(";")
-                if semi_idx != -1:
-                    media_type = mime_part[:semi_idx]  # e.g., "image/png"
-                    # Extract format from media type (e.g., "png" from "image/png")
-                    image_format = media_type.split("/")[1] if "/" in media_type else media_type
-                    # Extract base64 data after "base64,"
-                    base64_data = url.split("base64,")[1] if "base64," in url else ""
-                    converted_content.append(
-                        {
-                            "image": {
-                                "format": image_format,
-                                "source": {"bytes": base64.b64decode(base64_data)},
-                            }
-                        }
-                    )
-                else:
-                    # Malformed data URI, skip
-                    continue
-            else:
-                # URL-based images are not directly supported by Bedrock Converse API
-                # Would need to fetch and convert to base64 - skip for now
-                continue
+            if not url.startswith("data:"):
+                msg = (
+                    f"URL-based images are not supported by Bedrock. Please provide a base64 data URI. Got: {url[:100]}"
+                )
+                raise InvalidRequestError(msg, provider_name="bedrock")
+
+            # Parse data URI: data:image/png;base64,<data>
+            mime_part = url[5:]  # Remove "data:"
+            semi_idx = mime_part.find(";")
+            if semi_idx == -1:
+                msg = f"Malformed data URI: missing semicolon separator. Got: {url[:100]}"
+                raise InvalidRequestError(msg, provider_name="bedrock")
+
+            media_type = mime_part[:semi_idx]  # e.g., "image/png"
+            # Extract format from media type (e.g., "png" from "image/png")
+            image_format = media_type.split("/")[1] if "/" in media_type else media_type
+
+            if image_format not in SUPPORTED_IMAGE_FORMATS:
+                msg = f"Unsupported image format: '{image_format}'. Supported formats: {', '.join(sorted(SUPPORTED_IMAGE_FORMATS))}"
+                raise InvalidRequestError(msg, provider_name="bedrock")
+
+            # Normalize jpg to jpeg for Bedrock
+            if image_format == "jpg":
+                image_format = "jpeg"
+
+            # Extract base64 data after "base64,"
+            if "base64," not in url:
+                msg = f"Malformed data URI: missing 'base64,' marker. Got: {url[:100]}"
+                raise InvalidRequestError(msg, provider_name="bedrock")
+            base64_data = url.split("base64,")[1]
+
+            try:
+                decoded_bytes = base64.b64decode(base64_data)
+            except Exception as e:
+                msg = f"Invalid base64 image data: {e}"
+                raise InvalidRequestError(msg, provider_name="bedrock") from e
+
+            converted_content.append(
+                {
+                    "image": {
+                        "format": image_format,
+                        "source": {"bytes": decoded_bytes},
+                    }
+                }
+            )
         elif block.get("type") == "text":
             converted_content.append({"text": block.get("text", "")})
         else:

@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from any_llm.exceptions import InvalidRequestError
 from any_llm.providers.bedrock import BedrockProvider
 from any_llm.providers.bedrock.utils import (
     REASONING_EFFORT_TO_THINKING_BUDGETS,
@@ -430,17 +431,15 @@ def test_convert_images_for_bedrock_with_multiple_images() -> None:
     assert result[2]["image"]["source"]["bytes"] == image2_data
 
 
-def test_convert_images_for_bedrock_skips_url_images() -> None:
-    """Test that URL-based images are skipped (not supported by Bedrock)."""
+def test_convert_images_for_bedrock_raises_for_url_images() -> None:
+    """Test that URL-based images raise InvalidRequestError."""
     content: list[dict[str, Any]] = [
         {"type": "text", "text": "What is this?"},
         {"type": "image_url", "image_url": {"url": "https://example.com/image.png"}},
     ]
 
-    result = _convert_images_for_bedrock(content)
-
-    assert len(result) == 1
-    assert result[0] == {"text": "What is this?"}
+    with pytest.raises(InvalidRequestError, match="URL-based images are not supported"):
+        _convert_images_for_bedrock(content)
 
 
 def test_convert_images_for_bedrock_text_only() -> None:
@@ -453,6 +452,62 @@ def test_convert_images_for_bedrock_text_only() -> None:
 
     assert len(result) == 1
     assert result[0] == {"text": "Hello world"}
+
+
+def test_convert_images_for_bedrock_raises_for_malformed_data_uri_missing_semicolon() -> None:
+    """Test that malformed data URI without semicolon raises InvalidRequestError."""
+    content: list[dict[str, Any]] = [
+        {"type": "image_url", "image_url": {"url": "data:image/pngbase64,abc123"}},
+    ]
+
+    with pytest.raises(InvalidRequestError, match="missing semicolon separator"):
+        _convert_images_for_bedrock(content)
+
+
+def test_convert_images_for_bedrock_raises_for_missing_base64_marker() -> None:
+    """Test that data URI without base64 marker raises InvalidRequestError."""
+    content: list[dict[str, Any]] = [
+        {"type": "image_url", "image_url": {"url": "data:image/png;abc123"}},
+    ]
+
+    with pytest.raises(InvalidRequestError, match="missing 'base64,' marker"):
+        _convert_images_for_bedrock(content)
+
+
+def test_convert_images_for_bedrock_raises_for_unsupported_format() -> None:
+    """Test that unsupported image formats raise InvalidRequestError."""
+    content: list[dict[str, Any]] = [
+        {"type": "image_url", "image_url": {"url": "data:image/bmp;base64,abc123"}},
+    ]
+
+    with pytest.raises(InvalidRequestError, match="Unsupported image format: 'bmp'"):
+        _convert_images_for_bedrock(content)
+
+
+def test_convert_images_for_bedrock_raises_for_invalid_base64() -> None:
+    """Test that invalid base64 data raises InvalidRequestError."""
+    content: list[dict[str, Any]] = [
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,not-valid-base64!!!"}},
+    ]
+
+    with pytest.raises(InvalidRequestError, match="Invalid base64 image data"):
+        _convert_images_for_bedrock(content)
+
+
+def test_convert_images_for_bedrock_normalizes_jpg_to_jpeg() -> None:
+    """Test that jpg format is normalized to jpeg for Bedrock compatibility."""
+    test_image_data = b"jpg image bytes"
+    base64_data = base64.b64encode(test_image_data).decode("utf-8")
+
+    content: list[dict[str, Any]] = [
+        {"type": "image_url", "image_url": {"url": f"data:image/jpg;base64,{base64_data}"}},
+    ]
+
+    result = _convert_images_for_bedrock(content)
+
+    assert len(result) == 1
+    assert result[0]["image"]["format"] == "jpeg"
+    assert result[0]["image"]["source"]["bytes"] == test_image_data
 
 
 def test_convert_messages_with_image_content() -> None:
