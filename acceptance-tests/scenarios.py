@@ -1,5 +1,7 @@
 """Test scenario definitions and metadata."""
 
+from typing import Any
+
 from models import ScenarioID, ScenarioInfo
 
 SCENARIOS: dict[ScenarioID, ScenarioInfo] = {
@@ -100,3 +102,155 @@ def get_all_scenarios() -> list[ScenarioInfo]:
 def get_scenario_info(scenario_id: ScenarioID) -> ScenarioInfo | None:
     """Get info for a specific scenario."""
     return SCENARIOS.get(scenario_id)
+
+
+# Test data for acceptance tests - defines the actual requests to make for each scenario
+TEST_DATA: dict[str, dict[str, Any]] = {
+    "basic_completion": {
+        "model": "test-basic",
+        "messages": [{"role": "user", "content": "Hello, how are you?"}],
+        "stream": False,
+        "options": {},
+    },
+    "tool_calls": {
+        "model": "test-tools",
+        "messages": [{"role": "user", "content": "What is the weather in Paris?"}],
+        "stream": False,
+        "options": {
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "description": "Get the current weather for a location",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "location": {
+                                    "type": "string",
+                                    "description": "The city name",
+                                }
+                            },
+                            "required": ["location"],
+                        },
+                    },
+                }
+            ]
+        },
+    },
+    "tool_response": {
+        "model": "test-tool-response",
+        "messages": [
+            {"role": "user", "content": "What is the weather in Paris?"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_123",
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": '{"location": "Paris"}',
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_123",
+                "content": '{"temperature": 20, "condition": "sunny"}',
+            },
+        ],
+        "stream": False,
+        "options": {},
+    },
+    "streaming": {
+        "model": "test-stream",
+        "messages": [{"role": "user", "content": "Tell me a short story."}],
+        "stream": True,
+        "options": {"stream_options": {"include_usage": True}},
+    },
+    "structured_output": {
+        "model": "test-structured",
+        "messages": [
+            {
+                "role": "user",
+                "content": "Extract the name and age from: John is 30 years old.",
+            }
+        ],
+        "stream": False,
+        "options": {
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "person_info",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "age": {"type": "integer"},
+                        },
+                        "required": ["name", "age"],
+                    },
+                },
+            }
+        },
+    },
+    "multi_turn": {
+        "model": "test-multi-turn",
+        "messages": [
+            {"role": "user", "content": "My name is Alice."},
+            {"role": "assistant", "content": "Nice to meet you, Alice!"},
+            {"role": "user", "content": "What is my name?"},
+        ],
+        "stream": False,
+        "options": {},
+    },
+    "system_message": {
+        "model": "test-system",
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a helpful assistant that speaks like a pirate.",
+            },
+            {"role": "user", "content": "Hello!"},
+        ],
+        "stream": False,
+        "options": {},
+    },
+    "image_content": {
+        "model": "test-image",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "What do you see in this image?"},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+                        },
+                    },
+                ],
+            }
+        ],
+        "stream": False,
+        "options": {},
+    },
+    "temperature_params": {
+        "model": "test-params",
+        "messages": [{"role": "user", "content": "Generate a random word."}],
+        "stream": False,
+        "options": {
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "max_tokens": 100,
+        },
+    },
+}
+
+
+def get_test_data() -> dict[str, Any]:
+    """Get complete test scenario data for acceptance tests."""
+    return {"scenarios": TEST_DATA}

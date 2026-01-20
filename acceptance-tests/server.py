@@ -25,7 +25,7 @@ from models import (
 )
 import models
 from responses import create_mock_response, create_streaming_response
-from scenarios import get_all_scenarios, get_scenario_for_model
+from scenarios import get_all_scenarios, get_scenario_for_model, get_test_data
 
 
 @asynccontextmanager
@@ -55,14 +55,9 @@ async def list_scenarios() -> list[dict[str, Any]]:
 
 
 @app.get("/v1/test-data")
-async def get_test_data() -> dict[str, Any]:
+async def get_test_data_endpoint() -> dict[str, Any]:
     """Get complete test scenario data for acceptance tests."""
-    import json
-    from pathlib import Path
-
-    scenarios_file = Path(__file__).parent / "test-scenarios.json"
-    with open(scenarios_file) as f:
-        return json.load(f)
+    return get_test_data()
 
 
 @app.post("/v1/test-runs")
@@ -254,7 +249,7 @@ async def list_models() -> dict[str, Any]:
                 "id": model_name,
                 "object": "model",
                 "created": 1700000000,
-                "owned_by": "acceptance-test-server",
+                "owned_by": "acceptance-tests",
                 "description": f"Test model for {scenario.value} scenario",
             }
         )

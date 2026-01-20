@@ -17,6 +17,8 @@ class ResultsDB:
 
     def __init__(self, db_path: Path | str = DEFAULT_DB_PATH):
         self.db_path = Path(db_path)
+        # Ensure the parent directory exists
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
     def _init_db(self) -> None:
