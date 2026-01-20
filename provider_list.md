@@ -1,0 +1,35 @@
+
+- [Anthropic](./providers/anthropic.md)
+- [AWS Bedrock](./providers/aws_bedrock.md)
+- [AWS Sagemaker](./providers/aws_sagemaker.md)
+- [Azure Foundry](./providers/azure_foundry.md)
+- [Azure OpenAI](./providers/azure_openai.md)
+- [Cerebras](./providers/cerebras.md)
+- [Cohere](./providers/cohere.md)
+- [Databricks](./provders/databricks.md)
+- [Deepseek](./providers/deepseek.md)
+- [Fireworks](./providers/fireworks.md)
+- [Gemini](./providers/gemini.md)
+- Groq
+- HuggingFace
+- Inception
+- Llama API
+- Llama CPP
+- LLamafile
+- LMStudio
+- Minimax
+- Mistral
+- Moonshot
+- Nebius
+- Ollama
+- OpenAI
+- OpenRouter
+- Perplexity
+- Portkey
+- Sambanova
+- Together
+- vLLM
+- Voyage
+- WatsonX
+- Xai
+- Zai

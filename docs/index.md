@@ -15,63 +15,148 @@ schema:
       <p align="center">  <b>One interface. Every LLM. </b></p>
 </p>
 
-`any-llm` is a Python library providing a single interface to different llm providers.
+`any-llm` is a multi-language, spec-driven library providing a single interface to different llm providers.
 
-```python
-from any_llm import completion
 
-# Using the messages format
-response = completion(
-    model="gpt-4o-mini",
-    messages=[{"role": "user", "content": "What is Python?"}],
-    provider="openai"
-)
-print(response)
+=== "Python"
 
-# Switch providers without changing your code
-response = completion(
-    model="claude-sonnet-4-5-20250929",
-    messages=[{"role": "user", "content": "What is Python?"}],
-    provider="anthropic"
-)
-print(response)
+```bash
+pip install any-llm-py
 ```
 
-### Why any-llm
-  - Switch providers in one line
-  - Unified exception handling across providers
-  - Simple API, powerful features
+```python
+from any_llm import AnyLLM, Providers
+from any_llm.errors import (
+  AuthenticationError,
+  AnyLLMError,
+)
+# Directly pass an API key
+# Or use environment variables (MISTRAL_API_KEY, ANTHROPIC_API_KEY, etc.)
+llm = AnyLLM.create(Providers.MISTRAL)
 
-[View supported providers →](./providers.md)
+try:
+  response = llm.completion(
+      model="mistral-small-latest",
+      messages=[{"role": "user", "content": "Hello!"}]
+  )
+  print(response.choices[0].message.content)
+except AuthenticationError as e:
+  print(f"Auth failed: {e.message}")
+except AnyLLMError as e:
+  print(f"Error: {e.message}")
+```
 
-### Getting Started
+=== "Go"
 
-**[Get started in 5 minutes →](./quickstart.md)** - Install the library and run your first API call.
+```bash
+go get github.com/mozilla-ai/any-llm/go
+```
 
+```go
+package main
 
-### Demo
+import (
+    "fmt"
+    "log"
+    
+    "github.com/mozilla-ai/any-llm/go"
+    "github.com/mozilla-ai/any-llm/go/errors"
+)
 
-Try `any-llm` in action with our interactive chat demo:
+func main() {
+    // Directly pass an API key
+    // Or use environment variables (MISTRAL_API_KEY, ANTHROPIC_API_KEY, etc.)
+    llm, err := anyllm.Create(anyllm.Providers.MISTRAL)
+    if err != nil {
+        log.Fatal(err)
+    }
 
-**[📂 Run the Demo](https://github.com/mozilla-ai/any-llm/tree/main/demos/chat#readme)**
+    response, err := llm.Completion(anyllm.CompletionParams{
+        Model: "mistral-small-latest",
+        Messages: []anyllm.Message{
+            {Role: "user", Content: "Hello!"},
+        },
+    })
+    
+    if err != nil {
+        switch e := err.(type) {
+        case *errors.AuthenticationError:
+            fmt.Printf("Auth failed: %s\n", e.Message)
+        case *errors.AnyLLMError:
+            fmt.Printf("Error: %s\n", e.Message)
+        default:
+            log.Fatal(err)
+        }
+        return
+    }
 
-Features: real-time streaming responses, multiple provider support, and collapsible "thinking" content display.
+    fmt.Println(response.Choices[0].Message.Content)
+}
+```
 
-### API Documentation
+=== "TypeScript"
 
-`any-llm` provides two main interfaces:
+```bash
+npm install any-llm-ts
+```
 
-**Direct API Functions** (recommended for simple use cases):
-- [completion](./api/completion.md) - Chat completions with any provider
-- [embedding](./api/embedding.md) - Text embeddings
-- [responses](./api/responses.md) - OpenAI-style Responses API
+```typescript
+import { AnyLLM, Providers } from "any-llm";
+import { AuthenticationError, AnyLLMError } from "any-llm/errors";
 
-**AnyLLM Class** (recommended for advanced use cases):
-- [Provider API](./api/any_llm.md) - Lower-level provider interface with metadata access and reusability
+// Directly pass an API key
+// Or use environment variables (MISTRAL_API_KEY, ANTHROPIC_API_KEY, etc.)
+const llm = await AnyLLM.create(Providers.MISTRAL);
 
-## For AI Systems
+try {
+  const response = await llm.completion({
+    model: "mistral-small-latest",
+    messages: [{ role: "user", content: "Hello!" }],
+  });
 
-This documentation is available in two AI-friendly formats:
+  console.log(response.choices[0].message.content);
+} catch (e) {
+  if (e instanceof AuthenticationError) {
+    console.log(`Auth failed: ${e.message}`);
+  } else if (e instanceof AnyLLMError) {
+    console.log(`Error: ${e.message}`);
+  }
+}
+```
 
-- **[llms.txt](https://mozilla-ai.github.io/any-llm/llms.txt)** - A structured overview with curated links to key documentation sections
-- **[llms-full.txt](https://mozilla-ai.github.io/any-llm/llms-full.txt)** - Complete documentation content concatenated into a single file
+=== "Rust"
+
+```bash
+cargo add any-llm-rs
+```
+
+```rust
+use any_llm::{AnyLLM, Providers, Message};
+use any_llm::errors::{AuthenticationError, AnyLLMError};
+
+#[tokio::main]
+async fn main() {
+    // Directly pass an API key
+    // Or use environment variables (MISTRAL_API_KEY, ANTHROPIC_API_KEY, etc.)
+    let llm = AnyLLM::create(Providers::MISTRAL).await
+        .expect("Failed to create LLM client");
+
+    let response = llm.completion(
+        "mistral-small-latest",
+        vec![Message {
+            role: "user".to_string(),
+            content: "Hello!".to_string(),
+        }]
+    ).await;
+
+    match response {
+        Ok(resp) => println!("{}", resp.choices[0].message.content),
+        Err(AnyLLMError::Authentication(auth_err)) => {
+            println!("Auth failed: {}", auth_err.message);
+        }
+        Err(e) => {
+            println!("Error: {}", e);
+        }
+    }
+}
+```

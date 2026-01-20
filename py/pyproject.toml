@@ -1,0 +1,275 @@
+[build-system]
+requires = ["setuptools>=48"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "any-llm-sdk"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.11"
+version = "0.0.0-dev" # There is a regex in the release.yaml file that looks for this version string to set the version in the pyproject.toml file. Do not change this version string without updating the regex.
+dependencies = [
+  "pydantic>2,<3",
+  "openai>=1.99.3",
+  "rich",
+  "httpx",
+]
+
+[project.optional-dependencies]
+
+all = [
+  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,cohere,cerebras,fireworks,groq,bedrock,azure,azureopenai,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,perplexity,platform,llamafile,llamacpp,sagemaker,gateway,zai,minimax,vllm]"
+]
+
+platform = [
+  "any-llm-platform-client>=0.2.0",
+]
+
+perplexity = []
+
+mistral = [
+  "mistralai>=1.9.3",
+]
+
+anthropic = [
+  "anthropic",
+]
+
+gemini = [
+  "google-genai",
+]
+
+vertexai = [
+  "google-genai",
+]
+
+huggingface = [
+  "huggingface-hub",
+]
+
+cohere = [
+  "cohere",
+]
+
+cerebras = [
+  "cerebras_cloud_sdk>=1.23.0",
+]
+
+groq = [
+  "groq"
+]
+
+bedrock = [
+  "boto3",
+]
+
+azure = [
+  "azure-ai-inference",
+]
+
+watsonx = [
+  "ibm-watsonx-ai",
+]
+
+together = [
+  "together>=1.5.34",
+]
+
+ollama = [
+  "ollama>=0.5.1"
+]
+
+voyage = [
+  "voyageai",
+]
+
+xai = [
+  "xai-sdk>=1.0.1",
+]
+
+sagemaker = [
+  "boto3",
+]
+
+
+# These providers don't require any additional dependencies, but are included for completeness.
+azureopenai = []
+databricks = []
+deepseek = []
+fireworks = []
+inception = []
+llama = []
+llamacpp = []
+llamafile = []
+lmstudio = []
+moonshot = []
+nebius = []
+openai = []
+openrouter = []
+portkey = []
+sambanova = []
+minimax = []
+vllm = []
+gateway = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "sqlalchemy>=2.0.0",
+  "alembic>=1.13.0",
+  "pydantic-settings>=2.0.0",
+  "pyyaml>=6.0",
+  "click>=8.1.0",
+  "python-dotenv>=1.0.0",
+  "psycopg2-binary>=2.9.9",
+]
+zai = []
+
+[project.scripts]
+any-llm-gateway = "any_llm.gateway.cli:main"
+
+[project.urls]
+Documentation = "https://mozilla-ai.github.io/any-llm/"
+Issues = "https://github.com/mozilla-ai/any-llm/issues"
+Source = "https://github.com/mozilla-ai/any-llm"
+
+[tool.setuptools.package-data]
+"*" = ["py.typed"]
+"any_llm.gateway" = ["alembic.ini", "alembic/**/*"]
+
+[tool.setuptools.packages.find]
+exclude = ["tests", "tests.*"]
+where = ["src"]
+namespaces = false
+
+[tool.pylint.messages_control]
+disable = [
+    "import-outside-toplevel",
+]
+
+[tool.ruff]
+line-length = 120
+
+
+[tool.ruff.lint]
+ignore = [
+  "TD",
+  "FIX",
+  "D100",  # We don't use module docstrings
+  "D104",  # We don't use package docstrings
+  "D203",  # <- disable to resolve conflict with D211
+  "D213",  # <- disable to resolve conflict with D212
+  "FBT",
+  "COM",
+  "ANN",
+  "ARG",
+  "S101",
+  "E501",
+  "INP001",
+  "PERF",
+  "PLR",
+  "SIM",
+  "PTH",
+  "DTZ005",
+  "BLE001",
+  "TRY004",
+  "S113",
+  "PLW2901",
+  "C901",
+  "ERA001",
+  "SLF001",
+  "PLC0415", # We use lazy imports in several places
+  "PLR0912",
+  "PLR0913",
+  "N999",
+  "B024",
+]
+extend-select = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D", "N802"]
+"src/any_llm/providers/**" = ["D"]
+"src/any_llm/any_llm.py" = ["D"]
+"src/any_llm/types/**" = ["A005", "D"]
+"src/any_llm/gateway/**" = ["D"]
+"demos/**" = ["T201", "S104"]
+"scripts/**" = ["D", "T201"]
+"docs/cookbooks/**" = ["D", "T201"]
+
+[tool.mypy]
+strict = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+follow_untyped_imports = true
+exclude = [
+  "demos/",
+  "scripts/"
+]
+
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_decorators = false # mypy gets confused by pytest decorators
+
+[[tool.mypy.overrides]]
+module = ["pytest", "mktestdocs", "pytest_lazy_fixtures", "syrupy.assertion"]
+ignore_missing_imports = true # pytest related modules are not found
+
+[tool.pytest.ini_options]
+timeout = 120
+filterwarnings = [
+  # Silence Pydantic V1-style validator deprecation warnings coming from fireworks only
+  "ignore:Pydantic V1 style `@validator` validators are deprecated:pydantic.warnings.PydanticDeprecatedSince20:fireworks\\.client\\.image_api",
+  # Silence fireworks generated protos deprecation about BaseModelDetails.tunable only
+  "ignore:BaseModelDetails\\.tunable is deprecated:DeprecationWarning:fireworks\\.control_plane\\.generated\\.protos\\.gateway.*",
+  # Silence model format deprecation warnings
+  "ignore:Model format 'provider/model' is deprecated:DeprecationWarning",
+]
+
+[tool.coverage.run]
+branch = true
+omit = [
+  "tests/"
+]
+
+[dependency-groups]
+dev = [
+  { include-group = "docs" },
+  { include-group = "lint" },
+  { include-group = "tests" },
+]
+
+docs = [
+  "mkdocs",
+  "mkdocs-material",
+  "mkdocstrings-python",
+  "mkdocs-include-markdown-plugin>=7.1.5",
+  "mkdocs-jupyter>=0.25.1",
+  "mkdocs-swagger-ui-tag>=0.6.10",
+]
+
+
+lint = [
+  "pre-commit==4.5.1",
+  "pre-commit-uv==4.2.0",
+  "mypy",
+  "types-aiofiles",
+  "types-pyyaml",
+]
+
+tests = [
+  "pytest>=8,<10",
+  "pytest-cov>=6.2.1,<7",
+  "pytest-asyncio>=0.26.0",
+  "mktestdocs>=0.2.4",
+  "pytest-xdist>=3.6.1",
+  "pytest-timeout",
+  "debugpy",
+  "aiofiles",
+  "testcontainers[postgres]>=4.0.0",
+]
+
+# For completeness, but 'uv sync --group dev' currently installs the others too.
+all = [
+  { include-group = "lint" },
+  { include-group = "tests" },
+  { include-group = "docs" },
+]
