@@ -69,7 +69,10 @@ implement the input/output types following the API documentation (i.e. [completi
 If a provider offers an OpenAI-compatible API, inherit from the OpenAI provider and adjust the default
 parameters as needed (i.e. `api_base`).
 
-### List of Providers to implement
+### List of Providers
+
+The library must provide an enum (check language-specific instructions)
+exposing the list of supported to the user (instead of relaying on strings).
 
 - [OpenAI](./providers/openai.md)
 - [Anthropic](./providers/anthropic.md)
