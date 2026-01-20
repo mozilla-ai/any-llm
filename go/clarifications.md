@@ -1,14 +1,8 @@
 # Clarifications and Implementation Notes for Go Library
 
-## Assumptions Made
+## Implementation Details
 
-1. **HTTP Client Instead of OpenAI Go SDK**: The blueprint specifies using `https://github.com/openai/openai-go`, but this implementation uses a raw HTTP client approach instead. This was done because:
-   - The openai-go SDK is currently in beta and may have breaking changes
-   - A raw HTTP client provides more control over request/response handling
-   - It keeps the dependency footprint minimal
-   - The acceptance tests validate the API compatibility regardless of implementation approach
-
-   If the OpenAI Go SDK is strongly preferred, the provider implementation can be refactored to use it.
+1. **OpenAI Go SDK**: The implementation uses the official `github.com/openai/openai-go/v3` SDK as specified in the blueprint.
 
 2. **Synchronous API**: Go's idiomatic approach uses goroutines and channels for concurrency rather than async/await. The streaming API uses channels (`<-chan ChatCompletionChunk`) which is Go's standard pattern for iterators.
 
