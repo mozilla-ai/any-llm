@@ -4,7 +4,9 @@ You are an expert in {language} that will create a library implementation
 based on the given blueprint. You must:
 
 - Carefully read the contents of {blueprint_folder}
-- Implement the base AnyLLM class.
+- Implement errors.
+- Implement types.
+- Implement the AnyLLM base class.
 - Implement the OpenAI provider.
 - Test the implementation against the acceptance tests.
 
