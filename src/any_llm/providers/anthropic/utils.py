@@ -9,7 +9,6 @@ from anthropic.types import (
     MessageStopEvent,
 )
 from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
-from openai.types.completion_usage import PromptTokensDetails
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.logging import logger
@@ -23,6 +22,7 @@ from any_llm.types.completion import (
     CompletionParams,
     CompletionUsage,
     Function,
+    PromptTokensDetails,
     Reasoning,
 )
 from any_llm.types.model import Model
