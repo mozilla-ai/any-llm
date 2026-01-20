@@ -15,21 +15,24 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v6
 
-      - name: Install the latest version of uv and set the python version to 3.13
-        uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: 3.13
-          activate-environment: true
 
-      - name: Install pre-commit
-        run: uv sync --group lint --extra all
+      - run: uv run pre-commit run --all-files
 
-      - uses: actions/cache@v5
+      - uses: actions/setup-node@v4
         with:
-          path: .mypy_cache
-          key: ${{ runner.os }}-mypy-${{ hashFiles('pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-mypy-
+          node-version: '20'
 
-      - name: pre-commit
-        run: uv run pre-commit run --all-files --verbose
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8
+
+      - name: Lint Python
+        working-directory: py
+        run: bash lint.sh
+
+      - name: Lint TypeScript
+        working-directory: ts
+        run: bash lint.sh
