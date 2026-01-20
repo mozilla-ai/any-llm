@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
-from openai._streaming import AsyncStream
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from pydantic import BaseModel
@@ -11,6 +9,7 @@ from pydantic import BaseModel
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.portkey.utils import _convert_chat_completion, _convert_chat_completion_chunk
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, Reasoning
+from any_llm.types.model import Model
 from any_llm.utils.reasoning import (
     process_streaming_reasoning_chunks,
 )
@@ -22,7 +21,10 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
-    from portkey_ai import AsyncPortkey
+    from collections.abc import AsyncIterator, Sequence
+
+    from openai._streaming import AsyncStream
+    from portkey_ai import AsyncPortkey  # noqa: TC004
 
 
 class PortkeyProvider(BaseOpenAIProvider):
@@ -59,6 +61,9 @@ class PortkeyProvider(BaseOpenAIProvider):
             return _convert_chat_completion(response)
         if isinstance(response, ChatCompletion):
             return response
+        # Handle portkey SDK's ChatCompletions type (a Pydantic model)
+        if hasattr(response, "model_dump"):
+            return _convert_chat_completion(OpenAIChatCompletion.model_validate(response.model_dump()))
         return ChatCompletion.model_validate(response)
 
     @staticmethod
@@ -67,13 +72,17 @@ class PortkeyProvider(BaseOpenAIProvider):
             return _convert_chat_completion_chunk(response)
         if isinstance(response, ChatCompletionChunk):
             return response
+        # Handle portkey SDK's ChatCompletionChunk type (a Pydantic model)
+        if hasattr(response, "model_dump"):
+            return _convert_chat_completion_chunk(OpenAIChatCompletionChunk.model_validate(response.model_dump()))
         return ChatCompletionChunk.model_validate(response)
 
     def _convert_completion_response_async(
         self, response: OpenAIChatCompletion | AsyncStream[OpenAIChatCompletionChunk]
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Convert an OpenAI completion response with streaming reasoning support."""
-        if isinstance(response, OpenAIChatCompletion):
+        # Check for non-streaming response: either OpenAI type or portkey SDK type (which is not async iterable)
+        if isinstance(response, OpenAIChatCompletion) or not hasattr(response, "__aiter__"):
             return self._convert_completion_response(response)
 
         async def chunk_iterator() -> AsyncIterator[ChatCompletionChunk]:
@@ -97,6 +106,27 @@ class PortkeyProvider(BaseOpenAIProvider):
             set_content=set_content,
             set_reasoning=set_reasoning,
         )
+
+    @staticmethod
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        """Convert portkey list models response to any-llm format."""
+        if hasattr(response, "data"):
+            models = []
+            for model in response.data:
+                if isinstance(model, Model):
+                    models.append(model)
+                elif hasattr(model, "model_dump"):
+                    model_dict = model.model_dump()
+                    # Portkey SDK may return None for required fields
+                    if model_dict.get("created") is None:
+                        model_dict["created"] = 0
+                    if model_dict.get("owned_by") is None:
+                        model_dict["owned_by"] = "portkey"
+                    models.append(Model.model_validate(model_dict))
+                else:
+                    models.append(Model.model_validate(model))
+            return models
+        return [Model.model_validate(item) if not isinstance(item, Model) else item for item in response]
 
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
