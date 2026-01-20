@@ -1,9 +1,56 @@
+from collections.abc import AsyncIterator
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
+from openai.types.chat.chat_completion import Choice as OpenAIChoice
+from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
+from openai.types.chat.chat_completion_chunk import Choice as OpenAIChunkChoice
+from openai.types.chat.chat_completion_chunk import ChoiceDelta as OpenAIChoiceDelta
+from openai.types.chat.chat_completion_message import ChatCompletionMessage as OpenAIChatCompletionMessage
 from pydantic import BaseModel
 
-from any_llm.types.completion import CompletionParams
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    Choice,
+    ChoiceDelta,
+    ChunkChoice,
+    CompletionParams,
+)
+from any_llm.types.model import Model
+
+
+class MockPortkeyCompletion(BaseModel):
+    """Mock Pydantic model to simulate portkey SDK's ChatCompletions type."""
+
+    id: str
+    object: str
+    created: int
+    model: str
+    choices: list[dict[str, Any]]
+    usage: dict[str, int] | None = None
+
+
+class MockPortkeyChunk(BaseModel):
+    """Mock Pydantic model to simulate portkey SDK's ChatCompletionChunk type."""
+
+    id: str
+    object: str
+    created: int
+    model: str
+    choices: list[dict[str, Any]]
+
+
+class MockPortkeyModel(BaseModel):
+    """Mock Pydantic model to simulate portkey SDK's Model type."""
+
+    id: str
+    object: str
+    created: int | None = None
+    owned_by: str | None = None
 
 
 @pytest.mark.asyncio
@@ -107,21 +154,20 @@ async def test_acompletion_calls_client() -> None:
     with patch("any_llm.providers.portkey.portkey.AsyncPortkey") as mocked_portkey:
         provider = PortkeyProvider(api_key="test-api-key")
 
-        mock_response = Mock()
-        mock_response.model_dump.return_value = {
-            "id": "chatcmpl-123",
-            "object": "chat.completion",
-            "created": 1234567890,
-            "model": "test-model",
-            "choices": [
+        mock_response = MockPortkeyCompletion(
+            id="chatcmpl-123",
+            object="chat.completion",
+            created=1234567890,
+            model="test-model",
+            choices=[
                 {
                     "index": 0,
                     "message": {"role": "assistant", "content": "Hello!"},
                     "finish_reason": "stop",
                 }
             ],
-            "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
-        }
+            usage={"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
+        )
 
         mocked_portkey.return_value.chat.completions.create = AsyncMock(return_value=mock_response)
 
@@ -156,3 +202,365 @@ async def test_provider_config() -> None:
     assert PortkeyProvider.API_BASE == "https://api.portkey.ai/v1"
     assert PortkeyProvider.ENV_API_KEY_NAME == "PORTKEY_API_KEY"
     assert PortkeyProvider.PROVIDER_NAME == "portkey"
+
+
+def test_convert_completion_response_with_openai_type() -> None:
+    pytest.importorskip("portkey_ai")
+    from any_llm.providers.portkey.portkey import PortkeyProvider
+
+    openai_response = OpenAIChatCompletion(
+        id="chatcmpl-123",
+        object="chat.completion",
+        created=1234567890,
+        model="test-model",
+        choices=[
+            OpenAIChoice(
+                index=0,
+                message=OpenAIChatCompletionMessage(role="assistant", content="Hello!"),
+                finish_reason="stop",
+            )
+        ],
+    )
+
+    result = PortkeyProvider._convert_completion_response(openai_response)
+
+    assert isinstance(result, ChatCompletion)
+    assert result.id == "chatcmpl-123"
+    assert result.choices[0].message.content == "Hello!"
+
+
+def test_convert_completion_response_with_chat_completion_type() -> None:
+    pytest.importorskip("portkey_ai")
+    from any_llm.providers.portkey.portkey import PortkeyProvider
+
+    chat_completion = ChatCompletion(
+        id="chatcmpl-123",
+        object="chat.completion",
+        created=1234567890,
+        model="test-model",
+        choices=[
+            Choice(
+                index=0,
+                message=ChatCompletionMessage(role="assistant", content="Hello!"),
+                finish_reason="stop",
+            )
+        ],
+    )
+
+    result = PortkeyProvider._convert_completion_response(chat_completion)
+
+    assert isinstance(result, ChatCompletion)
+    assert result.id == chat_completion.id
+    assert result.choices[0].message.content == "Hello!"
+
+
+def test_convert_completion_response_with_portkey_sdk_type() -> None:
+    pytest.importorskip("portkey_ai")
+    from any_llm.providers.portkey.portkey import PortkeyProvider
+
+    mock_portkey_response = MockPortkeyCompletion(
+        id="chatcmpl-123",
+        object="chat.completion",
+        created=1234567890,
+        model="test-model",
+        choices=[
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": "Hello from portkey!"},
+                "finish_reason": "stop",
+            }
+        ],
+    )
+
+    result = PortkeyProvider._convert_completion_response(mock_portkey_response)
+
+    assert isinstance(result, ChatCompletion)
+    assert result.choices[0].message.content == "Hello from portkey!"
+
+
+def test_convert_completion_response_with_dict() -> None:
+    pytest.importorskip("portkey_ai")
+    from any_llm.providers.portkey.portkey import PortkeyProvider
+
+    dict_response = {
+        "id": "chatcmpl-123",
+        "object": "chat.completion",
+        "created": 1234567890,
+        "model": "test-model",
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": "Hello!"},
+                "finish_reason": "stop",
+            }
+        ],
+    }
+
+    result = PortkeyProvider._convert_completion_response(dict_response)
+
+    assert isinstance(result, ChatCompletion)
+    assert result.id == "chatcmpl-123"
+
+
+def test_convert_completion_chunk_response_with_openai_type() -> None:
+    pytest.importorskip("portkey_ai")
+    from any_llm.providers.portkey.portkey import PortkeyProvider
+
+    openai_chunk = OpenAIChatCompletionChunk(
+        id="chatcmpl-123",
+        object="chat.completion.chunk",
+        created=1234567890,
+        model="test-model",
+        choices=[
+            OpenAIChunkChoice(
+                index=0,
+                delta=OpenAIChoiceDelta(content="Hello"),
+                finish_reason=None,
+            )
+        ],
+    )
+
+    result = PortkeyProvider._convert_completion_chunk_response(openai_chunk)
+
+    assert isinstance(result, ChatCompletionChunk)
+    assert result.choices[0].delta.content == "Hello"
+
+
+def test_convert_completion_chunk_response_with_chat_completion_chunk_type() -> None:
+    pytest.importorskip("portkey_ai")
+    from any_llm.providers.portkey.portkey import PortkeyProvider
+
+    chunk = ChatCompletionChunk(
+        id="chatcmpl-123",
+        object="chat.completion.chunk",
+        created=1234567890,
+        model="test-model",
+        choices=[
+            ChunkChoice(
+                index=0,
+                delta=ChoiceDelta(content="Hello"),
+                finish_reason=None,
+            )
+        ],
+    )
+
+    result = PortkeyProvider._convert_completion_chunk_response(chunk)
+
+    assert isinstance(result, ChatCompletionChunk)
+    assert result.id == chunk.id
+    assert result.choices[0].delta.content == "Hello"
+
+
+def test_convert_completion_chunk_response_with_portkey_sdk_type() -> None:
+    pytest.importorskip("portkey_ai")
+    from any_llm.providers.portkey.portkey import PortkeyProvider
+
+    mock_portkey_chunk = MockPortkeyChunk(
+        id="chatcmpl-123",
+        object="chat.completion.chunk",
+        created=1234567890,
+        model="test-model",
+        choices=[
+            {
+                "index": 0,
+                "delta": {"content": "Hello from portkey!"},
+                "finish_reason": None,
+            }
+        ],
+    )
+
+    result = PortkeyProvider._convert_completion_chunk_response(mock_portkey_chunk)
+
+    assert isinstance(result, ChatCompletionChunk)
+    assert result.choices[0].delta.content == "Hello from portkey!"
+
+
+def test_convert_completion_chunk_response_with_dict() -> None:
+    pytest.importorskip("portkey_ai")
+    from any_llm.providers.portkey.portkey import PortkeyProvider
+
+    dict_chunk = {
+        "id": "chatcmpl-123",
+        "object": "chat.completion.chunk",
+        "created": 1234567890,
+        "model": "test-model",
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"content": "Hello"},
+                "finish_reason": None,
+            }
+        ],
+    }
+
+    result = PortkeyProvider._convert_completion_chunk_response(dict_chunk)
+
+    assert isinstance(result, ChatCompletionChunk)
+    assert result.id == "chatcmpl-123"
+
+
+def test_convert_list_models_response_with_model_type() -> None:
+    pytest.importorskip("portkey_ai")
+    from any_llm.providers.portkey.portkey import PortkeyProvider
+
+    model = Model(id="test-model", object="model", created=1234567890, owned_by="test")
+    mock_response = Mock()
+    mock_response.data = [model]
+
+    result = PortkeyProvider._convert_list_models_response(mock_response)
+
+    assert len(result) == 1
+    assert result[0] is model
+
+
+def test_convert_list_models_response_with_portkey_sdk_type() -> None:
+    pytest.importorskip("portkey_ai")
+    from any_llm.providers.portkey.portkey import PortkeyProvider
+
+    mock_model = MockPortkeyModel(
+        id="portkey-model",
+        object="model",
+        created=1234567890,
+        owned_by="portkey",
+    )
+    mock_response = Mock()
+    mock_response.data = [mock_model]
+
+    result = PortkeyProvider._convert_list_models_response(mock_response)
+
+    assert len(result) == 1
+    assert isinstance(result[0], Model)
+    assert result[0].id == "portkey-model"
+
+
+def test_convert_list_models_response_with_none_fields() -> None:
+    pytest.importorskip("portkey_ai")
+    from any_llm.providers.portkey.portkey import PortkeyProvider
+
+    mock_model = MockPortkeyModel(
+        id="portkey-model",
+        object="model",
+        created=None,
+        owned_by=None,
+    )
+    mock_response = Mock()
+    mock_response.data = [mock_model]
+
+    result = PortkeyProvider._convert_list_models_response(mock_response)
+
+    assert len(result) == 1
+    assert isinstance(result[0], Model)
+    assert result[0].id == "portkey-model"
+    assert result[0].created == 0
+    assert result[0].owned_by == "portkey"
+
+
+def test_convert_list_models_response_with_dict() -> None:
+    pytest.importorskip("portkey_ai")
+    from any_llm.providers.portkey.portkey import PortkeyProvider
+
+    mock_response = Mock()
+    mock_response.data = [{"id": "model-1", "object": "model", "created": 1234567890, "owned_by": "test"}]
+
+    result = PortkeyProvider._convert_list_models_response(mock_response)
+
+    assert len(result) == 1
+    assert isinstance(result[0], Model)
+    assert result[0].id == "model-1"
+
+
+def test_convert_list_models_response_without_data_attr() -> None:
+    pytest.importorskip("portkey_ai")
+    from any_llm.providers.portkey.portkey import PortkeyProvider
+
+    models = [{"id": "model-1", "object": "model", "created": 1234567890, "owned_by": "test"}]
+
+    result = PortkeyProvider._convert_list_models_response(models)
+
+    assert len(result) == 1
+    assert isinstance(result[0], Model)
+    assert result[0].id == "model-1"
+
+
+@pytest.mark.asyncio
+async def test_convert_completion_response_async_non_streaming() -> None:
+    pytest.importorskip("portkey_ai")
+    from any_llm.providers.portkey.portkey import PortkeyProvider
+
+    with patch("any_llm.providers.portkey.portkey.AsyncPortkey"):
+        provider = PortkeyProvider(api_key="test-api-key")
+
+        mock_response = MockPortkeyCompletion(
+            id="chatcmpl-123",
+            object="chat.completion",
+            created=1234567890,
+            model="test-model",
+            choices=[
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "Hello!"},
+                    "finish_reason": "stop",
+                }
+            ],
+        )
+
+        result = provider._convert_completion_response_async(cast("Any", mock_response))
+
+        assert isinstance(result, ChatCompletion)
+        assert result.choices[0].message.content == "Hello!"
+
+
+@pytest.mark.asyncio
+async def test_convert_completion_response_async_streaming() -> None:
+    pytest.importorskip("portkey_ai")
+    from any_llm.providers.portkey.portkey import PortkeyProvider
+
+    with patch("any_llm.providers.portkey.portkey.AsyncPortkey"):
+        provider = PortkeyProvider(api_key="test-api-key")
+
+        async def mock_stream() -> AsyncIterator[OpenAIChatCompletionChunk]:
+            chunks = [
+                OpenAIChatCompletionChunk(
+                    id="chatcmpl-123",
+                    object="chat.completion.chunk",
+                    created=1234567890,
+                    model="test-model",
+                    choices=[
+                        OpenAIChunkChoice(
+                            index=0,
+                            delta=OpenAIChoiceDelta(content="Hello"),
+                            finish_reason=None,
+                        )
+                    ],
+                ),
+                OpenAIChatCompletionChunk(
+                    id="chatcmpl-123",
+                    object="chat.completion.chunk",
+                    created=1234567890,
+                    model="test-model",
+                    choices=[
+                        OpenAIChunkChoice(
+                            index=0,
+                            delta=OpenAIChoiceDelta(content=" World"),
+                            finish_reason="stop",
+                        )
+                    ],
+                ),
+            ]
+            for chunk in chunks:
+                yield chunk
+
+        mock_response = mock_stream()
+
+        result = provider._convert_completion_response_async(cast("Any", mock_response))
+
+        # Result should be an async iterator
+        result_iter = cast("AsyncIterator[ChatCompletionChunk]", result)
+
+        chunks = []
+        async for chunk in result_iter:
+            chunks.append(chunk)
+
+        assert len(chunks) == 2
+        assert chunks[0].choices[0].delta.content == "Hello"
+        assert chunks[1].choices[0].delta.content == " World"

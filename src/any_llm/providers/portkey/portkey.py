@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterable
 from typing import TYPE_CHECKING, Any
 
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
@@ -61,8 +62,8 @@ class PortkeyProvider(BaseOpenAIProvider):
             return _convert_chat_completion(response)
         if isinstance(response, ChatCompletion):
             return response
-        # Handle portkey SDK's ChatCompletions type (a Pydantic model)
-        if hasattr(response, "model_dump"):
+        # Handle portkey SDK's ChatCompletions type (a Pydantic BaseModel)
+        if isinstance(response, BaseModel):
             return _convert_chat_completion(OpenAIChatCompletion.model_validate(response.model_dump()))
         return ChatCompletion.model_validate(response)
 
@@ -72,8 +73,8 @@ class PortkeyProvider(BaseOpenAIProvider):
             return _convert_chat_completion_chunk(response)
         if isinstance(response, ChatCompletionChunk):
             return response
-        # Handle portkey SDK's ChatCompletionChunk type (a Pydantic model)
-        if hasattr(response, "model_dump"):
+        # Handle portkey SDK's ChatCompletionChunk type (a Pydantic BaseModel)
+        if isinstance(response, BaseModel):
             return _convert_chat_completion_chunk(OpenAIChatCompletionChunk.model_validate(response.model_dump()))
         return ChatCompletionChunk.model_validate(response)
 
@@ -82,7 +83,7 @@ class PortkeyProvider(BaseOpenAIProvider):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Convert an OpenAI completion response with streaming reasoning support."""
         # Check for non-streaming response: either OpenAI type or portkey SDK type (which is not async iterable)
-        if isinstance(response, OpenAIChatCompletion) or not hasattr(response, "__aiter__"):
+        if isinstance(response, OpenAIChatCompletion) or not isinstance(response, AsyncIterable):
             return self._convert_completion_response(response)
 
         async def chunk_iterator() -> AsyncIterator[ChatCompletionChunk]:
@@ -110,12 +111,13 @@ class PortkeyProvider(BaseOpenAIProvider):
     @staticmethod
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert portkey list models response to any-llm format."""
-        if hasattr(response, "data"):
+        data = getattr(response, "data", None)
+        if data is not None:
             models = []
-            for model in response.data:
+            for model in data:
                 if isinstance(model, Model):
                     models.append(model)
-                elif hasattr(model, "model_dump"):
+                elif isinstance(model, BaseModel):
                     model_dict = model.model_dump()
                     # Portkey SDK may return None for required fields
                     if model_dict.get("created") is None:
