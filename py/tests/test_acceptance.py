@@ -100,5 +100,5 @@ async def test_scenario(
             **options,
         )
 
-        assert response.get("choices"), "Response missing choices"
-        assert len(response["choices"]) > 0, "Response has no choices"
+        assert response.choices, "Response missing choices"
+        assert len(response.choices) > 0, "Response has no choices"
