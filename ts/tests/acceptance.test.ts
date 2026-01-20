@@ -14,7 +14,7 @@ interface Scenario {
 }
 
 let testRunId: string;
-let scenarios: Record<string, Scenario> = {};
+let scenarios: Record<string, Scenario>;
 
 beforeAll(async () => {
   testRunId = `ts-${Date.now()}`;

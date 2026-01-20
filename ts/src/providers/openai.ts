@@ -64,13 +64,14 @@ export class OpenAIProvider extends AnyLLM {
     options?: CompletionOptions,
   ): Promise<ChatCompletion> {
     const params = this.buildCompletionParams(model, messages, options, false);
-    const requestParams = OpenAIProvider.convertCompletionParams(params);
+    const requestParams = OpenAIProvider.toOpenAIParams(params);
 
     try {
-      const response = await this.client.chat.completions.create(
-        requestParams as unknown as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming,
-      );
-      return OpenAIProvider.convertCompletionResponse(response);
+      const response = await this.client.chat.completions.create({
+        ...requestParams,
+        stream: false,
+      });
+      return response;
     } catch (error) {
       throw this.mapError(error);
     }
@@ -85,16 +86,16 @@ export class OpenAIProvider extends AnyLLM {
     options?: CompletionOptions,
   ): AsyncIterable<ChatCompletionChunk> {
     const params = this.buildCompletionParams(model, messages, options, true);
-    const requestParams = OpenAIProvider.convertCompletionParams(params);
+    const requestParams = OpenAIProvider.toOpenAIParams(params);
 
     try {
       const stream = await this.client.chat.completions.create({
-        ...(requestParams as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming),
+        ...requestParams,
         stream: true,
       });
 
       for await (const chunk of stream) {
-        yield OpenAIProvider.convertCompletionChunkResponse(chunk);
+        yield chunk;
       }
     } catch (error) {
       throw this.mapError(error);
@@ -105,40 +106,46 @@ export class OpenAIProvider extends AnyLLM {
    * Convert CompletionParams to OpenAI-specific request parameters.
    * For OpenAI, the params are already in the correct format.
    */
-  protected static override convertCompletionParams(
+  private static toOpenAIParams(
     params: CompletionParams,
-  ): Record<string, unknown> {
+  ): OpenAI.Chat.ChatCompletionCreateParams {
     // OpenAI uses the standard format, so we can pass through most params
-    // Filter out undefined values
-    const result: Record<string, unknown> = {};
+    // Build the params object with only defined values
+    const result: OpenAI.Chat.ChatCompletionCreateParams = {
+      model: params.model,
+      messages: params.messages,
+    };
 
-    for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined) {
-        result[key] = value;
-      }
+    if (params.temperature !== undefined)
+      result.temperature = params.temperature;
+    if (params.top_p !== undefined) result.top_p = params.top_p;
+    if (params.max_tokens !== undefined) result.max_tokens = params.max_tokens;
+    if (params.max_completion_tokens !== undefined)
+      result.max_completion_tokens = params.max_completion_tokens;
+    if (params.n !== undefined) result.n = params.n;
+    if (params.stop !== undefined) result.stop = params.stop;
+    if (params.presence_penalty !== undefined)
+      result.presence_penalty = params.presence_penalty;
+    if (params.frequency_penalty !== undefined)
+      result.frequency_penalty = params.frequency_penalty;
+    if (params.logit_bias !== undefined) result.logit_bias = params.logit_bias;
+    if (params.user !== undefined) result.user = params.user;
+    if (params.tools !== undefined) result.tools = params.tools;
+    if (params.tool_choice !== undefined)
+      result.tool_choice = params.tool_choice;
+    if (params.parallel_tool_calls !== undefined)
+      result.parallel_tool_calls = params.parallel_tool_calls;
+    if (params.response_format !== undefined) {
+      result.response_format =
+        params.response_format as OpenAI.Chat.ChatCompletionCreateParams["response_format"];
     }
+    if (params.logprobs !== undefined) result.logprobs = params.logprobs;
+    if (params.top_logprobs !== undefined)
+      result.top_logprobs = params.top_logprobs;
+    if (params.stream_options !== undefined)
+      result.stream_options = params.stream_options;
 
     return result;
-  }
-
-  /**
-   * Convert OpenAI response to standard ChatCompletion.
-   * OpenAI responses are already in the standard format.
-   */
-  protected static override convertCompletionResponse(
-    response: unknown,
-  ): ChatCompletion {
-    return response as ChatCompletion;
-  }
-
-  /**
-   * Convert OpenAI chunk to standard ChatCompletionChunk.
-   * OpenAI chunks are already in the standard format.
-   */
-  protected static override convertCompletionChunkResponse(
-    chunk: unknown,
-  ): ChatCompletionChunk {
-    return chunk as ChatCompletionChunk;
   }
 
   /**

@@ -203,9 +203,11 @@ export abstract class AnyLLM {
         params.top_logprobs = options.topLogprobs;
       }
       if (options.streamOptions !== undefined) {
-        params.stream_options = {
-          include_usage: options.streamOptions.includeUsage,
-        };
+        const streamOpts: { include_usage?: boolean } = {};
+        if (options.streamOptions.includeUsage !== undefined) {
+          streamOpts.include_usage = options.streamOptions.includeUsage;
+        }
+        params.stream_options = streamOpts;
       }
     }
 
