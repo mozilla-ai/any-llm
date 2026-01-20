@@ -16,6 +16,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v7
         with:
+          activate-environment: "true"
           python-version: 3.13
 
       - name: Install pre-commit
