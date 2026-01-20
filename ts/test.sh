@@ -1,2 +1,2 @@
-
-vitest run
+pnpm install
+pnpm exec vitest run
