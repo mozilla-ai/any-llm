@@ -1,3 +1,4 @@
+import base64
 import json
 from time import time
 from typing import Any, Literal, cast
@@ -97,6 +98,49 @@ def _convert_tool_spec(tools: list[dict[str, Any]], tool_choice: str | dict[str,
     return tool_config
 
 
+def _convert_images_for_bedrock(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert images from OpenAI format to AWS Bedrock format.
+
+    OpenAI format: {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}
+    Bedrock format: {"image": {"format": "png", "source": {"bytes": "..."}}}
+    """
+    converted_content = []
+    for block in content:
+        if block.get("type") == "image_url":
+            url = block.get("image_url", {}).get("url", "")
+            if url.startswith("data:"):
+                # Parse data URI: data:image/png;base64,<data>
+                mime_part = url[5:]  # Remove "data:"
+                semi_idx = mime_part.find(";")
+                if semi_idx != -1:
+                    media_type = mime_part[:semi_idx]  # e.g., "image/png"
+                    # Extract format from media type (e.g., "png" from "image/png")
+                    image_format = media_type.split("/")[1] if "/" in media_type else media_type
+                    # Extract base64 data after "base64,"
+                    base64_data = url.split("base64,")[1] if "base64," in url else ""
+                    converted_content.append(
+                        {
+                            "image": {
+                                "format": image_format,
+                                "source": {"bytes": base64.b64decode(base64_data)},
+                            }
+                        }
+                    )
+                else:
+                    # Malformed data URI, skip
+                    continue
+            else:
+                # URL-based images are not directly supported by Bedrock Converse API
+                # Would need to fetch and convert to base64 - skip for now
+                continue
+        elif block.get("type") == "text":
+            converted_content.append({"text": block.get("text", "")})
+        else:
+            # Pass through other block types
+            converted_content.append(block)
+    return converted_content
+
+
 def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Convert messages to AWS Bedrock format.
 
@@ -133,10 +177,17 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, An
                 formatted_messages.append(bedrock_message)
         else:  # user messages
             flush_tool_results()
+            content = message.get("content", "")
+            if isinstance(content, list):
+                # Multimodal content (text + images)
+                converted_content = _convert_images_for_bedrock(content)
+            else:
+                # Simple text content
+                converted_content = [{"text": content}]
             formatted_messages.append(
                 {
                     "role": message["role"],
-                    "content": [{"text": message["content"]}],
+                    "content": converted_content,
                 }
             )
 

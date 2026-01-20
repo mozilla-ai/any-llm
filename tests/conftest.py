@@ -93,6 +93,7 @@ def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict
         LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
         LLMProvider.OLLAMA: "llava-phi3",  # Fast vision model compatible with OpenAI format
         LLMProvider.FIREWORKS: "accounts/fireworks/models/qwen2p5-vl-32b-instruct",
+        LLMProvider.BEDROCK: "anthropic.claude-3-haiku-20240307-v1:0",  # Claude 3 Haiku with vision support
     }
 
 
