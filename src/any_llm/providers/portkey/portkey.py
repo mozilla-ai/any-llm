@@ -3,17 +3,13 @@ from __future__ import annotations
 from collections.abc import AsyncIterable
 from typing import TYPE_CHECKING, Any
 
-from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from pydantic import BaseModel
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.portkey.utils import _convert_chat_completion, _convert_chat_completion_chunk
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, Reasoning
 from any_llm.types.model import Model
-from any_llm.utils.reasoning import (
-    process_streaming_reasoning_chunks,
-)
+from any_llm.utils.reasoning import process_streaming_reasoning_chunks
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -31,7 +27,6 @@ except ImportError as e:
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
-    from openai._streaming import AsyncStream
     from portkey_ai import AsyncPortkey  # noqa: TC004
     from portkey_ai.api_resources.types.chat_complete_type import (
         ChatCompletionChunk as PortkeyChatCompletionChunk,
@@ -71,40 +66,22 @@ class PortkeyProvider(BaseOpenAIProvider):
         )
 
     @staticmethod
-    def _convert_completion_response(
-        response: OpenAIChatCompletion | PortkeyChatCompletions | ChatCompletion,
-    ) -> ChatCompletion:
-        if isinstance(response, OpenAIChatCompletion):
-            return _convert_chat_completion(response)
-        if isinstance(response, ChatCompletion):
-            return response
-        # Handle Portkey SDK's ChatCompletions type
-        return _convert_chat_completion(OpenAIChatCompletion.model_validate(response.model_dump()))
+    def _convert_completion_response(response: PortkeyChatCompletions) -> ChatCompletion:
+        return _convert_chat_completion(response)
 
     @staticmethod
     def _convert_completion_chunk_response(
-        response: OpenAIChatCompletionChunk | PortkeyChatCompletionChunk | ChatCompletionChunk,
+        response: PortkeyChatCompletionChunk,
         **kwargs: Any,
     ) -> ChatCompletionChunk:
-        if isinstance(response, OpenAIChatCompletionChunk):
-            return _convert_chat_completion_chunk(response)
-        if isinstance(response, ChatCompletionChunk):
-            return response
-        # Handle Portkey SDK's ChatCompletionChunk type
-        return _convert_chat_completion_chunk(OpenAIChatCompletionChunk.model_validate(response.model_dump()))
+        return _convert_chat_completion_chunk(response)
 
-    def _convert_completion_response_async(
+    def _convert_completion_response_async(  # type: ignore[override]
         self,
-        response: (
-            OpenAIChatCompletion
-            | PortkeyChatCompletions
-            | AsyncStream[OpenAIChatCompletionChunk]
-            | AsyncIterable[PortkeyChatCompletionChunk]
-        ),
+        response: PortkeyChatCompletions | AsyncIterable[PortkeyChatCompletionChunk],
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Convert a completion response with streaming reasoning support."""
-        # Check for non-streaming response: either OpenAI type or Portkey SDK type (which is not async iterable)
-        if isinstance(response, OpenAIChatCompletion) or not isinstance(response, AsyncIterable):
+        if not isinstance(response, AsyncIterable):
             return self._convert_completion_response(response)
 
         async def chunk_iterator() -> AsyncIterator[ChatCompletionChunk]:
@@ -136,16 +113,12 @@ class PortkeyProvider(BaseOpenAIProvider):
         if response.data is None:
             return models
         for model in response.data:
-            if isinstance(model, Model):
-                models.append(model)
-            else:
-                model_dict = model.model_dump()
-                # Portkey SDK may return None for required fields
-                if model_dict.get("created") is None:
-                    model_dict["created"] = 0
-                if model_dict.get("owned_by") is None:
-                    model_dict["owned_by"] = "portkey"
-                models.append(Model.model_validate(model_dict))
+            model_dict = model.model_dump()
+            if model_dict.get("created") is None:
+                model_dict["created"] = 0
+            if model_dict.get("owned_by") is None:
+                model_dict["owned_by"] = "portkey"
+            models.append(Model.model_validate(model_dict))
         return models
 
     @staticmethod

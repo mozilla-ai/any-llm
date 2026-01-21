@@ -3,21 +3,11 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
-from openai.types.chat.chat_completion import Choice as OpenAIChoice
-from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
-from openai.types.chat.chat_completion_chunk import Choice as OpenAIChunkChoice
-from openai.types.chat.chat_completion_chunk import ChoiceDelta as OpenAIChoiceDelta
-from openai.types.chat.chat_completion_message import ChatCompletionMessage as OpenAIChatCompletionMessage
 from pydantic import BaseModel
 
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
-    ChatCompletionMessage,
-    Choice,
-    ChoiceDelta,
-    ChunkChoice,
     CompletionParams,
 )
 from any_llm.types.model import Model
@@ -204,56 +194,6 @@ async def test_provider_config() -> None:
     assert PortkeyProvider.PROVIDER_NAME == "portkey"
 
 
-def test_convert_completion_response_with_openai_type() -> None:
-    pytest.importorskip("portkey_ai")
-    from any_llm.providers.portkey.portkey import PortkeyProvider
-
-    openai_response = OpenAIChatCompletion(
-        id="chatcmpl-123",
-        object="chat.completion",
-        created=1234567890,
-        model="test-model",
-        choices=[
-            OpenAIChoice(
-                index=0,
-                message=OpenAIChatCompletionMessage(role="assistant", content="Hello!"),
-                finish_reason="stop",
-            )
-        ],
-    )
-
-    result = PortkeyProvider._convert_completion_response(openai_response)
-
-    assert isinstance(result, ChatCompletion)
-    assert result.id == "chatcmpl-123"
-    assert result.choices[0].message.content == "Hello!"
-
-
-def test_convert_completion_response_with_chat_completion_type() -> None:
-    pytest.importorskip("portkey_ai")
-    from any_llm.providers.portkey.portkey import PortkeyProvider
-
-    chat_completion = ChatCompletion(
-        id="chatcmpl-123",
-        object="chat.completion",
-        created=1234567890,
-        model="test-model",
-        choices=[
-            Choice(
-                index=0,
-                message=ChatCompletionMessage(role="assistant", content="Hello!"),
-                finish_reason="stop",
-            )
-        ],
-    )
-
-    result = PortkeyProvider._convert_completion_response(chat_completion)
-
-    assert isinstance(result, ChatCompletion)
-    assert result.id == chat_completion.id
-    assert result.choices[0].message.content == "Hello!"
-
-
 def test_convert_completion_response_with_portkey_sdk_type() -> None:
     pytest.importorskip("portkey_ai")
     from any_llm.providers.portkey.portkey import PortkeyProvider
@@ -276,55 +216,6 @@ def test_convert_completion_response_with_portkey_sdk_type() -> None:
 
     assert isinstance(result, ChatCompletion)
     assert result.choices[0].message.content == "Hello from portkey!"
-
-
-def test_convert_completion_chunk_response_with_openai_type() -> None:
-    pytest.importorskip("portkey_ai")
-    from any_llm.providers.portkey.portkey import PortkeyProvider
-
-    openai_chunk = OpenAIChatCompletionChunk(
-        id="chatcmpl-123",
-        object="chat.completion.chunk",
-        created=1234567890,
-        model="test-model",
-        choices=[
-            OpenAIChunkChoice(
-                index=0,
-                delta=OpenAIChoiceDelta(content="Hello"),
-                finish_reason=None,
-            )
-        ],
-    )
-
-    result = PortkeyProvider._convert_completion_chunk_response(openai_chunk)
-
-    assert isinstance(result, ChatCompletionChunk)
-    assert result.choices[0].delta.content == "Hello"
-
-
-def test_convert_completion_chunk_response_with_chat_completion_chunk_type() -> None:
-    pytest.importorskip("portkey_ai")
-    from any_llm.providers.portkey.portkey import PortkeyProvider
-
-    chunk = ChatCompletionChunk(
-        id="chatcmpl-123",
-        object="chat.completion.chunk",
-        created=1234567890,
-        model="test-model",
-        choices=[
-            ChunkChoice(
-                index=0,
-                delta=ChoiceDelta(content="Hello"),
-                finish_reason=None,
-            )
-        ],
-    )
-
-    result = PortkeyProvider._convert_completion_chunk_response(chunk)
-
-    assert isinstance(result, ChatCompletionChunk)
-    assert result.id == chunk.id
-    assert result.choices[0].delta.content == "Hello"
 
 
 def test_convert_completion_chunk_response_with_portkey_sdk_type() -> None:
@@ -355,14 +246,19 @@ def test_convert_list_models_response_with_model_type() -> None:
     pytest.importorskip("portkey_ai")
     from any_llm.providers.portkey.portkey import PortkeyProvider
 
-    model = Model(id="test-model", object="model", created=1234567890, owned_by="test")
+    mock_model = MockPortkeyModel(
+        id="test-model",
+        object="model",
+        created=1234567890,
+        owned_by="test",
+    )
     mock_response = Mock()
-    mock_response.data = [model]
+    mock_response.data = [mock_model]
 
     result = PortkeyProvider._convert_list_models_response(mock_response)
 
     assert len(result) == 1
-    assert result[0] is model
+    assert result[0].id == "test-model"
 
 
 def test_convert_list_models_response_with_portkey_sdk_type() -> None:
@@ -455,32 +351,32 @@ async def test_convert_completion_response_async_streaming() -> None:
     with patch("any_llm.providers.portkey.portkey.AsyncPortkey"):
         provider = PortkeyProvider(api_key="test-api-key")
 
-        async def mock_stream() -> AsyncIterator[OpenAIChatCompletionChunk]:
+        async def mock_stream() -> AsyncIterator[MockPortkeyChunk]:
             chunks = [
-                OpenAIChatCompletionChunk(
+                MockPortkeyChunk(
                     id="chatcmpl-123",
                     object="chat.completion.chunk",
                     created=1234567890,
                     model="test-model",
                     choices=[
-                        OpenAIChunkChoice(
-                            index=0,
-                            delta=OpenAIChoiceDelta(content="Hello"),
-                            finish_reason=None,
-                        )
+                        {
+                            "index": 0,
+                            "delta": {"content": "Hello"},
+                            "finish_reason": None,
+                        }
                     ],
                 ),
-                OpenAIChatCompletionChunk(
+                MockPortkeyChunk(
                     id="chatcmpl-123",
                     object="chat.completion.chunk",
                     created=1234567890,
                     model="test-model",
                     choices=[
-                        OpenAIChunkChoice(
-                            index=0,
-                            delta=OpenAIChoiceDelta(content=" World"),
-                            finish_reason="stop",
-                        )
+                        {
+                            "index": 0,
+                            "delta": {"content": " World"},
+                            "finish_reason": "stop",
+                        }
                     ],
                 ),
             ]
