@@ -240,6 +240,9 @@ class OpenAIProvider(AnyLLM):
         """Convert completion parameters to OpenAI API format.
 
         For OpenAI, this is a direct mapping since OpenAI is the canonical format.
+        Automatically converts ChatCompletionMessage Pydantic models to dictionaries
+        when they appear in the messages list, allowing users to append response
+        messages directly without manual conversion.
 
         Args:
             params: The completion parameters.
@@ -251,6 +254,13 @@ class OpenAIProvider(AnyLLM):
         """
         api_params = params.to_api_params()
         api_params.update(kwargs)
+
+        # Convert any ChatCompletionMessage Pydantic models in messages to dicts
+        if "messages" in api_params:
+            api_params["messages"] = [
+                msg.model_dump() if hasattr(msg, "model_dump") else msg for msg in api_params["messages"]
+            ]
+
         return api_params
 
     @staticmethod

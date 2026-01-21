@@ -10,7 +10,6 @@ from any_llm import AnyLLM, Providers
 from any_llm.tools import function_to_tool
 
 if TYPE_CHECKING:
-
     from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
 
 
@@ -32,8 +31,8 @@ def get_weather(location: str) -> str:
     ("provider", "model", "client_config"),
     [
         (Providers.OPENAI, "gpt-5-nano", {"timeout": 10}),
-        #(Providers.ANTHROPIC, "claude-haiku-4-5-2025100", {"timeout": 10}),
-    ]
+        # (Providers.ANTHROPIC, "claude-haiku-4-5-2025100", {"timeout": 10}),
+    ],
 )
 @pytest.mark.asyncio
 async def test_agent_loop_parallel_tool_calls(
@@ -41,7 +40,6 @@ async def test_agent_loop_parallel_tool_calls(
     model: str,
     client_config: dict[str, Any],
 ) -> None:
-
     llm = AnyLLM.create(provider, **client_config)
     messages: list[dict[str, Any] | ChatCompletionMessage] = [
         {
