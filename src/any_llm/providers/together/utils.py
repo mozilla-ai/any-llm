@@ -35,7 +35,7 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
                 logger.warning("Together delta_content missing 'content' attribute: %s", delta_content)
             content = getattr(delta_content, "content", None)
             if getattr(delta_content, "role", None):
-                role = cast("Literal['assistant', 'user', 'system']", delta_content.role)
+                role = cast("Literal['assistant', 'user', 'system']", delta_content.role)  # type: ignore[attr-defined]
             if hasattr(delta_content, "reasoning") and delta_content.reasoning:
                 reasoning = Reasoning(content=delta_content.reasoning)
 

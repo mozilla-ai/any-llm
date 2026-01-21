@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate Pydantic models from OpenResponses OpenAPI specification.
 
 This script downloads the OpenResponses OpenAPI spec, detects changes,

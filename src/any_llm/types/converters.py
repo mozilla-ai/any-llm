@@ -26,11 +26,13 @@ from any_llm.types.responses import (
     FunctionTool,
     FunctionToolChoice,
     IncompleteDetails,
+    InputTokensDetails,
     Message,
     MessageRole,
     MessageStatus,
     Object,
     OutputTextContent,
+    OutputTokensDetails,
     Reasoning,
     ReasoningBody,
     ResponseCompletedStreamingEvent,
@@ -58,9 +60,11 @@ from any_llm.types.responses import (
     ResponseRefusalDoneStreamingEvent,
     ResponseResource,
     TextField,
+    TextResponseFormat,
     Tool,
     ToolChoiceValueEnum,
     TruncationEnum,
+    Type34,
     Type37,
     Type38,
     Type39,
@@ -110,15 +114,27 @@ def convert_openai_response_to_openresponses(response: OpenAIResponse) -> Respon
 
     usage = None
     if response.usage:
+        input_details = InputTokensDetails(cached_tokens=0)
+        output_details = OutputTokensDetails(reasoning_tokens=0)
+        if hasattr(response.usage, "input_tokens_details") and response.usage.input_tokens_details:
+            input_details = InputTokensDetails(
+                cached_tokens=getattr(response.usage.input_tokens_details, "cached_tokens", 0)
+            )
+        if hasattr(response.usage, "output_tokens_details") and response.usage.output_tokens_details:
+            output_details = OutputTokensDetails(
+                reasoning_tokens=getattr(response.usage.output_tokens_details, "reasoning_tokens", 0)
+            )
         usage = Usage(
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-            total_tokens=response.usage.total_tokens,
+            input_tokens=response.usage.input_tokens or 0,
+            output_tokens=response.usage.output_tokens or 0,
+            total_tokens=response.usage.total_tokens or 0,
+            input_tokens_details=input_details,
+            output_tokens_details=output_details,
         )
 
-    text = TextField(format=None)
+    text = TextField(format=TextResponseFormat(type=Type34.text))
     if response.text:
-        text = TextField(format=None)
+        text = TextField(format=TextResponseFormat(type=Type34.text))
 
     return ResponseResource(
         id=response.id,
@@ -135,7 +151,7 @@ def convert_openai_response_to_openresponses(response: OpenAIResponse) -> Respon
         tools=tools,
         tool_choice=tool_choice,
         truncation=TruncationEnum(response.truncation) if response.truncation else TruncationEnum.disabled,
-        parallel_tool_calls=response.parallel_tool_calls,
+        parallel_tool_calls=response.parallel_tool_calls if response.parallel_tool_calls is not None else True,
         text=text,
         top_p=response.top_p or 1.0,
         presence_penalty=0.0,
@@ -169,6 +185,7 @@ def _convert_output_item(item: Any) -> Message | FunctionCall | FunctionCallOutp
                         type="output_text",
                         text=getattr(content, "text", ""),
                         annotations=[],
+                        logprobs=[],
                     )
                 )
         return Message(
@@ -474,7 +491,7 @@ def _create_minimal_response() -> ResponseResource:
         tool_choice=ToolChoiceValueEnum.auto,
         truncation=TruncationEnum.disabled,
         parallel_tool_calls=True,
-        text=TextField(format=None),
+        text=TextField(format=TextResponseFormat(type=Type34.text)),
         top_p=1.0,
         presence_penalty=0.0,
         frequency_penalty=0.0,
@@ -496,7 +513,7 @@ def _create_minimal_response() -> ResponseResource:
 def _convert_content_part(part: Any) -> OutputTextContent:
     """Convert a content part from OpenAI format to OpenResponses format."""
     if part is None:
-        return OutputTextContent(type="output_text", text="", annotations=[])
+        return OutputTextContent(type="output_text", text="", annotations=[], logprobs=[])
 
     part_type = getattr(part, "type", "output_text")
     if part_type == "output_text":
@@ -504,8 +521,9 @@ def _convert_content_part(part: Any) -> OutputTextContent:
             type="output_text",
             text=getattr(part, "text", ""),
             annotations=[],
+            logprobs=[],
         )
-    return OutputTextContent(type="output_text", text="", annotations=[])
+    return OutputTextContent(type="output_text", text="", annotations=[], logprobs=[])
 
 
 def _convert_reasoning_summary_part(part: Any) -> Any:

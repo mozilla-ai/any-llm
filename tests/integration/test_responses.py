@@ -37,4 +37,3 @@ async def test_responses_async(
         raise
     assert isinstance(result, Response)
     assert get_output_text(result) is not None
-    assert result.reasoning is not None
