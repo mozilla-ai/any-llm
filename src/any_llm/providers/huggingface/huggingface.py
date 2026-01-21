@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from openai import AsyncOpenAI
-from openai._streaming import AsyncStream
 
 from any_llm.any_llm import AnyLLM
 from any_llm.types.completion import (
@@ -225,8 +224,9 @@ class HuggingfaceProvider(AnyLLM):
         response = await self.responses_client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
 
         if params.stream:
-            if not isinstance(response, AsyncStream):
-                msg = f"Expected streaming response but got: {type(response)}"
+            # For streaming, the response is an async iterator, not a Response object
+            if isinstance(response, Response):
+                msg = "Expected streaming response but got Response object"
                 raise ValueError(msg)
 
             async def stream_iterator() -> AsyncIterator[ResponseStreamEvent]:

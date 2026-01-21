@@ -1,4 +1,4 @@
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
@@ -422,7 +422,7 @@ async def test_huggingface_aresponses_streaming() -> None:
     model = "moonshotai/Kimi-K2-Instruct:groq"
     input_data = "Tell me about AI."
 
-    # Create mock streaming response
+    # Create mock streaming response events
     mock_events = [
         Mock(type="response.created"),
         Mock(type="response.output_text.delta", delta="AI is"),
@@ -434,43 +434,26 @@ async def test_huggingface_aresponses_streaming() -> None:
         for event in mock_events:
             yield event
 
-    # Create a mock AsyncStream
-    mock_stream = AsyncMock()
-    mock_stream.__aiter__ = lambda self: mock_stream_iterator()
+    # Create a simple async iterable mock (not a Response)
+    class MockAsyncStream:
+        def __aiter__(self) -> AsyncIterator[Mock]:
+            return mock_stream_iterator()
 
     with mock_huggingface_responses_provider() as (_, _, openai_mock):
-        # Patch AsyncStream to recognize our mock
-        with patch("any_llm.providers.huggingface.huggingface.AsyncStream") as mock_stream_class:
-            mock_stream_class.return_value = mock_stream
-            # Make isinstance check return True for our mock
-            openai_mock.responses.create = AsyncMock(return_value=mock_stream)
+        openai_mock.responses.create = AsyncMock(return_value=MockAsyncStream())
 
-            provider = HuggingfaceProvider(api_key=api_key)
+        provider = HuggingfaceProvider(api_key=api_key)
+        result = await provider._aresponses(ResponsesParams(model=model, input=input_data, stream=True))
 
-            # Use a real AsyncStream mock that passes isinstance check
-            from openai._streaming import AsyncStream
+        # Verify it returns an async iterator (not a Response)
+        assert not isinstance(result, Response)
 
-            # Create a custom mock that passes isinstance check
-            class MockAsyncStream(AsyncStream):  # type: ignore[type-arg]
-                def __init__(self) -> None:
-                    pass
+        # Consume the stream
+        events_received = []
+        async for event in result:
+            events_received.append(event)
 
-                def __aiter__(self):  # type: ignore[no-untyped-def]
-                    return mock_stream_iterator()
-
-            openai_mock.responses.create = AsyncMock(return_value=MockAsyncStream())
-
-            result = await provider._aresponses(ResponsesParams(model=model, input=input_data, stream=True))
-
-            # Verify it returns an async iterator (not a Response)
-            assert not isinstance(result, Response)
-
-            # Consume the stream
-            events_received = []
-            async for event in result:
-                events_received.append(event)
-
-            assert len(events_received) == 4
+        assert len(events_received) == 4
 
 
 @pytest.mark.asyncio
