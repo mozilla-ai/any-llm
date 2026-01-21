@@ -35,7 +35,7 @@ The gateway acts as a transparent proxy between your applications and LLM provid
   > Learn how to set up your secure master key [here](authentication.md)  
 
 <p align="center" width="100%">
-  <img src="../../images/gateway.png" alt="Diagram showing application connecting to gateway, which then routes to multiple LLM providers (OpenAI, Anthropic, Google, etc). The gateway interfaces with a PostgreSQL database for storing usage, budgets, and keys." width="70%" align="center"/>
+  <img src="../images/gateway.png" alt="Diagram showing application connecting to gateway, which then routes to multiple LLM providers (OpenAI, Anthropic, Google, etc). The gateway interfaces with a PostgreSQL database for storing usage, budgets, and keys." width="70%" align="center"/>
 </p>
 
 ## Key Features
