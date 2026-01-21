@@ -50,8 +50,7 @@ jobs:
 
       - name: Lint Python
         if: steps.changes.outputs.changed == 'true'
-        working-directory: py
-        run: bash lint.sh
+        run: cd py && bash lint.sh
 
   lint-typescript:
     timeout-minutes: 30
@@ -83,8 +82,7 @@ jobs:
 
       - name: Lint TypeScript
         if: steps.changes.outputs.changed == 'true'
-        working-directory: ts
-        run: bash lint.sh
+        run: cd ts && bash lint.sh
 
   lint-go:
     timeout-minutes: 30
@@ -111,5 +109,4 @@ jobs:
 
       - name: Lint Go
         if: steps.changes.outputs.changed == 'true'
-        working-directory: go
-        run: bash lint.sh
+        run: cd go && bash lint.sh
