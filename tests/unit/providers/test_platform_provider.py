@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from datetime import datetime
 from unittest.mock import AsyncMock, Mock, patch
 from uuid import UUID
@@ -7,6 +8,7 @@ import pytest
 from any_llm_platform_client import DecryptedProviderKey
 from pydantic import ValidationError
 
+from any_llm.constants import LLMProvider
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.openai import OpenaiProvider
 from any_llm.providers.platform import PlatformProvider
@@ -85,9 +87,46 @@ def mock_platform_client() -> Mock:
     from any_llm_platform_client import AnyLLMPlatformClient
 
     mock_client = Mock(spec=AnyLLMPlatformClient)
-    mock_client.aget_solved_challenge = AsyncMock(return_value=UUID("550e8400-e29b-41d4-a716-446655440000"))
-    mock_client.get_public_key = Mock(return_value="mock-public-key")
+    mock_client._aensure_valid_token = AsyncMock(return_value="mock-jwt-token-12345")
     return mock_client
+
+
+@pytest.fixture
+def mock_streaming_chunks() -> list[ChatCompletionChunk]:
+    """Fixture for mock streaming chunks with usage data."""
+    return [
+        ChatCompletionChunk(
+            id="chatcmpl-123",
+            model="test-model",
+            created=1234567890,
+            object="chat.completion.chunk",
+            choices=[
+                ChunkChoice(
+                    index=0,
+                    delta=ChoiceDelta(role="assistant", content="Hello"),
+                    finish_reason=None,
+                )
+            ],
+        ),
+        ChatCompletionChunk(
+            id="chatcmpl-123",
+            model="test-model",
+            created=1234567890,
+            object="chat.completion.chunk",
+            choices=[
+                ChunkChoice(
+                    index=0,
+                    delta=ChoiceDelta(),
+                    finish_reason="stop",
+                )
+            ],
+            usage=CompletionUsage(
+                prompt_tokens=10,
+                completion_tokens=5,
+                total_tokens=15,
+            ),
+        ),
+    ]
 
 
 def test_platform_key_valid_format() -> None:
@@ -397,9 +436,7 @@ async def test_post_completion_usage_event_success(
     )
 
     # Assertions
-    # Convenience method should be called once
-    mock_platform_client.aget_solved_challenge.assert_called_once_with(any_llm_key=any_llm_key)
-    mock_platform_client.get_public_key.assert_called_once_with(any_llm_key)
+    mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
 
     # Usage event POST should be called once
     client.post.assert_called_once()
@@ -481,8 +518,8 @@ async def test_post_completion_usage_event_invalid_key_format() -> None:
 
     mock_platform_client = Mock(spec=AnyLLMPlatformClient)
 
-    # Mock the platform client methods to raise ValueError for invalid key
-    mock_platform_client.aget_solved_challenge = AsyncMock(side_effect=ValueError("Invalid ANY_LLM_KEY format"))
+    # Mock the token management method to raise ValueError for invalid key
+    mock_platform_client._aensure_valid_token = AsyncMock(side_effect=ValueError("Invalid ANY_LLM_KEY format"))
 
     client = AsyncMock(spec=httpx.AsyncClient)
 
@@ -594,8 +631,7 @@ async def test_post_completion_usage_event_with_performance_metrics(
     )
 
     # Assertions
-    mock_platform_client.aget_solved_challenge.assert_called_once_with(any_llm_key=any_llm_key)
-    mock_platform_client.get_public_key.assert_called_once_with(any_llm_key)
+    mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
     client.post.assert_called_once()
 
     # Verify the payload includes performance metrics
@@ -718,9 +754,7 @@ async def test_post_completion_usage_event_skips_when_no_usage(
         provider_key_id="550e8400-e29b-41d4-a716-446655440000",
     )
 
-    # Verify authentication calls were made but POST was not (early return after usage check)
-    mock_platform_client.aget_solved_challenge.assert_called_once_with(any_llm_key=any_llm_key)
-    mock_platform_client.get_public_key.assert_called_once_with(any_llm_key)
+    mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
     client.post.assert_not_called()
 
 
@@ -872,3 +906,218 @@ async def test_non_streaming_includes_total_duration(
     call_args = mock_post_usage.call_args
     assert call_args.kwargs["total_duration_ms"] is not None
     assert call_args.kwargs["total_duration_ms"] > 0
+
+
+@pytest.mark.asyncio
+@patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
+@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@pytest.mark.parametrize(
+    "provider_name",
+    [
+        # Supported providers
+        LLMProvider.OPENAI,
+        LLMProvider.HUGGINGFACE,
+        LLMProvider.GROQ,
+        LLMProvider.DEEPSEEK,
+        # Unsupported providers
+        LLMProvider.ANTHROPIC,
+        LLMProvider.CEREBRAS,
+        LLMProvider.COHERE,
+        LLMProvider.GEMINI,
+        LLMProvider.MISTRAL,
+        LLMProvider.OLLAMA,
+        LLMProvider.TOGETHER,
+    ],
+)
+async def test_stream_options_handling_by_provider(
+    mock_post_usage: AsyncMock,
+    mock_get_decrypted_provider_key: Mock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+    mock_streaming_chunks: list[ChatCompletionChunk],
+    provider_name: LLMProvider,
+) -> None:
+    """Test stream_options handling for both supported and unsupported providers."""
+    # Define unsupported providers (should match platform.py)
+    providers_without_stream_options = {
+        LLMProvider.ANTHROPIC,
+        LLMProvider.CEREBRAS,
+        LLMProvider.COHERE,
+        LLMProvider.GEMINI,
+        LLMProvider.MISTRAL,
+        LLMProvider.OLLAMA,
+        LLMProvider.TOGETHER,
+    }
+
+    mock_decrypted_provider_key.provider = provider_name.value
+    mock_get_decrypted_provider_key.return_value = mock_decrypted_provider_key
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        for chunk in mock_streaming_chunks:
+            yield chunk
+
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+
+    # Create a mock provider with the PROVIDER_NAME attribute
+    mock_provider = Mock()
+    mock_provider.PROVIDER_NAME = provider_name
+    provider_instance._provider = mock_provider
+
+    # Mock the underlying provider's _acompletion to capture the params it receives
+    captured_params = None
+
+    async def capture_and_return(*args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal captured_params
+        captured_params = kwargs.get("params") or args[0]
+        return mock_stream()
+
+    provider_instance.provider._acompletion = AsyncMock(side_effect=capture_and_return)  # type: ignore[method-assign]
+
+    # Create completion params WITHOUT stream_options
+    params = CompletionParams(
+        model_id="test-model",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=True,
+        stream_options=None,
+    )
+
+    # Call _acompletion
+    result = await provider_instance._acompletion(params)
+
+    # Consume the stream
+    async for _ in result:  # type: ignore[union-attr]
+        pass
+
+    # Verify behavior based on provider support
+    assert captured_params is not None
+    if provider_name in providers_without_stream_options:
+        # Unsupported providers should receive None
+        assert captured_params.stream_options is None
+    else:
+        # Supported providers should have it auto-enabled
+        assert captured_params.stream_options == {"include_usage": True}
+
+    # Verify original params not mutated
+    assert params.stream_options is None
+
+
+@pytest.mark.asyncio
+@patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
+@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+async def test_stream_options_preserved_when_user_specifies_it(
+    mock_post_usage: AsyncMock,
+    mock_get_decrypted_provider_key: Mock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+    mock_streaming_chunks: list[ChatCompletionChunk],
+) -> None:
+    """Test that user-specified stream_options are preserved for supported providers."""
+    mock_decrypted_provider_key.provider = LLMProvider.OPENAI.value
+    mock_get_decrypted_provider_key.return_value = mock_decrypted_provider_key
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        for chunk in mock_streaming_chunks:
+            yield chunk
+
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+
+    # Create a mock provider with the PROVIDER_NAME attribute
+    mock_provider = Mock()
+    mock_provider.PROVIDER_NAME = LLMProvider.OPENAI
+    provider_instance._provider = mock_provider
+
+    # Mock the underlying provider's _acompletion to capture the params it receives
+    captured_params = None
+
+    async def capture_and_return(*args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal captured_params
+        captured_params = kwargs.get("params") or args[0]
+        return mock_stream()
+
+    provider_instance.provider._acompletion = AsyncMock(side_effect=capture_and_return)  # type: ignore[method-assign]
+
+    # User specifies custom stream_options
+    custom_stream_options = {"include_usage": False, "custom_field": "custom_value"}
+    params = CompletionParams(
+        model_id="test-model",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=True,
+        stream_options=custom_stream_options,
+    )
+
+    # Call _acompletion
+    result = await provider_instance._acompletion(params)
+
+    # Consume the stream
+    async for _ in result:  # type: ignore[union-attr]
+        pass
+
+    # Verify that user-specified stream_options are preserved
+    assert captured_params is not None
+    assert captured_params.stream_options == custom_stream_options
+
+
+@pytest.mark.asyncio
+async def test_usage_event_uses_bearer_token(
+    mock_platform_client: Mock,
+    any_llm_key: str,
+    mock_completion: ChatCompletion,
+) -> None:
+    """Test that usage events use Bearer token authentication (v3.0)."""
+    mock_http_client = AsyncMock(spec=httpx.AsyncClient)
+    mock_response = Mock()
+    mock_response.raise_for_status = Mock()
+    mock_http_client.post = AsyncMock(return_value=mock_response)
+
+    await post_completion_usage_event(
+        platform_client=mock_platform_client,
+        client=mock_http_client,
+        any_llm_key=any_llm_key,
+        provider="openai",
+        completion=mock_completion,
+        provider_key_id="550e8400-e29b-41d4-a716-446655440000",
+        client_name="test-client",
+        total_duration_ms=100.0,
+    )
+
+    mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
+
+    mock_http_client.post.assert_called_once()
+    call_args = mock_http_client.post.call_args
+    headers = call_args.kwargs["headers"]
+
+    assert "Authorization" in headers
+    assert headers["Authorization"] == "Bearer mock-jwt-token-12345"
+    assert "encryption-key" not in headers
+    assert "AnyLLM-Challenge-Response" not in headers
+
+
+@pytest.mark.asyncio
+async def test_usage_event_includes_version_header(
+    mock_platform_client: Mock,
+    any_llm_key: str,
+    mock_completion: ChatCompletion,
+) -> None:
+    """Test that usage events include library version in User-Agent header."""
+    from any_llm import __version__
+
+    mock_http_client = AsyncMock(spec=httpx.AsyncClient)
+    mock_response = Mock()
+    mock_response.raise_for_status = Mock()
+    mock_http_client.post = AsyncMock(return_value=mock_response)
+
+    await post_completion_usage_event(
+        platform_client=mock_platform_client,
+        client=mock_http_client,
+        any_llm_key=any_llm_key,
+        provider="openai",
+        completion=mock_completion,
+        provider_key_id="550e8400-e29b-41d4-a716-446655440000",
+    )
+
+    mock_http_client.post.assert_called_once()
+    call_args = mock_http_client.post.call_args
+    headers = call_args.kwargs["headers"]
+
+    assert "User-Agent" in headers
+    assert headers["User-Agent"] == f"python-any-llm/{__version__}"

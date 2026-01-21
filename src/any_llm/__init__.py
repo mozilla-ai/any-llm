@@ -20,8 +20,6 @@ from any_llm.exceptions import (
 try:
     __version__ = version("any-llm-sdk")
 except PackageNotFoundError:
-    # In the case of local development
-    # i.e., running directly from the source directory without package being installed
     __version__ = "0.0.0-dev"
 
 

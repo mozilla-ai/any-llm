@@ -19,6 +19,7 @@ from openai.types.chat.chat_completion_message_function_tool_call import (
 )
 from openai.types.chat.chat_completion_message_function_tool_call import Function as OpenAIFunction
 from openai.types.completion_usage import CompletionUsage as OpenAICompletionUsage
+from openai.types.completion_usage import PromptTokensDetails as OpenAIPromptTokensDetails
 from openai.types.create_embedding_response import Usage as OpenAIUsage
 from openai.types.embedding import Embedding as OpenAIEmbedding
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -73,13 +74,14 @@ class ChatCompletionMessageFunctionToolCall(OpenAIChatCompletionMessageFunctionT
 ChatCompletionMessageToolCall = ChatCompletionMessageFunctionToolCall | OpenAIChatCompletionMessageToolCall
 Function = OpenAIFunction
 CompletionUsage = OpenAICompletionUsage
+PromptTokensDetails = OpenAIPromptTokensDetails
 CreateEmbeddingResponse = OpenAICreateEmbeddingResponse
 Embedding = OpenAIEmbedding
 Usage = OpenAIUsage
 ChoiceDeltaToolCall = OpenAIChoiceDeltaToolCall
 ChoiceDeltaToolCallFunction = OpenAIChoiceDeltaToolCallFunction
 
-ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "auto"]
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "auto"]
 
 
 class CompletionParams(BaseModel):

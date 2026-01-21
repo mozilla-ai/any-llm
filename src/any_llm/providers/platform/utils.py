@@ -9,6 +9,8 @@ from any_llm_platform_client import (
     AnyLLMPlatformClient,  # noqa: TC002
 )
 
+from any_llm import __version__
+
 if TYPE_CHECKING:
     from any_llm.types.completion import ChatCompletion
 
@@ -36,8 +38,7 @@ async def post_completion_usage_event(
 ) -> None:
     """Posts completion usage events.
 
-    The client uses the convenience method to get a solved challenge and prove ownership
-    of the project it wants to post data to.
+    Uses JWT Bearer token authentication to authenticate with the platform API.
 
     Args:
         platform_client: The AnyLLMPlatformClient instance to use for authentication.
@@ -55,25 +56,18 @@ async def post_completion_usage_event(
         avg_chunk_size: Average tokens per chunk (streaming only).
         inter_chunk_latency_variance_ms: Inter-chunk latency variance (streaming only).
     """
-    # Get solved challenge using the convenience method
-    solved_challenge = await platform_client.aget_solved_challenge(any_llm_key=any_llm_key)
+    access_token = await platform_client._aensure_valid_token(any_llm_key)
 
-    # Get the public key for the request headers
-    public_key = platform_client.get_public_key(any_llm_key)
-
-    # Send usage event data
     if completion.usage is None:
         return
 
     event_id = str(uuid.uuid4())
 
-    # Build data payload with token usage
     data: dict[str, Any] = {
         "input_tokens": str(completion.usage.prompt_tokens),
         "output_tokens": str(completion.usage.completion_tokens),
     }
 
-    # Add performance metrics if available
     performance: dict[str, float | int] = {}
     if time_to_first_token_ms is not None:
         performance["time_to_first_token_ms"] = time_to_first_token_ms
@@ -106,6 +100,9 @@ async def post_completion_usage_event(
     response = await client.post(
         f"{ANY_LLM_PLATFORM_API_URL}/usage-events/",
         json=payload,
-        headers={"encryption-key": public_key, "AnyLLM-Challenge-Response": str(solved_challenge)},
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": f"python-any-llm/{__version__}",
+        },
     )
     response.raise_for_status()
