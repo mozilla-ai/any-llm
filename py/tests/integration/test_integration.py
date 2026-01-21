@@ -31,7 +31,7 @@ def get_weather(location: str) -> str:
     ("provider", "model", "client_config"),
     [
         (Providers.OPENAI, "gpt-5-nano", {"timeout": 10}),
-        (Providers.ANTHROPIC, "claude-haiku-4-5-20250115", {"timeout": 30}),
+        (Providers.ANTHROPIC, "claude-haiku-4-5-20251001", {"timeout": 30}),
     ],
 )
 @pytest.mark.asyncio
