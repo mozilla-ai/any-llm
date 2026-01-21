@@ -1,22 +1,20 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Literal, cast
 
+from llama_api_client.types.system_message_param import SystemMessageParam
+from llama_api_client.types.tool_response_message_param import ToolResponseMessageParam
+from llama_api_client.types.user_message_param import UserMessageParam
 from pydantic import BaseModel
 
 from any_llm.any_llm import AnyLLM
-from any_llm.providers.llama.utils import (
-    _convert_tool_call_arguments,
-    _extract_content_text,
-    _map_stop_reason_to_finish_reason,
-    _patch_json_schema,
-)
+from any_llm.providers.llama.utils import _patch_json_schema
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
     ChatCompletionMessage,
     ChatCompletionMessageFunctionToolCall,
-    ChatCompletionMessageToolCall,
     Choice,
     CompletionParams,
     CompletionUsage,
@@ -32,8 +30,16 @@ except ImportError as e:
 
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Sequence
+    from collections.abc import AsyncIterator, Iterable, Sequence
 
+    from llama_api_client.types import (
+        CreateChatCompletionResponse,
+        CreateChatCompletionResponseStreamChunk,
+        MessageParam,
+    )
+    from llama_api_client.types.completion_message_param import CompletionMessageParam
+    from llama_api_client.types.create_chat_completion_response import Metric
+    from llama_api_client.types.create_chat_completion_response_stream_chunk import EventDeltaToolCallDelta
     from openai.types.chat.chat_completion_message_custom_tool_call import (
         ChatCompletionMessageCustomToolCall,
     )
@@ -71,6 +77,36 @@ class LlamaProvider(AnyLLM):
     client: AsyncLlamaAPIClient
 
     @staticmethod
+    def _convert_messages(messages: list[dict[str, Any]]) -> Iterable[MessageParam]:
+        """Convert message dictionaries to Llama SDK MessageParam types."""
+        result: list[MessageParam] = []
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content", "")
+
+            if role == "user":
+                result.append(UserMessageParam(role="user", content=content))
+            elif role == "system":
+                result.append(SystemMessageParam(role="system", content=content))
+            elif role == "assistant":
+                assistant_msg: CompletionMessageParam = {"role": "assistant", "content": content}
+                if msg.get("tool_calls"):
+                    assistant_msg["tool_calls"] = msg["tool_calls"]
+                if msg.get("stop_reason"):
+                    assistant_msg["stop_reason"] = msg["stop_reason"]
+                result.append(assistant_msg)
+            elif role == "tool":
+                result.append(
+                    ToolResponseMessageParam(
+                        role="tool",
+                        content=content,
+                        tool_call_id=msg.get("tool_call_id", ""),
+                    )
+                )
+
+        return result
+
+    @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Llama API."""
         converted_params = params.model_dump(
@@ -100,28 +136,44 @@ class LlamaProvider(AnyLLM):
         return converted_params
 
     @staticmethod
-    def _convert_completion_response(response: Any, model_id: str = "") -> ChatCompletion:
+    def _convert_completion_response(response: CreateChatCompletionResponse, model_id: str = "") -> ChatCompletion:
         """Convert Llama response to OpenAI ChatCompletion format."""
-        completion_message = getattr(response, "completion_message", None)
+        cm = response.completion_message
         choices_out: list[Choice] = []
 
-        if completion_message is not None:
-            content = _extract_content_text(getattr(completion_message, "content", None))
-            tool_calls = LlamaProvider._build_tool_calls(getattr(completion_message, "tool_calls", None))
+        if cm is not None:
+            # Extract content (str | MessageTextContentItem | None)
+            content = cm.content if isinstance(cm.content, str) else (cm.content.text if cm.content else None)
+
+            # Build tool calls using SDK's ToolCall structure
+            tool_calls = None
+            if cm.tool_calls:
+                tool_calls = [
+                    ChatCompletionMessageFunctionToolCall(
+                        id=tc.id,
+                        type="function",
+                        function=Function(name=tc.function.name, arguments=tc.function.arguments),
+                    )
+                    for tc in cm.tool_calls
+                ]
 
             message = ChatCompletionMessage(
-                role=getattr(completion_message, "role", "assistant"),
+                role=cm.role or "assistant",
                 content=content,
                 tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls),
             )
 
-            finish_reason = _map_stop_reason_to_finish_reason(getattr(response, "stop_reason", None)) or "stop"
+            # stop_reason is already OpenAI-compatible
+            finish_reason = cast(
+                "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']",
+                cm.stop_reason or "stop",
+            )
             choices_out.append(Choice(index=0, finish_reason=finish_reason, message=message))
 
-        usage = LlamaProvider._build_usage(getattr(response, "metrics", None))
+        usage = LlamaProvider._build_usage(response.metrics)
 
         return ChatCompletion(
-            id=f"chatcmpl-{id(response)}",
+            id=response.id or f"chatcmpl-{id(response)}",
             model=model_id,
             created=0,
             object="chat.completion",
@@ -130,36 +182,19 @@ class LlamaProvider(AnyLLM):
         )
 
     @staticmethod
-    def _build_tool_calls(
-        tool_calls_raw: Any,
-    ) -> list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] | None:
-        """Build tool calls list from raw Llama tool calls."""
-        if not tool_calls_raw:
-            return None
-
-        tool_calls_list: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
-        for i, tc in enumerate(tool_calls_raw):
-            call_id = getattr(tc, "id", None) or getattr(tc, "call_id", f"call_{i}")
-            tool_name = getattr(tc, "tool_name", None) or getattr(tc, "name", "")
-            arguments = _convert_tool_call_arguments(getattr(tc, "arguments", None))
-
-            tool_calls_list.append(
-                ChatCompletionMessageFunctionToolCall(
-                    id=call_id,
-                    type="function",
-                    function=Function(name=tool_name, arguments=arguments),
-                )
-            )
-        return tool_calls_list
-
-    @staticmethod
-    def _build_usage(metrics: Any) -> CompletionUsage | None:
-        """Build usage from Llama metrics."""
+    def _build_usage(metrics: list[Metric] | None) -> CompletionUsage | None:
+        """Build usage from Llama metrics list."""
         if not metrics:
             return None
 
-        prompt_tokens = getattr(metrics, "prompt_token_count", 0) or 0
-        completion_tokens = getattr(metrics, "completion_token_count", 0) or 0
+        prompt_tokens = 0
+        completion_tokens = 0
+        for m in metrics:
+            if m.metric == "prompt_token_count":
+                prompt_tokens = int(m.value)
+            elif m.metric == "completion_token_count":
+                completion_tokens = int(m.value)
+
         return CompletionUsage(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
@@ -183,48 +218,47 @@ class LlamaProvider(AnyLLM):
         return ChatCompletionChunk.model_validate(chunk_dict)
 
     @staticmethod
-    def _extract_chunk_delta(response: Any) -> tuple[dict[str, Any], str | None]:
+    def _extract_chunk_delta(
+        response: CreateChatCompletionResponseStreamChunk,
+    ) -> tuple[dict[str, Any], str | None]:
         """Extract delta and finish_reason from Llama streaming chunk."""
         delta: dict[str, Any] = {}
-        finish_reason = None
+        event = response.event
 
-        event = getattr(response, "event", None)
         if event is None:
-            return delta, finish_reason
+            return delta, None
 
-        event_delta = getattr(event, "delta", None)
+        event_delta = event.delta
         if event_delta is not None:
-            text = getattr(event_delta, "text", None)
-            if text is not None:
-                delta["content"] = text
+            # Check for text content
+            if hasattr(event_delta, "text") and event_delta.text is not None:
+                delta["content"] = event_delta.text
 
-            role = getattr(event_delta, "role", None)
-            if role:
-                delta["role"] = role
+            # Check for role
+            if hasattr(event_delta, "role") and event_delta.role:
+                delta["role"] = event_delta.role
 
-            tool_call = getattr(event_delta, "tool_call", None)
-            if tool_call is not None:
-                delta["tool_calls"] = [LlamaProvider._build_streaming_tool_call(tool_call)]
+            # Check for tool call
+            if hasattr(event_delta, "tool_call") and event_delta.tool_call is not None:
+                delta["tool_calls"] = [LlamaProvider._build_streaming_tool_call(event_delta.tool_call)]
 
-        finish_reason = _map_stop_reason_to_finish_reason(getattr(event, "stop_reason", None))
-        return delta, finish_reason
+        # stop_reason is already OpenAI-compatible
+        return delta, event.stop_reason
 
     @staticmethod
-    def _build_streaming_tool_call(tool_call: Any) -> dict[str, Any]:
+    def _build_streaming_tool_call(tool_call: EventDeltaToolCallDelta) -> dict[str, Any]:
         """Build a streaming tool call dict from Llama tool call object."""
-        tool_call_dict: dict[str, Any] = {
-            "index": getattr(tool_call, "index", 0) or 0,
-            "id": getattr(tool_call, "id", None),
+        result: dict[str, Any] = {
+            "index": 0,
+            "id": tool_call.id,
             "type": "function",
         }
-        tool_name = getattr(tool_call, "tool_name", None)
-        arguments = getattr(tool_call, "arguments", None)
-        if tool_name or arguments:
-            tool_call_dict["function"] = {
-                "name": tool_name,
-                "arguments": _convert_tool_call_arguments(arguments),
+        if tool_call.function and (tool_call.function.name or tool_call.function.arguments):
+            result["function"] = {
+                "name": tool_call.function.name,
+                "arguments": tool_call.function.arguments or "",
             }
-        return tool_call_dict
+        return result
 
     @staticmethod
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
@@ -247,7 +281,7 @@ class LlamaProvider(AnyLLM):
     async def _stream_completion_async(
         self,
         model: str,
-        messages: list[dict[str, Any]],
+        messages: Iterable[MessageParam],
         **kwargs: Any,
     ) -> AsyncIterator[ChatCompletionChunk]:
         stream = await self.client.chat.completions.create(
@@ -266,17 +300,18 @@ class LlamaProvider(AnyLLM):
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         completion_kwargs = self._convert_completion_params(params, **kwargs)
+        converted_messages = self._convert_messages(params.messages)
 
         if params.stream:
             return self._stream_completion_async(
                 params.model_id,
-                params.messages,
+                converted_messages,
                 **completion_kwargs,
             )
 
         response = await self.client.chat.completions.create(
             model=params.model_id,
-            messages=params.messages,
+            messages=converted_messages,
             **completion_kwargs,
         )
 
