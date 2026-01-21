@@ -88,6 +88,7 @@ def mock_platform_client() -> Mock:
 
     mock_client = Mock(spec=AnyLLMPlatformClient)
     mock_client._aensure_valid_token = AsyncMock(return_value="mock-jwt-token-12345")
+    mock_client.any_llm_platform_url = "http://localhost:8000/api/v1"
     return mock_client
 
 
@@ -265,7 +266,7 @@ def test_prepare_creates_provider_without_api_key() -> None:
 
 @pytest.mark.asyncio
 @patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.queue_completion_usage_event")
 async def test_acompletion_non_streaming_success(
     mock_post_usage: AsyncMock,
     mock_get_decrypted_provider_key: Mock,
@@ -294,19 +295,18 @@ async def test_acompletion_non_streaming_success(
     assert result == mock_completion
     provider_instance.provider._acompletion.assert_called_once_with(params=params)
 
-    # Verify post_completion_usage_event was called with the platform_client instance
+    # Verify post_completion_usage_event was called with the batch_queue instance
     call_args = mock_post_usage.call_args
-    assert call_args.kwargs["client"] == provider_instance.client
+    assert call_args.kwargs["batch_queue"] == provider_instance.batch_queue
     assert call_args.kwargs["any_llm_key"] == any_llm_key
     assert call_args.kwargs["provider"] == "openai"
     assert call_args.kwargs["completion"] == mock_completion
     assert call_args.kwargs["provider_key_id"] == "550e8400-e29b-41d4-a716-446655440000"
-    assert "platform_client" in call_args.kwargs
 
 
 @pytest.mark.asyncio
 @patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.queue_completion_usage_event")
 async def test_acompletion_streaming_success(
     mock_post_usage: AsyncMock,
     mock_get_decrypted_provider_key: Mock,
@@ -400,7 +400,7 @@ async def test_acompletion_streaming_success(
     # Verify usage event was posted with correct data
     mock_post_usage.assert_called_once()
     call_args = mock_post_usage.call_args
-    assert call_args.kwargs["client"] == provider_instance.client
+    assert call_args.kwargs["batch_queue"] == provider_instance.batch_queue
     assert call_args.kwargs["any_llm_key"] == any_llm_key
     assert call_args.kwargs["provider"] == "openai"
     assert call_args.kwargs["completion"].usage.prompt_tokens == 10
@@ -760,7 +760,7 @@ async def test_post_completion_usage_event_skips_when_no_usage(
 
 @pytest.mark.asyncio
 @patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.queue_completion_usage_event")
 async def test_streaming_performance_metrics_tracking(
     mock_post_usage: AsyncMock,
     mock_get_decrypted_provider_key: Mock,
@@ -875,7 +875,7 @@ async def test_streaming_performance_metrics_tracking(
 
 @pytest.mark.asyncio
 @patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.queue_completion_usage_event")
 async def test_non_streaming_includes_total_duration(
     mock_post_usage: AsyncMock,
     mock_get_decrypted_provider_key: Mock,
@@ -910,7 +910,7 @@ async def test_non_streaming_includes_total_duration(
 
 @pytest.mark.asyncio
 @patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.queue_completion_usage_event")
 @pytest.mark.parametrize(
     "provider_name",
     [
@@ -1003,7 +1003,7 @@ async def test_stream_options_handling_by_provider(
 
 @pytest.mark.asyncio
 @patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.queue_completion_usage_event")
 async def test_stream_options_preserved_when_user_specifies_it(
     mock_post_usage: AsyncMock,
     mock_get_decrypted_provider_key: Mock,
