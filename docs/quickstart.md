@@ -79,7 +79,7 @@ print(f"Supports streaming: {metadata.streaming}")
 print(f"Supports tools: {metadata.completion}")
 ```
 
-### API Call 
+### API Call
 
 ```python
 import os
@@ -132,27 +132,6 @@ for chunk in completion(
     output += chunk_content
 ```
 
-## OpenResponses API
-
-`any-llm` supports the [OpenResponses](https://www.openresponses.org/) specification for agentic AI systems. OpenResponses extends OpenAI's Responses API with reasoning content, semantic streaming, and MCP tool support.
-
-```python
-from any_llm import AnyLLM, LLMProvider
-
-# Using HuggingFace OpenResponses router
-llm = AnyLLM.create(LLMProvider.HUGGINGFACE)
-
-response = await llm.aresponses(
-    model="openai/gpt-oss-120b:groq",  # model:provider routing
-    input_data="What is 15% of 80?",
-    reasoning={"effort": "high"},
-)
-
-print(f"Answer: {response.output_text}")
-```
-
-See the [Responses API documentation](./api/responses.md) for full details on reasoning, MCP tools, and streaming.
-
 ## Embeddings
 
 [`embedding`][any_llm.embedding] and [`aembedding`][any_llm.aembedding] allow you to create vector embeddings from text using the same unified interface across providers.
@@ -191,7 +170,7 @@ def get_weather(location: str, unit: str = "F") -> str:
         location: The city or location to get weather for
         unit: Temperature unit, either 'C' or 'F'
 
-    Returns: 
+    Returns:
         Current weather description
     """
     return f"Weather in {location} is sunny and 75{unit}!"

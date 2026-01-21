@@ -215,10 +215,6 @@ class HuggingfaceProvider(AnyLLM):
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call OpenResponses API via HuggingFace router.
 
-        The HuggingFace OpenResponses router supports provider routing via model identifiers.
-        Use the format 'model_id:provider' to route to specific inference providers
-        (e.g., 'moonshotai/Kimi-K2-Instruct:groq').
-
         See: https://huggingface.co/docs/inference-providers/guides/responses-api
         """
         response = await self.responses_client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
