@@ -1090,3 +1090,34 @@ async def test_usage_event_uses_bearer_token(
     assert headers["Authorization"] == "Bearer mock-jwt-token-12345"
     assert "encryption-key" not in headers
     assert "AnyLLM-Challenge-Response" not in headers
+
+
+@pytest.mark.asyncio
+async def test_usage_event_includes_version_header(
+    mock_platform_client: Mock,
+    any_llm_key: str,
+    mock_completion: ChatCompletion,
+) -> None:
+    """Test that usage events include library version in User-Agent header."""
+    from any_llm import __version__
+
+    mock_http_client = AsyncMock(spec=httpx.AsyncClient)
+    mock_response = Mock()
+    mock_response.raise_for_status = Mock()
+    mock_http_client.post = AsyncMock(return_value=mock_response)
+
+    await post_completion_usage_event(
+        platform_client=mock_platform_client,
+        client=mock_http_client,
+        any_llm_key=any_llm_key,
+        provider="openai",
+        completion=mock_completion,
+        provider_key_id="550e8400-e29b-41d4-a716-446655440000",
+    )
+
+    mock_http_client.post.assert_called_once()
+    call_args = mock_http_client.post.call_args
+    headers = call_args.kwargs["headers"]
+
+    assert "User-Agent" in headers
+    assert headers["User-Agent"] == f"python-any-llm/{__version__}"
