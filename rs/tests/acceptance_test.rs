@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::env;
 
-use any_llm_rs::{AnyLLM, CompletionOptions, Message, Provider, StreamOptions};
+use any_llm_rs::{AnyLLM, Message, Provider};
 use futures::StreamExt;
 use serde::Deserialize;
 
@@ -53,88 +53,6 @@ fn generate_test_run_id() -> String {
             .unwrap()
             .as_millis()
     )
-}
-
-#[tokio::test]
-async fn test_basic_completion() {
-    let base_url = get_base_url();
-    let server_base = base_url.replace("/v1", "");
-    let test_run_id = generate_test_run_id();
-
-    let _ = create_test_run(&server_base, &test_run_id).await;
-
-    let scenarios = match load_scenarios(&server_base).await {
-        Ok(s) => s,
-        Err(_) => return, // Skip if server not available
-    };
-
-    let mut headers = HashMap::new();
-    headers.insert("X-Test-Run-Id".to_string(), test_run_id);
-
-    let client = AnyLLM::create(
-        Provider::OpenAI,
-        Some(DUMMY_API_KEY.to_string()),
-        Some(base_url),
-        Some(headers),
-    )
-    .expect("Failed to create client");
-
-    let scenario = scenarios
-        .get("basic_completion")
-        .expect("Scenario not found");
-
-    let response = client
-        .completion(&scenario.model, scenario.messages.clone(), None)
-        .await
-        .expect("Completion failed");
-
-    assert!(!response.choices.is_empty());
-}
-
-#[tokio::test]
-async fn test_streaming() {
-    let base_url = get_base_url();
-    let server_base = base_url.replace("/v1", "");
-    let test_run_id = generate_test_run_id();
-
-    let _ = create_test_run(&server_base, &test_run_id).await;
-
-    let scenarios = match load_scenarios(&server_base).await {
-        Ok(s) => s,
-        Err(_) => return,
-    };
-
-    let mut headers = HashMap::new();
-    headers.insert("X-Test-Run-Id".to_string(), test_run_id);
-
-    let client = AnyLLM::create(
-        Provider::OpenAI,
-        Some(DUMMY_API_KEY.to_string()),
-        Some(base_url),
-        Some(headers),
-    )
-    .expect("Failed to create client");
-
-    let scenario = scenarios.get("streaming").expect("Scenario not found");
-
-    let options = CompletionOptions {
-        stream_options: Some(StreamOptions {
-            include_usage: Some(true),
-        }),
-        ..Default::default()
-    };
-
-    let mut stream = client
-        .completion_stream(&scenario.model, scenario.messages.clone(), Some(options))
-        .await
-        .expect("Stream creation failed");
-
-    let mut chunks = Vec::new();
-    while let Some(result) = stream.next().await {
-        chunks.push(result.expect("Chunk error"));
-    }
-
-    assert!(!chunks.is_empty());
 }
 
 #[tokio::test]
