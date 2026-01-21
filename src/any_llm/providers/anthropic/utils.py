@@ -22,6 +22,7 @@ from any_llm.types.completion import (
     CompletionParams,
     CompletionUsage,
     Function,
+    PromptTokensDetails,
     Reasoning,
 )
 from any_llm.types.model import Model
@@ -195,10 +196,15 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
     elif isinstance(chunk, MessageStopEvent):
         finish_reason = "stop"
         if hasattr(chunk, "message") and chunk.message.usage:
+            anthropic_usage = chunk.message.usage
+            cache_read = anthropic_usage.cache_read_input_tokens or 0
+            cache_creation = anthropic_usage.cache_creation_input_tokens or 0
+            total_prompt_tokens = anthropic_usage.input_tokens + cache_read + cache_creation
             chunk_dict["usage"] = {
-                "prompt_tokens": chunk.message.usage.input_tokens,
-                "completion_tokens": chunk.message.usage.output_tokens,
-                "total_tokens": chunk.message.usage.input_tokens + chunk.message.usage.output_tokens,
+                "prompt_tokens": total_prompt_tokens,
+                "completion_tokens": anthropic_usage.output_tokens,
+                "total_tokens": total_prompt_tokens + anthropic_usage.output_tokens,
+                "prompt_tokens_details": PromptTokensDetails(cached_tokens=cache_read) if cache_read else None,
             }
 
     choice = {
@@ -252,10 +258,15 @@ def _convert_response(response: Message) -> ChatCompletion:
         tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls or None),
     )
 
+    cache_read = response.usage.cache_read_input_tokens or 0
+    cache_creation = response.usage.cache_creation_input_tokens or 0
+    total_prompt_tokens = response.usage.input_tokens + cache_read + cache_creation
+
     usage = CompletionUsage(
         completion_tokens=response.usage.output_tokens,
-        prompt_tokens=response.usage.input_tokens,
-        total_tokens=response.usage.input_tokens + response.usage.output_tokens,
+        prompt_tokens=total_prompt_tokens,
+        total_tokens=total_prompt_tokens + response.usage.output_tokens,
+        prompt_tokens_details=PromptTokensDetails(cached_tokens=cache_read) if cache_read else None,
     )
 
     from typing import Literal
