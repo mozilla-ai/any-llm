@@ -1,6 +1,14 @@
 // Main class
 export { AnyLLM } from "./any_llm.js";
 
+// Tools
+export { functionToTool } from "./tools.js";
+export type {
+  FunctionToToolOptions,
+  JSONSchemaType,
+  ParameterDefinition,
+} from "./tools.js";
+
 // Errors
 export {
   AnyLLMError,

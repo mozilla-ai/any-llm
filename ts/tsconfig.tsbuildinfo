@@ -1,1 +1,1 @@
-{"root":["./src/any_llm.ts","./src/errors.ts","./src/index.ts","./src/types.ts","./src/providers/openai.ts"],"version":"5.9.3"}
+{"root":["./src/any_llm.ts","./src/errors.ts","./src/index.ts","./src/tools.ts","./src/types.ts","./src/providers/openai.ts"],"version":"5.9.3"}
