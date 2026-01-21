@@ -10,6 +10,7 @@ from any_llm_platform_client import (
 )
 
 from .batch_queue import UsageEventBatchQueue
+from any_llm import __version__
 
 if TYPE_CHECKING:
     from any_llm.types.completion import ChatCompletion
@@ -238,6 +239,9 @@ async def post_completion_usage_event(
     response = await client.post(
         f"{ANY_LLM_PLATFORM_API_URL}/usage-events/",
         json=payload,
-        headers={"Authorization": f"Bearer {access_token}"},
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": f"python-any-llm/{__version__}",
+        },
     )
     response.raise_for_status()
