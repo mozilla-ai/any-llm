@@ -1,10 +1,9 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import { AnyLLM, functionToTool } from "../src/index.js";
 import type { ChatCompletion, ChatCompletionMessage } from "../src/index.js";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
-const BASE_URL = process.env.TEST_SERVER_URL ?? "http://localhost:8080/v1";
-const DUMMY_API_KEY = "test-key";
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 /**
  * Get the weather for a location.
@@ -29,29 +28,16 @@ const getWeatherTool = functionToTool(getWeather, {
 });
 
 describe("Integration tests with tool calls", () => {
-  let testRunId: string;
-
-  beforeAll(async () => {
-    testRunId = `ts-integration-${Date.now()}`;
-
-    const serverBase = BASE_URL.replace("/v1", "");
-    const testRunResponse = await fetch(
-      `${serverBase}/v1/test-runs?test_run_id=${encodeURIComponent(
-        testRunId,
-      )}&description=TypeScript%20integration%20tests`,
-      { method: "POST" },
-    );
-
-    if (!testRunResponse.ok && testRunResponse.status !== 409) {
-      throw new Error(`Failed to create test run: ${testRunResponse.status}`);
-    }
-  });
-
   describe("OpenAI provider", () => {
-    it("should handle parallel tool calls agent loop", async () => {
-      const llm = await AnyLLM.create("openai", DUMMY_API_KEY, BASE_URL, {
-        defaultHeaders: { "X-Test-Run-Id": testRunId },
-      });
+    it(
+      "should handle parallel tool calls agent loop",
+      async () => {
+        if (!OPENAI_API_KEY) {
+          console.log("Skipping test: OPENAI_API_KEY not set");
+          return;
+        }
+
+        const llm = await AnyLLM.create("openai", OPENAI_API_KEY);
 
       const messages: ChatCompletionMessageParam[] = [
         {
@@ -108,12 +94,14 @@ describe("Integration tests with tool calls", () => {
       );
 
       // Should have content or more tool calls
-      const secondMessage: ChatCompletionMessage =
-        secondResult.choices[0].message;
-      expect(
-        secondMessage.content !== null ||
-          secondMessage.tool_calls !== undefined,
-      ).toBe(true);
-    });
+        const secondMessage: ChatCompletionMessage =
+          secondResult.choices[0].message;
+        expect(
+          secondMessage.content !== null ||
+            secondMessage.tool_calls !== undefined,
+        ).toBe(true);
+      },
+      60000,
+    );
   });
 });
