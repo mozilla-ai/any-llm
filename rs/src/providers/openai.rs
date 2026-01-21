@@ -151,14 +151,8 @@ impl OpenAIProvider {
     ) -> Result<CompletionRequest> {
         let options = options.unwrap_or_default();
 
-        let tools = options
-            .tools
-            .map(serde_json::to_value)
-            .transpose()?;
-        let tool_choice = options
-            .tool_choice
-            .map(serde_json::to_value)
-            .transpose()?;
+        let tools = options.tools.map(serde_json::to_value).transpose()?;
+        let tool_choice = options.tool_choice.map(serde_json::to_value).transpose()?;
         let response_format = options
             .response_format
             .map(serde_json::to_value)
