@@ -48,7 +48,7 @@ To regenerate:
 def fetch_spec() -> bytes:
     """Fetch the OpenResponses OpenAPI spec from the remote URL."""
     print(f"Fetching OpenAPI spec from {OPENRESPONSES_SPEC_URL}...")
-    with urllib.request.urlopen(OPENRESPONSES_SPEC_URL, timeout=30) as response:
+    with urllib.request.urlopen(OPENRESPONSES_SPEC_URL, timeout=30) as response:  # noqa: S310
         return response.read()
 
 
@@ -102,11 +102,11 @@ def format_output() -> None:
 
     # Fix lint issues (import sorting, trailing newline, etc.)
     fix_cmd = ["ruff", "check", "--fix", str(OUTPUT_FILE)]
-    subprocess.run(fix_cmd, capture_output=True, text=True, check=False)
+    subprocess.run(fix_cmd, capture_output=True, text=True, check=False)  # noqa: S603
 
     # Format the file
     format_cmd = ["ruff", "format", str(OUTPUT_FILE)]
-    result = subprocess.run(format_cmd, capture_output=True, text=True, check=False)
+    result = subprocess.run(format_cmd, capture_output=True, text=True, check=False)  # noqa: S603
 
     if result.returncode != 0:
         print(f"Warning: ruff formatting failed: {result.stderr}", file=sys.stderr)
@@ -134,7 +134,7 @@ def generate_models(spec_hash: str) -> None:
         str(OUTPUT_FILE),
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
 
     if result.returncode != 0:
         print(f"Error generating models: {result.stderr}", file=sys.stderr)
@@ -155,7 +155,7 @@ def prepend_header(spec_hash: str) -> None:
     filtered_lines = []
     skip_header = True
     for line in lines:
-        if skip_header and (line.startswith("#") or line.startswith('"""') or not line.strip()):
+        if skip_header and (line.startswith(("#", '"""')) or not line.strip()):
             if line.startswith('"""'):
                 skip_header = False
             continue
@@ -186,7 +186,7 @@ def main() -> None:
     if cached_hash is None:
         print("First time generating OpenResponses types.")
     else:
-        print(f"OpenResponses spec has CHANGED!")
+        print("OpenResponses spec has CHANGED!")
         print(f"  Previous: {cached_hash[:12]}...")
         print(f"  Current:  {current_hash[:12]}...")
 
