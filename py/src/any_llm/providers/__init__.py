@@ -44,6 +44,7 @@ class Providers(str, Enum):
 # Mapping of provider enum to module name and class name
 PROVIDER_REGISTRY: dict[str, tuple[str, str]] = {
     Providers.OPENAI.value: ("any_llm.providers.openai", "OpenAIProvider"),
+    Providers.ANTHROPIC.value: ("any_llm.providers.anthropic", "AnthropicProvider"),
 }
 
 
