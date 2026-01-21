@@ -569,3 +569,38 @@ async def test_send_batch_error_handling(mock_platform_client: MagicMock, mock_h
     await asyncio.sleep(0.1)  # Give time for background flush
 
     await queue.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_flushes_on_error(mock_platform_client: MagicMock, mock_http_client: MagicMock) -> None:
+    """Test that shutdown attempts to flush events even when errors occur."""
+    from any_llm.providers.platform.batch_queue import UsageEventBatchQueue
+
+    queue = UsageEventBatchQueue(
+        platform_client=mock_platform_client,
+        http_client=mock_http_client,
+        batch_size=100,
+        flush_interval=100.0,
+    )
+
+    # Enqueue some events
+    for i in range(5):
+        await queue.enqueue(
+            any_llm_key="test-key",
+            provider="openai",
+            completion=MockCompletion(),  # type: ignore[arg-type]
+            provider_key_id=f"key-{i}",
+        )
+
+    # Should not have auto-flushed
+    assert mock_http_client.post.call_count == 0
+
+    # Make HTTP client raise an error on next call
+    mock_http_client.post = AsyncMock(side_effect=Exception("Network error during flush"))
+
+    # Shutdown should still attempt to flush despite error
+    # and should not raise the exception
+    await queue.shutdown()
+
+    # Verify flush was attempted (post was called)
+    assert mock_http_client.post.call_count == 1

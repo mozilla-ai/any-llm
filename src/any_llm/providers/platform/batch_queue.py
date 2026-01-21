@@ -182,7 +182,11 @@ class UsageEventBatchQueue:
             await self._flush_internal()
 
     async def shutdown(self) -> None:
-        """Shutdown the queue and flush remaining events."""
+        """Shutdown the queue and flush remaining events.
+        
+        This method ensures all pending events are sent before shutdown,
+        even if errors occurred during processing.
+        """
         self._shutdown = True
 
         # Cancel background task
@@ -192,6 +196,12 @@ class UsageEventBatchQueue:
                 await self._flush_task
             except asyncio.CancelledError:
                 pass
+            except Exception as exc:
+                logger.error(f"Error cancelling background flush task: {exc}")
 
-        # Final flush
-        await self.flush()
+        # Final flush - attempt to send all remaining events
+        try:
+            await self.flush()
+        except Exception as exc:
+            logger.error(f"Error during final flush on shutdown: {exc}")
+            # Log but don't raise - we want shutdown to complete

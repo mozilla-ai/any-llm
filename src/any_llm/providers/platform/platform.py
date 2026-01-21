@@ -319,5 +319,13 @@ class PlatformProvider(AnyLLM):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        """Async context manager exit - flushes remaining events."""
-        await self.shutdown()
+        """Async context manager exit - flushes remaining events.
+        
+        This ensures usage events are sent even when exceptions occur during execution,
+        preventing data loss from agent failures.
+        """
+        try:
+            await self.shutdown()
+        except Exception as e:
+            logger.error(f"Error while flushing usage events during shutdown: {e}")
+            # Don't suppress the original exception if one occurred
