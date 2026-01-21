@@ -9,6 +9,7 @@ from openai._streaming import AsyncStream
 from openai._types import NOT_GIVEN, Omit
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
+from openai.types.responses import Response as OpenAIResponse
 
 from any_llm.any_llm import AnyLLM
 from any_llm.logging import logger
@@ -21,6 +22,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     ReasoningEffort,
 )
+from any_llm.types.converters import convert_openai_response_to_openresponses, convert_openai_stream_event
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
@@ -164,13 +166,22 @@ class BaseOpenAIProvider(AnyLLM):
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
-        """Call OpenAI Responses API"""
+        """Call OpenAI Responses API and convert to OpenResponses types."""
         response = await self.client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
 
-        if not isinstance(response, Response | AsyncStream):
-            msg = f"Responses API returned an unexpected type: {type(response)}"
-            raise ValueError(msg)
-        return response
+        if isinstance(response, OpenAIResponse):
+            return convert_openai_response_to_openresponses(response)
+
+        if isinstance(response, AsyncStream):
+
+            async def stream_iterator() -> AsyncIterator[ResponseStreamEvent]:
+                async for event in response:
+                    yield convert_openai_stream_event(event)
+
+            return stream_iterator()
+
+        msg = f"Responses API returned an unexpected type: {type(response)}"
+        raise ValueError(msg)
 
     async def _aembedding(
         self,

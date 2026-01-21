@@ -6,7 +6,7 @@ from openai import APIConnectionError
 
 from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.types.responses import Response
+from any_llm.types.responses import Response, get_output_text
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 
@@ -36,5 +36,5 @@ async def test_responses_async(
             pytest.skip("Local Model host is not set up, skipping")
         raise
     assert isinstance(result, Response)
-    assert result.output_text is not None
+    assert get_output_text(result) is not None
     assert result.reasoning is not None

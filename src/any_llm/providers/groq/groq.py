@@ -3,14 +3,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from openai import AsyncOpenAI, AsyncStream
+from openai.types.responses import Response as OpenAIResponse
 from pydantic import BaseModel
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
+from any_llm.types.converters import convert_openai_response_to_openresponses, convert_openai_stream_event
 
 if TYPE_CHECKING:
     from any_llm.types.completion import CreateEmbeddingResponse
+    from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -151,7 +153,7 @@ class GroqProvider(AnyLLM):
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
-        """Call Groq Responses API and normalize into ChatCompletion/Chunks."""
+        """Call Groq Responses API and convert to OpenResponses types."""
         # Python SDK doesn't yet support it: https://community.groq.com/feature-requests-6/groq-python-sdk-support-for-responses-api-262
 
         if params.max_tool_calls is not None:
@@ -166,11 +168,19 @@ class GroqProvider(AnyLLM):
 
         response = await client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
 
-        if not isinstance(response, Response | AsyncStream):
-            msg = f"Responses API returned an unexpected type: {type(response)}"
-            raise ValueError(msg)
+        if isinstance(response, OpenAIResponse):
+            return convert_openai_response_to_openresponses(response)
 
-        return response
+        if isinstance(response, AsyncStream):
+
+            async def stream_iterator() -> AsyncIterator[ResponseStreamEvent]:
+                async for event in response:
+                    yield convert_openai_stream_event(event)
+
+            return stream_iterator()
+
+        msg = f"Responses API returned an unexpected type: {type(response)}"
+        raise ValueError(msg)
 
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.models.list(**kwargs)
