@@ -173,7 +173,11 @@ func structToJSONSchema(t reflect.Type) map[string]interface{} {
 		fieldName := field.Name
 		if jsonTag := field.Tag.Get("json"); jsonTag != "" {
 			parts := strings.Split(jsonTag, ",")
-			if parts[0] != "-" && parts[0] != "" {
+			// Skip fields with json:"-" tag entirely
+			if parts[0] == "-" {
+				continue
+			}
+			if parts[0] != "" {
 				fieldName = parts[0]
 			}
 			// Check for omitempty to determine if required

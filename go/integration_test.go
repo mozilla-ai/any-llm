@@ -228,4 +228,40 @@ func TestFunctionToTool(t *testing.T) {
 		assert.Equal(t, "object", mapSchema["type"])
 		assert.Equal(t, map[string]interface{}{"type": "integer"}, mapSchema["additionalProperties"])
 	})
+
+	t.Run("struct_with_json_skip_tag", func(t *testing.T) {
+		// Test struct with json:"-" tag should be skipped
+		type TestStruct struct {
+			Name     string `json:"name"`
+			Internal string `json:"-"`
+			Count    int    `json:"count,omitempty"`
+		}
+
+		spec := anyllm.FunctionSpec{
+			Name:        "test_struct_func",
+			Description: "A test function with struct parameter.",
+			Parameters: []anyllm.ParameterSpec{
+				{Name: "data", Type: reflect.TypeOf(TestStruct{}), Required: true},
+			},
+		}
+
+		tool := anyllm.FunctionToTool(spec)
+		params := tool.Function.Parameters
+		properties := params["properties"].(map[string]interface{})
+
+		dataSchema := properties["data"].(map[string]interface{})
+		assert.Equal(t, "object", dataSchema["type"])
+
+		dataProperties := dataSchema["properties"].(map[string]interface{})
+		// Should contain "name" and "count" but NOT "Internal" (json:"-")
+		assert.Contains(t, dataProperties, "name")
+		assert.Contains(t, dataProperties, "count")
+		assert.NotContains(t, dataProperties, "Internal")
+		assert.NotContains(t, dataProperties, "-")
+
+		// "name" is required (no omitempty), "count" is optional (has omitempty)
+		dataRequired := dataSchema["required"].([]string)
+		assert.Contains(t, dataRequired, "name")
+		assert.NotContains(t, dataRequired, "count")
+	})
 }
