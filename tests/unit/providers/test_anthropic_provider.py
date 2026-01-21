@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from datetime import UTC
 from typing import Any, get_args
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -394,3 +395,162 @@ async def test_response_format_raises_error() -> None:
                 response_format={"type": "json_object"},
             )
         )
+
+
+def test_convert_response_includes_cache_tokens_in_usage() -> None:
+    """Test that prompt caching tokens are correctly included in usage calculation.
+
+    When Anthropic returns cache_read_input_tokens or cache_creation_input_tokens,
+    these should be added to prompt_tokens and total_tokens for accurate reporting.
+    See: https://github.com/mozilla-ai/any-llm/issues/622
+    """
+    from datetime import datetime
+    from unittest.mock import MagicMock
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    mock_response = MagicMock()
+    mock_response.id = "msg_123"
+    mock_response.model = "claude-3-haiku"
+    mock_response.stop_reason = "end_turn"
+    mock_response.content = [MagicMock(type="text", text="Hello!")]
+    mock_response.created_at = datetime.now(UTC)
+
+    mock_response.usage.input_tokens = 3
+    mock_response.usage.output_tokens = 122
+    mock_response.usage.cache_read_input_tokens = 13332
+    mock_response.usage.cache_creation_input_tokens = 0
+
+    result = _convert_response(mock_response)
+
+    expected_prompt_tokens = 3 + 13332 + 0
+    expected_total_tokens = expected_prompt_tokens + 122
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == expected_prompt_tokens
+    assert result.usage.completion_tokens == 122
+    assert result.usage.total_tokens == expected_total_tokens
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 13332
+
+
+def test_convert_response_includes_cache_creation_tokens() -> None:
+    """Test that cache_creation_input_tokens are included in usage when writing to cache."""
+    from datetime import datetime
+    from unittest.mock import MagicMock
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    mock_response = MagicMock()
+    mock_response.id = "msg_123"
+    mock_response.model = "claude-3-haiku"
+    mock_response.stop_reason = "end_turn"
+    mock_response.content = [MagicMock(type="text", text="Hello!")]
+    mock_response.created_at = datetime.now(UTC)
+
+    mock_response.usage.input_tokens = 3
+    mock_response.usage.output_tokens = 122
+    mock_response.usage.cache_read_input_tokens = 0
+    mock_response.usage.cache_creation_input_tokens = 13332
+
+    result = _convert_response(mock_response)
+
+    expected_prompt_tokens = 3 + 0 + 13332
+    expected_total_tokens = expected_prompt_tokens + 122
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == expected_prompt_tokens
+    assert result.usage.total_tokens == expected_total_tokens
+    assert result.usage.prompt_tokens_details is None
+
+
+def test_convert_response_without_cache_tokens() -> None:
+    """Test that usage is correct when no cache tokens are present."""
+    from datetime import datetime
+    from unittest.mock import MagicMock
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    mock_response = MagicMock()
+    mock_response.id = "msg_123"
+    mock_response.model = "claude-3-haiku"
+    mock_response.stop_reason = "end_turn"
+    mock_response.content = [MagicMock(type="text", text="Hello!")]
+    mock_response.created_at = datetime.now(UTC)
+
+    mock_response.usage.input_tokens = 100
+    mock_response.usage.output_tokens = 50
+    mock_response.usage.cache_read_input_tokens = None
+    mock_response.usage.cache_creation_input_tokens = None
+
+    result = _convert_response(mock_response)
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 100
+    assert result.usage.completion_tokens == 50
+    assert result.usage.total_tokens == 150
+    assert result.usage.prompt_tokens_details is None
+
+
+def test_streaming_chunk_includes_cache_tokens_in_usage() -> None:
+    """Test that streaming chunks correctly include cache tokens in usage."""
+    from unittest.mock import MagicMock
+
+    from anthropic.types import MessageStopEvent, Usage
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    usage = Usage(
+        input_tokens=3,
+        output_tokens=159,
+        cache_read_input_tokens=13332,
+        cache_creation_input_tokens=0,
+    )
+
+    mock_message = MagicMock()
+    mock_message.usage = usage
+
+    chunk = MessageStopEvent(type="message_stop")
+    chunk.message = mock_message  # type: ignore[attr-defined]
+
+    result = _create_openai_chunk_from_anthropic_chunk(chunk, "claude-3-haiku")
+
+    expected_prompt_tokens = 3 + 13332 + 0
+    expected_total_tokens = expected_prompt_tokens + 159
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == expected_prompt_tokens
+    assert result.usage.completion_tokens == 159
+    assert result.usage.total_tokens == expected_total_tokens
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 13332
+
+
+def test_streaming_chunk_without_cache_tokens() -> None:
+    """Test that streaming chunks work correctly without cache tokens."""
+    from unittest.mock import MagicMock
+
+    from anthropic.types import MessageStopEvent, Usage
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    usage = Usage(
+        input_tokens=100,
+        output_tokens=50,
+        cache_read_input_tokens=None,
+        cache_creation_input_tokens=None,
+    )
+
+    mock_message = MagicMock()
+    mock_message.usage = usage
+
+    chunk = MessageStopEvent(type="message_stop")
+    chunk.message = mock_message  # type: ignore[attr-defined]
+
+    result = _create_openai_chunk_from_anthropic_chunk(chunk, "claude-3-haiku")
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 100
+    assert result.usage.completion_tokens == 50
+    assert result.usage.total_tokens == 150
+    assert result.usage.prompt_tokens_details is None
