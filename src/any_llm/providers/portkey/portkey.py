@@ -18,6 +18,13 @@ from any_llm.utils.reasoning import (
 MISSING_PACKAGES_ERROR = None
 try:
     from portkey_ai import AsyncPortkey
+    from portkey_ai.api_resources.types.chat_complete_type import (
+        ChatCompletionChunk as PortkeyChatCompletionChunk,
+    )
+    from portkey_ai.api_resources.types.chat_complete_type import (
+        ChatCompletions as PortkeyChatCompletions,
+    )
+    from portkey_ai.api_resources.types.models_type import ModelList as PortkeyModelList
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
@@ -26,6 +33,13 @@ if TYPE_CHECKING:
 
     from openai._streaming import AsyncStream
     from portkey_ai import AsyncPortkey  # noqa: TC004
+    from portkey_ai.api_resources.types.chat_complete_type import (
+        ChatCompletionChunk as PortkeyChatCompletionChunk,
+    )
+    from portkey_ai.api_resources.types.chat_complete_type import (
+        ChatCompletions as PortkeyChatCompletions,
+    )
+    from portkey_ai.api_resources.types.models_type import ModelList as PortkeyModelList
 
 
 class PortkeyProvider(BaseOpenAIProvider):
@@ -57,32 +71,39 @@ class PortkeyProvider(BaseOpenAIProvider):
         )
 
     @staticmethod
-    def _convert_completion_response(response: Any) -> ChatCompletion:
+    def _convert_completion_response(
+        response: OpenAIChatCompletion | PortkeyChatCompletions | ChatCompletion,
+    ) -> ChatCompletion:
         if isinstance(response, OpenAIChatCompletion):
             return _convert_chat_completion(response)
         if isinstance(response, ChatCompletion):
             return response
-        # Handle portkey SDK's ChatCompletions type (a Pydantic BaseModel)
-        if isinstance(response, BaseModel):
-            return _convert_chat_completion(OpenAIChatCompletion.model_validate(response.model_dump()))
-        return ChatCompletion.model_validate(response)
+        # Handle Portkey SDK's ChatCompletions type
+        return _convert_chat_completion(OpenAIChatCompletion.model_validate(response.model_dump()))
 
     @staticmethod
-    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+    def _convert_completion_chunk_response(
+        response: OpenAIChatCompletionChunk | PortkeyChatCompletionChunk | ChatCompletionChunk,
+        **kwargs: Any,
+    ) -> ChatCompletionChunk:
         if isinstance(response, OpenAIChatCompletionChunk):
             return _convert_chat_completion_chunk(response)
         if isinstance(response, ChatCompletionChunk):
             return response
-        # Handle portkey SDK's ChatCompletionChunk type (a Pydantic BaseModel)
-        if isinstance(response, BaseModel):
-            return _convert_chat_completion_chunk(OpenAIChatCompletionChunk.model_validate(response.model_dump()))
-        return ChatCompletionChunk.model_validate(response)
+        # Handle Portkey SDK's ChatCompletionChunk type
+        return _convert_chat_completion_chunk(OpenAIChatCompletionChunk.model_validate(response.model_dump()))
 
     def _convert_completion_response_async(
-        self, response: OpenAIChatCompletion | AsyncStream[OpenAIChatCompletionChunk]
+        self,
+        response: (
+            OpenAIChatCompletion
+            | PortkeyChatCompletions
+            | AsyncStream[OpenAIChatCompletionChunk]
+            | AsyncIterable[PortkeyChatCompletionChunk]
+        ),
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        """Convert an OpenAI completion response with streaming reasoning support."""
-        # Check for non-streaming response: either OpenAI type or portkey SDK type (which is not async iterable)
+        """Convert a completion response with streaming reasoning support."""
+        # Check for non-streaming response: either OpenAI type or Portkey SDK type (which is not async iterable)
         if isinstance(response, OpenAIChatCompletion) or not isinstance(response, AsyncIterable):
             return self._convert_completion_response(response)
 
@@ -109,26 +130,23 @@ class PortkeyProvider(BaseOpenAIProvider):
         )
 
     @staticmethod
-    def _convert_list_models_response(response: Any) -> Sequence[Model]:
-        """Convert portkey list models response to any-llm format."""
-        data = getattr(response, "data", None)
-        if data is not None:
-            models = []
-            for model in data:
-                if isinstance(model, Model):
-                    models.append(model)
-                elif isinstance(model, BaseModel):
-                    model_dict = model.model_dump()
-                    # Portkey SDK may return None for required fields
-                    if model_dict.get("created") is None:
-                        model_dict["created"] = 0
-                    if model_dict.get("owned_by") is None:
-                        model_dict["owned_by"] = "portkey"
-                    models.append(Model.model_validate(model_dict))
-                else:
-                    models.append(Model.model_validate(model))
+    def _convert_list_models_response(response: PortkeyModelList) -> Sequence[Model]:
+        """Convert Portkey list models response to any-llm format."""
+        models: list[Model] = []
+        if response.data is None:
             return models
-        return [Model.model_validate(item) if not isinstance(item, Model) else item for item in response]
+        for model in response.data:
+            if isinstance(model, Model):
+                models.append(model)
+            else:
+                model_dict = model.model_dump()
+                # Portkey SDK may return None for required fields
+                if model_dict.get("created") is None:
+                    model_dict["created"] = 0
+                if model_dict.get("owned_by") is None:
+                    model_dict["owned_by"] = "portkey"
+                models.append(Model.model_validate(model_dict))
+        return models
 
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
