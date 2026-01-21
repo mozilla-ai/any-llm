@@ -101,9 +101,9 @@ jobs:
           INCLUDE_LOCAL_PROVIDERS: "false"
         run: |
           if [ -n "${{ inputs.filter }}" ]; then
-            pytest tests/integration -rs -v -n auto --cov --cov-report=xml -k "${{ inputs.filter }}" || [ $? -eq 5 ]
+            pytest tests/integration -v -n auto --cov --cov-report=xml -k "${{ inputs.filter }}" || [ $? -eq 5 ]
           else
-            pytest tests/integration -rs -v -n auto --cov --cov-report=xml || [ $? -eq 5 ]
+            pytest tests/integration -v -n auto --cov --cov-report=xml || [ $? -eq 5 ]
           fi
 
       - name: Upload coverage reports to Codecov
