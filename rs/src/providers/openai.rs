@@ -148,10 +148,31 @@ impl OpenAIProvider {
         messages: Vec<Message>,
         options: Option<CompletionOptions>,
         stream: bool,
-    ) -> CompletionRequest {
+    ) -> Result<CompletionRequest> {
         let options = options.unwrap_or_default();
 
-        CompletionRequest {
+        let tools = options
+            .tools
+            .map(serde_json::to_value)
+            .transpose()?;
+        let tool_choice = options
+            .tool_choice
+            .map(serde_json::to_value)
+            .transpose()?;
+        let response_format = options
+            .response_format
+            .map(serde_json::to_value)
+            .transpose()?;
+        let stream_options = if stream {
+            options
+                .stream_options
+                .map(serde_json::to_value)
+                .transpose()?
+        } else {
+            None
+        };
+
+        Ok(CompletionRequest {
             model: model.to_string(),
             messages,
             temperature: options.temperature,
@@ -167,23 +188,13 @@ impl OpenAIProvider {
             top_logprobs: options.top_logprobs,
             seed: options.seed,
             user: options.user,
-            tools: options.tools.map(|t| serde_json::to_value(t).unwrap()),
-            tool_choice: options
-                .tool_choice
-                .map(|t| serde_json::to_value(t).unwrap()),
+            tools,
+            tool_choice,
             parallel_tool_calls: options.parallel_tool_calls,
-            response_format: options
-                .response_format
-                .map(|r| serde_json::to_value(r).unwrap()),
+            response_format,
             stream: if stream { Some(true) } else { None },
-            stream_options: if stream {
-                options
-                    .stream_options
-                    .map(|s| serde_json::to_value(s).unwrap())
-            } else {
-                None
-            },
-        }
+            stream_options,
+        })
     }
 
     /// Map API error to `AnyLLMError`.
@@ -232,7 +243,7 @@ impl OpenAIProvider {
         messages: Vec<Message>,
         options: Option<CompletionOptions>,
     ) -> Result<ChatCompletion> {
-        let request_body = Self::convert_completion_params(model, messages, options, false);
+        let request_body = Self::convert_completion_params(model, messages, options, false)?;
 
         let url = format!("{}/chat/completions", self.api_base);
         let response = self
@@ -271,7 +282,7 @@ impl OpenAIProvider {
         messages: Vec<Message>,
         options: Option<CompletionOptions>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<ChatCompletionChunk>> + Send>>> {
-        let request_body = Self::convert_completion_params(model, messages, options, true);
+        let request_body = Self::convert_completion_params(model, messages, options, true)?;
 
         let url = format!("{}/chat/completions", self.api_base);
         let response = self
