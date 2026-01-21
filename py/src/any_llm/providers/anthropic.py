@@ -21,6 +21,7 @@ from anthropic.types import (
     ToolResultBlockParam,
     ToolUseBlock,
 )
+from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall, ChoiceDeltaToolCallFunction
 from openai.types.chat.chat_completion_message_tool_call import Function
 
 from any_llm.any_llm import AnyLLM
@@ -274,8 +275,9 @@ class AnthropicProvider(AnyLLM):
         )
 
         try:
-            # Remove stream from params since we'll handle it differently
-            params.pop("stream", None)
+            # Remove stream from params since we pass it directly to create()
+            if "stream" in params:
+                del params["stream"]
             stream = await self._client.messages.create(**params, stream=True)
 
             # State tracking for streaming
@@ -711,7 +713,6 @@ class AnthropicProvider(AnyLLM):
         # Process content blocks
         content_text = ""
         tool_calls: list[ChatCompletionMessageToolCall] = []
-        reasoning_content: str | None = None
 
         for block in response.content:
             if isinstance(block, TextBlock):
@@ -726,8 +727,7 @@ class AnthropicProvider(AnyLLM):
                     ),
                 )
                 tool_calls.append(tool_call)
-            elif isinstance(block, ThinkingBlock):
-                reasoning_content = block.thinking
+            # Note: ThinkingBlock content is not included in OpenAI-compatible format
 
         # Build message
         message = ChatCompletionMessage(
@@ -735,11 +735,6 @@ class AnthropicProvider(AnyLLM):
             content=content_text if content_text else None,
             tool_calls=tool_calls if tool_calls else None,  # type: ignore[arg-type]
         )
-
-        # Add reasoning if present (as extra field)
-        if reasoning_content:
-            # Store reasoning in a way compatible with the type
-            pass  # Could add as extra field if needed
 
         # Build usage
         usage = CompletionUsage(
@@ -837,8 +832,6 @@ class AnthropicProvider(AnyLLM):
                 )
             if isinstance(block, ToolUseBlock):
                 # Start of tool call
-                from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall, ChoiceDeltaToolCallFunction
-
                 tool_call = ChoiceDeltaToolCall(
                     index=event.index,
                     id=block.id,
@@ -867,11 +860,6 @@ class AnthropicProvider(AnyLLM):
                     object="chat.completion.chunk",
                 )
             if block_type == "tool_use":
-                from openai.types.chat.chat_completion_chunk import (
-                    ChoiceDeltaToolCall,
-                    ChoiceDeltaToolCallFunction,
-                )
-
                 tool_call = ChoiceDeltaToolCall(
                     index=event.index,
                     id=getattr(block, "id", ""),
@@ -914,11 +902,6 @@ class AnthropicProvider(AnyLLM):
                 )
             if delta_type == "input_json_delta":
                 # Tool argument delta
-                from openai.types.chat.chat_completion_chunk import (
-                    ChoiceDeltaToolCall,
-                    ChoiceDeltaToolCallFunction,
-                )
-
                 tool_call = ChoiceDeltaToolCall(
                     index=current_block_index or 0,
                     function=ChoiceDeltaToolCallFunction(arguments=getattr(delta_obj, "partial_json", "")),
