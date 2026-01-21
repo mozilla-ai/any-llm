@@ -46,6 +46,7 @@ export interface ParameterDefinition {
   description?: string;
   /**
    * Whether the parameter is required (no default value).
+   * Defaults to true if not specified.
    */
   required?: boolean;
 }
@@ -133,6 +134,8 @@ export function functionToTool(
 
       properties[paramName] = paramSchema;
 
+      // Parameters are required by default unless explicitly marked as optional
+      // This matches the typical pattern where most function parameters are required
       if (paramDef.required !== false) {
         required.push(paramName);
       }
