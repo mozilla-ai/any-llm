@@ -11,14 +11,14 @@
 //! #[tokio::main]
 //! async fn main() -> any_llm_rs::Result<()> {
 //!     let client = AnyLLM::create(Provider::OpenAI, None, None, None)?;
-//!     
+//!
 //!     let messages = vec![
 //!         Message::user("Hello, how are you?"),
 //!     ];
-//!     
+//!
 //!     let response = client.completion("gpt-4o", messages, None).await?;
 //!     println!("{:?}", response.choices[0].message.content);
-//!     
+//!
 //!     Ok(())
 //! }
 //! ```
