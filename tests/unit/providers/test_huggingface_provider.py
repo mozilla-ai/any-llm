@@ -1,4 +1,4 @@
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
@@ -8,7 +8,6 @@ import pytest
 from any_llm.providers.huggingface.huggingface import HuggingfaceProvider
 from any_llm.providers.huggingface.utils import _create_openai_chunk_from_huggingface_chunk
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
-from any_llm.types.responses import Response, ResponsesParams
 
 
 @contextmanager
