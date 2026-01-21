@@ -1,3 +1,4 @@
+import base64
 import json
 from contextlib import contextmanager
 from typing import Any, get_args
@@ -5,8 +6,14 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from any_llm.exceptions import InvalidRequestError
 from any_llm.providers.bedrock import BedrockProvider
-from any_llm.providers.bedrock.utils import REASONING_EFFORT_TO_THINKING_BUDGETS, _create_openai_chunk_from_aws_chunk
+from any_llm.providers.bedrock.utils import (
+    REASONING_EFFORT_TO_THINKING_BUDGETS,
+    _convert_images_for_bedrock,
+    _convert_messages,
+    _create_openai_chunk_from_aws_chunk,
+)
 from any_llm.types.completion import CompletionParams, ReasoningEffort
 
 
@@ -365,3 +372,206 @@ def test_streaming_chunk_content_block_start_text() -> None:
 
     assert result is not None
     assert result.choices[0].delta.content == ""
+
+
+def test_convert_images_for_bedrock_with_base64_image() -> None:
+    """Test converting base64 image from OpenAI format to Bedrock format."""
+    test_image_data = b"test image bytes"
+    base64_data = base64.b64encode(test_image_data).decode("utf-8")
+
+    content: list[dict[str, Any]] = [
+        {"type": "text", "text": "What is in this image?"},
+        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_data}"}},
+    ]
+
+    result = _convert_images_for_bedrock(content)
+
+    assert len(result) == 2
+    assert result[0] == {"text": "What is in this image?"}
+    assert result[1]["image"]["format"] == "png"
+    assert result[1]["image"]["source"]["bytes"] == test_image_data
+
+
+def test_convert_images_for_bedrock_with_jpeg_image() -> None:
+    """Test converting JPEG image from OpenAI format to Bedrock format."""
+    test_image_data = b"jpeg image bytes"
+    base64_data = base64.b64encode(test_image_data).decode("utf-8")
+
+    content = [
+        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_data}"}},
+    ]
+
+    result = _convert_images_for_bedrock(content)
+
+    assert len(result) == 1
+    assert result[0]["image"]["format"] == "jpeg"
+    assert result[0]["image"]["source"]["bytes"] == test_image_data
+
+
+def test_convert_images_for_bedrock_with_multiple_images() -> None:
+    """Test converting multiple images in a single message."""
+    image1_data = b"image one"
+    image2_data = b"image two"
+    base64_data1 = base64.b64encode(image1_data).decode("utf-8")
+    base64_data2 = base64.b64encode(image2_data).decode("utf-8")
+
+    content: list[dict[str, Any]] = [
+        {"type": "text", "text": "Compare these images."},
+        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_data1}"}},
+        {"type": "image_url", "image_url": {"url": f"data:image/webp;base64,{base64_data2}"}},
+    ]
+
+    result = _convert_images_for_bedrock(content)
+
+    assert len(result) == 3
+    assert result[0] == {"text": "Compare these images."}
+    assert result[1]["image"]["format"] == "png"
+    assert result[1]["image"]["source"]["bytes"] == image1_data
+    assert result[2]["image"]["format"] == "webp"
+    assert result[2]["image"]["source"]["bytes"] == image2_data
+
+
+def test_convert_images_for_bedrock_raises_for_url_images() -> None:
+    """Test that URL-based images raise InvalidRequestError."""
+    content: list[dict[str, Any]] = [
+        {"type": "text", "text": "What is this?"},
+        {"type": "image_url", "image_url": {"url": "https://example.com/image.png"}},
+    ]
+
+    with pytest.raises(InvalidRequestError, match="URL-based images are not supported"):
+        _convert_images_for_bedrock(content)
+
+
+def test_convert_images_for_bedrock_text_only() -> None:
+    """Test converting content with only text blocks."""
+    content = [
+        {"type": "text", "text": "Hello world"},
+    ]
+
+    result = _convert_images_for_bedrock(content)
+
+    assert len(result) == 1
+    assert result[0] == {"text": "Hello world"}
+
+
+def test_convert_images_for_bedrock_raises_for_malformed_data_uri_missing_semicolon() -> None:
+    """Test that malformed data URI without semicolon raises InvalidRequestError."""
+    content: list[dict[str, Any]] = [
+        {"type": "image_url", "image_url": {"url": "data:image/pngbase64,abc123"}},
+    ]
+
+    with pytest.raises(InvalidRequestError, match="missing semicolon separator"):
+        _convert_images_for_bedrock(content)
+
+
+def test_convert_images_for_bedrock_raises_for_missing_base64_marker() -> None:
+    """Test that data URI without base64 marker raises InvalidRequestError."""
+    content: list[dict[str, Any]] = [
+        {"type": "image_url", "image_url": {"url": "data:image/png;abc123"}},
+    ]
+
+    with pytest.raises(InvalidRequestError, match="missing 'base64,' marker"):
+        _convert_images_for_bedrock(content)
+
+
+def test_convert_images_for_bedrock_raises_for_unsupported_format() -> None:
+    """Test that unsupported image formats raise InvalidRequestError."""
+    content: list[dict[str, Any]] = [
+        {"type": "image_url", "image_url": {"url": "data:image/bmp;base64,abc123"}},
+    ]
+
+    with pytest.raises(InvalidRequestError, match="Unsupported image format: 'bmp'"):
+        _convert_images_for_bedrock(content)
+
+
+def test_convert_images_for_bedrock_raises_for_invalid_base64() -> None:
+    """Test that invalid base64 data raises InvalidRequestError."""
+    content: list[dict[str, Any]] = [
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,not-valid-base64!!!"}},
+    ]
+
+    with pytest.raises(InvalidRequestError, match="Invalid base64 image data"):
+        _convert_images_for_bedrock(content)
+
+
+def test_convert_images_for_bedrock_normalizes_jpg_to_jpeg() -> None:
+    """Test that jpg format is normalized to jpeg for Bedrock compatibility."""
+    test_image_data = b"jpg image bytes"
+    base64_data = base64.b64encode(test_image_data).decode("utf-8")
+
+    content: list[dict[str, Any]] = [
+        {"type": "image_url", "image_url": {"url": f"data:image/jpg;base64,{base64_data}"}},
+    ]
+
+    result = _convert_images_for_bedrock(content)
+
+    assert len(result) == 1
+    assert result[0]["image"]["format"] == "jpeg"
+    assert result[0]["image"]["source"]["bytes"] == test_image_data
+
+
+def test_convert_messages_with_image_content() -> None:
+    """Test that _convert_messages correctly handles messages with image content."""
+    test_image_data = b"test image"
+    base64_data = base64.b64encode(test_image_data).decode("utf-8")
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What is in this image?"},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_data}"}},
+            ],
+        }
+    ]
+
+    system_message, formatted_messages = _convert_messages(messages)
+
+    assert system_message == []
+    assert len(formatted_messages) == 1
+    assert formatted_messages[0]["role"] == "user"
+    assert len(formatted_messages[0]["content"]) == 2
+    assert formatted_messages[0]["content"][0] == {"text": "What is in this image?"}
+    assert formatted_messages[0]["content"][1]["image"]["format"] == "png"
+    assert formatted_messages[0]["content"][1]["image"]["source"]["bytes"] == test_image_data
+
+
+def test_convert_messages_with_string_content() -> None:
+    """Test that _convert_messages still works with simple string content."""
+    messages = [{"role": "user", "content": "Hello world"}]
+
+    system_message, formatted_messages = _convert_messages(messages)
+
+    assert system_message == []
+    assert len(formatted_messages) == 1
+    assert formatted_messages[0] == {"role": "user", "content": [{"text": "Hello world"}]}
+
+
+def test_completion_with_images() -> None:
+    """Test that completion correctly processes image content."""
+    test_image_data = b"test image bytes"
+    base64_data = base64.b64encode(test_image_data).decode("utf-8")
+
+    model_id = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Describe this image."},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_data}"}},
+            ],
+        }
+    ]
+
+    with mock_aws_provider() as mock_boto3_client:
+        provider = BedrockProvider(api_key="test_key")
+        provider._completion(CompletionParams(model_id=model_id, messages=messages))
+
+        call_args = mock_boto3_client.return_value.converse.call_args[1]
+        assert call_args["modelId"] == model_id
+        assert len(call_args["messages"]) == 1
+        assert call_args["messages"][0]["role"] == "user"
+        assert len(call_args["messages"][0]["content"]) == 2
+        assert call_args["messages"][0]["content"][0] == {"text": "Describe this image."}
+        assert call_args["messages"][0]["content"][1]["image"]["format"] == "png"
+        assert call_args["messages"][0]["content"][1]["image"]["source"]["bytes"] == test_image_data
