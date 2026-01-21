@@ -9,8 +9,9 @@ from any_llm_platform_client import (
     AnyLLMPlatformClient,  # noqa: TC002
 )
 
-from .batch_queue import UsageEventBatchQueue
 from any_llm import __version__
+
+from .batch_queue import UsageEventBatchQueue
 
 if TYPE_CHECKING:
     from any_llm.types.completion import ChatCompletion
