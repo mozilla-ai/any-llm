@@ -12,7 +12,7 @@ from any_llm.types.converters import convert_openai_response_to_openresponses, c
 
 if TYPE_CHECKING:
     from any_llm.types.completion import CreateEmbeddingResponse
-    from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
+    from any_llm.types.responses_helpers import Response, ResponsesParams, ResponseStreamEvent
 
 MISSING_PACKAGES_ERROR = None
 try:

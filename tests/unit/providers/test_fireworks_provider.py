@@ -1,7 +1,7 @@
 from unittest.mock import Mock
 
 from any_llm.providers.fireworks.utils import extract_reasoning_from_response
-from any_llm.types.responses import Response
+from any_llm.types.responses_helpers import Response
 
 
 def test_extract_reasoning_from_response_with_think_tags() -> None:

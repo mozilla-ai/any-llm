@@ -24,7 +24,7 @@ from any_llm.types.completion import (
 )
 from any_llm.types.converters import convert_openai_response_to_openresponses, convert_openai_stream_event
 from any_llm.types.model import Model
-from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
+from any_llm.types.responses_helpers import Response, ResponsesParams, ResponseStreamEvent
 
 
 class BaseOpenAIProvider(AnyLLM):

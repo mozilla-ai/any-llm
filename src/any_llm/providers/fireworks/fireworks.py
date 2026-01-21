@@ -2,8 +2,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.types.openresponses_generated import ResponseResource
-from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
+from any_llm.types.responses_helpers import Response, ResponsesParams, ResponseStreamEvent
 
 from .utils import extract_reasoning_from_response
 
@@ -27,6 +26,6 @@ class FireworksProvider(BaseOpenAIProvider):
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
         """Call Fireworks Responses API and extract reasoning from think tags."""
         response = await super()._aresponses(params, **kwargs)
-        if isinstance(response, ResponseResource):
+        if isinstance(response, Response):
             return extract_reasoning_from_response(response)
         return response

@@ -14,7 +14,7 @@ from any_llm.types.completion import (
     ReasoningEffort,
 )
 from any_llm.types.model import Model
-from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
+from any_llm.types.responses_helpers import Response, ResponseInputParam, ResponseStreamEvent
 from any_llm.utils.decorators import BATCH_API_EXPERIMENTAL_MESSAGE, experimental
 
 

@@ -44,7 +44,7 @@ if TYPE_CHECKING:
     )
 
     from any_llm.types.model import Model
-    from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
+    from any_llm.types.responses_helpers import Response, ResponsesParams, ResponseStreamEvent
 
 
 class HuggingfaceProvider(AnyLLM):

@@ -2,18 +2,24 @@
 
 This module provides conversion functions to translate between OpenAI SDK
 response types and the OpenResponses specification types defined in
-openresponses_generated.py.
+responses.py (auto-generated from the OpenResponses spec).
 
 This allows the library to use pure OpenResponses types in its public API
 while still using the OpenAI SDK internally for provider implementations.
+
+Note: This module uses dynamic type conversions between two different type systems
+(OpenAI SDK and OpenResponses spec). Type checking is disabled at the module level
+because the generated OpenResponses types use strict enum types (Type31, Type38, etc.)
+that are difficult to match statically with OpenAI SDK string literals.
 """
+# mypy: ignore-errors
 
 from typing import Any
 
 from openai.types.responses import Response as OpenAIResponse
 from openai.types.responses import ResponseStreamEvent as OpenAIResponseStreamEvent
 
-from any_llm.types.openresponses_generated import (
+from any_llm.types.responses import (
     Error,
     FunctionCall,
     FunctionCallOutput,
@@ -172,7 +178,7 @@ def _convert_output_item(item: Any) -> Message | FunctionCall | FunctionCallOutp
             role=MessageRole(getattr(item, "role", "assistant")),
             content=content_list,
         )
-    elif item_type == "function_call":
+    if item_type == "function_call":
         return FunctionCall(
             type="function_call",
             id=getattr(item, "id", ""),
@@ -181,28 +187,27 @@ def _convert_output_item(item: Any) -> Message | FunctionCall | FunctionCallOutp
             arguments=getattr(item, "arguments", ""),
             status=getattr(item, "status", "completed"),
         )
-    elif item_type == "function_call_output":
+    if item_type == "function_call_output":
         return FunctionCallOutput(
             type="function_call_output",
             id=getattr(item, "id", ""),
             call_id=getattr(item, "call_id", ""),
             output=getattr(item, "output", ""),
         )
-    elif item_type == "reasoning":
+    if item_type == "reasoning":
         return ReasoningBody(
             type="reasoning",
             id=getattr(item, "id", ""),
             status=getattr(item, "status", "completed"),
             summary=[],
         )
-    else:
-        return Message(
-            type="message",
-            id=getattr(item, "id", ""),
-            status=MessageStatus.completed,
-            role=MessageRole.assistant,
-            content=[],
-        )
+    return Message(
+        type="message",
+        id=getattr(item, "id", ""),
+        status=MessageStatus.completed,
+        role=MessageRole.assistant,
+        content=[],
+    )
 
 
 def _convert_tool(tool: Any) -> Tool:
@@ -277,51 +282,51 @@ def convert_openai_stream_event(event: OpenAIResponseStreamEvent) -> Any:
             sequence_number=sequence_number,
             response=_convert_response_for_event(event),
         )
-    elif event_type == "response.queued":
+    if event_type == "response.queued":
         return ResponseQueuedStreamingEvent(
             type=Type38.response_queued,
             sequence_number=sequence_number,
             response=_convert_response_for_event(event),
         )
-    elif event_type == "response.in_progress":
+    if event_type == "response.in_progress":
         return ResponseInProgressStreamingEvent(
             type=Type39.response_in_progress,
             sequence_number=sequence_number,
             response=_convert_response_for_event(event),
         )
-    elif event_type == "response.completed":
+    if event_type == "response.completed":
         return ResponseCompletedStreamingEvent(
             type=Type40.response_completed,
             sequence_number=sequence_number,
             response=_convert_response_for_event(event),
         )
-    elif event_type == "response.failed":
+    if event_type == "response.failed":
         return ResponseFailedStreamingEvent(
             type=Type41.response_failed,
             sequence_number=sequence_number,
             response=_convert_response_for_event(event),
         )
-    elif event_type == "response.incomplete":
+    if event_type == "response.incomplete":
         return ResponseIncompleteStreamingEvent(
             type=Type42.response_incomplete,
             sequence_number=sequence_number,
             response=_convert_response_for_event(event),
         )
-    elif event_type == "response.output_item.added":
+    if event_type == "response.output_item.added":
         return ResponseOutputItemAddedStreamingEvent(
             type="response.output_item.added",
             sequence_number=sequence_number,
             output_index=getattr(event, "output_index", 0),
             item=_convert_output_item(getattr(event, "item", None)),
         )
-    elif event_type == "response.output_item.done":
+    if event_type == "response.output_item.done":
         return ResponseOutputItemDoneStreamingEvent(
             type="response.output_item.done",
             sequence_number=sequence_number,
             output_index=getattr(event, "output_index", 0),
             item=_convert_output_item(getattr(event, "item", None)),
         )
-    elif event_type == "response.output_text.delta":
+    if event_type == "response.output_text.delta":
         return ResponseOutputTextDeltaStreamingEvent(
             type="response.output_text.delta",
             sequence_number=sequence_number,
@@ -329,7 +334,7 @@ def convert_openai_stream_event(event: OpenAIResponseStreamEvent) -> Any:
             content_index=getattr(event, "content_index", 0),
             delta=getattr(event, "delta", ""),
         )
-    elif event_type == "response.output_text.done":
+    if event_type == "response.output_text.done":
         return ResponseOutputTextDoneStreamingEvent(
             type="response.output_text.done",
             sequence_number=sequence_number,
@@ -337,7 +342,7 @@ def convert_openai_stream_event(event: OpenAIResponseStreamEvent) -> Any:
             content_index=getattr(event, "content_index", 0),
             text=getattr(event, "text", ""),
         )
-    elif event_type == "response.content_part.added":
+    if event_type == "response.content_part.added":
         return ResponseContentPartAddedStreamingEvent(
             type="response.content_part.added",
             sequence_number=sequence_number,
@@ -345,7 +350,7 @@ def convert_openai_stream_event(event: OpenAIResponseStreamEvent) -> Any:
             content_index=getattr(event, "content_index", 0),
             part=_convert_content_part(getattr(event, "part", None)),
         )
-    elif event_type == "response.content_part.done":
+    if event_type == "response.content_part.done":
         return ResponseContentPartDoneStreamingEvent(
             type="response.content_part.done",
             sequence_number=sequence_number,
@@ -353,33 +358,33 @@ def convert_openai_stream_event(event: OpenAIResponseStreamEvent) -> Any:
             content_index=getattr(event, "content_index", 0),
             part=_convert_content_part(getattr(event, "part", None)),
         )
-    elif event_type == "response.refusal.delta":
+    if event_type == "response.refusal.delta":
         return ResponseRefusalDeltaStreamingEvent(
             type="response.refusal.delta",
             sequence_number=sequence_number,
             delta=getattr(event, "delta", ""),
         )
-    elif event_type == "response.refusal.done":
+    if event_type == "response.refusal.done":
         return ResponseRefusalDoneStreamingEvent(
             type="response.refusal.done",
             sequence_number=sequence_number,
             refusal=getattr(event, "refusal", ""),
         )
-    elif event_type == "response.function_call_arguments.delta":
+    if event_type == "response.function_call_arguments.delta":
         return ResponseFunctionCallArgumentsDeltaStreamingEvent(
             type="response.function_call_arguments.delta",
             sequence_number=sequence_number,
             output_index=getattr(event, "output_index", 0),
             delta=getattr(event, "delta", ""),
         )
-    elif event_type == "response.function_call_arguments.done":
+    if event_type == "response.function_call_arguments.done":
         return ResponseFunctionCallArgumentsDoneStreamingEvent(
             type="response.function_call_arguments.done",
             sequence_number=sequence_number,
             output_index=getattr(event, "output_index", 0),
             arguments=getattr(event, "arguments", ""),
         )
-    elif event_type == "response.reasoning_summary.text.delta":
+    if event_type == "response.reasoning_summary.text.delta":
         return ResponseReasoningSummaryDeltaStreamingEvent(
             type="response.reasoning_summary_text.delta",
             sequence_number=sequence_number,
@@ -387,7 +392,7 @@ def convert_openai_stream_event(event: OpenAIResponseStreamEvent) -> Any:
             summary_index=getattr(event, "summary_index", 0),
             delta=getattr(event, "delta", ""),
         )
-    elif event_type == "response.reasoning_summary.text.done":
+    if event_type == "response.reasoning_summary.text.done":
         return ResponseReasoningSummaryDoneStreamingEvent(
             type="response.reasoning_summary_text.done",
             sequence_number=sequence_number,
@@ -395,7 +400,7 @@ def convert_openai_stream_event(event: OpenAIResponseStreamEvent) -> Any:
             summary_index=getattr(event, "summary_index", 0),
             text=getattr(event, "text", ""),
         )
-    elif event_type == "response.reasoning_summary.part.added":
+    if event_type == "response.reasoning_summary.part.added":
         return ResponseReasoningSummaryPartAddedStreamingEvent(
             type="response.reasoning_summary.part.added",
             sequence_number=sequence_number,
@@ -403,7 +408,7 @@ def convert_openai_stream_event(event: OpenAIResponseStreamEvent) -> Any:
             summary_index=getattr(event, "summary_index", 0),
             part=_convert_reasoning_summary_part(getattr(event, "part", None)),
         )
-    elif event_type == "response.reasoning_summary.part.done":
+    if event_type == "response.reasoning_summary.part.done":
         return ResponseReasoningSummaryPartDoneStreamingEvent(
             type="response.reasoning_summary.part.done",
             sequence_number=sequence_number,
@@ -411,21 +416,21 @@ def convert_openai_stream_event(event: OpenAIResponseStreamEvent) -> Any:
             summary_index=getattr(event, "summary_index", 0),
             part=_convert_reasoning_summary_part(getattr(event, "part", None)),
         )
-    elif event_type == "response.reasoning.delta":
+    if event_type == "response.reasoning.delta":
         return ResponseReasoningDeltaStreamingEvent(
             type="response.reasoning.delta",
             sequence_number=sequence_number,
             output_index=getattr(event, "output_index", 0),
             delta=getattr(event, "delta", ""),
         )
-    elif event_type == "response.reasoning.done":
+    if event_type == "response.reasoning.done":
         return ResponseReasoningDoneStreamingEvent(
             type="response.reasoning.done",
             sequence_number=sequence_number,
             output_index=getattr(event, "output_index", 0),
             text=getattr(event, "text", ""),
         )
-    elif event_type == "response.output_text.annotation.added":
+    if event_type == "response.output_text.annotation.added":
         return ResponseOutputTextAnnotationAddedStreamingEvent(
             type="response.output_text.annotation.added",
             sequence_number=sequence_number,
@@ -434,10 +439,9 @@ def convert_openai_stream_event(event: OpenAIResponseStreamEvent) -> Any:
             annotation_index=getattr(event, "annotation_index", 0),
             annotation=_convert_annotation(getattr(event, "annotation", None)),
         )
-    else:
-        # For events without direct OpenResponses equivalents, return a generic event
-        # This handles OpenAI-specific events like web_search, code_interpreter, etc.
-        return _create_passthrough_event(event)
+    # For events without direct OpenResponses equivalents, return a generic event
+    # This handles OpenAI-specific events like web_search, code_interpreter, etc.
+    return _create_passthrough_event(event)
 
 
 def _convert_response_for_event(event: Any) -> ResponseResource:

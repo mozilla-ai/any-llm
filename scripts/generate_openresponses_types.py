@@ -27,7 +27,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 SPEC_CACHE_DIR = PROJECT_ROOT / "src" / "any_llm" / "types" / ".openresponses"
 SPEC_CACHE_FILE = SPEC_CACHE_DIR / "openapi.json"
 SPEC_HASH_FILE = SPEC_CACHE_DIR / "openapi.sha256"
-OUTPUT_FILE = PROJECT_ROOT / "src" / "any_llm" / "types" / "openresponses_generated.py"
+OUTPUT_FILE = PROJECT_ROOT / "src" / "any_llm" / "types" / "responses.py"
 
 GENERATION_HEADER = '''\
 """Auto-generated Pydantic models from OpenResponses OpenAPI specification.
