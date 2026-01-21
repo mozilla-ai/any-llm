@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from openai import AsyncOpenAI
+from openai._streaming import AsyncStream
+
 from any_llm.any_llm import AnyLLM
 from any_llm.types.completion import (
     ChatCompletion,
@@ -13,6 +16,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     Reasoning,
 )
+from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -48,9 +52,12 @@ class HuggingfaceProvider(AnyLLM):
     ENV_API_KEY_NAME = "HF_TOKEN"
     PROVIDER_DOCUMENTATION_URL = "https://huggingface.co/docs/huggingface_hub/package_reference/inference_client"
 
+    # OpenResponses router endpoint for the Responses API
+    OPENRESPONSES_ROUTER_URL = "https://router.huggingface.co/v1"
+
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
-    SUPPORTS_RESPONSES = False
+    SUPPORTS_RESPONSES = True
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_COMPLETION_REASONING = False
@@ -61,6 +68,7 @@ class HuggingfaceProvider(AnyLLM):
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     client: AsyncInferenceClient
+    responses_client: AsyncOpenAI
 
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
@@ -106,6 +114,12 @@ class HuggingfaceProvider(AnyLLM):
             base_url=api_base,
             token=api_key,
             **kwargs,
+        )
+        # Initialize OpenAI-compatible client for OpenResponses API
+        # The router endpoint handles provider routing via model:provider syntax
+        self.responses_client = AsyncOpenAI(
+            base_url=self.OPENRESPONSES_ROUTER_URL,
+            api_key=api_key,
         )
 
     async def _stream_completion_async(
@@ -196,3 +210,32 @@ class HuggingfaceProvider(AnyLLM):
             kwargs["limit"] = 20
         models_list = client.list_models(**kwargs)
         return self._convert_list_models_response(models_list)
+
+    async def _aresponses(
+        self, params: ResponsesParams, **kwargs: Any
+    ) -> Response | AsyncIterator[ResponseStreamEvent]:
+        """Call OpenResponses API via HuggingFace router.
+
+        The HuggingFace OpenResponses router supports provider routing via model identifiers.
+        Use the format 'model_id:provider' to route to specific inference providers
+        (e.g., 'moonshotai/Kimi-K2-Instruct:groq').
+
+        See: https://huggingface.co/docs/inference-providers/guides/responses-api
+        """
+        response = await self.responses_client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
+
+        if params.stream:
+            if not isinstance(response, AsyncStream):
+                msg = f"Expected streaming response but got: {type(response)}"
+                raise ValueError(msg)
+
+            async def stream_iterator() -> AsyncIterator[ResponseStreamEvent]:
+                async for event in response:
+                    yield event
+
+            return stream_iterator()
+
+        if not isinstance(response, Response):
+            msg = f"Responses API returned an unexpected type: {type(response)}"
+            raise ValueError(msg)
+        return response
