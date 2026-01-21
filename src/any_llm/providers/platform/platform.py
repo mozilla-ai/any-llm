@@ -320,7 +320,7 @@ class PlatformProvider(AnyLLM):
         exc_tb: TracebackType | None,
     ) -> None:
         """Async context manager exit - flushes remaining events.
-        
+
         This ensures usage events are sent even when exceptions occur during execution,
         preventing data loss from agent failures.
         """

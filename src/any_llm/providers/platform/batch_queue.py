@@ -183,7 +183,7 @@ class UsageEventBatchQueue:
 
     async def shutdown(self) -> None:
         """Shutdown the queue and flush remaining events.
-        
+
         This method ensures all pending events are sent before shutdown,
         even if errors occurred during processing.
         """
