@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 from openai import AsyncOpenAI
 from openai._streaming import AsyncStream
 from openai.types.responses import Response as OpenAIResponse
-from openresponses_types import Response, ResponsesParams, ResponseStreamEvent  # noqa: TC002
+from openresponses_types import CreateResponseBody, ResponseResource  # noqa: TC002
 
 from any_llm.any_llm import AnyLLM
 from any_llm.types.completion import (
@@ -214,8 +214,8 @@ class HuggingfaceProvider(AnyLLM):
         return self._convert_list_models_response(models_list)
 
     async def _aresponses(
-        self, params: ResponsesParams, **kwargs: Any
-    ) -> Response | AsyncIterator[ResponseStreamEvent]:
+        self, params: CreateResponseBody, **kwargs: Any
+    ) -> ResponseResource | AsyncIterator[dict[str, Any]]:
         """Call OpenResponses API via HuggingFace router.
 
         See: https://huggingface.co/docs/inference-providers/guides/responses-api
@@ -227,7 +227,7 @@ class HuggingfaceProvider(AnyLLM):
 
         if isinstance(response, AsyncStream):
 
-            async def stream_iterator() -> AsyncIterator[ResponseStreamEvent]:
+            async def stream_iterator() -> AsyncIterator[dict[str, Any]]:
                 async for event in response:
                     yield convert_stream_event(event)
 

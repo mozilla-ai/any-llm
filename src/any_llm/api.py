@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
 
-from openresponses_types import Response, ResponseInputParam, ResponseStreamEvent
+from openresponses_types import ResponseResource
 from pydantic import BaseModel
 
 from any_llm import AnyLLM
@@ -234,7 +234,7 @@ async def acompletion(
 
 def responses(
     model: str,
-    input_data: str | ResponseInputParam,
+    input_data: str | list[Any],
     *,
     provider: str | LLMProvider | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
@@ -252,12 +252,12 @@ def responses(
     text: Any | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> Response | Iterator[ResponseStreamEvent]:
+) -> ResponseResource | Iterator[dict[str, Any]]:
     """Create a response using the OpenAI-style Responses API.
 
-    This follows the OpenAI Responses API shape and returns the aliased
-    `openresponses_types.Response` type. If `stream=True`, an iterator of
-    `openresponses_types.ResponseStreamEvent` items is returned.
+    This follows the OpenAI Responses API shape and returns
+    `openresponses_types.ResponseResource`. If `stream=True`, an iterator of
+    streaming event dicts is returned.
 
     Args:
         model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
@@ -282,8 +282,8 @@ def responses(
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
     Returns:
-        Either a `Response` object (non-streaming) or an iterator of
-        `ResponseStreamEvent` (streaming).
+        Either a `ResponseResource` object (non-streaming) or an iterator of
+        streaming event dicts (streaming).
 
     Raises:
         NotImplementedError: If the selected provider does not support the Responses API.
@@ -321,7 +321,7 @@ def responses(
 
 async def aresponses(
     model: str,
-    input_data: str | ResponseInputParam,
+    input_data: str | list[Any],
     *,
     provider: str | LLMProvider | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
@@ -339,12 +339,12 @@ async def aresponses(
     text: Any | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> Response | AsyncIterator[ResponseStreamEvent]:
+) -> ResponseResource | AsyncIterator[dict[str, Any]]:
     """Create a response using the OpenAI-style Responses API.
 
-    This follows the OpenAI Responses API shape and returns the aliased
-    `openresponses_types.Response` type. If `stream=True`, an iterator of
-    `openresponses_types.ResponseStreamEvent` items is returned.
+    This follows the OpenAI Responses API shape and returns
+    `openresponses_types.ResponseResource`. If `stream=True`, an iterator of
+    streaming event dicts is returned.
 
     Args:
         model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
@@ -369,8 +369,8 @@ async def aresponses(
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
     Returns:
-        Either a `Response` object (non-streaming) or an iterator of
-        `ResponseStreamEvent` (streaming).
+        Either a `ResponseResource` object (non-streaming) or an iterator of
+        streaming event dicts (streaming).
 
     Raises:
         NotImplementedError: If the selected provider does not support the Responses API.

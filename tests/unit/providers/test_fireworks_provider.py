@@ -1,6 +1,6 @@
 from unittest.mock import Mock
 
-from openresponses_types import Response
+from openresponses_types import ResponseResource
 
 from any_llm.providers.fireworks.utils import extract_reasoning_from_response
 
@@ -14,7 +14,7 @@ def test_extract_reasoning_from_response_with_think_tags() -> None:
     mock_output_item = Mock()
     mock_output_item.content = [mock_content]
 
-    mock_response = Mock(spec=Response)
+    mock_response = Mock(spec=ResponseResource)
     mock_response.output = [mock_output_item]
 
     result = extract_reasoning_from_response(mock_response)
@@ -32,7 +32,7 @@ def test_extract_reasoning_from_response_without_think_tags() -> None:
     mock_output_item = Mock()
     mock_output_item.content = [mock_content]
 
-    mock_response = Mock(spec=Response)
+    mock_response = Mock(spec=ResponseResource)
     mock_response.output = [mock_output_item]
 
     result = extract_reasoning_from_response(mock_response)
@@ -49,7 +49,7 @@ def test_extract_reasoning_from_response_empty_reasoning() -> None:
     mock_output_item = Mock()
     mock_output_item.content = [mock_content]
 
-    mock_response = Mock(spec=Response)
+    mock_response = Mock(spec=ResponseResource)
     mock_response.output = [mock_output_item]
 
     result = extract_reasoning_from_response(mock_response)
@@ -60,7 +60,7 @@ def test_extract_reasoning_from_response_empty_reasoning() -> None:
 
 def test_extract_reasoning_from_response_empty_output() -> None:
     """Test that responses with empty output are handled gracefully."""
-    mock_response = Mock(spec=Response)
+    mock_response = Mock(spec=ResponseResource)
     mock_response.output = []
 
     result = extract_reasoning_from_response(mock_response)

@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 from openai.types.responses import Response as OpenAIResponse  # noqa: TC002
-from openresponses_types import Response, ResponseStreamEvent
+from openresponses_types import ResponseResource
 
 
 def _convert_usage(usage: dict[str, Any] | None) -> dict[str, Any]:
@@ -77,8 +77,8 @@ def _convert_text(text: dict[str, Any] | None) -> dict[str, Any]:
     return {"format": {"type": "text"}}
 
 
-def convert_response(openai_response: OpenAIResponse) -> Response:
-    """Convert OpenAI SDK Response to OpenResponses Response type."""
+def convert_response(openai_response: OpenAIResponse) -> ResponseResource:
+    """Convert OpenAI SDK Response to OpenResponses ResponseResource type."""
     data = openai_response.model_dump(warnings=False)
 
     # Handle fields that OpenResponses requires as non-nullable but OpenAI returns as None
@@ -126,11 +126,11 @@ def convert_response(openai_response: OpenAIResponse) -> Response:
     output = data.get("output") or []
     converted["output"] = [_convert_output_item(item) for item in output]
 
-    return Response.model_validate(converted)
+    return ResponseResource.model_validate(converted)
 
 
-def convert_stream_event(event: Any) -> ResponseStreamEvent:
-    """Convert OpenAI SDK stream event to OpenResponses stream event type."""
+def convert_stream_event(event: Any) -> dict[str, Any]:
+    """Convert OpenAI SDK stream event to dict for OpenResponses streaming."""
     if hasattr(event, "model_dump"):
         return event.model_dump()  # type: ignore[no-any-return]
     return event  # type: ignore[no-any-return]

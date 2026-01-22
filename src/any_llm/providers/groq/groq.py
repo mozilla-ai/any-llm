@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from openai import AsyncOpenAI, AsyncStream
 from openai.types.responses import Response as OpenAIResponse
-from openresponses_types import Response, ResponsesParams, ResponseStreamEvent  # noqa: TC002
+from openresponses_types import CreateResponseBody, ResponseResource  # noqa: TC002
 from pydantic import BaseModel
 
 from any_llm.any_llm import AnyLLM
@@ -151,8 +151,8 @@ class GroqProvider(AnyLLM):
         return self._convert_completion_response(response)
 
     async def _aresponses(
-        self, params: ResponsesParams, **kwargs: Any
-    ) -> Response | AsyncIterator[ResponseStreamEvent]:
+        self, params: CreateResponseBody, **kwargs: Any
+    ) -> ResponseResource | AsyncIterator[dict[str, Any]]:
         """Call Groq Responses API."""
         # Python SDK doesn't yet support it: https://community.groq.com/feature-requests-6/groq-python-sdk-support-for-responses-api-262
 
@@ -173,7 +173,7 @@ class GroqProvider(AnyLLM):
 
         if isinstance(response, AsyncStream):
 
-            async def stream_iterator() -> AsyncIterator[ResponseStreamEvent]:
+            async def stream_iterator() -> AsyncIterator[dict[str, Any]]:
                 async for event in response:
                     yield convert_stream_event(event)
 

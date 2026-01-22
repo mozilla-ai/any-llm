@@ -3,7 +3,7 @@ from typing import Any
 import httpx
 import pytest
 from openai import APIConnectionError
-from openresponses_types import Response
+from openresponses_types import ResponseResource
 
 from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
@@ -35,4 +35,4 @@ async def test_responses_async(
         if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise
-    assert isinstance(result, Response)
+    assert isinstance(result, ResponseResource)

@@ -10,7 +10,7 @@ from openai._types import NOT_GIVEN, Omit
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from openai.types.responses import Response as OpenAIResponse
-from openresponses_types import Response, ResponsesParams, ResponseStreamEvent
+from openresponses_types import CreateResponseBody, ResponseResource
 
 from any_llm.any_llm import AnyLLM
 from any_llm.logging import logger
@@ -164,8 +164,8 @@ class BaseOpenAIProvider(AnyLLM):
         return self._convert_completion_response_async(response)
 
     async def _aresponses(
-        self, params: ResponsesParams, **kwargs: Any
-    ) -> Response | AsyncIterator[ResponseStreamEvent]:
+        self, params: CreateResponseBody, **kwargs: Any
+    ) -> ResponseResource | AsyncIterator[dict[str, Any]]:
         """Call OpenAI Responses API and return OpenResponses types."""
         response = await self.client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
 
@@ -174,7 +174,7 @@ class BaseOpenAIProvider(AnyLLM):
 
         if isinstance(response, AsyncStream):
 
-            async def stream_iterator() -> AsyncIterator[ResponseStreamEvent]:
+            async def stream_iterator() -> AsyncIterator[dict[str, Any]]:
                 async for event in response:
                     yield convert_stream_event(event)
 

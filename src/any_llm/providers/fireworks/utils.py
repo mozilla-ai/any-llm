@@ -1,8 +1,8 @@
 # mypy: disable-error-code="union-attr"
-from openresponses_types import Response
+from openresponses_types import ResponseResource
 
 
-def extract_reasoning_from_response(response: Response) -> Response:
+def extract_reasoning_from_response(response: ResponseResource) -> ResponseResource:
     """Extract <think> content from Fireworks response.
 
     Fireworks Responses API may include reasoning content within <think></think> tags.
@@ -12,10 +12,10 @@ def extract_reasoning_from_response(response: Response) -> Response:
     top-level field. This function primarily cleans the text output.
 
     Args:
-        response: The Response object to process
+        response: The ResponseResource object to process
 
     Returns:
-        The modified Response object with reasoning extracted from text
+        The modified ResponseResource object with reasoning extracted from text
     """
     if not response.output:
         return response
