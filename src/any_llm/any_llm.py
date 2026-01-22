@@ -498,8 +498,8 @@ class AnyLLM(ABC):
         """Create a response using the OpenAI-style Responses API.
 
         This follows the OpenAI Responses API shape and returns the aliased
-        `any_llm.types.responses.Response` type. If `stream=True`, an iterator of
-        `any_llm.types.responses.ResponseStreamEvent` items is returned.
+        `openai.types.responses.Response` type. If `stream=True`, an iterator of
+        `openai.types.responses.ResponseStreamEvent` items is returned.
 
         Args:
             model: Model identifier for the chosen provider (e.g., model='gpt-4.1-mini' for LLMProvider.OPENAI).

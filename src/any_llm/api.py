@@ -257,8 +257,8 @@ def responses(
     """Create a response using the OpenAI-style Responses API.
 
     This follows the OpenAI Responses API shape and returns the aliased
-    `any_llm.types.responses.Response` type. If `stream=True`, an iterator of
-    `any_llm.types.responses.ResponseStreamEvent` items is returned.
+    `openai.types.responses.Response` type. If `stream=True`, an iterator of
+    `openai.types.responses.ResponseStreamEvent` items is returned.
 
     Args:
         model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
@@ -344,8 +344,8 @@ async def aresponses(
     """Create a response using the OpenAI-style Responses API.
 
     This follows the OpenAI Responses API shape and returns the aliased
-    `any_llm.types.responses.Response` type. If `stream=True`, an iterator of
-    `any_llm.types.responses.ResponseStreamEvent` items is returned.
+    `openai.types.responses.Response` type. If `stream=True`, an iterator of
+    `openai.types.responses.ResponseStreamEvent` items is returned.
 
     Args:
         model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
