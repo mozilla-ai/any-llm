@@ -1,6 +1,6 @@
 from unittest.mock import Mock
 
-from openai.types.responses import Response
+from openresponses_types import Response
 
 from any_llm.providers.fireworks.utils import extract_reasoning_from_response
 

@@ -7,8 +7,7 @@ import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from openai.types.responses import Response, ResponseStreamEvent
-from openresponses_types import ResponseInputParam, ResponsesParams
+from openresponses_types import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
 
 from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
@@ -498,8 +497,8 @@ class AnyLLM(ABC):
         """Create a response using the OpenAI-style Responses API.
 
         This follows the OpenAI Responses API shape and returns the aliased
-        `openai.types.responses.Response` type. If `stream=True`, an iterator of
-        `openai.types.responses.ResponseStreamEvent` items is returned.
+        `openresponses_types.Response` type. If `stream=True`, an iterator of
+        `openresponses_types.ResponseStreamEvent` items is returned.
 
         Args:
             model: Model identifier for the chosen provider (e.g., model='gpt-4.1-mini' for LLMProvider.OPENAI).

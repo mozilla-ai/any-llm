@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING, Any
 
 from openai import AsyncOpenAI
 from openai._streaming import AsyncStream
-from openai.types.responses import Response, ResponseStreamEvent
-from openresponses_types import ResponsesParams  # noqa: TC002 - used at runtime
+from openai.types.responses import Response as OpenAIResponse
+from openresponses_types import Response, ResponsesParams, ResponseStreamEvent
 
 from any_llm.any_llm import AnyLLM
 from any_llm.types.completion import (
@@ -221,14 +221,14 @@ class HuggingfaceProvider(AnyLLM):
         """
         response = await self.responses_client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
 
-        if isinstance(response, Response):
-            return response
+        if isinstance(response, OpenAIResponse):
+            return Response.model_validate(response.model_dump())
 
         if isinstance(response, AsyncStream):
 
             async def stream_iterator() -> AsyncIterator[ResponseStreamEvent]:
                 async for event in response:
-                    yield event
+                    yield event.model_dump()
 
             return stream_iterator()
 

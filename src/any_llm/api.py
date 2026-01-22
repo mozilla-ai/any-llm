@@ -1,8 +1,7 @@
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
 
-from openai.types.responses import Response, ResponseStreamEvent
-from openresponses_types import ResponseInputParam
+from openresponses_types import Response, ResponseInputParam, ResponseStreamEvent
 from pydantic import BaseModel
 
 from any_llm import AnyLLM
@@ -257,8 +256,8 @@ def responses(
     """Create a response using the OpenAI-style Responses API.
 
     This follows the OpenAI Responses API shape and returns the aliased
-    `openai.types.responses.Response` type. If `stream=True`, an iterator of
-    `openai.types.responses.ResponseStreamEvent` items is returned.
+    `openresponses_types.Response` type. If `stream=True`, an iterator of
+    `openresponses_types.ResponseStreamEvent` items is returned.
 
     Args:
         model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
@@ -344,8 +343,8 @@ async def aresponses(
     """Create a response using the OpenAI-style Responses API.
 
     This follows the OpenAI Responses API shape and returns the aliased
-    `openai.types.responses.Response` type. If `stream=True`, an iterator of
-    `openai.types.responses.ResponseStreamEvent` items is returned.
+    `openresponses_types.Response` type. If `stream=True`, an iterator of
+    `openresponses_types.ResponseStreamEvent` items is returned.
 
     Args:
         model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.

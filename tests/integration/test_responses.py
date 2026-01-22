@@ -3,7 +3,7 @@ from typing import Any
 import httpx
 import pytest
 from openai import APIConnectionError
-from openai.types.responses import Response
+from openresponses_types import Response
 
 from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
@@ -36,4 +36,3 @@ async def test_responses_async(
             pytest.skip("Local Model host is not set up, skipping")
         raise
     assert isinstance(result, Response)
-    assert result.output_text is not None

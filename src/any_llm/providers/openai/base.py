@@ -9,8 +9,8 @@ from openai._streaming import AsyncStream
 from openai._types import NOT_GIVEN, Omit
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
-from openai.types.responses import Response, ResponseStreamEvent
-from openresponses_types import ResponsesParams
+from openai.types.responses import Response as OpenAIResponse
+from openresponses_types import Response, ResponsesParams, ResponseStreamEvent
 
 from any_llm.any_llm import AnyLLM
 from any_llm.logging import logger
@@ -63,7 +63,7 @@ class BaseOpenAIProvider(AnyLLM):
         """Convert OpenAI response to OpenAI format (passthrough)."""
         if isinstance(response, OpenAIChatCompletion):
             return _convert_chat_completion(response)
-        # If it's already our ChatCompletion type, return it
+            # If it's already our ChatCompletion type, return it
         if isinstance(response, ChatCompletion):
             return response
         # Otherwise, validate it as our type
@@ -165,17 +165,17 @@ class BaseOpenAIProvider(AnyLLM):
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
-        """Call OpenAI Responses API."""
+        """Call OpenAI Responses API and return OpenResponses types."""
         response = await self.client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
 
-        if isinstance(response, Response):
-            return response
+        if isinstance(response, OpenAIResponse):
+            return Response.model_validate(response.model_dump())
 
         if isinstance(response, AsyncStream):
 
             async def stream_iterator() -> AsyncIterator[ResponseStreamEvent]:
                 async for event in response:
-                    yield event
+                    yield event.model_dump()
 
             return stream_iterator()
 
