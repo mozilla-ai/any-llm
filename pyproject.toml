@@ -11,6 +11,7 @@ version = "0.0.0-dev" # There is a regex in the release.yaml file that looks for
 dependencies = [
   "pydantic>2,<3",
   "openai>=1.99.3",
+  "openresponses-types>=2.3.0",
   "rich",
   "httpx",
 ]
@@ -230,17 +231,6 @@ omit = [
   "tests/"
 ]
 
-[tool.datamodel-codegen]
-input = "src/any_llm/types/.openresponses/openapi.json"
-input-file-type = "openapi"
-output = "src/any_llm/types/openresponses_generated.py"
-output-model-type = "pydantic_v2.BaseModel"
-use-annotated = true
-field-constraints = true
-target-python-version = "3.11"
-use-double-quotes = true
-collapse-root-models = true
-
 [dependency-groups]
 dev = [
   { include-group = "docs" },
@@ -264,7 +254,6 @@ lint = [
   "mypy",
   "types-aiofiles",
   "types-pyyaml",
-  "datamodel-code-generator[http]>=0.26.0",
 ]
 
 tests = [

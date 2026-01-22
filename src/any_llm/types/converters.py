@@ -1,8 +1,8 @@
 """Converters between OpenAI SDK types and OpenResponses spec types.
 
 This module provides conversion functions to translate between OpenAI SDK
-response types and the OpenResponses specification types defined in
-responses.py (auto-generated from the OpenResponses spec).
+response types and the OpenResponses specification types from the
+openresponses-types package.
 
 This allows the library to use pure OpenResponses types in its public API
 while still using the OpenAI SDK internally for provider implementations.
@@ -18,8 +18,7 @@ from typing import Any
 
 from openai.types.responses import Response as OpenAIResponse
 from openai.types.responses import ResponseStreamEvent as OpenAIResponseStreamEvent
-
-from any_llm.types.responses import (
+from openresponses_types.types import (
     Error,
     FunctionCall,
     FunctionCallOutput,
