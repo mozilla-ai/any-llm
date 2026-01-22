@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import AsyncIterator, Sequence
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from openai import AsyncOpenAI
 from openai._streaming import AsyncStream
@@ -24,7 +24,11 @@ from any_llm.types.completion import (
     ReasoningEffort,
 )
 from any_llm.types.model import Model
-from any_llm.types.responses import convert_response, convert_stream_event
+
+if TYPE_CHECKING:
+    from openai.types.responses import ResponseStreamEvent as OpenAIResponseStreamEvent
+else:
+    OpenAIResponseStreamEvent = None
 
 
 class BaseOpenAIProvider(AnyLLM):
@@ -167,16 +171,18 @@ class BaseOpenAIProvider(AnyLLM):
         self, params: CreateResponseBody, **kwargs: Any
     ) -> ResponseResource | AsyncIterator[dict[str, Any]]:
         """Call OpenAI Responses API and return OpenResponses types."""
-        response = await self.client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
+        response: OpenAIResponse | AsyncStream[OpenAIResponseStreamEvent] = await self.client.responses.create(
+            **params.model_dump(exclude_none=True), **kwargs
+        )
 
         if isinstance(response, OpenAIResponse):
-            return convert_response(response)
+            return ResponseResource.model_validate(response.model_dump())
 
         if isinstance(response, AsyncStream):
 
             async def stream_iterator() -> AsyncIterator[dict[str, Any]]:
                 async for event in response:
-                    yield convert_stream_event(event)
+                    yield event.model_dump()
 
             return stream_iterator()
 

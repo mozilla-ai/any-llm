@@ -2,14 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from openai import AsyncOpenAI, AsyncStream
-from openai.types.responses import Response as OpenAIResponse
-from openresponses_types import CreateResponseBody, ResponseResource  # noqa: TC002
 from pydantic import BaseModel
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.types.responses import convert_response, convert_stream_event
 
 if TYPE_CHECKING:
     from any_llm.types.completion import CreateEmbeddingResponse
@@ -46,7 +42,7 @@ class GroqProvider(AnyLLM):
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
-    SUPPORTS_RESPONSES = True
+    SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
@@ -150,38 +146,125 @@ class GroqProvider(AnyLLM):
 
         return self._convert_completion_response(response)
 
-    async def _aresponses(
-        self, params: CreateResponseBody, **kwargs: Any
-    ) -> ResponseResource | AsyncIterator[dict[str, Any]]:
-        """Call Groq Responses API."""
-        # Python SDK doesn't yet support it: https://community.groq.com/feature-requests-6/groq-python-sdk-support-for-responses-api-262
-
-        if params.max_tool_calls is not None:
-            parameter = "max_tool_calls"
-            raise UnsupportedParameterError(parameter, self.PROVIDER_NAME)
-
-        client = AsyncOpenAI(
-            base_url="https://api.groq.com/openai/v1",
-            api_key=self.api_key,
-            **self.kwargs,
-        )
-
-        response = await client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
-
-        if isinstance(response, OpenAIResponse):
-            return convert_response(response)
-
-        if isinstance(response, AsyncStream):
-
-            async def stream_iterator() -> AsyncIterator[dict[str, Any]]:
-                async for event in response:
-                    yield convert_stream_event(event)
-
-            return stream_iterator()
-
-        msg = f"Responses API returned an unexpected type: {type(response)}"
-        raise ValueError(msg)
-
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(models_list)
+
+    # Groq is not compliant with OpenResponses spec
+
+
+"""
+>           return ResponseResource.model_validate(response.model_dump())
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 36 validation errors for ResponseResource
+E           output.1.Message.content.0.InputTextContent.type
+E             Input should be 'input_text' [type=literal_error, input_value='output_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.Message.content.0.OutputTextContent.logprobs
+E             Input should be a valid list [type=list_type, input_value=None, input_type=NoneType]
+E               For further information visit https://errors.pydantic.dev/2.12/v/list_type
+E           output.1.Message.content.0.TextContent.type
+E             Input should be 'text' [type=literal_error, input_value='output_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.Message.content.0.SummaryTextContent.type
+E             Input should be 'summary_text' [type=literal_error, input_value='output_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.Message.content.0.ReasoningTextContent.type
+E             Input should be 'reasoning_text' [type=literal_error, input_value='output_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.Message.content.0.RefusalContent.type
+E             Input should be 'refusal' [type=literal_error, input_value='output_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.Message.content.0.RefusalContent.refusal
+E             Field required [type=missing, input_value={'annotations': [], 'text...text', 'logprobs': None}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+E           output.1.Message.content.0.InputImageContent.type
+E             Input should be 'input_image' [type=literal_error, input_value='output_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.Message.content.0.InputImageContent.image_url
+E             Field required [type=missing, input_value={'annotations': [], 'text...text', 'logprobs': None}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+E           output.1.Message.content.0.InputImageContent.detail
+E             Field required [type=missing, input_value={'annotations': [], 'text...text', 'logprobs': None}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+E           output.1.Message.content.0.InputFileContent.type
+E             Input should be 'input_file' [type=literal_error, input_value='output_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.Message.content.0.InputVideoContent.type
+E             Input should be 'input_video' [type=literal_error, input_value='output_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.Message.content.0.InputVideoContent.video_url
+E             Field required [type=missing, input_value={'annotations': [], 'text...text', 'logprobs': None}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+E           output.1.FunctionCall.type
+E             Input should be 'function_call' [type=literal_error, input_value='message', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.FunctionCall.call_id
+E             Field required [type=missing, input_value={'id': 'msg_01kfktfn0tefy...ted', 'type': 'message'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+E           output.1.FunctionCall.name
+E             Field required [type=missing, input_value={'id': 'msg_01kfktfn0tefy...ted', 'type': 'message'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+E           output.1.FunctionCall.arguments
+E             Field required [type=missing, input_value={'id': 'msg_01kfktfn0tefy...ted', 'type': 'message'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+E           output.1.FunctionCallOutput.type
+E             Input should be 'function_call_output' [type=literal_error, input_value='message', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.FunctionCallOutput.call_id
+E             Field required [type=missing, input_value={'id': 'msg_01kfktfn0tefy...ted', 'type': 'message'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+E           output.1.FunctionCallOutput.output
+E             Field required [type=missing, input_value={'id': 'msg_01kfktfn0tefy...ted', 'type': 'message'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+E           output.1.ReasoningBody.type
+E             Input should be 'reasoning' [type=literal_error, input_value='message', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.ReasoningBody.content.0.InputTextContent.type
+E             Input should be 'input_text' [type=literal_error, input_value='output_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.ReasoningBody.content.0.OutputTextContent.logprobs
+E             Input should be a valid list [type=list_type, input_value=None, input_type=NoneType]
+E               For further information visit https://errors.pydantic.dev/2.12/v/list_type
+E           output.1.ReasoningBody.content.0.TextContent.type
+E             Input should be 'text' [type=literal_error, input_value='output_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.ReasoningBody.content.0.SummaryTextContent.type
+E             Input should be 'summary_text' [type=literal_error, input_value='output_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.ReasoningBody.content.0.ReasoningTextContent.type
+E             Input should be 'reasoning_text' [type=literal_error, input_value='output_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.ReasoningBody.content.0.RefusalContent.type
+E             Input should be 'refusal' [type=literal_error, input_value='output_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.ReasoningBody.content.0.RefusalContent.refusal
+E             Field required [type=missing, input_value={'annotations': [], 'text...text', 'logprobs': None}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+E           output.1.ReasoningBody.content.0.InputImageContent.type
+E             Input should be 'input_image' [type=literal_error, input_value='output_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.ReasoningBody.content.0.InputImageContent.image_url
+E             Field required [type=missing, input_value={'annotations': [], 'text...text', 'logprobs': None}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+E           output.1.ReasoningBody.content.0.InputImageContent.detail
+E             Field required [type=missing, input_value={'annotations': [], 'text...text', 'logprobs': None}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+E           output.1.ReasoningBody.content.0.InputFileContent.type
+E             Input should be 'input_file' [type=literal_error, input_value='output_text', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.12/v/literal_error
+E           output.1.ReasoningBody.summary
+E             Field required [type=missing, input_value={'id': 'msg_01kfktfn0tefy...ted', 'type': 'message'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+E           presence_penalty
+E             Field required [type=missing, input_value={'id': 'resp_01kfktfn0tef...': None, 'store': False}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+E           frequency_penalty
+E             Field required [type=missing, input_value={'id': 'resp_01kfktfn0tef...': None, 'store': False}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.12/v/missing
+E           top_logprobs
+E             Input should be a valid integer [type=int_type, input_value=None, input_type=NoneType]
+E               For further information visit https://errors.pydantic.dev/2.12/v/int_type
+
+src/any_llm/providers/groq/groq.py:172: ValidationError
+"""

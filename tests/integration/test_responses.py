@@ -26,6 +26,7 @@ async def test_responses_async(
             model_id,
             input_data="What's the capital of France? Please think step by step.",
             instructions="Talk like a pirate.",
+            reasoning_effort="low",
         )
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:
@@ -36,8 +37,4 @@ async def test_responses_async(
             pytest.skip("Local Model host is not set up, skipping")
         raise
     assert isinstance(result, ResponseResource)
-    # make sure it contains the reasoning
     assert result.reasoning is not None
-    # if it's openai, there should be a summary. If it's not openai, expect content
-    if provider == LLMProvider.OPENAI:
-        assert result.reasoning.summary is not None

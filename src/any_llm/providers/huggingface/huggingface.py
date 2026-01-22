@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING, Any
 from openai import AsyncOpenAI
 from openai._streaming import AsyncStream
 from openai.types.responses import Response as OpenAIResponse
-from openresponses_types import CreateResponseBody, ResponseResource  # noqa: TC002
+from openai.types.responses import ResponseStreamEvent as OpenAIResponseStreamEvent
+from openresponses_types import CreateResponseBody, ResponseResource
 
 from any_llm.any_llm import AnyLLM
 from any_llm.types.completion import (
@@ -18,7 +19,6 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     Reasoning,
 )
-from any_llm.types.responses import convert_response, convert_stream_event
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -220,16 +220,18 @@ class HuggingfaceProvider(AnyLLM):
 
         See: https://huggingface.co/docs/inference-providers/guides/responses-api
         """
-        response = await self.responses_client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
+        response: (
+            OpenAIResponse | AsyncStream[OpenAIResponseStreamEvent]
+        ) = await self.responses_client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
 
         if isinstance(response, OpenAIResponse):
-            return convert_response(response)
+            return ResponseResource.model_validate(response.model_dump())
 
         if isinstance(response, AsyncStream):
 
             async def stream_iterator() -> AsyncIterator[dict[str, Any]]:
                 async for event in response:
-                    yield convert_stream_event(event)
+                    yield event.model_dump()
 
             return stream_iterator()
 
