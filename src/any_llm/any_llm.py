@@ -532,15 +532,15 @@ class AnyLLM(ABC):
 
         params = CreateResponseBody(
             model=model,
-            input=input_data,
-            tools=prepared_tools,
-            tool_choice=tool_choice,
-            max_output_tokens=max_output_tokens,
+            input=input_data,  # type: ignore[arg-type]
+            tools=prepared_tools,  # type: ignore[arg-type]
+            tool_choice=tool_choice,  # type: ignore[arg-type]
+            max_output_tokens=max_output_tokens,  # type: ignore[arg-type]
             temperature=temperature,
             top_p=top_p,
             stream=stream,
             instructions=instructions,
-            max_tool_calls=max_tool_calls,
+            max_tool_calls=max_tool_calls,  # type: ignore[arg-type]
             parallel_tool_calls=bool(parallel_tool_calls),
             reasoning=reasoning,
             text=text,

@@ -1,13 +1,4 @@
-from collections.abc import AsyncIterator
-from typing import Any
-
-from openai import AsyncStream
-from openresponses_types import CreateResponseBody, ResponseResource
-
 from any_llm.providers.openai.base import BaseOpenAIProvider
-
-from .utils import extract_reasoning_from_response
-
 
 class FireworksProvider(BaseOpenAIProvider):
     PROVIDER_NAME = "fireworks"
@@ -22,12 +13,3 @@ class FireworksProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
-
-    async def _aresponses(
-        self, params: CreateResponseBody, **kwargs: Any
-    ) -> ResponseResource | AsyncIterator[dict[str, Any]]:
-        """Call Fireworks Responses API and extract reasoning from think tags."""
-        response = await super()._aresponses(params, **kwargs)
-        if isinstance(response, ResponseResource) and not isinstance(response, AsyncStream):
-            return extract_reasoning_from_response(response)
-        return response

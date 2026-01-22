@@ -36,3 +36,8 @@ async def test_responses_async(
             pytest.skip("Local Model host is not set up, skipping")
         raise
     assert isinstance(result, ResponseResource)
+    # make sure it contains the reasoning
+    assert result.reasoning is not None
+    # if it's openai, there should be a summary. If it's not openai, expect content
+    if provider == LLMProvider.OPENAI:
+        assert result.reasoning.summary is not None
