@@ -24,6 +24,7 @@ from any_llm.types.completion import (
     ReasoningEffort,
 )
 from any_llm.types.model import Model
+from any_llm.types.responses import convert_response, convert_stream_event
 
 
 class BaseOpenAIProvider(AnyLLM):
@@ -169,13 +170,13 @@ class BaseOpenAIProvider(AnyLLM):
         response = await self.client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
 
         if isinstance(response, OpenAIResponse):
-            return Response.model_validate(response.model_dump())
+            return convert_response(response)
 
         if isinstance(response, AsyncStream):
 
             async def stream_iterator() -> AsyncIterator[ResponseStreamEvent]:
                 async for event in response:
-                    yield event.model_dump()
+                    yield convert_stream_event(event)
 
             return stream_iterator()
 

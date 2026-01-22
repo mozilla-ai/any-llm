@@ -4,11 +4,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 from openai import AsyncOpenAI, AsyncStream
 from openai.types.responses import Response as OpenAIResponse
-from openresponses_types import Response, ResponsesParams, ResponseStreamEvent
+from openresponses_types import Response, ResponsesParams, ResponseStreamEvent  # noqa: TC002
 from pydantic import BaseModel
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.types.responses import convert_response, convert_stream_event
 
 if TYPE_CHECKING:
     from any_llm.types.completion import CreateEmbeddingResponse
@@ -168,13 +169,13 @@ class GroqProvider(AnyLLM):
         response = await client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
 
         if isinstance(response, OpenAIResponse):
-            return Response.model_validate(response.model_dump())
+            return convert_response(response)
 
         if isinstance(response, AsyncStream):
 
             async def stream_iterator() -> AsyncIterator[ResponseStreamEvent]:
                 async for event in response:
-                    yield event.model_dump()
+                    yield convert_stream_event(event)
 
             return stream_iterator()
 
