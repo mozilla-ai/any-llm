@@ -10,7 +10,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import logging
+import os
 import re
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -25,6 +27,7 @@ from nacl.bindings import (
 
 from any_llm.any_llm import AnyLLM
 from any_llm.errors import AnyLLMError, AuthenticationError
+from any_llm.providers import get_provider_class
 from any_llm.types import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -192,8 +195,11 @@ def decrypt_sealed_box(encrypted_data_base64: str, private_key: bytes) -> str:
         msg = f"Failed to decode encrypted data: {e}"
         raise DecryptionError(message=msg) from e
 
-    if len(encrypted_data) < 32:
-        raise DecryptionError
+    # Sealed box minimum size: 32 (ephemeral public key) + 16 (auth tag) = 48 bytes
+    min_sealed_box_size = 48
+    if len(encrypted_data) < min_sealed_box_size:
+        msg = f"Invalid sealed box: must be at least {min_sealed_box_size} bytes, got {len(encrypted_data)}"
+        raise DecryptionError(message=msg)
 
     # Split sealed box components
     ephemeral_public_key = encrypted_data[:32]
@@ -285,22 +291,26 @@ class PlatformClient:
 
         try:
             response = await client.post(url, json={"encryption_key": public_key})
-            if response.status_code == 400:
-                msg = "Invalid public key format"
-                raise ChallengeError(message=msg)
-            if response.status_code == 404:
-                msg = "No project found for the provided public key"
-                raise ChallengeError(message=msg)
-            response.raise_for_status()
-            data = response.json()
-            encrypted_challenge: str = data["encrypted_challenge"]
-            return encrypted_challenge
-        except httpx.HTTPStatusError as e:
-            msg = f"Challenge creation failed: {e}"
-            raise ChallengeError(message=msg) from e
         except httpx.RequestError as e:
             msg = f"Network error during challenge creation: {e}"
             raise ChallengeError(message=msg) from e
+
+        if response.status_code == 400:
+            msg = "Invalid public key format"
+            raise ChallengeError(message=msg)
+        if response.status_code == 404:
+            msg = "No project found for the provided public key"
+            raise ChallengeError(message=msg)
+
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            msg = f"Challenge creation failed: {e}"
+            raise ChallengeError(message=msg) from e
+
+        data = response.json()
+        encrypted_challenge: str = data["encrypted_challenge"]
+        return encrypted_challenge
 
     async def _request_token(self, solved_challenge: str) -> tuple[str, int]:
         """Request access token with solved challenge.
@@ -576,8 +586,6 @@ class PlatformProvider(AnyLLM):
 
         """
         if api_key is None:
-            import os
-
             api_key = os.environ.get(ENV_VAR_NAME)
 
         if api_key is None:
@@ -617,9 +625,6 @@ class PlatformProvider(AnyLLM):
             # Store tracking identifiers
             self._provider_key_id = result.provider_key_id
             self._project_id = result.project_id
-
-            # Import provider class dynamically
-            from any_llm.providers import get_provider_class
 
             provider_class = get_provider_class(provider_name)
 
@@ -737,8 +742,6 @@ class PlatformProvider(AnyLLM):
             ChatCompletion response object.
 
         """
-        import time
-
         start_time = time.time()
 
         # Ensure provider is initialized
@@ -832,8 +835,6 @@ class PlatformProvider(AnyLLM):
             ChatCompletionChunk objects.
 
         """
-        import time
-
         start_time = time.time()
         first_token_time: float | None = None
         last_chunk: ChatCompletionChunk | None = None

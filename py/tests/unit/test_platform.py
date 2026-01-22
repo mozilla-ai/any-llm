@@ -6,8 +6,10 @@ import pytest
 
 from any_llm.providers.platform import (
     ANY_LLM_KEY_PATTERN,
+    DecryptionError,
     InvalidKeyFormatError,
     KeyComponents,
+    decrypt_sealed_box,
     is_platform_key,
     load_private_key,
     parse_any_llm_key,
@@ -133,3 +135,26 @@ class TestKeyPattern:
         """Test that pattern does not match key with missing components."""
         assert ANY_LLM_KEY_PATTERN.match("ANY.v1.kid-key") is None
         assert ANY_LLM_KEY_PATTERN.match("ANY.v1.kid.fp") is None
+
+
+class TestDecryptSealedBox:
+    """Tests for decrypt_sealed_box function."""
+
+    def test_decrypt_sealed_box_too_short(self) -> None:
+        """Test decrypting sealed box that's too short raises DecryptionError."""
+        # Create a 32-byte private key
+        private_key = b"0" * 32
+
+        # Create data that's less than 48 bytes (minimum for sealed box)
+        short_data = b"0" * 47
+        short_data_b64 = base64.b64encode(short_data).decode("utf-8")
+
+        with pytest.raises(DecryptionError):
+            decrypt_sealed_box(short_data_b64, private_key)
+
+    def test_decrypt_sealed_box_invalid_base64(self) -> None:
+        """Test decrypting sealed box with invalid base64 raises DecryptionError."""
+        private_key = b"0" * 32
+
+        with pytest.raises(DecryptionError):
+            decrypt_sealed_box("not-valid-base64!!!", private_key)
