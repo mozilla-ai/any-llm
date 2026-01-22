@@ -38,6 +38,19 @@ const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
 const PROVIDER_NAME = "anthropic";
 const DEFAULT_MAX_TOKENS = 8192;
 
+/**
+ * Generate a unique ID using crypto.randomUUID().
+ * This is safe to use in Node.js 18+ which is the minimum required version.
+ */
+function generateUUID(): string {
+  return crypto.randomUUID();
+}
+
+/**
+ * Extended ToolChoice type that includes parallel tool use option
+ */
+type ExtendedToolChoice = ToolChoice & { disable_parallel_tool_use?: boolean };
+
 interface StreamState {
   messageId: string;
   currentContentBlocks: ContentBlockState[];
@@ -212,8 +225,8 @@ export class AnthropicProvider extends AnyLLM {
 
     // Convert parallel_tool_calls (inverted logic)
     if (params.parallel_tool_calls !== undefined && result.tool_choice) {
-      (result.tool_choice as ToolChoice & { disable_parallel_tool_use?: boolean }).disable_parallel_tool_use = 
-        !params.parallel_tool_calls;
+      const toolChoice = result.tool_choice as ExtendedToolChoice;
+      toolChoice.disable_parallel_tool_use = !params.parallel_tool_calls;
     }
 
     return result;
@@ -351,7 +364,7 @@ export class AnthropicProvider extends AnyLLM {
 
         contentBlocks.push({
           type: "tool_use",
-          id: (tc.id as string) ?? crypto.randomUUID(),
+          id: (tc.id as string) ?? generateUUID(),
           name: func.name,
           input: args,
         });
@@ -651,7 +664,7 @@ export class AnthropicProvider extends AnyLLM {
     state: StreamState,
   ): ChatCompletionChunk | null {
     const chunkId =
-      state.messageId || `chatcmpl-${crypto.randomUUID().slice(0, 8)}`;
+      state.messageId || `chatcmpl-${generateUUID().slice(0, 8)}`;
 
     if (event.type === "message_start") {
       const msgEvent = event as MessageStartEvent;
