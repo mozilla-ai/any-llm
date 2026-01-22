@@ -1,6 +1,8 @@
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
 
+from openai.types.responses import Response, ResponseStreamEvent
+from openresponses_types import ResponseInputParam
 from pydantic import BaseModel
 
 from any_llm import AnyLLM
@@ -14,7 +16,6 @@ from any_llm.types.completion import (
     ReasoningEffort,
 )
 from any_llm.types.model import Model
-from any_llm.types.responses_helpers import Response, ResponseInputParam, ResponseStreamEvent
 from any_llm.utils.decorators import BATCH_API_EXPERIMENTAL_MESSAGE, experimental
 
 

@@ -218,6 +218,3 @@ __marimo__/
 service_account.json
 config.yml
 gateway.db
-
-# OpenResponses spec cache (generated file is tracked, cache is not)
-src/any_llm/types/.openresponses/

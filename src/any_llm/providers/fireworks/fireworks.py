@@ -1,8 +1,10 @@
 from collections.abc import AsyncIterator
 from typing import Any
 
+from openai.types.responses import Response, ResponseStreamEvent
+from openresponses_types import ResponsesParams
+
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.types.responses_helpers import Response, ResponsesParams, ResponseStreamEvent
 
 from .utils import extract_reasoning_from_response
 

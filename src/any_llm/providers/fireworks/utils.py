@@ -1,5 +1,5 @@
 # mypy: disable-error-code="union-attr"
-from any_llm.types.responses_helpers import Response
+from openai.types.responses import Response
 
 
 def extract_reasoning_from_response(response: Response) -> Response:

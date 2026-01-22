@@ -3,16 +3,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from openai import AsyncOpenAI, AsyncStream
-from openai.types.responses import Response as OpenAIResponse
+from openai.types.responses import Response, ResponseStreamEvent
+from openresponses_types import ResponsesParams  # noqa: TC002 - used at runtime
 from pydantic import BaseModel
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.types.converters import convert_openai_response_to_openresponses, convert_openai_stream_event
 
 if TYPE_CHECKING:
     from any_llm.types.completion import CreateEmbeddingResponse
-    from any_llm.types.responses_helpers import Response, ResponsesParams, ResponseStreamEvent
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -153,7 +152,7 @@ class GroqProvider(AnyLLM):
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
-        """Call Groq Responses API and convert to OpenResponses types."""
+        """Call Groq Responses API."""
         # Python SDK doesn't yet support it: https://community.groq.com/feature-requests-6/groq-python-sdk-support-for-responses-api-262
 
         if params.max_tool_calls is not None:
@@ -168,14 +167,14 @@ class GroqProvider(AnyLLM):
 
         response = await client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
 
-        if isinstance(response, OpenAIResponse):
-            return convert_openai_response_to_openresponses(response)
+        if isinstance(response, Response):
+            return response
 
         if isinstance(response, AsyncStream):
 
             async def stream_iterator() -> AsyncIterator[ResponseStreamEvent]:
                 async for event in response:
-                    yield convert_openai_stream_event(event)
+                    yield event
 
             return stream_iterator()
 

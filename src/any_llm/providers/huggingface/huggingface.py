@@ -4,7 +4,8 @@ from typing import TYPE_CHECKING, Any
 
 from openai import AsyncOpenAI
 from openai._streaming import AsyncStream
-from openai.types.responses import Response as OpenAIResponse
+from openai.types.responses import Response, ResponseStreamEvent
+from openresponses_types import ResponsesParams  # noqa: TC002 - used at runtime
 
 from any_llm.any_llm import AnyLLM
 from any_llm.types.completion import (
@@ -17,7 +18,6 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     Reasoning,
 )
-from any_llm.types.converters import convert_openai_response_to_openresponses, convert_openai_stream_event
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -44,7 +44,6 @@ if TYPE_CHECKING:
     )
 
     from any_llm.types.model import Model
-    from any_llm.types.responses_helpers import Response, ResponsesParams, ResponseStreamEvent
 
 
 class HuggingfaceProvider(AnyLLM):
@@ -216,20 +215,20 @@ class HuggingfaceProvider(AnyLLM):
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
-        """Call OpenResponses API via HuggingFace router and convert to OpenResponses types.
+        """Call OpenResponses API via HuggingFace router.
 
         See: https://huggingface.co/docs/inference-providers/guides/responses-api
         """
         response = await self.responses_client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
 
-        if isinstance(response, OpenAIResponse):
-            return convert_openai_response_to_openresponses(response)
+        if isinstance(response, Response):
+            return response
 
         if isinstance(response, AsyncStream):
 
             async def stream_iterator() -> AsyncIterator[ResponseStreamEvent]:
                 async for event in response:
-                    yield convert_openai_stream_event(event)
+                    yield event
 
             return stream_iterator()
 
