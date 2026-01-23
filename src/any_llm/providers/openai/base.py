@@ -169,7 +169,7 @@ class BaseOpenAIProvider(AnyLLM):
 
     async def _aresponses(
         self, params: CreateResponseBody, **kwargs: Any
-    ) -> ResponseResource | AsyncIterator[dict[str, Any]]:
+    ) -> ResponseResource | OpenAIResponse | AsyncIterator[dict[str, Any]]:
         """Call OpenAI Responses API and return OpenResponses types."""
         response: OpenAIResponse | AsyncStream[OpenAIResponseStreamEvent] = await self.client.responses.create(
             **params.model_dump(exclude_none=True), **kwargs

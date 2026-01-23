@@ -7,6 +7,7 @@ import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from openai.types.responses import Response
 from openresponses_types import CreateResponseBody, ResponseResource
 
 from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider
@@ -464,14 +465,14 @@ class AnyLLM(ABC):
         msg = "Subclasses must implement _acompletion method"
         raise NotImplementedError(msg)
 
-    def responses(self, **kwargs: Any) -> ResponseResource | Iterator[dict[str, Any]]:
+    def responses(self, **kwargs: Any) -> ResponseResource | Response | Iterator[dict[str, Any]]:
         """Create a response synchronously.
 
         See [AnyLLM.aresponses][any_llm.any_llm.AnyLLM.aresponses]
         """
         allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
         response = run_async_in_sync(self.aresponses(**kwargs), allow_running_loop=allow_running_loop)
-        if isinstance(response, ResponseResource):
+        if isinstance(response, (ResponseResource, Response)):
             return response
         return async_iter_to_sync_iter(response)
 
@@ -493,12 +494,13 @@ class AnyLLM(ABC):
         reasoning: Any | None = None,
         text: Any | None = None,
         **kwargs: Any,
-    ) -> ResponseResource | AsyncIterator[dict[str, Any]]:
+    ) -> ResponseResource | Response | AsyncIterator[dict[str, Any]]:
         """Create a response using the OpenAI-style Responses API.
 
-        This follows the OpenAI Responses API shape and returns
-        `openresponses_types.ResponseResource`. If `stream=True`, an iterator of
-        streaming event dicts is returned.
+        This follows the OpenAI Responses API shape and returns either
+        `openresponses_types.ResponseResource` (for OpenResponses-compliant providers)
+        or `openai.types.responses.Response` (for providers not yet fully compliant).
+        If `stream=True`, an iterator of streaming event dicts is returned.
 
         Args:
             model: Model identifier for the chosen provider (e.g., model='gpt-4.1-mini' for LLMProvider.OPENAI).
@@ -519,7 +521,8 @@ class AnyLLM(ABC):
             **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
         Returns:
-            Either a `ResponseResource` object (non-streaming) or an iterator of
+            Either a `ResponseResource` object (OpenResponses-compliant providers),
+            a `Response` object (non-compliant providers), or an iterator of
             streaming event dicts (streaming).
 
         Raises:
@@ -551,7 +554,7 @@ class AnyLLM(ABC):
 
     async def _aresponses(
         self, params: CreateResponseBody, **kwargs: Any
-    ) -> ResponseResource | AsyncIterator[dict[str, Any]]:
+    ) -> ResponseResource | Response | AsyncIterator[dict[str, Any]]:
         if not self.SUPPORTS_RESPONSES:
             msg = "Provider doesn't support responses."
             raise NotImplementedError(msg)

@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
 
+from openai.types.responses import Response
 from openresponses_types import ResponseResource
 from pydantic import BaseModel
 
@@ -252,12 +253,13 @@ def responses(
     text: Any | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> ResponseResource | Iterator[dict[str, Any]]:
+) -> ResponseResource | Response | Iterator[dict[str, Any]]:
     """Create a response using the OpenAI-style Responses API.
 
-    This follows the OpenAI Responses API shape and returns
-    `openresponses_types.ResponseResource`. If `stream=True`, an iterator of
-    streaming event dicts is returned.
+    This follows the OpenAI Responses API shape and returns either
+    `openresponses_types.ResponseResource` (for OpenResponses-compliant providers)
+    or `openai.types.responses.Response` (for providers not yet fully compliant).
+    If `stream=True`, an iterator of streaming event dicts is returned.
 
     Args:
         model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
@@ -282,7 +284,8 @@ def responses(
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
     Returns:
-        Either a `ResponseResource` object (non-streaming) or an iterator of
+        Either a `ResponseResource` object (OpenResponses-compliant providers),
+        a `Response` object (non-compliant providers), or an iterator of
         streaming event dicts (streaming).
 
     Raises:
@@ -339,12 +342,13 @@ async def aresponses(
     text: Any | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> ResponseResource | AsyncIterator[dict[str, Any]]:
+) -> ResponseResource | Response | AsyncIterator[dict[str, Any]]:
     """Create a response using the OpenAI-style Responses API.
 
-    This follows the OpenAI Responses API shape and returns
-    `openresponses_types.ResponseResource`. If `stream=True`, an iterator of
-    streaming event dicts is returned.
+    This follows the OpenAI Responses API shape and returns either
+    `openresponses_types.ResponseResource` (for OpenResponses-compliant providers)
+    or `openai.types.responses.Response` (for providers not yet fully compliant).
+    If `stream=True`, an iterator of streaming event dicts is returned.
 
     Args:
         model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
@@ -369,7 +373,8 @@ async def aresponses(
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
     Returns:
-        Either a `ResponseResource` object (non-streaming) or an iterator of
+        Either a `ResponseResource` object (OpenResponses-compliant providers),
+        a `Response` object (non-compliant providers), or an iterator of
         streaming event dicts (streaming).
 
     Raises:
