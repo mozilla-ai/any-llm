@@ -1,11 +1,7 @@
 import os
-from collections.abc import AsyncIterator
 from typing import Any
 
-from openai import AsyncAzureOpenAI, AsyncStream
-from openai.types.responses import Response as OpenAIResponse
-from openai.types.responses import ResponseStreamEvent as OpenAIResponseStreamEvent
-from openresponses_types import CreateResponseBody, ResponseResource
+from openai import AsyncAzureOpenAI
 
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.openai.base import BaseOpenAIProvider
@@ -48,32 +44,3 @@ class AzureopenaiProvider(BaseOpenAIProvider):
             azure_ad_token=azure_ad_token,
             **kwargs,
         )
-
-    async def _aresponses(
-        self, params: CreateResponseBody, **kwargs: Any
-    ) -> ResponseResource | AsyncIterator[dict[str, Any]]:
-        """Call OpenAI Responses API and return OpenResponses types."""
-        response: OpenAIResponse | AsyncStream[OpenAIResponseStreamEvent] = await self.client.responses.create(
-            **params.model_dump(exclude_none=True), **kwargs
-        )
-
-        if isinstance(response, OpenAIResponse):
-            response_dict = response.model_dump()
-            # OpenResponses requires that nothing be empty but azure is empty presence_penalty and frequency_penalty
-            # openai extends their own spec via model_extra to do this, while azure doesn't...
-            if response_dict.get("presence_penalty") is None:
-                response_dict["presence_penalty"] = 0
-            if response_dict.get("frequency_penalty") is None:
-                response_dict["frequency_penalty"] = 0
-            return ResponseResource.model_validate(response_dict)
-
-        if isinstance(response, AsyncStream):
-
-            async def stream_iterator() -> AsyncIterator[dict[str, Any]]:
-                async for event in response:
-                    yield event.model_dump()
-
-            return stream_iterator()
-
-        msg = f"Responses API returned an unexpected type: {type(response)}"
-        raise ValueError(msg)

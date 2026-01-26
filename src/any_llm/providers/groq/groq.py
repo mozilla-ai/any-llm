@@ -2,17 +2,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from openai import AsyncOpenAI
-from openai._streaming import AsyncStream
-from openai.types.responses import Response as OpenAIResponse
+from openai import AsyncOpenAI, AsyncStream
 from pydantic import BaseModel
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
 if TYPE_CHECKING:
-    from openai.types.responses import ResponseStreamEvent as OpenAIResponseStreamEvent
-    from openresponses_types import CreateResponseBody, ResponseResource
+    from openresponses_types import ResponseResource
 
     from any_llm.types.completion import CreateEmbeddingResponse
 
@@ -55,8 +53,6 @@ class GroqProvider(AnyLLM):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
-
-    API_BASE = "https://api.groq.com/openai/v1"
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -104,11 +100,6 @@ class GroqProvider(AnyLLM):
         self.api_key = api_key
         self.kwargs = kwargs
         self.client = AsyncGroq(api_key=api_key, **kwargs)
-        self.openai_client = AsyncOpenAI(
-            base_url=api_base or self.API_BASE,
-            api_key=api_key,
-            **kwargs,
-        )
 
     async def _stream_async_completion(
         self, params: CompletionParams, **kwargs: Any
@@ -160,32 +151,30 @@ class GroqProvider(AnyLLM):
 
         return self._convert_completion_response(response)
 
+    async def _aresponses(
+        self, params: ResponsesParams, **kwargs: Any
+    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+        """Call Groq Responses API and normalize into ChatCompletion/Chunks."""
+        # Python SDK doesn't yet support it: https://community.groq.com/feature-requests-6/groq-python-sdk-support-for-responses-api-262
+
+        if params.max_tool_calls is not None:
+            parameter = "max_tool_calls"
+            raise UnsupportedParameterError(parameter, self.PROVIDER_NAME)
+
+        client = AsyncOpenAI(
+            base_url="https://api.groq.com/openai/v1",
+            api_key=self.api_key,
+            **self.kwargs,
+        )
+
+        response = await client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
+
+        if not isinstance(response, Response | AsyncStream):
+            msg = f"Responses API returned an unexpected type: {type(response)}"
+            raise ValueError(msg)
+
+        return response
+
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(models_list)
-
-    async def _aresponses(
-        self, params: CreateResponseBody, **kwargs: Any
-    ) -> ResponseResource | OpenAIResponse | AsyncIterator[dict[str, Any]]:
-        """Call Groq Responses API and return OpenAI Response type directly.
-
-        Groq is not yet compliant with the OpenResponses spec, so we return
-        the OpenAI Response type directly instead of converting to ResponseResource.
-        """
-        response: OpenAIResponse | AsyncStream[OpenAIResponseStreamEvent] = await self.openai_client.responses.create(
-            **params.model_dump(exclude_none=True), **kwargs
-        )
-
-        if isinstance(response, OpenAIResponse):
-            return response
-
-        if isinstance(response, AsyncStream):
-
-            async def stream_iterator() -> AsyncIterator[dict[str, Any]]:
-                async for event in response:
-                    yield event.model_dump()
-
-            return stream_iterator()
-
-        msg = f"Responses API returned an unexpected type: {type(response)}"
-        raise ValueError(msg)

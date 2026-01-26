@@ -7,14 +7,14 @@ import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from openai.types.responses import Response
-from openresponses_types import CreateResponseBody, ReasoningParam, ResponseResource, TextParam
+from openresponses_types import ResponseResource
 
 from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
 from any_llm.tools import prepare_tools
 from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, CompletionParams, ReasoningEffort
 from any_llm.types.provider import PlatformKey, ProviderMetadata
+from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
 from any_llm.utils.decorators import BATCH_API_EXPERIMENTAL_MESSAGE, experimental
 from any_llm.utils.exception_handler import handle_exceptions
@@ -465,7 +465,7 @@ class AnyLLM(ABC):
         msg = "Subclasses must implement _acompletion method"
         raise NotImplementedError(msg)
 
-    def responses(self, **kwargs: Any) -> ResponseResource | Response | Iterator[dict[str, Any]]:
+    def responses(self, **kwargs: Any) -> ResponseResource | Response | Iterator[ResponseStreamEvent]:
         """Create a response synchronously.
 
         See [AnyLLM.aresponses][any_llm.any_llm.AnyLLM.aresponses]
@@ -480,7 +480,7 @@ class AnyLLM(ABC):
     async def aresponses(
         self,
         model: str,
-        input_data: str | list[dict[str, Any]],
+        input_data: str | ResponseInputParam,
         *,
         tools: list[dict[str, Any] | Callable[..., Any]] | Any | None = None,
         tool_choice: str | dict[str, Any] | None = None,
@@ -491,10 +491,10 @@ class AnyLLM(ABC):
         instructions: str | None = None,
         max_tool_calls: int | None = None,
         parallel_tool_calls: int | None = None,
-        reasoning: ReasoningParam | None = None,
-        text: TextParam | None = None,
+        reasoning: Any | None = None,
+        text: Any | None = None,
         **kwargs: Any,
-    ) -> ResponseResource | Response | AsyncIterator[dict[str, Any]]:
+    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
         """Create a response using the OpenResponses API.
 
         This implements the OpenResponses specification and returns either
@@ -504,8 +504,9 @@ class AnyLLM(ABC):
 
         Args:
             model: Model identifier for the chosen provider (e.g., model='gpt-4.1-mini' for LLMProvider.OPENAI).
-            input_data: The input payload. Can be a simple string prompt or a list of
-                message dicts with 'role' and 'content' keys (e.g., [{"role": "user", "content": "Hello"}]).
+            input_data: The input payload accepted by provider's Responses API.
+                For OpenAI-compatible providers, this is typically a list mixing
+                text, images, and tool instructions, or a dict per OpenAI spec.
             tools: Optional tools for tool calling (Python callables or OpenAI tool dicts)
             tool_choice: Controls which tools the model can call
             max_output_tokens: Maximum number of output tokens to generate
@@ -515,14 +516,14 @@ class AnyLLM(ABC):
             instructions: A system (or developer) message inserted into the model's context.
             max_tool_calls: The maximum number of total calls to built-in tools that can be processed in a response. This maximum number applies across all built-in tool calls, not per individual tool. Any further attempts to call a tool by the model will be ignored.
             parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
-            reasoning: Configuration for reasoning models (see `openresponses_types.ReasoningParam`).
-            text: Configuration for text response format (see `openresponses_types.TextParam`).
+            reasoning: Configuration options for reasoning models.
+            text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
             **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
         Returns:
             Either a `ResponseResource` object (OpenResponses-compliant providers),
             a `Response` object (non-compliant providers), or an iterator of
-            streaming event dicts (streaming).
+            `ResponseStreamEvent` (streaming).
 
         Raises:
             NotImplementedError: If the selected provider does not support the Responses API.
@@ -532,17 +533,17 @@ class AnyLLM(ABC):
         if tools:
             prepared_tools = prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
 
-        params = CreateResponseBody(
+        params = ResponsesParams(
             model=model,
-            input=input_data,  # type: ignore[arg-type]
-            tools=prepared_tools,  # type: ignore[arg-type]
-            tool_choice=tool_choice,  # type: ignore[arg-type]
-            max_output_tokens=max_output_tokens,  # type: ignore[arg-type]
+            input=input_data,
+            tools=prepared_tools,
+            tool_choice=tool_choice,
+            max_output_tokens=max_output_tokens,
             temperature=temperature,
             top_p=top_p,
             stream=stream,
             instructions=instructions,
-            max_tool_calls=max_tool_calls,  # type: ignore[arg-type]
+            max_tool_calls=max_tool_calls,
             parallel_tool_calls=bool(parallel_tool_calls),
             reasoning=reasoning,
             text=text,
@@ -552,8 +553,8 @@ class AnyLLM(ABC):
         return await self._aresponses(params)
 
     async def _aresponses(
-        self, params: CreateResponseBody, **kwargs: Any
-    ) -> ResponseResource | Response | AsyncIterator[dict[str, Any]]:
+        self, params: ResponsesParams, **kwargs: Any
+    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
         if not self.SUPPORTS_RESPONSES:
             msg = "Provider doesn't support responses."
             raise NotImplementedError(msg)

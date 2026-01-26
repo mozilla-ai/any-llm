@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING, Any
 from openai import AsyncOpenAI
 from openai._streaming import AsyncStream
 from openai.types.responses import Response as OpenAIResponse
-from openai.types.responses import ResponseStreamEvent as OpenAIResponseStreamEvent
-from openresponses_types import CreateResponseBody, ResponseResource
+from openai.types.responses import ResponseStreamEvent
+from openresponses_types import ResponseResource
 
 from any_llm.any_llm import AnyLLM
 from any_llm.types.completion import (
@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     )
 
     from any_llm.types.model import Model
+    from any_llm.types.responses import Response, ResponsesParams
 
 
 class HuggingfaceProvider(AnyLLM):
@@ -118,10 +119,10 @@ class HuggingfaceProvider(AnyLLM):
             **kwargs,
         )
         # Initialize OpenAI-compatible client for OpenResponses API
-        # The router endpoint handles provider routing via model:provider syntax
         self.responses_client = AsyncOpenAI(
             base_url=self.OPENRESPONSES_ROUTER_URL,
             api_key=api_key,
+            **kwargs,
         )
 
     async def _stream_completion_async(
@@ -214,24 +215,43 @@ class HuggingfaceProvider(AnyLLM):
         return self._convert_list_models_response(models_list)
 
     async def _aresponses(
-        self, params: CreateResponseBody, **kwargs: Any
-    ) -> ResponseResource | AsyncIterator[dict[str, Any]]:
+        self, params: ResponsesParams, **kwargs: Any
+    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
         """Call OpenResponses API via HuggingFace router.
 
         See: https://huggingface.co/docs/inference-providers/guides/responses-api
         """
-        response: (
-            OpenAIResponse | AsyncStream[OpenAIResponseStreamEvent]
-        ) = await self.responses_client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
+        response: Response | AsyncStream[ResponseStreamEvent] = await self.responses_client.responses.create(
+            **params.model_dump(exclude_none=True), **kwargs
+        )
 
         if isinstance(response, OpenAIResponse):
-            return ResponseResource.model_validate(response.model_dump())
+            # HuggingFace router doesn't return fully spec-compliant OpenResponses.
+            # Fill in defaults for missing/null fields required by the spec.
+            # See: https://github.com/openresponses/openresponses/blob/main/schema/components/schemas/ResponseResource.json
+            # Waiting for HF team feedback https://huggingface.co/blog/open-responses#6977bfa7d4a00deea21b389c
+            data = response.model_dump()
+            defaults: dict[str, Any] = {
+                "truncation": "disabled",
+                "parallel_tool_calls": False,
+                "text": {"format": {"type": "text"}},
+                "presence_penalty": 0.0,
+                "frequency_penalty": 0.0,
+                "top_logprobs": 0,
+                "store": False,
+                "background": False,
+                "service_tier": "default",
+            }
+            for key, default in defaults.items():
+                if data.get(key) is None:
+                    data[key] = default
+            return ResponseResource.model_validate(data)
 
         if isinstance(response, AsyncStream):
 
-            async def stream_iterator() -> AsyncIterator[dict[str, Any]]:
+            async def stream_iterator() -> AsyncIterator[ResponseStreamEvent]:
                 async for event in response:
-                    yield event.model_dump()
+                    yield event
 
             return stream_iterator()
 

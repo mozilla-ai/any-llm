@@ -7,6 +7,7 @@ from openresponses_types import ResponseResource
 
 from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
+from any_llm.types.responses import Response
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 
@@ -26,7 +27,6 @@ async def test_responses_async(
             model_id,
             input_data="What's the capital of France? Please think step by step.",
             instructions="Talk like a pirate.",
-            reasoning_effort="low",
         )
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:
@@ -36,5 +36,5 @@ async def test_responses_async(
         if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise
-    assert isinstance(result, ResponseResource)
+    assert isinstance(result, (ResponseResource, Response))
     assert result.reasoning is not None

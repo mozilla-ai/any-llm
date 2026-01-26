@@ -1,14 +1,13 @@
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from openai._streaming import AsyncStream
-from openai.types.responses import Response as OpenAIResponse
+from openai import AsyncStream
+from openresponses_types import ResponseResource
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
-if TYPE_CHECKING:
-    from openai.types.responses import ResponseStreamEvent as OpenAIResponseStreamEvent
-    from openresponses_types import CreateResponseBody, ResponseResource
+from .utils import extract_reasoning_from_response
 
 
 class FireworksProvider(BaseOpenAIProvider):
@@ -19,35 +18,17 @@ class FireworksProvider(BaseOpenAIProvider):
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
+    SUPPORTS_RESPONSES = True
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
 
-    SUPPORTS_RESPONSES = True
-
     async def _aresponses(
-        self, params: "CreateResponseBody", **kwargs: Any
-    ) -> "ResponseResource | OpenAIResponse | AsyncIterator[dict[str, Any]]":
-        """Call Fireworks Responses API and return OpenAI Response type directly.
-
-        Fireworks is not yet compliant with the OpenResponses spec, so we return
-        the OpenAI Response type directly instead of converting to ResponseResource.
-        """
-        response: OpenAIResponse | AsyncStream[OpenAIResponseStreamEvent] = await self.client.responses.create(
-            **params.model_dump(exclude_none=True), **kwargs
-        )
-
-        if isinstance(response, OpenAIResponse):
-            return response
-
-        if isinstance(response, AsyncStream):
-
-            async def stream_iterator() -> AsyncIterator[dict[str, Any]]:
-                async for event in response:
-                    yield event.model_dump()
-
-            return stream_iterator()
-
-        msg = f"Responses API returned an unexpected type: {type(response)}"
-        raise ValueError(msg)
+        self, params: ResponsesParams, **kwargs: Any
+    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+        """Call Fireworks Responses API and normalize into ChatCompletion/Chunks."""
+        response = await super()._aresponses(params, **kwargs)
+        if isinstance(response, Response) and not isinstance(response, AsyncStream):
+            return extract_reasoning_from_response(response)
+        return response

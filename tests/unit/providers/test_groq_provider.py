@@ -26,6 +26,17 @@ async def test_stream_with_response_format_raises() -> None:
 
 
 @pytest.mark.asyncio
+async def test_unsupported_max_tool_calls_parameter() -> None:
+    pytest.importorskip("groq")
+    from any_llm.providers.groq.groq import GroqProvider
+
+    provider = GroqProvider(api_key="test-api-key")
+
+    with pytest.raises(UnsupportedParameterError):
+        await provider.aresponses("test_model", "test_data", max_tool_calls=3)
+
+
+@pytest.mark.asyncio
 async def test_completion_with_response_format_basemodel() -> None:
     pytest.importorskip("groq")
     from any_llm.providers.groq.groq import GroqProvider

@@ -2,15 +2,15 @@ import asyncio
 from collections.abc import AsyncIterator, Sequence
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Any, Literal, cast
 
 from openai import AsyncOpenAI
 from openai._streaming import AsyncStream
 from openai._types import NOT_GIVEN, Omit
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
-from openai.types.responses import Response as OpenAIResponse
-from openresponses_types import CreateResponseBody, ResponseResource
+from openresponses_types import ResponseResource
+from pydantic import ValidationError
 
 from any_llm.any_llm import AnyLLM
 from any_llm.logging import logger
@@ -24,11 +24,7 @@ from any_llm.types.completion import (
     ReasoningEffort,
 )
 from any_llm.types.model import Model
-
-if TYPE_CHECKING:
-    from openai.types.responses import ResponseStreamEvent as OpenAIResponseStreamEvent
-else:
-    OpenAIResponseStreamEvent = None
+from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
 
 class BaseOpenAIProvider(AnyLLM):
@@ -168,26 +164,25 @@ class BaseOpenAIProvider(AnyLLM):
         return self._convert_completion_response_async(response)
 
     async def _aresponses(
-        self, params: CreateResponseBody, **kwargs: Any
-    ) -> ResponseResource | OpenAIResponse | AsyncIterator[dict[str, Any]]:
-        """Call OpenAI Responses API and return OpenResponses types."""
-        response: OpenAIResponse | AsyncStream[OpenAIResponseStreamEvent] = await self.client.responses.create(
-            **params.model_dump(exclude_none=True), **kwargs
-        )
+        self, params: ResponsesParams, **kwargs: Any
+    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+        """Call OpenAI Responses API"""
+        response = await self.client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
 
-        if isinstance(response, OpenAIResponse):
-            return ResponseResource.model_validate(response.model_dump())
-
-        if isinstance(response, AsyncStream):
-
-            async def stream_iterator() -> AsyncIterator[dict[str, Any]]:
-                async for event in response:
-                    yield event.model_dump()
-
-            return stream_iterator()
-
-        msg = f"Responses API returned an unexpected type: {type(response)}"
-        raise ValueError(msg)
+        if not isinstance(response, Response | AsyncStream):
+            msg = f"Responses API returned an unexpected type: {type(response)}"
+            raise ValueError(msg)
+        # if it's a Response, try to convert it to a ResponseResource. If that fails, return the Response
+        if isinstance(response, Response):
+            try:
+                return ResponseResource.model_validate(response.model_dump())
+            except ValidationError as e:
+                msg = f"Failed to convert Response to OpenResponse ResponseResource: {e}"
+                # Right now we'll just log as info error.
+                # but if OpenResponses becomes the standard, this will need to become a warning or error
+                logger.info(msg)
+                return response
+        return response
 
     async def _aembedding(
         self,

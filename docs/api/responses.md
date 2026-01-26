@@ -18,27 +18,9 @@ The `responses()` and `aresponses()` functions return different types depending 
 | `openai.types.responses.Response` | Providers using OpenAI's native Responses API (not yet fully OpenResponses-compliant) |
 | `Iterator[dict]` / `AsyncIterator[dict]` | When `stream=True` is set |
 
-!!! tip "Handling Multiple Return Types"
 
-    Since the return type varies by provider, you may need to handle both cases:
-
-    ```python
-    from any_llm import responses
-    from openresponses_types import ResponseResource
-    from openai.types.responses import Response
-
-    result = responses("openai:gpt-4o", "Hello, world!")
-
-    if isinstance(result, ResponseResource):
-        # OpenResponses-compliant provider
-        print(result.output)
-    elif isinstance(result, Response):
-        # OpenAI-native provider
-        print(result.output)
-    ```
-
-    Both `ResponseResource` and `Response` share a similar structure, so in many cases
-    you can access common fields like `output` without type checking.
+Both `ResponseResource` and `Response` share a similar structure, so in many cases
+you can access common fields like `output` without type checking.
 
 ::: any_llm.api.responses
 ::: any_llm.api.aresponses
