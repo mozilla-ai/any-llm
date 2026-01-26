@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
 
 from openai.types.responses import Response
-from openresponses_types import ResponseResource
+from openresponses_types import ReasoningParam, ResponseResource, TextParam
 from pydantic import BaseModel
 
 from any_llm import AnyLLM
@@ -235,7 +235,7 @@ async def acompletion(
 
 def responses(
     model: str,
-    input_data: str | list[Any],
+    input_data: str | list[dict[str, Any]],
     *,
     provider: str | LLMProvider | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
@@ -249,24 +249,23 @@ def responses(
     instructions: str | None = None,
     max_tool_calls: int | None = None,
     parallel_tool_calls: int | None = None,
-    reasoning: Any | None = None,
-    text: Any | None = None,
+    reasoning: ReasoningParam | None = None,
+    text: TextParam | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ResponseResource | Response | Iterator[dict[str, Any]]:
-    """Create a response using the OpenAI-style Responses API.
+    """Create a response using the OpenResponses API.
 
-    This follows the OpenAI Responses API shape and returns either
+    This implements the OpenResponses specification and returns either
     `openresponses_types.ResponseResource` (for OpenResponses-compliant providers)
-    or `openai.types.responses.Response` (for providers not yet fully compliant).
+    or `openai.types.responses.Response` (for providers using OpenAI's native API).
     If `stream=True`, an iterator of streaming event dicts is returned.
 
     Args:
         model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
         provider: Provider name to use for the request. If provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai:gpt-4o'.
-        input_data: The input payload accepted by provider's Responses API.
-            For OpenAI-compatible providers, this is typically a list mixing
-            text, images, and tool instructions, or a dict per OpenAI spec.
+        input_data: The input payload. Can be a simple string prompt or a list of
+            message dicts with 'role' and 'content' keys (e.g., [{"role": "user", "content": "Hello"}]).
         tools: Optional tools for tool calling (Python callables or OpenAI tool dicts)
         tool_choice: Controls which tools the model can call
         max_output_tokens: Maximum number of output tokens to generate
@@ -278,8 +277,8 @@ def responses(
         instructions: A system (or developer) message inserted into the model's context.
         max_tool_calls: The maximum number of total calls to built-in tools that can be processed in a response. This maximum number applies across all built-in tool calls, not per individual tool. Any further attempts to call a tool by the model will be ignored.
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
-        reasoning: Configuration options for reasoning models.
-        text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
+        reasoning: Configuration for reasoning models (see `openresponses_types.ReasoningParam`).
+        text: Configuration for text response format (see `openresponses_types.TextParam`).
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
@@ -324,7 +323,7 @@ def responses(
 
 async def aresponses(
     model: str,
-    input_data: str | list[Any],
+    input_data: str | list[dict[str, Any]],
     *,
     provider: str | LLMProvider | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
@@ -338,24 +337,23 @@ async def aresponses(
     instructions: str | None = None,
     max_tool_calls: int | None = None,
     parallel_tool_calls: int | None = None,
-    reasoning: Any | None = None,
-    text: Any | None = None,
+    reasoning: ReasoningParam | None = None,
+    text: TextParam | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ResponseResource | Response | AsyncIterator[dict[str, Any]]:
-    """Create a response using the OpenAI-style Responses API.
+    """Create a response using the OpenResponses API.
 
-    This follows the OpenAI Responses API shape and returns either
+    This implements the OpenResponses specification and returns either
     `openresponses_types.ResponseResource` (for OpenResponses-compliant providers)
-    or `openai.types.responses.Response` (for providers not yet fully compliant).
+    or `openai.types.responses.Response` (for providers using OpenAI's native API).
     If `stream=True`, an iterator of streaming event dicts is returned.
 
     Args:
         model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
         provider: Provider name to use for the request. If provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai:gpt-4o'.
-        input_data: The input payload accepted by provider's Responses API.
-            For OpenAI-compatible providers, this is typically a list mixing
-            text, images, and tool instructions, or a dict per OpenAI spec.
+        input_data: The input payload. Can be a simple string prompt or a list of
+            message dicts with 'role' and 'content' keys (e.g., [{"role": "user", "content": "Hello"}]).
         tools: Optional tools for tool calling (Python callables or OpenAI tool dicts)
         tool_choice: Controls which tools the model can call
         max_output_tokens: Maximum number of output tokens to generate
@@ -367,8 +365,8 @@ async def aresponses(
         instructions: A system (or developer) message inserted into the model's context.
         max_tool_calls: The maximum number of total calls to built-in tools that can be processed in a response. This maximum number applies across all built-in tool calls, not per individual tool. Any further attempts to call a tool by the model will be ignored.
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
-        reasoning: Configuration options for reasoning models.
-        text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
+        reasoning: Configuration for reasoning models (see `openresponses_types.ReasoningParam`).
+        text: Configuration for text response format (see `openresponses_types.TextParam`).
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 

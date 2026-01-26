@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from openai.types.responses import Response
-from openresponses_types import CreateResponseBody, ResponseResource
+from openresponses_types import CreateResponseBody, ReasoningParam, ResponseResource, TextParam
 
 from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
@@ -480,7 +480,7 @@ class AnyLLM(ABC):
     async def aresponses(
         self,
         model: str,
-        input_data: str | list[Any],
+        input_data: str | list[dict[str, Any]],
         *,
         tools: list[dict[str, Any] | Callable[..., Any]] | Any | None = None,
         tool_choice: str | dict[str, Any] | None = None,
@@ -491,22 +491,21 @@ class AnyLLM(ABC):
         instructions: str | None = None,
         max_tool_calls: int | None = None,
         parallel_tool_calls: int | None = None,
-        reasoning: Any | None = None,
-        text: Any | None = None,
+        reasoning: ReasoningParam | None = None,
+        text: TextParam | None = None,
         **kwargs: Any,
     ) -> ResponseResource | Response | AsyncIterator[dict[str, Any]]:
-        """Create a response using the OpenAI-style Responses API.
+        """Create a response using the OpenResponses API.
 
-        This follows the OpenAI Responses API shape and returns either
+        This implements the OpenResponses specification and returns either
         `openresponses_types.ResponseResource` (for OpenResponses-compliant providers)
-        or `openai.types.responses.Response` (for providers not yet fully compliant).
+        or `openai.types.responses.Response` (for providers using OpenAI's native API).
         If `stream=True`, an iterator of streaming event dicts is returned.
 
         Args:
             model: Model identifier for the chosen provider (e.g., model='gpt-4.1-mini' for LLMProvider.OPENAI).
-            input_data: The input payload accepted by provider's Responses API.
-                For OpenAI-compatible providers, this is typically a list mixing
-                text, images, and tool instructions, or a dict per OpenAI spec.
+            input_data: The input payload. Can be a simple string prompt or a list of
+                message dicts with 'role' and 'content' keys (e.g., [{"role": "user", "content": "Hello"}]).
             tools: Optional tools for tool calling (Python callables or OpenAI tool dicts)
             tool_choice: Controls which tools the model can call
             max_output_tokens: Maximum number of output tokens to generate
@@ -516,8 +515,8 @@ class AnyLLM(ABC):
             instructions: A system (or developer) message inserted into the model's context.
             max_tool_calls: The maximum number of total calls to built-in tools that can be processed in a response. This maximum number applies across all built-in tool calls, not per individual tool. Any further attempts to call a tool by the model will be ignored.
             parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
-            reasoning: Configuration options for reasoning models.
-            text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
+            reasoning: Configuration for reasoning models (see `openresponses_types.ReasoningParam`).
+            text: Configuration for text response format (see `openresponses_types.TextParam`).
             **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
         Returns:
