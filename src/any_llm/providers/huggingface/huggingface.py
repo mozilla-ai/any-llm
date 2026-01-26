@@ -55,8 +55,8 @@ class HuggingfaceProvider(AnyLLM):
     ENV_API_KEY_NAME = "HF_TOKEN"
     PROVIDER_DOCUMENTATION_URL = "https://huggingface.co/docs/huggingface_hub/package_reference/inference_client"
 
-    # OpenResponses router endpoint for the Responses API
-    OPENRESPONSES_ROUTER_URL = "https://router.huggingface.co/v1"
+    # OpenResponses router endpoint for the OpenResponses API
+    OPENRESPONSES_ROUTER_URL = "https://evalstate-openresponses.hf.space/v1"
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
@@ -226,26 +226,7 @@ class HuggingfaceProvider(AnyLLM):
         )
 
         if isinstance(response, OpenAIResponse):
-            # HuggingFace router doesn't return fully spec-compliant OpenResponses.
-            # Fill in defaults for missing/null fields required by the spec.
-            # See: https://github.com/openresponses/openresponses/blob/main/schema/components/schemas/ResponseResource.json
-            # Waiting for HF team feedback https://huggingface.co/blog/open-responses#6977bfa7d4a00deea21b389c
-            data = response.model_dump()
-            defaults: dict[str, Any] = {
-                "truncation": "disabled",
-                "parallel_tool_calls": False,
-                "text": {"format": {"type": "text"}},
-                "presence_penalty": 0.0,
-                "frequency_penalty": 0.0,
-                "top_logprobs": 0,
-                "store": False,
-                "background": False,
-                "service_tier": "default",
-            }
-            for key, default in defaults.items():
-                if data.get(key) is None:
-                    data[key] = default
-            return ResponseResource.model_validate(data)
+            return ResponseResource.model_validate(response.model_dump())
 
         if isinstance(response, AsyncStream):
 

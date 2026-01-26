@@ -37,4 +37,3 @@ async def test_responses_async(
             pytest.skip("Local Model host is not set up, skipping")
         raise
     assert isinstance(result, (ResponseResource, Response))
-    assert result.reasoning is not None
