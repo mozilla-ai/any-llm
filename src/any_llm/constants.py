@@ -35,6 +35,7 @@ class LLMProvider(StrEnum):
     LLAMACPP = "llamacpp"
     MISTRAL = "mistral"
     MOONSHOT = "moonshot"
+    MZAI = "mzai"
     NEBIUS = "nebius"
     OLLAMA = "ollama"
     OPENAI = "openai"
