@@ -8,7 +8,7 @@ from any_llm.providers.anthropic.base import BaseAnthropicProvider
 
 MISSING_PACKAGES_ERROR = None
 try:
-    from anthropic import AnthropicVertex
+    from anthropic import AsyncAnthropicVertex
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
@@ -17,7 +17,7 @@ class VertexaianthropicProvider(BaseAnthropicProvider):
     """
     VertexAI Anthropic Provider for Claude models through Google Cloud's Model Garden.
 
-    Uses Anthropic's `AnthropicVertex` client from `anthropic[vertex]` to access
+    Uses Anthropic's `AsyncAnthropicVertex` client from `anthropic[vertex]` to access
     Claude models deployed on Google Cloud VertexAI.
 
     Authentication is handled via Google Cloud Application Default Credentials (ADC),
@@ -25,7 +25,7 @@ class VertexaianthropicProvider(BaseAnthropicProvider):
     constructor argument.
     """
 
-    PROVIDER_NAME = "vertexaianthromic"
+    PROVIDER_NAME = "vertexaianthropic"
     ENV_API_KEY_NAME = ""  # VertexAI uses GCP ADC, not an API key
     PROVIDER_DOCUMENTATION_URL = "https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-claude"
 
@@ -33,7 +33,7 @@ class VertexaianthropicProvider(BaseAnthropicProvider):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
-    client: AnthropicVertex
+    client: AsyncAnthropicVertex
 
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         # VertexAI uses Google Cloud ADC, not an API key
@@ -47,7 +47,7 @@ class VertexaianthropicProvider(BaseAnthropicProvider):
         if not project_id:
             raise MissingApiKeyError(self.PROVIDER_NAME, "GOOGLE_CLOUD_PROJECT")
 
-        self.client = AnthropicVertex(
+        self.client = AsyncAnthropicVertex(
             project_id=project_id,
             region=region,
             **kwargs,

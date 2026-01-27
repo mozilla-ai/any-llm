@@ -21,7 +21,7 @@ except ImportError as e:
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
-    from anthropic import AnthropicVertex, AsyncAnthropic
+    from anthropic import AsyncAnthropic, AsyncAnthropicVertex
     from anthropic.types import Message
     from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
 
@@ -49,7 +49,7 @@ class BaseAnthropicProvider(AnyLLM, ABC):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
-    client: AsyncAnthropic | AnthropicVertex
+    client: AsyncAnthropic | AsyncAnthropicVertex
 
     @abstractmethod
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
@@ -91,9 +91,7 @@ class BaseAnthropicProvider(AnyLLM, ABC):
 
     async def _stream_completion_async(self, **kwargs: Any) -> AsyncIterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
-        async with self.client.messages.stream(  # type: ignore[union-attr]
-            **kwargs,
-        ) as anthropic_stream:
+        async with self.client.messages.stream(**kwargs) as anthropic_stream:
             async for event in anthropic_stream:
                 yield self._convert_completion_chunk_response(event, model_id=kwargs.get("model", "unknown"))
 

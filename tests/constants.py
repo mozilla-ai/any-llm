@@ -12,6 +12,7 @@ LOCAL_PROVIDERS = [
 
 # Providers that should never run in CI (only for local development)
 CI_EXCLUDED_PROVIDERS = [
+    LLMProvider.VERTEXAIANTHROPIC,
     LLMProvider.VLLM,
 ]
 

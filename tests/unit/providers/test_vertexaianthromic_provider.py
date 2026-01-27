@@ -4,14 +4,14 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.providers.vertexaianthromic.vertexaianthromic import VertexaianthropicProvider
+from any_llm.providers.vertexaianthropic.vertexaianthropic import VertexaianthropicProvider
 from any_llm.types.completion import CompletionParams
 
 
 @contextmanager
-def mock_vertexaianthromic_provider():  # type: ignore[no-untyped-def]
+def mock_vertexaianthropic_provider():  # type: ignore[no-untyped-def]
     with (
-        patch("any_llm.providers.vertexaianthromic.vertexaianthromic.AnthropicVertex") as mock_vertex,
+        patch("any_llm.providers.vertexaianthropic.vertexaianthropic.AnthropicVertex") as mock_vertex,
         patch("any_llm.providers.anthropic.base._convert_response"),
     ):
         mock_client = Mock()
@@ -21,11 +21,11 @@ def mock_vertexaianthromic_provider():  # type: ignore[no-untyped-def]
 
 
 @pytest.mark.asyncio
-async def test_vertexaianthromic_client_created_with_project_id_and_region() -> None:
+async def test_vertexaianthropic_client_created_with_project_id_and_region() -> None:
     project_id = "test-project"
     region = "us-east1"
 
-    with mock_vertexaianthromic_provider() as mock_vertex:
+    with mock_vertexaianthropic_provider() as mock_vertex:
         provider = VertexaianthropicProvider(project_id=project_id, region=region)
         await provider._acompletion(
             CompletionParams(model_id="claude-3-5-sonnet@20240620", messages=[{"role": "user", "content": "Hello"}])
@@ -35,9 +35,9 @@ async def test_vertexaianthromic_client_created_with_project_id_and_region() -> 
 
 
 @pytest.mark.asyncio
-async def test_vertexaianthromic_client_uses_env_vars() -> None:
+async def test_vertexaianthropic_client_uses_env_vars() -> None:
     with (
-        mock_vertexaianthromic_provider() as mock_vertex,
+        mock_vertexaianthropic_provider() as mock_vertex,
         patch.dict("os.environ", {"GOOGLE_CLOUD_PROJECT": "env-project", "GOOGLE_CLOUD_LOCATION": "europe-west1"}),
     ):
         provider = VertexaianthropicProvider()
@@ -49,10 +49,10 @@ async def test_vertexaianthromic_client_uses_env_vars() -> None:
 
 
 @pytest.mark.asyncio
-async def test_vertexaianthromic_client_defaults_region_to_us_central1() -> None:
+async def test_vertexaianthropic_client_defaults_region_to_us_central1() -> None:
     project_id = "test-project"
 
-    with mock_vertexaianthromic_provider() as mock_vertex:
+    with mock_vertexaianthropic_provider() as mock_vertex:
         provider = VertexaianthropicProvider(project_id=project_id)
         await provider._acompletion(
             CompletionParams(model_id="claude-3-5-sonnet@20240620", messages=[{"role": "user", "content": "Hello"}])
@@ -61,9 +61,9 @@ async def test_vertexaianthromic_client_defaults_region_to_us_central1() -> None
         mock_vertex.assert_called_once_with(project_id=project_id, region="us-central1")
 
 
-def test_vertexaianthromic_raises_error_without_project_id() -> None:
+def test_vertexaianthropic_raises_error_without_project_id() -> None:
     with (
-        mock_vertexaianthromic_provider(),
+        mock_vertexaianthropic_provider(),
         patch.dict("os.environ", {}, clear=True),
         pytest.raises(MissingApiKeyError, match="GOOGLE_CLOUD_PROJECT"),
     ):
@@ -71,12 +71,12 @@ def test_vertexaianthromic_raises_error_without_project_id() -> None:
 
 
 @pytest.mark.asyncio
-async def test_vertexaianthromic_completion_calls_messages_create() -> None:
+async def test_vertexaianthropic_completion_calls_messages_create() -> None:
     project_id = "test-project"
     model = "claude-3-5-sonnet@20240620"
     messages = [{"role": "user", "content": "Hello"}]
 
-    with mock_vertexaianthromic_provider() as mock_vertex:
+    with mock_vertexaianthropic_provider() as mock_vertex:
         provider = VertexaianthropicProvider(project_id=project_id)
         await provider._acompletion(CompletionParams(model_id=model, messages=messages))
 
@@ -87,7 +87,7 @@ async def test_vertexaianthromic_completion_calls_messages_create() -> None:
 
 
 @pytest.mark.asyncio
-async def test_vertexaianthromic_completion_with_system_message() -> None:
+async def test_vertexaianthropic_completion_with_system_message() -> None:
     project_id = "test-project"
     model = "claude-3-5-sonnet@20240620"
     messages = [
@@ -95,7 +95,7 @@ async def test_vertexaianthromic_completion_with_system_message() -> None:
         {"role": "user", "content": "Hello"},
     ]
 
-    with mock_vertexaianthromic_provider() as mock_vertex:
+    with mock_vertexaianthropic_provider() as mock_vertex:
         provider = VertexaianthropicProvider(project_id=project_id)
         await provider._acompletion(CompletionParams(model_id=model, messages=messages))
 
@@ -104,26 +104,26 @@ async def test_vertexaianthromic_completion_with_system_message() -> None:
         assert call_kwargs["messages"] == [{"role": "user", "content": "Hello"}]
 
 
-def test_vertexaianthromic_provider_name() -> None:
-    with mock_vertexaianthromic_provider():
+def test_vertexaianthropic_provider_name() -> None:
+    with mock_vertexaianthropic_provider():
         provider = VertexaianthropicProvider(project_id="test-project")
-        assert provider.PROVIDER_NAME == "vertexaianthromic"
+        assert provider.PROVIDER_NAME == "vertexaianthropic"
 
 
-def test_vertexaianthromic_env_api_key_name_empty() -> None:
-    with mock_vertexaianthromic_provider():
+def test_vertexaianthropic_env_api_key_name_empty() -> None:
+    with mock_vertexaianthropic_provider():
         provider = VertexaianthropicProvider(project_id="test-project")
         assert provider.ENV_API_KEY_NAME == ""
 
 
-def test_vertexaianthromic_does_not_support_list_models() -> None:
-    with mock_vertexaianthromic_provider():
+def test_vertexaianthropic_does_not_support_list_models() -> None:
+    with mock_vertexaianthropic_provider():
         provider = VertexaianthropicProvider(project_id="test-project")
         assert provider.SUPPORTS_LIST_MODELS is False
 
 
-def test_vertexaianthromic_supports_completion() -> None:
-    with mock_vertexaianthromic_provider():
+def test_vertexaianthropic_supports_completion() -> None:
+    with mock_vertexaianthropic_provider():
         provider = VertexaianthropicProvider(project_id="test-project")
         assert provider.SUPPORTS_COMPLETION is True
         assert provider.SUPPORTS_COMPLETION_STREAMING is True
@@ -132,9 +132,9 @@ def test_vertexaianthromic_supports_completion() -> None:
 
 
 @pytest.mark.asyncio
-async def test_vertexaianthromic_constructor_arg_overrides_env_var() -> None:
+async def test_vertexaianthropic_constructor_arg_overrides_env_var() -> None:
     with (
-        mock_vertexaianthromic_provider() as mock_vertex,
+        mock_vertexaianthropic_provider() as mock_vertex,
         patch.dict("os.environ", {"GOOGLE_CLOUD_PROJECT": "env-project", "GOOGLE_CLOUD_LOCATION": "europe-west1"}),
     ):
         provider = VertexaianthropicProvider(project_id="constructor-project", region="asia-east1")
