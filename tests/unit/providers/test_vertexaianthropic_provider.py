@@ -11,7 +11,7 @@ from any_llm.types.completion import CompletionParams
 @contextmanager
 def mock_vertexaianthropic_provider():  # type: ignore[no-untyped-def]
     with (
-        patch("any_llm.providers.vertexaianthropic.vertexaianthropic.AnthropicVertex") as mock_vertex,
+        patch("any_llm.providers.vertexaianthropic.vertexaianthropic.AsyncAnthropicVertex") as mock_vertex,
         patch("any_llm.providers.anthropic.base._convert_response"),
     ):
         mock_client = Mock()
