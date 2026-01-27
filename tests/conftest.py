@@ -31,7 +31,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.DEEPSEEK: "deepseek-reasoner",
         LLMProvider.MOONSHOT: "kimi-thinking-preview",
         LLMProvider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-        LLMProvider.HUGGINGFACE: "openai/gpt-oss-120b:groq",
+        LLMProvider.HUGGINGFACE: "huggingface/tgi",
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
         LLMProvider.SAMBANOVA: "DeepSeek-R1-Distill-Llama-70B",
         LLMProvider.TOGETHER: "openai/gpt-oss-20b",
@@ -64,7 +64,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.VLLM: "Qwen/Qwen2.5-0.5B-Instruct",
         LLMProvider.COHERE: "command-a-03-2025",
         LLMProvider.CEREBRAS: "llama-3.3-70b",
-        LLMProvider.HUGGINGFACE: "openai/gpt-oss-120b:groq",  # This is the syntax used in `litellm` when using HF Inference Endpoints (https://docs.litellm.ai/docs/providers/huggingface#dedicated-inference-endpoints)
+        LLMProvider.HUGGINGFACE: "huggingface/tgi",  # This is the syntax used in `litellm` when using HF Inference Endpoints (https://docs.litellm.ai/docs/providers/huggingface#dedicated-inference-endpoints)
         LLMProvider.BEDROCK: "amazon.nova-lite-v1:0",
         LLMProvider.SAGEMAKER: "<sagemaker_endpoint_name>",
         LLMProvider.WATSONX: "ibm/granite-3-8b-instruct",

@@ -226,7 +226,7 @@ class HuggingfaceProvider(AnyLLM):
         )
 
         if isinstance(response, OpenAIResponse):
-            return ResponseResource.model_validate(response.model_dump())
+            return ResponseResource.model_validate(response.model_dump(warnings=False))
 
         if isinstance(response, AsyncStream):
 

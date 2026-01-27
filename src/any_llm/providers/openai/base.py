@@ -175,7 +175,7 @@ class BaseOpenAIProvider(AnyLLM):
         # if it's a Response, try to convert it to a ResponseResource. If that fails, return the Response
         if isinstance(response, Response):
             try:
-                return ResponseResource.model_validate(response.model_dump())
+                return ResponseResource.model_validate(response.model_dump(warnings=False))
             except ValidationError as e:
                 msg = f"Failed to convert Response to OpenResponse ResponseResource: {e}"
                 # Right now we'll just log as info error.

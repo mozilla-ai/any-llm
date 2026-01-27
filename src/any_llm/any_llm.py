@@ -493,6 +493,20 @@ class AnyLLM(ABC):
         parallel_tool_calls: int | None = None,
         reasoning: Any | None = None,
         text: Any | None = None,
+        presence_penalty: float | None = None,
+        frequency_penalty: float | None = None,
+        truncation: str | None = None,
+        store: bool | None = None,
+        service_tier: str | None = None,
+        user: str | None = None,
+        metadata: dict[str, str] | None = None,
+        previous_response_id: str | None = None,
+        include: list[str] | None = None,
+        background: bool | None = None,
+        safety_identifier: str | None = None,
+        prompt_cache_key: str | None = None,
+        prompt_cache_retention: str | None = None,
+        conversation: str | dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
         """Create a response using the OpenResponses API.
@@ -518,6 +532,20 @@ class AnyLLM(ABC):
             parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
             reasoning: Configuration options for reasoning models.
             text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
+            presence_penalty: Penalizes new tokens based on whether they appear in the text so far.
+            frequency_penalty: Penalizes new tokens based on their frequency in the text so far.
+            truncation: Controls how the service truncates input when it exceeds the model context window.
+            store: Whether to store the response so it can be retrieved later.
+            service_tier: The service tier to use for this request.
+            user: A unique identifier representing your end user.
+            metadata: Key-value pairs for custom metadata (up to 16 pairs).
+            previous_response_id: The ID of the response to use as the prior turn for this request.
+            include: Items to include in the response (e.g., 'reasoning.encrypted_content').
+            background: Whether to run the request in the background and return immediately.
+            safety_identifier: A stable identifier used for safety monitoring and abuse detection.
+            prompt_cache_key: A key to use when reading from or writing to the prompt cache.
+            prompt_cache_retention: How long to retain a prompt cache entry created by this request.
+            conversation: The conversation to associate this response with (ID string or ConversationParam object).
             **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
         Returns:
@@ -547,6 +575,20 @@ class AnyLLM(ABC):
             parallel_tool_calls=bool(parallel_tool_calls),
             reasoning=reasoning,
             text=text,
+            presence_penalty=presence_penalty,
+            frequency_penalty=frequency_penalty,
+            truncation=truncation,
+            store=store,
+            service_tier=service_tier,
+            user=user,
+            metadata=metadata,
+            previous_response_id=previous_response_id,
+            include=include,
+            background=background,
+            safety_identifier=safety_identifier,
+            prompt_cache_key=prompt_cache_key,
+            prompt_cache_retention=prompt_cache_retention,
+            conversation=conversation,
             **kwargs,
         )
 

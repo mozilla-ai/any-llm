@@ -69,3 +69,45 @@ class ResponsesParams(BaseModel):
 
     reasoning: dict[str, Any] | None = None
     """Configuration options for reasoning models."""
+
+    presence_penalty: float | None = None
+    """Penalizes new tokens based on whether they appear in the text so far."""
+
+    frequency_penalty: float | None = None
+    """Penalizes new tokens based on their frequency in the text so far."""
+
+    truncation: str | None = None
+    """Controls how the service truncates the input when it exceeds the model context window."""
+
+    store: bool | None = None
+    """Whether to store the response so it can be retrieved later."""
+
+    service_tier: str | None = None
+    """The service tier to use for this request."""
+
+    user: str | None = None
+    """A unique identifier representing your end user."""
+
+    metadata: dict[str, str] | None = None
+    """Key-value pairs for custom metadata (up to 16 pairs)."""
+
+    previous_response_id: str | None = None
+    """The ID of the response to use as the prior turn for this request."""
+
+    include: list[str] | None = None
+    """Items to include in the response (e.g., 'reasoning.encrypted_content')."""
+
+    background: bool | None = None
+    """Whether to run the request in the background and return immediately."""
+
+    safety_identifier: str | None = None
+    """A stable identifier used for safety monitoring and abuse detection."""
+
+    prompt_cache_key: str | None = None
+    """A key to use when reading from or writing to the prompt cache."""
+
+    prompt_cache_retention: str | None = None
+    """How long to retain a prompt cache entry created by this request."""
+
+    conversation: str | dict[str, Any] | None = None
+    """The conversation to associate this response with (ID string or ConversationParam object)."""
