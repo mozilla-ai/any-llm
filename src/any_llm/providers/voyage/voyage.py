@@ -1,18 +1,28 @@
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Any
 
 from any_llm.any_llm import AnyLLM
 
-MISSING_PACKAGES_ERROR = None
-try:
-    from voyageai.client_async import AsyncClient
+MISSING_PACKAGES_ERROR: Exception | None = None
+PYTHON_VERSION_INCOMPATIBLE = sys.version_info >= (3, 14)
 
-    from .utils import (
-        _create_openai_embedding_response_from_voyage,
+if PYTHON_VERSION_INCOMPATIBLE:
+    MISSING_PACKAGES_ERROR = ImportError(
+        "The 'voyageai' package is not compatible with Python 3.14+. "
+        "The package uses pydantic v1 which has breaking changes in Python 3.14. "
+        "Please use Python 3.13 or earlier to use this provider, or wait for an updated voyageai package."
     )
-except ImportError as e:
-    MISSING_PACKAGES_ERROR = e
+else:
+    try:
+        from voyageai.client_async import AsyncClient
+
+        from .utils import (
+            _create_openai_embedding_response_from_voyage,
+        )
+    except ImportError as e:
+        MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
