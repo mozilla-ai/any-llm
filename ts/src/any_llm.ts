@@ -44,6 +44,12 @@ export abstract class AnyLLM {
         instance.initClient(apiKey, apiBase, options);
         return instance;
       }
+      case "anthropic": {
+        const { AnthropicProvider } = await import("./providers/anthropic.js");
+        const instance = new AnthropicProvider();
+        instance.initClient(apiKey, apiBase, options);
+        return instance;
+      }
       default:
         throw new Error(`Unknown provider: ${provider}`);
     }

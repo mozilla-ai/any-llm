@@ -39,3 +39,4 @@ export type {
 
 // Provider implementations
 export { OpenAIProvider } from "./providers/openai.js";
+export { AnthropicProvider } from "./providers/anthropic.js";
