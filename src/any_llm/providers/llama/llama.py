@@ -1,6 +1,8 @@
 from collections.abc import AsyncIterator
 from typing import Any
 
+from typing_extensions import override
+
 from any_llm.providers.llama.utils import _patch_json_schema
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
@@ -22,6 +24,7 @@ class LlamaProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = False
 
+    @override
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:

@@ -5,6 +5,7 @@ from openai._streaming import AsyncStream
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from pydantic import BaseModel
+from typing_extensions import override
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.portkey.utils import _convert_chat_completion, _convert_chat_completion_chunk
@@ -32,6 +33,7 @@ class PortkeyProvider(BaseOpenAIProvider):
     _DEFAULT_REASONING_EFFORT = None
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         if isinstance(response, OpenAIChatCompletion):
             return _convert_chat_completion(response)
@@ -40,6 +42,7 @@ class PortkeyProvider(BaseOpenAIProvider):
         return ChatCompletion.model_validate(response)
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         if isinstance(response, OpenAIChatCompletionChunk):
             return _convert_chat_completion_chunk(response)
@@ -47,6 +50,7 @@ class PortkeyProvider(BaseOpenAIProvider):
             return response
         return ChatCompletionChunk.model_validate(response)
 
+    @override
     def _convert_completion_response_async(
         self, response: OpenAIChatCompletion | AsyncStream[OpenAIChatCompletionChunk]
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
@@ -77,6 +81,7 @@ class PortkeyProvider(BaseOpenAIProvider):
         )
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for OpenAI API."""
         if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):

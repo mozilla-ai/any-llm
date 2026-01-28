@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
+from typing_extensions import override
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.llamafile.utils import _convert_chat_completion
@@ -21,18 +22,20 @@ class LlamafileProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
 
+    @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         return ""
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
-        # Overriding the base behavior so that we can use our custom parsing of reasoning content
         if isinstance(response, OpenAIChatCompletion):
             return _convert_chat_completion(response)
         if isinstance(response, ChatCompletion):
             return response
         return ChatCompletion.model_validate(response)
 
+    @override
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:

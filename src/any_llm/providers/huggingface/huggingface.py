@@ -7,6 +7,7 @@ from openai._streaming import AsyncStream
 from openai.types.responses import Response as OpenAIResponse
 from openai.types.responses import ResponseStreamEvent
 from openresponses_types import ResponseResource
+from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.types.completion import (
@@ -74,11 +75,13 @@ class HuggingfaceProvider(AnyLLM):
     responses_client: AsyncOpenAI
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for HuggingFace API."""
         return _convert_params(params, **kwargs)
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         """Convert HuggingFace response to OpenAI format."""
         # If it's already our ChatCompletion type, return it
@@ -88,27 +91,32 @@ class HuggingfaceProvider(AnyLLM):
         return ChatCompletion.model_validate(response)
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert HuggingFace chunk response to OpenAI format."""
         return _create_openai_chunk_from_huggingface_chunk(response)
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Convert embedding parameters for HuggingFace."""
         msg = "HuggingFace does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Convert HuggingFace embedding response to OpenAI format."""
         msg = "HuggingFace does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert HuggingFace list models response to OpenAI format."""
         return _convert_models_list(response)
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.api_key = api_key
         self.api_base = api_base
@@ -154,6 +162,7 @@ class HuggingfaceProvider(AnyLLM):
         ):
             yield chunk
 
+    @override
     async def _acompletion(
         self,
         params: CompletionParams,
@@ -205,6 +214,7 @@ class HuggingfaceProvider(AnyLLM):
             usage=usage,
         )
 
+    @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         client = HfApi(endpoint=self.api_base, token=self.api_key, **self.kwargs)
         if kwargs.get("inference") is None and kwargs.get("inference_provider") is None:
@@ -214,6 +224,7 @@ class HuggingfaceProvider(AnyLLM):
         models_list = client.list_models(**kwargs)
         return self._convert_list_models_response(models_list)
 
+    @override
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
     ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:

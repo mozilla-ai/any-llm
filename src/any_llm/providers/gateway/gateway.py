@@ -1,6 +1,8 @@
 import os
 from typing import Any
 
+from typing_extensions import override
+
 from any_llm.logging import logger
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
@@ -37,6 +39,7 @@ class GatewayProvider(BaseOpenAIProvider):
             kwargs["default_headers"][GATEWAY_HEADER_NAME] = f"Bearer {api_key}"
         super().__init__(api_key=api_key, api_base=api_base, **kwargs)
 
+    @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         """Unlike other providers, the gateway provider does not require an API key"""
         return api_key or os.getenv(self.ENV_API_KEY_NAME, "")
