@@ -1274,11 +1274,10 @@ as well as what features the provider supports for each model, refer to the prov
 <div class="admonition note">
 <p class="admonition-title">Legend</p>
 <ul>
-<li><strong>Reasoning (Completions)</strong>: Provider can return reasoning traces alongside the assistant message via the completions and/or streaming endpoints. This does not indicate whether the provider offers separate "reasoning models".See <a href="https://github.com/mozilla-ai/any-llm/issues/95">this</a></li>
-<li><strong>Streaming (Completions)</strong>: Provider can stream completion results back as an iterator.
-discussion for more information.</li>
+<li><strong>Reasoning (Completions)</strong>: Provider can return reasoning traces alongside the assistant message via the completions and/or streaming endpoints. This does not indicate whether the provider offers separate "reasoning models". See <a href="https://github.com/mozilla-ai/any-llm/issues/95">this</a> discussion for more information.</li>
+<li><strong>Streaming (Completions)</strong>: Provider can stream completion results back as an iterator.</li>
 <li><strong>Image (Completions)</strong>: Provider supports passing an <code>image_data</code> parameter for vision capabilities, as defined by the OpenAI spec <a href="https://platform.openai.com/docs/api-reference/chat/create#chat_create-messages">here</a>.</li>
-<li><strong>Responses API</strong>: Provider supports the Responses API variant for text generation.  See <a href="https://github.com/mozilla-ai/any-llm/issues/26">this</a> to follow along with our implementation effort.</li>
+<li><strong>OpenResponses API</strong>: Provider supports the <a href="https://www.openresponses.org/">OpenResponses</a> specification for agentic AI systems. See the <a href="../api/responses/">Responses API docs</a> for usage details.</li>
 <li><strong>List Models API</strong>: Provider supports listing available models programmatically via the <code>list_models()</code> function. This allows you to discover what models are available from the provider at runtime, which can be useful for dynamic model selection or validation.</li>
 </ul>
 </div>
@@ -1447,7 +1446,7 @@ discussion for more information.</li>
 <tr>
 <td><a href="https://huggingface.co/docs/huggingface_hub/package_reference/inference_client"><code>huggingface</code></a></td>
 <td>HF_TOKEN</td>
-<td>❌</td>
+<td>✅</td>
 <td>✅</td>
 <td>✅</td>
 <td>❌</td>

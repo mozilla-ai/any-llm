@@ -76,7 +76,7 @@ Features: real-time streaming responses, multiple provider support, and collapsi
 **Direct API Functions** (recommended for simple use cases):
 - [completion](#./api/completion.md) - Chat completions with any provider
 - [embedding](#./api/embedding.md) - Text embeddings
-- [responses](#./api/responses.md) - OpenAI-style Responses API
+- [responses](#./api/responses.md) - [OpenResponses](https://www.openresponses.org/) API for agentic AI systems
 
 **AnyLLM Class** (recommended for advanced use cases):
 - [Provider API](#./api/any_llm.md) - Lower-level provider interface with metadata access and reusability
@@ -176,7 +176,7 @@ print(f"Supports streaming: {metadata.streaming}")
 print(f"Supports tools: {metadata.completion}")
 ```
 
-### API Call 
+### API Call
 
 ```python
 import os
@@ -267,7 +267,7 @@ def get_weather(location: str, unit: str = "F") -> str:
         location: The city or location to get weather for
         unit: Temperature unit, either 'C' or 'F'
 
-    Returns: 
+    Returns:
         Current weather description
     """
     return f"Weather in {location} is sunny and 75{unit}!"
@@ -368,11 +368,10 @@ Provider source code can be found in the [`src/any_llm/providers/`](https://gith
 
 !!! note "Legend"
 
-    - **Reasoning (Completions)**: Provider can return reasoning traces alongside the assistant message via the completions and/or streaming endpoints. This does not indicate whether the provider offers separate "reasoning models".See [this](https://github.com/mozilla-ai/any-llm/issues/95)
+    - **Reasoning (Completions)**: Provider can return reasoning traces alongside the assistant message via the completions and/or streaming endpoints. This does not indicate whether the provider offers separate "reasoning models". See [this](https://github.com/mozilla-ai/any-llm/issues/95) discussion for more information.
     - **Streaming (Completions)**: Provider can stream completion results back as an iterator.
-    discussion for more information.
     - **Image (Completions)**: Provider supports passing an `image_data` parameter for vision capabilities, as defined by the OpenAI spec [here](https://platform.openai.com/docs/api-reference/chat/create#chat_create-messages).
-    - **Responses API**: Provider supports the Responses API variant for text generation.  See [this](https://github.com/mozilla-ai/any-llm/issues/26) to follow along with our implementation effort.
+    - **OpenResponses API**: Provider supports the [OpenResponses](https://www.openresponses.org/) specification for agentic AI systems. See the [Responses API docs](#api/responses.md) for usage details.
     - **List Models API**: Provider supports listing available models programmatically via the `list_models()` function. This allows you to discover what models are available from the provider at runtime, which can be useful for dynamic model selection or validation.
 
 
@@ -398,13 +397,29 @@ Provider source code can be found in the [`src/any_llm/providers/`](https://gith
 
 <!-- Source: api/responses.md -->
 
-## Responses
+## OpenResponses API
+
+The Responses API in any-llm implements the [OpenResponses](https://www.openresponses.org/) specification—an open-source standard for building multi-provider, interoperable LLM interfaces for agentic AI systems.
+
+!!! info "Learn More"
+
+    - [OpenResponses Specification](https://www.openresponses.org/specification)
+    - [OpenResponses Reference](https://www.openresponses.org/reference)
+    - [HuggingFace Responses API Guide](https://huggingface.co/docs/inference-providers/guides/responses-api)
+
+### Return Types
+
+The `responses()` and `aresponses()` functions return different types depending on the provider's level of OpenResponses compliance:
+
+| Return Type | When Returned |
+|-------------|---------------|
+| `openresponses_types.ResponseResource` | Providers fully compliant with the OpenResponses specification |
+| `openai.types.responses.Response` | Providers using OpenAI's native Responses API (not yet fully OpenResponses-compliant) |
+| `Iterator[dict]` / `AsyncIterator[dict]` | When `stream=True` is set |
 
 
-!!! warning
-
-    This API is experimental and subject to changes based upon our experience as we integrate additional providers.
-    Use with caution.
+Both `ResponseResource` and `Response` share a similar structure, so in many cases
+you can access common fields like `output` without type checking.
 
 ::: any_llm.api.responses
 ::: any_llm.api.aresponses
@@ -514,9 +529,12 @@ Data models and types for completion operations.
 
 <!-- Source: api/types/responses.md -->
 
-## Response Types
+## OpenResponses Types
 
-Data models and types for API responses.
+Data models and types for the [OpenResponses](https://www.openresponses.org/) API specification.
+
+For the full OpenResponses type definitions, see the [openresponses-types](https://pypi.org/project/openresponses-types/) package documentation.
+
 
 ::: any_llm.types.responses
 
