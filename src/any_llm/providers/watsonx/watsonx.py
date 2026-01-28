@@ -1,25 +1,35 @@
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
 from any_llm.any_llm import AnyLLM
 
-MISSING_PACKAGES_ERROR = None
-try:
-    from ibm_watsonx_ai import APIClient as WatsonxClient
-    from ibm_watsonx_ai import Credentials
-    from ibm_watsonx_ai.foundation_models.inference.model_inference import ModelInference
+MISSING_PACKAGES_ERROR: ImportError | None = None
+PYTHON_VERSION_INCOMPATIBLE = sys.version_info >= (3, 14)
 
-    from .utils import (
-        _convert_models_list,
-        _convert_pydantic_to_watsonx_json,
-        _convert_response,
-        _convert_streaming_chunk,
+if PYTHON_VERSION_INCOMPATIBLE:
+    MISSING_PACKAGES_ERROR = ImportError(
+        "The 'ibm-watsonx-ai' package is not compatible with Python 3.14+. "
+        "The package has StrEnum compatibility issues with Python 3.14. "
+        "Please use Python 3.13 or earlier to use this provider, or wait for an updated ibm-watsonx-ai package."
     )
-except ImportError as e:
-    MISSING_PACKAGES_ERROR = e
+else:
+    try:
+        from ibm_watsonx_ai import APIClient as WatsonxClient
+        from ibm_watsonx_ai import Credentials
+        from ibm_watsonx_ai.foundation_models.inference.model_inference import ModelInference
+
+        from .utils import (
+            _convert_models_list,
+            _convert_pydantic_to_watsonx_json,
+            _convert_response,
+            _convert_streaming_chunk,
+        )
+    except ImportError as e:
+        MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence

@@ -73,7 +73,7 @@ azure = [
 ]
 
 watsonx = [
-  "ibm-watsonx-ai",
+  "ibm-watsonx-ai; python_version < '3.14'",
 ]
 
 together = [
@@ -85,7 +85,7 @@ ollama = [
 ]
 
 voyage = [
-  "voyageai",
+  "voyageai; python_version < '3.14'",
 ]
 
 xai = [
