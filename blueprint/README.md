@@ -82,7 +82,7 @@ exposing the list of supported to the user (instead of relaying on strings).
 ## Testing
 
 The OpenAI provider (and those using OpenAI-compatible APIs) must be tested
-against the [Acceptance Tests](./acceptance-tests.md).
+against the [Integration Tests](./integration-tests.md).
 
 For providers using their own SDKs, the internal conversion method must be
 fully covered by unit tests.
