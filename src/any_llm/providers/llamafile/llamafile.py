@@ -12,6 +12,7 @@ from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, Comple
 class LlamafileProvider(BaseOpenAIProvider):
     API_BASE = "http://127.0.0.1:8080/v1"
     ENV_API_KEY_NAME = "None"
+    ENV_API_BASE_NAME = "LLAMAFILE_API_BASE"
     PROVIDER_NAME = "llamafile"
     PROVIDER_DOCUMENTATION_URL = "https://github.com/Mozilla-Ocho/llamafile"
 

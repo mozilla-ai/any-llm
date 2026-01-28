@@ -33,6 +33,7 @@ class AzureProvider(AnyLLM):
 
     PROVIDER_NAME = "azure"
     ENV_API_KEY_NAME = "AZURE_API_KEY"
+    ENV_API_BASE_NAME = "AZURE_ENDPOINT"
     PROVIDER_DOCUMENTATION_URL = "https://azure.microsoft.com/en-us/products/ai-services/openai-service"
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION_IMAGE = False

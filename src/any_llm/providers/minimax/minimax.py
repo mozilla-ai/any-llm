@@ -15,6 +15,7 @@ from any_llm.utils.reasoning import process_streaming_reasoning_chunks
 class MinimaxProvider(BaseOpenAIProvider):
     API_BASE = "https://api.minimax.io/v1"
     ENV_API_KEY_NAME = "MINIMAX_API_KEY"
+    ENV_API_BASE_NAME = "MINIMAX_API_BASE"
     PROVIDER_NAME = "minimax"
     PROVIDER_DOCUMENTATION_URL = "https://www.minimax.io/platform_overview"
 

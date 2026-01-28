@@ -14,6 +14,7 @@ class GeminiProvider(GoogleProvider):
     PROVIDER_NAME = "gemini"
     PROVIDER_DOCUMENTATION_URL = "https://ai.google.dev/gemini-api/docs"
     ENV_API_KEY_NAME = "GEMINI_API_KEY/GOOGLE_API_KEY"
+    ENV_API_BASE_NAME = "GEMINI_API_BASE"
 
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         if not api_key:

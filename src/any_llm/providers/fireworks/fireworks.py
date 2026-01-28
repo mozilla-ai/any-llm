@@ -13,6 +13,7 @@ from .utils import extract_reasoning_from_response
 class FireworksProvider(BaseOpenAIProvider):
     PROVIDER_NAME = "fireworks"
     ENV_API_KEY_NAME = "FIREWORKS_API_KEY"
+    ENV_API_BASE_NAME = "FIREWORKS_API_BASE"
     PROVIDER_DOCUMENTATION_URL = "https://fireworks.ai/api"
     API_BASE = "https://api.fireworks.ai/inference/v1"
 

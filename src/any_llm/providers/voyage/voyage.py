@@ -38,6 +38,7 @@ class VoyageProvider(AnyLLM):
 
     PROVIDER_NAME = "voyage"
     ENV_API_KEY_NAME = "VOYAGE_API_KEY"
+    ENV_API_BASE_NAME = "VOYAGE_API_BASE"
     PROVIDER_DOCUMENTATION_URL = "https://docs.voyageai.com/"
 
     SUPPORTS_COMPLETION = False

@@ -44,6 +44,7 @@ class MistralProvider(AnyLLM):
 
     PROVIDER_NAME = "mistral"
     ENV_API_KEY_NAME = "MISTRAL_API_KEY"
+    ENV_API_BASE_NAME = "MISTRAL_API_BASE"
     PROVIDER_DOCUMENTATION_URL = "https://docs.mistral.ai/"
 
     SUPPORTS_COMPLETION_STREAMING = True

@@ -4,6 +4,7 @@ from any_llm.providers.openai.base import BaseOpenAIProvider
 class VllmProvider(BaseOpenAIProvider):
     API_BASE = "http://localhost:8000/v1"
     ENV_API_KEY_NAME = "VLLM_API_KEY"
+    ENV_API_BASE_NAME = "VLLM_API_BASE"
     PROVIDER_NAME = "vllm"
     PROVIDER_DOCUMENTATION_URL = "https://docs.vllm.ai/"
 
