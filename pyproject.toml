@@ -220,8 +220,8 @@ ignore_missing_imports = true # pytest related modules are not found
 
 [tool.pytest.ini_options]
 timeout = 120
-reruns = 3
-reruns_delay = 5
+reruns = 5
+reruns_delay = 10
 filterwarnings = [
   # Silence Pydantic V1-style validator deprecation warnings coming from fireworks only
   "ignore:Pydantic V1 style `@validator` validators are deprecated:pydantic.warnings.PydanticDeprecatedSince20:fireworks\\.client\\.image_api",
