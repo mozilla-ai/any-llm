@@ -4,6 +4,7 @@ from typing import Any
 from openai._streaming import AsyncStream
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
+from typing_extensions import override
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.minimax.utils import _convert_chat_completion
@@ -25,6 +26,7 @@ class MinimaxProvider(BaseOpenAIProvider):
     SUPPORTS_EMBEDDING = False
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         if isinstance(response, OpenAIChatCompletion):
             return _convert_chat_completion(response)
@@ -32,6 +34,7 @@ class MinimaxProvider(BaseOpenAIProvider):
             return response
         return ChatCompletion.model_validate(response)
 
+    @override
     def _convert_completion_response_async(
         self, response: OpenAIChatCompletion | AsyncStream[OpenAIChatCompletionChunk]
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
@@ -64,6 +67,7 @@ class MinimaxProvider(BaseOpenAIProvider):
         )
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         # response_format is supported in the z.ai SDK, but the SDK doesn't yet have an async client
         # so we can't use it in any-llm

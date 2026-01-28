@@ -1,3 +1,5 @@
+from typing_extensions import override
+
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
 # LM Studio has a python sdk, but per their docs they are compliant with OpenAI spec
@@ -13,5 +15,6 @@ class LmstudioProvider(BaseOpenAIProvider):
 
     SUPPORTS_COMPLETION_REASONING = True
 
+    @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         return ""

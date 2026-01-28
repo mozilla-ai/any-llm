@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from typing_extensions import override
+
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.anthropic.base import BaseAnthropicProvider
 
@@ -35,11 +37,13 @@ class VertexaianthropicProvider(BaseAnthropicProvider):
 
     client: AsyncAnthropicVertex
 
+    @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         # VertexAI uses Google Cloud ADC, not an API key
         # We don't require an API key, but we do require project_id
         return api_key
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         project_id = kwargs.pop("project_id", None) or os.getenv("GOOGLE_CLOUD_PROJECT")
         region = kwargs.pop("region", None) or os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")

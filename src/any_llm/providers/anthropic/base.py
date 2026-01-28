@@ -3,6 +3,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
+from typing_extensions import override
+
 from any_llm.any_llm import AnyLLM
 
 MISSING_PACKAGES_ERROR = None
@@ -52,39 +54,46 @@ class BaseAnthropicProvider(AnyLLM, ABC):
     client: AsyncAnthropic | AsyncAnthropicVertex
 
     @abstractmethod
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Anthropic API."""
         return _convert_params(params, **kwargs)
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Message) -> ChatCompletion:
         """Convert Anthropic Message to OpenAI ChatCompletion format."""
         return _convert_response(response)
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert Anthropic streaming chunk to OpenAI ChatCompletionChunk format."""
         model_id = kwargs.get("model_id", "unknown")
         return _create_openai_chunk_from_anthropic_chunk(response, model_id)
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Anthropic does not support embeddings."""
         msg = "Anthropic does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Anthropic does not support embeddings."""
         msg = "Anthropic does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: list[AnthropicModelInfo]) -> Sequence[Model]:
         """Convert Anthropic models list to OpenAI format."""
         return _convert_models_list(response)
@@ -95,6 +104,7 @@ class BaseAnthropicProvider(AnyLLM, ABC):
             async for event in anthropic_stream:
                 yield self._convert_completion_chunk_response(event, model_id=kwargs.get("model", "unknown"))
 
+    @override
     async def _acompletion(
         self,
         params: CompletionParams,

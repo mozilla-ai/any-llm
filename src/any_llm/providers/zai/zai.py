@@ -1,5 +1,7 @@
 from typing import Any
 
+from typing_extensions import override
+
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.completion import CompletionParams
@@ -29,6 +31,7 @@ class ZaiProvider(BaseOpenAIProvider):
     PACKAGES_INSTALLED = True
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         # response_format is supported in the z.ai SDK, but the SDK doesn't yet have an async client
         # so we can't use it in any-llm

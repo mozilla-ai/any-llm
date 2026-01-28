@@ -1,6 +1,8 @@
 # ruff: noqa: D107
 from __future__ import annotations
 
+from typing_extensions import override
+
 
 class AnyLLMError(Exception):
     """Base exception for all any-llm errors.
@@ -28,6 +30,7 @@ class AnyLLMError(Exception):
         self.original_exception = original_exception
         self.provider_name = provider_name
 
+    @override
     def __str__(self) -> str:
         """Return string representation of the exception."""
         if self.provider_name:

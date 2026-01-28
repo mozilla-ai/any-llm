@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel
+from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
@@ -50,6 +51,7 @@ class CerebrasProvider(AnyLLM):
     client: cerebras.AsyncCerebras
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         # Cerebras does not support providing reasoning effort
         converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream"})
@@ -59,10 +61,12 @@ class CerebrasProvider(AnyLLM):
         return converted_params
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         return _convert_response(response)
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         if isinstance(response, ChatChunkResponse):
             return _create_openai_chunk_from_cerebras_chunk(response)
@@ -70,19 +74,23 @@ class CerebrasProvider(AnyLLM):
         raise ValueError(msg)
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         msg = "Cerebras does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         msg = "Cerebras does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         return _convert_models_list(response)
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = cerebras.AsyncCerebras(api_key=api_key, **kwargs)
 
@@ -106,6 +114,7 @@ class CerebrasProvider(AnyLLM):
         async for chunk in cast("cerebras.AsyncStream[ChatCompletion]", cerebras_stream):
             yield self._convert_completion_chunk_response(chunk)
 
+    @override
     async def _acompletion(
         self,
         params: CompletionParams,
@@ -146,6 +155,7 @@ class CerebrasProvider(AnyLLM):
 
         return self._convert_completion_response(response_data)
 
+    @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(models_list)

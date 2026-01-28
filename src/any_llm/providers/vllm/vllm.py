@@ -1,3 +1,5 @@
+from typing_extensions import override
+
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
 
@@ -12,6 +14,7 @@ class VllmProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION_PDF = False
 
+    @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         # vLLM server by default doesn't require an API key
         # but can be configured to use one via --api-key flag

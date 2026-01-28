@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from pydantic import BaseModel
+from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
@@ -76,6 +77,7 @@ class GoogleProvider(AnyLLM):
     client: genai.Client
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Google API."""
         provider_name = kwargs.pop("provider_name")
@@ -134,6 +136,7 @@ class GoogleProvider(AnyLLM):
         return result_kwargs
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         """Convert Google response data to OpenAI ChatCompletion format."""
         # Expect response to be a tuple of (response_dict, model_id)
@@ -195,11 +198,13 @@ class GoogleProvider(AnyLLM):
         )
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert Google chunk response to OpenAI format."""
         return _create_openai_chunk_from_google_chunk(response)
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Convert embedding parameters for Google API."""
         converted_params = {"contents": params}
@@ -207,6 +212,7 @@ class GoogleProvider(AnyLLM):
         return converted_params
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Convert Google embedding response to OpenAI format."""
         # We need the model parameter for conversion
@@ -214,10 +220,12 @@ class GoogleProvider(AnyLLM):
         return _create_openai_embedding_response_from_google(model, response["result"])
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Google list models response to OpenAI format."""
         return _convert_models_list(response)
 
+    @override
     async def _aembedding(
         self,
         model: str,
@@ -233,6 +241,7 @@ class GoogleProvider(AnyLLM):
         response_data = {"model": model, "result": result}
         return self._convert_embedding_response(response_data)
 
+    @override
     async def _acompletion(
         self,
         params: CompletionParams,
@@ -255,6 +264,7 @@ class GoogleProvider(AnyLLM):
         response_dict = _convert_response_to_response_dict(response)
         return self._convert_completion_response((response_dict, params.model_id))
 
+    @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.aio.models.list(**kwargs)
         return self._convert_list_models_response(models_list)

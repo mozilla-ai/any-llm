@@ -4,6 +4,7 @@ import sys
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
+from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 
@@ -60,6 +61,7 @@ class WatsonxProvider(AnyLLM):
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Watsonx API."""
         # Watsonx does not support providing reasoning effort
@@ -72,32 +74,38 @@ class WatsonxProvider(AnyLLM):
         return converted_params
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         """Convert Watsonx response to OpenAI format."""
         return _convert_response(response)
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert Watsonx chunk response to OpenAI format."""
         return _convert_streaming_chunk(response)
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Convert embedding parameters for Watsonx."""
         msg = "Watsonx does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Convert Watsonx embedding response to OpenAI format."""
         msg = "Watsonx does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Watsonx list models response to OpenAI format."""
         return _convert_models_list(response)
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         # watsonx requires params.model_id to instantiate the client
         # which is not available at this point.
@@ -119,6 +127,7 @@ class WatsonxProvider(AnyLLM):
         async for chunk in response_stream:
             yield self._convert_completion_chunk_response(chunk)
 
+    @override
     async def _acompletion(
         self,
         params: CompletionParams,
@@ -152,6 +161,7 @@ class WatsonxProvider(AnyLLM):
 
         return self._convert_completion_response(response)
 
+    @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.

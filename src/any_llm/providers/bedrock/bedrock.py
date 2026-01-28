@@ -6,6 +6,8 @@ import os
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
 
+from typing_extensions import override
+
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.logging import logger
@@ -46,16 +48,19 @@ class BedrockProvider(AnyLLM):
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for AWS API."""
         return _convert_params(params, kwargs)
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         """Convert AWS Bedrock response to OpenAI format."""
         return _convert_response(response)
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert AWS Bedrock chunk response to OpenAI format."""
         model = kwargs.get("model", "")
@@ -67,12 +72,14 @@ class BedrockProvider(AnyLLM):
         return chunk
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Convert embedding parameters for AWS Bedrock."""
         # For bedrock, we don't need to convert the params, just pass them through
         return kwargs
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Convert AWS Bedrock embedding response to OpenAI format."""
         return _create_openai_embedding_response_from_aws(
@@ -80,6 +87,7 @@ class BedrockProvider(AnyLLM):
         )
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert AWS Bedrock list models response to OpenAI format."""
         models_list = response.get("modelSummaries", [])
@@ -88,11 +96,13 @@ class BedrockProvider(AnyLLM):
         # the modelId is a string and will not be None
         return [Model(id=model["modelId"], object="model", created=0, owned_by="aws") for model in models_list]
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.api_base = api_base
         self.kwargs = kwargs
         self.client = boto3.client("bedrock-runtime", endpoint_url=api_base, **kwargs)
 
+    @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         session = boto3.Session()  # type: ignore[attr-defined]
         credentials = session.get_credentials()
@@ -104,6 +114,7 @@ class BedrockProvider(AnyLLM):
 
         return api_key
 
+    @override
     async def _acompletion(
         self,
         params: CompletionParams,
@@ -154,6 +165,7 @@ class BedrockProvider(AnyLLM):
 
         return self._convert_completion_response(response)
 
+    @override
     async def _aembedding(
         self,
         model: str,
@@ -171,6 +183,7 @@ class BedrockProvider(AnyLLM):
 
         return await loop.run_in_executor(None, call_sync_partial)
 
+    @override
     def _embedding(
         self,
         model: str,
@@ -201,6 +214,7 @@ class BedrockProvider(AnyLLM):
         response_data = {"embedding_data": embedding_data, "model": model, "total_tokens": total_tokens}
         return self._convert_embedding_response(response_data)
 
+    @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         client = boto3.client(
             "bedrock",
