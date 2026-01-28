@@ -15,7 +15,7 @@ from any_llm.types.completion import CompletionParams, ReasoningEffort
 def mock_anthropic_provider():  # type: ignore[no-untyped-def]
     with (
         patch("any_llm.providers.anthropic.anthropic.AsyncAnthropic") as mock_anthropic,
-        patch("any_llm.providers.anthropic.anthropic._convert_response"),
+        patch("any_llm.providers.anthropic.base._convert_response"),
     ):
         mock_client = Mock()
         mock_anthropic.return_value = mock_client
