@@ -29,7 +29,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.COHERE: "command-a-reasoning-08-2025",
         LLMProvider.DEEPSEEK: "deepseek-reasoner",
-        LLMProvider.MOONSHOT: "kimi-thinking-preview",
+        LLMProvider.MOONSHOT: "kimi-k2-thinking",
         LLMProvider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         LLMProvider.HUGGINGFACE: "huggingface/tgi",
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
