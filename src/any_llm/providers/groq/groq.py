@@ -42,7 +42,7 @@ class GroqProvider(AnyLLM):
 
     PROVIDER_NAME = "groq"
     ENV_API_KEY_NAME = "GROQ_API_KEY"
-    ENV_API_BASE_NAME = "GROQ_API_BASE"
+    ENV_API_BASE_NAME = "GROQ_BASE_URL"
     PROVIDER_DOCUMENTATION_URL = "https://groq.com/api"
 
     SUPPORTS_COMPLETION_STREAMING = True
