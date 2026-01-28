@@ -19,6 +19,7 @@ class PortkeyProvider(BaseOpenAIProvider):
 
     API_BASE = "https://api.portkey.ai/v1"
     ENV_API_KEY_NAME = "PORTKEY_API_KEY"
+    ENV_API_BASE_NAME = "PORTKEY_API_BASE"
     PROVIDER_NAME = "portkey"
     PROVIDER_DOCUMENTATION_URL = "https://portkey.ai/docs"
 

@@ -27,6 +27,7 @@ class VertexaianthropicProvider(BaseAnthropicProvider):
 
     PROVIDER_NAME = "vertexaianthropic"
     ENV_API_KEY_NAME = ""  # VertexAI uses GCP ADC, not an API key
+    ENV_API_BASE_NAME = "VERTEXAI_ANTHROPIC_API_BASE"
     PROVIDER_DOCUMENTATION_URL = "https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-claude"
 
     SUPPORTS_LIST_MODELS = False

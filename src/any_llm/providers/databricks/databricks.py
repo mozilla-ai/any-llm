@@ -5,6 +5,7 @@ class DatabricksProvider(BaseOpenAIProvider):
     """Databricks Provider using the new response conversion utilities."""
 
     ENV_API_KEY_NAME = "DATABRICKS_TOKEN"
+    ENV_API_BASE_NAME = "DATABRICKS_HOST"
     PROVIDER_NAME = "databricks"
     PROVIDER_DOCUMENTATION_URL = "https://docs.databricks.com/"
 

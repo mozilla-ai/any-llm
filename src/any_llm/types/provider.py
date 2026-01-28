@@ -8,6 +8,7 @@ ANY_API_KEY_REGEX = r"^ANY\.v\d+\.([^.]+)\.([^-]+)-(.+)$"
 class ProviderMetadata(BaseModel):
     name: str
     env_key: str
+    env_api_base: str | None
     doc_url: str
     streaming: bool
     reasoning: bool

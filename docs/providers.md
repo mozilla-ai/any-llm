@@ -16,6 +16,8 @@ Provider source code can be found in the [`src/any_llm/providers/`](https://gith
 
 !!! note "Legend"
 
+    - **Key**: Environment variable for the API key (e.g., `OPENAI_API_KEY`).
+    - **Base**: Environment variable for a custom API base URL (e.g., `OPENAI_BASE_URL`). Useful for proxies or self-hosted endpoints.
     - **Reasoning (Completions)**: Provider can return reasoning traces alongside the assistant message via the completions and/or streaming endpoints. This does not indicate whether the provider offers separate "reasoning models". See [this](https://github.com/mozilla-ai/any-llm/issues/95) discussion for more information.
     - **Streaming (Completions)**: Provider can stream completion results back as an iterator.
     - **Image (Completions)**: Provider supports passing an `image_data` parameter for vision capabilities, as defined by the OpenAI spec [here](https://platform.openai.com/docs/api-reference/chat/create#chat_create-messages).

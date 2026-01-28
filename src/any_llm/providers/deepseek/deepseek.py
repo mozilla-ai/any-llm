@@ -9,6 +9,7 @@ from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, Comple
 class DeepseekProvider(BaseOpenAIProvider):
     API_BASE = "https://api.deepseek.com"
     ENV_API_KEY_NAME = "DEEPSEEK_API_KEY"
+    ENV_API_BASE_NAME = "DEEPSEEK_API_BASE"
     PROVIDER_NAME = "deepseek"
     PROVIDER_DOCUMENTATION_URL = "https://platform.deepseek.com/"
 

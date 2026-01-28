@@ -39,6 +39,7 @@ if TYPE_CHECKING:
 class TogetherProvider(AnyLLM):
     PROVIDER_NAME = "together"
     ENV_API_KEY_NAME = "TOGETHER_API_KEY"
+    ENV_API_BASE_NAME = "TOGETHER_API_BASE"
     PROVIDER_DOCUMENTATION_URL = "https://together.ai/"
 
     SUPPORTS_COMPLETION_STREAMING = True

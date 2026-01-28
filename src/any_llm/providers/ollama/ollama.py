@@ -41,6 +41,7 @@ class OllamaProvider(AnyLLM):
     PROVIDER_NAME = "ollama"
     PROVIDER_DOCUMENTATION_URL = "https://github.com/ollama/ollama"
     ENV_API_KEY_NAME = "None"
+    ENV_API_BASE_NAME = "OLLAMA_HOST"
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True

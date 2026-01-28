@@ -8,6 +8,7 @@ from any_llm.types.completion import CompletionParams
 class InceptionProvider(BaseOpenAIProvider):
     API_BASE = "https://api.inceptionlabs.ai/v1"
     ENV_API_KEY_NAME = "INCEPTION_API_KEY"
+    ENV_API_BASE_NAME = "INCEPTION_API_BASE"
     PROVIDER_NAME = "inception"
     PROVIDER_DOCUMENTATION_URL = "https://inceptionlabs.ai/"
 

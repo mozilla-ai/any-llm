@@ -11,6 +11,7 @@ class AzureopenaiProvider(BaseOpenAIProvider):
     """Azure OpenAI AnyLLM."""
 
     ENV_API_KEY_NAME = "AZURE_OPENAI_API_KEY"
+    ENV_API_BASE_NAME = "AZURE_OPENAI_ENDPOINT"
     PROVIDER_NAME = "azureopenai"
     PROVIDER_DOCUMENTATION_URL = "https://learn.microsoft.com/en-us/azure/ai-foundry/"
     SUPPORTS_RESPONSES = True

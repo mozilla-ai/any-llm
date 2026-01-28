@@ -45,6 +45,9 @@ class AnyLLM(ABC):
     ENV_API_KEY_NAME: str
     """Environment variable name for the API key"""
 
+    ENV_API_BASE_NAME: str | None = None
+    """Environment variable name for the API base URL. Optional."""
+
     # === Feature support flags (to be set by subclasses) ===
     SUPPORTS_COMPLETION_STREAMING: bool
     """OpenAI Streaming Completion API"""
@@ -96,7 +99,7 @@ class AnyLLM(ABC):
         self._verify_no_missing_packages()
         self._init_client(
             api_key=self._verify_and_set_api_key(api_key),
-            api_base=api_base,
+            api_base=self._resolve_api_base(api_base),
             **kwargs,
         )
 
@@ -114,6 +117,20 @@ class AnyLLM(ABC):
         if not api_key:
             raise MissingApiKeyError(self.PROVIDER_NAME, self.ENV_API_KEY_NAME)
         return api_key
+
+    def _resolve_api_base(self, api_base: str | None = None) -> str | None:
+        """Resolve API base URL from parameter or environment variable.
+
+        Resolution order:
+        1. Explicit api_base parameter (if provided)
+        2. Environment variable (if ENV_API_BASE_NAME is defined and set)
+        3. None (allowing _init_client to use API_BASE class default)
+        """
+        if api_base:
+            return api_base
+        if self.ENV_API_BASE_NAME:
+            return os.getenv(self.ENV_API_BASE_NAME)
+        return None
 
     @classmethod
     def create(
@@ -325,6 +342,7 @@ class AnyLLM(ABC):
         return ProviderMetadata(
             name=cls.PROVIDER_NAME,
             env_key=cls.ENV_API_KEY_NAME,
+            env_api_base=cls.ENV_API_BASE_NAME,
             doc_url=cls.PROVIDER_DOCUMENTATION_URL,
             streaming=cls.SUPPORTS_COMPLETION_STREAMING,
             reasoning=cls.SUPPORTS_COMPLETION_REASONING,

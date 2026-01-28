@@ -30,6 +30,7 @@ class SagemakerProvider(AnyLLM):
 
     PROVIDER_NAME = "sagemaker"
     ENV_API_KEY_NAME = "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
+    ENV_API_BASE_NAME = "SAGEMAKER_ENDPOINT_URL"
     PROVIDER_DOCUMENTATION_URL = "https://aws.amazon.com/sagemaker/"
 
     SUPPORTS_BATCH = False
