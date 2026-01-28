@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "any-llm-sdk"
 readme = "README.md"
 license = {text = "Apache-2.0"}
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 version = "0.0.0-dev" # There is a regex in the release.yaml file that looks for this version string to set the version in the pyproject.toml file. Do not change this version string without updating the regex.
 dependencies = [
   "pydantic>2,<3",
