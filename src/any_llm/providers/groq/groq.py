@@ -10,6 +10,8 @@ from any_llm.exceptions import UnsupportedParameterError
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
 if TYPE_CHECKING:
+    from openresponses_types import ResponseResource
+
     from any_llm.types.completion import CreateEmbeddingResponse
 
 MISSING_PACKAGES_ERROR = None
@@ -55,6 +57,7 @@ class GroqProvider(AnyLLM):
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     client: AsyncGroq
+    openai_client: AsyncOpenAI
 
     @staticmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
@@ -150,7 +153,7 @@ class GroqProvider(AnyLLM):
 
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
-    ) -> Response | AsyncIterator[ResponseStreamEvent]:
+    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
         """Call Groq Responses API and normalize into ChatCompletion/Chunks."""
         # Python SDK doesn't yet support it: https://community.groq.com/feature-requests-6/groq-python-sdk-support-for-responses-api-262
 

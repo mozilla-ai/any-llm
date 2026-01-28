@@ -79,7 +79,7 @@ print(f"Supports streaming: {metadata.streaming}")
 print(f"Supports tools: {metadata.completion}")
 ```
 
-### API Call 
+### API Call
 
 ```python
 import os
@@ -170,7 +170,7 @@ def get_weather(location: str, unit: str = "F") -> str:
         location: The city or location to get weather for
         unit: Temperature unit, either 'C' or 'F'
 
-    Returns: 
+    Returns:
         Current weather description
     """
     return f"Weather in {location} is sunny and 75{unit}!"

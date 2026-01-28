@@ -16,11 +16,10 @@ Provider source code can be found in the [`src/any_llm/providers/`](https://gith
 
 !!! note "Legend"
 
-    - **Reasoning (Completions)**: Provider can return reasoning traces alongside the assistant message via the completions and/or streaming endpoints. This does not indicate whether the provider offers separate "reasoning models".See [this](https://github.com/mozilla-ai/any-llm/issues/95)
+    - **Reasoning (Completions)**: Provider can return reasoning traces alongside the assistant message via the completions and/or streaming endpoints. This does not indicate whether the provider offers separate "reasoning models". See [this](https://github.com/mozilla-ai/any-llm/issues/95) discussion for more information.
     - **Streaming (Completions)**: Provider can stream completion results back as an iterator.
-    discussion for more information.
     - **Image (Completions)**: Provider supports passing an `image_data` parameter for vision capabilities, as defined by the OpenAI spec [here](https://platform.openai.com/docs/api-reference/chat/create#chat_create-messages).
-    - **Responses API**: Provider supports the Responses API variant for text generation.  See [this](https://github.com/mozilla-ai/any-llm/issues/26) to follow along with our implementation effort.
+    - **OpenResponses API**: Provider supports the [OpenResponses](https://www.openresponses.org/) specification for agentic AI systems. See the [Responses API docs](api/responses.md) for usage details.
     - **List Models API**: Provider supports listing available models programmatically via the `list_models()` function. This allows you to discover what models are available from the provider at runtime, which can be useful for dynamic model selection or validation.
 
 

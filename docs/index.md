@@ -64,7 +64,7 @@ Features: real-time streaming responses, multiple provider support, and collapsi
 **Direct API Functions** (recommended for simple use cases):
 - [completion](./api/completion.md) - Chat completions with any provider
 - [embedding](./api/embedding.md) - Text embeddings
-- [responses](./api/responses.md) - OpenAI-style Responses API
+- [responses](./api/responses.md) - [OpenResponses](https://www.openresponses.org/) API for agentic AI systems
 
 **AnyLLM Class** (recommended for advanced use cases):
 - [Provider API](./api/any_llm.md) - Lower-level provider interface with metadata access and reusability

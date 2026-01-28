@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from openai import AsyncStream
+from openresponses_types import ResponseResource
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
@@ -25,7 +26,7 @@ class FireworksProvider(BaseOpenAIProvider):
 
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
-    ) -> Response | AsyncIterator[ResponseStreamEvent]:
+    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
         """Call Fireworks Responses API and normalize into ChatCompletion/Chunks."""
         response = await super()._aresponses(params, **kwargs)
         if isinstance(response, Response) and not isinstance(response, AsyncStream):

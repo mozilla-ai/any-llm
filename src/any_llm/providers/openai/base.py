@@ -9,6 +9,8 @@ from openai._streaming import AsyncStream
 from openai._types import NOT_GIVEN, Omit
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
+from openresponses_types import ResponseResource
+from pydantic import ValidationError
 
 from any_llm.any_llm import AnyLLM
 from any_llm.logging import logger
@@ -62,7 +64,7 @@ class BaseOpenAIProvider(AnyLLM):
         """Convert OpenAI response to OpenAI format (passthrough)."""
         if isinstance(response, OpenAIChatCompletion):
             return _convert_chat_completion(response)
-        # If it's already our ChatCompletion type, return it
+            # If it's already our ChatCompletion type, return it
         if isinstance(response, ChatCompletion):
             return response
         # Otherwise, validate it as our type
@@ -163,13 +165,23 @@ class BaseOpenAIProvider(AnyLLM):
 
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
-    ) -> Response | AsyncIterator[ResponseStreamEvent]:
+    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
         """Call OpenAI Responses API"""
         response = await self.client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
 
         if not isinstance(response, Response | AsyncStream):
             msg = f"Responses API returned an unexpected type: {type(response)}"
             raise ValueError(msg)
+        # if it's a Response, try to convert it to a ResponseResource. If that fails, return the Response
+        if isinstance(response, Response):
+            try:
+                return ResponseResource.model_validate(response.model_dump(warnings=False))
+            except ValidationError as e:
+                msg = f"Failed to convert Response to OpenResponse ResponseResource: {e}"
+                # Right now we'll just log as info error.
+                # but if OpenResponses becomes the standard, this will need to become a warning or error
+                logger.info(msg)
+                return response
         return response
 
     async def _aembedding(
