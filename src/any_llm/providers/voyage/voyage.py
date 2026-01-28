@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from any_llm.any_llm import AnyLLM
 
-MISSING_PACKAGES_ERROR: Exception | None = None
+MISSING_PACKAGES_ERROR: ImportError | None = None
 PYTHON_VERSION_INCOMPATIBLE = sys.version_info >= (3, 14)
 
 if PYTHON_VERSION_INCOMPATIBLE:
