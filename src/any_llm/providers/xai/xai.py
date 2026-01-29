@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from typing_extensions import override
+
 from any_llm.any_llm import AnyLLM
 
 MISSING_PACKAGES_ERROR = None
@@ -49,6 +51,7 @@ class XaiProvider(AnyLLM):
     client: XaiAsyncClient
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for xAI API."""
         # xAI does not support providing reasoning effort
@@ -69,35 +72,42 @@ class XaiProvider(AnyLLM):
         return converted_params
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         """Convert xAI response to OpenAI format."""
         return _convert_xai_completion_to_anyllm_response(response)
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert xAI chunk response to OpenAI format."""
         return _convert_xai_chunk_to_anyllm_chunk(response)
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Convert embedding parameters for xAI."""
         msg = "xAI does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Convert xAI embedding response to OpenAI format."""
         msg = "xAI does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert xAI list models response to OpenAI format."""
         return _convert_models_list(response)
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = XaiAsyncClient(api_key=api_key, **kwargs)
 
+    @override
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
@@ -153,6 +163,7 @@ class XaiProvider(AnyLLM):
 
         return self._convert_completion_response(response)
 
+    @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.models.list_language_models()
         return self._convert_list_models_response(models_list)

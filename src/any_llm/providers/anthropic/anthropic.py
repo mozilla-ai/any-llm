@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from typing_extensions import override
+
 from .base import BaseAnthropicProvider
 
 MISSING_PACKAGES_ERROR = None
@@ -33,6 +35,7 @@ class AnthropicProvider(BaseAnthropicProvider):
 
     client: AsyncAnthropic
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = AsyncAnthropic(
             api_key=api_key,
@@ -40,6 +43,7 @@ class AnthropicProvider(BaseAnthropicProvider):
             **kwargs,
         )
 
+    @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(models_list.data)

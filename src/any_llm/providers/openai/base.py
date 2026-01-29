@@ -11,6 +11,7 @@ from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatComple
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from openresponses_types import ResponseResource
 from pydantic import ValidationError
+from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.logging import logger
@@ -53,6 +54,7 @@ class BaseOpenAIProvider(AnyLLM):
     client: AsyncOpenAI
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for OpenAI API."""
         converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
@@ -60,6 +62,7 @@ class BaseOpenAIProvider(AnyLLM):
         return converted_params
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         """Convert OpenAI response to OpenAI format (passthrough)."""
         if isinstance(response, OpenAIChatCompletion):
@@ -71,6 +74,7 @@ class BaseOpenAIProvider(AnyLLM):
         return ChatCompletion.model_validate(response)
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert OpenAI chunk response to OpenAI format (passthrough)."""
         if isinstance(response, OpenAIChatCompletionChunk):
@@ -92,6 +96,7 @@ class BaseOpenAIProvider(AnyLLM):
         return ChatCompletionChunk.model_validate(response)
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Convert embedding parameters for OpenAI API."""
         converted_params = {"input": params}
@@ -99,6 +104,7 @@ class BaseOpenAIProvider(AnyLLM):
         return converted_params
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Convert OpenAI embedding response to OpenAI format (passthrough)."""
         if isinstance(response, CreateEmbeddingResponse):
@@ -106,6 +112,7 @@ class BaseOpenAIProvider(AnyLLM):
         return CreateEmbeddingResponse.model_validate(response)
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert OpenAI list models response to OpenAI format (passthrough)."""
         if hasattr(response, "data"):
@@ -117,6 +124,7 @@ class BaseOpenAIProvider(AnyLLM):
         # Otherwise, validate each item
         return [Model.model_validate(item) if not isinstance(item, Model) else item for item in response]
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = AsyncOpenAI(
             base_url=api_base or self.API_BASE,
@@ -137,6 +145,7 @@ class BaseOpenAIProvider(AnyLLM):
 
         return chunk_iterator()
 
+    @override
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
@@ -163,6 +172,7 @@ class BaseOpenAIProvider(AnyLLM):
             )
         return self._convert_completion_response_async(response)
 
+    @override
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
     ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
@@ -184,6 +194,7 @@ class BaseOpenAIProvider(AnyLLM):
                 return response
         return response
 
+    @override
     async def _aembedding(
         self,
         model: str,
@@ -204,6 +215,7 @@ class BaseOpenAIProvider(AnyLLM):
             )
         )
 
+    @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         if not self.SUPPORTS_LIST_MODELS:
             message = f"{self.PROVIDER_NAME} does not support listing models."
@@ -211,6 +223,7 @@ class BaseOpenAIProvider(AnyLLM):
         response = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(response)
 
+    @override
     async def _acreate_batch(
         self,
         input_file_path: str,
@@ -249,6 +262,7 @@ class BaseOpenAIProvider(AnyLLM):
             **kwargs,
         )
 
+    @override
     async def _aretrieve_batch(self, batch_id: str, **kwargs: Any) -> Batch:
         """Retrieve a batch job using the OpenAI Batch API."""
         if not self.SUPPORTS_BATCH:
@@ -257,6 +271,7 @@ class BaseOpenAIProvider(AnyLLM):
 
         return await self.client.batches.retrieve(batch_id, **kwargs)
 
+    @override
     async def _acancel_batch(self, batch_id: str, **kwargs: Any) -> Batch:
         """Cancel a batch job using the OpenAI Batch API."""
         if not self.SUPPORTS_BATCH:
@@ -265,6 +280,7 @@ class BaseOpenAIProvider(AnyLLM):
 
         return await self.client.batches.cancel(batch_id, **kwargs)
 
+    @override
     async def _alist_batches(
         self,
         after: str | None = None,

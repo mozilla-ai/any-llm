@@ -3,6 +3,7 @@ from typing import Any
 
 from openai import AsyncStream
 from openresponses_types import ResponseResource
+from typing_extensions import override
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
@@ -24,6 +25,7 @@ class FireworksProvider(BaseOpenAIProvider):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
 
+    @override
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
     ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:

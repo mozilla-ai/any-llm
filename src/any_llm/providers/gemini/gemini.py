@@ -2,6 +2,7 @@ import os
 from typing import Any
 
 from google import genai
+from typing_extensions import override
 
 from any_llm.exceptions import MissingApiKeyError
 
@@ -15,6 +16,7 @@ class GeminiProvider(GoogleProvider):
     PROVIDER_DOCUMENTATION_URL = "https://ai.google.dev/gemini-api/docs"
     ENV_API_KEY_NAME = "GEMINI_API_KEY/GOOGLE_API_KEY"
 
+    @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         if not api_key:
             api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
@@ -23,5 +25,6 @@ class GeminiProvider(GoogleProvider):
             raise MissingApiKeyError(self.PROVIDER_NAME, self.ENV_API_KEY_NAME)
         return api_key
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = genai.Client(api_key=api_key, **kwargs)

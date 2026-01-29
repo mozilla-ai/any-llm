@@ -1,6 +1,8 @@
 from collections.abc import AsyncIterator
 from typing import Any
 
+from typing_extensions import override
+
 from any_llm.providers.deepseek.utils import _preprocess_messages
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
@@ -17,6 +19,7 @@ class DeepseekProvider(BaseOpenAIProvider):
     SUPPORTS_EMBEDDING = False  # DeepSeek doesn't host an embedding model
     SUPPORTS_COMPLETION_REASONING = True
 
+    @override
     async def _acompletion(
         self,
         params: CompletionParams,
