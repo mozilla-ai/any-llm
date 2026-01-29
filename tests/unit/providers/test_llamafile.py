@@ -7,8 +7,10 @@ from openai.types.chat.chat_completion_message import ChatCompletionMessage as O
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.llamafile.llamafile import LlamafileProvider
-from any_llm.providers.llamafile.utils import _convert_chat_completion
 from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.providers.openai.xml_reasoning_utils import (
+    convert_chat_completion_with_xml_reasoning as _convert_chat_completion,
+)
 from any_llm.types.completion import CompletionParams
 
 
