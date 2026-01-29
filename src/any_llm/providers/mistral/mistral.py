@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
     from mistralai import Mistral  # noqa: TC004
+    from mistralai.models import APIEndpoint
     from mistralai.models.embeddingresponse import EmbeddingResponse
 
     from any_llm.types.batch import Batch
@@ -214,9 +215,10 @@ class MistralProvider(AnyLLM):
             )
             raise ValueError(msg)
 
+        valid_endpoint = cast("APIEndpoint", endpoint)
         batch_job = await self.client.batch.jobs.create_async(
             input_files=[uploaded_file.id],
-            endpoint=cast("Any", endpoint),
+            endpoint=valid_endpoint,
             model=model,
             metadata=metadata,
             timeout_hours=timeout_hours,
