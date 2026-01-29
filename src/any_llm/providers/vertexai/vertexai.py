@@ -13,6 +13,7 @@ class VertexaiProvider(GoogleProvider):
     PROVIDER_NAME = "vertexai"
     PROVIDER_DOCUMENTATION_URL = "https://cloud.google.com/vertex-ai/docs"
     ENV_API_KEY_NAME = ""
+    ENV_API_BASE_NAME = "VERTEXAI_API_BASE"
 
     @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:

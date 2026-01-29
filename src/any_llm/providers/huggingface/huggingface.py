@@ -54,6 +54,7 @@ class HuggingfaceProvider(AnyLLM):
 
     PROVIDER_NAME = "huggingface"
     ENV_API_KEY_NAME = "HF_TOKEN"
+    ENV_API_BASE_NAME = "HUGGINGFACE_API_BASE"
     PROVIDER_DOCUMENTATION_URL = "https://huggingface.co/docs/huggingface_hub/package_reference/inference_client"
 
     # OpenResponses router endpoint for the OpenResponses API

@@ -18,6 +18,7 @@ class ZaiProvider(BaseOpenAIProvider):
     API_BASE = "https://api.z.ai/api/paas/v4/"
     PROVIDER_DOCUMENTATION_URL = "https://docs.z.ai/guides/develop/python/introduction"
     ENV_API_KEY_NAME = "ZAI_API_KEY"
+    ENV_API_BASE_NAME = "ZAI_BASE_URL"
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True

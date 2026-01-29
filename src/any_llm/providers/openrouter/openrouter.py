@@ -10,6 +10,7 @@ from any_llm.types.completion import CompletionParams
 class OpenrouterProvider(BaseOpenAIProvider):
     API_BASE = "https://openrouter.ai/api/v1"
     ENV_API_KEY_NAME = "OPENROUTER_API_KEY"
+    ENV_API_BASE_NAME = "OPENROUTER_API_BASE"
     PROVIDER_NAME = "openrouter"
     PROVIDER_DOCUMENTATION_URL = "https://openrouter.ai/docs"
 

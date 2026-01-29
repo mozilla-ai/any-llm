@@ -46,6 +46,7 @@ class WatsonxProvider(AnyLLM):
 
     PROVIDER_NAME = "watsonx"
     ENV_API_KEY_NAME = "WATSONX_API_KEY"
+    ENV_API_BASE_NAME = "WATSONX_URL"
     PROVIDER_DOCUMENTATION_URL = "https://www.ibm.com/watsonx"
 
     SUPPORTS_COMPLETION_STREAMING = True

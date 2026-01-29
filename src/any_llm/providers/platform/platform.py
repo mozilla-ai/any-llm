@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 class PlatformProvider(AnyLLM):
     PROVIDER_NAME = "platform"
     ENV_API_KEY_NAME = "ANY_LLM_KEY"
+    ENV_API_BASE_NAME = "ANY_LLM_PLATFORM_URL"
     PROVIDER_DOCUMENTATION_URL = "https://github.com/mozilla-ai/any-llm"
 
     # All features are marked as supported, but depending on which provider you call inside the gateway, they may not all work.

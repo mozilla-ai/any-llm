@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 class XaiProvider(AnyLLM):
     API_BASE = "https://api.x.ai/v1"
     ENV_API_KEY_NAME = "XAI_API_KEY"
+    ENV_API_BASE_NAME = "XAI_API_BASE"
     PROVIDER_NAME = "xai"
     PROVIDER_DOCUMENTATION_URL = "https://x.ai/"
 

@@ -27,6 +27,7 @@ class AnthropicProvider(BaseAnthropicProvider):
 
     PROVIDER_NAME = "anthropic"
     ENV_API_KEY_NAME = "ANTHROPIC_API_KEY"
+    ENV_API_BASE_NAME = "ANTHROPIC_BASE_URL"
     PROVIDER_DOCUMENTATION_URL = "https://docs.anthropic.com/en/home"
 
     SUPPORTS_LIST_MODELS = True

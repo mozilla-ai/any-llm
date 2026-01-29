@@ -34,6 +34,7 @@ class CohereProvider(AnyLLM):
 
     PROVIDER_NAME = "cohere"
     ENV_API_KEY_NAME = "COHERE_API_KEY"
+    ENV_API_BASE_NAME = "COHERE_BASE_URL"
     PROVIDER_DOCUMENTATION_URL = "https://cohere.com/api"
 
     SUPPORTS_COMPLETION_STREAMING = True

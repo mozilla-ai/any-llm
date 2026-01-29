@@ -34,6 +34,7 @@ class CerebrasProvider(AnyLLM):
 
     PROVIDER_NAME = "cerebras"
     ENV_API_KEY_NAME = "CEREBRAS_API_KEY"
+    ENV_API_BASE_NAME = "CEREBRAS_API_BASE"
     PROVIDER_DOCUMENTATION_URL = "https://docs.cerebras.ai/"
 
     SUPPORTS_COMPLETION_STREAMING = True

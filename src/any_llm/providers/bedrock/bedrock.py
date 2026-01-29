@@ -33,6 +33,7 @@ class BedrockProvider(AnyLLM):
 
     PROVIDER_NAME = "bedrock"
     ENV_API_KEY_NAME = "AWS_BEARER_TOKEN_BEDROCK"
+    ENV_API_BASE_NAME = "AWS_ENDPOINT_URL_BEDROCK_RUNTIME"
     PROVIDER_DOCUMENTATION_URL = "https://aws.amazon.com/bedrock/"
 
     SUPPORTS_COMPLETION_STREAMING = True
