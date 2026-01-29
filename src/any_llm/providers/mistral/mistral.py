@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel
 from typing_extensions import override
@@ -216,7 +216,7 @@ class MistralProvider(AnyLLM):
 
         batch_job = await self.client.batch.jobs.create_async(
             input_files=[uploaded_file.id],
-            endpoint=endpoint,
+            endpoint=cast("Any", endpoint),
             model=model,
             metadata=metadata,
             timeout_hours=timeout_hours,
