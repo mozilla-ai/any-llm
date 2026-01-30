@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+
 import pytest
 
 from any_llm.providers.openai.xml_reasoning import (
@@ -102,15 +104,15 @@ def test_set_chunk_reasoning_overwrites_existing() -> None:
 # --- wrap_chunks_with_xml_reasoning ---
 
 
-async def _collect_chunks(aiter):  # type: ignore[no-untyped-def]
+async def _collect_chunks(chunks_iter: AsyncIterator[ChatCompletionChunk]) -> list[ChatCompletionChunk]:
     """Helper to collect all chunks from an async iterator."""
-    results = []
-    async for chunk in aiter:
+    results: list[ChatCompletionChunk] = []
+    async for chunk in chunks_iter:
         results.append(chunk)
     return results
 
 
-async def _async_iter_chunks(chunks: list[ChatCompletionChunk]):  # type: ignore[no-untyped-def]
+async def _async_iter_chunks(chunks: list[ChatCompletionChunk]) -> AsyncIterator[ChatCompletionChunk]:
     """Create an async iterator from a list of chunks."""
     for chunk in chunks:
         yield chunk
