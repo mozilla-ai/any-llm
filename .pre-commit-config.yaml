@@ -19,7 +19,7 @@ repos:
         exclude: (\.md|\.ambr)$
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: "v0.14.10"
+    rev: "v0.14.14"
     hooks:
       - id: ruff
         args:
@@ -45,6 +45,6 @@ repos:
         exclude: CODE_OF_CONDUCT.md|tests/assets|demos/
 
   - repo: https://github.com/kynan/nbstripout
-    rev: 0.8.2
+    rev: 0.9.0
     hooks:
       - id: nbstripout
