@@ -47,7 +47,7 @@ demos/                 # Example apps(Python: `demos/*/backend`, React: `demos/*
 - Add/adjust tests with every change (happy path + error cases).
 - Skip integration tests when credentials/services aren’t available : `pytest.skip(...)`
 - Target ~85%+ coverage (see `CONTRIBUTING.md`).
-- **No test classses**: Do not use class-based test grouping (`class TestFoo:`). All tests should be standalone functions.
+- **No test classes**: Do not use class-based test grouping (`class TestFoo:`). All tests should be standalone functions.
 ```python
 # ✅ Good
 def test_provider_returns_response():
