@@ -5,8 +5,8 @@ from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatComple
 from typing_extensions import override
 
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.providers.llamafile.utils import _convert_chat_completion
 from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.providers.openai.xml_reasoning_utils import convert_chat_completion_with_xml_reasoning
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 
 
@@ -31,7 +31,7 @@ class LlamafileProvider(BaseOpenAIProvider):
     @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         if isinstance(response, OpenAIChatCompletion):
-            return _convert_chat_completion(response)
+            return convert_chat_completion_with_xml_reasoning(response)
         if isinstance(response, ChatCompletion):
             return response
         return ChatCompletion.model_validate(response)

@@ -1,19 +1,19 @@
-from collections.abc import AsyncIterator
 from typing import Any
 
-from openai._streaming import AsyncStream
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from pydantic import BaseModel
 from typing_extensions import override
 
-from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.providers.sambanova.utils import _convert_chat_completion, _convert_chat_completion_chunk
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, Reasoning
-from any_llm.utils.reasoning import process_streaming_reasoning_chunks
+from any_llm.providers.openai.xml_reasoning import XMLReasoningOpenAIProvider
+from any_llm.providers.openai.xml_reasoning_utils import (
+    convert_chat_completion_chunk_with_xml_reasoning,
+    convert_chat_completion_with_xml_reasoning,
+)
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 
 
-class SambanovaProvider(BaseOpenAIProvider):
+class SambanovaProvider(XMLReasoningOpenAIProvider):
     API_BASE = "https://api.sambanova.ai/v1/"
     ENV_API_KEY_NAME = "SAMBANOVA_API_KEY"
     ENV_API_BASE_NAME = "SAMBANOVA_API_BASE"
@@ -27,7 +27,7 @@ class SambanovaProvider(BaseOpenAIProvider):
     @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         if isinstance(response, OpenAIChatCompletion):
-            return _convert_chat_completion(response)
+            return convert_chat_completion_with_xml_reasoning(response)
         if isinstance(response, ChatCompletion):
             return response
         return ChatCompletion.model_validate(response)
@@ -36,40 +36,10 @@ class SambanovaProvider(BaseOpenAIProvider):
     @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         if isinstance(response, OpenAIChatCompletionChunk):
-            return _convert_chat_completion_chunk(response)
+            return convert_chat_completion_chunk_with_xml_reasoning(response)
         if isinstance(response, ChatCompletionChunk):
             return response
         return ChatCompletionChunk.model_validate(response)
-
-    @override
-    def _convert_completion_response_async(
-        self, response: OpenAIChatCompletion | AsyncStream[OpenAIChatCompletionChunk]
-    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        """Convert an OpenAI completion response with streaming reasoning support."""
-        if isinstance(response, OpenAIChatCompletion):
-            return self._convert_completion_response(response)
-
-        async def chunk_iterator() -> AsyncIterator[ChatCompletionChunk]:
-            async for chunk in response:
-                yield self._convert_completion_chunk_response(chunk)
-
-        def get_content(chunk: ChatCompletionChunk) -> str | None:
-            return chunk.choices[0].delta.content if len(chunk.choices) > 0 else None
-
-        def set_content(chunk: ChatCompletionChunk, content: str | None) -> ChatCompletionChunk:
-            chunk.choices[0].delta.content = content
-            return chunk
-
-        def set_reasoning(chunk: ChatCompletionChunk, reasoning: str) -> ChatCompletionChunk:
-            chunk.choices[0].delta.reasoning = Reasoning(content=reasoning)
-            return chunk
-
-        return process_streaming_reasoning_chunks(
-            chunk_iterator(),
-            get_content=get_content,
-            set_content=set_content,
-            set_reasoning=set_reasoning,
-        )
 
     @staticmethod
     @override

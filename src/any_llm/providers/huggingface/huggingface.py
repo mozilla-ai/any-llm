@@ -25,10 +25,8 @@ MISSING_PACKAGES_ERROR = None
 try:
     from huggingface_hub import AsyncInferenceClient, HfApi
 
-    from any_llm.utils.reasoning import (
-        normalize_reasoning_from_provider_fields_and_xml_tags,
-        process_streaming_reasoning_chunks,
-    )
+    from any_llm.providers.openai.xml_reasoning import wrap_chunks_with_xml_reasoning
+    from any_llm.utils.reasoning import normalize_reasoning_from_provider_fields_and_xml_tags
 
     from .utils import (
         _convert_models_list,
@@ -144,23 +142,7 @@ class HuggingfaceProvider(AnyLLM):
             async for chunk in response:
                 yield self._convert_completion_chunk_response(chunk)
 
-        def get_content(chunk: ChatCompletionChunk) -> str | None:
-            return chunk.choices[0].delta.content if len(chunk.choices) > 0 else None
-
-        def set_content(chunk: ChatCompletionChunk, content: str | None) -> ChatCompletionChunk:
-            chunk.choices[0].delta.content = content
-            return chunk
-
-        def set_reasoning(chunk: ChatCompletionChunk, reasoning: str) -> ChatCompletionChunk:
-            chunk.choices[0].delta.reasoning = Reasoning(content=reasoning)
-            return chunk
-
-        async for chunk in process_streaming_reasoning_chunks(
-            chunk_iterator(),
-            get_content=get_content,
-            set_content=set_content,
-            set_reasoning=set_reasoning,
-        ):
+        async for chunk in wrap_chunks_with_xml_reasoning(chunk_iterator()):
             yield chunk
 
     @override
