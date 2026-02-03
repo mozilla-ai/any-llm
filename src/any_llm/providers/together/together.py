@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel
+from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
 class TogetherProvider(AnyLLM):
     PROVIDER_NAME = "together"
     ENV_API_KEY_NAME = "TOGETHER_API_KEY"
+    ENV_API_BASE_NAME = "TOGETHER_API_BASE"
     PROVIDER_DOCUMENTATION_URL = "https://together.ai/"
 
     SUPPORTS_COMPLETION_STREAMING = True
@@ -56,6 +58,7 @@ class TogetherProvider(AnyLLM):
     client: together.AsyncTogether
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Together API."""
         converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
@@ -75,6 +78,7 @@ class TogetherProvider(AnyLLM):
         return converted_params
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         """Convert Together response to OpenAI format."""
         # We need the model parameter for conversion
@@ -82,28 +86,33 @@ class TogetherProvider(AnyLLM):
         return _convert_together_response_to_chat_completion(response, model)
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert Together chunk response to OpenAI format."""
         return _create_openai_chunk_from_together_chunk(response)
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Convert embedding parameters for Together."""
         msg = "Together does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Convert Together embedding response to OpenAI format."""
         msg = "Together does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Together list models response to OpenAI format."""
         msg = "Together does not support listing models"
         raise NotImplementedError(msg)
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = together.AsyncTogether(
             api_key=api_key,
@@ -132,6 +141,7 @@ class TogetherProvider(AnyLLM):
         async for chunk in response:
             yield self._convert_completion_chunk_response(chunk)
 
+    @override
     async def _acompletion(
         self,
         params: CompletionParams,

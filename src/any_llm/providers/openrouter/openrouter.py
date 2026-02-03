@@ -1,5 +1,7 @@
 from typing import Any
 
+from typing_extensions import override
+
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.openrouter.utils import build_reasoning_directive
 from any_llm.types.completion import CompletionParams
@@ -8,6 +10,7 @@ from any_llm.types.completion import CompletionParams
 class OpenrouterProvider(BaseOpenAIProvider):
     API_BASE = "https://openrouter.ai/api/v1"
     ENV_API_KEY_NAME = "OPENROUTER_API_KEY"
+    ENV_API_BASE_NAME = "OPENROUTER_API_BASE"
     PROVIDER_NAME = "openrouter"
     PROVIDER_DOCUMENTATION_URL = "https://openrouter.ai/docs"
 
@@ -18,6 +21,7 @@ class OpenrouterProvider(BaseOpenAIProvider):
     SUPPORTS_EMBEDDING = True
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for OpenRouter API, including reasoning directive."""
         converted_params = BaseOpenAIProvider._convert_completion_params(params, **kwargs)

@@ -5,9 +5,11 @@ from openai.types.chat.chat_completion_chunk import Choice as OpenAIChunkChoice
 from openai.types.chat.chat_completion_chunk import ChoiceDelta as OpenAIChoiceDelta
 from openai.types.chat.chat_completion_message import ChatCompletionMessage as OpenAIChatCompletionMessage
 
-from any_llm.providers.sambanova.utils import (
-    _convert_chat_completion,
-    _convert_chat_completion_chunk,
+from any_llm.providers.openai.xml_reasoning_utils import (
+    convert_chat_completion_chunk_with_xml_reasoning as _convert_chat_completion_chunk,
+)
+from any_llm.providers.openai.xml_reasoning_utils import (
+    convert_chat_completion_with_xml_reasoning as _convert_chat_completion,
 )
 
 

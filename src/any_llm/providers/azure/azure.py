@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+from typing_extensions import override
+
 from any_llm.any_llm import AnyLLM
 
 MISSING_PACKAGES_ERROR = None
@@ -33,6 +35,7 @@ class AzureProvider(AnyLLM):
 
     PROVIDER_NAME = "azure"
     ENV_API_KEY_NAME = "AZURE_API_KEY"
+    ENV_API_BASE_NAME = "AZURE_AI_CHAT_ENDPOINT"
     PROVIDER_DOCUMENTATION_URL = "https://azure.microsoft.com/en-us/products/ai-services/openai-service"
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION_IMAGE = False
@@ -49,6 +52,7 @@ class AzureProvider(AnyLLM):
     chat_client: aio.ChatCompletionsClient
     embeddings_client: aio.EmbeddingsClient
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         if not api_base:
             msg = (
@@ -87,6 +91,7 @@ class AzureProvider(AnyLLM):
         async for chunk in azure_stream:
             yield self._convert_completion_chunk_response(chunk)
 
+    @override
     async def _acompletion(
         self,
         params: CompletionParams,
@@ -113,6 +118,7 @@ class AzureProvider(AnyLLM):
 
         return self._convert_completion_response(response)
 
+    @override
     async def _aembedding(
         self,
         model: str,
@@ -131,6 +137,7 @@ class AzureProvider(AnyLLM):
         return self._convert_embedding_response(response)
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to Azure AI Inference format."""
         if params.reasoning_effort in ("auto", "none"):
@@ -148,16 +155,19 @@ class AzureProvider(AnyLLM):
         return call_kwargs
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         """Convert Azure ChatCompletions response to OpenAI ChatCompletion format."""
         return _convert_response(response)
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert Azure StreamingChatCompletionsUpdate to OpenAI ChatCompletionChunk format."""
         return _create_openai_chunk_from_azure_chunk(response)
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Convert embedding parameters to Azure AI Inference format."""
         embedding_kwargs = {}
@@ -167,11 +177,13 @@ class AzureProvider(AnyLLM):
         return embedding_kwargs
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Convert Azure EmbeddingsResult to OpenAI CreateEmbeddingResponse format."""
         return _create_openai_embedding_response_from_azure(response)
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Azure list models response to OpenAI format. Not supported by Azure."""
         msg = "Azure provider does not support listing models"

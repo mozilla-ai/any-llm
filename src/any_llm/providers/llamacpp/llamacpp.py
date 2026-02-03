@@ -1,9 +1,12 @@
+from typing_extensions import override
+
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
 
 class LlamacppProvider(BaseOpenAIProvider):
     API_BASE = "http://127.0.0.1:8080/v1"
     ENV_API_KEY_NAME = "None"
+    ENV_API_BASE_NAME = "LLAMACPP_API_BASE"
     PROVIDER_NAME = "llamacpp"
     PROVIDER_DOCUMENTATION_URL = "https://github.com/ggml-org/llama.cpp"
 
@@ -12,5 +15,6 @@ class LlamacppProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION_PDF = False
 
+    @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         return ""

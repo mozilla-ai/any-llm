@@ -7,6 +7,8 @@ import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from openresponses_types import ResponseResource
+
 from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
 from any_llm.tools import prepare_tools
@@ -42,6 +44,9 @@ class AnyLLM(ABC):
 
     ENV_API_KEY_NAME: str
     """Environment variable name for the API key"""
+
+    ENV_API_BASE_NAME: str | None = None
+    """Environment variable name for the API base URL. Optional."""
 
     # === Feature support flags (to be set by subclasses) ===
     SUPPORTS_COMPLETION_STREAMING: bool
@@ -94,13 +99,13 @@ class AnyLLM(ABC):
         self._verify_no_missing_packages()
         self._init_client(
             api_key=self._verify_and_set_api_key(api_key),
-            api_base=api_base,
+            api_base=self._resolve_api_base(api_base),
             **kwargs,
         )
 
     def _verify_no_missing_packages(self) -> None:
         if self.MISSING_PACKAGES_ERROR is not None:
-            msg = f"{self.PROVIDER_NAME} required packages are not installed. Please install them with `pip install any-llm-sdk[{self.PROVIDER_NAME}]`"
+            msg = f"{self.PROVIDER_NAME} required packages are not installed. Please install them with `pip install any-llm-sdk[{self.PROVIDER_NAME}]. Specific error message: {self.MISSING_PACKAGES_ERROR.msg}`"
             raise ImportError(msg) from self.MISSING_PACKAGES_ERROR
 
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
@@ -112,6 +117,20 @@ class AnyLLM(ABC):
         if not api_key:
             raise MissingApiKeyError(self.PROVIDER_NAME, self.ENV_API_KEY_NAME)
         return api_key
+
+    def _resolve_api_base(self, api_base: str | None = None) -> str | None:
+        """Resolve API base URL from parameter or environment variable.
+
+        Resolution order:
+        1. Explicit api_base parameter (if provided)
+        2. Environment variable (if ENV_API_BASE_NAME is defined and set)
+        3. None (allowing _init_client to use API_BASE class default)
+        """
+        if api_base:
+            return api_base
+        if self.ENV_API_BASE_NAME:
+            return os.getenv(self.ENV_API_BASE_NAME)
+        return None
 
     @classmethod
     def create(
@@ -323,6 +342,7 @@ class AnyLLM(ABC):
         return ProviderMetadata(
             name=cls.PROVIDER_NAME,
             env_key=cls.ENV_API_KEY_NAME,
+            env_api_base=cls.ENV_API_BASE_NAME,
             doc_url=cls.PROVIDER_DOCUMENTATION_URL,
             streaming=cls.SUPPORTS_COMPLETION_STREAMING,
             reasoning=cls.SUPPORTS_COMPLETION_REASONING,
@@ -463,14 +483,14 @@ class AnyLLM(ABC):
         msg = "Subclasses must implement _acompletion method"
         raise NotImplementedError(msg)
 
-    def responses(self, **kwargs: Any) -> Response | Iterator[ResponseStreamEvent]:
+    def responses(self, **kwargs: Any) -> ResponseResource | Response | Iterator[ResponseStreamEvent]:
         """Create a response synchronously.
 
         See [AnyLLM.aresponses][any_llm.any_llm.AnyLLM.aresponses]
         """
         allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
         response = run_async_in_sync(self.aresponses(**kwargs), allow_running_loop=allow_running_loop)
-        if isinstance(response, Response):
+        if isinstance(response, (ResponseResource, Response)):
             return response
         return async_iter_to_sync_iter(response)
 
@@ -491,13 +511,28 @@ class AnyLLM(ABC):
         parallel_tool_calls: int | None = None,
         reasoning: Any | None = None,
         text: Any | None = None,
+        presence_penalty: float | None = None,
+        frequency_penalty: float | None = None,
+        truncation: str | None = None,
+        store: bool | None = None,
+        service_tier: str | None = None,
+        user: str | None = None,
+        metadata: dict[str, str] | None = None,
+        previous_response_id: str | None = None,
+        include: list[str] | None = None,
+        background: bool | None = None,
+        safety_identifier: str | None = None,
+        prompt_cache_key: str | None = None,
+        prompt_cache_retention: str | None = None,
+        conversation: str | dict[str, Any] | None = None,
         **kwargs: Any,
-    ) -> Response | AsyncIterator[ResponseStreamEvent]:
-        """Create a response using the OpenAI-style Responses API.
+    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+        """Create a response using the OpenResponses API.
 
-        This follows the OpenAI Responses API shape and returns the aliased
-        `any_llm.types.responses.Response` type. If `stream=True`, an iterator of
-        `any_llm.types.responses.ResponseStreamEvent` items is returned.
+        This implements the OpenResponses specification and returns either
+        `openresponses_types.ResponseResource` (for OpenResponses-compliant providers)
+        or `openai.types.responses.Response` (for providers using OpenAI's native API).
+        If `stream=True`, an iterator of streaming event dicts is returned.
 
         Args:
             model: Model identifier for the chosen provider (e.g., model='gpt-4.1-mini' for LLMProvider.OPENAI).
@@ -515,10 +550,25 @@ class AnyLLM(ABC):
             parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
             reasoning: Configuration options for reasoning models.
             text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
+            presence_penalty: Penalizes new tokens based on whether they appear in the text so far.
+            frequency_penalty: Penalizes new tokens based on their frequency in the text so far.
+            truncation: Controls how the service truncates input when it exceeds the model context window.
+            store: Whether to store the response so it can be retrieved later.
+            service_tier: The service tier to use for this request.
+            user: A unique identifier representing your end user.
+            metadata: Key-value pairs for custom metadata (up to 16 pairs).
+            previous_response_id: The ID of the response to use as the prior turn for this request.
+            include: Items to include in the response (e.g., 'reasoning.encrypted_content').
+            background: Whether to run the request in the background and return immediately.
+            safety_identifier: A stable identifier used for safety monitoring and abuse detection.
+            prompt_cache_key: A key to use when reading from or writing to the prompt cache.
+            prompt_cache_retention: How long to retain a prompt cache entry created by this request.
+            conversation: The conversation to associate this response with (ID string or ConversationParam object).
             **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
         Returns:
-            Either a `Response` object (non-streaming) or an iterator of
+            Either a `ResponseResource` object (OpenResponses-compliant providers),
+            a `Response` object (non-compliant providers), or an iterator of
             `ResponseStreamEvent` (streaming).
 
         Raises:
@@ -543,6 +593,20 @@ class AnyLLM(ABC):
             parallel_tool_calls=bool(parallel_tool_calls),
             reasoning=reasoning,
             text=text,
+            presence_penalty=presence_penalty,
+            frequency_penalty=frequency_penalty,
+            truncation=truncation,
+            store=store,
+            service_tier=service_tier,
+            user=user,
+            metadata=metadata,
+            previous_response_id=previous_response_id,
+            include=include,
+            background=background,
+            safety_identifier=safety_identifier,
+            prompt_cache_key=prompt_cache_key,
+            prompt_cache_retention=prompt_cache_retention,
+            conversation=conversation,
             **kwargs,
         )
 
@@ -550,7 +614,7 @@ class AnyLLM(ABC):
 
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
-    ) -> Response | AsyncIterator[ResponseStreamEvent]:
+    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
         if not self.SUPPORTS_RESPONSES:
             msg = "Provider doesn't support responses."
             raise NotImplementedError(msg)

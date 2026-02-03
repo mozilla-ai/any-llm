@@ -36,10 +36,11 @@ demos/                 # Example apps(Python: `demos/*/backend`, React: `demos/*
 - **Python indentation**: 4 spaces; 
     - Formatting:  `ruff` (line length 120), enforced via `pre-commit`.
 - **Types**: Required; `mypy` strict mode for library code (see `pyproject.toml`).
-- **Provider-Specific Behavior**: K eep provider-specific behavior code under `src/any_llm/providers/<provider>/`.
+- **Provider-Specific Behavior**: Keep provider-specific behavior code under `src/any_llm/providers/<provider>/`.
 - **Access** : Prefer direct attribute access (e.g., `obj.field`) over `getattr(obj, "field")` when the field is typed. Only use `getattr`/`setattr` when working with truly dynamic attributes or when type information is unavailable.
-- Comments: Add only if helpful, remove if obvious.
-- Simplify: Consolidate or remove unneeded code when possible.
+- **Override decorator**: Use  `@override` from `typing_extensions` when overriding base class methods. For static methods: `@staticmethod` then `@override`.
+- **Comments**: Add only if helpful; remove any describing obvious behavior before finishing.
+- **Simplification**: Look for opportunities to consolidate or remove unneeded code.
 
 ## Testing
 

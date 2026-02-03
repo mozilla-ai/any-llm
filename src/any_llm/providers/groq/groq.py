@@ -4,12 +4,15 @@ from typing import TYPE_CHECKING, Any, cast
 
 from openai import AsyncOpenAI, AsyncStream
 from pydantic import BaseModel
+from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
 if TYPE_CHECKING:
+    from openresponses_types import ResponseResource
+
     from any_llm.types.completion import CreateEmbeddingResponse
 
 MISSING_PACKAGES_ERROR = None
@@ -40,6 +43,7 @@ class GroqProvider(AnyLLM):
 
     PROVIDER_NAME = "groq"
     ENV_API_KEY_NAME = "GROQ_API_KEY"
+    ENV_API_BASE_NAME = "GROQ_BASE_URL"
     PROVIDER_DOCUMENTATION_URL = "https://groq.com/api"
 
     SUPPORTS_COMPLETION_STREAMING = True
@@ -55,8 +59,10 @@ class GroqProvider(AnyLLM):
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     client: AsyncGroq
+    openai_client: AsyncOpenAI
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Groq API."""
         # Groq does not support providing reasoning effort
@@ -67,32 +73,38 @@ class GroqProvider(AnyLLM):
         return converted_params
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         """Convert Groq response to OpenAI format."""
         return to_chat_completion(response)
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert Groq chunk response to OpenAI format."""
         return _create_openai_chunk_from_groq_chunk(response)
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Convert embedding parameters for Groq."""
         msg = "Groq does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Convert Groq embedding response to OpenAI format."""
         msg = "Groq does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Groq list models response to OpenAI format."""
         return _convert_models_list(response)
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.api_key = api_key
         self.kwargs = kwargs
@@ -118,6 +130,7 @@ class GroqProvider(AnyLLM):
 
         return _stream()
 
+    @override
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
@@ -148,9 +161,10 @@ class GroqProvider(AnyLLM):
 
         return self._convert_completion_response(response)
 
+    @override
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
-    ) -> Response | AsyncIterator[ResponseStreamEvent]:
+    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
         """Call Groq Responses API and normalize into ChatCompletion/Chunks."""
         # Python SDK doesn't yet support it: https://community.groq.com/feature-requests-6/groq-python-sdk-support-for-responses-api-262
 
@@ -172,6 +186,7 @@ class GroqProvider(AnyLLM):
 
         return response
 
+    @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(models_list)

@@ -1,6 +1,8 @@
 import os
 from typing import Any
 
+from typing_extensions import override
+
 from any_llm.logging import logger
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
@@ -9,6 +11,7 @@ GATEWAY_HEADER_NAME = "X-AnyLLM-Key"
 
 class GatewayProvider(BaseOpenAIProvider):
     ENV_API_KEY_NAME = "GATEWAY_API_KEY"
+    ENV_API_BASE_NAME = "GATEWAY_API_BASE"
     PROVIDER_NAME = "gateway"
     PROVIDER_DOCUMENTATION_URL = "https://github.com/mozilla-ai/any-llm"
 
@@ -24,8 +27,9 @@ class GatewayProvider(BaseOpenAIProvider):
     SUPPORTS_BATCH = True
 
     def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
-        if not api_base:
-            msg = "For any-llm-gateway, api_base is required"
+        resolved_api_base = api_base or os.getenv(self.ENV_API_BASE_NAME)
+        if not resolved_api_base:
+            msg = f"For any-llm-gateway, api_base is required (set via parameter or {self.ENV_API_BASE_NAME} env var)"
             raise ValueError(msg)
         api_key = self._verify_and_set_api_key(api_key)
         if api_key:
@@ -35,8 +39,9 @@ class GatewayProvider(BaseOpenAIProvider):
                 msg = f"{GATEWAY_HEADER_NAME} header is already set, overriding with new API key"
                 logger.info(msg)
             kwargs["default_headers"][GATEWAY_HEADER_NAME] = f"Bearer {api_key}"
-        super().__init__(api_key=api_key, api_base=api_base, **kwargs)
+        super().__init__(api_key=api_key, api_base=resolved_api_base, **kwargs)
 
+    @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         """Unlike other providers, the gateway provider does not require an API key"""
         return api_key or os.getenv(self.ENV_API_KEY_NAME, "")

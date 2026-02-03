@@ -4,6 +4,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
+from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 
@@ -41,6 +42,7 @@ class OllamaProvider(AnyLLM):
     PROVIDER_NAME = "ollama"
     PROVIDER_DOCUMENTATION_URL = "https://github.com/ollama/ollama"
     ENV_API_KEY_NAME = "None"
+    ENV_API_BASE_NAME = "OLLAMA_HOST"
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
@@ -57,6 +59,7 @@ class OllamaProvider(AnyLLM):
     client: AsyncClient
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Ollama API."""
         # Ollama does not support providing reasoning effort
@@ -70,16 +73,19 @@ class OllamaProvider(AnyLLM):
         return converted_params
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         """Convert Ollama response to OpenAI format."""
         return _create_chat_completion_from_ollama_response(response)
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert Ollama chunk response to OpenAI format."""
         return _create_openai_chunk_from_ollama_chunk(response)
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Convert embedding parameters for Ollama."""
         converted_params = {"input": params}
@@ -87,18 +93,22 @@ class OllamaProvider(AnyLLM):
         return converted_params
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Convert Ollama embedding response to OpenAI format."""
         return _create_openai_embedding_response_from_ollama(response)
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Ollama list models response to OpenAI format."""
         return _convert_models_list(response)
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = AsyncClient(host=api_base, **kwargs)
 
+    @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         return api_key
 
@@ -149,6 +159,7 @@ class OllamaProvider(AnyLLM):
         async for chunk in response:
             yield self._convert_completion_chunk_response(chunk)
 
+    @override
     async def _acompletion(
         self,
         params: CompletionParams,
@@ -211,6 +222,7 @@ class OllamaProvider(AnyLLM):
         )
         return self._convert_completion_response(response)
 
+    @override
     async def _aembedding(
         self,
         model: str,
@@ -225,6 +237,7 @@ class OllamaProvider(AnyLLM):
         )
         return self._convert_embedding_response(response)
 
+    @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.list(**kwargs)
         return self._convert_list_models_response(models_list)

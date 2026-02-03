@@ -5,6 +5,8 @@ import json
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
 
+from typing_extensions import override
+
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.logging import logger
@@ -30,6 +32,7 @@ class SagemakerProvider(AnyLLM):
 
     PROVIDER_NAME = "sagemaker"
     ENV_API_KEY_NAME = "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
+    ENV_API_BASE_NAME = "SAGEMAKER_ENDPOINT_URL"
     PROVIDER_DOCUMENTATION_URL = "https://aws.amazon.com/sagemaker/"
 
     SUPPORTS_BATCH = False
@@ -45,17 +48,20 @@ class SagemakerProvider(AnyLLM):
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for SageMaker API."""
         return _convert_params(params, kwargs)
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         """Convert SageMaker response to OpenAI format."""
         model = response.get("model", "")
         return _convert_response(response, model)
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert SageMaker chunk response to OpenAI format."""
         model = kwargs.get("model", "")
@@ -66,11 +72,13 @@ class SagemakerProvider(AnyLLM):
         return chunk
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Convert embedding parameters for SageMaker."""
         return kwargs
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Convert SageMaker embedding response to OpenAI format."""
         return _create_openai_embedding_response_from_sagemaker(
@@ -78,10 +86,12 @@ class SagemakerProvider(AnyLLM):
         )
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert SageMaker list models response to OpenAI format."""
         return []
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         logger.warning(
             "AWS Sagemaker Support is experimental and may not work as expected. Please file an ticket at https://github.com/mozilla-ai/any-llm/issues if you encounter any issues."
@@ -92,6 +102,7 @@ class SagemakerProvider(AnyLLM):
             **kwargs,
         )
 
+    @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         session = boto3.Session()  # type: ignore[attr-defined]
         credentials = session.get_credentials()
@@ -99,6 +110,7 @@ class SagemakerProvider(AnyLLM):
             raise MissingApiKeyError(provider_name=self.PROVIDER_NAME, env_var_name=self.ENV_API_KEY_NAME)
         return api_key
 
+    @override
     async def _acompletion(
         self,
         params: CompletionParams,
@@ -158,6 +170,7 @@ class SagemakerProvider(AnyLLM):
         response_body = json.loads(response["Body"].read())
         return self._convert_completion_response({"model": params.model_id, **response_body})
 
+    @override
     async def _aembedding(
         self,
         model: str,
@@ -174,6 +187,7 @@ class SagemakerProvider(AnyLLM):
 
         return await loop.run_in_executor(None, call_sync_partial)
 
+    @override
     def _embedding(
         self,
         model: str,

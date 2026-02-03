@@ -1,3 +1,6 @@
+import os
+from collections import defaultdict
+from collections.abc import Generator
 from typing import Any
 
 import pytest
@@ -29,7 +32,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.COHERE: "command-a-reasoning-08-2025",
         LLMProvider.DEEPSEEK: "deepseek-reasoner",
-        LLMProvider.MOONSHOT: "kimi-thinking-preview",
+        LLMProvider.MOONSHOT: "kimi-k2-thinking",
         LLMProvider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         LLMProvider.HUGGINGFACE: "huggingface/tgi",
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
@@ -205,3 +208,62 @@ def agent_loop_messages() -> list[dict[str, Any]]:
         },
         {"role": "tool", "tool_call_id": "foo", "content": "sunny"},
     ]
+
+
+# =============================================================================
+# Retry Statistics Tracking (for pytest-rerunfailures integration)
+# =============================================================================
+
+_retry_stats: dict[str, dict[str, Any]] = defaultdict(lambda: {"attempts": 1, "final_outcome": "passed"})
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) -> Generator[None, Any, None]:
+    """Track retry attempts for each test using pytest-rerunfailures execution_count."""
+    outcome = yield
+    rep = outcome.get_result()
+
+    if rep.when == "call":
+        test_name = item.nodeid
+        execution_count = getattr(item, "execution_count", 1)
+
+        _retry_stats[test_name]["attempts"] = execution_count
+        _retry_stats[test_name]["final_outcome"] = rep.outcome
+
+
+def pytest_terminal_summary(terminalreporter: Any, exitstatus: int, config: pytest.Config) -> None:
+    """Add retry summary to terminal output."""
+    retried_tests = {k: v for k, v in _retry_stats.items() if v["attempts"] > 1}
+
+    if not retried_tests:
+        return
+
+    terminalreporter.write_sep("=", "RETRY SUMMARY")
+    terminalreporter.write_line(f"Tests that required retries: {len(retried_tests)}")
+    terminalreporter.write_line("")
+
+    for test_name, stats in sorted(retried_tests.items()):
+        terminalreporter.write_line(f"  {test_name}: {stats['attempts']} attempts, final: {stats['final_outcome']}")
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Write retry summary to GitHub Actions job summary (GITHUB_STEP_SUMMARY)."""
+    summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not summary_file:
+        return
+
+    retried_tests = {k: v for k, v in _retry_stats.items() if v["attempts"] > 1}
+
+    if not retried_tests:
+        return
+
+    with open(summary_file, "a") as f:
+        f.write("\n## 🔄 Test Retry Summary\n\n")
+        f.write(f"**{len(retried_tests)} test(s) required retries**\n\n")
+        f.write("| Test | Attempts | Final Result |\n")
+        f.write("|------|----------|-------------|\n")
+
+        for test_name, stats in sorted(retried_tests.items()):
+            short_name = test_name.split("::")[-1] if "::" in test_name else test_name
+            result_emoji = "✅" if stats["final_outcome"] == "passed" else "❌"
+            f.write(f"| `{short_name}` | {stats['attempts']} | {result_emoji} {stats['final_outcome']} |\n")

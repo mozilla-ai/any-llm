@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel
+from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
     from mistralai import Mistral  # noqa: TC004
+    from mistralai.models import APIEndpoint
     from mistralai.models.embeddingresponse import EmbeddingResponse
 
     from any_llm.types.batch import Batch
@@ -44,6 +46,7 @@ class MistralProvider(AnyLLM):
 
     PROVIDER_NAME = "mistral"
     ENV_API_KEY_NAME = "MISTRAL_API_KEY"
+    ENV_API_BASE_NAME = "MISTRAL_API_BASE"
     PROVIDER_DOCUMENTATION_URL = "https://docs.mistral.ai/"
 
     SUPPORTS_COMPLETION_STREAMING = True
@@ -61,6 +64,7 @@ class MistralProvider(AnyLLM):
     client: Mistral
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Mistral API."""
         # Mistral does not support providing reasoning effort
@@ -82,6 +86,7 @@ class MistralProvider(AnyLLM):
         return converted_params
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         """Convert Mistral response to OpenAI format."""
         # We need the model parameter for conversion
@@ -89,11 +94,13 @@ class MistralProvider(AnyLLM):
         return _create_mistral_completion_from_response(response_data=response, model=model)
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert Mistral chunk response to OpenAI format."""
         return _create_openai_chunk_from_mistral_chunk(response)
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Convert embedding parameters for Mistral."""
         converted_params = {"inputs": params}
@@ -101,15 +108,18 @@ class MistralProvider(AnyLLM):
         return converted_params
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Convert Mistral embedding response to OpenAI format."""
         return _create_openai_embedding_response_from_mistral(response)
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Mistral list models response to OpenAI format."""
         return _convert_models_list(response)
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = Mistral(
             api_key=api_key,
@@ -125,6 +135,7 @@ class MistralProvider(AnyLLM):
         async for event in mistral_stream:
             yield self._convert_completion_chunk_response(event)
 
+    @override
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
@@ -143,6 +154,7 @@ class MistralProvider(AnyLLM):
 
         return self._convert_completion_response(response)
 
+    @override
     async def _aembedding(
         self,
         model: str,
@@ -156,10 +168,12 @@ class MistralProvider(AnyLLM):
         )
         return self._convert_embedding_response(result)
 
+    @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.models.list_async(**kwargs)
         return self._convert_list_models_response(models_list)
 
+    @override
     async def _acreate_batch(
         self,
         input_file_path: str,
@@ -201,9 +215,10 @@ class MistralProvider(AnyLLM):
             )
             raise ValueError(msg)
 
+        valid_endpoint = cast("APIEndpoint", endpoint)
         batch_job = await self.client.batch.jobs.create_async(
             input_files=[uploaded_file.id],
-            endpoint=endpoint,
+            endpoint=valid_endpoint,
             model=model,
             metadata=metadata,
             timeout_hours=timeout_hours,
@@ -212,16 +227,19 @@ class MistralProvider(AnyLLM):
 
         return _convert_batch_job_to_openai(batch_job)
 
+    @override
     async def _aretrieve_batch(self, batch_id: str, **kwargs: Any) -> Batch:
         """Retrieve a batch job using the Mistral Batch API."""
         batch_job = await self.client.batch.jobs.get_async(job_id=batch_id, **kwargs)
         return _convert_batch_job_to_openai(batch_job)
 
+    @override
     async def _acancel_batch(self, batch_id: str, **kwargs: Any) -> Batch:
         """Cancel a batch job using the Mistral Batch API."""
         batch_job = await self.client.batch.jobs.cancel_async(job_id=batch_id, **kwargs)
         return _convert_batch_job_to_openai(batch_job)
 
+    @override
     async def _alist_batches(
         self,
         after: str | None = None,

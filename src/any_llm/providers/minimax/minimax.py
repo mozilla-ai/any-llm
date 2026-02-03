@@ -4,17 +4,18 @@ from typing import Any
 from openai._streaming import AsyncStream
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
+from typing_extensions import override
 
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.providers.minimax.utils import _convert_chat_completion
-from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, Reasoning
-from any_llm.utils.reasoning import process_streaming_reasoning_chunks
+from any_llm.providers.openai.xml_reasoning import XMLReasoningOpenAIProvider, wrap_chunks_with_xml_reasoning
+from any_llm.providers.openai.xml_reasoning_utils import convert_chat_completion_with_xml_reasoning
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 
 
-class MinimaxProvider(BaseOpenAIProvider):
+class MinimaxProvider(XMLReasoningOpenAIProvider):
     API_BASE = "https://api.minimax.io/v1"
     ENV_API_KEY_NAME = "MINIMAX_API_KEY"
+    ENV_API_BASE_NAME = "MINIMAX_API_BASE"
     PROVIDER_NAME = "minimax"
     PROVIDER_DOCUMENTATION_URL = "https://www.minimax.io/platform_overview"
 
@@ -25,17 +26,19 @@ class MinimaxProvider(BaseOpenAIProvider):
     SUPPORTS_EMBEDDING = False
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         if isinstance(response, OpenAIChatCompletion):
-            return _convert_chat_completion(response)
+            return convert_chat_completion_with_xml_reasoning(response)
         if isinstance(response, ChatCompletion):
             return response
         return ChatCompletion.model_validate(response)
 
+    @override
     def _convert_completion_response_async(
         self, response: OpenAIChatCompletion | AsyncStream[OpenAIChatCompletionChunk]
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        """Convert an OpenAI completion response with streaming reasoning support."""
+        """Convert completion response with Minimax-specific chunk filtering."""
         if isinstance(response, OpenAIChatCompletion):
             return self._convert_completion_response(response)
 
@@ -45,25 +48,10 @@ class MinimaxProvider(BaseOpenAIProvider):
                     if chunk.choices and chunk.choices[0].delta:
                         yield self._convert_completion_chunk_response(chunk)
 
-        def get_content(chunk: ChatCompletionChunk) -> str | None:
-            return chunk.choices[0].delta.content if len(chunk.choices) > 0 else None
-
-        def set_content(chunk: ChatCompletionChunk, content: str | None) -> ChatCompletionChunk:
-            chunk.choices[0].delta.content = content
-            return chunk
-
-        def set_reasoning(chunk: ChatCompletionChunk, reasoning: str) -> ChatCompletionChunk:
-            chunk.choices[0].delta.reasoning = Reasoning(content=reasoning)
-            return chunk
-
-        return process_streaming_reasoning_chunks(
-            chunk_iterator(),
-            get_content=get_content,
-            set_content=set_content,
-            set_reasoning=set_reasoning,
-        )
+        return wrap_chunks_with_xml_reasoning(chunk_iterator())
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         # response_format is supported in the z.ai SDK, but the SDK doesn't yet have an async client
         # so we can't use it in any-llm

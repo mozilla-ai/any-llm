@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
 
+from openresponses_types import ResponseResource
 from pydantic import BaseModel
 
 from any_llm import AnyLLM
@@ -250,14 +251,29 @@ def responses(
     parallel_tool_calls: int | None = None,
     reasoning: Any | None = None,
     text: Any | None = None,
+    presence_penalty: float | None = None,
+    frequency_penalty: float | None = None,
+    truncation: str | None = None,
+    store: bool | None = None,
+    service_tier: str | None = None,
+    user: str | None = None,
+    metadata: dict[str, str] | None = None,
+    previous_response_id: str | None = None,
+    include: list[str] | None = None,
+    background: bool | None = None,
+    safety_identifier: str | None = None,
+    prompt_cache_key: str | None = None,
+    prompt_cache_retention: str | None = None,
+    conversation: str | dict[str, Any] | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> Response | Iterator[ResponseStreamEvent]:
-    """Create a response using the OpenAI-style Responses API.
+) -> ResponseResource | Response | Iterator[ResponseStreamEvent]:
+    """Create a response using the OpenResponses API.
 
-    This follows the OpenAI Responses API shape and returns the aliased
-    `any_llm.types.responses.Response` type. If `stream=True`, an iterator of
-    `any_llm.types.responses.ResponseStreamEvent` items is returned.
+    This implements the OpenResponses specification and returns either
+    `openresponses_types.ResponseResource` (for OpenResponses-compliant providers)
+    or `openai.types.responses.Response` (for providers using OpenAI's native API).
+    If `stream=True`, an iterator of `any_llm.types.responses.ResponseStreamEvent` items is returned.
 
     Args:
         model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
@@ -278,11 +294,26 @@ def responses(
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
         reasoning: Configuration options for reasoning models.
         text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
+        presence_penalty: Penalizes new tokens based on whether they appear in the text so far.
+        frequency_penalty: Penalizes new tokens based on their frequency in the text so far.
+        truncation: Controls how the service truncates input when it exceeds the model context window.
+        store: Whether to store the response so it can be retrieved later.
+        service_tier: The service tier to use for this request.
+        user: A unique identifier representing your end user.
+        metadata: Key-value pairs for custom metadata (up to 16 pairs).
+        previous_response_id: The ID of the response to use as the prior turn for this request.
+        include: Items to include in the response (e.g., 'reasoning.encrypted_content').
+        background: Whether to run the request in the background and return immediately.
+        safety_identifier: A stable identifier used for safety monitoring and abuse detection.
+        prompt_cache_key: A key to use when reading from or writing to the prompt cache.
+        prompt_cache_retention: How long to retain a prompt cache entry created by this request.
+        conversation: The conversation to associate this response with (ID string or ConversationParam object).
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
     Returns:
-        Either a `Response` object (non-streaming) or an iterator of
+        Either a `ResponseResource` object (OpenResponses-compliant providers),
+        a `Response` object (non-compliant providers), or an iterator of
         `ResponseStreamEvent` (streaming).
 
     Raises:
@@ -315,6 +346,20 @@ def responses(
         parallel_tool_calls=parallel_tool_calls,
         reasoning=reasoning,
         text=text,
+        presence_penalty=presence_penalty,
+        frequency_penalty=frequency_penalty,
+        truncation=truncation,
+        store=store,
+        service_tier=service_tier,
+        user=user,
+        metadata=metadata,
+        previous_response_id=previous_response_id,
+        include=include,
+        background=background,
+        safety_identifier=safety_identifier,
+        prompt_cache_key=prompt_cache_key,
+        prompt_cache_retention=prompt_cache_retention,
+        conversation=conversation,
         **kwargs,
     )
 
@@ -337,14 +382,29 @@ async def aresponses(
     parallel_tool_calls: int | None = None,
     reasoning: Any | None = None,
     text: Any | None = None,
+    presence_penalty: float | None = None,
+    frequency_penalty: float | None = None,
+    truncation: str | None = None,
+    store: bool | None = None,
+    service_tier: str | None = None,
+    user: str | None = None,
+    metadata: dict[str, str] | None = None,
+    previous_response_id: str | None = None,
+    include: list[str] | None = None,
+    background: bool | None = None,
+    safety_identifier: str | None = None,
+    prompt_cache_key: str | None = None,
+    prompt_cache_retention: str | None = None,
+    conversation: str | dict[str, Any] | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> Response | AsyncIterator[ResponseStreamEvent]:
-    """Create a response using the OpenAI-style Responses API.
+) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+    """Create a response using the OpenResponses API.
 
-    This follows the OpenAI Responses API shape and returns the aliased
-    `any_llm.types.responses.Response` type. If `stream=True`, an iterator of
-    `any_llm.types.responses.ResponseStreamEvent` items is returned.
+    This implements the OpenResponses specification and returns either
+    `openresponses_types.ResponseResource` (for OpenResponses-compliant providers)
+    or `openai.types.responses.Response` (for providers using OpenAI's native API).
+    If `stream=True`, an iterator of `any_llm.types.responses.ResponseStreamEvent` items is returned.
 
     Args:
         model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
@@ -365,11 +425,26 @@ async def aresponses(
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
         reasoning: Configuration options for reasoning models.
         text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
+        presence_penalty: Penalizes new tokens based on whether they appear in the text so far.
+        frequency_penalty: Penalizes new tokens based on their frequency in the text so far.
+        truncation: Controls how the service truncates input when it exceeds the model context window.
+        store: Whether to store the response so it can be retrieved later.
+        service_tier: The service tier to use for this request.
+        user: A unique identifier representing your end user.
+        metadata: Key-value pairs for custom metadata (up to 16 pairs).
+        previous_response_id: The ID of the response to use as the prior turn for this request.
+        include: Items to include in the response (e.g., 'reasoning.encrypted_content').
+        background: Whether to run the request in the background and return immediately.
+        safety_identifier: A stable identifier used for safety monitoring and abuse detection.
+        prompt_cache_key: A key to use when reading from or writing to the prompt cache.
+        prompt_cache_retention: How long to retain a prompt cache entry created by this request.
+        conversation: The conversation to associate this response with (ID string or ConversationParam object).
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
     Returns:
-        Either a `Response` object (non-streaming) or an iterator of
+        Either a `ResponseResource` object (OpenResponses-compliant providers),
+        a `Response` object (non-compliant providers), or an iterator of
         `ResponseStreamEvent` (streaming).
 
     Raises:
@@ -402,6 +477,20 @@ async def aresponses(
         parallel_tool_calls=parallel_tool_calls,
         reasoning=reasoning,
         text=text,
+        presence_penalty=presence_penalty,
+        frequency_penalty=frequency_penalty,
+        truncation=truncation,
+        store=store,
+        service_tier=service_tier,
+        user=user,
+        metadata=metadata,
+        previous_response_id=previous_response_id,
+        include=include,
+        background=background,
+        safety_identifier=safety_identifier,
+        prompt_cache_key=prompt_cache_key,
+        prompt_cache_retention=prompt_cache_retention,
+        conversation=conversation,
         **kwargs,
     )
 

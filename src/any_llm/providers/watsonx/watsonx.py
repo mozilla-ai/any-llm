@@ -1,25 +1,36 @@
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
+from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 
-MISSING_PACKAGES_ERROR = None
-try:
-    from ibm_watsonx_ai import APIClient as WatsonxClient
-    from ibm_watsonx_ai import Credentials
-    from ibm_watsonx_ai.foundation_models.inference.model_inference import ModelInference
+MISSING_PACKAGES_ERROR: ImportError | None = None
+PYTHON_VERSION_INCOMPATIBLE = sys.version_info >= (3, 14)
 
-    from .utils import (
-        _convert_models_list,
-        _convert_pydantic_to_watsonx_json,
-        _convert_response,
-        _convert_streaming_chunk,
+if PYTHON_VERSION_INCOMPATIBLE:
+    MISSING_PACKAGES_ERROR = ImportError(
+        "The 'ibm-watsonx-ai' package is not compatible with Python 3.14+. "
+        "The package has StrEnum compatibility issues with Python 3.14. "
+        "Please use Python 3.13 or earlier to use this provider, or wait for an updated ibm-watsonx-ai package."
     )
-except ImportError as e:
-    MISSING_PACKAGES_ERROR = e
+else:
+    try:
+        from ibm_watsonx_ai import APIClient as WatsonxClient
+        from ibm_watsonx_ai import Credentials
+        from ibm_watsonx_ai.foundation_models.inference.model_inference import ModelInference
+
+        from .utils import (
+            _convert_models_list,
+            _convert_pydantic_to_watsonx_json,
+            _convert_response,
+            _convert_streaming_chunk,
+        )
+    except ImportError as e:
+        MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
@@ -35,6 +46,7 @@ class WatsonxProvider(AnyLLM):
 
     PROVIDER_NAME = "watsonx"
     ENV_API_KEY_NAME = "WATSONX_API_KEY"
+    ENV_API_BASE_NAME = "WATSONX_URL"
     PROVIDER_DOCUMENTATION_URL = "https://www.ibm.com/watsonx"
 
     SUPPORTS_COMPLETION_STREAMING = True
@@ -50,6 +62,7 @@ class WatsonxProvider(AnyLLM):
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Watsonx API."""
         # Watsonx does not support providing reasoning effort
@@ -62,32 +75,38 @@ class WatsonxProvider(AnyLLM):
         return converted_params
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         """Convert Watsonx response to OpenAI format."""
         return _convert_response(response)
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert Watsonx chunk response to OpenAI format."""
         return _convert_streaming_chunk(response)
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Convert embedding parameters for Watsonx."""
         msg = "Watsonx does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Convert Watsonx embedding response to OpenAI format."""
         msg = "Watsonx does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Watsonx list models response to OpenAI format."""
         return _convert_models_list(response)
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         # watsonx requires params.model_id to instantiate the client
         # which is not available at this point.
@@ -109,6 +128,7 @@ class WatsonxProvider(AnyLLM):
         async for chunk in response_stream:
             yield self._convert_completion_chunk_response(chunk)
 
+    @override
     async def _acompletion(
         self,
         params: CompletionParams,
@@ -142,6 +162,7 @@ class WatsonxProvider(AnyLLM):
 
         return self._convert_completion_response(response)
 
+    @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         """
         Fetch available models from the /v1/models endpoint.

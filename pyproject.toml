@@ -11,14 +11,16 @@ version = "0.0.0-dev" # There is a regex in the release.yaml file that looks for
 dependencies = [
   "pydantic>2,<3",
   "openai>=1.99.3",
+  "openresponses-types>=2.3.0.post1",
   "rich",
   "httpx",
+  "typing_extensions>=4.4.0",
 ]
 
 [project.optional-dependencies]
 
 all = [
-  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,cohere,cerebras,fireworks,groq,bedrock,azure,azureopenai,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,perplexity,platform,llamafile,llamacpp,sagemaker,gateway,zai,minimax,vllm]"
+  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,vertexaianthropic,cohere,cerebras,fireworks,groq,bedrock,azure,azureopenai,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,perplexity,platform,llamafile,llamacpp,sagemaker,gateway,zai,minimax,vllm]"
 ]
 
 platform = [
@@ -41,6 +43,10 @@ gemini = [
 
 vertexai = [
   "google-genai",
+]
+
+vertexaianthropic = [
+  "anthropic[vertex]",
 ]
 
 huggingface = [
@@ -68,7 +74,7 @@ azure = [
 ]
 
 watsonx = [
-  "ibm-watsonx-ai",
+  "ibm-watsonx-ai; python_version < '3.14'",
 ]
 
 together = [
@@ -80,7 +86,7 @@ ollama = [
 ]
 
 voyage = [
-  "voyageai",
+  "voyageai; python_version < '3.14'",
 ]
 
 xai = [
@@ -199,6 +205,7 @@ strict = true
 disallow_untyped_calls = true
 disallow_untyped_defs = true
 follow_untyped_imports = true
+enable_error_code = ["explicit-override"]
 exclude = [
   "demos/",
   "scripts/"
@@ -215,6 +222,8 @@ ignore_missing_imports = true # pytest related modules are not found
 
 [tool.pytest.ini_options]
 timeout = 120
+reruns = 5
+reruns_delay = 10
 filterwarnings = [
   # Silence Pydantic V1-style validator deprecation warnings coming from fireworks only
   "ignore:Pydantic V1 style `@validator` validators are deprecated:pydantic.warnings.PydanticDeprecatedSince20:fireworks\\.client\\.image_api",
@@ -259,6 +268,7 @@ tests = [
   "pytest>=8,<10",
   "pytest-cov>=6.2.1,<7",
   "pytest-asyncio>=0.26.0",
+  "pytest-rerunfailures>=16.0",
   "mktestdocs>=0.2.4",
   "pytest-xdist>=3.6.1",
   "pytest-timeout",

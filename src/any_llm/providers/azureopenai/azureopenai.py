@@ -2,6 +2,7 @@ import os
 from typing import Any
 
 from openai import AsyncAzureOpenAI
+from typing_extensions import override
 
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.openai.base import BaseOpenAIProvider
@@ -11,6 +12,7 @@ class AzureopenaiProvider(BaseOpenAIProvider):
     """Azure OpenAI AnyLLM."""
 
     ENV_API_KEY_NAME = "AZURE_OPENAI_API_KEY"
+    ENV_API_BASE_NAME = "AZURE_OPENAI_ENDPOINT"
     PROVIDER_NAME = "azureopenai"
     PROVIDER_DOCUMENTATION_URL = "https://learn.microsoft.com/en-us/azure/ai-foundry/"
     SUPPORTS_RESPONSES = True
@@ -21,9 +23,11 @@ class AzureopenaiProvider(BaseOpenAIProvider):
 
     client: AsyncAzureOpenAI
 
+    @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         return api_key or os.getenv(self.ENV_API_KEY_NAME)
 
+    @override
     def _init_client(
         self,
         api_key: str | None = None,

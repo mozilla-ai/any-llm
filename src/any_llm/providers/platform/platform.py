@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from any_llm_platform_client import AnyLLMPlatformClient
 from httpx import AsyncClient
+from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.constants import LLMProvider
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
 class PlatformProvider(AnyLLM):
     PROVIDER_NAME = "platform"
     ENV_API_KEY_NAME = "ANY_LLM_KEY"
+    ENV_API_BASE_NAME = "ANY_LLM_PLATFORM_URL"
     PROVIDER_DOCUMENTATION_URL = "https://github.com/mozilla-ai/any-llm"
 
     # All features are marked as supported, but depending on which provider you call inside the gateway, they may not all work.
@@ -57,6 +59,7 @@ class PlatformProvider(AnyLLM):
 
         self._init_client(api_key=api_key, api_base=api_base, **kwargs)
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = AsyncClient(**kwargs)
         # Initialize the platform client for authentication and usage tracking
@@ -65,29 +68,36 @@ class PlatformProvider(AnyLLM):
         self.platform_client = AnyLLMPlatformClient(any_llm_platform_url=ANY_LLM_PLATFORM_API_URL)
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         raise NotImplementedError
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         raise NotImplementedError
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         raise NotImplementedError
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         raise NotImplementedError
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         raise NotImplementedError
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         raise NotImplementedError
 
+    @override
     async def _acompletion(
         self,
         params: CompletionParams,

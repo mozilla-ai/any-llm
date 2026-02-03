@@ -1,6 +1,7 @@
 from typing import Any
 
 from google import genai
+from typing_extensions import override
 
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.gemini.base import GoogleProvider
@@ -12,10 +13,13 @@ class VertexaiProvider(GoogleProvider):
     PROVIDER_NAME = "vertexai"
     PROVIDER_DOCUMENTATION_URL = "https://cloud.google.com/vertex-ai/docs"
     ENV_API_KEY_NAME = ""
+    ENV_API_BASE_NAME = "VERTEXAI_API_BASE"
 
+    @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         return api_key
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         """Get Vertex AI client."""
         self.client = genai.Client(

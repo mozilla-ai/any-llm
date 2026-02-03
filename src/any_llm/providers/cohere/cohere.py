@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
+from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
@@ -33,6 +34,7 @@ class CohereProvider(AnyLLM):
 
     PROVIDER_NAME = "cohere"
     ENV_API_KEY_NAME = "COHERE_API_KEY"
+    ENV_API_BASE_NAME = "COHERE_BASE_URL"
     PROVIDER_DOCUMENTATION_URL = "https://cohere.com/api"
 
     SUPPORTS_COMPLETION_STREAMING = True
@@ -50,6 +52,7 @@ class CohereProvider(AnyLLM):
     client: cohere.AsyncClientV2
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Cohere API."""
         # Cohere does not support providing reasoning effort
@@ -62,6 +65,7 @@ class CohereProvider(AnyLLM):
         return converted_params
 
     @staticmethod
+    @override
     def _convert_completion_response(response: V2ChatResponse, **kwargs: Any) -> ChatCompletion:
         """Convert Cohere response to OpenAI format."""
         # We need the model parameter for conversion
@@ -69,27 +73,32 @@ class CohereProvider(AnyLLM):
         return _convert_response(response, model)
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert Cohere chunk response to OpenAI format."""
         return _create_openai_chunk_from_cohere_chunk(response)
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Convert embedding parameters for Cohere."""
         msg = "Cohere does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Convert Cohere embedding response to OpenAI format."""
         msg = "Cohere does not support embeddings"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Cohere list models response to OpenAI format."""
         return _convert_models_list(response)
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = cohere.AsyncClientV2(api_key=api_key, **kwargs)
 
@@ -121,6 +130,7 @@ class CohereProvider(AnyLLM):
         # Validation logic could/would eventually go here
         return response_format
 
+    @override
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
@@ -151,6 +161,7 @@ class CohereProvider(AnyLLM):
 
         return self._convert_completion_response(response, model=params.model_id)
 
+    @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         model_list = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(model_list)

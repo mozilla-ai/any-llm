@@ -1,18 +1,30 @@
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Any
+
+from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 
-MISSING_PACKAGES_ERROR = None
-try:
-    from voyageai.client_async import AsyncClient
+MISSING_PACKAGES_ERROR: ImportError | None = None
+PYTHON_VERSION_INCOMPATIBLE = sys.version_info >= (3, 14)
 
-    from .utils import (
-        _create_openai_embedding_response_from_voyage,
+if PYTHON_VERSION_INCOMPATIBLE:
+    MISSING_PACKAGES_ERROR = ImportError(
+        "The 'voyageai' package is not compatible with Python 3.14+. "
+        "The package uses pydantic v1 which has breaking changes in Python 3.14. "
+        "Please use Python 3.13 or earlier to use this provider, or wait for an updated voyageai package."
     )
-except ImportError as e:
-    MISSING_PACKAGES_ERROR = e
+else:
+    try:
+        from voyageai.client_async import AsyncClient
+
+        from .utils import (
+            _create_openai_embedding_response_from_voyage,
+        )
+    except ImportError as e:
+        MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -28,6 +40,7 @@ class VoyageProvider(AnyLLM):
 
     PROVIDER_NAME = "voyage"
     ENV_API_KEY_NAME = "VOYAGE_API_KEY"
+    ENV_API_BASE_NAME = "VOYAGE_API_BASE"
     PROVIDER_DOCUMENTATION_URL = "https://docs.voyageai.com/"
 
     SUPPORTS_COMPLETION = False
@@ -45,24 +58,28 @@ class VoyageProvider(AnyLLM):
     client: AsyncClient
 
     @staticmethod
+    @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Voyage API."""
         msg = "Voyage does not support completions"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         """Convert Voyage response to OpenAI format."""
         msg = "Voyage does not support completions"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert Voyage chunk response to OpenAI format."""
         msg = "Voyage does not support completions"
         raise NotImplementedError(msg)
 
     @staticmethod
+    @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Convert embedding parameters for Voyage."""
         if isinstance(params, str):
@@ -72,6 +89,7 @@ class VoyageProvider(AnyLLM):
         return converted_params
 
     @staticmethod
+    @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Convert Voyage embedding response to OpenAI format."""
         # We need the model parameter for conversion
@@ -79,14 +97,17 @@ class VoyageProvider(AnyLLM):
         return _create_openai_embedding_response_from_voyage(model, response["result"])
 
     @staticmethod
+    @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Voyage list models response to OpenAI format."""
         msg = "Voyage does not support listing models"
         raise NotImplementedError(msg)
 
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = AsyncClient(api_key=api_key, **kwargs)
 
+    @override
     async def _aembedding(
         self,
         model: str,
