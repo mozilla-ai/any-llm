@@ -64,15 +64,26 @@ class TogetherProvider(AnyLLM):
         converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
         if converted_params.get("reasoning_effort") in ("auto", "none"):
             converted_params.pop("reasoning_effort")
-        if (
-            params.response_format is not None
-            and isinstance(params.response_format, type)
-            and issubclass(params.response_format, BaseModel)
-        ):
-            converted_params["response_format"] = {
-                "type": "json_schema",
-                "schema": params.response_format.model_json_schema(),
-            }
+        if params.response_format is not None:
+            if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
+                # Handle Pydantic model: convert to Together's json_schema format
+                converted_params["response_format"] = {
+                    "type": "json_schema",
+                    "schema": params.response_format.model_json_schema(),
+                }
+            elif isinstance(params.response_format, dict):
+                # Handle OpenAI-style dict format (e.g., {"type": "json_schema", "json_schema": {...}})
+                # Together expects {"type": "json_schema", "schema": {...}}
+                if params.response_format.get("type") == "json_schema":
+                    json_schema = params.response_format.get("json_schema", {})
+                    schema = json_schema.get("schema", json_schema)
+                    converted_params["response_format"] = {
+                        "type": "json_schema",
+                        "schema": schema,
+                    }
+                else:
+                    # Pass through other dict formats (e.g., {"type": "json_object"})
+                    converted_params["response_format"] = params.response_format
 
         converted_params.update(kwargs)
         return converted_params

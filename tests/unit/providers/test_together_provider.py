@@ -213,3 +213,100 @@ def test_create_openai_chunk_with_usage() -> None:
     assert result.usage.prompt_tokens == 10
     assert result.usage.completion_tokens == 5
     assert result.usage.total_tokens == 15
+
+
+def test_convert_completion_params_with_pydantic_response_format() -> None:
+    """Test that Pydantic model response_format is converted correctly."""
+    from pydantic import BaseModel
+
+    from any_llm.providers.together.together import TogetherProvider
+
+    class TestSchema(BaseModel):
+        name: str
+        value: int
+
+    params = CompletionParams(
+        model_id="test-model",
+        messages=[{"role": "user", "content": "Hello"}],
+        response_format=TestSchema,
+    )
+
+    result = TogetherProvider._convert_completion_params(params)
+
+    assert "response_format" in result
+    assert result["response_format"]["type"] == "json_schema"
+    assert "schema" in result["response_format"]
+    assert result["response_format"]["schema"]["properties"]["name"]["type"] == "string"
+    assert result["response_format"]["schema"]["properties"]["value"]["type"] == "integer"
+
+
+def test_convert_completion_params_with_dict_json_schema_response_format() -> None:
+    """Test that OpenAI-style dict response_format with json_schema is converted correctly.
+
+    This tests the fix for issue #791: OpenAI-style dict format should be supported.
+    """
+    from any_llm.providers.together.together import TogetherProvider
+
+    openai_json_schema = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "StructuredOutput",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "answer": {"type": "string"},
+                    "confidence": {"type": "number"},
+                },
+                "required": ["answer", "confidence"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    }
+
+    params = CompletionParams(
+        model_id="test-model",
+        messages=[{"role": "user", "content": "Hello"}],
+        response_format=openai_json_schema,
+    )
+
+    result = TogetherProvider._convert_completion_params(params)
+
+    assert "response_format" in result
+    assert result["response_format"]["type"] == "json_schema"
+    assert "schema" in result["response_format"]
+    assert result["response_format"]["schema"]["type"] == "object"
+    assert "answer" in result["response_format"]["schema"]["properties"]
+    assert "confidence" in result["response_format"]["schema"]["properties"]
+
+
+def test_convert_completion_params_with_dict_json_object_response_format() -> None:
+    """Test that dict response_format with json_object type is passed through."""
+    from any_llm.providers.together.together import TogetherProvider
+
+    json_object_format = {"type": "json_object"}
+
+    params = CompletionParams(
+        model_id="test-model",
+        messages=[{"role": "user", "content": "Hello"}],
+        response_format=json_object_format,
+    )
+
+    result = TogetherProvider._convert_completion_params(params)
+
+    assert "response_format" in result
+    assert result["response_format"]["type"] == "json_object"
+
+
+def test_convert_completion_params_without_response_format() -> None:
+    """Test that params without response_format work correctly."""
+    from any_llm.providers.together.together import TogetherProvider
+
+    params = CompletionParams(
+        model_id="test-model",
+        messages=[{"role": "user", "content": "Hello"}],
+    )
+
+    result = TogetherProvider._convert_completion_params(params)
+
+    assert "response_format" not in result
