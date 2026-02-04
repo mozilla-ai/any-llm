@@ -6,6 +6,8 @@ import re
 import warnings
 from typing import TYPE_CHECKING, Any, TypeVar
 
+from pydantic import ValidationError
+
 from any_llm.exceptions import (
     AnyLLMError,
     AuthenticationError,
@@ -133,8 +135,16 @@ def _handle_exception(exception: Exception, provider_name: str) -> None:
     Raises:
         AnyLLMError: If unified exceptions are enabled
         Exception: The original exception if unified exceptions are disabled
+        pydantic.ValidationError: Always re-raised unchanged
 
     """
+    # When using response_format with a Pydantic model, the SDK validates the response
+    # internally. If the LLM produces output that doesn't conform to the schema, pydantic
+    # raises ValidationError. This should bubble up unchanged.
+    # See: https://github.com/mozilla-ai/any-llm/issues/799
+    if isinstance(exception, ValidationError):
+        raise exception
+
     if os.environ.get(ANY_LLM_UNIFIED_EXCEPTIONS_ENV, "").lower() in ("1", "true", "yes", "on"):
         converted = convert_exception(exception, provider_name)
         raise converted from exception
