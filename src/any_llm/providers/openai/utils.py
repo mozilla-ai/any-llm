@@ -5,6 +5,7 @@ from typing import Any
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 
 from any_llm.constants import REASONING_FIELD_NAMES
+from any_llm.exceptions import ProviderError
 from any_llm.logging import logger
 from any_llm.types.completion import ChatCompletion
 
@@ -58,6 +59,17 @@ def _convert_chat_completion(response: OpenAIChatCompletion) -> ChatCompletion:
             response.object,
         )
         response.object = "chat.completion"
+
+    # Detect completely empty responses (all required fields None).
+    # Some providers return 200 OK with an empty body on malformed input
+    # instead of a proper error. Fail fast with a clear message.
+    if response.id is None and response.choices is None and response.model is None:
+        msg = (
+            "Provider returned an empty response with no id, choices, or model. "
+            "This usually means the provider failed to process the request."
+        )
+        raise ProviderError(msg)
+
     if not isinstance(response.created, int):
         # Sambanova returns a float instead of an int.
         logger.warning(
