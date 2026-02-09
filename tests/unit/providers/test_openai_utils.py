@@ -10,9 +10,9 @@ def test_convert_chat_completion_with_empty_response() -> None:
     # ChatCompletion(id=None, choices=None, created=None, model=None, object='chat.completion', ...)
     openai_response = OpenAIChatCompletion.model_construct(
         id=None,
-        choices=None, # type: ignore
-        created=None, # type: ignore
-        model=None,   # type: ignore
+        choices=None,
+        created=None,
+        model=None,
         object="chat.completion",
     )
 
@@ -27,9 +27,9 @@ def test_convert_chat_completion_with_partial_none_response() -> None:
     # but the specific guard being tested here should not trigger.
     openai_response = OpenAIChatCompletion.model_construct(
         id="test-id",
-        choices=None, # type: ignore
+        choices=None,
         created=1234567890,
-        model=None,   # type: ignore
+        model=None,
         object="chat.completion",
     )
 
