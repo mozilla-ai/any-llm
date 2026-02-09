@@ -21,6 +21,7 @@ def test_convert_chat_completion_with_empty_response() -> None:
 
     assert "Provider returned an empty response" in str(exc_info.value)
 
+
 def test_convert_chat_completion_with_partial_none_response() -> None:
     # If not all THREE (id, choices, model) are None, it should NOT raise ProviderError early.
     # It might fail later if other required fields like 'created' are missing or invalid,
@@ -35,12 +36,13 @@ def test_convert_chat_completion_with_partial_none_response() -> None:
 
     # In this case, it will fail later during ChatCompletion.model_validate(normalized)
     # because 'choices' is None, or during _normalize_openai_dict_response if it expect choices to be a list.
-    
+
     # Actually _normalize_openai_dict_response handles choices=None:
     # choices = response_dict.get("choices")
     # if isinstance(choices, list): ...
-    
+
     # But ChatCompletion.model_validate(normalized) will fail because choices is required.
     from pydantic import ValidationError
+
     with pytest.raises(ValidationError):
         _convert_chat_completion(openai_response)
