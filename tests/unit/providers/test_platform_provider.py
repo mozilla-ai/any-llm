@@ -566,7 +566,44 @@ def test_anyllm_instantiation_with_platform_key(
     assert mock_import_module.call_count == 2
     mock_import_module.assert_any_call("any_llm.providers.openai")
     mock_import_module.assert_any_call("any_llm.providers.platform")
-    mock_platform_class.assert_called_once_with(api_key=any_llm_key, api_base=None)
+    mock_platform_class.assert_called_once_with(api_key=any_llm_key, api_base=None, client_name=None)
+
+
+@patch("any_llm.any_llm.importlib.import_module")
+def test_anyllm_instantiation_with_platform_key_and_client_name(
+    mock_import_module: Mock,
+) -> None:
+    """Test that AnyLLM.create() correctly passes client_name to PlatformProvider."""
+    from any_llm import AnyLLM
+
+    any_llm_key = "ANY.v1.kid123.fingerprint456-base64key"
+    client_name = "test-client"
+
+    # Mock the provider module first (for initial validation)
+    mock_provider_module = Mock()
+    mock_provider_class = Mock()
+    mock_provider_module.OpenaiProvider = mock_provider_class
+
+    # Mock the PlatformProvider module and class
+    mock_platform_module = Mock()
+    mock_platform_class = Mock(spec=PlatformProvider)
+    mock_platform_instance = Mock(spec=PlatformProvider)
+    mock_platform_class.return_value = mock_platform_instance
+    mock_platform_module.PlatformProvider = mock_platform_class
+
+    # Configure import_module to return provider module first, then platform module
+    mock_import_module.side_effect = [mock_provider_module, mock_platform_module]
+
+    # Call AnyLLM.create() with platform key and client_name
+    result = AnyLLM.create(provider="openai", api_key=any_llm_key, client_name=client_name)
+
+    # Assertions
+    assert result == mock_platform_instance
+    assert mock_import_module.call_count == 2
+    mock_import_module.assert_any_call("any_llm.providers.openai")
+    mock_import_module.assert_any_call("any_llm.providers.platform")
+    # Verify client_name is passed correctly and only once
+    mock_platform_class.assert_called_once_with(api_key=any_llm_key, api_base=None, client_name=client_name)
 
 
 @patch("any_llm.any_llm.importlib.import_module")
