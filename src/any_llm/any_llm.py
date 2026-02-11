@@ -192,7 +192,11 @@ class AnyLLM(ABC):
 
                 # Instantiate the class first and pass the provider next,
                 # so we don't change the common API between different provideers.
-                platform_provider = platform_class(api_key=api_key, api_base=api_base, **kwargs)
+                # pop platform-specific kwargs to avoid passing them to the provider's __init__
+                client_name = kwargs.pop("client_name", None)
+                platform_provider = platform_class(
+                    api_key=api_key, api_base=api_base, client_name=client_name, **kwargs
+                )
                 platform_provider.provider = provider_class  # type: ignore[attr-defined]
             except ValueError:
                 pass
