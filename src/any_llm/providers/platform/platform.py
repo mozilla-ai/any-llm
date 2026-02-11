@@ -103,6 +103,10 @@ class PlatformProvider(AnyLLM):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        client_name = kwargs.pop("client_name", None)
+        if self.client_name is None:
+            self.client_name = client_name
+
         start_time = time.perf_counter()
 
         # List of providers that don't support stream_options and automatically return token usage.
