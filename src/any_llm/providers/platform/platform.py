@@ -104,8 +104,12 @@ class PlatformProvider(AnyLLM):
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         client_name = kwargs.pop("client_name", None)
-        if self.client_name is None:
-            self.client_name = client_name
+        if client_name is not None:
+            msg = (
+                "Passing client_name at request time is not supported for PlatformProvider. "
+                "Set client_name when creating the provider (for example, AnyLLM.create(..., client_name=...))."
+            )
+            raise ValueError(msg)
 
         start_time = time.perf_counter()
 
