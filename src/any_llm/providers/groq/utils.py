@@ -17,6 +17,7 @@ from any_llm.types.completion import (
     ChunkChoice,
     CompletionUsage,
     Function,
+    PromptTokensDetails,
     Reasoning,
 )
 from any_llm.types.model import Model
@@ -39,10 +40,14 @@ def to_chat_completion(response: GroqChatCompletion) -> ChatCompletion:
 
     usage = None
     if response.usage:
+        # Groq's prompt_tokens already includes cached tokens (cached_tokens is a subset).
+        # Reference: https://console.groq.com/docs/prompt-caching
+        cached_tokens = getattr(response.usage.prompt_tokens_details, "cached_tokens", None)
         usage = CompletionUsage(
             prompt_tokens=response.usage.prompt_tokens,
             completion_tokens=response.usage.completion_tokens,
             total_tokens=response.usage.total_tokens,
+            prompt_tokens_details=PromptTokensDetails(cached_tokens=cached_tokens) if cached_tokens else None,
         )
 
     choices: list[Choice] = []
@@ -139,10 +144,12 @@ def _create_openai_chunk_from_groq_chunk(groq_chunk: GroqChatCompletionChunk) ->
     usage = None
     usage_data = groq_chunk.usage
     if usage_data:
+        cached_tokens = getattr(usage_data.prompt_tokens_details, "cached_tokens", None)
         usage = CompletionUsage(
             prompt_tokens=usage_data.prompt_tokens,
             completion_tokens=usage_data.completion_tokens,
             total_tokens=usage_data.total_tokens,
+            prompt_tokens_details=PromptTokensDetails(cached_tokens=cached_tokens) if cached_tokens else None,
         )
 
     return ChatCompletionChunk(
