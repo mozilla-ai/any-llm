@@ -15,6 +15,7 @@ from any_llm.types.completion import (
     CompletionUsage,
     CreateEmbeddingResponse,
     Embedding,
+    PromptTokensDetails,
     Reasoning,
     Usage,
 )
@@ -140,22 +141,32 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[types.Conten
     return formatted_messages, system_instruction
 
 
+def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, Any]:
+    """Extract usage from a Gemini response as a dict.
+
+    Gemini's ``prompt_token_count`` already includes cached tokens
+    (``cached_content_token_count`` is a subset).
+
+    Reference: https://ai.google.dev/gemini-api/docs/caching
+    """
+    metadata = getattr(response, "usage_metadata", None)
+    cached_tokens = getattr(metadata, "cached_content_token_count", None)
+    usage: dict[str, Any] = {
+        "prompt_tokens": getattr(metadata, "prompt_token_count", 0) or 0,
+        "completion_tokens": getattr(metadata, "candidates_token_count", 0) or 0,
+        "total_tokens": getattr(metadata, "total_token_count", 0) or 0,
+    }
+    if cached_tokens:
+        usage["prompt_tokens_details"] = PromptTokensDetails(cached_tokens=cached_tokens)
+    return usage
+
+
 def _convert_response_to_response_dict(response: types.GenerateContentResponse) -> dict[str, Any]:
     response_dict = {
         "id": "google_genai_response",
         "model": "google/genai",
         "created": 0,
-        "usage": {
-            "prompt_tokens": getattr(response.usage_metadata, "prompt_token_count", 0)
-            if hasattr(response, "usage_metadata")
-            else 0,
-            "completion_tokens": getattr(response.usage_metadata, "candidates_token_count", 0)
-            if hasattr(response, "usage_metadata")
-            else 0,
-            "total_tokens": getattr(response.usage_metadata, "total_token_count", 0)
-            if hasattr(response, "usage_metadata")
-            else 0,
-        },
+        "usage": _extract_usage_dict(response),
     }
 
     choices: list[dict[str, Any]] = []
@@ -315,10 +326,12 @@ def _create_openai_chunk_from_google_chunk(
 
     usage = None
     if response.usage_metadata:
+        cached_tokens = response.usage_metadata.cached_content_token_count
         usage = CompletionUsage(
             prompt_tokens=response.usage_metadata.prompt_token_count or 0,
             completion_tokens=response.usage_metadata.candidates_token_count or 0,
             total_tokens=response.usage_metadata.total_token_count or 0,
+            prompt_tokens_details=PromptTokensDetails(cached_tokens=cached_tokens) if cached_tokens else None,
         )
 
     return ChatCompletionChunk(
