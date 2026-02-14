@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from any_llm.types.completion import CompletionParams
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, PromptTokensDetails
 
 
 def _convert_pydantic_to_deepseek_json(
@@ -56,3 +56,29 @@ def _preprocess_messages(params: CompletionParams) -> CompletionParams:
             params.messages = modified_messages
 
     return params
+
+
+def _inject_cached_tokens(completion: ChatCompletion) -> ChatCompletion:
+    """Populate ``prompt_tokens_details.cached_tokens`` from DeepSeek's ``prompt_cache_hit_tokens``.
+
+    DeepSeek's ``prompt_tokens`` already includes cached tokens
+    (``prompt_tokens = prompt_cache_hit_tokens + prompt_cache_miss_tokens``).
+
+    Reference: https://api-docs.deepseek.com/api/create-chat-completion
+    """
+    if completion.usage is None:
+        return completion
+    cached = getattr(completion.usage, "prompt_cache_hit_tokens", None)
+    if cached:
+        completion.usage.prompt_tokens_details = PromptTokensDetails(cached_tokens=cached)
+    return completion
+
+
+def _inject_cached_tokens_chunk(chunk: ChatCompletionChunk) -> ChatCompletionChunk:
+    """Same as ``_inject_cached_tokens`` but for streaming chunks."""
+    if chunk.usage is None:
+        return chunk
+    cached = getattr(chunk.usage, "prompt_cache_hit_tokens", None)
+    if cached:
+        chunk.usage.prompt_tokens_details = PromptTokensDetails(cached_tokens=cached)
+    return chunk
