@@ -24,7 +24,7 @@ all = [
 ]
 
 platform = [
-  "any-llm-platform-client>=0.2.2",
+  "any-llm-platform-client>=0.3.0",
 ]
 
 perplexity = []
