@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+`CLAUDE.md` is a symlink to this file. Always edit `AGENTS.md` directly; never modify `CLAUDE.md`.
+
 ## Where to Look First
 
 - [README.md](README.md): high-level usage and gateway overview.
@@ -14,7 +16,6 @@
 - `tests/`: `unit/`, `integration/`, `gateway/`, plus shared fixtures in `tests/conftest.py`.
 - `docs/`: MkDocs documentation site (config in `mkdocs.yml`).
 - `docker/`: Gateway Dockerfile + Compose configs ([docker/docker-compose.yml](docker/docker-compose.yml), [docker/config.example.yml](docker/config.example.yml)).
-- `demos/`: Example apps (`demos/*/backend` in Python, `demos/*/frontend` in React).
 
 ## Build, Test, and Development Commands
 

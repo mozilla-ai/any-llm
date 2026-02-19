@@ -196,7 +196,6 @@ extend-select = ["ALL"]
 "src/any_llm/any_llm.py" = ["D"]
 "src/any_llm/types/**" = ["A005", "D"]
 "src/any_llm/gateway/**" = ["D"]
-"demos/**" = ["T201", "S104"]
 "scripts/**" = ["D", "T201"]
 "docs/cookbooks/**" = ["D", "T201"]
 
@@ -207,7 +206,6 @@ disallow_untyped_defs = true
 follow_untyped_imports = true
 enable_error_code = ["explicit-override"]
 exclude = [
-  "demos/",
   "scripts/"
 ]
 
