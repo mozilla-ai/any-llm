@@ -219,27 +219,6 @@ The `model_id` is passed directly to the provider. To find available models:
 - Use our `list_models` API (if the provider supports it)
 
 
-## Try It
-
-Try `any-llm` in action with our interactive demos:
-
-### 💬 Chat Demo
-**[📂 Run the Chat Demo](./demos/chat/README.md)**
-
-An interactive chat interface showcasing streaming completions and provider switching:
-- Real-time streaming responses
-- Easy switching between multiple LLM providers
-- Collapsible "thinking" content display for supported models
-- Auto-scrolling chat interface
-
-### 🔍 Model Finder Demo
-**[📂 Run the Model Finder Demo](./demos/finder/README.md)**
-
-A model discovery tool featuring:
-- Search and filter models across all your configured providers
-- Provider status dashboard
-- API configuration checker
-
 ## Motivation
 
 The landscape of LLM provider interfaces is fragmented. While OpenAI's API has become the de facto standard, providers implement slight variations in parameter names, response formats, and feature sets. This creates a need for light wrappers that gracefully handle these differences while maintaining a consistent interface.
