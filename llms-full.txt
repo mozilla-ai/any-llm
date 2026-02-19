@@ -61,14 +61,6 @@ print(response)
 **[Get started in 5 minutes →](#./quickstart.md)** - Install the library and run your first API call.
 
 
-### Demo
-
-Try `any-llm` in action with our interactive chat demo:
-
-**[📂 Run the Demo](https://github.com/mozilla-ai/any-llm/tree/main/demos/chat#readme)**
-
-Features: real-time streaming responses, multiple provider support, and collapsible "thinking" content display.
-
 ### API Documentation
 
 `any-llm` provides two main interfaces:
@@ -228,6 +220,30 @@ for chunk in completion(
     print(chunk_content)
     output += chunk_content
 ```
+
+## Reasoning
+
+For [providers that support reasoning](#./providers.md), you can request thinking traces alongside the response using `reasoning_effort`:
+
+```python
+from any_llm import completion
+
+response = completion(
+    model="claude-sonnet-4-5-20250929",
+    provider="anthropic",
+    messages=[{"role": "user", "content": "How many r's are in strawberry?"}],
+    reasoning_effort="high",
+)
+
+# Access the model's thinking trace
+if response.choices[0].message.reasoning:
+    print(response.choices[0].message.reasoning.content)
+
+# The final answer
+print(response.choices[0].message.content)
+```
+
+Reasoning also works with streaming — each chunk may include `chunk.choices[0].delta.reasoning`.
 
 ## Embeddings
 
