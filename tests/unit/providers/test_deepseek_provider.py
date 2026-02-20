@@ -161,3 +161,32 @@ def test_convert_chunk_response_extracts_cached_tokens() -> None:
     assert result.usage.prompt_tokens == 100
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 80
+
+
+def test_convert_chunk_response_without_cached_tokens() -> None:
+    """Test that prompt_tokens_details is None for streaming chunks when no cache tokens are present."""
+    chunk = OpenAIChatCompletionChunk.model_validate(
+        {
+            "id": "chatcmpl-123",
+            "object": "chat.completion.chunk",
+            "created": 1234567890,
+            "model": "deepseek-chat",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": ""},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150,
+            },
+        }
+    )
+
+    result = DeepseekProvider._convert_completion_chunk_response(chunk)
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens_details is None
