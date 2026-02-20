@@ -42,7 +42,8 @@ def to_chat_completion(response: GroqChatCompletion) -> ChatCompletion:
     if response.usage:
         # Groq's prompt_tokens already includes cached tokens (cached_tokens is a subset).
         # Reference: https://console.groq.com/docs/prompt-caching
-        cached_tokens = getattr(response.usage.prompt_tokens_details, "cached_tokens", None)
+        ptd = response.usage.prompt_tokens_details
+        cached_tokens = ptd.cached_tokens if ptd else None
         usage = CompletionUsage(
             prompt_tokens=response.usage.prompt_tokens,
             completion_tokens=response.usage.completion_tokens,
@@ -144,7 +145,10 @@ def _create_openai_chunk_from_groq_chunk(groq_chunk: GroqChatCompletionChunk) ->
     usage = None
     usage_data = groq_chunk.usage
     if usage_data:
-        cached_tokens = getattr(usage_data.prompt_tokens_details, "cached_tokens", None)
+        # Groq's prompt_tokens already includes cached tokens (cached_tokens is a subset).
+        # Reference: https://console.groq.com/docs/prompt-caching
+        ptd = usage_data.prompt_tokens_details
+        cached_tokens = ptd.cached_tokens if ptd else None
         usage = CompletionUsage(
             prompt_tokens=usage_data.prompt_tokens,
             completion_tokens=usage_data.completion_tokens,
