@@ -12,7 +12,7 @@ from tests.constants import CI_EXCLUDED_PROVIDERS, INCLUDE_LOCAL_PROVIDERS, INCL
 @pytest.fixture
 def provider_reasoning_model_map() -> dict[LLMProvider, str]:
     return {
-        LLMProvider.ANTHROPIC: "claude-sonnet-4-20250514",
+        LLMProvider.ANTHROPIC: "claude-sonnet-4-0",
         LLMProvider.MISTRAL: "magistral-small-latest",
         LLMProvider.GEMINI: "gemini-2.5-flash",
         LLMProvider.GATEWAY: "gpt-5-nano",
@@ -49,7 +49,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
 def provider_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.MISTRAL: "mistral-small-latest",
-        LLMProvider.ANTHROPIC: "claude-3-5-haiku-latest",
+        LLMProvider.ANTHROPIC: "claude-haiku-4-5",
         LLMProvider.DEEPSEEK: "deepseek-chat",
         LLMProvider.OPENAI: "gpt-5-nano",
         LLMProvider.GATEWAY: "gpt-5-nano",
