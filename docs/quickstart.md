@@ -132,6 +132,30 @@ for chunk in completion(
     output += chunk_content
 ```
 
+## Reasoning
+
+For [providers that support reasoning](./providers.md), you can request thinking traces alongside the response using `reasoning_effort`:
+
+```python
+from any_llm import completion
+
+response = completion(
+    model="claude-sonnet-4-5-20250929",
+    provider="anthropic",
+    messages=[{"role": "user", "content": "How many r's are in strawberry?"}],
+    reasoning_effort="high",
+)
+
+# Access the model's thinking trace
+if response.choices[0].message.reasoning:
+    print(response.choices[0].message.reasoning.content)
+
+# The final answer
+print(response.choices[0].message.content)
+```
+
+Reasoning also works with streaming — each chunk may include `chunk.choices[0].delta.reasoning`.
+
 ## Embeddings
 
 [`embedding`][any_llm.embedding] and [`aembedding`][any_llm.aembedding] allow you to create vector embeddings from text using the same unified interface across providers.
