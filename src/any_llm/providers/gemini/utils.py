@@ -149,15 +149,16 @@ def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, An
 
     Reference: https://ai.google.dev/gemini-api/docs/caching
     """
-    metadata = getattr(response, "usage_metadata", None)
-    cached_tokens = getattr(metadata, "cached_content_token_count", None)
+    metadata = response.usage_metadata
+    if metadata is None:
+        return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     usage: dict[str, Any] = {
-        "prompt_tokens": getattr(metadata, "prompt_token_count", 0) or 0,
-        "completion_tokens": getattr(metadata, "candidates_token_count", 0) or 0,
-        "total_tokens": getattr(metadata, "total_token_count", 0) or 0,
+        "prompt_tokens": metadata.prompt_token_count or 0,
+        "completion_tokens": metadata.candidates_token_count or 0,
+        "total_tokens": metadata.total_token_count or 0,
     }
-    if cached_tokens:
-        usage["prompt_tokens_details"] = PromptTokensDetails(cached_tokens=cached_tokens)
+    if metadata.cached_content_token_count:
+        usage["prompt_tokens_details"] = PromptTokensDetails(cached_tokens=metadata.cached_content_token_count)
     return usage
 
 
