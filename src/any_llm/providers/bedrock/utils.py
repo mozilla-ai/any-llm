@@ -19,6 +19,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     Embedding,
     Function,
+    PromptTokensDetails,
     Reasoning,
     Usage,
 )
@@ -278,6 +279,29 @@ def _convert_assistant(message: dict[str, Any]) -> dict[str, Any] | None:
     return {"role": "assistant", "content": content} if content else None
 
 
+def _extract_usage(usage_data: dict[str, Any]) -> CompletionUsage:
+    """Extract usage from a Bedrock response, including cached token details.
+
+    Bedrock's TokenUsage reports ``inputTokens`` *excluding* cached tokens;
+    ``cacheReadInputTokens`` and ``cacheWriteInputTokens`` are additive.
+    This applies to all models that support prompt caching on Bedrock
+    (Anthropic Claude and Amazon Nova families).
+
+    Reference: https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_TokenUsage.html
+    """
+    cache_read = usage_data.get("cacheReadInputTokens", 0)
+    cache_write = usage_data.get("cacheWriteInputTokens", 0)
+    input_tokens = usage_data.get("inputTokens", 0)
+    prompt_tokens = input_tokens + cache_read + cache_write
+    output_tokens = usage_data.get("outputTokens", 0)
+    return CompletionUsage(
+        completion_tokens=output_tokens,
+        prompt_tokens=prompt_tokens,
+        total_tokens=prompt_tokens + output_tokens,
+        prompt_tokens_details=PromptTokensDetails(cached_tokens=cache_read) if cache_read else None,
+    )
+
+
 def _convert_response(response: dict[str, Any]) -> ChatCompletion:
     """Convert AWS Bedrock response to OpenAI format directly."""
     choices_out: list[Choice] = []
@@ -329,12 +353,7 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
         choices_out.append(Choice(index=0, finish_reason="tool_calls", message=message))
 
         if "usage" in response:
-            usage_data = response["usage"]
-            usage = CompletionUsage(
-                completion_tokens=usage_data.get("outputTokens", 0),
-                prompt_tokens=usage_data.get("inputTokens", 0),
-                total_tokens=usage_data.get("totalTokens", 0),
-            )
+            usage = _extract_usage(response["usage"])
 
         return ChatCompletion(
             id=response.get("id", ""),
@@ -367,12 +386,7 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
     )
 
     if "usage" in response:
-        usage_data = response["usage"]
-        usage = CompletionUsage(
-            completion_tokens=usage_data.get("outputTokens", 0),
-            prompt_tokens=usage_data.get("inputTokens", 0),
-            total_tokens=usage_data.get("totalTokens", 0),
-        )
+        usage = _extract_usage(response["usage"])
 
     return ChatCompletion(
         id=response.get("id", ""),
@@ -402,6 +416,7 @@ def _create_openai_chunk_from_aws_chunk(
     reasoning_content: str | None = None
     finish_reason: Literal["stop", "length", "tool_calls"] | None = None
     tool_call: ChoiceDeltaToolCall | None = None
+    usage: CompletionUsage | None = None
 
     if "contentBlockStart" in chunk:
         block_start = chunk["contentBlockStart"]
@@ -454,6 +469,9 @@ def _create_openai_chunk_from_aws_chunk(
             finish_reason = "stop"
     elif "messageStart" in chunk:
         content = ""
+    elif "metadata" in chunk:
+        usage_data = chunk["metadata"].get("usage")
+        usage = _extract_usage(usage_data) if usage_data else None
     else:
         return None
 
@@ -474,6 +492,7 @@ def _create_openai_chunk_from_aws_chunk(
         model=model,
         created=int(time()),
         object="chat.completion.chunk",
+        usage=usage,
     )
 
 

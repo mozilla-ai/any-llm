@@ -872,6 +872,13 @@
       },
       "ValidationError": {
         "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
           "loc": {
             "items": {
               "anyOf": [
@@ -908,7 +915,7 @@
   "info": {
     "description": "A clean FastAPI gateway for any-llm with API key management",
     "title": "any-llm-gateway",
-    "version": "1.1.1.dev23+g56c5a9b20.d20251105"
+    "version": "0.0.0.dev0"
   },
   "openapi": "3.1.0",
   "paths": {

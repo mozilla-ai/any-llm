@@ -8,9 +8,14 @@ from google.genai import types
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.gemini import GeminiProvider
-from any_llm.providers.gemini.base import REASONING_EFFORT_TO_THINKING_BUDGETS
-from any_llm.providers.gemini.utils import _convert_messages, _convert_response_to_response_dict, _convert_tool_spec
-from any_llm.types.completion import CompletionParams, ReasoningEffort
+from any_llm.providers.gemini.base import REASONING_EFFORT_TO_THINKING_BUDGETS, GoogleProvider
+from any_llm.providers.gemini.utils import (
+    _convert_messages,
+    _convert_response_to_response_dict,
+    _convert_tool_spec,
+    _create_openai_chunk_from_google_chunk,
+)
+from any_llm.types.completion import CompletionParams, PromptTokensDetails, ReasoningEffort
 
 
 @contextmanager
@@ -244,6 +249,7 @@ def test_convert_response_single_tool_call() -> None:
     mock_response.usage_metadata.prompt_token_count = 10
     mock_response.usage_metadata.candidates_token_count = 15
     mock_response.usage_metadata.total_token_count = 25
+    mock_response.usage_metadata.cached_content_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -305,6 +311,7 @@ def test_convert_response_multiple_parallel_tool_calls() -> None:
     mock_response.usage_metadata.prompt_token_count = 20
     mock_response.usage_metadata.candidates_token_count = 30
     mock_response.usage_metadata.total_token_count = 50
+    mock_response.usage_metadata.cached_content_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -412,6 +419,7 @@ async def test_streaming_completion_includes_usage_data() -> None:
     mock_response.usage_metadata.prompt_token_count = 10
     mock_response.usage_metadata.candidates_token_count = 5
     mock_response.usage_metadata.total_token_count = 15
+    mock_response.usage_metadata.cached_content_token_count = None
 
     chunk = _create_openai_chunk_from_google_chunk(mock_response)
 
@@ -543,6 +551,7 @@ def test_convert_response_preserves_thought_signature() -> None:
     mock_response.usage_metadata.prompt_token_count = 10
     mock_response.usage_metadata.candidates_token_count = 15
     mock_response.usage_metadata.total_token_count = 25
+    mock_response.usage_metadata.cached_content_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -574,6 +583,7 @@ def test_convert_response_no_thought_signature() -> None:
     mock_response.usage_metadata.prompt_token_count = 10
     mock_response.usage_metadata.candidates_token_count = 15
     mock_response.usage_metadata.total_token_count = 25
+    mock_response.usage_metadata.cached_content_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -785,3 +795,140 @@ def test_streaming_completion_with_function_call_none() -> None:
     assert chunk.choices[0].delta.content == "Just text content"
     assert chunk.choices[0].delta.tool_calls is None
     assert chunk.choices[0].finish_reason == "stop"
+
+
+def test_convert_response_extracts_cached_tokens() -> None:
+    """Test that cached_content_token_count is extracted into prompt_tokens_details."""
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_part = Mock()
+    mock_part.thought = None
+    mock_part.function_call = None
+    mock_part.text = "Hello!"
+    mock_response.candidates[0].content.parts = [mock_part]
+
+    mock_response.usage_metadata = Mock()
+    mock_response.usage_metadata.prompt_token_count = 100
+    mock_response.usage_metadata.candidates_token_count = 50
+    mock_response.usage_metadata.total_token_count = 150
+    mock_response.usage_metadata.cached_content_token_count = 80
+
+    response_dict = _convert_response_to_response_dict(mock_response)
+
+    assert response_dict["usage"]["prompt_tokens"] == 100
+    assert response_dict["usage"]["completion_tokens"] == 50
+    assert response_dict["usage"]["total_tokens"] == 150
+    assert response_dict["usage"]["prompt_tokens_details"].cached_tokens == 80
+
+
+def test_convert_response_without_cached_tokens() -> None:
+    """Test that prompt_tokens_details is absent when no cached tokens are present."""
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_part = Mock()
+    mock_part.thought = None
+    mock_part.function_call = None
+    mock_part.text = "Hello!"
+    mock_response.candidates[0].content.parts = [mock_part]
+
+    mock_response.usage_metadata = Mock()
+    mock_response.usage_metadata.prompt_token_count = 100
+    mock_response.usage_metadata.candidates_token_count = 50
+    mock_response.usage_metadata.total_token_count = 150
+    mock_response.usage_metadata.cached_content_token_count = None
+
+    response_dict = _convert_response_to_response_dict(mock_response)
+
+    assert response_dict["usage"]["prompt_tokens"] == 100
+    assert "prompt_tokens_details" not in response_dict["usage"]
+
+
+def test_streaming_chunk_extracts_cached_tokens() -> None:
+    """Test that streaming chunks extract cached_content_token_count into prompt_tokens_details."""
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_part = Mock()
+    mock_part.thought = None
+    mock_part.function_call = None
+    mock_part.text = "Hello!"
+    mock_response.candidates[0].content.parts = [mock_part]
+    mock_response.candidates[0].finish_reason = Mock()
+    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.model_version = "gemini-2.5-flash"
+
+    mock_response.usage_metadata = Mock()
+    mock_response.usage_metadata.prompt_token_count = 100
+    mock_response.usage_metadata.candidates_token_count = 50
+    mock_response.usage_metadata.total_token_count = 150
+    mock_response.usage_metadata.cached_content_token_count = 80
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    assert chunk.usage is not None
+    assert chunk.usage.prompt_tokens == 100
+    assert chunk.usage.completion_tokens == 50
+    assert chunk.usage.prompt_tokens_details is not None
+    assert chunk.usage.prompt_tokens_details.cached_tokens == 80
+
+
+def test_streaming_chunk_without_cached_tokens() -> None:
+    """Test that streaming chunks have no prompt_tokens_details when no cache is used."""
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_part = Mock()
+    mock_part.thought = None
+    mock_part.function_call = None
+    mock_part.text = "Hello!"
+    mock_response.candidates[0].content.parts = [mock_part]
+    mock_response.candidates[0].finish_reason = Mock()
+    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.model_version = "gemini-2.5-flash"
+
+    mock_response.usage_metadata = Mock()
+    mock_response.usage_metadata.prompt_token_count = 100
+    mock_response.usage_metadata.candidates_token_count = 50
+    mock_response.usage_metadata.total_token_count = 150
+    mock_response.usage_metadata.cached_content_token_count = None
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    assert chunk.usage is not None
+    assert chunk.usage.prompt_tokens == 100
+    assert chunk.usage.prompt_tokens_details is None
+
+
+def test_convert_completion_response_preserves_prompt_tokens_details() -> None:
+    """Test that _convert_completion_response passes prompt_tokens_details through to ChatCompletion."""
+    response_dict = {
+        "id": "google_genai_response",
+        "model": "google/genai",
+        "created": 0,
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": "Hello!", "tool_calls": None},
+                "finish_reason": "stop",
+                "index": 0,
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 100,
+            "completion_tokens": 50,
+            "total_tokens": 150,
+            "prompt_tokens_details": PromptTokensDetails(cached_tokens=80),
+        },
+    }
+
+    result = GoogleProvider._convert_completion_response((response_dict, "test-model"))
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 100
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 80

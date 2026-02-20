@@ -49,14 +49,6 @@ print(response)
 **[Get started in 5 minutes →](./quickstart.md)** - Install the library and run your first API call.
 
 
-### Demo
-
-Try `any-llm` in action with our interactive chat demo:
-
-**[📂 Run the Demo](https://github.com/mozilla-ai/any-llm/tree/main/demos/chat#readme)**
-
-Features: real-time streaming responses, multiple provider support, and collapsible "thinking" content display.
-
 ### API Documentation
 
 `any-llm` provides two main interfaces:
