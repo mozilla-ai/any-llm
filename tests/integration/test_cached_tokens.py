@@ -30,8 +30,6 @@ _LONG_SYSTEM_INSTRUCTION = (
     "or video and audio content that is referenced repeatedly.\n"
 ) * 200  # ~10,000 tokens — well above the 1,024 minimum
 
-CACHE_MODEL = "gemini-2.5-flash"
-
 
 @pytest.fixture
 def gemini_client() -> genai.Client:
@@ -42,9 +40,14 @@ def gemini_client() -> genai.Client:
 
 
 @pytest.fixture
-def cached_content(gemini_client: genai.Client) -> Generator[types.CachedContent]:
+def gemini_model(provider_model_map: dict[LLMProvider, str]) -> str:
+    return provider_model_map[LLMProvider.GEMINI]
+
+
+@pytest.fixture
+def cached_content(gemini_client: genai.Client, gemini_model: str) -> Generator[types.CachedContent]:
     cache = gemini_client.caches.create(
-        model=f"models/{CACHE_MODEL}",
+        model=f"models/{gemini_model}",
         config=types.CreateCachedContentConfig(
             display_name="any-llm-cached-tokens-test",
             system_instruction=_LONG_SYSTEM_INSTRUCTION,
@@ -57,12 +60,15 @@ def cached_content(gemini_client: genai.Client) -> Generator[types.CachedContent
 
 
 @pytest.mark.asyncio
-async def test_gemini_cached_tokens_non_streaming(cached_content: types.CachedContent) -> None:
+async def test_gemini_cached_tokens_non_streaming(
+    cached_content: types.CachedContent,
+    gemini_model: str,
+) -> None:
     """Non-streaming completion reports cached_tokens in prompt_tokens_details."""
     llm = AnyLLM.create(LLMProvider.GEMINI)
 
     result = await llm.acompletion(
-        model=CACHE_MODEL,
+        model=gemini_model,
         messages=[{"role": "user", "content": "What is context caching? Reply in one sentence."}],
         cached_content=cached_content.name,
     )
@@ -77,12 +83,15 @@ async def test_gemini_cached_tokens_non_streaming(cached_content: types.CachedCo
 
 
 @pytest.mark.asyncio
-async def test_gemini_cached_tokens_streaming(cached_content: types.CachedContent) -> None:
+async def test_gemini_cached_tokens_streaming(
+    cached_content: types.CachedContent,
+    gemini_model: str,
+) -> None:
     """Streaming completion reports cached_tokens in the final chunk's usage."""
     llm = AnyLLM.create(LLMProvider.GEMINI)
 
     response = await llm.acompletion(
-        model=CACHE_MODEL,
+        model=gemini_model,
         messages=[{"role": "user", "content": "What is context caching? Reply in one sentence."}],
         cached_content=cached_content.name,
         stream=True,
