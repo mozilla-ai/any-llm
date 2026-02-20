@@ -65,7 +65,10 @@ class PlatformProvider(AnyLLM):
         # Initialize the platform client for authentication and usage tracking
         from .utils import ANY_LLM_PLATFORM_API_URL
 
-        self.platform_client = AnyLLMPlatformClient(any_llm_platform_url=ANY_LLM_PLATFORM_API_URL)
+        self.platform_client = AnyLLMPlatformClient(
+            any_llm_platform_url=ANY_LLM_PLATFORM_API_URL,
+            client_name=self.client_name,
+        )
 
     @staticmethod
     @override

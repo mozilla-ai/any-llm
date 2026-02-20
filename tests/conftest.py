@@ -12,7 +12,7 @@ from tests.constants import CI_EXCLUDED_PROVIDERS, INCLUDE_LOCAL_PROVIDERS, INCL
 @pytest.fixture
 def provider_reasoning_model_map() -> dict[LLMProvider, str]:
     return {
-        LLMProvider.ANTHROPIC: "claude-sonnet-4-20250514",
+        LLMProvider.ANTHROPIC: "claude-sonnet-4-0",
         LLMProvider.MISTRAL: "magistral-small-latest",
         LLMProvider.GEMINI: "gemini-2.5-flash",
         LLMProvider.GATEWAY: "gpt-5-nano",
@@ -49,7 +49,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
 def provider_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.MISTRAL: "mistral-small-latest",
-        LLMProvider.ANTHROPIC: "claude-3-5-haiku-latest",
+        LLMProvider.ANTHROPIC: "claude-haiku-4-5",
         LLMProvider.DEEPSEEK: "deepseek-chat",
         LLMProvider.OPENAI: "gpt-5-nano",
         LLMProvider.GATEWAY: "gpt-5-nano",
@@ -66,7 +66,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.LMSTUDIO: "google/gemma-3n-e4b",  # You must have LM Studio running and the server enabled
         LLMProvider.VLLM: "Qwen/Qwen2.5-0.5B-Instruct",
         LLMProvider.COHERE: "command-a-03-2025",
-        LLMProvider.CEREBRAS: "llama-3.3-70b",
+        LLMProvider.CEREBRAS: "llama3.1-8b",
         LLMProvider.HUGGINGFACE: "huggingface/tgi",  # This is the syntax used in `litellm` when using HF Inference Endpoints (https://docs.litellm.ai/docs/providers/huggingface#dedicated-inference-endpoints)
         LLMProvider.BEDROCK: "amazon.nova-lite-v1:0",
         LLMProvider.SAGEMAKER: "<sagemaker_endpoint_name>",
@@ -95,7 +95,7 @@ def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
         LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
         LLMProvider.OLLAMA: "llava-phi3",  # Fast vision model compatible with OpenAI format
-        LLMProvider.FIREWORKS: "accounts/fireworks/models/qwen2p5-vl-32b-instruct",
+        LLMProvider.FIREWORKS: "accounts/fireworks/models/kimi-k2p5",
         LLMProvider.BEDROCK: "anthropic.claude-3-haiku-20240307-v1:0",  # Claude 3 Haiku with vision support
     }
 
