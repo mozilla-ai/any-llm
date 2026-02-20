@@ -154,22 +154,15 @@ class BaseOpenAIProvider(AnyLLM):
 
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 
-        if params.response_format:
-            if params.stream:
-                msg = "stream is not supported for response_format"
-                raise ValueError(msg)
-            completion_kwargs.pop("stream", None)
-            response = await self.client.chat.completions.parse(
-                model=params.model_id,
-                messages=cast("Any", params.messages),
-                **completion_kwargs,
-            )
-        else:
-            response = await self.client.chat.completions.create(
-                model=params.model_id,
-                messages=cast("Any", params.messages),
-                **completion_kwargs,
-            )
+        if params.response_format and params.stream:
+            msg = "stream is not supported for response_format"
+            raise ValueError(msg)
+
+        response = await self.client.chat.completions.create(
+            model=params.model_id,
+            messages=cast("Any", params.messages),
+            **completion_kwargs,
+        )
         return self._convert_completion_response_async(response)
 
     @override

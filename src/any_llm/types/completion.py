@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any, Generic, Literal, TypeVar
 
 from openai.types import CreateEmbeddingResponse as OpenAICreateEmbeddingResponse
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
@@ -43,6 +43,21 @@ class Choice(OpenAIChoice):
 
 class ChatCompletion(OpenAIChatCompletion):
     choices: list[Choice]  # type: ignore[assignment]
+
+
+ContentType = TypeVar("ContentType")
+
+
+class ParsedChatCompletionMessage(ChatCompletionMessage, Generic[ContentType]):
+    parsed: ContentType | None = None
+
+
+class ParsedChoice(Choice, Generic[ContentType]):
+    message: ParsedChatCompletionMessage[ContentType]
+
+
+class ParsedChatCompletion(ChatCompletion, Generic[ContentType]):
+    choices: list[ParsedChoice[ContentType]]  # type: ignore[assignment]
 
 
 class ChoiceDelta(OpenAIChoiceDelta):

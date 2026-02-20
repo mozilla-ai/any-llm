@@ -5,9 +5,8 @@ import pytest
 from openai import APIConnectionError
 from pydantic import BaseModel
 
-from any_llm import AnyLLM, LLMProvider
+from any_llm import AnyLLM, LLMProvider, ParsedChatCompletion
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
-from any_llm.types.completion import ChatCompletion
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 
@@ -43,10 +42,13 @@ async def test_response_format(
             # From https://github.com/mozilla-ai/any-llm/issues/150, should be ok to set stream=False
             stream=False,
         )
-        assert isinstance(result, ChatCompletion)
+        assert isinstance(result, ParsedChatCompletion)
         assert result.choices[0].message.content is not None
         output = ResponseFormat.model_validate_json(result.choices[0].message.content)
         assert "paris" in output.city_name.lower()
+        parsed = result.choices[0].message.parsed
+        assert isinstance(parsed, ResponseFormat)
+        assert "paris" in parsed.city_name.lower()
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:
             raise

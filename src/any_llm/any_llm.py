@@ -5,30 +5,34 @@ import importlib
 import os
 import warnings
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, overload
 
 from openresponses_types import ResponseResource
+from pydantic import BaseModel
 
 from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
 from any_llm.tools import prepare_tools
-from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, CompletionParams, ReasoningEffort
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionMessage,
+    CompletionParams,
+    ParsedChatCompletion,
+    ReasoningEffort,
+)
 from any_llm.types.provider import PlatformKey, ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
 from any_llm.utils.decorators import BATCH_API_EXPERIMENTAL_MESSAGE, experimental
 from any_llm.utils.exception_handler import handle_exceptions
 
+ResponseFormatT = TypeVar("ResponseFormatT", bound=BaseModel)
+
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 
-    from pydantic import BaseModel
-
     from any_llm.types.batch import Batch
-    from any_llm.types.completion import (
-        ChatCompletionChunk,
-        CreateEmbeddingResponse,
-    )
+    from any_llm.types.completion import ChatCompletionChunk, CreateEmbeddingResponse
     from any_llm.types.model import Model
 
 
@@ -380,6 +384,49 @@ class AnyLLM(ABC):
 
         return async_iter_to_sync_iter(response)
 
+    @overload
+    async def acompletion(
+        self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        response_format: type[ResponseFormatT],
+        stream: Literal[False] | None = ...,
+        **kwargs: Any,
+    ) -> ParsedChatCompletion[ResponseFormatT]: ...
+
+    @overload
+    async def acompletion(
+        self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        stream: Literal[True],
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatCompletionChunk]: ...
+
+    @overload
+    async def acompletion(
+        self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        response_format: dict[str, Any] | None = ...,
+        stream: Literal[False] | None = ...,
+        **kwargs: Any,
+    ) -> ChatCompletion: ...
+
+    @overload
+    async def acompletion(
+        self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        response_format: dict[str, Any] | type[BaseModel] | None = ...,
+        stream: bool | None = ...,
+        **kwargs: Any,
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk] | ParsedChatCompletion[Any]: ...
+
     @handle_exceptions(wrap_streaming=True)
     async def acompletion(
         self,
@@ -407,7 +454,7 @@ class AnyLLM(ABC):
         max_completion_tokens: int | None = None,
         reasoning_effort: ReasoningEffort | None = "auto",
         **kwargs: Any,
-    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk] | ParsedChatCompletion[Any]:
         """Create a chat completion asynchronously.
 
         Args:
@@ -476,7 +523,28 @@ class AnyLLM(ABC):
             reasoning_effort=reasoning_effort,
         )
 
-        return await self._acompletion(params, **kwargs)
+        result = await self._acompletion(params, **kwargs)
+
+        if (
+            isinstance(response_format, type)
+            and issubclass(response_format, BaseModel)
+            and isinstance(result, ChatCompletion)
+        ):
+            parsed_completion: ParsedChatCompletion[Any] = ParsedChatCompletion.model_validate(
+                result, from_attributes=True
+            )
+            for choice in parsed_completion.choices:
+                if choice.finish_reason in ("length", "content_filter"):
+                    choice.message.parsed = None
+                elif isinstance(choice.message.parsed, response_format):
+                    continue
+                elif choice.message.content and not choice.message.refusal:
+                    choice.message.parsed = response_format.model_validate_json(choice.message.content)
+                else:
+                    choice.message.parsed = None
+            return parsed_completion
+
+        return result
 
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any

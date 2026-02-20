@@ -16,6 +16,7 @@ from any_llm.exceptions import (
     UnsupportedParameterError,
     UnsupportedProviderError,
 )
+from any_llm.types.completion import ParsedChatCompletion, ParsedChatCompletionMessage, ParsedChoice
 
 try:
     __version__ = version("any-llm-sdk")
@@ -33,6 +34,9 @@ __all__ = [
     "LLMProvider",
     "MissingApiKeyError",
     "ModelNotFoundError",
+    "ParsedChatCompletion",
+    "ParsedChatCompletionMessage",
+    "ParsedChoice",
     "ProviderError",
     "RateLimitError",
     "UnsupportedParameterError",
