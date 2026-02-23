@@ -526,6 +526,45 @@ def test_streaming_chunk_includes_cache_tokens_in_usage() -> None:
     assert result.usage.prompt_tokens_details.cached_tokens == 13332
 
 
+@pytest.mark.asyncio
+async def test_completion_strips_openai_specific_fields() -> None:
+    """Test that OpenAI-specific fields like 'refusal' are stripped from messages.
+
+    OpenAI responses include fields like 'refusal', 'audio', 'annotations' etc.
+    that are not part of Anthropic's API schema. When these messages are forwarded
+    to Anthropic, these extra fields must be removed to avoid 400 errors.
+    See: messages.X.refusal: Extra inputs are not permitted
+    """
+    api_key = "test-api-key"
+    model = "model-id"
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Hello"},
+        {
+            "role": "assistant",
+            "content": "I can help with that.",
+            "refusal": None,
+            "audio": None,
+            "function_call": None,
+            "annotations": [],
+        },
+        {"role": "user", "content": "Thanks"},
+    ]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key=api_key)
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages))
+
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
+            model=model,
+            messages=[
+                {"role": "user", "content": "Hello"},
+                {"role": "assistant", "content": "I can help with that."},
+                {"role": "user", "content": "Thanks"},
+            ],
+            max_tokens=DEFAULT_MAX_TOKENS,
+        )
+
+
 def test_streaming_chunk_without_cache_tokens() -> None:
     """Test that streaming chunks work correctly without cache tokens."""
     from unittest.mock import MagicMock
