@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -151,6 +151,7 @@ async def _log_usage(
 
 @router.post("/completions", response_model=None)
 async def chat_completions(
+    raw_request: Request,
     request: ChatCompletionRequest,
     auth_result: Annotated[tuple[APIKey | None, bool], Depends(verify_api_key_or_master_key)],
     db: Annotated[Session, Depends(get_db)],
@@ -190,6 +191,10 @@ async def chat_completions(
                 detail="API key has no associated user",
             )
         user_id = str(api_key.user_id)
+
+    rate_limiter = getattr(raw_request.app.state, "rate_limiter", None)
+    if rate_limiter is not None:
+        rate_limiter.check(user_id)
 
     _ = await validate_user_budget(db, user_id)
 

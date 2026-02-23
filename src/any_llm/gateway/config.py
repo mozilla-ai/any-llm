@@ -37,6 +37,9 @@ class GatewayConfig(BaseSettings):
     host: str = Field(default="0.0.0.0", description="Host to bind the server to")  # noqa: S104
     port: int = Field(default=8000, description="Port to bind the server to")
     master_key: str | None = Field(default=None, description="Master key for protecting management endpoints")
+    rate_limit_rpm: int | None = Field(
+        default=None, description="Maximum requests per minute per user (None disables rate limiting)"
+    )
     providers: dict[str, dict[str, Any]] = Field(
         default_factory=dict, description="Pre-configured provider credentials"
     )
