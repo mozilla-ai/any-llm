@@ -47,7 +47,7 @@ def setup_vertex_environment(
             except Exception as e:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Unable to load vertex credentials: {e}",
+                    detail="Unable to load vertex credentials",
                 ) from e
         elif isinstance(credentials, dict):
             json_obj = credentials
