@@ -1,3 +1,4 @@
+import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -243,6 +244,8 @@ async def chat_completions(
                         # This should never happen.
                         logger.warning(f"No usage data received from streaming response for model {model}")
                 except Exception as e:
+                    error_data = {"error": {"message": "An error occurred during streaming", "type": "server_error"}}
+                    yield f"data: {json.dumps(error_data)}\n\n"
                     await _log_usage(
                         db=db,
                         api_key_obj=api_key,
@@ -252,7 +255,7 @@ async def chat_completions(
                         user_id=user_id,
                         error=str(e),
                     )
-                    raise
+                    logger.error(f"Streaming error for {provider}:{model}: {e}")
 
             return StreamingResponse(generate(), media_type="text/event-stream")
 
