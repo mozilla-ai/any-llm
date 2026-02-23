@@ -79,6 +79,7 @@
               "additionalProperties": true,
               "type": "object"
             },
+            "minItems": 1,
             "title": "Messages",
             "type": "array"
           },
