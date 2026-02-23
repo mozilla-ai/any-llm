@@ -4,10 +4,16 @@ from typing import Any, get_args
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from anthropic import transform_schema
+from pydantic import BaseModel
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
-from any_llm.providers.anthropic.utils import DEFAULT_MAX_TOKENS, REASONING_EFFORT_TO_THINKING_BUDGETS
+from any_llm.providers.anthropic.utils import (
+    DEFAULT_MAX_TOKENS,
+    REASONING_EFFORT_TO_THINKING_BUDGETS,
+    _convert_response_format,
+)
 from any_llm.types.completion import CompletionParams, ReasoningEffort
 
 
@@ -380,14 +386,53 @@ async def test_completion_with_parallel_tool_calls() -> None:
 
 
 @pytest.mark.asyncio
-async def test_response_format_raises_error() -> None:
+async def test_completion_with_response_format_basemodel() -> None:
+    class MySchema(BaseModel):
+        city_name: str
+
+    api_key = "test-api-key"
+    model = "model-id"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key=api_key)
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages, response_format=MySchema))
+
+        call_kwargs = mock_anthropic.return_value.messages.create.call_args[1]
+        expected_schema = transform_schema(MySchema.model_json_schema())
+        assert call_kwargs["output_config"] == {"format": {"type": "json_schema", "schema": expected_schema}}
+
+
+@pytest.mark.asyncio
+async def test_completion_with_response_format_dict_json_schema() -> None:
+    api_key = "test-api-key"
+    model = "model-id"
+    messages = [{"role": "user", "content": "Hello"}]
+    schema = {"type": "object", "properties": {"city_name": {"type": "string"}}, "required": ["city_name"]}
+    response_format: dict[str, Any] = {
+        "type": "json_schema",
+        "json_schema": {"name": "MySchema", "schema": schema},
+    }
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key=api_key)
+        await provider._acompletion(
+            CompletionParams(model_id=model, messages=messages, response_format=response_format)
+        )
+
+        call_kwargs = mock_anthropic.return_value.messages.create.call_args[1]
+        assert call_kwargs["output_config"] == {"format": {"type": "json_schema", "schema": transform_schema(schema)}}
+
+
+@pytest.mark.asyncio
+async def test_completion_with_response_format_dict_json_object_raises() -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
 
     provider = AnthropicProvider(api_key=api_key)
 
-    with pytest.raises(UnsupportedParameterError, match="Check the following links:"):
+    with pytest.raises(UnsupportedParameterError, match="json_object"):
         await provider._acompletion(
             CompletionParams(
                 model_id=model,
@@ -395,6 +440,48 @@ async def test_response_format_raises_error() -> None:
                 response_format={"type": "json_object"},
             )
         )
+
+
+@pytest.mark.asyncio
+async def test_stream_with_response_format_raises() -> None:
+    api_key = "test-api-key"
+    model = "model-id"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    provider = AnthropicProvider(api_key=api_key)
+
+    with pytest.raises(UnsupportedParameterError, match="stream and response_format"):
+        await provider._acompletion(
+            CompletionParams(
+                model_id=model,
+                messages=messages,
+                response_format={"type": "json_schema", "json_schema": {"name": "Foo", "schema": {}}},
+                stream=True,
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_completion_with_response_format_dict_unknown_type_raises() -> None:
+    api_key = "test-api-key"
+    model = "model-id"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    provider = AnthropicProvider(api_key=api_key)
+
+    with pytest.raises(ValueError, match="Unsupported response_format type"):
+        await provider._acompletion(
+            CompletionParams(
+                model_id=model,
+                messages=messages,
+                response_format={"type": "unknown"},
+            )
+        )
+
+
+def test_convert_response_format_non_dict_non_basemodel_raises() -> None:
+    with pytest.raises(ValueError, match="Unsupported response_format"):
+        _convert_response_format("invalid", "anthropic")  # type: ignore[arg-type]
 
 
 def test_convert_response_includes_cache_tokens_in_usage() -> None:
