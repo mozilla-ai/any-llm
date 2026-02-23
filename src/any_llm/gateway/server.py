@@ -6,6 +6,7 @@ from any_llm.gateway.auth.dependencies import set_config
 from any_llm.gateway.config import GatewayConfig
 from any_llm.gateway.db import get_db, init_db
 from any_llm.gateway.pricing_init import initialize_pricing_from_config
+from any_llm.gateway.rate_limit import RateLimiter
 from any_llm.gateway.routes import budgets, chat, health, keys, pricing, users
 
 
@@ -43,6 +44,11 @@ def create_app(config: GatewayConfig) -> FastAPI:
             allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
             allow_headers=["Content-Type", "Authorization", "X-AnyLLM-Key"],
         )
+
+    if config.rate_limit_rpm is not None:
+        app.state.rate_limiter = RateLimiter(config.rate_limit_rpm)
+    else:
+        app.state.rate_limiter = None
 
     app.include_router(chat.router)
     app.include_router(keys.router)

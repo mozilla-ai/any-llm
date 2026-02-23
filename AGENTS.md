@@ -43,6 +43,7 @@ This repo uses `uv` for local dev (Python 3.11+). For the full, up-to-date comma
 - Add/adjust tests with every change (happy path + error cases). Integration tests should `pytest.skip(...)` when credentials/services aren’t available.
 - New code should target ~85%+ coverage (see `CONTRIBUTING.md`). Write tests for every branch in new code, including error/raise paths and edge cases, so that patch coverage passes in CI.
 - Do not use class-based test grouping (`class TestFoo:`). All tests should be standalone functions.
+- Do not add decorative section-separator comments (e.g., `# -----------` banners). Well-named test functions and natural file ordering are sufficient.
 - Place imports at the top of test files unless the import is for an optional dependency that may not be installed (e.g., provider-specific SDKs like `mistralai`, `cohere`). In that case, inline imports inside the test function are acceptable to avoid breaking the entire file.
 
 ## Commit & Pull Request Guidelines
