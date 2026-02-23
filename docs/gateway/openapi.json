@@ -52,6 +52,17 @@
       "ChatCompletionRequest": {
         "description": "OpenAI-compatible chat completion request.",
         "properties": {
+          "max_completion_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Completion Tokens"
+          },
           "max_tokens": {
             "anyOf": [
               {
