@@ -104,7 +104,7 @@ async def _log_usage(
         id=str(uuid.uuid4()),
         api_key_id=api_key_obj.id if api_key_obj else None,
         user_id=user_id,
-        timestamp=datetime.now(UTC).replace(tzinfo=None),
+        timestamp=datetime.now(UTC),
         model=model,
         provider=provider,
         endpoint=endpoint,
