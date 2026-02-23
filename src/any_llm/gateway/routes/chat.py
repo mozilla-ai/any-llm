@@ -207,8 +207,9 @@ async def chat_completions(
 
     provider_kwargs = _get_provider_kwargs(config, provider)
 
-    completion_kwargs = request.model_dump()
-    completion_kwargs.update(provider_kwargs)
+    # User request fields take precedence over provider config defaults
+    request_fields = request.model_dump(exclude_unset=True)
+    completion_kwargs = {**provider_kwargs, **request_fields}
 
     try:
         if request.stream:
