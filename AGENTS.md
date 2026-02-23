@@ -43,6 +43,7 @@ This repo uses `uv` for local dev (Python 3.11+). For the full, up-to-date comma
 - Add/adjust tests with every change (happy path + error cases). Integration tests should `pytest.skip(...)` when credentials/services aren’t available.
 - New code should target ~85%+ coverage (see `CONTRIBUTING.md`).
 - Do not use class-based test grouping (`class TestFoo:`). All tests should be standalone functions.
+- Do not add decorative section-separator comments (e.g., `# -----------` banners). Well-named test functions and natural file ordering are sufficient.
 
 ## Commit & Pull Request Guidelines
 

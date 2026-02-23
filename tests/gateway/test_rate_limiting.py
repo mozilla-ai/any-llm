@@ -17,11 +17,6 @@ from any_llm.gateway.rate_limit import RateLimiter, RateLimitInfo
 from any_llm.gateway.server import create_app
 from tests.gateway.conftest import _run_alembic_migrations
 
-# ---------------------------------------------------------------------------
-# Unit tests for RateLimiter
-# ---------------------------------------------------------------------------
-
-
 def test_rate_limiter_allows_under_limit() -> None:
     """Test that requests under the limit are allowed."""
     limiter = RateLimiter(rpm=5)
@@ -139,11 +134,6 @@ def test_rate_limiter_cleanup() -> None:
         assert "active-user" in limiter._requests
 
 
-# ---------------------------------------------------------------------------
-# Config validation tests
-# ---------------------------------------------------------------------------
-
-
 def test_config_rejects_zero_rate_limit() -> None:
     """Test that rate_limit_rpm=0 is rejected by validation."""
     with pytest.raises(ValidationError):
@@ -166,11 +156,6 @@ def test_config_accepts_none_rate_limit() -> None:
     """Test that rate_limit_rpm=None (disabled) is accepted."""
     config = GatewayConfig(rate_limit_rpm=None)
     assert config.rate_limit_rpm is None
-
-
-# ---------------------------------------------------------------------------
-# Integration tests with TestClient
-# ---------------------------------------------------------------------------
 
 
 class _MockCompletionError(Exception):
