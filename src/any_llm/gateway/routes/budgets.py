@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -63,8 +63,8 @@ async def create_budget(
 @router.get("", dependencies=[Depends(verify_master_key)])
 async def list_budgets(
     db: Annotated[Session, Depends(get_db)],
-    skip: int = 0,
-    limit: int = 100,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> list[BudgetResponse]:
     """List all budgets with pagination."""
     budgets = db.query(Budget).offset(skip).limit(limit).all()
