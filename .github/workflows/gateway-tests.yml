@@ -24,6 +24,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    environment: integration-tests
 
     steps:
     - uses: actions/checkout@v6
