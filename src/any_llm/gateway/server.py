@@ -35,13 +35,15 @@ def create_app(config: GatewayConfig) -> FastAPI:
         version=__version__,
     )
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    if config.cors_allow_origins:
+        allow_credentials = "*" not in config.cors_allow_origins
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=config.cors_allow_origins,
+            allow_credentials=allow_credentials,
+            allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=["Content-Type", "Authorization", "X-AnyLLM-Key"],
+        )
 
     if config.rate_limit_rpm is not None:
         app.state.rate_limiter = RateLimiter(config.rate_limit_rpm)

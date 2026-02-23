@@ -5,7 +5,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from any_llm import AnyLLM, LLMProvider, acompletion
@@ -34,7 +34,17 @@ class ChatCompletionRequest(BaseModel):
     """OpenAI-compatible chat completion request."""
 
     model: str
-    messages: list[dict[str, Any]]
+    messages: list[dict[str, Any]] = Field(min_length=1)
+
+    @field_validator("messages")
+    @classmethod
+    def validate_message_structure(cls, v: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        for i, message in enumerate(v):
+            if "role" not in message:
+                msg = f"messages[{i}]: 'role' is required"
+                raise ValueError(msg)
+        return v
+
     user: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
@@ -143,15 +153,15 @@ async def _log_usage(
             usage_log.cost = cost
 
             if user_id:
-                user = db.query(User).filter(User.user_id == user_id).first()
-                if user:
-                    user.spend = float(user.spend) + cost
+                db.query(User).filter(User.user_id == user_id).update({User.spend: User.spend + cost})
         else:
             attempted = f"'{model_key}'" + (f" or '{model_key_legacy}'" if model_key_legacy else "")
             logger.warning(f"No pricing configured for {attempted}. Usage will be tracked without cost.")
 
-    db.add(usage_log)
     try:
+        nested = db.begin_nested()
+        db.add(usage_log)
+        nested.commit()
         db.commit()
     except Exception as e:
         logger.error(f"Failed to log usage to database: {e}")
@@ -210,8 +220,9 @@ async def chat_completions(
 
     provider_kwargs = _get_provider_kwargs(config, provider)
 
-    completion_kwargs = request.model_dump()
-    completion_kwargs.update(provider_kwargs)
+    # User request fields take precedence over provider config defaults
+    request_fields = request.model_dump(exclude_unset=True)
+    completion_kwargs = {**provider_kwargs, **request_fields}
 
     try:
         if request.stream:
@@ -225,13 +236,15 @@ async def chat_completions(
                     stream: AsyncIterator[ChatCompletionChunk] = await acompletion(**completion_kwargs)  # type: ignore[assignment]
                     async for chunk in stream:
                         if chunk.usage:
-                            # Prompt tokens should be constant, take first non-zero value
-                            if chunk.usage.prompt_tokens and not prompt_tokens:
+                            # Take the last non-zero value for each field. This works for
+                            # providers that report cumulative totals (last = total) and
+                            # providers that only report usage on the final chunk.
+                            if chunk.usage.prompt_tokens:
                                 prompt_tokens = chunk.usage.prompt_tokens
                             if chunk.usage.completion_tokens:
-                                completion_tokens = max(completion_tokens, chunk.usage.completion_tokens)
+                                completion_tokens = chunk.usage.completion_tokens
                             if chunk.usage.total_tokens:
-                                total_tokens = max(total_tokens, chunk.usage.total_tokens)
+                                total_tokens = chunk.usage.total_tokens
 
                         yield f"data: {chunk.model_dump_json()}\n\n"
                     yield "data: [DONE]\n\n"
@@ -291,9 +304,10 @@ async def chat_completions(
             user_id=user_id,
             error=str(e),
         )
+        logger.error(f"Provider call failed for {provider}:{model}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error calling provider: {e!s}",
+            detail="The request could not be completed by the provider",
         ) from e
 
     if rate_limit_info:
