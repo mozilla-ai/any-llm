@@ -41,6 +41,19 @@ def test_rate_limiter_returns_rate_limit_info() -> None:
     assert info2.remaining == 3
 
 
+def test_rate_limiter_reset_is_wall_clock() -> None:
+    """Test that reset uses wall-clock time, not monotonic time."""
+    limiter = RateLimiter(rpm=5)
+
+    with patch("any_llm.gateway.rate_limit.time") as mock_time:
+        mock_time.monotonic.return_value = 1000.0
+        mock_time.time.return_value = 1700000000.0
+        info = limiter.check("user-1")
+
+    # reset should be based on wall-clock time (~60s from now), not monotonic
+    assert info.reset == pytest.approx(1700000060.0, abs=1.0)
+
+
 def test_rate_limiter_rejects_over_limit() -> None:
     """Test that requests over the limit are rejected with 429."""
     limiter = RateLimiter(rpm=3)
@@ -88,6 +101,7 @@ def test_rate_limiter_window_expiry() -> None:
 
     with patch("any_llm.gateway.rate_limit.time") as mock_time:
         mock_time.monotonic.return_value = 1000.0
+        mock_time.time.return_value = 1700000000.0
         limiter.check("user-1")
         limiter.check("user-1")
 
@@ -96,6 +110,7 @@ def test_rate_limiter_window_expiry() -> None:
 
         # Fast-forward past the 60s window
         mock_time.monotonic.return_value = 1061.0
+        mock_time.time.return_value = 1700000061.0
         info = limiter.check("user-1")
         assert info.remaining == 1
 
@@ -107,6 +122,7 @@ def test_rate_limiter_cleanup() -> None:
 
     with patch("any_llm.gateway.rate_limit.time") as mock_time:
         mock_time.monotonic.return_value = 1000.0
+        mock_time.time.return_value = 1700000000.0
 
         # Create entries for stale-user
         limiter.check("stale-user")
@@ -114,6 +130,7 @@ def test_rate_limiter_cleanup() -> None:
 
         # Fast-forward so stale-user's timestamps expire
         mock_time.monotonic.return_value = 1061.0
+        mock_time.time.return_value = 1700000061.0
 
         # Third call triggers cleanup (interval=3)
         limiter.check("active-user")
@@ -234,18 +251,38 @@ def _chat_request(client: TestClient, user_id: str, master_key: str = "test-mast
 
 def test_rate_limit_headers_on_success(rate_limit_client: TestClient) -> None:
     """Test that successful responses include rate limit headers."""
+    from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, Choice, CompletionUsage
+
     user_id = _create_test_user(rate_limit_client)
 
-    async def mock_acompletion(**kwargs: Any) -> None:
-        raise _MockCompletionError
+    mock_response = ChatCompletion(
+        id="chatcmpl-test",
+        object="chat.completion",
+        created=1700000000,
+        model="gpt-4o-mini",
+        choices=[
+            Choice(
+                index=0,
+                message=ChatCompletionMessage(role="assistant", content="hello"),
+                finish_reason="stop",
+            )
+        ],
+        usage=CompletionUsage(prompt_tokens=5, completion_tokens=1, total_tokens=6),
+    )
+
+    async def mock_acompletion(**kwargs: Any) -> ChatCompletion:
+        return mock_response
 
     with patch("any_llm.gateway.routes.chat.acompletion", new=mock_acompletion):
-        # First request should succeed rate limiting (but fail at provider)
         resp = _chat_request(rate_limit_client, user_id)
 
-    # The rate limiter runs before acompletion, so 500 means we passed rate limiting
-    assert resp.status_code == 500
-    assert "X-RateLimit-Limit" not in resp.headers  # headers only on 200
+    assert resp.status_code == 200
+    assert resp.headers["X-RateLimit-Limit"] == "3"
+    assert resp.headers["X-RateLimit-Remaining"] == "2"
+    assert "X-RateLimit-Reset" in resp.headers
+    # Reset should be a plausible Unix timestamp (wall-clock based)
+    reset = int(resp.headers["X-RateLimit-Reset"])
+    assert reset > 1_000_000_000
 
 
 def test_rate_limit_returns_429_with_retry_after(rate_limit_client: TestClient) -> None:

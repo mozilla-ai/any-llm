@@ -65,7 +65,8 @@ class RateLimiter:
 
         current.append(now)
         remaining = self._rpm - len(current)
-        reset = current[0] + self._window_sec
+        # Use wall-clock time for the externally-facing reset header
+        reset = time.time() + (current[0] + self._window_sec - now)
         return RateLimitInfo(limit=self._rpm, remaining=remaining, reset=reset)
 
     def _cleanup(self, cutoff: float) -> None:
