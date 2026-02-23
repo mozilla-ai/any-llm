@@ -65,7 +65,7 @@ async def validate_user_budget(db: Session, user_id: str) -> User:
         HTTPException: If user is blocked, doesn't exist, or exceeded budget
 
     """
-    user = db.query(User).filter(User.user_id == user_id).first()
+    user = db.query(User).filter(User.user_id == user_id).with_for_update().first()
 
     if not user:
         raise HTTPException(
