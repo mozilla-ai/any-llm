@@ -13,9 +13,9 @@ router = APIRouter(prefix="/v1/budgets", tags=["budgets"])
 class CreateBudgetRequest(BaseModel):
     """Request model for creating a new budget."""
 
-    max_budget: float | None = Field(default=None, description="Maximum spending limit")
+    max_budget: float | None = Field(default=None, ge=0, description="Maximum spending limit")
     budget_duration_sec: int | None = Field(
-        default=None, description="Budget duration in seconds (e.g., 86400 for daily, 604800 for weekly)"
+        default=None, gt=0, description="Budget duration in seconds (e.g., 86400 for daily, 604800 for weekly)"
     )
 
 
@@ -32,8 +32,8 @@ class BudgetResponse(BaseModel):
 class UpdateBudgetRequest(BaseModel):
     """Request model for updating a budget."""
 
-    max_budget: float | None = None
-    budget_duration_sec: int | None = None
+    max_budget: float | None = Field(default=None, ge=0)
+    budget_duration_sec: int | None = Field(default=None, gt=0)
 
 
 @router.post("", dependencies=[Depends(verify_master_key)])

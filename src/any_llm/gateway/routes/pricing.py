@@ -15,8 +15,8 @@ class SetPricingRequest(BaseModel):
     """Request model for setting model pricing."""
 
     model_key: str = Field(description="Model identifier in format 'provider:model'")
-    input_price_per_million: float = Field(description="Price per 1M input tokens")
-    output_price_per_million: float = Field(description="Price per 1M output tokens")
+    input_price_per_million: float = Field(ge=0, description="Price per 1M input tokens")
+    output_price_per_million: float = Field(ge=0, description="Price per 1M output tokens")
 
 
 class PricingResponse(BaseModel):

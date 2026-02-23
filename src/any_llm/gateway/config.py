@@ -12,8 +12,8 @@ API_KEY_HEADER = "X-AnyLLM-Key"
 class PricingConfig(BaseModel):
     """Model pricing configuration."""
 
-    input_price_per_million: float
-    output_price_per_million: float
+    input_price_per_million: float = Field(ge=0)
+    output_price_per_million: float = Field(ge=0)
 
 
 class GatewayConfig(BaseSettings):
