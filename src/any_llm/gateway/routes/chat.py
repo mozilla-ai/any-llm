@@ -139,8 +139,10 @@ async def _log_usage(
             attempted = f"'{model_key}'" + (f" or '{model_key_legacy}'" if model_key_legacy else "")
             logger.warning(f"No pricing configured for {attempted}. Usage will be tracked without cost.")
 
-    db.add(usage_log)
     try:
+        nested = db.begin_nested()
+        db.add(usage_log)
+        nested.commit()
         db.commit()
     except Exception as e:
         logger.error(f"Failed to log usage to database: {e}")
