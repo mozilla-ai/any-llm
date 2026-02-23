@@ -50,7 +50,19 @@ jobs:
         file: ./coverage.xml
         fail_ci_if_error: false
 
+  openapi-spec:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - uses: astral-sh/setup-uv@v7
+      with:
+        python-version: 3.13
+        activate-environment: true
+
+    - name: Install dependencies
+      run: uv sync --extra gateway --extra all -U --python=3.13
 
     - name: Verify OpenAPI spec is up to date
-      run: |
-        python scripts/generate_openapi.py --check
+      run: python scripts/generate_openapi.py --check

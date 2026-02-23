@@ -37,6 +37,13 @@ repos:
         types: [python]
         verbose: true
         exclude: demos|scripts
+      - id: openapi-spec
+        name: openapi-spec
+        entry: "uv run python scripts/generate_openapi.py"
+        language: system
+        files: ^src/any_llm/gateway/
+        pass_filenames: false
+        verbose: true
 
   - repo: https://github.com/codespell-project/codespell
     rev: "v2.4.1"
