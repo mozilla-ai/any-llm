@@ -212,13 +212,15 @@ async def chat_completions(
                     stream: AsyncIterator[ChatCompletionChunk] = await acompletion(**completion_kwargs)  # type: ignore[assignment]
                     async for chunk in stream:
                         if chunk.usage:
-                            # Prompt tokens should be constant, take first non-zero value
-                            if chunk.usage.prompt_tokens and not prompt_tokens:
+                            # Take the last non-zero value for each field. This works for
+                            # providers that report cumulative totals (last = total) and
+                            # providers that only report usage on the final chunk.
+                            if chunk.usage.prompt_tokens:
                                 prompt_tokens = chunk.usage.prompt_tokens
                             if chunk.usage.completion_tokens:
-                                completion_tokens = max(completion_tokens, chunk.usage.completion_tokens)
+                                completion_tokens = chunk.usage.completion_tokens
                             if chunk.usage.total_tokens:
-                                total_tokens = max(total_tokens, chunk.usage.total_tokens)
+                                total_tokens = chunk.usage.total_tokens
 
                         yield f"data: {chunk.model_dump_json()}\n\n"
                     yield "data: [DONE]\n\n"
