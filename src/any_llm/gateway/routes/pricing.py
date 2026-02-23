@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from any_llm.any_llm import AnyLLM
 from any_llm.gateway.auth import verify_master_key
 from any_llm.gateway.db import ModelPricing, get_db
 
@@ -34,14 +35,16 @@ async def set_pricing(
     db: Annotated[Session, Depends(get_db)],
 ) -> PricingResponse:
     """Set or update pricing for a model."""
-    pricing = db.query(ModelPricing).filter(ModelPricing.model_key == request.model_key).first()
+    provider, model_name = AnyLLM.split_model_provider(request.model_key)
+    normalized_key = f"{provider.value}:{model_name}"
+    pricing = db.query(ModelPricing).filter(ModelPricing.model_key == normalized_key).first()
 
     if pricing:
         pricing.input_price_per_million = request.input_price_per_million
         pricing.output_price_per_million = request.output_price_per_million
     else:
         pricing = ModelPricing(
-            model_key=request.model_key,
+            model_key=normalized_key,
             input_price_per_million=request.input_price_per_million,
             output_price_per_million=request.output_price_per_million,
         )
