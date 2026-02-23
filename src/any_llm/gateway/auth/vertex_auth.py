@@ -1,11 +1,26 @@
 """Helper module for loading Google Cloud Vertex AI credentials."""
 
+import atexit
 import json
 import os
 import tempfile
 from typing import Any
 
 from fastapi import HTTPException, status
+
+_temp_credential_file: str | None = None
+
+
+def _cleanup_temp_credentials() -> None:
+    """Remove temporary credential file on process exit."""
+    if _temp_credential_file and os.path.exists(_temp_credential_file):
+        try:
+            os.remove(_temp_credential_file)
+        except OSError:
+            pass
+
+
+atexit.register(_cleanup_temp_credentials)
 
 
 def setup_vertex_environment(
@@ -31,6 +46,8 @@ def setup_vertex_environment(
         HTTPException: If credentials cannot be loaded or project cannot be determined
 
     """
+    global _temp_credential_file  # noqa: PLW0603
+
     env_updates: dict[str, str] = {}
 
     if credentials is not None:
@@ -58,10 +75,14 @@ def setup_vertex_environment(
             )
 
         if json_obj and "GOOGLE_APPLICATION_CREDENTIALS" not in env_updates:
-            temp_file = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
-            json.dump(json_obj, temp_file)
-            temp_file.close()
-            env_updates["GOOGLE_APPLICATION_CREDENTIALS"] = temp_file.name
+            if _temp_credential_file and os.path.exists(_temp_credential_file):
+                env_updates["GOOGLE_APPLICATION_CREDENTIALS"] = _temp_credential_file
+            else:
+                temp_file = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+                json.dump(json_obj, temp_file)
+                temp_file.close()
+                _temp_credential_file = temp_file.name
+                env_updates["GOOGLE_APPLICATION_CREDENTIALS"] = _temp_credential_file
 
         if project is None and json_obj:
             project = json_obj.get("project_id")
