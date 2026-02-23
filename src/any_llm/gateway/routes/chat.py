@@ -5,7 +5,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from any_llm import AnyLLM, LLMProvider, acompletion
@@ -21,20 +21,21 @@ from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, Comple
 router = APIRouter(prefix="/v1/chat", tags=["chat"])
 
 
-class ChatCompletionMessage(BaseModel):
-    """A single message in a chat completion request."""
-
-    model_config = {"extra": "allow"}
-
-    role: str
-    content: str | list[dict[str, Any]] | None = None
-
-
 class ChatCompletionRequest(BaseModel):
     """OpenAI-compatible chat completion request."""
 
     model: str
-    messages: list[ChatCompletionMessage] = Field(min_length=1)
+    messages: list[dict[str, Any]] = Field(min_length=1)
+
+    @field_validator("messages")
+    @classmethod
+    def validate_message_structure(cls, v: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        for i, message in enumerate(v):
+            if "role" not in message:
+                msg = f"messages[{i}]: 'role' is required"
+                raise ValueError(msg)
+        return v
+
     user: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None

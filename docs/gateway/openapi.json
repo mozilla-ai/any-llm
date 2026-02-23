@@ -49,39 +49,6 @@
         "title": "BudgetResponse",
         "type": "object"
       },
-      "ChatCompletionMessage": {
-        "additionalProperties": true,
-        "description": "A single message in a chat completion request.",
-        "properties": {
-          "content": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Content"
-          },
-          "role": {
-            "title": "Role",
-            "type": "string"
-          }
-        },
-        "required": [
-          "role"
-        ],
-        "title": "ChatCompletionMessage",
-        "type": "object"
-      },
       "ChatCompletionRequest": {
         "description": "OpenAI-compatible chat completion request.",
         "properties": {
@@ -109,7 +76,8 @@
           },
           "messages": {
             "items": {
-              "$ref": "#/components/schemas/ChatCompletionMessage"
+              "additionalProperties": true,
+              "type": "object"
             },
             "minItems": 1,
             "title": "Messages",

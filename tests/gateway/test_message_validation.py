@@ -31,10 +31,8 @@ def test_empty_messages_rejected(client: TestClient, master_key_header: dict[str
     assert response.status_code == 422
 
 
-def test_valid_message_with_extra_fields_accepted(client: TestClient, master_key_header: dict[str, str]) -> None:
-    """Test that messages with extra provider-specific fields are accepted."""
-    # This should pass validation (though may fail at the provider level)
-    # The point is the request model accepts it
+def test_valid_message_accepted(client: TestClient, master_key_header: dict[str, str]) -> None:
+    """Test that valid messages with extra provider-specific fields are accepted."""
     response = client.post(
         "/v1/chat/completions",
         json={
@@ -44,7 +42,6 @@ def test_valid_message_with_extra_fields_accepted(client: TestClient, master_key
         },
         headers=master_key_header,
     )
-    # Will be 404 (user not found) or 500 (provider error), not 422
     assert response.status_code != 422
 
 
@@ -59,5 +56,4 @@ def test_message_with_null_content_accepted(client: TestClient, master_key_heade
         },
         headers=master_key_header,
     )
-    # Should not be a validation error
     assert response.status_code != 422
