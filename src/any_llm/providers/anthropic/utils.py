@@ -138,7 +138,8 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
             if "content" in message and isinstance(message["content"], list):
                 message["content"] = _convert_images_for_anthropic(message["content"])
 
-            filtered_messages.append(message)
+            # Only keep Anthropic-compatible fields (strips OpenAI-specific fields like 'refusal')
+            filtered_messages.append({"role": message["role"], "content": message.get("content", "")})
 
     return system_message, filtered_messages
 
