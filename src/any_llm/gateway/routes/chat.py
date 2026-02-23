@@ -121,8 +121,11 @@ async def _log_usage(
         usage_log.completion_tokens = usage_data.completion_tokens
         usage_log.total_tokens = usage_data.total_tokens
 
-        model_key = f"{provider}:{model}" if provider else model
+        model_key = f"{provider}/{model}" if provider else model
         pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key).first()
+        if not pricing and provider:
+            model_key_alt = f"{provider}:{model}"
+            pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key_alt).first()
 
         if pricing:
             cost = (usage_data.prompt_tokens / 1_000_000) * pricing.input_price_per_million + (
