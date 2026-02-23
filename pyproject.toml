@@ -34,7 +34,7 @@ mistral = [
 ]
 
 anthropic = [
-  "anthropic",
+  "anthropic>=0.83.0",
 ]
 
 gemini = [
@@ -46,7 +46,7 @@ vertexai = [
 ]
 
 vertexaianthropic = [
-  "anthropic[vertex]",
+  "anthropic[vertex]>=0.83.0",
 ]
 
 huggingface = [
