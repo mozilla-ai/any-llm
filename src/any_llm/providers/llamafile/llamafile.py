@@ -46,10 +46,4 @@ class LlamafileProvider(BaseOpenAIProvider):
                 msg,
                 self.PROVIDER_NAME,
             )
-        if params.tools:
-            msg = "tools"
-            raise UnsupportedParameterError(
-                msg,
-                self.PROVIDER_NAME,
-            )
         return await super()._acompletion(params, **kwargs)

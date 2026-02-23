@@ -39,7 +39,7 @@ async def test_calls_completion() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tools_raises() -> None:
+async def test_tools_passed_through() -> None:
     provider = LlamafileProvider()
     tools = [
         {
@@ -50,14 +50,16 @@ async def test_tools_raises() -> None:
             },
         }
     ]
-    with pytest.raises(UnsupportedParameterError):
-        await provider._acompletion(
-            CompletionParams(
-                model_id="llama3.1",
-                messages=[{"role": "user", "content": "Hi"}],
-                tools=tools,
-            )
-        )
+    params = CompletionParams(
+        model_id="llama3.1",
+        messages=[{"role": "user", "content": "Hi"}],
+        tools=tools,
+    )
+    sentinel = object()
+    with patch.object(BaseOpenAIProvider, "_acompletion", autospec=True, return_value=sentinel) as mock_super:
+        result = await provider._acompletion(params)
+        assert result is sentinel
+        mock_super.assert_called_once_with(provider, params)
 
 
 def test_convert_chat_completion_extracts_reasoning() -> None:
