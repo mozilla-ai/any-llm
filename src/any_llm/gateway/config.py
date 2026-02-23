@@ -71,6 +71,10 @@ def _resolve_env_vars(config: dict[str, Any]) -> dict[str, Any]:
     """Recursively resolve environment variable references in config.
 
     Supports ${VAR_NAME} syntax in string values.
+
+    Raises:
+        ValueError: If an environment variable reference cannot be resolved
+
     """
     if isinstance(config, dict):
         return {key: _resolve_env_vars(value) for key, value in config.items()}
@@ -78,5 +82,9 @@ def _resolve_env_vars(config: dict[str, Any]) -> dict[str, Any]:
         return [_resolve_env_vars(item) for item in config]
     if isinstance(config, str) and config.startswith("${") and config.endswith("}"):
         env_var = config[2:-1]
-        return os.getenv(env_var, config)
+        value = os.getenv(env_var)
+        if value is None:
+            msg = f"Environment variable '{env_var}' is not set (referenced in config as '${{{env_var}}}')"
+            raise ValueError(msg)
+        return value
     return config
