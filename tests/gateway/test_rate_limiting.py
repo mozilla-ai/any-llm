@@ -17,6 +17,7 @@ from any_llm.gateway.rate_limit import RateLimiter, RateLimitInfo
 from any_llm.gateway.server import create_app
 from tests.gateway.conftest import _run_alembic_migrations
 
+
 def test_rate_limiter_allows_under_limit() -> None:
     """Test that requests under the limit are allowed."""
     limiter = RateLimiter(rpm=5)
