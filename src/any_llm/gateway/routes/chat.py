@@ -1,3 +1,4 @@
+import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -123,7 +124,7 @@ async def _log_usage(
         id=str(uuid.uuid4()),
         api_key_id=api_key_obj.id if api_key_obj else None,
         user_id=user_id,
-        timestamp=datetime.now(UTC).replace(tzinfo=None),
+        timestamp=datetime.now(UTC),
         model=model,
         provider=provider,
         endpoint=endpoint,
@@ -269,16 +270,22 @@ async def chat_completions(
                         # This should never happen.
                         logger.warning(f"No usage data received from streaming response for model {model}")
                 except Exception as e:
-                    await _log_usage(
-                        db=db,
-                        api_key_obj=api_key,
-                        model=model,
-                        provider=provider,
-                        endpoint="/v1/chat/completions",
-                        user_id=user_id,
-                        error=str(e),
-                    )
-                    raise
+                    error_data = {"error": {"message": "An error occurred during streaming", "type": "server_error"}}
+                    yield f"data: {json.dumps(error_data)}\n\n"
+                    yield "data: [DONE]\n\n"
+                    try:
+                        await _log_usage(
+                            db=db,
+                            api_key_obj=api_key,
+                            model=model,
+                            provider=provider,
+                            endpoint="/v1/chat/completions",
+                            user_id=user_id,
+                            error=str(e),
+                        )
+                    except Exception as log_err:
+                        logger.error(f"Failed to log streaming error usage: {log_err}")
+                    logger.error(f"Streaming error for {provider}:{model}: {e}")
 
             rl_headers = _rate_limit_headers(rate_limit_info) if rate_limit_info else {}
             return StreamingResponse(generate(), media_type="text/event-stream", headers=rl_headers)
