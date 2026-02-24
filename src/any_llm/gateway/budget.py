@@ -51,12 +51,13 @@ def reset_user_budget(db: Session, user: User, budget: Budget) -> None:
     db.commit()
 
 
-async def validate_user_budget(db: Session, user_id: str) -> User:
+async def validate_user_budget(db: Session, user_id: str, model: str | None = None) -> User:
     """Validate user exists, is not blocked, and has available budget.
 
     Args:
         db: Database session
         user_id: User identifier
+        model: Optional model identifier (e.g., "provider/model") to check if it's a free model
 
     Returns:
         User object if validation passes
@@ -88,9 +89,54 @@ async def validate_user_budget(db: Session, user_id: str) -> User:
 
             if budget.max_budget is not None:
                 if user.spend >= budget.max_budget:
+                    if model and _is_model_free(db, model):
+                        return user
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail=f"User '{user_id}' has exceeded budget limit",
                     )
 
     return user
+
+
+def _is_model_free(db: Session, model: str) -> bool:
+    """Check if a model is free (both input and output prices are 0).
+
+    Args:
+        db: Database session
+        model: Model identifier (e.g., "provider/model" or "model")
+
+    Returns:
+        True if the model is free, False otherwise or if pricing not found
+
+    """
+    from any_llm.gateway.db import ModelPricing
+
+    provider, model_name = _split_model_provider(model)
+    model_key = f"{provider}:{model_name}" if provider else model_name
+    model_key_legacy = f"{provider}/{model_name}" if provider else None
+
+    pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key).first()
+    if not pricing and model_key_legacy:
+        pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key_legacy).first()
+
+    if pricing:
+        return pricing.input_price_per_million == 0 and pricing.output_price_per_million == 0
+
+    return False
+
+
+def _split_model_provider(model: str) -> tuple[str | None, str]:
+    """Split model identifier into provider and model name.
+
+    Args:
+        model: Model identifier (e.g., "openai/gpt-4o" or "gpt-4o")
+
+    Returns:
+        Tuple of (provider, model_name)
+
+    """
+    if "/" in model:
+        parts = model.split("/", 1)
+        return parts[0], parts[1]
+    return None, model

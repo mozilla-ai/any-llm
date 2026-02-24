@@ -214,7 +214,7 @@ async def chat_completions(
 
     rate_limit_info = check_rate_limit(raw_request, user_id)
 
-    _ = await validate_user_budget(db, user_id)
+    _ = await validate_user_budget(db, user_id, request.model)
 
     provider, model = AnyLLM.split_model_provider(request.model)
 
