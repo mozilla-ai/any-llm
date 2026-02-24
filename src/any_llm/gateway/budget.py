@@ -3,7 +3,8 @@ from datetime import UTC, datetime, timedelta
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from any_llm.gateway.db import Budget, BudgetResetLog, User
+from any_llm.any_llm import AnyLLM
+from any_llm.gateway.db import Budget, BudgetResetLog, ModelPricing, User
 
 
 def calculate_next_reset(start: datetime, duration_sec: int) -> datetime:
@@ -51,12 +52,13 @@ def reset_user_budget(db: Session, user: User, budget: Budget) -> None:
     db.commit()
 
 
-async def validate_user_budget(db: Session, user_id: str) -> User:
+async def validate_user_budget(db: Session, user_id: str, model: str | None = None) -> User:
     """Validate user exists, is not blocked, and has available budget.
 
     Args:
         db: Database session
         user_id: User identifier
+        model: Optional model identifier (e.g., "provider/model") to check if it's a free model
 
     Returns:
         User object if validation passes
@@ -88,9 +90,36 @@ async def validate_user_budget(db: Session, user_id: str) -> User:
 
             if budget.max_budget is not None:
                 if user.spend >= budget.max_budget:
+                    if model and _is_model_free(db, model):
+                        return user
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail=f"User '{user_id}' has exceeded budget limit",
                     )
 
     return user
+
+
+def _is_model_free(db: Session, model: str) -> bool:
+    """Check if a model is free (both input and output prices are 0).
+
+    Args:
+        db: Database session
+        model: Model identifier (e.g., "provider/model" or "model")
+
+    Returns:
+        True if the model is free, False otherwise or if pricing not found
+
+    """
+    provider, model_name = AnyLLM.split_model_provider(model)
+    model_key = f"{provider.value}:{model_name}" if provider else model_name
+    model_key_legacy = f"{provider.value}/{model_name}" if provider else None
+
+    pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key).first()
+    if not pricing and model_key_legacy:
+        pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key_legacy).first()
+
+    if pricing:
+        return pricing.input_price_per_million == 0 and pricing.output_price_per_million == 0
+
+    return False
