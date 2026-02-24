@@ -42,3 +42,17 @@ def get_db() -> Generator[Session]:
         yield db
     finally:
         db.close()
+
+
+def reset_db() -> None:
+    """Reset database state. Intended for testing only.
+
+    Disposes the engine connection pool and clears the module-level references
+    so that init_db() can be called again with different parameters.
+    """
+    global _engine, _SessionLocal  # noqa: PLW0603
+
+    if _engine is not None:
+        _engine.dispose()
+    _engine = None
+    _SessionLocal = None

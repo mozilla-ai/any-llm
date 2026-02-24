@@ -12,8 +12,8 @@ API_KEY_HEADER = "X-AnyLLM-Key"
 class PricingConfig(BaseModel):
     """Model pricing configuration."""
 
-    input_price_per_million: float
-    output_price_per_million: float
+    input_price_per_million: float = Field(ge=0)
+    output_price_per_million: float = Field(ge=0)
 
 
 class GatewayConfig(BaseSettings):
@@ -37,6 +37,12 @@ class GatewayConfig(BaseSettings):
     host: str = Field(default="0.0.0.0", description="Host to bind the server to")  # noqa: S104
     port: int = Field(default=8000, description="Port to bind the server to")
     master_key: str | None = Field(default=None, description="Master key for protecting management endpoints")
+    rate_limit_rpm: int | None = Field(
+        default=None, ge=1, description="Maximum requests per minute per user (None disables rate limiting)"
+    )
+    cors_allow_origins: list[str] = Field(
+        default_factory=list, description="Allowed CORS origins (empty list disables CORS)"
+    )
     providers: dict[str, dict[str, Any]] = Field(
         default_factory=dict, description="Pre-configured provider credentials"
     )
@@ -71,6 +77,10 @@ def _resolve_env_vars(config: dict[str, Any]) -> dict[str, Any]:
     """Recursively resolve environment variable references in config.
 
     Supports ${VAR_NAME} syntax in string values.
+
+    Raises:
+        ValueError: If an environment variable reference cannot be resolved
+
     """
     if isinstance(config, dict):
         return {key: _resolve_env_vars(value) for key, value in config.items()}
@@ -78,5 +88,9 @@ def _resolve_env_vars(config: dict[str, Any]) -> dict[str, Any]:
         return [_resolve_env_vars(item) for item in config]
     if isinstance(config, str) and config.startswith("${") and config.endswith("}"):
         env_var = config[2:-1]
-        return os.getenv(env_var, config)
+        value = os.getenv(env_var)
+        if value is None:
+            msg = f"Environment variable '{env_var}' is not set (referenced in config as '${{{env_var}}}')"
+            raise ValueError(msg)
+        return value
     return config
