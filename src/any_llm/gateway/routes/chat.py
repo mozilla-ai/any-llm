@@ -154,7 +154,9 @@ async def _log_usage(
             usage_log.cost = cost
 
             if user_id:
-                db.query(User).filter(User.user_id == user_id).update({User.spend: User.spend + cost})
+                db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).update(
+                    {User.spend: User.spend + cost}
+                )
         else:
             attempted = f"'{model_key}'" + (f" or '{model_key_legacy}'" if model_key_legacy else "")
             logger.warning(f"No pricing configured for {attempted}. Usage will be tracked without cost.")

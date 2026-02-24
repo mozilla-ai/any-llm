@@ -80,6 +80,11 @@ async def create_key(
                 alias=f"User {request.user_id}",
             )
             db.add(user)
+        elif user.deleted_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User '{request.user_id}' has been deleted. Recreate via POST /v1/users first.",
+            )
         user_id = request.user_id
     else:
         user_id = f"apikey-{key_id}"
