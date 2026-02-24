@@ -199,12 +199,12 @@ jobs:
 
       - name: Download LM Studio model
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio')
-        run: lms get google/gemma-3-1b-it-qat
+        run: lms get google/gemma-3-4b
 
       - name: Load model and start LM Studio server
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio')
         run: |
-          lms load google/gemma-3-1b-it-qat --yes &
+          lms load google/gemma-3-4b --yes &
           lms server start
 
       - name: Wait for LM Studio to be ready
