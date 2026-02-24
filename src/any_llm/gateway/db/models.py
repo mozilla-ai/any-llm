@@ -84,7 +84,7 @@ class User(Base):
     budget_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     next_budget_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     blocked: Mapped[bool] = mapped_column(default=False)
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -94,7 +94,7 @@ class User(Base):
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
 
     budget = relationship("Budget", back_populates="users")
-    api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
+    api_keys = relationship("APIKey", back_populates="user", passive_deletes=True)
     usage_logs = relationship("UsageLog", back_populates="user", passive_deletes=True)
     reset_logs = relationship("BudgetResetLog", back_populates="user", passive_deletes=True)
 

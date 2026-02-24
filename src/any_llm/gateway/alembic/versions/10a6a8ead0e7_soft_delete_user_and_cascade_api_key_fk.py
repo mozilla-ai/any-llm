@@ -26,6 +26,7 @@ naming_convention = {
 def upgrade() -> None:
     """Add deleted_at column to users and set CASCADE on api_keys.user_id FK."""
     op.add_column("users", sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True))
+    op.create_index("ix_users_deleted_at", "users", ["deleted_at"])
 
     with op.batch_alter_table("api_keys", schema=None, naming_convention=naming_convention) as batch_op:
         batch_op.drop_constraint("fk_api_keys_user_id_users", type_="foreignkey")
@@ -49,4 +50,5 @@ def downgrade() -> None:
             ["user_id"],
         )
 
+    op.drop_index("ix_users_deleted_at", table_name="users")
     op.drop_column("users", "deleted_at")

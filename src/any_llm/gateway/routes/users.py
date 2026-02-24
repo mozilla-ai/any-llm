@@ -262,7 +262,7 @@ async def get_user_usage(
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> list[UsageLogResponse]:
     """Get usage history for a specific user."""
-    user = db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).first()
+    user = db.query(User).filter(User.user_id == user_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

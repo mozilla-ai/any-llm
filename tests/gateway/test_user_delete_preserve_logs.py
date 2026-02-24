@@ -187,6 +187,38 @@ def test_soft_delete_deactivates_api_keys(
     assert key.is_active is False, "API key should be deactivated when user is soft-deleted"
 
 
+def test_get_user_usage_after_soft_delete(
+    client: TestClient,
+    master_key_header: dict[str, str],
+) -> None:
+    """GET /v1/users/{user_id}/usage should still return logs after the user is soft-deleted."""
+    client.post("/v1/users", json={"user_id": "usage-del-user"}, headers=master_key_header)
+    key_resp = client.post(
+        "/v1/keys",
+        json={"key_name": "usage-key", "user_id": "usage-del-user"},
+        headers=master_key_header,
+    )
+    api_key = key_resp.json()["key"]
+
+    client.post(
+        "/v1/chat/completions",
+        json={"model": MODEL_NAME, "messages": [{"role": "user", "content": "Hello"}], "user": "usage-del-user"},
+        headers={API_KEY_HEADER: f"Bearer {api_key}"},
+    )
+
+    usage_before = client.get("/v1/users/usage-del-user/usage", headers=master_key_header)
+    assert usage_before.status_code == 200
+    assert len(usage_before.json()) > 0
+
+    resp = client.delete("/v1/users/usage-del-user", headers=master_key_header)
+    assert resp.status_code == 204
+
+    usage_after = client.get("/v1/users/usage-del-user/usage", headers=master_key_header)
+    assert usage_after.status_code == 200
+    assert len(usage_after.json()) > 0
+    assert usage_after.json()[0]["user_id"] == "usage-del-user"
+
+
 def test_cascade_delete_api_keys_on_hard_delete(
     client: TestClient,
     master_key_header: dict[str, str],
