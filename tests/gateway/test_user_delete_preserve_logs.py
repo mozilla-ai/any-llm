@@ -3,26 +3,13 @@
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
-import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
-from any_llm.gateway.config import API_KEY_HEADER, GatewayConfig
+from any_llm.gateway.config import API_KEY_HEADER
 from any_llm.gateway.db.models import APIKey, BudgetResetLog, UsageLog
 from tests.gateway.conftest import MODEL_NAME
-
-
-@pytest.fixture
-def db_session(test_config: GatewayConfig) -> Session:
-    """Create a standalone DB session for verifying state outside the test client."""
-    engine = create_engine(test_config.database_url)
-    session = sessionmaker(autocommit=False, autoflush=False, bind=engine)()
-    try:
-        yield session  # type: ignore[misc]
-    finally:
-        session.close()
-        engine.dispose()
 
 
 def test_delete_user_preserves_usage_logs(
@@ -30,7 +17,7 @@ def test_delete_user_preserves_usage_logs(
     master_key_header: dict[str, str],
     db_session: Session,
 ) -> None:
-    """Soft-deleting a user preserves FK links in usage logs; API key deletion nullifies api_key_id."""
+    """Soft-deleting a user preserves FK links in usage logs; API keys are deactivated, not deleted."""
     client.post("/v1/users", json={"user_id": "del-user"}, headers=master_key_header)
     key_resp = client.post(
         "/v1/keys",
@@ -57,7 +44,7 @@ def test_delete_user_preserves_usage_logs(
     log_after = db_session.query(UsageLog).filter(UsageLog.id == log_id).first()
     assert log_after is not None, "Usage log should survive user deletion"
     assert log_after.user_id == "del-user", "user_id FK should be preserved (soft-delete keeps user row)"
-    assert log_after.api_key_id is None, "api_key_id should be NULL (api keys hard-deleted on soft-delete)"
+    assert log_after.api_key_id is not None, "api_key_id should be preserved (api keys deactivated, not deleted)"
     assert log_after.model is not None, "Usage log data should be preserved"
 
 
@@ -178,12 +165,12 @@ def test_recreate_soft_deleted_user(
     assert get_resp.status_code == 200
 
 
-def test_soft_delete_removes_api_keys(
+def test_soft_delete_deactivates_api_keys(
     client: TestClient,
     master_key_header: dict[str, str],
     db_session: Session,
 ) -> None:
-    """API keys should be hard-deleted when a user is soft-deleted."""
+    """API keys should be deactivated (not deleted) when a user is soft-deleted."""
     client.post("/v1/users", json={"user_id": "key-del-user"}, headers=master_key_header)
     key_resp = client.post(
         "/v1/keys",
@@ -196,7 +183,8 @@ def test_soft_delete_removes_api_keys(
 
     db_session.expire_all()
     key = db_session.query(APIKey).filter(APIKey.id == key_id).first()
-    assert key is None, "API key should be hard-deleted when user is soft-deleted"
+    assert key is not None, "API key should still exist after user soft-delete"
+    assert key.is_active is False, "API key should be deactivated when user is soft-deleted"
 
 
 def test_cascade_delete_api_keys_on_hard_delete(

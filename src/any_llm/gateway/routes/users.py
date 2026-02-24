@@ -249,7 +249,7 @@ async def delete_user(
             detail=f"User with id '{user_id}' not found",
         )
 
-    db.query(APIKey).filter(APIKey.user_id == user_id).delete(synchronize_session="fetch")
+    db.query(APIKey).filter(APIKey.user_id == user_id).update({"is_active": False}, synchronize_session="fetch")
     user.deleted_at = datetime.now(UTC)
     db.commit()
 
