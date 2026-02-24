@@ -15,9 +15,6 @@ async def test_list_models(provider: LLMProvider, provider_client_config: dict[L
     """Test that all supported providers can be loaded successfully."""
     try:
         config = provider_client_config.get(provider, {})
-        if provider == "huggingface":
-            # We don't want to use the custom endpoint for listing models
-            config.pop("api_base")
         llm = AnyLLM.create(provider, **config)
         if not llm.SUPPORTS_LIST_MODELS:
             pytest.skip(f"{provider.value} does not support listing models, skipping")
