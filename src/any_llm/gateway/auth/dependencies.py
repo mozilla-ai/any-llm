@@ -79,13 +79,13 @@ def _verify_and_update_api_key(db: Session, token: str) -> APIKey:
             detail="API key is inactive",
         )
 
-    if api_key.expires_at and api_key.expires_at < datetime.now(UTC).replace(tzinfo=None):
+    if api_key.expires_at and api_key.expires_at < datetime.now(UTC):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="API key has expired",
         )
 
-    api_key.last_used_at = datetime.now(UTC).replace(tzinfo=None)
+    api_key.last_used_at = datetime.now(UTC)
     db.commit()
 
     return api_key

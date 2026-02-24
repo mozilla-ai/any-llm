@@ -18,7 +18,7 @@ class APIKey(Base):
     id: Mapped[str] = mapped_column(primary_key=True)
     key_hash: Mapped[str] = mapped_column(unique=True, index=True)
     key_name: Mapped[str | None] = mapped_column()
-    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.user_id"), index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -27,7 +27,7 @@ class APIKey(Base):
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
 
     user = relationship("User", back_populates="api_keys")
-    usage_logs = relationship("UsageLog", back_populates="api_key", cascade="all, delete-orphan")
+    usage_logs = relationship("UsageLog", back_populates="api_key", passive_deletes=True)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert model to dictionary."""
@@ -84,6 +84,7 @@ class User(Base):
     budget_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     next_budget_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     blocked: Mapped[bool] = mapped_column(default=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -93,9 +94,9 @@ class User(Base):
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
 
     budget = relationship("Budget", back_populates="users")
-    api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
-    usage_logs = relationship("UsageLog", back_populates="user", cascade="all, delete-orphan")
-    reset_logs = relationship("BudgetResetLog", back_populates="user")
+    api_keys = relationship("APIKey", back_populates="user", passive_deletes=True)
+    usage_logs = relationship("UsageLog", back_populates="user", passive_deletes=True)
+    reset_logs = relationship("BudgetResetLog", back_populates="user", passive_deletes=True)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert model to dictionary."""
@@ -145,8 +146,8 @@ class UsageLog(Base):
     __tablename__ = "usage_logs"
 
     id: Mapped[str] = mapped_column(primary_key=True, default=lambda: str(uuid.uuid4()))
-    api_key_id: Mapped[str | None] = mapped_column(ForeignKey("api_keys.id"), index=True)
-    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.user_id"), index=True)
+    api_key_id: Mapped[str | None] = mapped_column(ForeignKey("api_keys.id", ondelete="SET NULL"), index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.user_id", ondelete="SET NULL"), index=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
 
     model: Mapped[str] = mapped_column()
@@ -188,7 +189,7 @@ class BudgetResetLog(Base):
     __tablename__ = "budget_reset_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id"), index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.user_id", ondelete="SET NULL"), index=True)
     budget_id: Mapped[str] = mapped_column(ForeignKey("budgets.budget_id"))
     previous_spend: Mapped[float] = mapped_column()
     reset_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
