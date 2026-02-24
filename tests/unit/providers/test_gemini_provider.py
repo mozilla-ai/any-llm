@@ -54,6 +54,60 @@ def test_gemini_initialization_with_env_var_api_key(env_var: str) -> None:
         assert provider.client._api_client.api_key == "env-api-key"
 
 
+def test_gemini_api_base_passed_to_client() -> None:
+    """Test that api_base is forwarded to genai.Client via http_options."""
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client:
+        GeminiProvider(api_key="test-key", api_base="https://custom.endpoint.com")
+        mock_client.assert_called_once()
+        call_kwargs = mock_client.call_args[1]
+        assert "http_options" in call_kwargs
+        assert call_kwargs["http_options"].base_url == "https://custom.endpoint.com"
+
+
+def test_gemini_api_base_none_does_not_add_http_options() -> None:
+    """Test that no http_options is added when api_base is None."""
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client:
+        GeminiProvider(api_key="test-key")
+        mock_client.assert_called_once()
+        call_kwargs = mock_client.call_args[1]
+        assert "http_options" not in call_kwargs
+
+
+def test_gemini_api_base_does_not_override_explicit_http_options() -> None:
+    """Test that explicit http_options with base_url takes precedence over api_base."""
+    from google.genai import types as genai_types
+
+    explicit_options = genai_types.HttpOptions(base_url="https://explicit.endpoint.com")
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client:
+        GeminiProvider(api_key="test-key", api_base="https://custom.endpoint.com", http_options=explicit_options)
+        mock_client.assert_called_once()
+        call_kwargs = mock_client.call_args[1]
+        assert call_kwargs["http_options"].base_url == "https://explicit.endpoint.com"
+
+
+def test_gemini_api_base_with_dict_http_options() -> None:
+    """Test that api_base fills in base_url when http_options is a dict without base_url."""
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client:
+        GeminiProvider(api_key="test-key", api_base="https://custom.endpoint.com", http_options={"timeout": 30})
+        mock_client.assert_called_once()
+        call_kwargs = mock_client.call_args[1]
+        assert call_kwargs["http_options"]["base_url"] == "https://custom.endpoint.com"
+        assert call_kwargs["http_options"]["timeout"] == 30
+
+
+def test_gemini_api_base_env_var() -> None:
+    """Test that GOOGLE_GEMINI_BASE_URL env var is used when api_base is not provided."""
+    with (
+        patch.dict("os.environ", {"GEMINI_API_KEY": "test-key", "GOOGLE_GEMINI_BASE_URL": "https://env.endpoint.com"}),
+        patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client,
+    ):
+        GeminiProvider()
+        mock_client.assert_called_once()
+        call_kwargs = mock_client.call_args[1]
+        assert "http_options" in call_kwargs
+        assert call_kwargs["http_options"].base_url == "https://env.endpoint.com"
+
+
 @pytest.mark.asyncio
 async def test_completion_with_system_instruction() -> None:
     """Test that completion works correctly with system_instruction."""
