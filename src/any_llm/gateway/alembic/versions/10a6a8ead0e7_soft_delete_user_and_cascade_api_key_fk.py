@@ -1,8 +1,8 @@
 """soft-delete user and cascade api key FK
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: 10a6a8ead0e7
 Revises: 5911f4bbf98d
-Create Date: 2026-02-24 18:00:00.000000
+Create Date: 2026-02-24 14:02:43.506983
 
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "a1b2c3d4e5f6"
+revision: str = "10a6a8ead0e7"
 down_revision: str | Sequence[str] | None = "5911f4bbf98d"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
