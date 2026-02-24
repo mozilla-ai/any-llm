@@ -20,6 +20,10 @@ async def test_completion_reasoning(
 ) -> None:
     """Test that all supported providers can be loaded successfully."""
     try:
+        if provider == LLMProvider.LMSTUDIO:
+            pytest.skip(
+                "LM Studio doesn't extract reasoning into a separate field for the model used for testing, skipping"
+            )
         llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_COMPLETION_REASONING:
             pytest.skip(f"{provider.value} does not support reasoning, skipping")
@@ -70,6 +74,10 @@ async def test_completion_reasoning_streaming(
 ) -> None:
     """Test that reasoning works with streaming for supported providers."""
     try:
+        if provider == LLMProvider.LMSTUDIO:
+            pytest.skip(
+                "LM Studio doesn't extract reasoning into a separate field for the model used for testing, skipping"
+            )
         llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_COMPLETION_REASONING:
             pytest.skip(f"{provider.value} does not support reasoning, skipping")
