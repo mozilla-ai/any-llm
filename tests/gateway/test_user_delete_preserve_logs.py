@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -12,15 +13,22 @@ from any_llm.gateway.db.models import BudgetResetLog, UsageLog
 from tests.gateway.conftest import MODEL_NAME
 
 
-def _make_db_session(database_url: str) -> Session:
-    engine = create_engine(database_url)
-    return sessionmaker(autocommit=False, autoflush=False, bind=engine)()
+@pytest.fixture
+def db_session(test_config: GatewayConfig) -> Session:
+    """Create a standalone DB session for verifying state outside the test client."""
+    engine = create_engine(test_config.database_url)
+    session = sessionmaker(autocommit=False, autoflush=False, bind=engine)()
+    try:
+        yield session  # type: ignore[misc]
+    finally:
+        session.close()
+        engine.dispose()
 
 
 def test_delete_user_preserves_usage_logs(
     client: TestClient,
     master_key_header: dict[str, str],
-    test_config: GatewayConfig,
+    db_session: Session,
 ) -> None:
     """Deleting a user nullifies user_id and api_key_id in usage logs instead of deleting them."""
     client.post("/v1/users", json={"user_id": "del-user"}, headers=master_key_header)
@@ -37,27 +45,20 @@ def test_delete_user_preserves_usage_logs(
         headers={API_KEY_HEADER: f"Bearer {api_key}"},
     )
 
-    db = _make_db_session(test_config.database_url)
-    try:
-        logs_before = db.query(UsageLog).filter(UsageLog.user_id == "del-user").all()
-        assert len(logs_before) > 0
-        log_id = logs_before[0].id
-        assert logs_before[0].api_key_id is not None
-    finally:
-        db.close()
+    logs_before = db_session.query(UsageLog).filter(UsageLog.user_id == "del-user").all()
+    assert len(logs_before) > 0
+    log_id = logs_before[0].id
+    assert logs_before[0].api_key_id is not None
 
     response = client.delete("/v1/users/del-user", headers=master_key_header)
     assert response.status_code == 204
 
-    db = _make_db_session(test_config.database_url)
-    try:
-        log_after = db.query(UsageLog).filter(UsageLog.id == log_id).first()
-        assert log_after is not None, "Usage log should survive user deletion"
-        assert log_after.user_id is None, "user_id should be NULL after user deletion"
-        assert log_after.api_key_id is None, "api_key_id should be NULL (api key cascade-deleted with user)"
-        assert log_after.model is not None, "Usage log data should be preserved"
-    finally:
-        db.close()
+    db_session.expire_all()
+    log_after = db_session.query(UsageLog).filter(UsageLog.id == log_id).first()
+    assert log_after is not None, "Usage log should survive user deletion"
+    assert log_after.user_id is None, "user_id should be NULL after user deletion"
+    assert log_after.api_key_id is None, "api_key_id should be NULL (api key cascade-deleted with user)"
+    assert log_after.model is not None, "Usage log data should be preserved"
 
 
 def test_delete_user_preserves_budget_reset_logs(
@@ -65,7 +66,7 @@ def test_delete_user_preserves_budget_reset_logs(
     master_key_header: dict[str, str],
     api_key_header: dict[str, str],
     test_messages: list[dict[str, str]],
-    test_config: GatewayConfig,
+    db_session: Session,
 ) -> None:
     """Deleting a user nullifies user_id in budget reset logs instead of deleting them."""
     budget_resp = client.post(
@@ -103,22 +104,15 @@ def test_delete_user_preserves_budget_reset_logs(
             headers=api_key_header,
         )
 
-    db = _make_db_session(test_config.database_url)
-    try:
-        reset_logs_before = db.query(BudgetResetLog).filter(BudgetResetLog.user_id == "reset-user").all()
-        assert len(reset_logs_before) > 0
-        reset_log_id = reset_logs_before[0].id
-    finally:
-        db.close()
+    reset_logs_before = db_session.query(BudgetResetLog).filter(BudgetResetLog.user_id == "reset-user").all()
+    assert len(reset_logs_before) > 0
+    reset_log_id = reset_logs_before[0].id
 
     response = client.delete("/v1/users/reset-user", headers=master_key_header)
     assert response.status_code == 204
 
-    db = _make_db_session(test_config.database_url)
-    try:
-        reset_log_after = db.query(BudgetResetLog).filter(BudgetResetLog.id == reset_log_id).first()
-        assert reset_log_after is not None, "Budget reset log should survive user deletion"
-        assert reset_log_after.user_id is None, "user_id should be NULL after user deletion"
-        assert reset_log_after.previous_spend is not None, "Reset log data should be preserved"
-    finally:
-        db.close()
+    db_session.expire_all()
+    reset_log_after = db_session.query(BudgetResetLog).filter(BudgetResetLog.id == reset_log_id).first()
+    assert reset_log_after is not None, "Budget reset log should survive user deletion"
+    assert reset_log_after.user_id is None, "user_id should be NULL after user deletion"
+    assert reset_log_after.previous_spend is not None, "Reset log data should be preserved"

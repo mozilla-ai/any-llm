@@ -57,6 +57,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Restore original FK constraints without ON DELETE SET NULL."""
+    # Remove orphaned rows before restoring NOT NULL constraint
+    op.execute(sa.text("DELETE FROM budget_reset_logs WHERE user_id IS NULL"))
+
     with op.batch_alter_table("budget_reset_logs", schema=None, naming_convention=naming_convention) as batch_op:
         batch_op.drop_constraint("fk_budget_reset_logs_user_id_users", type_="foreignkey")
         batch_op.create_foreign_key("fk_budget_reset_logs_user_id_users", "users", ["user_id"], ["user_id"])
