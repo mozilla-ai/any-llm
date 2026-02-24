@@ -26,6 +26,12 @@ def get_config() -> GatewayConfig:
     return _config
 
 
+def reset_config() -> None:
+    """Reset config state. Intended for testing only."""
+    global _config  # noqa: PLW0603
+    _config = None
+
+
 def _extract_bearer_token(request: Request, config: GatewayConfig) -> str:
     """Extract and validate Bearer token from request header.
 

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -15,8 +15,8 @@ class SetPricingRequest(BaseModel):
     """Request model for setting model pricing."""
 
     model_key: str = Field(description="Model identifier in format 'provider:model'")
-    input_price_per_million: float = Field(description="Price per 1M input tokens")
-    output_price_per_million: float = Field(description="Price per 1M output tokens")
+    input_price_per_million: float = Field(ge=0, description="Price per 1M input tokens")
+    output_price_per_million: float = Field(ge=0, description="Price per 1M output tokens")
 
 
 class PricingResponse(BaseModel):
@@ -65,8 +65,8 @@ async def set_pricing(
 @router.get("")
 async def list_pricing(
     db: Annotated[Session, Depends(get_db)],
-    skip: int = 0,
-    limit: int = 100,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> list[PricingResponse]:
     """List all model pricing."""
     pricings = db.query(ModelPricing).offset(skip).limit(limit).all()
