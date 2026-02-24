@@ -145,6 +145,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-llamafile-
 
+      - uses: actions/cache@v5
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio')
+        with:
+          path: ~/.lmstudio
+          key: ${{ runner.os }}-lmstudio-models-${{ hashFiles('tests/conftest.py') }}
+          restore-keys: |
+            ${{ runner.os }}-lmstudio-models-
+
       - name: Setup Ollama
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
         uses: ai-action/setup-ollama@v2
