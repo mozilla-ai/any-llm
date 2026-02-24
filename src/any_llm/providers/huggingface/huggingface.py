@@ -199,7 +199,7 @@ class HuggingfaceProvider(AnyLLM):
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        client = HfApi(endpoint=self.api_base, token=self.api_key, **self.kwargs)
+        client = HfApi(token=self.api_key)
         if kwargs.get("inference") is None and kwargs.get("inference_provider") is None:
             kwargs["inference"] = "warm"
         if kwargs.get("limit") is None:

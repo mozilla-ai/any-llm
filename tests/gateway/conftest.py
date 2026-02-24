@@ -66,6 +66,18 @@ def test_db(postgres_url: str) -> Generator[Session]:
             conn.commit()
 
 
+@pytest.fixture
+def db_session(test_config: GatewayConfig) -> Generator[Session]:
+    """Create a standalone DB session for verifying state outside the test client."""
+    engine = create_engine(test_config.database_url, pool_pre_ping=True)
+    session = sessionmaker(autocommit=False, autoflush=False, bind=engine)()
+    try:
+        yield session
+    finally:
+        session.close()
+        engine.dispose()
+
+
 @pytest.fixture(scope="session")
 def test_config(postgres_url: str) -> GatewayConfig:
     """Create a test configuration."""

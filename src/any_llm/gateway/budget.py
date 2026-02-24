@@ -3,7 +3,8 @@ from datetime import UTC, datetime, timedelta
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from any_llm.gateway.db import Budget, BudgetResetLog, User
+from any_llm.any_llm import AnyLLM
+from any_llm.gateway.db import Budget, BudgetResetLog, ModelPricing, User
 
 
 def calculate_next_reset(start: datetime, duration_sec: int) -> datetime:
@@ -66,7 +67,7 @@ async def validate_user_budget(db: Session, user_id: str, model: str | None = No
         HTTPException: If user is blocked, doesn't exist, or exceeded budget
 
     """
-    user = db.query(User).filter(User.user_id == user_id).with_for_update().first()
+    user = db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).with_for_update().first()
 
     if not user:
         raise HTTPException(
@@ -110,11 +111,9 @@ def _is_model_free(db: Session, model: str) -> bool:
         True if the model is free, False otherwise or if pricing not found
 
     """
-    from any_llm.gateway.db import ModelPricing
-
-    provider, model_name = _split_model_provider(model)
-    model_key = f"{provider}:{model_name}" if provider else model_name
-    model_key_legacy = f"{provider}/{model_name}" if provider else None
+    provider, model_name = AnyLLM.split_model_provider(model)
+    model_key = f"{provider.value}:{model_name}" if provider else model_name
+    model_key_legacy = f"{provider.value}/{model_name}" if provider else None
 
     pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key).first()
     if not pricing and model_key_legacy:
@@ -124,19 +123,3 @@ def _is_model_free(db: Session, model: str) -> bool:
         return pricing.input_price_per_million == 0 and pricing.output_price_per_million == 0
 
     return False
-
-
-def _split_model_provider(model: str) -> tuple[str | None, str]:
-    """Split model identifier into provider and model name.
-
-    Args:
-        model: Model identifier (e.g., "openai/gpt-4o" or "gpt-4o")
-
-    Returns:
-        Tuple of (provider, model_name)
-
-    """
-    if "/" in model:
-        parts = model.split("/", 1)
-        return parts[0], parts[1]
-    return None, model
