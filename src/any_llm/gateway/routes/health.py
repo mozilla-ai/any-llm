@@ -5,6 +5,7 @@ from sqlalchemy import text
 
 from any_llm.gateway import __version__
 from any_llm.gateway.db import get_db
+from any_llm.gateway.log_config import logger
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -66,12 +67,12 @@ async def health_readiness() -> dict[str, Any]:
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Database connectivity check failed: {e}")
         raise HTTPException(
             status_code=503,
             detail={
                 "status": "unhealthy",
-                "database": "error",
-                "error": str(e),
+                "database": "unavailable",
                 "version": __version__,
             },
         ) from e

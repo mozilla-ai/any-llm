@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -119,8 +119,8 @@ async def create_user(
 @router.get("", dependencies=[Depends(verify_master_key)])
 async def list_users(
     db: Annotated[Session, Depends(get_db)],
-    skip: int = 0,
-    limit: int = 100,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> list[UserResponse]:
     """List all users with pagination."""
     users = db.query(User).offset(skip).limit(limit).all()
@@ -246,8 +246,8 @@ async def delete_user(
 async def get_user_usage(
     user_id: str,
     db: Annotated[Session, Depends(get_db)],
-    skip: int = 0,
-    limit: int = 100,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> list[UsageLogResponse]:
     """Get usage history for a specific user."""
     user = db.query(User).filter(User.user_id == user_id).first()

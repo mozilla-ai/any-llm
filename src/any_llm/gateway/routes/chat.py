@@ -1,11 +1,12 @@
+import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from any_llm import AnyLLM, LLMProvider, acompletion
@@ -16,16 +17,35 @@ from any_llm.gateway.budget import validate_user_budget
 from any_llm.gateway.config import GatewayConfig
 from any_llm.gateway.db import APIKey, ModelPricing, UsageLog, User, get_db
 from any_llm.gateway.log_config import logger
+from any_llm.gateway.rate_limit import RateLimitInfo, check_rate_limit
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionUsage
 
 router = APIRouter(prefix="/v1/chat", tags=["chat"])
+
+
+def _rate_limit_headers(info: RateLimitInfo) -> dict[str, str]:
+    return {
+        "X-RateLimit-Limit": str(info.limit),
+        "X-RateLimit-Remaining": str(info.remaining),
+        "X-RateLimit-Reset": str(int(info.reset)),
+    }
 
 
 class ChatCompletionRequest(BaseModel):
     """OpenAI-compatible chat completion request."""
 
     model: str
-    messages: list[dict[str, Any]]
+    messages: list[dict[str, Any]] = Field(min_length=1)
+
+    @field_validator("messages")
+    @classmethod
+    def validate_message_structure(cls, v: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        for i, message in enumerate(v):
+            if "role" not in message:
+                msg = f"messages[{i}]: 'role' is required"
+                raise ValueError(msg)
+        return v
+
     user: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
@@ -104,7 +124,7 @@ async def _log_usage(
         id=str(uuid.uuid4()),
         api_key_id=api_key_obj.id if api_key_obj else None,
         user_id=user_id,
-        timestamp=datetime.now(UTC).replace(tzinfo=None),
+        timestamp=datetime.now(UTC),
         model=model,
         provider=provider,
         endpoint=endpoint,
@@ -134,15 +154,15 @@ async def _log_usage(
             usage_log.cost = cost
 
             if user_id:
-                user = db.query(User).filter(User.user_id == user_id).first()
-                if user:
-                    user.spend = float(user.spend) + cost
+                db.query(User).filter(User.user_id == user_id).update({User.spend: User.spend + cost})
         else:
             attempted = f"'{model_key}'" + (f" or '{model_key_legacy}'" if model_key_legacy else "")
             logger.warning(f"No pricing configured for {attempted}. Usage will be tracked without cost.")
 
-    db.add(usage_log)
     try:
+        nested = db.begin_nested()
+        db.add(usage_log)
+        nested.commit()
         db.commit()
     except Exception as e:
         logger.error(f"Failed to log usage to database: {e}")
@@ -151,6 +171,8 @@ async def _log_usage(
 
 @router.post("/completions", response_model=None)
 async def chat_completions(
+    raw_request: Request,
+    response: Response,
     request: ChatCompletionRequest,
     auth_result: Annotated[tuple[APIKey | None, bool], Depends(verify_api_key_or_master_key)],
     db: Annotated[Session, Depends(get_db)],
@@ -191,14 +213,17 @@ async def chat_completions(
             )
         user_id = str(api_key.user_id)
 
+    rate_limit_info = check_rate_limit(raw_request, user_id)
+
     _ = await validate_user_budget(db, user_id)
 
     provider, model = AnyLLM.split_model_provider(request.model)
 
     provider_kwargs = _get_provider_kwargs(config, provider)
 
-    completion_kwargs = request.model_dump()
-    completion_kwargs.update(provider_kwargs)
+    # User request fields take precedence over provider config defaults
+    request_fields = request.model_dump(exclude_unset=True)
+    completion_kwargs = {**provider_kwargs, **request_fields}
 
     try:
         if request.stream:
@@ -212,13 +237,15 @@ async def chat_completions(
                     stream: AsyncIterator[ChatCompletionChunk] = await acompletion(**completion_kwargs)  # type: ignore[assignment]
                     async for chunk in stream:
                         if chunk.usage:
-                            # Prompt tokens should be constant, take first non-zero value
-                            if chunk.usage.prompt_tokens and not prompt_tokens:
+                            # Take the last non-zero value for each field. This works for
+                            # providers that report cumulative totals (last = total) and
+                            # providers that only report usage on the final chunk.
+                            if chunk.usage.prompt_tokens:
                                 prompt_tokens = chunk.usage.prompt_tokens
                             if chunk.usage.completion_tokens:
-                                completion_tokens = max(completion_tokens, chunk.usage.completion_tokens)
+                                completion_tokens = chunk.usage.completion_tokens
                             if chunk.usage.total_tokens:
-                                total_tokens = max(total_tokens, chunk.usage.total_tokens)
+                                total_tokens = chunk.usage.total_tokens
 
                         yield f"data: {chunk.model_dump_json()}\n\n"
                     yield "data: [DONE]\n\n"
@@ -243,20 +270,27 @@ async def chat_completions(
                         # This should never happen.
                         logger.warning(f"No usage data received from streaming response for model {model}")
                 except Exception as e:
-                    await _log_usage(
-                        db=db,
-                        api_key_obj=api_key,
-                        model=model,
-                        provider=provider,
-                        endpoint="/v1/chat/completions",
-                        user_id=user_id,
-                        error=str(e),
-                    )
-                    raise
+                    error_data = {"error": {"message": "An error occurred during streaming", "type": "server_error"}}
+                    yield f"data: {json.dumps(error_data)}\n\n"
+                    yield "data: [DONE]\n\n"
+                    try:
+                        await _log_usage(
+                            db=db,
+                            api_key_obj=api_key,
+                            model=model,
+                            provider=provider,
+                            endpoint="/v1/chat/completions",
+                            user_id=user_id,
+                            error=str(e),
+                        )
+                    except Exception as log_err:
+                        logger.error(f"Failed to log streaming error usage: {log_err}")
+                    logger.error(f"Streaming error for {provider}:{model}: {e}")
 
-            return StreamingResponse(generate(), media_type="text/event-stream")
+            rl_headers = _rate_limit_headers(rate_limit_info) if rate_limit_info else {}
+            return StreamingResponse(generate(), media_type="text/event-stream", headers=rl_headers)
 
-        response: ChatCompletion = await acompletion(**completion_kwargs)  # type: ignore[assignment]
+        completion: ChatCompletion = await acompletion(**completion_kwargs)  # type: ignore[assignment]
         await _log_usage(
             db=db,
             api_key_obj=api_key,
@@ -264,7 +298,7 @@ async def chat_completions(
             provider=provider,
             endpoint="/v1/chat/completions",
             user_id=user_id,
-            response=response,
+            response=completion,
         )
 
     except Exception as e:
@@ -277,8 +311,14 @@ async def chat_completions(
             user_id=user_id,
             error=str(e),
         )
+        logger.error(f"Provider call failed for {provider}:{model}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error calling provider: {e!s}",
+            detail="The request could not be completed by the provider",
         ) from e
-    return response
+
+    if rate_limit_info:
+        for key, value in _rate_limit_headers(rate_limit_info).items():
+            response.headers[key] = value
+
+    return completion

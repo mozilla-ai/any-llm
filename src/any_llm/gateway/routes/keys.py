@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -117,8 +117,8 @@ async def create_key(
 @router.get("", dependencies=[Depends(verify_master_key)])
 async def list_keys(
     db: Annotated[Session, Depends(get_db)],
-    skip: int = 0,
-    limit: int = 100,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> list[KeyInfo]:
     """List all API keys.
 
