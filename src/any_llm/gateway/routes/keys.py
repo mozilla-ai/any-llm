@@ -80,6 +80,9 @@ async def create_key(
                 alias=f"User {request.user_id}",
             )
             db.add(user)
+        elif user.deleted_at is not None:
+            user.deleted_at = None
+            user.spend = 0.0
         user_id = request.user_id
     else:
         user_id = f"apikey-{key_id}"

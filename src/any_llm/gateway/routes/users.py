@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from any_llm.gateway.auth import verify_master_key
 from any_llm.gateway.budget import calculate_next_reset
-from any_llm.gateway.db import Budget, UsageLog, User, get_db
+from any_llm.gateway.db import APIKey, Budget, UsageLog, User, get_db
 
 router = APIRouter(prefix="/v1/users", tags=["users"])
 
@@ -71,19 +71,31 @@ async def create_user(
 ) -> UserResponse:
     """Create a new user."""
     existing_user = db.query(User).filter(User.user_id == request.user_id).first()
-    if existing_user:
+    if existing_user and existing_user.deleted_at is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"User with id '{request.user_id}' already exists",
         )
 
-    user = User(
-        user_id=request.user_id,
-        alias=request.alias,
-        budget_id=request.budget_id,
-        blocked=request.blocked,
-        metadata_=request.metadata,
-    )
+    if existing_user and existing_user.deleted_at is not None:
+        user = existing_user
+        user.deleted_at = None
+        user.spend = 0.0
+        user.alias = request.alias
+        user.budget_id = request.budget_id
+        user.blocked = request.blocked
+        user.metadata_ = request.metadata
+        user.budget_started_at = None
+        user.next_budget_reset_at = None
+    else:
+        user = User(
+            user_id=request.user_id,
+            alias=request.alias,
+            budget_id=request.budget_id,
+            blocked=request.blocked,
+            metadata_=request.metadata,
+        )
+        db.add(user)
 
     if request.budget_id:
         budget = db.query(Budget).filter(Budget.budget_id == request.budget_id).first()
@@ -98,7 +110,6 @@ async def create_user(
         if budget.budget_duration_sec:
             user.next_budget_reset_at = calculate_next_reset(now, budget.budget_duration_sec)
 
-    db.add(user)
     db.commit()
     db.refresh(user)
 
@@ -123,7 +134,7 @@ async def list_users(
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> list[UserResponse]:
     """List all users with pagination."""
-    users = db.query(User).offset(skip).limit(limit).all()
+    users = db.query(User).filter(User.deleted_at.is_(None)).offset(skip).limit(limit).all()
 
     return [
         UserResponse(
@@ -148,7 +159,7 @@ async def get_user(
     db: Annotated[Session, Depends(get_db)],
 ) -> UserResponse:
     """Get details of a specific user."""
-    user = db.query(User).filter(User.user_id == user_id).first()
+    user = db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).first()
 
     if not user:
         raise HTTPException(
@@ -177,7 +188,7 @@ async def update_user(
     db: Annotated[Session, Depends(get_db)],
 ) -> UserResponse:
     """Update a user."""
-    user = db.query(User).filter(User.user_id == user_id).first()
+    user = db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).first()
 
     if not user:
         raise HTTPException(
@@ -230,7 +241,7 @@ async def delete_user(
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     """Delete a user."""
-    user = db.query(User).filter(User.user_id == user_id).first()
+    user = db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).first()
 
     if not user:
         raise HTTPException(
@@ -238,7 +249,8 @@ async def delete_user(
             detail=f"User with id '{user_id}' not found",
         )
 
-    db.delete(user)
+    db.query(APIKey).filter(APIKey.user_id == user_id).delete(synchronize_session="fetch")
+    user.deleted_at = datetime.now(UTC)
     db.commit()
 
 
@@ -250,7 +262,7 @@ async def get_user_usage(
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> list[UsageLogResponse]:
     """Get usage history for a specific user."""
-    user = db.query(User).filter(User.user_id == user_id).first()
+    user = db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

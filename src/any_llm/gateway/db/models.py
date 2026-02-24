@@ -18,7 +18,7 @@ class APIKey(Base):
     id: Mapped[str] = mapped_column(primary_key=True)
     key_hash: Mapped[str] = mapped_column(unique=True, index=True)
     key_name: Mapped[str | None] = mapped_column()
-    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.user_id"), index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -84,6 +84,7 @@ class User(Base):
     budget_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     next_budget_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     blocked: Mapped[bool] = mapped_column(default=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -107,6 +108,7 @@ class User(Base):
             "budget_started_at": self.budget_started_at.isoformat() if self.budget_started_at else None,
             "next_budget_reset_at": self.next_budget_reset_at.isoformat() if self.next_budget_reset_at else None,
             "blocked": self.blocked,
+            "deleted_at": self.deleted_at.isoformat() if self.deleted_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "metadata": self.metadata_,
