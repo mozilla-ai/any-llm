@@ -221,7 +221,6 @@ async def test_platform_provider_requires_valid_key() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.integration
 async def test_token_reuse_across_requests(platform_provider: PlatformProvider) -> None:
     """Test that multiple requests reuse the same token (performance optimization).
 
