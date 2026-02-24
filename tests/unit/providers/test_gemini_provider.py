@@ -85,6 +85,18 @@ def test_gemini_api_base_does_not_override_explicit_http_options() -> None:
         assert call_kwargs["http_options"].base_url == "https://explicit.endpoint.com"
 
 
+def test_gemini_api_base_fills_http_options_without_base_url() -> None:
+    """Test that api_base fills in base_url on HttpOptions that has no base_url set."""
+    from google.genai import types as genai_types
+
+    options = genai_types.HttpOptions(timeout=30000)
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client:
+        GeminiProvider(api_key="test-key", api_base="https://custom.endpoint.com", http_options=options)
+        mock_client.assert_called_once()
+        call_kwargs = mock_client.call_args[1]
+        assert call_kwargs["http_options"].base_url == "https://custom.endpoint.com"
+
+
 def test_gemini_api_base_with_dict_http_options() -> None:
     """Test that api_base fills in base_url when http_options is a dict without base_url."""
     with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client:
