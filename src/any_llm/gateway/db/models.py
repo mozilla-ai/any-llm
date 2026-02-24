@@ -27,7 +27,7 @@ class APIKey(Base):
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
 
     user = relationship("User", back_populates="api_keys")
-    usage_logs = relationship("UsageLog", back_populates="api_key", cascade="all, delete-orphan")
+    usage_logs = relationship("UsageLog", back_populates="api_key", passive_deletes=True)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert model to dictionary."""

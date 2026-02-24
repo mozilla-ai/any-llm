@@ -1,8 +1,8 @@
-"""Set NULL on user delete for usage and reset logs.
+"""set null on user delete for log preservation
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: 5911f4bbf98d
 Revises: e7c85cc73bfa
-Create Date: 2026-02-23 00:00:00.000000
+Create Date: 2026-02-24 13:24:13.439244
 
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "a1b2c3d4e5f6"
+revision: str = "5911f4bbf98d"
 down_revision: str | Sequence[str] | None = "e7c85cc73bfa"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
