@@ -246,15 +246,19 @@ async def chat_completions(
                 except Exception as e:
                     error_data = {"error": {"message": "An error occurred during streaming", "type": "server_error"}}
                     yield f"data: {json.dumps(error_data)}\n\n"
-                    await _log_usage(
-                        db=db,
-                        api_key_obj=api_key,
-                        model=model,
-                        provider=provider,
-                        endpoint="/v1/chat/completions",
-                        user_id=user_id,
-                        error=str(e),
-                    )
+                    yield "data: [DONE]\n\n"
+                    try:
+                        await _log_usage(
+                            db=db,
+                            api_key_obj=api_key,
+                            model=model,
+                            provider=provider,
+                            endpoint="/v1/chat/completions",
+                            user_id=user_id,
+                            error=str(e),
+                        )
+                    except Exception as log_err:
+                        logger.error(f"Failed to log streaming error usage: {log_err}")
                     logger.error(f"Streaming error for {provider}:{model}: {e}")
 
             return StreamingResponse(generate(), media_type="text/event-stream")

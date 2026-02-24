@@ -26,10 +26,12 @@ def test_streaming_error_emits_sse_error_event(
     # The response should be 200 (streaming started) but contain an error event
     assert response.status_code == 200
 
+    events: list[str] = []
     found_error_event = False
     for line in response.iter_lines():
         if line.startswith("data: "):
             data_str = line[6:]
+            events.append(data_str)
             if data_str == "[DONE]":
                 break
             try:
@@ -38,8 +40,16 @@ def test_streaming_error_emits_sse_error_event(
                     found_error_event = True
                     assert "message" in chunk["error"]
                     assert "type" in chunk["error"]
-                    break
             except json.JSONDecodeError:
                 continue
 
     assert found_error_event, "Should have received an SSE error event for invalid model"
+
+    # [DONE] must be the last event and must come after the error event
+    assert events[-1] == "[DONE]", "Stream should end with [DONE] after error event"
+
+    # No [DONE] should appear before the error event
+    done_indices = [i for i, e in enumerate(events) if e == "[DONE]"]
+    error_indices = [i for i, e in enumerate(events) if e != "[DONE]" and "error" in e]
+    assert error_indices, "Should have found an error event"
+    assert done_indices[-1] > error_indices[0], "[DONE] must come after the error event"
