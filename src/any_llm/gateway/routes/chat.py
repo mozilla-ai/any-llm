@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
@@ -16,9 +16,18 @@ from any_llm.gateway.budget import validate_user_budget
 from any_llm.gateway.config import GatewayConfig
 from any_llm.gateway.db import APIKey, ModelPricing, UsageLog, User, get_db
 from any_llm.gateway.log_config import logger
+from any_llm.gateway.rate_limit import RateLimitInfo, check_rate_limit
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionUsage
 
 router = APIRouter(prefix="/v1/chat", tags=["chat"])
+
+
+def _rate_limit_headers(info: RateLimitInfo) -> dict[str, str]:
+    return {
+        "X-RateLimit-Limit": str(info.limit),
+        "X-RateLimit-Remaining": str(info.remaining),
+        "X-RateLimit-Reset": str(int(info.reset)),
+    }
 
 
 class ChatCompletionRequest(BaseModel):
@@ -161,6 +170,8 @@ async def _log_usage(
 
 @router.post("/completions", response_model=None)
 async def chat_completions(
+    raw_request: Request,
+    response: Response,
     request: ChatCompletionRequest,
     auth_result: Annotated[tuple[APIKey | None, bool], Depends(verify_api_key_or_master_key)],
     db: Annotated[Session, Depends(get_db)],
@@ -201,14 +212,17 @@ async def chat_completions(
             )
         user_id = str(api_key.user_id)
 
+    rate_limit_info = check_rate_limit(raw_request, user_id)
+
     _ = await validate_user_budget(db, user_id)
 
     provider, model = AnyLLM.split_model_provider(request.model)
 
     provider_kwargs = _get_provider_kwargs(config, provider)
 
-    completion_kwargs = request.model_dump()
-    completion_kwargs.update(provider_kwargs)
+    # User request fields take precedence over provider config defaults
+    request_fields = request.model_dump(exclude_unset=True)
+    completion_kwargs = {**provider_kwargs, **request_fields}
 
     try:
         if request.stream:
@@ -266,9 +280,10 @@ async def chat_completions(
                     )
                     raise
 
-            return StreamingResponse(generate(), media_type="text/event-stream")
+            rl_headers = _rate_limit_headers(rate_limit_info) if rate_limit_info else {}
+            return StreamingResponse(generate(), media_type="text/event-stream", headers=rl_headers)
 
-        response: ChatCompletion = await acompletion(**completion_kwargs)  # type: ignore[assignment]
+        completion: ChatCompletion = await acompletion(**completion_kwargs)  # type: ignore[assignment]
         await _log_usage(
             db=db,
             api_key_obj=api_key,
@@ -276,7 +291,7 @@ async def chat_completions(
             provider=provider,
             endpoint="/v1/chat/completions",
             user_id=user_id,
-            response=response,
+            response=completion,
         )
 
     except Exception as e:
@@ -294,4 +309,9 @@ async def chat_completions(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="The request could not be completed by the provider",
         ) from e
-    return response
+
+    if rate_limit_info:
+        for key, value in _rate_limit_headers(rate_limit_info).items():
+            response.headers[key] = value
+
+    return completion

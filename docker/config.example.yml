@@ -10,6 +10,9 @@ port: 8000
 # Master key for protecting key management endpoints
 master_key: YOUR_MASTER_KEY_HERE
 
+# Per-user rate limiting (requests per minute). Omit or set to null to disable.
+# rate_limit_rpm: 60
+
 # Pre-configured provider credentials
 providers:
   vertexai:
