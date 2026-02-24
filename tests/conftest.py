@@ -27,7 +27,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.LLAMAFILE: "N/A",
         LLMProvider.LLAMACPP: "N/A",
         LLMProvider.VLLM: "N/A",
-        LLMProvider.LMSTUDIO: "google/gemma-3-4b-it",  # You must have LM Studio running and the server enabled
+        LLMProvider.LMSTUDIO: "qwen3-0.6b",
         LLMProvider.AZUREOPENAI: "gpt-4.1-nano",
         LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.COHERE: "command-a-reasoning-08-2025",
@@ -63,7 +63,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
         LLMProvider.OLLAMA: "llama3.2:1b",
         LLMProvider.LLAMAFILE: "N/A",
-        LLMProvider.LMSTUDIO: "google/gemma-3-4b-it",  # You must have LM Studio running and the server enabled
+        LLMProvider.LMSTUDIO: "google/gemma-3-4b",  # You must have LM Studio running and the server enabled
         LLMProvider.VLLM: "Qwen/Qwen2.5-0.5B-Instruct",
         LLMProvider.COHERE: "command-a-03-2025",
         LLMProvider.CEREBRAS: "llama3.1-8b",
