@@ -403,6 +403,7 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
                 "reasoning_effort",
                 "response_format",
                 "parallel_tool_calls",
+                "stream_options",
             },
         )
     )
