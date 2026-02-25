@@ -17,7 +17,7 @@ def test_all_providers_in_enum() -> None:
 
     provider_dirs = []
     for item in providers_dir.iterdir():
-        if item.is_dir() and item.name not in ("__pycache__", "google"):
+        if item.is_dir() and item.name not in ("__pycache__", "google", "platform"):
             provider_dirs.append(item.name)
 
     enum_values = [provider.value for provider in LLMProvider]
@@ -40,7 +40,7 @@ def test_provider_enum_values_match_directory_names() -> None:
 
     actual_providers = set()
     for item in providers_dir.iterdir():
-        if item.is_dir() and item.name not in ("__pycache__", "google"):
+        if item.is_dir() and item.name not in ("__pycache__", "google", "platform"):
             actual_providers.add(item.name)
 
     enum_providers = {provider.value for provider in LLMProvider}

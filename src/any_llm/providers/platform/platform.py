@@ -9,7 +9,6 @@ from httpx import AsyncClient
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.constants import LLMProvider
 from any_llm.logging import logger
 from any_llm.types.completion import (
     ChatCompletion,
@@ -23,7 +22,11 @@ from .utils import post_completion_usage_event
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
+    from openresponses_types import ResponseResource
+
+    from any_llm.types.batch import Batch
     from any_llm.types.model import Model
+    from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
 
 class PlatformProvider(AnyLLM):
@@ -32,7 +35,9 @@ class PlatformProvider(AnyLLM):
     ENV_API_BASE_NAME = "ANY_LLM_PLATFORM_URL"
     PROVIDER_DOCUMENTATION_URL = "https://github.com/mozilla-ai/any-llm"
 
-    # All features are marked as supported, but depending on which provider you call inside the gateway, they may not all work.
+    # All features are marked as supported by default. When a provider class is
+    # assigned via the `provider` setter, these flags are updated to reflect the
+    # wrapped provider's actual capabilities.
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = True
@@ -56,6 +61,9 @@ class PlatformProvider(AnyLLM):
         self.kwargs = kwargs
         self.provider_key_id: str | None = None
         self.project_id: str | None = None
+        self._provider_class: type[AnyLLM] | None = None
+        self._provider: AnyLLM | None = None
+        self._provider_initialized = False
 
         self._init_client(api_key=api_key, api_base=api_base, **kwargs)
 
@@ -100,6 +108,30 @@ class PlatformProvider(AnyLLM):
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         raise NotImplementedError
 
+    # -- Lazy async provider initialization --
+
+    async def _ensure_provider_initialized(self) -> None:
+        """Lazily initialize the wrapped provider using async HTTP on first use."""
+        if self._provider_initialized:
+            return
+        if self._provider_class is None:
+            msg = "No provider class has been set. Use the provider setter first."
+            raise RuntimeError(msg)
+        if self.any_llm_key is None:
+            msg = "any_llm_key is required for platform provider"
+            raise ValueError(msg)
+        provider_key_result = await self.platform_client.aget_decrypted_provider_key(
+            any_llm_key=self.any_llm_key, provider=self._provider_class.PROVIDER_NAME
+        )
+        self.provider_key_id = str(provider_key_result.provider_key_id)
+        self.project_id = str(provider_key_result.project_id)
+        self._provider = self._provider_class(
+            api_key=provider_key_result.api_key, api_base=self.api_base, **self.kwargs
+        )
+        self._provider_initialized = True
+
+    # -- Delegation methods --
+
     @override
     async def _acompletion(
         self,
@@ -114,37 +146,16 @@ class PlatformProvider(AnyLLM):
             )
             raise ValueError(msg)
 
+        await self._ensure_provider_initialized()
         start_time = time.perf_counter()
 
-        # List of providers that don't support stream_options and automatically return token usage.
-        # This list may need to be updated if a provider updates its usage of stream options.
-        providers_without_stream_options = {
-            LLMProvider.ANTHROPIC,
-            LLMProvider.CEREBRAS,
-            LLMProvider.COHERE,
-            LLMProvider.GEMINI,
-            LLMProvider.MISTRAL,
-            LLMProvider.OLLAMA,
-            LLMProvider.TOGETHER,
-        }
-
-        if params.stream:
-            if self.provider.PROVIDER_NAME in providers_without_stream_options:
-                if params.stream_options is not None:
-                    logger.warning(
-                        f"stream_options was set but {self.provider.PROVIDER_NAME} does not support it. "
-                        "The parameter will be ignored for this request."
-                    )
-                params_copy = params.model_copy()
-                params_copy.stream_options = None
-                completion = await self.provider._acompletion(params=params_copy, **kwargs)
-            else:
-                if params.stream_options is None:
-                    params_copy = params.model_copy()
-                    params_copy.stream_options = {"include_usage": True}
-                    completion = await self.provider._acompletion(params=params_copy, **kwargs)
-                else:
-                    completion = await self.provider._acompletion(params=params, **kwargs)
+        if params.stream and params.stream_options is None:
+            # Auto-inject stream_options to request usage data for tracking.
+            # Providers that don't support stream_options strip it in their
+            # _convert_completion_params and include usage data automatically.
+            params_copy = params.model_copy()
+            params_copy.stream_options = {"include_usage": True}
+            completion = await self.provider._acompletion(params=params_copy, **kwargs)
         else:
             completion = await self.provider._acompletion(params=params, **kwargs)
 
@@ -166,6 +177,61 @@ class PlatformProvider(AnyLLM):
 
         # For streaming, wrap the iterator to collect usage info
         return self._stream_with_usage_tracking(cast("AsyncIterator[ChatCompletionChunk]", completion), start_time)
+
+    @override
+    async def _aresponses(
+        self, params: ResponsesParams, **kwargs: Any
+    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+        await self._ensure_provider_initialized()
+        return await self.provider._aresponses(params, **kwargs)
+
+    @override
+    async def _aembedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:
+        await self._ensure_provider_initialized()
+        return await self.provider._aembedding(model, inputs, **kwargs)
+
+    @override
+    async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
+        await self._ensure_provider_initialized()
+        return await self.provider._alist_models(**kwargs)
+
+    @override
+    async def _acreate_batch(
+        self,
+        input_file_path: str,
+        endpoint: str,
+        completion_window: str = "24h",
+        metadata: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> Batch:
+        await self._ensure_provider_initialized()
+        return await self.provider._acreate_batch(
+            input_file_path=input_file_path,
+            endpoint=endpoint,
+            completion_window=completion_window,
+            metadata=metadata,
+            **kwargs,
+        )
+
+    @override
+    async def _aretrieve_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        await self._ensure_provider_initialized()
+        return await self.provider._aretrieve_batch(batch_id, **kwargs)
+
+    @override
+    async def _acancel_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        await self._ensure_provider_initialized()
+        return await self.provider._acancel_batch(batch_id, **kwargs)
+
+    @override
+    async def _alist_batches(
+        self,
+        after: str | None = None,
+        limit: int | None = None,
+        **kwargs: Any,
+    ) -> Sequence[Batch]:
+        await self._ensure_provider_initialized()
+        return await self.provider._alist_batches(after=after, limit=limit, **kwargs)
 
     async def _stream_with_usage_tracking(
         self, stream: AsyncIterator[ChatCompletionChunk], start_time: float
@@ -289,16 +355,33 @@ class PlatformProvider(AnyLLM):
 
     @property
     def provider(self) -> AnyLLM:
+        if self._provider is None:
+            msg = "Provider not yet initialized. Call an async method (e.g. acompletion, alist_models) first."
+            raise RuntimeError(msg)
         return self._provider
 
     @provider.setter
     def provider(self, provider_class: type[AnyLLM]) -> None:
+        """Store the provider class for lazy async initialization.
+
+        The actual provider instance is created on the first async method call
+        via _ensure_provider_initialized(), which uses async HTTP to fetch the
+        decrypted provider key without blocking the event loop.
+        """
         if self.any_llm_key is None:
             msg = "any_llm_key is required for platform provider"
             raise ValueError(msg)
-        provider_key_result = self.platform_client.get_decrypted_provider_key(
-            any_llm_key=self.any_llm_key, provider=provider_class.PROVIDER_NAME
-        )
-        self.provider_key_id = str(provider_key_result.provider_key_id)
-        self.project_id = str(provider_key_result.project_id)
-        self._provider = provider_class(api_key=provider_key_result.api_key, api_base=self.api_base, **self.kwargs)
+        self._provider_class = provider_class
+        self._provider_initialized = False
+        self._provider = None
+
+        # Sync capability flags to match the wrapped provider
+        self.SUPPORTS_COMPLETION_STREAMING = provider_class.SUPPORTS_COMPLETION_STREAMING
+        self.SUPPORTS_COMPLETION = provider_class.SUPPORTS_COMPLETION
+        self.SUPPORTS_RESPONSES = provider_class.SUPPORTS_RESPONSES
+        self.SUPPORTS_COMPLETION_REASONING = provider_class.SUPPORTS_COMPLETION_REASONING
+        self.SUPPORTS_COMPLETION_IMAGE = provider_class.SUPPORTS_COMPLETION_IMAGE
+        self.SUPPORTS_COMPLETION_PDF = provider_class.SUPPORTS_COMPLETION_PDF
+        self.SUPPORTS_EMBEDDING = provider_class.SUPPORTS_EMBEDDING
+        self.SUPPORTS_LIST_MODELS = provider_class.SUPPORTS_LIST_MODELS
+        self.SUPPORTS_BATCH = provider_class.SUPPORTS_BATCH

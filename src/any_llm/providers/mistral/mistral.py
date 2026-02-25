@@ -69,7 +69,8 @@ class MistralProvider(AnyLLM):
         """Convert CompletionParams to kwargs for Mistral API."""
         # Mistral does not support providing reasoning effort
         converted_params = params.model_dump(
-            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream", "user"}
+            exclude_none=True,
+            exclude={"model_id", "messages", "response_format", "stream", "stream_options", "user"},
         )
         converted_params["messages"] = _patch_messages(params.messages)
 
