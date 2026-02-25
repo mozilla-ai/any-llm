@@ -26,7 +26,6 @@ from any_llm.types.completion import (
 from any_llm.types.provider import PlatformKey
 
 
-# Fixtures
 @pytest.fixture
 def any_llm_key() -> str:
     """Fixture for a valid ANY_LLM_KEY."""

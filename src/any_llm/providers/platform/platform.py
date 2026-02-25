@@ -108,8 +108,6 @@ class PlatformProvider(AnyLLM):
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         raise NotImplementedError
 
-    # -- Lazy async provider initialization --
-
     async def _ensure_provider_initialized(self) -> None:
         """Lazily initialize the wrapped provider using async HTTP on first use."""
         if self._provider_initialized:
@@ -129,8 +127,6 @@ class PlatformProvider(AnyLLM):
             api_key=provider_key_result.api_key, api_base=self.api_base, **self.kwargs
         )
         self._provider_initialized = True
-
-    # -- Delegation methods --
 
     @override
     async def _acompletion(

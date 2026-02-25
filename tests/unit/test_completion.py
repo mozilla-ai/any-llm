@@ -154,8 +154,6 @@ async def test_all_providers_can_be_loaded(provider: str) -> None:
         kwargs["location"] = "test-location"
     if provider == "gateway":
         kwargs["api_base"] = "http://127.0.0.1:8080/v1"
-    if provider == "platform":
-        pytest.skip("ValueError: Invalid ANY_API_KEY format. Expected: ANY.v1.<kid>.<fingerprint>-<base64_key>")
 
     provider_instance = AnyLLM.create(provider, **kwargs)
 
@@ -173,8 +171,6 @@ async def test_all_providers_can_be_loaded_with_config(provider: str) -> None:
     like api_key and api_base without throwing errors during instantiation.
     """
     kwargs: dict[str, Any] = {"api_key": "test_key", "api_base": "https://test.example.com"}
-    if provider == "platform":
-        pytest.skip("ValueError: Invalid ANY_API_KEY format. Expected: ANY.v1.<kid>.<fingerprint>-<base64_key>")
     if provider == "bedrock":
         kwargs["region_name"] = "us-east-1"
     if provider == "vertexai":
