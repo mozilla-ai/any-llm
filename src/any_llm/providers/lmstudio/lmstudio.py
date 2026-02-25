@@ -15,6 +15,7 @@ class LmstudioProvider(BaseOpenAIProvider):
     PROVIDER_DOCUMENTATION_URL = "https://lmstudio.ai/"
 
     SUPPORTS_COMPLETION_REASONING = True
+    SUPPORTS_RESPONSES = True
 
     @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:

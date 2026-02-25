@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
@@ -5,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from any_llm.any_llm import AnyLLM
 from any_llm.gateway.db import Budget, BudgetResetLog, ModelPricing, User
+
+logger = logging.getLogger(__name__)
 
 
 def calculate_next_reset(start: datetime, duration_sec: int) -> datetime:
@@ -111,15 +114,20 @@ def _is_model_free(db: Session, model: str) -> bool:
         True if the model is free, False otherwise or if pricing not found
 
     """
-    provider, model_name = AnyLLM.split_model_provider(model)
-    model_key = f"{provider.value}:{model_name}" if provider else model_name
-    model_key_legacy = f"{provider.value}/{model_name}" if provider else None
+    try:
+        provider, model_name = AnyLLM.split_model_provider(model)
+        model_key = f"{provider.value}:{model_name}" if provider else model_name
+        model_key_legacy = f"{provider.value}/{model_name}" if provider else None
 
-    pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key).first()
-    if not pricing and model_key_legacy:
-        pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key_legacy).first()
+        pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key).first()
+        if not pricing and model_key_legacy:
+            pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key_legacy).first()
 
-    if pricing:
-        return pricing.input_price_per_million == 0 and pricing.output_price_per_million == 0
+        if pricing:
+            return pricing.input_price_per_million == 0 and pricing.output_price_per_million == 0
+    except Exception:
+        # If we can't determine the provider or pricing, treat as not free
+        warning_msg = "Failed to determine provider pricing: {e}"
+        logger.warning(warning_msg)
 
     return False

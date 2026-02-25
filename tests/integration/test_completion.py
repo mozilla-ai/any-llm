@@ -91,8 +91,8 @@ async def test_completion_with_image(
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     try:
-        if provider == LLMProvider.LLAMACPP:
-            pytest.skip("We use a llamacpp model that doesn't support images, skipping")
+        if provider in (LLMProvider.LLAMACPP, LLMProvider.LMSTUDIO):
+            pytest.skip(f"CI model for {provider.value} doesn't support images, skipping")
         llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_COMPLETION_IMAGE:
             pytest.skip(f"{provider.value} does not support completion, skipping")
@@ -136,6 +136,8 @@ async def test_completion_with_pdf(
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
     try:
+        if provider in (LLMProvider.LLAMACPP, LLMProvider.LMSTUDIO):
+            pytest.skip(f"CI model for {provider.value} doesn't support PDFs, skipping")
         llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_COMPLETION_PDF:
             pytest.skip(f"{provider.value} does not support completion, skipping")
