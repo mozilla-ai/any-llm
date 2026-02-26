@@ -66,7 +66,7 @@ async def test_platform_provider_streaming_completion(platform_provider_openai: 
     )
 
     chunks_collected = []
-    async for chunk in stream:  # type: ignore[union-attr]
+    async for chunk in stream:
         assert isinstance(chunk, ChatCompletionChunk)
         chunks_collected.append(chunk)
 
