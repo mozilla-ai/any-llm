@@ -113,6 +113,27 @@ async def test_no_parsed_completion_without_response_format(provider: AnyLLM) ->
 
 
 @pytest.mark.asyncio
+async def test_parsed_completion_already_parsed(provider: AnyLLM) -> None:
+    """When a provider returns a ParsedChatCompletion with .parsed already set, skip re-parsing."""
+    completion = _make_chat_completion()
+    parsed_completion: ParsedChatCompletion[Any] = ParsedChatCompletion.model_validate(
+        completion, from_attributes=True
+    )
+    parsed_completion.choices[0].message.parsed = CityResponse(city_name="Paris")
+    provider._acompletion = AsyncMock(return_value=parsed_completion)  # type: ignore[method-assign]
+
+    result = await provider.acompletion(
+        model="test-model",
+        messages=[{"role": "user", "content": "What is the capital of France?"}],
+        response_format=CityResponse,
+    )
+
+    assert isinstance(result, ParsedChatCompletion)
+    assert isinstance(result.choices[0].message.parsed, CityResponse)
+    assert result.choices[0].message.parsed.city_name == "Paris"
+
+
+@pytest.mark.asyncio
 async def test_parsed_completion_no_content_no_refusal(provider: AnyLLM) -> None:
     provider._acompletion = AsyncMock(  # type: ignore[method-assign]
         return_value=_make_chat_completion(content=None),

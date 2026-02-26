@@ -10,12 +10,16 @@ from openai._types import NOT_GIVEN, Omit
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from openresponses_types import ResponseResource
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.logging import logger
-from any_llm.providers.openai.utils import _convert_chat_completion, _normalize_openai_dict_response
+from any_llm.providers.openai.utils import (
+    _convert_chat_completion,
+    _convert_parsed_chat_completion,
+    _normalize_openai_dict_response,
+)
 from any_llm.types.batch import Batch
 from any_llm.types.completion import (
     ChatCompletion,
@@ -157,6 +161,16 @@ class BaseOpenAIProvider(AnyLLM):
         if params.response_format and params.stream:
             msg = "stream is not supported for response_format"
             raise ValueError(msg)
+
+        rf = completion_kwargs.get("response_format")
+        if isinstance(rf, type) and issubclass(rf, BaseModel):
+            completion_kwargs.pop("stream", None)
+            response = await self.client.chat.completions.parse(
+                model=params.model_id,
+                messages=cast("Any", params.messages),
+                **completion_kwargs,
+            )
+            return _convert_parsed_chat_completion(response)
 
         response = await self.client.chat.completions.create(
             model=params.model_id,

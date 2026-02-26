@@ -7,7 +7,7 @@ from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatComple
 from any_llm.constants import REASONING_FIELD_NAMES
 from any_llm.exceptions import ProviderError
 from any_llm.logging import logger
-from any_llm.types.completion import ChatCompletion
+from any_llm.types.completion import ChatCompletion, ParsedChatCompletion
 
 
 def _normalize_reasoning_on_message(message_dict: dict[str, Any]) -> None:
@@ -79,3 +79,16 @@ def _convert_chat_completion(response: OpenAIChatCompletion) -> ChatCompletion:
         response.created = int(response.created)
     normalized = _normalize_openai_dict_response(response.model_dump())
     return ChatCompletion.model_validate(normalized)
+
+
+def _convert_parsed_chat_completion(response: OpenAIChatCompletion) -> ParsedChatCompletion[Any]:
+    """Convert an OpenAI ParsedChatCompletion preserving the .parsed field on each choice."""
+    base = _convert_chat_completion(response)
+    parsed_completion: ParsedChatCompletion[Any] = ParsedChatCompletion.model_validate(
+        base, from_attributes=True
+    )
+    for base_choice, parsed_choice in zip(response.choices, parsed_completion.choices):
+        parsed_msg = getattr(base_choice.message, "parsed", None)
+        if parsed_msg is not None:
+            parsed_choice.message.parsed = parsed_msg
+    return parsed_completion
