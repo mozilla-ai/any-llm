@@ -59,6 +59,26 @@ class BaseOpenAIProvider(AnyLLM):
         """Convert CompletionParams to kwargs for OpenAI API."""
         converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
         converted_params.update(kwargs)
+
+        max_tokens_key = "max_tokens"
+        max_completion_tokens_key = "max_completion_tokens"
+
+        # Attempt to map max_tokens to max_completion_tokens for OpenAI API compatibility.
+        max_tokens = converted_params.pop(max_tokens_key, None)
+
+        # We can return early if there's no max tokens to deal with.
+        if max_tokens is None:
+            return converted_params
+
+        if max_completion_tokens_key in converted_params:
+            logger.warning(
+                "Ignoring %s (%s) in favor of %s (%s).",
+                max_tokens_key, max_tokens,
+                max_completion_tokens_key, converted_params[max_completion_tokens_key],
+            )
+        else:
+            converted_params[max_completion_tokens_key] = max_tokens
+
         return converted_params
 
     @staticmethod
