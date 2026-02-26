@@ -8,14 +8,38 @@ on:
       - 'tests/**'
       - '.github/workflows/**'
       - 'pyproject.toml'
+  pull_request_target:
+    types: [labeled]
   workflow_dispatch:
     inputs:
       filter:
         description: the arg you want to pass to pytest filter (-k)
         type: string
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
+  remove-label:
+    if: github.event_name == 'pull_request_target' && github.event.label.name == 'run-integration-tests'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove run-integration-tests label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.removeLabel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              name: 'run-integration-tests'
+            });
+
   expected-providers:
+    if: >
+      github.event_name != 'pull_request_target' ||
+      github.event.label.name == 'run-integration-tests'
     runs-on: ubuntu-latest
     outputs:
       providers: ${{ steps.set_providers.outputs.expected_providers }}
@@ -37,6 +61,8 @@ jobs:
       should_run_local: ${{ steps.determine.outputs.should_run_local }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Determine which jobs should run based on filter
         id: determine
@@ -54,6 +80,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: astral-sh/setup-uv@v7
         with:
@@ -115,6 +143,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: astral-sh/setup-uv@v7
         with:
