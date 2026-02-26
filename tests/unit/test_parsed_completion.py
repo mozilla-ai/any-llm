@@ -2,7 +2,7 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from any_llm import AnyLLM, ParsedChatCompletion
 from any_llm.types.completion import ChatCompletion
@@ -127,6 +127,20 @@ async def test_parsed_completion_no_content_no_refusal(provider: AnyLLM) -> None
     assert isinstance(result, ParsedChatCompletion)
     assert result.choices[0].message.parsed is None
     assert result.choices[0].message.content is None
+
+
+@pytest.mark.asyncio
+async def test_parsed_completion_invalid_json_raises_validation_error(provider: AnyLLM) -> None:
+    provider._acompletion = AsyncMock(  # type: ignore[method-assign]
+        return_value=_make_chat_completion(content='{"wrong_field": "value"}'),
+    )
+
+    with pytest.raises(ValidationError):
+        await provider.acompletion(
+            model="test-model",
+            messages=[{"role": "user", "content": "test"}],
+            response_format=CityResponse,
+        )
 
 
 @pytest.mark.asyncio
