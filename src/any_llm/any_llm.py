@@ -369,16 +369,111 @@ class AnyLLM(ABC):
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
 
+    @overload
     def completion(
         self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        response_format: type[ResponseFormatT],
+        stream: Literal[False] | None = ...,
         **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+    ) -> ParsedChatCompletion[ResponseFormatT]: ...
+
+    @overload
+    def completion(
+        self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        stream: Literal[True],
+        **kwargs: Any,
+    ) -> Iterator[ChatCompletionChunk]: ...
+
+    @overload
+    def completion(
+        self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        response_format: dict[str, Any] | None = ...,
+        stream: Literal[False] | None = ...,
+        **kwargs: Any,
+    ) -> ChatCompletion: ...
+
+    @overload
+    def completion(
+        self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        response_format: dict[str, Any] | type[BaseModel] | None = ...,
+        stream: bool | None = ...,
+        **kwargs: Any,
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk] | ParsedChatCompletion[Any]: ...
+
+    def completion(
+        self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        tools: list[dict[str, Any] | Callable[..., Any]] | Any | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        max_tokens: int | None = None,
+        response_format: dict[str, Any] | type[BaseModel] | None = None,
+        stream: bool | None = None,
+        n: int | None = None,
+        stop: str | list[str] | None = None,
+        presence_penalty: float | None = None,
+        frequency_penalty: float | None = None,
+        seed: int | None = None,
+        user: str | None = None,
+        parallel_tool_calls: bool | None = None,
+        logprobs: bool | None = None,
+        top_logprobs: int | None = None,
+        logit_bias: dict[str, float] | None = None,
+        stream_options: dict[str, Any] | None = None,
+        max_completion_tokens: int | None = None,
+        reasoning_effort: ReasoningEffort | None = "auto",
+        allow_running_loop: bool | None = None,
+        **kwargs: Any,
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk] | ParsedChatCompletion[Any]:
         """Create a chat completion synchronously.
 
         See [AnyLLM.acompletion][any_llm.any_llm.AnyLLM.acompletion]
         """
-        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
-        response = run_async_in_sync(self.acompletion(**kwargs), allow_running_loop=allow_running_loop)
+        if allow_running_loop is None:
+            allow_running_loop = INSIDE_NOTEBOOK
+        response = run_async_in_sync(
+            self.acompletion(
+                model=model,
+                messages=messages,
+                tools=tools,
+                tool_choice=tool_choice,
+                temperature=temperature,
+                top_p=top_p,
+                max_tokens=max_tokens,
+                response_format=response_format,
+                stream=stream,
+                n=n,
+                stop=stop,
+                presence_penalty=presence_penalty,
+                frequency_penalty=frequency_penalty,
+                seed=seed,
+                user=user,
+                parallel_tool_calls=parallel_tool_calls,
+                logprobs=logprobs,
+                top_logprobs=top_logprobs,
+                logit_bias=logit_bias,
+                stream_options=stream_options,
+                max_completion_tokens=max_completion_tokens,
+                reasoning_effort=reasoning_effort,
+                **kwargs,
+            ),
+            allow_running_loop=allow_running_loop,
+        )
         if isinstance(response, ChatCompletion):
             return response
 
