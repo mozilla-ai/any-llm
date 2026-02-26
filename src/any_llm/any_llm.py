@@ -620,26 +620,25 @@ class AnyLLM(ABC):
 
         result = await self._acompletion(params, **kwargs)
 
-        if (
-            isinstance(response_format, type)
-            and issubclass(response_format, BaseModel)
-            and isinstance(result, ChatCompletion)
-        ):
-            parsed_completion: ParsedChatCompletion[Any] = ParsedChatCompletion.model_validate(
-                result, from_attributes=True
-            )
-            for choice in parsed_completion.choices:
-                if choice.finish_reason in ("length", "content_filter"):
-                    # TODO: raise LengthFinishReasonError / ContentFilterFinishReasonError
-                    # to align with OpenAI SDK semantics (deferred to a future major version)
-                    choice.message.parsed = None
-                elif isinstance(choice.message.parsed, response_format):
-                    continue
-                elif choice.message.content and not choice.message.refusal:
-                    choice.message.parsed = response_format.model_validate_json(choice.message.content)
-                else:
-                    choice.message.parsed = None
-            return parsed_completion
+        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+            # Short-circuit when the underlying SDK already handles .parse() (e.g. OpenAI)
+            if isinstance(result, ParsedChatCompletion):
+                return result
+
+            if isinstance(result, ChatCompletion):
+                parsed_completion: ParsedChatCompletion[Any] = ParsedChatCompletion.model_validate(
+                    result, from_attributes=True
+                )
+                for choice in parsed_completion.choices:
+                    if choice.finish_reason in ("length", "content_filter"):
+                        # TODO: raise LengthFinishReasonError / ContentFilterFinishReasonError
+                        # to align with OpenAI SDK semantics (deferred to a future major version)
+                        choice.message.parsed = None
+                    elif choice.message.content and not choice.message.refusal:
+                        choice.message.parsed = response_format.model_validate_json(choice.message.content)
+                    else:
+                        choice.message.parsed = None
+                return parsed_completion
 
         return result
 

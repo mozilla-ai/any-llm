@@ -87,5 +87,5 @@ def _convert_parsed_chat_completion(response: OpenAIParsedChatCompletion[Any]) -
     base = _convert_chat_completion(response)
     parsed_completion: ParsedChatCompletion[Any] = ParsedChatCompletion.model_validate(base, from_attributes=True)
     for base_choice, parsed_choice in zip(response.choices, parsed_completion.choices, strict=True):
-        parsed_choice.message.parsed = getattr(base_choice.message, "parsed", None)
+        parsed_choice.message.parsed = base_choice.message.parsed
     return parsed_completion
