@@ -112,7 +112,7 @@ async def test_platform_provider_parallel_requests(platform_provider_openai: Pla
     ("provider", "model", "expected_provider_name"),
     [
         (LLMProvider.OPENAI, "gpt-5-nano", "openai"),
-        (LLMProvider.ANTHROPIC, "claude-3-5-haiku-latest", "anthropic"),
+        (LLMProvider.ANTHROPIC, "claude-haiku-4-5", "anthropic"),
         (LLMProvider.GEMINI, "gemini-3-flash-preview", "gemini"),
     ],
 )
@@ -221,7 +221,6 @@ async def test_platform_provider_requires_valid_key() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.integration
 async def test_token_reuse_across_requests(platform_provider: PlatformProvider) -> None:
     """Test that multiple requests reuse the same token (performance optimization).
 

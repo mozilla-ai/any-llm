@@ -2,6 +2,7 @@ import os
 from typing import Any
 
 from google import genai
+from google.genai import types
 from typing_extensions import override
 
 from any_llm.exceptions import MissingApiKeyError
@@ -28,4 +29,13 @@ class GeminiProvider(GoogleProvider):
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        if api_base:
+            http_options = kwargs.pop("http_options", None)
+            if http_options is None:
+                http_options = types.HttpOptions(base_url=api_base)
+            elif isinstance(http_options, dict):
+                http_options.setdefault("base_url", api_base)
+            elif isinstance(http_options, types.HttpOptions) and http_options.base_url is None:
+                http_options.base_url = api_base
+            kwargs["http_options"] = http_options
         self.client = genai.Client(api_key=api_key, **kwargs)

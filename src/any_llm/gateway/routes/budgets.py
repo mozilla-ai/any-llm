@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -13,9 +13,9 @@ router = APIRouter(prefix="/v1/budgets", tags=["budgets"])
 class CreateBudgetRequest(BaseModel):
     """Request model for creating a new budget."""
 
-    max_budget: float | None = Field(default=None, description="Maximum spending limit")
+    max_budget: float | None = Field(default=None, ge=0, description="Maximum spending limit")
     budget_duration_sec: int | None = Field(
-        default=None, description="Budget duration in seconds (e.g., 86400 for daily, 604800 for weekly)"
+        default=None, gt=0, description="Budget duration in seconds (e.g., 86400 for daily, 604800 for weekly)"
     )
 
 
@@ -32,8 +32,8 @@ class BudgetResponse(BaseModel):
 class UpdateBudgetRequest(BaseModel):
     """Request model for updating a budget."""
 
-    max_budget: float | None = None
-    budget_duration_sec: int | None = None
+    max_budget: float | None = Field(default=None, ge=0)
+    budget_duration_sec: int | None = Field(default=None, gt=0)
 
 
 @router.post("", dependencies=[Depends(verify_master_key)])
@@ -63,8 +63,8 @@ async def create_budget(
 @router.get("", dependencies=[Depends(verify_master_key)])
 async def list_budgets(
     db: Annotated[Session, Depends(get_db)],
-    skip: int = 0,
-    limit: int = 100,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> list[BudgetResponse]:
     """List all budgets with pagination."""
     budgets = db.query(Budget).offset(skip).limit(limit).all()

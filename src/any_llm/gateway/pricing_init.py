@@ -28,8 +28,9 @@ def initialize_pricing_from_config(config: GatewayConfig, db: Session) -> None:
 
     logger.info(f"Loading pricing configuration for {len(config.pricing)} model(s)")
 
-    for model_key, pricing_config in config.pricing.items():
-        provider, _ = AnyLLM.split_model_provider(model_key)
+    for raw_model_key, pricing_config in config.pricing.items():
+        provider, model_name = AnyLLM.split_model_provider(raw_model_key)
+        model_key = f"{provider.value}:{model_name}"
 
         if provider.value not in config.providers:
             msg = (

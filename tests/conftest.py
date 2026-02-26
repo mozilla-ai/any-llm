@@ -12,7 +12,7 @@ from tests.constants import CI_EXCLUDED_PROVIDERS, INCLUDE_LOCAL_PROVIDERS, INCL
 @pytest.fixture
 def provider_reasoning_model_map() -> dict[LLMProvider, str]:
     return {
-        LLMProvider.ANTHROPIC: "claude-sonnet-4-20250514",
+        LLMProvider.ANTHROPIC: "claude-sonnet-4-0",
         LLMProvider.MISTRAL: "magistral-small-latest",
         LLMProvider.GEMINI: "gemini-2.5-flash",
         LLMProvider.GATEWAY: "gpt-5-nano",
@@ -27,14 +27,14 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.LLAMAFILE: "N/A",
         LLMProvider.LLAMACPP: "N/A",
         LLMProvider.VLLM: "N/A",
-        LLMProvider.LMSTUDIO: "openai/gpt-oss-20b",  # You must have LM Studio running and the server enabled
+        LLMProvider.LMSTUDIO: "qwen3-0.6b",
         LLMProvider.AZUREOPENAI: "gpt-4.1-nano",
         LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.COHERE: "command-a-reasoning-08-2025",
         LLMProvider.DEEPSEEK: "deepseek-reasoner",
         LLMProvider.MOONSHOT: "kimi-k2-thinking",
         LLMProvider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-        LLMProvider.HUGGINGFACE: "huggingface/tgi",
+        LLMProvider.HUGGINGFACE: "Qwen/Qwen2.5-72B-Instruct",
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
         LLMProvider.SAMBANOVA: "DeepSeek-R1-Distill-Llama-70B",
         LLMProvider.TOGETHER: "openai/gpt-oss-20b",
@@ -49,7 +49,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
 def provider_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.MISTRAL: "mistral-small-latest",
-        LLMProvider.ANTHROPIC: "claude-3-5-haiku-latest",
+        LLMProvider.ANTHROPIC: "claude-haiku-4-5",
         LLMProvider.DEEPSEEK: "deepseek-chat",
         LLMProvider.OPENAI: "gpt-5-nano",
         LLMProvider.GATEWAY: "gpt-5-nano",
@@ -63,11 +63,11 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
         LLMProvider.OLLAMA: "llama3.2:1b",
         LLMProvider.LLAMAFILE: "N/A",
-        LLMProvider.LMSTUDIO: "google/gemma-3n-e4b",  # You must have LM Studio running and the server enabled
+        LLMProvider.LMSTUDIO: "google/gemma-3-4b",  # You must have LM Studio running and the server enabled
         LLMProvider.VLLM: "Qwen/Qwen2.5-0.5B-Instruct",
         LLMProvider.COHERE: "command-a-03-2025",
         LLMProvider.CEREBRAS: "llama3.1-8b",
-        LLMProvider.HUGGINGFACE: "huggingface/tgi",  # This is the syntax used in `litellm` when using HF Inference Endpoints (https://docs.litellm.ai/docs/providers/huggingface#dedicated-inference-endpoints)
+        LLMProvider.HUGGINGFACE: "Qwen/Qwen2.5-72B-Instruct",
         LLMProvider.BEDROCK: "amazon.nova-lite-v1:0",
         LLMProvider.SAGEMAKER: "<sagemaker_endpoint_name>",
         LLMProvider.WATSONX: "ibm/granite-3-8b-instruct",
@@ -137,7 +137,6 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.GATEWAY: {"api_base": "http://127.0.0.1:3000", "timeout": 1},
         LLMProvider.GROQ: {"timeout": 10},
         LLMProvider.OPENAI: {"timeout": 100},
-        LLMProvider.HUGGINGFACE: {"api_base": "https://oze7k8n86bjfzgjk.us-east-1.aws.endpoints.huggingface.cloud/v1"},
         LLMProvider.LLAMACPP: {"api_base": "http://127.0.0.1:8090/v1"},
         LLMProvider.VLLM: {"api_base": "http://127.0.0.1:8080/v1"},
         LLMProvider.MISTRAL: {"timeout_ms": 100000},

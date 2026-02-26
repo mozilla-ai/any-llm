@@ -154,8 +154,6 @@ async def test_all_providers_can_be_loaded(provider: str) -> None:
         kwargs["location"] = "test-location"
     if provider == "gateway":
         kwargs["api_base"] = "http://127.0.0.1:8080/v1"
-    if provider == "platform":
-        pytest.skip("ValueError: Invalid ANY_API_KEY format. Expected: ANY.v1.<kid>.<fingerprint>-<base64_key>")
 
     provider_instance = AnyLLM.create(provider, **kwargs)
 
@@ -173,8 +171,6 @@ async def test_all_providers_can_be_loaded_with_config(provider: str) -> None:
     like api_key and api_base without throwing errors during instantiation.
     """
     kwargs: dict[str, Any] = {"api_key": "test_key", "api_base": "https://test.example.com"}
-    if provider == "platform":
-        pytest.skip("ValueError: Invalid ANY_API_KEY format. Expected: ANY.v1.<kid>.<fingerprint>-<base64_key>")
     if provider == "bedrock":
         kwargs["region_name"] = "us-east-1"
     if provider == "vertexai":
@@ -197,8 +193,6 @@ async def test_provider_factory_can_create_all_supported_providers() -> None:
 
     for provider_name in supported_providers:
         kwargs: dict[str, Any] = {"api_key": "test_key"}
-        if provider_name == "platform":
-            pytest.skip("ValueError: Invalid ANY_API_KEY format. Expected: ANY.v1.<kid>.<fingerprint>-<base64_key>")
         if provider_name in ("azure", "azureopenai"):
             kwargs["api_base"] = "test_api_base"
         if provider_name == "bedrock":
@@ -206,6 +200,8 @@ async def test_provider_factory_can_create_all_supported_providers() -> None:
         if provider_name == "vertexai":
             kwargs["project"] = "test-project"
             kwargs["location"] = "test-location"
+        if provider_name == "vertexaianthropic":
+            kwargs["project_id"] = "test-project"
         if provider_name == "sagemaker":
             continue
         if provider_name == "gateway":

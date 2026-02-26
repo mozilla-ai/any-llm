@@ -52,6 +52,17 @@
       "ChatCompletionRequest": {
         "description": "OpenAI-compatible chat completion request.",
         "properties": {
+          "max_completion_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Completion Tokens"
+          },
           "max_tokens": {
             "anyOf": [
               {
@@ -68,6 +79,7 @@
               "additionalProperties": true,
               "type": "object"
             },
+            "minItems": 1,
             "title": "Messages",
             "type": "array"
           },
@@ -169,6 +181,7 @@
           "budget_duration_sec": {
             "anyOf": [
               {
+                "exclusiveMinimum": 0.0,
                 "type": "integer"
               },
               {
@@ -181,6 +194,7 @@
           "max_budget": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "number"
               },
               {
@@ -496,6 +510,7 @@
         "properties": {
           "input_price_per_million": {
             "description": "Price per 1M input tokens",
+            "minimum": 0.0,
             "title": "Input Price Per Million",
             "type": "number"
           },
@@ -506,6 +521,7 @@
           },
           "output_price_per_million": {
             "description": "Price per 1M output tokens",
+            "minimum": 0.0,
             "title": "Output Price Per Million",
             "type": "number"
           }
@@ -524,6 +540,7 @@
           "budget_duration_sec": {
             "anyOf": [
               {
+                "exclusiveMinimum": 0.0,
                 "type": "integer"
               },
               {
@@ -535,6 +552,7 @@
           "max_budget": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "number"
               },
               {
@@ -1003,6 +1021,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "minimum": 0,
               "title": "Skip",
               "type": "integer"
             }
@@ -1013,6 +1032,8 @@
             "required": false,
             "schema": {
               "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }
@@ -1269,6 +1290,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "minimum": 0,
               "title": "Skip",
               "type": "integer"
             }
@@ -1279,6 +1301,8 @@
             "required": false,
             "schema": {
               "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }
@@ -1495,6 +1519,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "minimum": 0,
               "title": "Skip",
               "type": "integer"
             }
@@ -1505,6 +1530,8 @@
             "required": false,
             "schema": {
               "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }
@@ -1670,6 +1697,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "minimum": 0,
               "title": "Skip",
               "type": "integer"
             }
@@ -1680,6 +1708,8 @@
             "required": false,
             "schema": {
               "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }
@@ -1905,6 +1935,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "minimum": 0,
               "title": "Skip",
               "type": "integer"
             }
@@ -1915,6 +1946,8 @@
             "required": false,
             "schema": {
               "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }

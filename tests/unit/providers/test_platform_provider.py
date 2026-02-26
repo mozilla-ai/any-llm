@@ -26,7 +26,6 @@ from any_llm.types.completion import (
 from any_llm.types.provider import PlatformKey
 
 
-# Fixtures
 @pytest.fixture
 def any_llm_key() -> str:
     """Fixture for a valid ANY_LLM_KEY."""
@@ -50,12 +49,24 @@ def mock_platform_provider(
     any_llm_key: str,
     mock_decrypted_provider_key: DecryptedProviderKey,
 ) -> PlatformProvider:
-    """Fixture to create a mock platform provider with OpenAI."""
-    with patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key") as mock_get_key:
-        mock_get_key.return_value = mock_decrypted_provider_key
-        provider = PlatformProvider(api_key=any_llm_key)
-        provider.provider = OpenaiProvider
-        return provider
+    """Fixture to create a mock platform provider with OpenAI (lazily initialized)."""
+    provider = PlatformProvider(api_key=any_llm_key)
+    provider.provider = OpenaiProvider
+    return provider
+
+
+async def _init_provider(
+    provider: PlatformProvider,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Helper to trigger lazy async initialization with a mocked key."""
+    with patch.object(
+        provider.platform_client,
+        "aget_decrypted_provider_key",
+        new_callable=AsyncMock,
+        return_value=mock_decrypted_provider_key,
+    ):
+        await provider._ensure_provider_initialized()
 
 
 @pytest.fixture
@@ -234,27 +245,73 @@ def test_platform_key_completely_invalid() -> None:
         assert "Invalid API key format" in str(exc_info.value)
 
 
-@patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
-def test_prepare_creates_provider(
-    mock_get_decrypted_provider_key: Mock,
+def test_provider_setter_stores_class_without_http(
     any_llm_key: str,
-    mock_decrypted_provider_key: DecryptedProviderKey,
 ) -> None:
-    """Test proper initialization with an API key."""
-    mock_get_decrypted_provider_key.return_value = mock_decrypted_provider_key
-
+    """Test that the provider setter stores the class lazily without making HTTP calls."""
     provider_instance = PlatformProvider(api_key=any_llm_key)
     provider_instance.provider = OpenaiProvider
 
-    assert provider_instance.PROVIDER_NAME == "platform"
+    assert provider_instance._provider_class is OpenaiProvider
+    assert provider_instance._provider_initialized is False
+    assert provider_instance._provider is None
+
+
+@pytest.mark.asyncio
+async def test_ensure_provider_initialized_uses_async_http(
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Test that _ensure_provider_initialized uses async HTTP and creates the provider instance."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+
+    with patch.object(
+        provider_instance.platform_client,
+        "aget_decrypted_provider_key",
+        new_callable=AsyncMock,
+        return_value=mock_decrypted_provider_key,
+    ) as mock_aget_key:
+        await provider_instance._ensure_provider_initialized()
+
+        mock_aget_key.assert_called_once_with(any_llm_key=any_llm_key, provider="openai")
+
+    assert provider_instance._provider_initialized is True
     assert provider_instance.provider.PROVIDER_NAME == "openai"
     assert provider_instance.provider_key_id == "550e8400-e29b-41d4-a716-446655440000"
     assert provider_instance.project_id == "550e8400-e29b-41d4-a716-446655440001"
 
-    # Verify get_decrypted_provider_key was called
-    call_args = mock_get_decrypted_provider_key.call_args
-    assert call_args.kwargs["any_llm_key"] == any_llm_key
-    assert call_args.kwargs["provider"] == "openai"
+
+@pytest.mark.asyncio
+async def test_ensure_provider_initialized_is_idempotent(
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Test that _ensure_provider_initialized only runs once."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+
+    with patch.object(
+        provider_instance.platform_client,
+        "aget_decrypted_provider_key",
+        new_callable=AsyncMock,
+        return_value=mock_decrypted_provider_key,
+    ) as mock_aget_key:
+        await provider_instance._ensure_provider_initialized()
+        await provider_instance._ensure_provider_initialized()
+
+        mock_aget_key.assert_called_once()
+
+
+def test_provider_getter_raises_before_init(
+    any_llm_key: str,
+) -> None:
+    """Test that accessing .provider before async init raises RuntimeError."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+
+    with pytest.raises(RuntimeError, match="Provider not yet initialized"):
+        _ = provider_instance.provider
 
 
 def test_prepare_creates_provider_without_api_key() -> None:
@@ -263,38 +320,58 @@ def test_prepare_creates_provider_without_api_key() -> None:
         PlatformProvider()
 
 
+def test_supports_flags_delegate_to_provider_class(
+    any_llm_key: str,
+) -> None:
+    """Test that SUPPORTS_* flags reflect the wrapped provider class capabilities."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+
+    assert provider_instance.SUPPORTS_COMPLETION is True
+    assert provider_instance.SUPPORTS_COMPLETION_STREAMING is True
+    assert provider_instance.SUPPORTS_LIST_MODELS is True
+    assert provider_instance.SUPPORTS_EMBEDDING is True
+
+
+def test_supports_flags_reflect_wrapped_provider_capabilities(
+    any_llm_key: str,
+) -> None:
+    """Test that SUPPORTS_* flags accurately reflect providers with limited capabilities."""
+    from any_llm.providers.anthropic.base import BaseAnthropicProvider
+
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = BaseAnthropicProvider
+
+    assert provider_instance.SUPPORTS_EMBEDDING is False
+    assert provider_instance.SUPPORTS_BATCH is False
+    assert provider_instance.SUPPORTS_LIST_MODELS is False
+
+
 @pytest.mark.asyncio
-@patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
 @patch("any_llm.providers.platform.platform.post_completion_usage_event")
 async def test_acompletion_non_streaming_success(
     mock_post_usage: AsyncMock,
-    mock_get_decrypted_provider_key: Mock,
     any_llm_key: str,
     mock_decrypted_provider_key: DecryptedProviderKey,
     mock_completion: ChatCompletion,
 ) -> None:
     """Test that non-streaming completions correctly call the provider and post usage events."""
-    mock_get_decrypted_provider_key.return_value = mock_decrypted_provider_key
-
     provider_instance = PlatformProvider(api_key=any_llm_key)
     provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
     provider_instance.provider._acompletion = AsyncMock(return_value=mock_completion)  # type: ignore[method-assign]
 
-    # Create completion params
     params = CompletionParams(
         model_id="gpt-4",
         messages=[{"role": "user", "content": "Hello"}],
         stream=False,
     )
 
-    # Call _acompletion
     result = await provider_instance._acompletion(params)
 
-    # Assertions
     assert result == mock_completion
     provider_instance.provider._acompletion.assert_called_once_with(params=params)
 
-    # Verify post_completion_usage_event was called with the platform_client instance
     call_args = mock_post_usage.call_args
     assert call_args.kwargs["client"] == provider_instance.client
     assert call_args.kwargs["any_llm_key"] == any_llm_key
@@ -305,18 +382,13 @@ async def test_acompletion_non_streaming_success(
 
 
 @pytest.mark.asyncio
-@patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
 @patch("any_llm.providers.platform.platform.post_completion_usage_event")
 async def test_acompletion_streaming_success(
     mock_post_usage: AsyncMock,
-    mock_get_decrypted_provider_key: Mock,
     any_llm_key: str,
     mock_decrypted_provider_key: DecryptedProviderKey,
 ) -> None:
     """Test that streaming completions correctly wrap the iterator and track usage."""
-    mock_get_decrypted_provider_key.return_value = mock_decrypted_provider_key
-
-    # Create mock streaming chunks
     mock_chunks = [
         ChatCompletionChunk(
             id="chatcmpl-123",
@@ -368,15 +440,12 @@ async def test_acompletion_streaming_success(
         for chunk in mock_chunks:
             yield chunk
 
-    provider_instance = PlatformProvider(
-        api_key=any_llm_key,
-    )
+    provider_instance = PlatformProvider(api_key=any_llm_key)
     provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
 
-    # Mock the underlying provider's _acompletion method
     provider_instance.provider._acompletion = AsyncMock(return_value=mock_stream())  # type: ignore[method-assign, no-untyped-call]
 
-    # Create completion params
     params = CompletionParams(
         model_id="gpt-4",
         messages=[{"role": "user", "content": "Hello"}],
@@ -384,20 +453,16 @@ async def test_acompletion_streaming_success(
         stream_options={"include_usage": True},
     )
 
-    # Call _acompletion
     result = await provider_instance._acompletion(params)
 
-    # Collect all chunks from the stream
     collected_chunks = []
     async for chunk in result:  # type: ignore[union-attr]
         collected_chunks.append(chunk)
 
-    # Assertions
     assert len(collected_chunks) == 3
     assert collected_chunks == mock_chunks
     provider_instance.provider._acompletion.assert_called_once_with(params=params)
 
-    # Verify usage event was posted with correct data
     mock_post_usage.assert_called_once()
     call_args = mock_post_usage.call_args
     assert call_args.kwargs["client"] == provider_instance.client
@@ -418,14 +483,12 @@ async def test_post_completion_usage_event_success(
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
     provider_key_id = UUID("550e8400-e29b-41d4-a716-446655440002")
 
-    # Create mock httpx client
     mock_response = Mock()
     mock_response.raise_for_status = Mock()
 
     client = AsyncMock(spec=httpx.AsyncClient)
     client.post = AsyncMock(return_value=mock_response)
 
-    # Call the function
     await post_completion_usage_event(
         platform_client=mock_platform_client,
         client=client,
@@ -435,13 +498,10 @@ async def test_post_completion_usage_event_success(
         provider_key_id=str(provider_key_id),
     )
 
-    # Assertions
     mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
 
-    # Usage event POST should be called once
     client.post.assert_called_once()
 
-    # Verify the payload sent to the usage event endpoint
     call_args = client.post.call_args
     assert "/usage-events/" in call_args.args[0]
     payload = call_args.kwargs["json"]
@@ -464,14 +524,12 @@ async def test_post_completion_usage_event_with_client_name(
     provider_key_id = UUID("550e8400-e29b-41d4-a716-446655440002")
     client_name = "my-test-client"
 
-    # Create mock httpx client
     mock_response = Mock()
     mock_response.raise_for_status = Mock()
 
     client = AsyncMock(spec=httpx.AsyncClient)
     client.post = AsyncMock(return_value=mock_response)
 
-    # Call the function
     await post_completion_usage_event(
         platform_client=mock_platform_client,
         client=client,
@@ -482,7 +540,6 @@ async def test_post_completion_usage_event_with_client_name(
         client_name=client_name,
     )
 
-    # Verify client_name is included in the payload
     call_args = client.post.call_args
     payload = call_args.kwargs["json"]
     assert payload["client_name"] == client_name
@@ -518,7 +575,6 @@ async def test_post_completion_usage_event_invalid_key_format() -> None:
 
     mock_platform_client = Mock(spec=AnyLLMPlatformClient)
 
-    # Mock the token management method to raise ValueError for invalid key
     mock_platform_client._aensure_valid_token = AsyncMock(side_effect=ValueError("Invalid ANY_LLM_KEY format"))
 
     client = AsyncMock(spec=httpx.AsyncClient)
@@ -543,25 +599,20 @@ def test_anyllm_instantiation_with_platform_key(
 
     any_llm_key = "ANY.v1.kid123.fingerprint456-base64key"
 
-    # Mock the provider module first (for initial validation)
     mock_provider_module = Mock()
     mock_provider_class = Mock()
     mock_provider_module.OpenaiProvider = mock_provider_class
 
-    # Mock the PlatformProvider module and class
     mock_platform_module = Mock()
     mock_platform_class = Mock(spec=PlatformProvider)
     mock_platform_instance = Mock(spec=PlatformProvider)
     mock_platform_class.return_value = mock_platform_instance
     mock_platform_module.PlatformProvider = mock_platform_class
 
-    # Configure import_module to return provider module first, then platform module
     mock_import_module.side_effect = [mock_provider_module, mock_platform_module]
 
-    # Call AnyLLM.create() with platform key
     result = AnyLLM.create(provider="openai", api_key=any_llm_key)
 
-    # Assertions
     assert result == mock_platform_instance
     assert mock_import_module.call_count == 2
     mock_import_module.assert_any_call("any_llm.providers.openai")
@@ -579,30 +630,24 @@ def test_anyllm_instantiation_with_platform_key_and_client_name(
     any_llm_key = "ANY.v1.kid123.fingerprint456-base64key"
     client_name = "test-client"
 
-    # Mock the provider module first (for initial validation)
     mock_provider_module = Mock()
     mock_provider_class = Mock()
     mock_provider_module.OpenaiProvider = mock_provider_class
 
-    # Mock the PlatformProvider module and class
     mock_platform_module = Mock()
     mock_platform_class = Mock(spec=PlatformProvider)
     mock_platform_instance = Mock(spec=PlatformProvider)
     mock_platform_class.return_value = mock_platform_instance
     mock_platform_module.PlatformProvider = mock_platform_class
 
-    # Configure import_module to return provider module first, then platform module
     mock_import_module.side_effect = [mock_provider_module, mock_platform_module]
 
-    # Call AnyLLM.create() with platform key and client_name
     result = AnyLLM.create(provider="openai", api_key=any_llm_key, client_name=client_name)
 
-    # Assertions
     assert result == mock_platform_instance
     assert mock_import_module.call_count == 2
     mock_import_module.assert_any_call("any_llm.providers.openai")
     mock_import_module.assert_any_call("any_llm.providers.platform")
-    # Verify client_name is passed correctly and only once
     mock_platform_class.assert_called_once_with(api_key=any_llm_key, api_base=None, client_name=client_name)
 
 
@@ -615,23 +660,205 @@ def test_anyllm_instantiation_with_non_platform_key(
 
     regular_api_key = "sk-proj-1234567890"
 
-    # Mock the OpenAI provider module and class
     mock_openai_module = Mock()
     mock_openai_class = Mock(spec=OpenaiProvider)
     mock_openai_instance = Mock(spec=OpenaiProvider)
     mock_openai_class.return_value = mock_openai_instance
     mock_openai_module.OpenaiProvider = mock_openai_class
 
-    # Configure import_module to return our mock for OpenAI
     mock_import_module.return_value = mock_openai_module
 
-    # Call AnyLLM.create() with regular key
     result = AnyLLM.create(provider="openai", api_key=regular_api_key)
 
-    # Assertions
     assert result == mock_openai_instance
     mock_import_module.assert_called_once_with("any_llm.providers.openai")
     mock_openai_class.assert_called_once_with(api_key=regular_api_key, api_base=None)
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+async def test_alist_models_delegates_to_provider(
+    mock_post_usage: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Test that _alist_models delegates to the wrapped provider."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+
+    mock_models = [Mock(), Mock()]
+    provider_instance.provider._alist_models = AsyncMock(return_value=mock_models)  # type: ignore[method-assign]
+
+    result = await provider_instance._alist_models()
+
+    assert result == mock_models
+    provider_instance.provider._alist_models.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+async def test_aembedding_delegates_to_provider(
+    mock_post_usage: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Test that _aembedding delegates to the wrapped provider."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+
+    mock_response = Mock()
+    provider_instance.provider._aembedding = AsyncMock(return_value=mock_response)  # type: ignore[method-assign]
+
+    result = await provider_instance._aembedding("text-embedding-ada-002", "hello")
+
+    assert result == mock_response
+    provider_instance.provider._aembedding.assert_called_once_with("text-embedding-ada-002", "hello")
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+async def test_aresponses_delegates_to_provider(
+    mock_post_usage: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Test that _aresponses delegates to the wrapped provider."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+
+    mock_response = Mock()
+    provider_instance.provider._aresponses = AsyncMock(return_value=mock_response)  # type: ignore[method-assign]
+
+    mock_params = Mock()
+    result = await provider_instance._aresponses(mock_params)
+
+    assert result == mock_response
+    provider_instance.provider._aresponses.assert_called_once_with(mock_params)
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+async def test_acreate_batch_delegates_to_provider(
+    mock_post_usage: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Test that _acreate_batch delegates to the wrapped provider."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+
+    mock_batch = Mock()
+    provider_instance.provider._acreate_batch = AsyncMock(return_value=mock_batch)  # type: ignore[method-assign]
+
+    result = await provider_instance._acreate_batch(
+        input_file_path="batch_input.jsonl",
+        endpoint="/v1/chat/completions",
+        completion_window="24h",
+        metadata={"key": "value"},
+    )
+
+    assert result == mock_batch
+    provider_instance.provider._acreate_batch.assert_called_once_with(
+        input_file_path="batch_input.jsonl",
+        endpoint="/v1/chat/completions",
+        completion_window="24h",
+        metadata={"key": "value"},
+    )
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+async def test_aretrieve_batch_delegates_to_provider(
+    mock_post_usage: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Test that _aretrieve_batch delegates to the wrapped provider."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+
+    mock_batch = Mock()
+    provider_instance.provider._aretrieve_batch = AsyncMock(return_value=mock_batch)  # type: ignore[method-assign]
+
+    result = await provider_instance._aretrieve_batch("batch-123")
+
+    assert result == mock_batch
+    provider_instance.provider._aretrieve_batch.assert_called_once_with("batch-123")
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+async def test_acancel_batch_delegates_to_provider(
+    mock_post_usage: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Test that _acancel_batch delegates to the wrapped provider."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+
+    mock_batch = Mock()
+    provider_instance.provider._acancel_batch = AsyncMock(return_value=mock_batch)  # type: ignore[method-assign]
+
+    result = await provider_instance._acancel_batch("batch-123")
+
+    assert result == mock_batch
+    provider_instance.provider._acancel_batch.assert_called_once_with("batch-123")
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+async def test_alist_batches_delegates_to_provider(
+    mock_post_usage: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Test that _alist_batches delegates to the wrapped provider."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+
+    mock_batches = [Mock(), Mock()]
+    provider_instance.provider._alist_batches = AsyncMock(return_value=mock_batches)  # type: ignore[method-assign]
+
+    result = await provider_instance._alist_batches(after="batch-100", limit=10)
+
+    assert result == mock_batches
+    provider_instance.provider._alist_batches.assert_called_once_with(after="batch-100", limit=10)
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+async def test_delegation_triggers_lazy_init(
+    mock_post_usage: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Test that calling a delegation method triggers lazy async initialization."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+
+    assert provider_instance._provider_initialized is False
+
+    with patch.object(
+        provider_instance.platform_client,
+        "aget_decrypted_provider_key",
+        new_callable=AsyncMock,
+        return_value=mock_decrypted_provider_key,
+    ):
+        mock_models = [Mock()]
+        # We need to patch _alist_models on the OpenaiProvider instance that will be created
+        with patch.object(OpenaiProvider, "_alist_models", new_callable=AsyncMock, return_value=mock_models):
+            result = await provider_instance._alist_models()
+
+    assert provider_instance._provider_initialized is True
+    assert result == mock_models
 
 
 @pytest.mark.asyncio
@@ -643,14 +870,12 @@ async def test_post_completion_usage_event_with_performance_metrics(
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
     provider_key_id = UUID("550e8400-e29b-41d4-a716-446655440002")
 
-    # Create mock httpx client
     mock_response = Mock()
     mock_response.raise_for_status = Mock()
 
     client = AsyncMock(spec=httpx.AsyncClient)
     client.post = AsyncMock(return_value=mock_response)
 
-    # Call the function with performance metrics
     await post_completion_usage_event(
         platform_client=mock_platform_client,
         client=client,
@@ -667,11 +892,9 @@ async def test_post_completion_usage_event_with_performance_metrics(
         inter_chunk_latency_variance_ms=5.0,
     )
 
-    # Assertions
     mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
     client.post.assert_called_once()
 
-    # Verify the payload includes performance metrics
     call_args = client.post.call_args
     payload = call_args.kwargs["json"]
     assert "performance" in payload["data"]
@@ -700,7 +923,6 @@ async def test_post_completion_usage_event_with_partial_performance_metrics(
     client = AsyncMock(spec=httpx.AsyncClient)
     client.post = AsyncMock(return_value=mock_response)
 
-    # Call with only some performance metrics
     await post_completion_usage_event(
         platform_client=mock_platform_client,
         client=client,
@@ -712,7 +934,6 @@ async def test_post_completion_usage_event_with_partial_performance_metrics(
         tokens_per_second=25.0,
     )
 
-    # Verify only provided metrics are included
     call_args = client.post.call_args
     payload = call_args.kwargs["json"]
     assert "performance" in payload["data"]
@@ -739,7 +960,6 @@ async def test_post_completion_usage_event_without_performance_metrics(
     client = AsyncMock(spec=httpx.AsyncClient)
     client.post = AsyncMock(return_value=mock_response)
 
-    # Call without any performance metrics
     await post_completion_usage_event(
         platform_client=mock_platform_client,
         client=client,
@@ -749,7 +969,6 @@ async def test_post_completion_usage_event_without_performance_metrics(
         provider_key_id=str(provider_key_id),
     )
 
-    # Verify performance section is not included when no metrics provided
     call_args = client.post.call_args
     payload = call_args.kwargs["json"]
     assert "performance" not in payload["data"]
@@ -762,7 +981,6 @@ async def test_post_completion_usage_event_skips_when_no_usage(
     """Test that post_completion_usage_event returns early when completion has no usage data."""
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
 
-    # Create completion without usage data
     completion = ChatCompletion(
         id="chatcmpl-123",
         model="gpt-4",
@@ -781,7 +999,6 @@ async def test_post_completion_usage_event_skips_when_no_usage(
     client = AsyncMock(spec=httpx.AsyncClient)
     client.post = AsyncMock()
 
-    # Call the function
     await post_completion_usage_event(
         platform_client=mock_platform_client,
         client=client,
@@ -796,18 +1013,13 @@ async def test_post_completion_usage_event_skips_when_no_usage(
 
 
 @pytest.mark.asyncio
-@patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
 @patch("any_llm.providers.platform.platform.post_completion_usage_event")
 async def test_streaming_performance_metrics_tracking(
     mock_post_usage: AsyncMock,
-    mock_get_decrypted_provider_key: Mock,
     any_llm_key: str,
     mock_decrypted_provider_key: DecryptedProviderKey,
 ) -> None:
     """Test that streaming completions correctly track performance metrics."""
-    mock_get_decrypted_provider_key.return_value = mock_decrypted_provider_key
-
-    # Create mock streaming chunks with content
     mock_chunks = [
         ChatCompletionChunk(
             id="chatcmpl-123",
@@ -872,10 +1084,9 @@ async def test_streaming_performance_metrics_tracking(
         for chunk in mock_chunks:
             yield chunk
 
-    provider_instance = PlatformProvider(
-        api_key=any_llm_key,
-    )
+    provider_instance = PlatformProvider(api_key=any_llm_key)
     provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
 
     provider_instance.provider._acompletion = AsyncMock(return_value=mock_stream())  # type: ignore[method-assign, no-untyped-call]
 
@@ -886,19 +1097,15 @@ async def test_streaming_performance_metrics_tracking(
         stream_options={"include_usage": True},
     )
 
-    # Call _acompletion
     result = await provider_instance._acompletion(params)
 
-    # Collect all chunks from the stream
     collected_chunks = []
     async for chunk in result:  # type: ignore[union-attr]
         collected_chunks.append(chunk)
 
-    # Assertions
     assert len(collected_chunks) == 4
     mock_post_usage.assert_called_once()
 
-    # Verify performance metrics were tracked
     call_args = mock_post_usage.call_args
     assert call_args.kwargs["time_to_first_token_ms"] is not None
     assert call_args.kwargs["time_to_last_token_ms"] is not None
@@ -911,22 +1118,17 @@ async def test_streaming_performance_metrics_tracking(
 
 
 @pytest.mark.asyncio
-@patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
 @patch("any_llm.providers.platform.platform.post_completion_usage_event")
 async def test_non_streaming_includes_total_duration(
     mock_post_usage: AsyncMock,
-    mock_get_decrypted_provider_key: Mock,
     any_llm_key: str,
     mock_decrypted_provider_key: DecryptedProviderKey,
     mock_completion: ChatCompletion,
 ) -> None:
     """Test that non-streaming completions include total_duration_ms metric."""
-    mock_get_decrypted_provider_key.return_value = mock_decrypted_provider_key
-
-    provider_instance = PlatformProvider(
-        api_key=any_llm_key,
-    )
+    provider_instance = PlatformProvider(api_key=any_llm_key)
     provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
     provider_instance.provider._acompletion = AsyncMock(return_value=mock_completion)  # type: ignore[method-assign]
 
     params = CompletionParams(
@@ -935,10 +1137,8 @@ async def test_non_streaming_includes_total_duration(
         stream=False,
     )
 
-    # Call _acompletion
     await provider_instance._acompletion(params)
 
-    # Verify total_duration_ms was tracked
     mock_post_usage.assert_called_once()
     call_args = mock_post_usage.call_args
     assert call_args.kwargs["total_duration_ms"] is not None
@@ -946,48 +1146,14 @@ async def test_non_streaming_includes_total_duration(
 
 
 @pytest.mark.asyncio
-@patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
 @patch("any_llm.providers.platform.platform.post_completion_usage_event")
-@pytest.mark.parametrize(
-    "provider_name",
-    [
-        # Supported providers
-        LLMProvider.OPENAI,
-        LLMProvider.HUGGINGFACE,
-        LLMProvider.GROQ,
-        LLMProvider.DEEPSEEK,
-        # Unsupported providers
-        LLMProvider.ANTHROPIC,
-        LLMProvider.CEREBRAS,
-        LLMProvider.COHERE,
-        LLMProvider.GEMINI,
-        LLMProvider.MISTRAL,
-        LLMProvider.OLLAMA,
-        LLMProvider.TOGETHER,
-    ],
-)
-async def test_stream_options_handling_by_provider(
+async def test_stream_options_auto_injected_when_not_set(
     mock_post_usage: AsyncMock,
-    mock_get_decrypted_provider_key: Mock,
     any_llm_key: str,
     mock_decrypted_provider_key: DecryptedProviderKey,
     mock_streaming_chunks: list[ChatCompletionChunk],
-    provider_name: LLMProvider,
 ) -> None:
-    """Test stream_options handling for both supported and unsupported providers."""
-    # Define unsupported providers (should match platform.py)
-    providers_without_stream_options = {
-        LLMProvider.ANTHROPIC,
-        LLMProvider.CEREBRAS,
-        LLMProvider.COHERE,
-        LLMProvider.GEMINI,
-        LLMProvider.MISTRAL,
-        LLMProvider.OLLAMA,
-        LLMProvider.TOGETHER,
-    }
-
-    mock_decrypted_provider_key.provider = provider_name.value
-    mock_get_decrypted_provider_key.return_value = mock_decrypted_provider_key
+    """Test that PlatformProvider auto-injects stream_options when not set by user."""
 
     async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
         for chunk in mock_streaming_chunks:
@@ -995,12 +1161,11 @@ async def test_stream_options_handling_by_provider(
 
     provider_instance = PlatformProvider(api_key=any_llm_key)
 
-    # Create a mock provider with the PROVIDER_NAME attribute
     mock_provider = Mock()
-    mock_provider.PROVIDER_NAME = provider_name
+    mock_provider.PROVIDER_NAME = LLMProvider.OPENAI
     provider_instance._provider = mock_provider
+    provider_instance._provider_initialized = True
 
-    # Mock the underlying provider's _acompletion to capture the params it receives
     captured_params = None
 
     async def capture_and_return(*args, **kwargs):  # type: ignore[no-untyped-def]
@@ -1010,7 +1175,6 @@ async def test_stream_options_handling_by_provider(
 
     provider_instance.provider._acompletion = AsyncMock(side_effect=capture_and_return)  # type: ignore[method-assign]
 
-    # Create completion params WITHOUT stream_options
     params = CompletionParams(
         model_id="test-model",
         messages=[{"role": "user", "content": "Hello"}],
@@ -1018,39 +1182,27 @@ async def test_stream_options_handling_by_provider(
         stream_options=None,
     )
 
-    # Call _acompletion
     result = await provider_instance._acompletion(params)
 
-    # Consume the stream
     async for _ in result:  # type: ignore[union-attr]
         pass
 
-    # Verify behavior based on provider support
     assert captured_params is not None
-    if provider_name in providers_without_stream_options:
-        # Unsupported providers should receive None
-        assert captured_params.stream_options is None
-    else:
-        # Supported providers should have it auto-enabled
-        assert captured_params.stream_options == {"include_usage": True}
+    assert captured_params.stream_options == {"include_usage": True}
 
     # Verify original params not mutated
     assert params.stream_options is None
 
 
 @pytest.mark.asyncio
-@patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
 @patch("any_llm.providers.platform.platform.post_completion_usage_event")
 async def test_stream_options_preserved_when_user_specifies_it(
     mock_post_usage: AsyncMock,
-    mock_get_decrypted_provider_key: Mock,
     any_llm_key: str,
     mock_decrypted_provider_key: DecryptedProviderKey,
     mock_streaming_chunks: list[ChatCompletionChunk],
 ) -> None:
-    """Test that user-specified stream_options are preserved for supported providers."""
-    mock_decrypted_provider_key.provider = LLMProvider.OPENAI.value
-    mock_get_decrypted_provider_key.return_value = mock_decrypted_provider_key
+    """Test that user-specified stream_options are preserved."""
 
     async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
         for chunk in mock_streaming_chunks:
@@ -1058,12 +1210,11 @@ async def test_stream_options_preserved_when_user_specifies_it(
 
     provider_instance = PlatformProvider(api_key=any_llm_key)
 
-    # Create a mock provider with the PROVIDER_NAME attribute
     mock_provider = Mock()
     mock_provider.PROVIDER_NAME = LLMProvider.OPENAI
     provider_instance._provider = mock_provider
+    provider_instance._provider_initialized = True
 
-    # Mock the underlying provider's _acompletion to capture the params it receives
     captured_params = None
 
     async def capture_and_return(*args, **kwargs):  # type: ignore[no-untyped-def]
@@ -1073,7 +1224,6 @@ async def test_stream_options_preserved_when_user_specifies_it(
 
     provider_instance.provider._acompletion = AsyncMock(side_effect=capture_and_return)  # type: ignore[method-assign]
 
-    # User specifies custom stream_options
     custom_stream_options = {"include_usage": False, "custom_field": "custom_value"}
     params = CompletionParams(
         model_id="test-model",
@@ -1082,14 +1232,11 @@ async def test_stream_options_preserved_when_user_specifies_it(
         stream_options=custom_stream_options,
     )
 
-    # Call _acompletion
     result = await provider_instance._acompletion(params)
 
-    # Consume the stream
     async for _ in result:  # type: ignore[union-attr]
         pass
 
-    # Verify that user-specified stream_options are preserved
     assert captured_params is not None
     assert captured_params.stream_options == custom_stream_options
 
@@ -1161,23 +1308,19 @@ async def test_usage_event_includes_version_header(
 
 
 @pytest.mark.asyncio
-@patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
 @patch("any_llm.providers.platform.platform.post_completion_usage_event")
 async def test_acompletion_rejects_client_name_in_kwargs_when_not_initialized(
     mock_post_usage: AsyncMock,
-    mock_get_decrypted_provider_key: Mock,
     any_llm_key: str,
     mock_decrypted_provider_key: DecryptedProviderKey,
     mock_completion: ChatCompletion,
 ) -> None:
     """Test that _acompletion rejects request-time client_name when provider was not initialized with it."""
-    mock_get_decrypted_provider_key.return_value = mock_decrypted_provider_key
-
     provider_instance = PlatformProvider(api_key=any_llm_key)
     provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
     provider_instance.provider._acompletion = AsyncMock(return_value=mock_completion)  # type: ignore[method-assign]
 
-    # Create completion params
     params = CompletionParams(
         model_id="gpt-4",
         messages=[{"role": "user", "content": "Hello"}],
@@ -1194,24 +1337,20 @@ async def test_acompletion_rejects_client_name_in_kwargs_when_not_initialized(
 
 
 @pytest.mark.asyncio
-@patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
 @patch("any_llm.providers.platform.platform.post_completion_usage_event")
 async def test_acompletion_rejects_changing_existing_client_name(
     mock_post_usage: AsyncMock,
-    mock_get_decrypted_provider_key: Mock,
     any_llm_key: str,
     mock_decrypted_provider_key: DecryptedProviderKey,
     mock_completion: ChatCompletion,
 ) -> None:
     """Test that _acompletion rejects a request-time client_name that differs from configured client_name."""
-    mock_get_decrypted_provider_key.return_value = mock_decrypted_provider_key
-
     initial_client_name = "initial-client"
     provider_instance = PlatformProvider(api_key=any_llm_key, client_name=initial_client_name)
     provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
     provider_instance.provider._acompletion = AsyncMock(return_value=mock_completion)  # type: ignore[method-assign]
 
-    # Create completion params
     params = CompletionParams(
         model_id="gpt-4",
         messages=[{"role": "user", "content": "Hello"}],
@@ -1228,21 +1367,18 @@ async def test_acompletion_rejects_changing_existing_client_name(
 
 
 @pytest.mark.asyncio
-@patch("any_llm_platform_client.AnyLLMPlatformClient.get_decrypted_provider_key")
 @patch("any_llm.providers.platform.platform.post_completion_usage_event")
 async def test_acompletion_rejects_same_client_name_in_kwargs(
     mock_post_usage: AsyncMock,
-    mock_get_decrypted_provider_key: Mock,
     any_llm_key: str,
     mock_decrypted_provider_key: DecryptedProviderKey,
     mock_completion: ChatCompletion,
 ) -> None:
     """Test that _acompletion rejects request-time client_name even when it matches configured value."""
-    mock_get_decrypted_provider_key.return_value = mock_decrypted_provider_key
-
     client_name = "configured-client"
     provider_instance = PlatformProvider(api_key=any_llm_key, client_name=client_name)
     provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
     provider_instance.provider._acompletion = AsyncMock(return_value=mock_completion)  # type: ignore[method-assign]
 
     params = CompletionParams(

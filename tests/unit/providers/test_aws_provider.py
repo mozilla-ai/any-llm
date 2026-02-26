@@ -12,6 +12,7 @@ from any_llm.providers.bedrock.utils import (
     REASONING_EFFORT_TO_THINKING_BUDGETS,
     _convert_images_for_bedrock,
     _convert_messages,
+    _convert_response,
     _create_openai_chunk_from_aws_chunk,
 )
 from any_llm.types.completion import CompletionParams, ReasoningEffort
@@ -575,3 +576,127 @@ def test_completion_with_images() -> None:
         assert call_args["messages"][0]["content"][0] == {"text": "Describe this image."}
         assert call_args["messages"][0]["content"][1]["image"]["format"] == "png"
         assert call_args["messages"][0]["content"][1]["image"]["source"]["bytes"] == test_image_data
+
+
+def test_convert_response_extracts_cached_tokens() -> None:
+    """Test that cacheReadInputTokens is extracted into prompt_tokens_details."""
+    response: dict[str, Any] = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "stopReason": "end_turn",
+        "usage": {
+            "inputTokens": 100,
+            "outputTokens": 50,
+            "totalTokens": 150,
+            "cacheReadInputTokens": 80,
+            "cacheWriteInputTokens": 20,
+        },
+    }
+
+    result = _convert_response(response)
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 200  # 100 + 80 + 20
+    assert result.usage.completion_tokens == 50
+    assert result.usage.total_tokens == 250  # 200 + 50
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 80
+
+
+def test_convert_response_without_cached_tokens() -> None:
+    """Test that prompt_tokens_details is None when no cached tokens are present."""
+    response: dict[str, Any] = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "stopReason": "end_turn",
+        "usage": {
+            "inputTokens": 100,
+            "outputTokens": 50,
+            "totalTokens": 150,
+        },
+    }
+
+    result = _convert_response(response)
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 100
+    assert result.usage.completion_tokens == 50
+    assert result.usage.total_tokens == 150
+    assert result.usage.prompt_tokens_details is None
+
+
+def test_convert_response_tool_calls_extracts_cached_tokens() -> None:
+    """Test that cached tokens are extracted for tool call responses."""
+    response: dict[str, Any] = {
+        "output": {
+            "message": {
+                "content": [
+                    {
+                        "toolUse": {
+                            "toolUseId": "tool-123",
+                            "name": "get_weather",
+                            "input": {"location": "Paris"},
+                        }
+                    }
+                ]
+            }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+            "inputTokens": 100,
+            "outputTokens": 50,
+            "totalTokens": 150,
+            "cacheReadInputTokens": 80,
+        },
+    }
+
+    result = _convert_response(response)
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 180  # 100 + 80
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 80
+
+
+def test_streaming_metadata_chunk_extracts_cached_tokens() -> None:
+    """Test that the metadata streaming event extracts cached tokens into usage."""
+    chunk: dict[str, Any] = {
+        "metadata": {
+            "usage": {
+                "inputTokens": 100,
+                "outputTokens": 50,
+                "totalTokens": 150,
+                "cacheReadInputTokens": 80,
+                "cacheWriteInputTokens": 20,
+            }
+        }
+    }
+
+    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model")
+
+    assert result is not None
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 200  # 100 + 80 + 20
+    assert result.usage.completion_tokens == 50
+    assert result.usage.total_tokens == 250
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 80
+
+
+def test_streaming_metadata_chunk_without_cached_tokens() -> None:
+    """Test that streaming metadata works without cached tokens."""
+    chunk: dict[str, Any] = {
+        "metadata": {
+            "usage": {
+                "inputTokens": 100,
+                "outputTokens": 50,
+                "totalTokens": 150,
+            }
+        }
+    }
+
+    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model")
+
+    assert result is not None
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 100
+    assert result.usage.completion_tokens == 50
+    assert result.usage.prompt_tokens_details is None

@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from any_llm.any_llm import AnyLLM
 from any_llm.gateway.auth import verify_master_key
 from any_llm.gateway.db import ModelPricing, get_db
 
@@ -14,8 +15,8 @@ class SetPricingRequest(BaseModel):
     """Request model for setting model pricing."""
 
     model_key: str = Field(description="Model identifier in format 'provider:model'")
-    input_price_per_million: float = Field(description="Price per 1M input tokens")
-    output_price_per_million: float = Field(description="Price per 1M output tokens")
+    input_price_per_million: float = Field(ge=0, description="Price per 1M input tokens")
+    output_price_per_million: float = Field(ge=0, description="Price per 1M output tokens")
 
 
 class PricingResponse(BaseModel):
@@ -34,14 +35,16 @@ async def set_pricing(
     db: Annotated[Session, Depends(get_db)],
 ) -> PricingResponse:
     """Set or update pricing for a model."""
-    pricing = db.query(ModelPricing).filter(ModelPricing.model_key == request.model_key).first()
+    provider, model_name = AnyLLM.split_model_provider(request.model_key)
+    normalized_key = f"{provider.value}:{model_name}"
+    pricing = db.query(ModelPricing).filter(ModelPricing.model_key == normalized_key).first()
 
     if pricing:
         pricing.input_price_per_million = request.input_price_per_million
         pricing.output_price_per_million = request.output_price_per_million
     else:
         pricing = ModelPricing(
-            model_key=request.model_key,
+            model_key=normalized_key,
             input_price_per_million=request.input_price_per_million,
             output_price_per_million=request.output_price_per_million,
         )
@@ -62,8 +65,8 @@ async def set_pricing(
 @router.get("")
 async def list_pricing(
     db: Annotated[Session, Depends(get_db)],
-    skip: int = 0,
-    limit: int = 100,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> list[PricingResponse]:
     """List all model pricing."""
     pricings = db.query(ModelPricing).offset(skip).limit(limit).all()

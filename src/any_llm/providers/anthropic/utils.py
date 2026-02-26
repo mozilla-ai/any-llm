@@ -1,6 +1,7 @@
 import json
 from typing import TYPE_CHECKING, Any, cast
 
+from anthropic import transform_schema
 from anthropic.types import (
     ContentBlockDeltaEvent,
     ContentBlockStartEvent,
@@ -9,6 +10,7 @@ from anthropic.types import (
     MessageStopEvent,
 )
 from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
+from pydantic import BaseModel
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.logging import logger
@@ -136,7 +138,8 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
             if "content" in message and isinstance(message["content"], list):
                 message["content"] = _convert_images_for_anthropic(message["content"])
 
-            filtered_messages.append(message)
+            # Only keep Anthropic-compatible fields (strips OpenAI-specific fields like 'refusal')
+            filtered_messages.append({"role": message["role"], "content": message.get("content", "")})
 
     return system_message, filtered_messages
 
@@ -339,18 +342,40 @@ def _convert_tool_choice(params: CompletionParams) -> dict[str, Any]:
     return {"type": tool_choice, "disable_parallel_tool_use": not parallel_tool_calls}
 
 
+def _convert_response_format(response_format: dict[str, Any] | type[BaseModel], provider_name: str) -> dict[str, Any]:
+    """Convert any-llm response_format to Anthropic's output_config."""
+    if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+        schema = response_format.model_json_schema()
+    elif isinstance(response_format, dict):
+        if response_format.get("type") == "json_schema":
+            schema = response_format["json_schema"]["schema"]
+        elif response_format.get("type") == "json_object":
+            msg = "response_format with type 'json_object'"
+            raise UnsupportedParameterError(
+                msg,
+                provider_name,
+                "Use a Pydantic model or json_schema format instead.",
+            )
+        else:
+            msg = f"Unsupported response_format type: {response_format.get('type')}"
+            raise ValueError(msg)
+    else:
+        msg = f"Unsupported response_format: {response_format}"
+        raise ValueError(msg)
+
+    return {"format": {"type": "json_schema", "schema": transform_schema(schema)}}
+
+
 def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
     """Convert CompletionParams to kwargs for Anthropic API."""
     provider_name: str = kwargs.pop("provider_name")
     result_kwargs: dict[str, Any] = kwargs.copy()
 
     if params.response_format:
-        msg = "response_format"
-        raise UnsupportedParameterError(
-            msg,
-            provider_name,
-            "Check the following links:\n- https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/increase-consistency\n- https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview#json-mode",
-        )
+        if params.stream:
+            msg = "stream and response_format"
+            raise UnsupportedParameterError(msg, provider_name)
+        result_kwargs["output_config"] = _convert_response_format(params.response_format, provider_name)
     if params.max_tokens is None:
         logger.warning(f"max_tokens is required for Anthropic, setting to {DEFAULT_MAX_TOKENS}")
         params.max_tokens = DEFAULT_MAX_TOKENS
@@ -378,6 +403,7 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
                 "reasoning_effort",
                 "response_format",
                 "parallel_tool_calls",
+                "stream_options",
             },
         )
     )
