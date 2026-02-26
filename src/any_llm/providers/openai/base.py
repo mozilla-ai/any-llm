@@ -73,8 +73,10 @@ class BaseOpenAIProvider(AnyLLM):
         if max_completion_tokens_key in converted_params:
             logger.warning(
                 "Ignoring %s (%s) in favor of %s (%s).",
-                max_tokens_key, max_tokens,
-                max_completion_tokens_key, converted_params[max_completion_tokens_key],
+                max_tokens_key,
+                max_tokens,
+                max_completion_tokens_key,
+                converted_params[max_completion_tokens_key],
             )
         else:
             converted_params[max_completion_tokens_key] = max_tokens
