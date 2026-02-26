@@ -631,8 +631,6 @@ class AnyLLM(ABC):
             for choice in parsed_completion.choices:
                 if choice.finish_reason in ("length", "content_filter"):
                     choice.message.parsed = None
-                elif isinstance(choice.message.parsed, response_format):
-                    continue
                 elif choice.message.content and not choice.message.refusal:
                     choice.message.parsed = response_format.model_validate_json(choice.message.content)
                 else:
