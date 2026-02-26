@@ -21,7 +21,7 @@ async def test_sambanova_converts_pydantic_response_format(mock_openai_class: Ma
 
     # Mock the response
     mock_response = MagicMock()
-    mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+    mock_client.chat.completions.parse = AsyncMock(return_value=mock_response)
 
     provider = SambanovaProvider(api_key="test-key")
 
@@ -31,8 +31,8 @@ async def test_sambanova_converts_pydantic_response_format(mock_openai_class: Ma
     await provider._acompletion(params)
 
     # Verify the client was called with the converted response_format
-    mock_client.chat.completions.create.assert_called_once()
-    call_args = mock_client.chat.completions.create.call_args
+    mock_client.chat.completions.parse.assert_called_once()
+    call_args = mock_client.chat.completions.parse.call_args
 
     assert call_args is not None
     kwargs = call_args.kwargs
@@ -58,7 +58,7 @@ async def test_sambanova_preserves_dict_response_format(mock_openai_class: Magic
 
     # Mock the response
     mock_response = MagicMock()
-    mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+    mock_client.chat.completions.parse = AsyncMock(return_value=mock_response)
 
     provider = SambanovaProvider(api_key="test-key")
 
@@ -69,8 +69,8 @@ async def test_sambanova_preserves_dict_response_format(mock_openai_class: Magic
     await provider._acompletion(params)
 
     # Verify the client was called with the original dict response_format
-    mock_client.chat.completions.create.assert_called_once()
-    call_args = mock_client.chat.completions.create.call_args
+    mock_client.chat.completions.parse.assert_called_once()
+    call_args = mock_client.chat.completions.parse.call_args
 
     assert call_args is not None
     kwargs = call_args.kwargs

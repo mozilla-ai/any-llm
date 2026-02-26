@@ -3,6 +3,7 @@
 from typing import Any
 
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
+from openai.types.chat.parsed_chat_completion import ParsedChatCompletion as OpenAIParsedChatCompletion
 
 from any_llm.constants import REASONING_FIELD_NAMES
 from any_llm.exceptions import ProviderError
@@ -81,10 +82,10 @@ def _convert_chat_completion(response: OpenAIChatCompletion) -> ChatCompletion:
     return ChatCompletion.model_validate(normalized)
 
 
-def _convert_parsed_chat_completion(response: OpenAIChatCompletion) -> ParsedChatCompletion[Any]:
+def _convert_parsed_chat_completion(response: OpenAIParsedChatCompletion[Any]) -> ParsedChatCompletion[Any]:
     """Convert an OpenAI ParsedChatCompletion preserving the .parsed field on each choice."""
     base = _convert_chat_completion(response)
-    parsed_completion = ParsedChatCompletion.model_validate(base, from_attributes=True)
+    parsed_completion: ParsedChatCompletion[Any] = ParsedChatCompletion.model_validate(base, from_attributes=True)
     for base_choice, parsed_choice in zip(response.choices, parsed_completion.choices, strict=True):
         parsed_choice.message.parsed = getattr(base_choice.message, "parsed", None)
     return parsed_completion

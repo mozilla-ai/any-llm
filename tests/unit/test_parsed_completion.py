@@ -116,9 +116,7 @@ async def test_no_parsed_completion_without_response_format(provider: AnyLLM) ->
 async def test_parsed_completion_already_parsed(provider: AnyLLM) -> None:
     """When a provider returns a ParsedChatCompletion with .parsed already set, skip re-parsing."""
     completion = _make_chat_completion()
-    parsed_completion: ParsedChatCompletion[Any] = ParsedChatCompletion.model_validate(
-        completion, from_attributes=True
-    )
+    parsed_completion: ParsedChatCompletion[Any] = ParsedChatCompletion.model_validate(completion, from_attributes=True)
     parsed_completion.choices[0].message.parsed = CityResponse(city_name="Paris")
     provider._acompletion = AsyncMock(return_value=parsed_completion)  # type: ignore[method-assign]
 
