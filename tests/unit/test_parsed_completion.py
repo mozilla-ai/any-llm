@@ -113,6 +113,23 @@ async def test_no_parsed_completion_without_response_format(provider: AnyLLM) ->
 
 
 @pytest.mark.asyncio
+async def test_parsed_completion_no_content_no_refusal(provider: AnyLLM) -> None:
+    provider._acompletion = AsyncMock(  # type: ignore[method-assign]
+        return_value=_make_chat_completion(content=None),
+    )
+
+    result = await provider.acompletion(
+        model="test-model",
+        messages=[{"role": "user", "content": "test"}],
+        response_format=CityResponse,
+    )
+
+    assert isinstance(result, ParsedChatCompletion)
+    assert result.choices[0].message.parsed is None
+    assert result.choices[0].message.content is None
+
+
+@pytest.mark.asyncio
 async def test_no_parsed_completion_with_dict_response_format(provider: AnyLLM) -> None:
     provider._acompletion = AsyncMock(return_value=_make_chat_completion())  # type: ignore[method-assign]
 
