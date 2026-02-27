@@ -15,9 +15,7 @@ if TYPE_CHECKING:
     from any_llm.types.completion import ChatCompletion
 
 
-ANY_LLM_PLATFORM_URL = os.getenv("ANY_LLM_PLATFORM_URL", "https://platform-api.any-llm.ai")
-API_V1_STR = "/api/v1"
-ANY_LLM_PLATFORM_API_URL = f"{ANY_LLM_PLATFORM_URL}{API_V1_STR}"
+ANY_LLM_PLATFORM_API_URL = os.getenv("ANY_LLM_PLATFORM_URL", "https://platform-api.any-llm.ai/api/v1")
 
 
 async def post_completion_usage_event(
