@@ -156,6 +156,21 @@ def test_providers_raise_MissingApiKeyError(provider: LLMProvider) -> None:
             AnyLLM.create(provider.value)
 
 
+def test_missing_packages_error_message_format() -> None:
+    """Test that _verify_no_missing_packages produces a well-formatted error message."""
+    original_error = ImportError("No module named 'anthropic'")
+    provider_class = AnyLLM.get_provider_class("anthropic")
+
+    # Temporarily set MISSING_PACKAGES_ERROR to simulate missing package
+    old_value = provider_class.MISSING_PACKAGES_ERROR
+    provider_class.MISSING_PACKAGES_ERROR = original_error
+    try:
+        with pytest.raises(ImportError, match=r"pip install any-llm-sdk\[anthropic\]"):
+            provider_class(api_key="test_key")
+    finally:
+        provider_class.MISSING_PACKAGES_ERROR = old_value
+
+
 @pytest.mark.parametrize(
     ("provider_name", "module_name"),
     [
