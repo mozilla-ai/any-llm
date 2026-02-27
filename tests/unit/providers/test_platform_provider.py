@@ -7,6 +7,8 @@ from uuid import UUID
 import httpx
 import pytest
 from any_llm_platform_client import DecryptedProviderKey
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import ValidationError
 
@@ -494,14 +496,12 @@ async def test_export_completion_trace_success(
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
 
     exporter = InMemorySpanExporter()
-
-    def _build_span_exporter_stub(access_token: str):  # type: ignore[no-untyped-def]
-        assert access_token == "mock-jwt-token-12345"
-        return exporter
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
 
     client = AsyncMock(spec=httpx.AsyncClient)
 
-    with patch("any_llm.providers.platform.utils._build_span_exporter", _build_span_exporter_stub):
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
         await export_completion_trace(
             platform_client=mock_platform_client,
             client=client,
@@ -537,14 +537,12 @@ async def test_export_completion_trace_with_client_name(
     client_name = "my-test-client"
 
     exporter = InMemorySpanExporter()
-
-    def _build_span_exporter_stub(access_token: str):  # type: ignore[no-untyped-def]
-        assert access_token == "mock-jwt-token-12345"
-        return exporter
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
 
     client = AsyncMock(spec=httpx.AsyncClient)
 
-    with patch("any_llm.providers.platform.utils._build_span_exporter", _build_span_exporter_stub):
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
         await export_completion_trace(
             platform_client=mock_platform_client,
             client=client,
@@ -890,14 +888,12 @@ async def test_export_completion_trace_with_performance_metrics(
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
 
     exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
 
     client = AsyncMock(spec=httpx.AsyncClient)
 
-    def _build_span_exporter_stub(access_token: str):  # type: ignore[no-untyped-def]
-        assert access_token == "mock-jwt-token-12345"
-        return exporter
-
-    with patch("any_llm.providers.platform.utils._build_span_exporter", _build_span_exporter_stub):
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
         await export_completion_trace(
             platform_client=mock_platform_client,
             client=client,
@@ -937,14 +933,12 @@ async def test_export_completion_trace_with_partial_performance_metrics(
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
 
     exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
 
     client = AsyncMock(spec=httpx.AsyncClient)
 
-    def _build_span_exporter_stub(access_token: str):  # type: ignore[no-untyped-def]
-        assert access_token == "mock-jwt-token-12345"
-        return exporter
-
-    with patch("any_llm.providers.platform.utils._build_span_exporter", _build_span_exporter_stub):
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
         await export_completion_trace(
             platform_client=mock_platform_client,
             client=client,
@@ -975,14 +969,12 @@ async def test_export_completion_trace_without_performance_metrics(
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
 
     exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
 
     client = AsyncMock(spec=httpx.AsyncClient)
 
-    def _build_span_exporter_stub(access_token: str):  # type: ignore[no-untyped-def]
-        assert access_token == "mock-jwt-token-12345"
-        return exporter
-
-    with patch("any_llm.providers.platform.utils._build_span_exporter", _build_span_exporter_stub):
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
         await export_completion_trace(
             platform_client=mock_platform_client,
             client=client,
@@ -1021,14 +1013,12 @@ async def test_export_completion_trace_skips_when_no_usage(
     )
 
     exporter = InMemorySpanExporter()
-
-    def _build_span_exporter_stub(access_token: str):  # type: ignore[no-untyped-def]
-        assert access_token == "mock-jwt-token-12345"
-        return exporter
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
 
     client = AsyncMock(spec=httpx.AsyncClient)
 
-    with patch("any_llm.providers.platform.utils._build_span_exporter", _build_span_exporter_stub):
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
         await export_completion_trace(
             platform_client=mock_platform_client,
             client=client,
@@ -1282,6 +1272,8 @@ async def test_trace_export_uses_bearer_token(
     mock_completion: ChatCompletion,
 ) -> None:
     """Test that trace export uses Bearer token authentication."""
+    from any_llm.providers.platform import utils as platform_utils
+
     mock_http_client = AsyncMock(spec=httpx.AsyncClient)
     captured: dict[str, Any] = {}
 
@@ -1289,19 +1281,29 @@ async def test_trace_export_uses_bearer_token(
         captured.update(kwargs)
         return InMemorySpanExporter()
 
-    with patch("any_llm.providers.platform.utils.OTLPSpanExporter", side_effect=_exporter_factory):
-        await export_completion_trace(
-            platform_client=mock_platform_client,
-            client=mock_http_client,
-            any_llm_key=any_llm_key,
-            provider="openai",
-            request_model="gpt-4",
-            completion=mock_completion,
-            start_time_ns=100,
-            end_time_ns=200,
-            client_name="test-client",
-            total_duration_ms=100.0,
-        )
+    # Clear the provider cache so a new provider is created with our mocked exporter
+    original_providers = platform_utils._providers.copy()
+    platform_utils._providers.clear()
+    try:
+        with patch("any_llm.providers.platform.utils.OTLPSpanExporter", side_effect=_exporter_factory):
+            await export_completion_trace(
+                platform_client=mock_platform_client,
+                client=mock_http_client,
+                any_llm_key=any_llm_key,
+                provider="openai",
+                request_model="gpt-4",
+                completion=mock_completion,
+                start_time_ns=100,
+                end_time_ns=200,
+                client_name="test-client",
+                total_duration_ms=100.0,
+            )
+    finally:
+        # Shutdown any providers created during the test and restore original state
+        for provider in platform_utils._providers.values():
+            provider.shutdown()
+        platform_utils._providers.clear()
+        platform_utils._providers.update(original_providers)
 
     mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
 
@@ -1321,6 +1323,7 @@ async def test_trace_export_includes_version_header(
 ) -> None:
     """Test that trace export includes library version in User-Agent header."""
     from any_llm import __version__
+    from any_llm.providers.platform import utils as platform_utils
 
     mock_http_client = AsyncMock(spec=httpx.AsyncClient)
     captured: dict[str, Any] = {}
@@ -1329,17 +1332,26 @@ async def test_trace_export_includes_version_header(
         captured.update(kwargs)
         return InMemorySpanExporter()
 
-    with patch("any_llm.providers.platform.utils.OTLPSpanExporter", side_effect=_exporter_factory):
-        await export_completion_trace(
-            platform_client=mock_platform_client,
-            client=mock_http_client,
-            any_llm_key=any_llm_key,
-            provider="openai",
-            request_model="gpt-4",
-            completion=mock_completion,
-            start_time_ns=100,
-            end_time_ns=200,
-        )
+    # Clear the provider cache so a new provider is created with our mocked exporter
+    original_providers = platform_utils._providers.copy()
+    platform_utils._providers.clear()
+    try:
+        with patch("any_llm.providers.platform.utils.OTLPSpanExporter", side_effect=_exporter_factory):
+            await export_completion_trace(
+                platform_client=mock_platform_client,
+                client=mock_http_client,
+                any_llm_key=any_llm_key,
+                provider="openai",
+                request_model="gpt-4",
+                completion=mock_completion,
+                start_time_ns=100,
+                end_time_ns=200,
+            )
+    finally:
+        for provider in platform_utils._providers.values():
+            provider.shutdown()
+        platform_utils._providers.clear()
+        platform_utils._providers.update(original_providers)
 
     headers = captured["headers"]
 
@@ -1561,3 +1573,45 @@ async def test_platform_provider_mzai_exports_traces_streaming(
     assert len(chunks) == len(mock_streaming_chunks)
     mock_export_trace.assert_called_once()
     assert mock_export_trace.call_args.kwargs["provider"] == "mzai"
+
+
+def test_tracer_provider_reused_for_same_token() -> None:
+    """Test that _get_or_create_tracer_provider returns the same provider for the same token."""
+    from any_llm.providers.platform import utils as platform_utils
+    from any_llm.providers.platform.utils import _get_or_create_tracer_provider
+
+    original_providers = platform_utils._providers.copy()
+    platform_utils._providers.clear()
+    try:
+        provider_a = _get_or_create_tracer_provider("token-aaa")
+        provider_b = _get_or_create_tracer_provider("token-aaa")
+        assert provider_a is provider_b
+
+        provider_c = _get_or_create_tracer_provider("token-bbb")
+        assert provider_c is not provider_a
+    finally:
+        for provider in platform_utils._providers.values():
+            provider.shutdown()
+        platform_utils._providers.clear()
+        platform_utils._providers.update(original_providers)
+
+
+def test_shutdown_telemetry_clears_providers() -> None:
+    """Test that shutdown_telemetry shuts down all providers and clears the cache."""
+    from any_llm.providers.platform import utils as platform_utils
+    from any_llm.providers.platform.utils import _get_or_create_tracer_provider, shutdown_telemetry
+
+    original_providers = platform_utils._providers.copy()
+    platform_utils._providers.clear()
+    try:
+        _get_or_create_tracer_provider("token-xxx")
+        _get_or_create_tracer_provider("token-yyy")
+        assert len(platform_utils._providers) == 2
+
+        shutdown_telemetry()
+
+        assert len(platform_utils._providers) == 0
+    finally:
+        # Restore original state (shutdown_telemetry already cleared, but be safe)
+        platform_utils._providers.clear()
+        platform_utils._providers.update(original_providers)

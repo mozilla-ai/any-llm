@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import atexit
 import os
+import threading
 from typing import TYPE_CHECKING
 
 import httpx  # noqa: TC002
@@ -10,8 +12,8 @@ from any_llm_platform_client import (
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import SpanKind
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter
 
 from any_llm import __version__
 
@@ -26,21 +28,47 @@ if _trace_base_url.endswith("/api/v1"):
     _trace_base_url = _trace_base_url[: -len("/api/v1")]
 ANY_LLM_PLATFORM_TRACE_URL = f"{_trace_base_url}{TRACE_API_PATH}"
 
-
-def _build_span_exporter(access_token: str) -> SpanExporter:
-    return OTLPSpanExporter(
-        endpoint=ANY_LLM_PLATFORM_TRACE_URL,
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "User-Agent": f"python-any-llm/{__version__}",
-        },
-    )
+# Module-level cache: access_token -> TracerProvider
+_providers: dict[str, TracerProvider] = {}
+_providers_lock = threading.Lock()
 
 
-def _build_tracer_provider(access_token: str) -> TracerProvider:
-    provider = TracerProvider(resource=Resource.create({"service.name": "any-llm"}))
-    provider.add_span_processor(SimpleSpanProcessor(_build_span_exporter(access_token)))
-    return provider
+def _get_or_create_tracer_provider(access_token: str) -> TracerProvider:
+    """Get or create a TracerProvider for the given access token.
+
+    Providers are cached by token and reused across requests.
+    When a token expires and a new one is issued, a new provider is created.
+    """
+    with _providers_lock:
+        if access_token in _providers:
+            return _providers[access_token]
+
+        provider = TracerProvider(resource=Resource.create({"service.name": "any-llm"}))
+        exporter = OTLPSpanExporter(
+            endpoint=ANY_LLM_PLATFORM_TRACE_URL,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "User-Agent": f"python-any-llm/{__version__}",
+            },
+        )
+        provider.add_span_processor(BatchSpanProcessor(exporter))
+        _providers[access_token] = provider
+        return provider
+
+
+def shutdown_telemetry() -> None:
+    """Shutdown all cached tracer providers.
+
+    Called automatically at process exit via atexit, but can also be called
+    manually to ensure all pending spans are flushed before shutdown.
+    """
+    with _providers_lock:
+        for provider in _providers.values():
+            provider.shutdown()
+        _providers.clear()
+
+
+atexit.register(shutdown_telemetry)
 
 
 async def export_completion_trace(
@@ -70,7 +98,7 @@ async def export_completion_trace(
     """
     access_token = await platform_client._aensure_valid_token(any_llm_key)
 
-    provider_instance = _build_tracer_provider(access_token)
+    provider_instance = _get_or_create_tracer_provider(access_token)
     tracer = provider_instance.get_tracer("any-llm", __version__)
 
     span = tracer.start_span("llm.request", kind=SpanKind.CLIENT, start_time=start_time_ns)
@@ -111,5 +139,3 @@ async def export_completion_trace(
         )
 
     span.end(end_time=end_time_ns)
-    provider_instance.force_flush()
-    provider_instance.shutdown()
