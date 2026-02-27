@@ -105,7 +105,7 @@ class AnyLLM(ABC):
 
     def _verify_no_missing_packages(self) -> None:
         if self.MISSING_PACKAGES_ERROR is not None:
-            msg = f"{self.PROVIDER_NAME} required packages are not installed. Please install them with `pip install any-llm-sdk[{self.PROVIDER_NAME}]. Specific error message: {self.MISSING_PACKAGES_ERROR.msg}`"
+            msg = f"{self.PROVIDER_NAME} required packages are not installed. Please install them with `pip install any-llm-sdk[{self.PROVIDER_NAME}]`. Specific error message: {self.MISSING_PACKAGES_ERROR}"
             raise ImportError(msg) from self.MISSING_PACKAGES_ERROR
 
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
