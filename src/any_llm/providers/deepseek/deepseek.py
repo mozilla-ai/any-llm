@@ -22,6 +22,15 @@ class DeepseekProvider(BaseOpenAIProvider):
 
     @staticmethod
     @override
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """DeepSeek only accepts ``max_tokens``, not ``max_completion_tokens``."""
+        converted_params = BaseOpenAIProvider._convert_completion_params(params, **kwargs)
+        if "max_completion_tokens" in converted_params:
+            converted_params["max_tokens"] = converted_params.pop("max_completion_tokens")
+        return converted_params
+
+    @staticmethod
+    @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
         result = BaseOpenAIProvider._convert_completion_response(response)
         return _inject_cached_tokens(result)

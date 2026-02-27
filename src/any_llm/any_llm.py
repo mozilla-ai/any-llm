@@ -109,7 +109,7 @@ class AnyLLM(ABC):
 
     def _verify_no_missing_packages(self) -> None:
         if self.MISSING_PACKAGES_ERROR is not None:
-            msg = f"{self.PROVIDER_NAME} required packages are not installed. Please install them with `pip install any-llm-sdk[{self.PROVIDER_NAME}]. Specific error message: {self.MISSING_PACKAGES_ERROR.msg}`"
+            msg = f"{self.PROVIDER_NAME} required packages are not installed. Please install them with `pip install any-llm-sdk[{self.PROVIDER_NAME}]`. Specific error message: {self.MISSING_PACKAGES_ERROR}"
             raise ImportError(msg) from self.MISSING_PACKAGES_ERROR
 
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
@@ -195,7 +195,7 @@ class AnyLLM(ABC):
                 platform_class: type[AnyLLM] = getattr(platform_module, platform_class_name)
 
                 # Instantiate the class first and pass the provider next,
-                # so we don't change the common API between different provideers.
+                # so we don't change the common API between different providers.
                 # pop platform-specific kwargs to avoid passing them to the provider's __init__
                 client_name = kwargs.pop("client_name", None)
                 platform_provider = platform_class(
