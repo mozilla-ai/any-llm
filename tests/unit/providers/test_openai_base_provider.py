@@ -131,3 +131,37 @@ def test_base_openai_provider_does_not_map_max_tokens() -> None:
     result = BaseOpenAIProvider._convert_completion_params(params)
     assert result["max_tokens"] == 8192
     assert "max_completion_tokens" not in result
+
+
+def test_base_openai_provider_excludes_prompt_cache_fields() -> None:
+    params = CompletionParams(
+        model_id="model",
+        messages=[{"role": "user", "content": "hi"}],
+        prompt_cache_key="my-key",
+        prompt_cache_retention="1h",
+    )
+    result = BaseOpenAIProvider._convert_completion_params(params)
+    assert "prompt_cache_key" not in result
+    assert "prompt_cache_retention" not in result
+
+
+def test_openai_provider_includes_prompt_cache_fields_when_set() -> None:
+    params = CompletionParams(
+        model_id="gpt-5.2",
+        messages=[{"role": "user", "content": "hi"}],
+        prompt_cache_key="my-key",
+        prompt_cache_retention="1h",
+    )
+    result = OpenaiProvider._convert_completion_params(params)
+    assert result["prompt_cache_key"] == "my-key"
+    assert result["prompt_cache_retention"] == "1h"
+
+
+def test_openai_provider_omits_prompt_cache_fields_when_none() -> None:
+    params = CompletionParams(
+        model_id="gpt-5.2",
+        messages=[{"role": "user", "content": "hi"}],
+    )
+    result = OpenaiProvider._convert_completion_params(params)
+    assert "prompt_cache_key" not in result
+    assert "prompt_cache_retention" not in result

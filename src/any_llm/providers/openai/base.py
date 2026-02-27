@@ -57,7 +57,9 @@ class BaseOpenAIProvider(AnyLLM):
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for OpenAI API."""
-        converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
+        converted_params = params.model_dump(
+            exclude_none=True, exclude={"model_id", "messages", "prompt_cache_key", "prompt_cache_retention"}
+        )
         converted_params.update(kwargs)
         return converted_params
 

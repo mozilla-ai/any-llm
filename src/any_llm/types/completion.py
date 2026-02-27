@@ -166,3 +166,9 @@ class CompletionParams(BaseModel):
 
     reasoning_effort: ReasoningEffort | None = "auto"
     """Reasoning effort level for models that support it. "auto" will map to each provider's default."""
+
+    prompt_cache_key: str | None = None
+    """A key to use when reading from or writing to the prompt cache."""
+
+    prompt_cache_retention: str | None = None
+    """How long to retain a prompt cache entry created by this request."""

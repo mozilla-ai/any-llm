@@ -33,4 +33,8 @@ class OpenaiProvider(BaseOpenAIProvider):
                 )
             else:
                 converted_params["max_completion_tokens"] = max_tokens
+        if params.prompt_cache_key is not None:
+            converted_params["prompt_cache_key"] = params.prompt_cache_key
+        if params.prompt_cache_retention is not None:
+            converted_params["prompt_cache_retention"] = params.prompt_cache_retention
         return converted_params
