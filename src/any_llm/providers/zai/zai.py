@@ -29,8 +29,6 @@ class ZaiProvider(BaseOpenAIProvider):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
 
-    PACKAGES_INSTALLED = True
-
     @staticmethod
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:

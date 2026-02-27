@@ -4,8 +4,6 @@ from any_llm.providers.openai.base import BaseOpenAIProvider
 class PerplexityProvider(BaseOpenAIProvider):
     """Perplexity provider for accessing LLMs through Perplexity's OpenAI-compatible API."""
 
-    PACKAGES_INSTALLED = True
-
     API_BASE = "https://api.perplexity.ai"
     ENV_API_KEY_NAME = "PERPLEXITY_API_KEY"
     ENV_API_BASE_NAME = "PERPLEXITY_BASE_URL"
