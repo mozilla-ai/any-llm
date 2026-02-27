@@ -18,7 +18,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
 )
 
-from .utils import post_completion_usage_event
+from .utils import export_completion_trace
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
@@ -71,7 +71,7 @@ class PlatformProvider(AnyLLM):
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = AsyncClient(**kwargs)
-        # Initialize the platform client for authentication and usage tracking
+        # Initialize the platform client for authentication and trace export
         from .utils import ANY_LLM_PLATFORM_API_URL
 
         self.platform_client = AnyLLMPlatformClient(
@@ -143,6 +143,7 @@ class PlatformProvider(AnyLLM):
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         client_name = kwargs.pop("client_name", None)
+        session_label = kwargs.pop("session_label", None)
         if client_name is not None:
             msg = (
                 "Passing client_name at request time is not supported for PlatformProvider. "
@@ -152,6 +153,7 @@ class PlatformProvider(AnyLLM):
 
         await self._ensure_provider_initialized()
         start_time = time.perf_counter()
+        start_time_ns = time.time_ns()
 
         if params.stream and params.stream_options is None:
             # Auto-inject stream_options to request usage data for tracking.
@@ -165,23 +167,34 @@ class PlatformProvider(AnyLLM):
 
         if not params.stream:
             end_time = time.perf_counter()
+            end_time_ns = time.time_ns()
             total_duration_ms = (end_time - start_time) * 1000
 
-            if self.provider_key_id is not None:
-                await post_completion_usage_event(
-                    platform_client=self.platform_client,
-                    client=self.client,
-                    any_llm_key=self.any_llm_key,  # type: ignore[arg-type]
-                    provider=self.provider.PROVIDER_NAME,
-                    completion=cast("ChatCompletion", completion),
-                    provider_key_id=self.provider_key_id,
-                    client_name=self.client_name,
-                    total_duration_ms=total_duration_ms,
-                )
+            await export_completion_trace(
+                platform_client=self.platform_client,
+                client=self.client,
+                any_llm_key=self.any_llm_key,  # type: ignore[arg-type]
+                provider=self.provider.PROVIDER_NAME,
+                request_model=params.model_id,
+                completion=cast("ChatCompletion", completion),
+                start_time_ns=start_time_ns,
+                end_time_ns=end_time_ns,
+                client_name=self.client_name,
+                session_label=session_label,
+                conversation_id=params.user,
+                total_duration_ms=total_duration_ms,
+            )
             return completion
 
         # For streaming, wrap the iterator to collect usage info
-        return self._stream_with_usage_tracking(cast("AsyncIterator[ChatCompletionChunk]", completion), start_time)
+        return self._stream_with_usage_tracking(
+            cast("AsyncIterator[ChatCompletionChunk]", completion),
+            start_time,
+            start_time_ns,
+            params.model_id,
+            params.user,
+            session_label,
+        )
 
     @override
     async def _aresponses(
@@ -239,7 +252,13 @@ class PlatformProvider(AnyLLM):
         return await self.provider._alist_batches(after=after, limit=limit, **kwargs)
 
     async def _stream_with_usage_tracking(
-        self, stream: AsyncIterator[ChatCompletionChunk], start_time: float
+        self,
+        stream: AsyncIterator[ChatCompletionChunk],
+        start_time: float,
+        start_time_ns: int,
+        request_model: str,
+        conversation_id: str | None,
+        session_label: str | None,
     ) -> AsyncIterator[ChatCompletionChunk]:
         """Wrap the stream to track usage after completion."""
         chunks: list[ChatCompletionChunk] = []
@@ -272,6 +291,7 @@ class PlatformProvider(AnyLLM):
         # After stream completes, reconstruct completion for usage tracking
         if chunks:
             end_time = time.perf_counter()
+            end_time_ns = time.time_ns()
             total_duration_ms = (end_time - start_time) * 1000
 
             # Use time_to_last_content_token_ms if available, otherwise use total_duration_ms
@@ -308,24 +328,26 @@ class PlatformProvider(AnyLLM):
             # Calculate inter-chunk latency variance
             if len(chunk_latencies) > 1:
                 inter_chunk_latency_variance_ms = statistics.variance(chunk_latencies)
-
-            if self.provider_key_id is not None:
-                await post_completion_usage_event(
-                    platform_client=self.platform_client,
-                    client=self.client,
-                    any_llm_key=self.any_llm_key,  # type: ignore [arg-type]
-                    provider=self.provider.PROVIDER_NAME,
-                    completion=final_completion,
-                    provider_key_id=self.provider_key_id,
-                    client_name=self.client_name,
-                    time_to_first_token_ms=time_to_first_token_ms,
-                    time_to_last_token_ms=time_to_last_token_ms,
-                    total_duration_ms=total_duration_ms,
-                    tokens_per_second=tokens_per_second,
-                    chunks_received=chunks_received,
-                    avg_chunk_size=avg_chunk_size,
-                    inter_chunk_latency_variance_ms=inter_chunk_latency_variance_ms,
-                )
+            await export_completion_trace(
+                platform_client=self.platform_client,
+                client=self.client,
+                any_llm_key=self.any_llm_key,  # type: ignore [arg-type]
+                provider=self.provider.PROVIDER_NAME,
+                request_model=request_model,
+                completion=final_completion,
+                start_time_ns=start_time_ns,
+                end_time_ns=end_time_ns,
+                client_name=self.client_name,
+                session_label=session_label,
+                conversation_id=conversation_id,
+                time_to_first_token_ms=time_to_first_token_ms,
+                time_to_last_token_ms=time_to_last_token_ms,
+                total_duration_ms=total_duration_ms,
+                tokens_per_second=tokens_per_second,
+                chunks_received=chunks_received,
+                avg_chunk_size=avg_chunk_size,
+                inter_chunk_latency_variance_ms=inter_chunk_latency_variance_ms,
+            )
 
     def _combine_chunks(self, chunks: list[ChatCompletionChunk]) -> ChatCompletion:
         """Combine streaming chunks into a ChatCompletion for usage tracking."""
