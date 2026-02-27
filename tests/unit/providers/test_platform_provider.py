@@ -1,12 +1,13 @@
-import base64
 from collections.abc import AsyncIterator
 from datetime import datetime
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 from uuid import UUID
 
 import httpx
 import pytest
 from any_llm_platform_client import DecryptedProviderKey
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import ValidationError
 
 from any_llm.constants import LLMProvider
@@ -141,12 +142,10 @@ def mock_streaming_chunks() -> list[ChatCompletionChunk]:
     ]
 
 
-def _extract_span(payload: dict) -> dict:
-    return payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
-
-
-def _attributes_to_dict(attributes: list[dict]) -> dict:
-    return {attr["key"]: attr["value"] for attr in attributes}
+def _get_single_span(exporter: InMemorySpanExporter):  # type: ignore[type-arg]
+    spans = exporter.get_finished_spans()
+    assert len(spans) == 1
+    return spans[0]
 
 
 def test_platform_key_valid_format() -> None:
@@ -323,8 +322,9 @@ def test_provider_getter_raises_before_init(
         _ = provider_instance.provider
 
 
-def test_prepare_creates_provider_without_api_key() -> None:
+def test_prepare_creates_provider_without_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test error handling when instantiating a PlatformProvider without an ANY_LLM_KEY set."""
+    monkeypatch.delenv("ANY_LLM_KEY", raising=False)
     with pytest.raises(MissingApiKeyError):
         PlatformProvider()
 
@@ -493,19 +493,15 @@ async def test_export_completion_trace_success(
     """Test successful posting of completion trace."""
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
 
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
+    exporter = InMemorySpanExporter()
+
+    def _build_span_exporter_stub(access_token: str):  # type: ignore[no-untyped-def]
+        assert access_token == "mock-jwt-token-12345"
+        return exporter
 
     client = AsyncMock(spec=httpx.AsyncClient)
-    client.post = AsyncMock(return_value=mock_response)
 
-    trace_id = base64.b64encode(b"\x01" * 16).decode("ascii")
-    span_id = base64.b64encode(b"\x02" * 8).decode("ascii")
-
-    with patch(
-        "any_llm.providers.platform.utils._generate_trace_ids",
-        return_value=(trace_id, span_id),
-    ):
+    with patch("any_llm.providers.platform.utils._build_span_exporter", _build_span_exporter_stub):
         await export_completion_trace(
             platform_client=mock_platform_client,
             client=client,
@@ -519,26 +515,16 @@ async def test_export_completion_trace_success(
 
     mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
 
-    client.post.assert_called_once()
-
-    call_args = client.post.call_args
-    assert "/v1/traces" in call_args.args[0]
-    payload = call_args.kwargs["json"]
-
-    span = _extract_span(payload)
-    assert span["traceId"] == trace_id
-    assert span["spanId"] == span_id
-    assert span["kind"] == "SPAN_KIND_CLIENT"
-    assert span["startTimeUnixNano"] == "100"
-    assert span["endTimeUnixNano"] == "200"
-
-    attributes = _attributes_to_dict(span["attributes"])
-    assert attributes["gen_ai.provider.name"]["stringValue"] == "openai"
-    assert attributes["gen_ai.request.model"]["stringValue"] == "gpt-4"
-    assert attributes["gen_ai.response.model"]["stringValue"] == "gpt-4"
-    assert attributes["gen_ai.usage.input_tokens"]["intValue"] == "10"
-    assert attributes["gen_ai.usage.output_tokens"]["intValue"] == "5"
-    assert "anyllm.client_name" not in attributes
+    span = _get_single_span(exporter)
+    assert span.kind.name == "CLIENT"
+    assert span.start_time == 100
+    assert span.end_time == 200
+    assert span.attributes["gen_ai.provider.name"] == "openai"
+    assert span.attributes["gen_ai.request.model"] == "gpt-4"
+    assert span.attributes["gen_ai.response.model"] == "gpt-4"
+    assert span.attributes["gen_ai.usage.input_tokens"] == 10
+    assert span.attributes["gen_ai.usage.output_tokens"] == 5
+    assert "anyllm.client_name" not in span.attributes
 
 
 @pytest.mark.asyncio
@@ -550,33 +536,33 @@ async def test_export_completion_trace_with_client_name(
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
     client_name = "my-test-client"
 
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
+    exporter = InMemorySpanExporter()
+
+    def _build_span_exporter_stub(access_token: str):  # type: ignore[no-untyped-def]
+        assert access_token == "mock-jwt-token-12345"
+        return exporter
 
     client = AsyncMock(spec=httpx.AsyncClient)
-    client.post = AsyncMock(return_value=mock_response)
 
-    await export_completion_trace(
-        platform_client=mock_platform_client,
-        client=client,
-        any_llm_key=any_llm_key,
-        provider="openai",
-        request_model="gpt-4",
-        completion=mock_completion,
-        start_time_ns=100,
-        end_time_ns=200,
-        client_name=client_name,
-        session_label="session-1",
-        conversation_id="user-123",
-    )
+    with patch("any_llm.providers.platform.utils._build_span_exporter", _build_span_exporter_stub):
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=mock_completion,
+            start_time_ns=100,
+            end_time_ns=200,
+            client_name=client_name,
+            session_label="session-1",
+            conversation_id="user-123",
+        )
 
-    call_args = client.post.call_args
-    payload = call_args.kwargs["json"]
-    span = _extract_span(payload)
-    attributes = _attributes_to_dict(span["attributes"])
-    assert attributes["anyllm.client_name"]["stringValue"] == client_name
-    assert attributes["anyllm.session_label"]["stringValue"] == "session-1"
-    assert attributes["gen_ai.conversation.id"]["stringValue"] == "user-123"
+    span = _get_single_span(exporter)
+    assert span.attributes["anyllm.client_name"] == client_name
+    assert span.attributes["anyllm.session_label"] == "session-1"
+    assert span.attributes["gen_ai.conversation.id"] == "user-123"
 
 
 @pytest.mark.asyncio
@@ -903,44 +889,43 @@ async def test_export_completion_trace_with_performance_metrics(
     """Test posting completion trace with performance metrics included."""
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
 
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
+    exporter = InMemorySpanExporter()
 
     client = AsyncMock(spec=httpx.AsyncClient)
-    client.post = AsyncMock(return_value=mock_response)
 
-    await export_completion_trace(
-        platform_client=mock_platform_client,
-        client=client,
-        any_llm_key=any_llm_key,
-        provider="openai",
-        request_model="gpt-4",
-        completion=mock_completion,
-        start_time_ns=100,
-        end_time_ns=200,
-        time_to_first_token_ms=50.0,
-        time_to_last_token_ms=200.0,
-        total_duration_ms=250.0,
-        tokens_per_second=25.0,
-        chunks_received=10,
-        avg_chunk_size=0.5,
-        inter_chunk_latency_variance_ms=5.0,
-    )
+    def _build_span_exporter_stub(access_token: str):  # type: ignore[no-untyped-def]
+        assert access_token == "mock-jwt-token-12345"
+        return exporter
+
+    with patch("any_llm.providers.platform.utils._build_span_exporter", _build_span_exporter_stub):
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=mock_completion,
+            start_time_ns=100,
+            end_time_ns=200,
+            time_to_first_token_ms=50.0,
+            time_to_last_token_ms=200.0,
+            total_duration_ms=250.0,
+            tokens_per_second=25.0,
+            chunks_received=10,
+            avg_chunk_size=0.5,
+            inter_chunk_latency_variance_ms=5.0,
+        )
 
     mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
-    client.post.assert_called_once()
 
-    call_args = client.post.call_args
-    payload = call_args.kwargs["json"]
-    span = _extract_span(payload)
-    attributes = _attributes_to_dict(span["attributes"])
-    assert attributes["anyllm.performance.time_to_first_token_ms"]["doubleValue"] == 50.0
-    assert attributes["anyllm.performance.time_to_last_token_ms"]["doubleValue"] == 200.0
-    assert attributes["anyllm.performance.total_duration_ms"]["doubleValue"] == 250.0
-    assert attributes["anyllm.performance.tokens_per_second"]["doubleValue"] == 25.0
-    assert attributes["anyllm.performance.chunks_received"]["intValue"] == "10"
-    assert attributes["anyllm.performance.avg_chunk_size"]["doubleValue"] == 0.5
-    assert attributes["anyllm.performance.inter_chunk_latency_variance_ms"]["doubleValue"] == 5.0
+    span = _get_single_span(exporter)
+    assert span.attributes["anyllm.performance.time_to_first_token_ms"] == 50.0
+    assert span.attributes["anyllm.performance.time_to_last_token_ms"] == 200.0
+    assert span.attributes["anyllm.performance.total_duration_ms"] == 250.0
+    assert span.attributes["anyllm.performance.tokens_per_second"] == 25.0
+    assert span.attributes["anyllm.performance.chunks_received"] == 10
+    assert span.attributes["anyllm.performance.avg_chunk_size"] == 0.5
+    assert span.attributes["anyllm.performance.inter_chunk_latency_variance_ms"] == 5.0
 
 
 @pytest.mark.asyncio
@@ -951,34 +936,34 @@ async def test_export_completion_trace_with_partial_performance_metrics(
     """Test posting completion trace with only some performance metrics."""
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
 
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
+    exporter = InMemorySpanExporter()
 
     client = AsyncMock(spec=httpx.AsyncClient)
-    client.post = AsyncMock(return_value=mock_response)
 
-    await export_completion_trace(
-        platform_client=mock_platform_client,
-        client=client,
-        any_llm_key=any_llm_key,
-        provider="openai",
-        request_model="gpt-4",
-        completion=mock_completion,
-        start_time_ns=100,
-        end_time_ns=200,
-        total_duration_ms=250.0,
-        tokens_per_second=25.0,
-    )
+    def _build_span_exporter_stub(access_token: str):  # type: ignore[no-untyped-def]
+        assert access_token == "mock-jwt-token-12345"
+        return exporter
 
-    call_args = client.post.call_args
-    payload = call_args.kwargs["json"]
-    span = _extract_span(payload)
-    attributes = _attributes_to_dict(span["attributes"])
-    assert attributes["anyllm.performance.total_duration_ms"]["doubleValue"] == 250.0
-    assert attributes["anyllm.performance.tokens_per_second"]["doubleValue"] == 25.0
-    assert "anyllm.performance.time_to_first_token_ms" not in attributes
-    assert "anyllm.performance.time_to_last_token_ms" not in attributes
-    assert "anyllm.performance.chunks_received" not in attributes
+    with patch("any_llm.providers.platform.utils._build_span_exporter", _build_span_exporter_stub):
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=mock_completion,
+            start_time_ns=100,
+            end_time_ns=200,
+            total_duration_ms=250.0,
+            tokens_per_second=25.0,
+        )
+
+    span = _get_single_span(exporter)
+    assert span.attributes["anyllm.performance.total_duration_ms"] == 250.0
+    assert span.attributes["anyllm.performance.tokens_per_second"] == 25.0
+    assert "anyllm.performance.time_to_first_token_ms" not in span.attributes
+    assert "anyllm.performance.time_to_last_token_ms" not in span.attributes
+    assert "anyllm.performance.chunks_received" not in span.attributes
 
 
 @pytest.mark.asyncio
@@ -989,28 +974,28 @@ async def test_export_completion_trace_without_performance_metrics(
     """Test posting completion trace without any performance metrics."""
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
 
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
+    exporter = InMemorySpanExporter()
 
     client = AsyncMock(spec=httpx.AsyncClient)
-    client.post = AsyncMock(return_value=mock_response)
 
-    await export_completion_trace(
-        platform_client=mock_platform_client,
-        client=client,
-        any_llm_key=any_llm_key,
-        provider="openai",
-        request_model="gpt-4",
-        completion=mock_completion,
-        start_time_ns=100,
-        end_time_ns=200,
-    )
+    def _build_span_exporter_stub(access_token: str):  # type: ignore[no-untyped-def]
+        assert access_token == "mock-jwt-token-12345"
+        return exporter
 
-    call_args = client.post.call_args
-    payload = call_args.kwargs["json"]
-    span = _extract_span(payload)
-    attributes = _attributes_to_dict(span["attributes"])
-    assert not any(key.startswith("anyllm.performance.") for key in attributes.keys())
+    with patch("any_llm.providers.platform.utils._build_span_exporter", _build_span_exporter_stub):
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=mock_completion,
+            start_time_ns=100,
+            end_time_ns=200,
+        )
+
+    span = _get_single_span(exporter)
+    assert not any(key.startswith("anyllm.performance.") for key in span.attributes.keys())
 
 
 @pytest.mark.asyncio
@@ -1035,27 +1020,30 @@ async def test_export_completion_trace_skips_when_no_usage(
         usage=None,
     )
 
-    client = AsyncMock(spec=httpx.AsyncClient)
-    client.post = AsyncMock()
+    exporter = InMemorySpanExporter()
 
-    await export_completion_trace(
-        platform_client=mock_platform_client,
-        client=client,
-        any_llm_key=any_llm_key,
-        provider="openai",
-        request_model="gpt-4",
-        completion=completion,
-        start_time_ns=100,
-        end_time_ns=200,
-    )
+    def _build_span_exporter_stub(access_token: str):  # type: ignore[no-untyped-def]
+        assert access_token == "mock-jwt-token-12345"
+        return exporter
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    with patch("any_llm.providers.platform.utils._build_span_exporter", _build_span_exporter_stub):
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=completion,
+            start_time_ns=100,
+            end_time_ns=200,
+        )
 
     mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
-    client.post.assert_called_once()
-    payload = client.post.call_args.kwargs["json"]
-    span = _extract_span(payload)
-    attributes = _attributes_to_dict(span["attributes"])
-    assert "gen_ai.usage.input_tokens" not in attributes
-    assert "gen_ai.usage.output_tokens" not in attributes
+    span = _get_single_span(exporter)
+    assert "gen_ai.usage.input_tokens" not in span.attributes
+    assert "gen_ai.usage.output_tokens" not in span.attributes
 
 
 @pytest.mark.asyncio
@@ -1295,28 +1283,29 @@ async def test_trace_export_uses_bearer_token(
 ) -> None:
     """Test that trace export uses Bearer token authentication."""
     mock_http_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
-    mock_http_client.post = AsyncMock(return_value=mock_response)
+    captured: dict[str, Any] = {}
 
-    await export_completion_trace(
-        platform_client=mock_platform_client,
-        client=mock_http_client,
-        any_llm_key=any_llm_key,
-        provider="openai",
-        request_model="gpt-4",
-        completion=mock_completion,
-        start_time_ns=100,
-        end_time_ns=200,
-        client_name="test-client",
-        total_duration_ms=100.0,
-    )
+    def _exporter_factory(*args: Any, **kwargs: Any) -> InMemorySpanExporter:  # type: ignore[type-arg]
+        captured.update(kwargs)
+        return InMemorySpanExporter()
+
+    with patch("any_llm.providers.platform.utils.OTLPSpanExporter", side_effect=_exporter_factory):
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=mock_http_client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=mock_completion,
+            start_time_ns=100,
+            end_time_ns=200,
+            client_name="test-client",
+            total_duration_ms=100.0,
+        )
 
     mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
 
-    mock_http_client.post.assert_called_once()
-    call_args = mock_http_client.post.call_args
-    headers = call_args.kwargs["headers"]
+    headers = captured["headers"]
 
     assert "Authorization" in headers
     assert headers["Authorization"] == "Bearer mock-jwt-token-12345"
@@ -1334,24 +1323,25 @@ async def test_trace_export_includes_version_header(
     from any_llm import __version__
 
     mock_http_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
-    mock_http_client.post = AsyncMock(return_value=mock_response)
+    captured: dict[str, Any] = {}
 
-    await export_completion_trace(
-        platform_client=mock_platform_client,
-        client=mock_http_client,
-        any_llm_key=any_llm_key,
-        provider="openai",
-        request_model="gpt-4",
-        completion=mock_completion,
-        start_time_ns=100,
-        end_time_ns=200,
-    )
+    def _exporter_factory(*args: Any, **kwargs: Any) -> InMemorySpanExporter:  # type: ignore[type-arg]
+        captured.update(kwargs)
+        return InMemorySpanExporter()
 
-    mock_http_client.post.assert_called_once()
-    call_args = mock_http_client.post.call_args
-    headers = call_args.kwargs["headers"]
+    with patch("any_llm.providers.platform.utils.OTLPSpanExporter", side_effect=_exporter_factory):
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=mock_http_client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=mock_completion,
+            start_time_ns=100,
+            end_time_ns=200,
+        )
+
+    headers = captured["headers"]
 
     assert "User-Agent" in headers
     assert headers["User-Agent"] == f"python-any-llm/{__version__}"
@@ -1508,13 +1498,13 @@ async def _init_mzai_provider(provider: PlatformProvider) -> None:
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
-async def test_platform_provider_mzai_skips_usage_events_non_streaming(
-    mock_post_usage: AsyncMock,
+@patch("any_llm.providers.platform.platform.export_completion_trace")
+async def test_platform_provider_mzai_exports_traces_non_streaming(
+    mock_export_trace: AsyncMock,
     any_llm_key: str,
     mock_completion: ChatCompletion,
 ) -> None:
-    """Test that usage events are skipped for mzai provider (non-streaming)."""
+    """Test that traces are exported for mzai provider (non-streaming)."""
     from any_llm.providers.mzai import MzaiProvider
 
     provider_instance = PlatformProvider(api_key=any_llm_key)
@@ -1531,17 +1521,18 @@ async def test_platform_provider_mzai_skips_usage_events_non_streaming(
     result = await provider_instance._acompletion(params)
 
     assert result == mock_completion
-    mock_post_usage.assert_not_called()
+    mock_export_trace.assert_called_once()
+    assert mock_export_trace.call_args.kwargs["provider"] == "mzai"
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
-async def test_platform_provider_mzai_skips_usage_events_streaming(
-    mock_post_usage: AsyncMock,
+@patch("any_llm.providers.platform.platform.export_completion_trace")
+async def test_platform_provider_mzai_exports_traces_streaming(
+    mock_export_trace: AsyncMock,
     any_llm_key: str,
     mock_streaming_chunks: list[ChatCompletionChunk],
 ) -> None:
-    """Test that usage events are skipped for mzai provider (streaming)."""
+    """Test that traces are exported for mzai provider (streaming)."""
     from any_llm.providers.mzai import MzaiProvider
 
     provider_instance = PlatformProvider(api_key=any_llm_key)
@@ -1568,4 +1559,5 @@ async def test_platform_provider_mzai_skips_usage_events_streaming(
         chunks.append(chunk)
 
     assert len(chunks) == len(mock_streaming_chunks)
-    mock_post_usage.assert_not_called()
+    mock_export_trace.assert_called_once()
+    assert mock_export_trace.call_args.kwargs["provider"] == "mzai"

@@ -1,13 +1,17 @@
 from __future__ import annotations
 
-import base64
 import os
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import httpx  # noqa: TC002
 from any_llm_platform_client import (
     AnyLLMPlatformClient,  # noqa: TC002
 )
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.trace import SpanKind
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter
 
 from any_llm import __version__
 
@@ -23,26 +27,20 @@ if _trace_base_url.endswith("/api/v1"):
 ANY_LLM_PLATFORM_TRACE_URL = f"{_trace_base_url}{TRACE_API_PATH}"
 
 
-def _generate_trace_ids() -> tuple[str, str]:
-    trace_id = base64.b64encode(os.urandom(16)).decode("ascii")
-    span_id = base64.b64encode(os.urandom(8)).decode("ascii")
-    return trace_id, span_id
+def _build_span_exporter(access_token: str) -> SpanExporter:
+    return OTLPSpanExporter(
+        endpoint=ANY_LLM_PLATFORM_TRACE_URL,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": f"python-any-llm/{__version__}",
+        },
+    )
 
 
-def _attribute_value(value: Any) -> dict[str, Any]:
-    if isinstance(value, bool):
-        return {"boolValue": value}
-    if isinstance(value, int):
-        return {"intValue": str(value)}
-    if isinstance(value, float):
-        return {"doubleValue": value}
-    return {"stringValue": str(value)}
-
-
-def _append_attribute(attributes: list[dict[str, Any]], key: str, value: Any) -> None:
-    if value is None:
-        return
-    attributes.append({"key": key, "value": _attribute_value(value)})
+def _build_tracer_provider(access_token: str) -> TracerProvider:
+    provider = TracerProvider(resource=Resource.create({"service.name": "any-llm"}))
+    provider.add_span_processor(SimpleSpanProcessor(_build_span_exporter(access_token)))
+    return provider
 
 
 async def export_completion_trace(
@@ -72,70 +70,46 @@ async def export_completion_trace(
     """
     access_token = await platform_client._aensure_valid_token(any_llm_key)
 
-    attributes: list[dict[str, Any]] = []
-    _append_attribute(attributes, "gen_ai.provider.name", provider)
-    _append_attribute(attributes, "gen_ai.request.model", request_model)
+    provider_instance = _build_tracer_provider(access_token)
+    tracer = provider_instance.get_tracer("any-llm", __version__)
+
+    span = tracer.start_span("llm.request", kind=SpanKind.CLIENT, start_time=start_time_ns)
+
+    span.set_attribute("gen_ai.provider.name", provider)
+    span.set_attribute("gen_ai.request.model", request_model)
 
     if completion is not None:
-        _append_attribute(attributes, "gen_ai.response.model", completion.model)
+        span.set_attribute("gen_ai.response.model", completion.model)
         usage = completion.usage
         if usage is not None:
-            _append_attribute(attributes, "gen_ai.usage.input_tokens", usage.prompt_tokens)
-            _append_attribute(attributes, "gen_ai.usage.output_tokens", usage.completion_tokens)
+            span.set_attribute("gen_ai.usage.input_tokens", usage.prompt_tokens)
+            span.set_attribute("gen_ai.usage.output_tokens", usage.completion_tokens)
 
-    _append_attribute(attributes, "gen_ai.conversation.id", conversation_id)
-    _append_attribute(attributes, "anyllm.client_name", client_name)
-    _append_attribute(attributes, "anyllm.session_label", session_label)
+    if conversation_id is not None:
+        span.set_attribute("gen_ai.conversation.id", conversation_id)
+    if client_name is not None:
+        span.set_attribute("anyllm.client_name", client_name)
+    if session_label is not None:
+        span.set_attribute("anyllm.session_label", session_label)
 
-    _append_attribute(attributes, "anyllm.performance.time_to_first_token_ms", time_to_first_token_ms)
-    _append_attribute(attributes, "anyllm.performance.time_to_last_token_ms", time_to_last_token_ms)
-    _append_attribute(attributes, "anyllm.performance.total_duration_ms", total_duration_ms)
-    _append_attribute(attributes, "anyllm.performance.tokens_per_second", tokens_per_second)
-    _append_attribute(attributes, "anyllm.performance.chunks_received", chunks_received)
-    _append_attribute(attributes, "anyllm.performance.avg_chunk_size", avg_chunk_size)
-    _append_attribute(
-        attributes,
-        "anyllm.performance.inter_chunk_latency_variance_ms",
-        inter_chunk_latency_variance_ms,
-    )
+    if time_to_first_token_ms is not None:
+        span.set_attribute("anyllm.performance.time_to_first_token_ms", time_to_first_token_ms)
+    if time_to_last_token_ms is not None:
+        span.set_attribute("anyllm.performance.time_to_last_token_ms", time_to_last_token_ms)
+    if total_duration_ms is not None:
+        span.set_attribute("anyllm.performance.total_duration_ms", total_duration_ms)
+    if tokens_per_second is not None:
+        span.set_attribute("anyllm.performance.tokens_per_second", tokens_per_second)
+    if chunks_received is not None:
+        span.set_attribute("anyllm.performance.chunks_received", chunks_received)
+    if avg_chunk_size is not None:
+        span.set_attribute("anyllm.performance.avg_chunk_size", avg_chunk_size)
+    if inter_chunk_latency_variance_ms is not None:
+        span.set_attribute(
+            "anyllm.performance.inter_chunk_latency_variance_ms",
+            inter_chunk_latency_variance_ms,
+        )
 
-    trace_id, span_id = _generate_trace_ids()
-
-    payload = {
-        "resourceSpans": [
-            {
-                "resource": {
-                    "attributes": [
-                        {"key": "service.name", "value": {"stringValue": "any-llm"}},
-                    ]
-                },
-                "scopeSpans": [
-                    {
-                        "scope": {"name": "any-llm", "version": __version__},
-                        "spans": [
-                            {
-                                "traceId": trace_id,
-                                "spanId": span_id,
-                                "name": "llm.request",
-                                "kind": "SPAN_KIND_CLIENT",
-                                "startTimeUnixNano": str(start_time_ns),
-                                "endTimeUnixNano": str(end_time_ns),
-                                "attributes": attributes,
-                            }
-                        ],
-                    }
-                ],
-            }
-        ]
-    }
-
-    response = await client.post(
-        ANY_LLM_PLATFORM_TRACE_URL,
-        json=payload,
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "User-Agent": f"python-any-llm/{__version__}",
-            "Content-Type": "application/json",
-        },
-    )
-    response.raise_for_status()
+    span.end(end_time=end_time_ns)
+    provider_instance.force_flush()
+    provider_instance.shutdown()

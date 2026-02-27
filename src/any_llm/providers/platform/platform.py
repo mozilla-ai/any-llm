@@ -76,7 +76,6 @@ class PlatformProvider(AnyLLM):
 
         self.platform_client = AnyLLMPlatformClient(
             any_llm_platform_url=ANY_LLM_PLATFORM_API_URL,
-            client_name=self.client_name,
         )
 
     @staticmethod
