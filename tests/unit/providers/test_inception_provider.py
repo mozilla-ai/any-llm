@@ -15,3 +15,10 @@ def test_inception_unsupported_response_format() -> None:
     )
     with pytest.raises(UnsupportedParameterError, match="'response_format' is not supported for inception"):
         InceptionProvider._convert_completion_params(params)
+
+
+def test_inception_remaps_max_tokens_to_max_completion_tokens() -> None:
+    params = CompletionParams(model_id="mercury", messages=[{"role": "user", "content": "Hello"}], max_tokens=8192)
+    result = InceptionProvider._convert_completion_params(params)
+    assert "max_tokens" not in result
+    assert result["max_completion_tokens"] == 8192
