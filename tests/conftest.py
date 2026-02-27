@@ -135,7 +135,6 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.COHERE: {"timeout": 10},
         LLMProvider.GATEWAY: {"api_base": "http://127.0.0.1:3000", "timeout": 1},
         LLMProvider.GROQ: {"timeout": 10},
-        LLMProvider.OPENAI: {"timeout": 100},
         LLMProvider.LLAMACPP: {"api_base": "http://127.0.0.1:8090/v1"},
         LLMProvider.VLLM: {"api_base": "http://127.0.0.1:8080/v1"},
         LLMProvider.MISTRAL: {"timeout_ms": 100000},
