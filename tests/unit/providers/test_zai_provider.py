@@ -18,9 +18,7 @@ def test_zai_unsupported_response_format() -> None:
 
 
 def test_zai_remaps_max_tokens_to_max_completion_tokens() -> None:
-    params = CompletionParams(
-        model_id="zai-model", messages=[{"role": "user", "content": "Hello"}], max_tokens=8192
-    )
+    params = CompletionParams(model_id="zai-model", messages=[{"role": "user", "content": "Hello"}], max_tokens=8192)
     result = ZaiProvider._convert_completion_params(params)
     assert "max_tokens" not in result
     assert result["max_completion_tokens"] == 8192
