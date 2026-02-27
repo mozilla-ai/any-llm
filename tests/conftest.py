@@ -13,7 +13,6 @@ from tests.constants import CI_EXCLUDED_PROVIDERS, INCLUDE_LOCAL_PROVIDERS, INCL
 def provider_reasoning_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.ANTHROPIC: "claude-sonnet-4-0",
-        LLMProvider.MISTRAL: "magistral-small-latest",
         LLMProvider.GEMINI: "gemini-2.5-flash",
         LLMProvider.GATEWAY: "gpt-5-nano",
         LLMProvider.VERTEXAI: "gemini-2.5-flash",
