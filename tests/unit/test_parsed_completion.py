@@ -132,6 +132,27 @@ async def test_parsed_completion_already_parsed(provider: AnyLLM) -> None:
 
 
 @pytest.mark.asyncio
+async def test_parsed_completion_with_parsed_none_and_valid_content(provider: AnyLLM) -> None:
+    """When a provider returns ParsedChatCompletion with .parsed=None but valid content, parse it."""
+    completion = _make_chat_completion()
+    parsed_completion: ParsedChatCompletion[Any] = ParsedChatCompletion.model_validate(completion, from_attributes=True)
+    # Simulate providers (e.g. deepseek, sambanova) where the OpenAI SDK's .parse()
+    # returns ParsedChatCompletion but doesn't populate .parsed
+    assert parsed_completion.choices[0].message.parsed is None
+    provider._acompletion = AsyncMock(return_value=parsed_completion)  # type: ignore[method-assign]
+
+    result = await provider.acompletion(
+        model="test-model",
+        messages=[{"role": "user", "content": "What is the capital of France?"}],
+        response_format=CityResponse,
+    )
+
+    assert isinstance(result, ParsedChatCompletion)
+    assert isinstance(result.choices[0].message.parsed, CityResponse)
+    assert result.choices[0].message.parsed.city_name == "Paris"
+
+
+@pytest.mark.asyncio
 async def test_parsed_completion_no_content_no_refusal(provider: AnyLLM) -> None:
     provider._acompletion = AsyncMock(  # type: ignore[method-assign]
         return_value=_make_chat_completion(content=None),
