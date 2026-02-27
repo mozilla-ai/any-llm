@@ -369,6 +369,9 @@ class AnyLLM(ABC):
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
 
+    # Overloads let type checkers narrow the return type based on response_format and stream.
+    # The implementation only declares these discriminating params; everything else
+    # passes through via **kwargs to acompletion().
     @overload
     def completion(
         self,
@@ -437,6 +440,7 @@ class AnyLLM(ABC):
 
         return async_iter_to_sync_iter(response)
 
+    # Overloads let type checkers narrow the return type based on response_format and stream.
     @overload
     async def acompletion(
         self,
