@@ -24,6 +24,4 @@ class InceptionProvider(BaseOpenAIProvider):
         if params.response_format is not None:
             param = "response_format"
             raise UnsupportedParameterError(param, "inception")
-        converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
-        converted_params.update(kwargs)
-        return converted_params
+        return BaseOpenAIProvider._convert_completion_params(params, **kwargs)

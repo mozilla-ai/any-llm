@@ -56,9 +56,26 @@ class BaseOpenAIProvider(AnyLLM):
     @staticmethod
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
-        """Convert CompletionParams to kwargs for OpenAI API."""
+        """Convert CompletionParams to kwargs for OpenAI API.
+
+        Remaps ``max_tokens`` to ``max_completion_tokens`` to follow the
+        current OpenAI spec.  Providers whose API does not accept
+        ``max_completion_tokens`` should override this method to remap back.
+        """
         converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
         converted_params.update(kwargs)
+
+        if "max_tokens" in converted_params:
+            max_tokens = converted_params.pop("max_tokens")
+            if "max_completion_tokens" in converted_params:
+                logger.warning(
+                    "Ignoring max_tokens (%s) in favor of max_completion_tokens (%s).",
+                    max_tokens,
+                    converted_params["max_completion_tokens"],
+                )
+            else:
+                converted_params["max_completion_tokens"] = max_tokens
+
         return converted_params
 
     @staticmethod

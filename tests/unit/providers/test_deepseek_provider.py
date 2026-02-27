@@ -190,3 +190,31 @@ def test_convert_chunk_response_without_cached_tokens() -> None:
 
     assert result.usage is not None
     assert result.usage.prompt_tokens_details is None
+
+
+def test_deepseek_remaps_max_tokens_back_to_max_tokens() -> None:
+    """max_tokens → base remaps to max_completion_tokens → DeepSeek remaps back to max_tokens."""
+    params = CompletionParams(model_id="deepseek-chat", messages=[{"role": "user", "content": "hi"}], max_tokens=8192)
+    result = DeepseekProvider._convert_completion_params(params)
+    assert result["max_tokens"] == 8192
+    assert "max_completion_tokens" not in result
+
+
+def test_deepseek_remaps_max_completion_tokens_to_max_tokens() -> None:
+    """max_completion_tokens set directly → DeepSeek remaps to max_tokens."""
+    params = CompletionParams(
+        model_id="deepseek-chat",
+        messages=[{"role": "user", "content": "hi"}],
+        max_completion_tokens=4096,
+    )
+    result = DeepseekProvider._convert_completion_params(params)
+    assert result["max_tokens"] == 4096
+    assert "max_completion_tokens" not in result
+
+
+def test_deepseek_no_max_tokens_when_neither_set() -> None:
+    """Neither max_tokens nor max_completion_tokens set → neither appears."""
+    params = CompletionParams(model_id="deepseek-chat", messages=[{"role": "user", "content": "hi"}])
+    result = DeepseekProvider._convert_completion_params(params)
+    assert "max_tokens" not in result
+    assert "max_completion_tokens" not in result

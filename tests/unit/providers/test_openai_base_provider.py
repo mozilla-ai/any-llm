@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.providers.openai.openai import OpenaiProvider
 from any_llm.types.completion import CompletionParams
 from any_llm.types.model import Model
 
@@ -77,29 +76,29 @@ def test_list_models_passes_kwargs_to_client(mock_openai_class: MagicMock) -> No
     mock_client.models.list.assert_called_once_with(limit=10, after="model-123")
 
 
-def test_openai_provider_maps_max_tokens_to_max_completion_tokens() -> None:
-    params = CompletionParams(model_id="gpt-5.2", messages=[{"role": "user", "content": "hi"}], max_tokens=8192)
-    result = OpenaiProvider._convert_completion_params(params)
+def test_base_provider_maps_max_tokens_to_max_completion_tokens() -> None:
+    params = CompletionParams(model_id="model", messages=[{"role": "user", "content": "hi"}], max_tokens=8192)
+    result = BaseOpenAIProvider._convert_completion_params(params)
     assert "max_tokens" not in result
     assert result["max_completion_tokens"] == 8192
 
 
-def test_openai_provider_preserves_explicit_max_completion_tokens() -> None:
+def test_base_provider_preserves_explicit_max_completion_tokens() -> None:
     params = CompletionParams(
-        model_id="gpt-5.2",
+        model_id="model",
         messages=[{"role": "user", "content": "hi"}],
         max_completion_tokens=4096,
     )
-    result = OpenaiProvider._convert_completion_params(params)
+    result = BaseOpenAIProvider._convert_completion_params(params)
     assert "max_tokens" not in result
     assert result["max_completion_tokens"] == 4096
 
 
-def test_openai_provider_max_completion_tokens_takes_precedence_over_max_tokens(
+def test_base_provider_max_completion_tokens_takes_precedence_over_max_tokens(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     params = CompletionParams(
-        model_id="gpt-5.2",
+        model_id="model",
         messages=[{"role": "user", "content": "hi"}],
         max_tokens=8192,
         max_completion_tokens=4096,
@@ -109,7 +108,7 @@ def test_openai_provider_max_completion_tokens_takes_precedence_over_max_tokens(
     any_llm_logger.propagate = True
     try:
         with caplog.at_level(logging.WARNING, logger="any_llm"):
-            result = OpenaiProvider._convert_completion_params(params)
+            result = BaseOpenAIProvider._convert_completion_params(params)
     finally:
         any_llm_logger.propagate = False
 
@@ -118,16 +117,16 @@ def test_openai_provider_max_completion_tokens_takes_precedence_over_max_tokens(
     assert "Ignoring max_tokens (8192) in favor of max_completion_tokens (4096)" in caplog.text
 
 
-def test_openai_provider_no_max_tokens_passes_through_unchanged() -> None:
-    params = CompletionParams(model_id="gpt-5.2", messages=[{"role": "user", "content": "hi"}], temperature=0.5)
-    result = OpenaiProvider._convert_completion_params(params)
+def test_base_provider_no_max_tokens_passes_through_unchanged() -> None:
+    params = CompletionParams(model_id="model", messages=[{"role": "user", "content": "hi"}], temperature=0.5)
+    result = BaseOpenAIProvider._convert_completion_params(params)
     assert "max_tokens" not in result
     assert "max_completion_tokens" not in result
     assert result["temperature"] == 0.5
 
 
-def test_base_openai_provider_does_not_map_max_tokens() -> None:
-    params = CompletionParams(model_id="model", messages=[{"role": "user", "content": "hi"}], max_tokens=8192)
-    result = BaseOpenAIProvider._convert_completion_params(params)
-    assert result["max_tokens"] == 8192
-    assert "max_completion_tokens" not in result
+def test_base_provider_max_tokens_via_kwargs_also_remapped() -> None:
+    params = CompletionParams(model_id="model", messages=[{"role": "user", "content": "hi"}])
+    result = BaseOpenAIProvider._convert_completion_params(params, max_tokens=1024)
+    assert "max_tokens" not in result
+    assert result["max_completion_tokens"] == 1024
