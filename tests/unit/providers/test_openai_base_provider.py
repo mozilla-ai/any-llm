@@ -76,6 +76,27 @@ def test_list_models_passes_kwargs_to_client(mock_openai_class: MagicMock) -> No
     mock_client.models.list.assert_called_once_with(limit=10, after="model-123")
 
 
+@pytest.mark.asyncio
+async def test_stream_with_response_format_raises() -> None:
+    class TestProvider(BaseOpenAIProvider):
+        PROVIDER_NAME = "TestProvider"
+        ENV_API_KEY_NAME = "TEST_API_KEY"
+        PROVIDER_DOCUMENTATION_URL = "https://example.com"
+
+    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
+        provider = TestProvider(api_key="test-key")
+
+        with pytest.raises(ValueError, match="stream is not supported for response_format"):
+            await provider._acompletion(
+                CompletionParams(
+                    model_id="test-model",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    stream=True,
+                    response_format={"type": "json_object"},
+                )
+            )
+
+
 def test_base_provider_maps_max_tokens_to_max_completion_tokens() -> None:
     params = CompletionParams(model_id="model", messages=[{"role": "user", "content": "hi"}], max_tokens=8192)
     result = BaseOpenAIProvider._convert_completion_params(params)
