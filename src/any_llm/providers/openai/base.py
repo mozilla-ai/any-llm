@@ -47,8 +47,6 @@ class BaseOpenAIProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
 
-    PACKAGES_INSTALLED = True
-
     _DEFAULT_REASONING_EFFORT: ReasoningEffort | None = None
 
     client: AsyncOpenAI
