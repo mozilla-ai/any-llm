@@ -39,6 +39,7 @@ def completion(
     api_key: str | None = None,
     api_base: str | None = None,
     user: str | None = None,
+    session_label: str | None = None,
     parallel_tool_calls: bool | None = None,
     logprobs: bool | None = None,
     top_logprobs: int | None = None,
@@ -73,6 +74,7 @@ def completion(
         api_key: API key for the provider
         api_base: Base URL for the provider API
         user: Unique identifier for the end user
+        session_label: Optional session label for platform trace grouping (platform provider only)
         parallel_tool_calls: Whether to allow parallel tool calls
         logprobs: Include token-level log probabilities in the response
         top_logprobs: Number of alternatives to return when logprobs are requested
@@ -115,6 +117,7 @@ def completion(
         frequency_penalty=frequency_penalty,
         seed=seed,
         user=user,
+        session_label=session_label,
         parallel_tool_calls=parallel_tool_calls,
         logprobs=logprobs,
         top_logprobs=top_logprobs,
@@ -146,6 +149,7 @@ async def acompletion(
     api_key: str | None = None,
     api_base: str | None = None,
     user: str | None = None,
+    session_label: str | None = None,
     parallel_tool_calls: bool | None = None,
     logprobs: bool | None = None,
     top_logprobs: int | None = None,
@@ -180,6 +184,7 @@ async def acompletion(
         api_key: API key for the provider
         api_base: Base URL for the provider API
         user: Unique identifier for the end user
+        session_label: Optional session label for platform trace grouping (platform provider only)
         parallel_tool_calls: Whether to allow parallel tool calls
         logprobs: Include token-level log probabilities in the response
         top_logprobs: Number of alternatives to return when logprobs are requested
@@ -222,6 +227,7 @@ async def acompletion(
         frequency_penalty=frequency_penalty,
         seed=seed,
         user=user,
+        session_label=session_label,
         parallel_tool_calls=parallel_tool_calls,
         logprobs=logprobs,
         top_logprobs=top_logprobs,

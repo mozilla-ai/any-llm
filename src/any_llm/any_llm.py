@@ -503,6 +503,7 @@ class AnyLLM(ABC):
         frequency_penalty: float | None = None,
         seed: int | None = None,
         user: str | None = None,
+        session_label: str | None = None,
         parallel_tool_calls: bool | None = None,
         logprobs: bool | None = None,
         top_logprobs: int | None = None,
@@ -530,6 +531,7 @@ class AnyLLM(ABC):
             frequency_penalty: Penalize new tokens based on frequency in text
             seed: Random seed for reproducible results
             user: Unique identifier for the end user
+            session_label: Optional session label for platform trace grouping (platform provider only)
             parallel_tool_calls: Whether to allow parallel tool calls
             logprobs: Include token-level log probabilities in the response
             top_logprobs: Number of alternatives to return when logprobs are requested
@@ -579,6 +581,9 @@ class AnyLLM(ABC):
             max_completion_tokens=max_completion_tokens,
             reasoning_effort=reasoning_effort,
         )
+
+        if session_label is not None and self.PROVIDER_NAME == "platform":
+            kwargs["session_label"] = session_label
 
         result = await self._acompletion(params, **kwargs)
 

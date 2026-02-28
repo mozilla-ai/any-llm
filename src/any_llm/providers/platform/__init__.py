@@ -1,4 +1,4 @@
 from .platform import PlatformProvider
-from .utils import post_completion_usage_event
+from .utils import export_completion_trace, shutdown_telemetry
 
-__all__ = ["PlatformProvider", "post_completion_usage_event"]
+__all__ = ["PlatformProvider", "export_completion_trace", "shutdown_telemetry"]
