@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.providers.openai.openai import OpenaiProvider
 from any_llm.types.completion import CompletionParams
 from any_llm.types.model import Model
 
@@ -151,3 +152,37 @@ def test_base_provider_max_tokens_via_kwargs_also_remapped() -> None:
     result = BaseOpenAIProvider._convert_completion_params(params, max_tokens=1024)
     assert "max_tokens" not in result
     assert result["max_completion_tokens"] == 1024
+
+
+def test_base_openai_provider_excludes_prompt_cache_fields() -> None:
+    params = CompletionParams(
+        model_id="model",
+        messages=[{"role": "user", "content": "hi"}],
+        prompt_cache_key="my-key",
+        prompt_cache_retention="1h",
+    )
+    result = BaseOpenAIProvider._convert_completion_params(params)
+    assert "prompt_cache_key" not in result
+    assert "prompt_cache_retention" not in result
+
+
+def test_openai_provider_includes_prompt_cache_fields_when_set() -> None:
+    params = CompletionParams(
+        model_id="gpt-5.2",
+        messages=[{"role": "user", "content": "hi"}],
+        prompt_cache_key="my-key",
+        prompt_cache_retention="1h",
+    )
+    result = OpenaiProvider._convert_completion_params(params)
+    assert result["prompt_cache_key"] == "my-key"
+    assert result["prompt_cache_retention"] == "1h"
+
+
+def test_openai_provider_omits_prompt_cache_fields_when_none() -> None:
+    params = CompletionParams(
+        model_id="gpt-5.2",
+        messages=[{"role": "user", "content": "hi"}],
+    )
+    result = OpenaiProvider._convert_completion_params(params)
+    assert "prompt_cache_key" not in result
+    assert "prompt_cache_retention" not in result

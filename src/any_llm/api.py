@@ -46,6 +46,8 @@ def completion(
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
     reasoning_effort: ReasoningEffort | None = "auto",
+    prompt_cache_key: str | None = None,
+    prompt_cache_retention: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
@@ -80,6 +82,8 @@ def completion(
         stream_options: Additional options controlling streaming behavior
         max_completion_tokens: Maximum number of tokens for the completion
         reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
+        prompt_cache_key: A key to use when reading from or writing to the prompt cache.
+        prompt_cache_retention: How long to retain a prompt cache entry created by this request.
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
@@ -122,6 +126,8 @@ def completion(
         stream_options=stream_options,
         max_completion_tokens=max_completion_tokens,
         reasoning_effort=reasoning_effort,
+        prompt_cache_key=prompt_cache_key,
+        prompt_cache_retention=prompt_cache_retention,
         **kwargs,
     )
 
@@ -153,6 +159,8 @@ async def acompletion(
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
     reasoning_effort: ReasoningEffort | None = "auto",
+    prompt_cache_key: str | None = None,
+    prompt_cache_retention: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
@@ -187,6 +195,8 @@ async def acompletion(
         stream_options: Additional options controlling streaming behavior
         max_completion_tokens: Maximum number of tokens for the completion
         reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
+        prompt_cache_key: A key to use when reading from or writing to the prompt cache.
+        prompt_cache_retention: How long to retain a prompt cache entry created by this request.
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
@@ -229,6 +239,8 @@ async def acompletion(
         stream_options=stream_options,
         max_completion_tokens=max_completion_tokens,
         reasoning_effort=reasoning_effort,
+        prompt_cache_key=prompt_cache_key,
+        prompt_cache_retention=prompt_cache_retention,
         **kwargs,
     )
 

@@ -65,7 +65,9 @@ class BaseOpenAIProvider(AnyLLM):
         current OpenAI spec.  Providers whose API does not accept
         ``max_completion_tokens`` should override this method to remap back.
         """
-        converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
+        converted_params = params.model_dump(
+            exclude_none=True, exclude={"model_id", "messages", "prompt_cache_key", "prompt_cache_retention"}
+        )
         converted_params.update(kwargs)
 
         if "max_tokens" in converted_params:

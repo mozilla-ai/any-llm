@@ -1,3 +1,9 @@
+from typing import Any
+
+from typing_extensions import override
+
+from any_llm.types.completion import CompletionParams
+
 from .base import BaseOpenAIProvider
 
 
@@ -11,3 +17,13 @@ class OpenaiProvider(BaseOpenAIProvider):
     SUPPORTS_RESPONSES = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
+
+    @staticmethod
+    @override
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        converted_params = BaseOpenAIProvider._convert_completion_params(params, **kwargs)
+        if params.prompt_cache_key is not None:
+            converted_params["prompt_cache_key"] = params.prompt_cache_key
+        if params.prompt_cache_retention is not None:
+            converted_params["prompt_cache_retention"] = params.prompt_cache_retention
+        return converted_params
