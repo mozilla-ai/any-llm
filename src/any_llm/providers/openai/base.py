@@ -9,13 +9,18 @@ from openai._streaming import AsyncStream
 from openai._types import NOT_GIVEN, Omit
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
+from openai.types.chat.parsed_chat_completion import ParsedChatCompletion as OpenAIParsedChatCompletion
 from openresponses_types import ResponseResource
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.logging import logger
-from any_llm.providers.openai.utils import _convert_chat_completion, _normalize_openai_dict_response
+from any_llm.providers.openai.utils import (
+    _convert_chat_completion,
+    _convert_parsed_chat_completion,
+    _normalize_openai_dict_response,
+)
 from any_llm.types.batch import Batch
 from any_llm.types.completion import (
     ChatCompletion,
@@ -47,8 +52,6 @@ class BaseOpenAIProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
 
-    PACKAGES_INSTALLED = True
-
     _DEFAULT_REASONING_EFFORT: ReasoningEffort | None = None
 
     client: AsyncOpenAI
@@ -56,11 +59,28 @@ class BaseOpenAIProvider(AnyLLM):
     @staticmethod
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
-        """Convert CompletionParams to kwargs for OpenAI API."""
+        """Convert CompletionParams to kwargs for OpenAI API.
+
+        Remaps ``max_tokens`` to ``max_completion_tokens`` to follow the
+        current OpenAI spec.  Providers whose API does not accept
+        ``max_completion_tokens`` should override this method to remap back.
+        """
         converted_params = params.model_dump(
             exclude_none=True, exclude={"model_id", "messages", "prompt_cache_key", "prompt_cache_retention"}
         )
         converted_params.update(kwargs)
+
+        if "max_tokens" in converted_params:
+            max_tokens = converted_params.pop("max_tokens")
+            if "max_completion_tokens" in converted_params:
+                logger.warning(
+                    "Ignoring max_tokens (%s) in favor of max_completion_tokens (%s).",
+                    max_tokens,
+                    converted_params["max_completion_tokens"],
+                )
+            else:
+                converted_params["max_completion_tokens"] = max_tokens
+
         return converted_params
 
     @staticmethod
@@ -156,16 +176,23 @@ class BaseOpenAIProvider(AnyLLM):
 
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 
-        if params.response_format:
+        response_format = completion_kwargs.get("response_format")
+        use_parse = isinstance(response_format, type) and issubclass(response_format, BaseModel)
+
+        if response_format:
             if params.stream:
                 msg = "stream is not supported for response_format"
                 raise ValueError(msg)
             completion_kwargs.pop("stream", None)
+
+        if use_parse:
             response = await self.client.chat.completions.parse(
                 model=params.model_id,
                 messages=cast("Any", params.messages),
                 **completion_kwargs,
             )
+            if isinstance(response, OpenAIParsedChatCompletion):
+                return _convert_parsed_chat_completion(response)
         else:
             response = await self.client.chat.completions.create(
                 model=params.model_id,

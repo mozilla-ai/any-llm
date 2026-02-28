@@ -138,9 +138,14 @@ def _handle_exception(exception: Exception, provider_name: str) -> None:
         pydantic.ValidationError: Always re-raised unchanged
 
     """
-    # When using response_format with a Pydantic model, the SDK validates the response
-    # internally. If the LLM produces output that doesn't conform to the schema, pydantic
-    # raises ValidationError. This should bubble up unchanged.
+    # AnyLLMError subclasses are already unified exceptions and should not be re-processed
+    # or trigger the deprecation warning.
+    if isinstance(exception, AnyLLMError):
+        raise exception
+
+    # When using response_format with a Pydantic model, acompletion() deserializes the
+    # response content via model_validate_json. If the LLM produces output that doesn't
+    # conform to the schema, pydantic raises ValidationError. This should bubble up unchanged.
     # See: https://github.com/mozilla-ai/any-llm/issues/799
     if isinstance(exception, ValidationError):
         raise exception

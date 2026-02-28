@@ -1,5 +1,3 @@
-"""Unit tests for OpenRouter reasoning support."""
-
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -254,3 +252,10 @@ async def test_streaming_with_reasoning() -> None:
         assert call_args.kwargs["stream"] is True
         assert "extra_body" in call_args.kwargs
         assert call_args.kwargs["extra_body"]["reasoning"]["effort"] == "high"
+
+
+def test_openrouter_remaps_max_tokens_to_max_completion_tokens() -> None:
+    params = CompletionParams(model_id="openai/gpt-4", messages=[{"role": "user", "content": "Hello"}], max_tokens=8192)
+    result = OpenrouterProvider._convert_completion_params(params)
+    assert "max_tokens" not in result
+    assert result["max_completion_tokens"] == 8192

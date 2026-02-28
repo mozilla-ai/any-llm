@@ -5,30 +5,34 @@ import importlib
 import os
 import warnings
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, overload
 
 from openresponses_types import ResponseResource
+from pydantic import BaseModel
 
 from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider
 from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
 from any_llm.tools import prepare_tools
-from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, CompletionParams, ReasoningEffort
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionMessage,
+    CompletionParams,
+    ParsedChatCompletion,
+    ReasoningEffort,
+)
 from any_llm.types.provider import PlatformKey, ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
 from any_llm.utils.decorators import BATCH_API_EXPERIMENTAL_MESSAGE, experimental
 from any_llm.utils.exception_handler import handle_exceptions
 
+ResponseFormatT = TypeVar("ResponseFormatT", bound=BaseModel)
+
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 
-    from pydantic import BaseModel
-
     from any_llm.types.batch import Batch
-    from any_llm.types.completion import (
-        ChatCompletionChunk,
-        CreateEmbeddingResponse,
-    )
+    from any_llm.types.completion import ChatCompletionChunk, CreateEmbeddingResponse
     from any_llm.types.model import Model
 
 
@@ -105,7 +109,7 @@ class AnyLLM(ABC):
 
     def _verify_no_missing_packages(self) -> None:
         if self.MISSING_PACKAGES_ERROR is not None:
-            msg = f"{self.PROVIDER_NAME} required packages are not installed. Please install them with `pip install any-llm-sdk[{self.PROVIDER_NAME}]. Specific error message: {self.MISSING_PACKAGES_ERROR.msg}`"
+            msg = f"{self.PROVIDER_NAME} required packages are not installed. Please install them with `pip install any-llm-sdk[{self.PROVIDER_NAME}]`. Specific error message: {self.MISSING_PACKAGES_ERROR}"
             raise ImportError(msg) from self.MISSING_PACKAGES_ERROR
 
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
@@ -191,7 +195,7 @@ class AnyLLM(ABC):
                 platform_class: type[AnyLLM] = getattr(platform_module, platform_class_name)
 
                 # Instantiate the class first and pass the provider next,
-                # so we don't change the common API between different provideers.
+                # so we don't change the common API between different providers.
                 # pop platform-specific kwargs to avoid passing them to the provider's __init__
                 client_name = kwargs.pop("client_name", None)
                 platform_provider = platform_class(
@@ -365,20 +369,120 @@ class AnyLLM(ABC):
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
 
+    # Overloads let type checkers narrow the return type based on response_format and stream.
+    # The implementation only declares these discriminating params; everything else
+    # passes through via **kwargs to acompletion().
+    @overload
     def completion(
         self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        response_format: type[ResponseFormatT],
+        stream: Literal[False] | None = ...,
         **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+    ) -> ParsedChatCompletion[ResponseFormatT]: ...
+
+    @overload
+    def completion(
+        self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        stream: Literal[True],
+        **kwargs: Any,
+    ) -> Iterator[ChatCompletionChunk]: ...
+
+    @overload
+    def completion(
+        self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        response_format: dict[str, Any] | None = ...,
+        stream: Literal[False] | None = ...,
+        **kwargs: Any,
+    ) -> ChatCompletion: ...
+
+    @overload
+    def completion(
+        self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        response_format: dict[str, Any] | type[BaseModel] | None = ...,
+        stream: bool | None = ...,
+        **kwargs: Any,
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk] | ParsedChatCompletion[Any]: ...
+
+    def completion(
+        self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        response_format: dict[str, Any] | type[BaseModel] | None = None,
+        stream: bool | None = None,
+        allow_running_loop: bool | None = None,
+        **kwargs: Any,
+    ) -> ChatCompletion | Iterator[ChatCompletionChunk] | ParsedChatCompletion[Any]:
         """Create a chat completion synchronously.
 
         See [AnyLLM.acompletion][any_llm.any_llm.AnyLLM.acompletion]
         """
-        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
-        response = run_async_in_sync(self.acompletion(**kwargs), allow_running_loop=allow_running_loop)
+        if allow_running_loop is None:
+            allow_running_loop = INSIDE_NOTEBOOK
+        response = run_async_in_sync(
+            self.acompletion(model=model, messages=messages, response_format=response_format, stream=stream, **kwargs),
+            allow_running_loop=allow_running_loop,
+        )
         if isinstance(response, ChatCompletion):
             return response
 
         return async_iter_to_sync_iter(response)
+
+    # Overloads let type checkers narrow the return type based on response_format and stream.
+    @overload
+    async def acompletion(
+        self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        response_format: type[ResponseFormatT],
+        stream: Literal[False] | None = ...,
+        **kwargs: Any,
+    ) -> ParsedChatCompletion[ResponseFormatT]: ...
+
+    @overload
+    async def acompletion(
+        self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        stream: Literal[True],
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatCompletionChunk]: ...
+
+    @overload
+    async def acompletion(
+        self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        response_format: dict[str, Any] | None = ...,
+        stream: Literal[False] | None = ...,
+        **kwargs: Any,
+    ) -> ChatCompletion: ...
+
+    @overload
+    async def acompletion(
+        self,
+        model: str,
+        messages: list[dict[str, Any] | ChatCompletionMessage],
+        *,
+        response_format: dict[str, Any] | type[BaseModel] | None = ...,
+        stream: bool | None = ...,
+        **kwargs: Any,
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk] | ParsedChatCompletion[Any]: ...
 
     @handle_exceptions(wrap_streaming=True)
     async def acompletion(
@@ -409,7 +513,7 @@ class AnyLLM(ABC):
         prompt_cache_key: str | None = None,
         prompt_cache_retention: str | None = None,
         **kwargs: Any,
-    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk] | ParsedChatCompletion[Any]:
         """Create a chat completion asynchronously.
 
         Args:
@@ -482,7 +586,28 @@ class AnyLLM(ABC):
             prompt_cache_retention=prompt_cache_retention,
         )
 
-        return await self._acompletion(params, **kwargs)
+        result = await self._acompletion(params, **kwargs)
+
+        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+            if isinstance(result, ParsedChatCompletion):
+                parsed_completion = result
+            elif isinstance(result, ChatCompletion):
+                parsed_completion = ParsedChatCompletion.model_validate(result, from_attributes=True)
+            else:
+                return result
+
+            for choice in parsed_completion.choices:
+                if choice.message.parsed is not None:
+                    continue
+                if choice.finish_reason in ("length", "content_filter"):
+                    # TODO: raise LengthFinishReasonError / ContentFilterFinishReasonError
+                    # to align with OpenAI SDK semantics (deferred to a future major version)
+                    pass
+                elif choice.message.content and not choice.message.refusal:
+                    choice.message.parsed = response_format.model_validate_json(choice.message.content)
+            return parsed_completion
+
+        return result
 
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any

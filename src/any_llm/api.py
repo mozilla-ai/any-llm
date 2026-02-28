@@ -288,8 +288,11 @@ def responses(
     If `stream=True`, an iterator of `any_llm.types.responses.ResponseStreamEvent` items is returned.
 
     Args:
-        model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
-        provider: Provider name to use for the request. If provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai:gpt-4o'.
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='gpt-4o', provider='openai').
+            **Alternative**: Combined format 'provider:model' (e.g., 'openai:gpt-4o').
+            Legacy format 'provider/model' is also supported but deprecated.
+        provider: **Recommended**: Provider name to use for the request (e.g., 'openai', 'mistral').
+            When provided, the model parameter should contain only the model name.
         input_data: The input payload accepted by provider's Responses API.
             For OpenAI-compatible providers, this is typically a list mixing
             text, images, and tool instructions, or a dict per OpenAI spec.
@@ -419,8 +422,11 @@ async def aresponses(
     If `stream=True`, an iterator of `any_llm.types.responses.ResponseStreamEvent` items is returned.
 
     Args:
-        model: Model identifier in format 'provider/model' (e.g., 'openai/gpt-4o'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
-        provider: Provider name to use for the request. If provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai:gpt-4o'.
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='gpt-4o', provider='openai').
+            **Alternative**: Combined format 'provider:model' (e.g., 'openai:gpt-4o').
+            Legacy format 'provider/model' is also supported but deprecated.
+        provider: **Recommended**: Provider name to use for the request (e.g., 'openai', 'mistral').
+            When provided, the model parameter should contain only the model name.
         input_data: The input payload accepted by provider's Responses API.
             For OpenAI-compatible providers, this is typically a list mixing
             text, images, and tool instructions, or a dict per OpenAI spec.
@@ -558,8 +564,11 @@ async def aembedding(
     """Create an embedding asynchronously.
 
     Args:
-        model: Model identifier in format 'provider/model' (e.g., 'openai/text-embedding-3-small'). If provider is provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai/gpt-4o'.
-        provider: Provider name to use for the request. If provided, we assume that the model does not contain the provider name. Otherwise, we assume that the model contains the provider name, like 'openai:gpt-4o'.
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='text-embedding-3-small', provider='openai').
+            **Alternative**: Combined format 'provider:model' (e.g., 'openai:text-embedding-3-small').
+            Legacy format 'provider/model' is also supported but deprecated.
+        provider: **Recommended**: Provider name to use for the request (e.g., 'openai', 'mistral').
+            When provided, the model parameter should contain only the model name.
         inputs: The input text to embed
         api_key: API key for the provider
         api_base: Base URL for the provider API

@@ -1392,3 +1392,130 @@ async def test_acompletion_rejects_same_client_name_in_kwargs(
 
     provider_instance.provider._acompletion.assert_not_called()
     mock_post_usage.assert_not_called()
+
+
+# Tests for mzai provider with JWT token authentication
+
+
+@pytest.mark.asyncio
+async def test_platform_provider_with_mzai_fetches_token(
+    any_llm_key: str,
+) -> None:
+    """Test that mzai provider fetches JWT token instead of decrypted provider key."""
+    from any_llm.providers.mzai import MzaiProvider
+
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = MzaiProvider
+
+    with patch.object(
+        provider_instance.platform_client,
+        "_aensure_valid_token",
+        new_callable=AsyncMock,
+        return_value="mock-jwt-token-12345",
+    ) as mock_ensure_token:
+        await provider_instance._ensure_provider_initialized()
+
+    assert provider_instance.PROVIDER_NAME == "platform"
+    assert provider_instance.provider.PROVIDER_NAME == "mzai"
+    assert provider_instance.provider_key_id is None
+    assert provider_instance.project_id is None
+
+    mock_ensure_token.assert_called_once_with(any_llm_key)
+
+
+@pytest.mark.asyncio
+async def test_platform_provider_mzai_passes_token_to_provider(
+    any_llm_key: str,
+) -> None:
+    """Test that the JWT token is passed as api_key to MzaiProvider."""
+    from any_llm.providers.mzai import MzaiProvider
+
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = MzaiProvider
+
+    with patch.object(
+        provider_instance.platform_client,
+        "_aensure_valid_token",
+        new_callable=AsyncMock,
+        return_value="mock-jwt-token-12345",
+    ):
+        await provider_instance._ensure_provider_initialized()
+
+    # The underlying provider should have the JWT token as its API key
+    assert isinstance(provider_instance.provider, MzaiProvider)
+    assert provider_instance.provider.client.api_key == "mock-jwt-token-12345"
+
+
+async def _init_mzai_provider(provider: PlatformProvider) -> None:
+    """Helper to trigger lazy async initialization for mzai with a mocked JWT token."""
+    with patch.object(
+        provider.platform_client,
+        "_aensure_valid_token",
+        new_callable=AsyncMock,
+        return_value="mock-jwt-token-12345",
+    ):
+        await provider._ensure_provider_initialized()
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+async def test_platform_provider_mzai_skips_usage_events_non_streaming(
+    mock_post_usage: AsyncMock,
+    any_llm_key: str,
+    mock_completion: ChatCompletion,
+) -> None:
+    """Test that usage events are skipped for mzai provider (non-streaming)."""
+    from any_llm.providers.mzai import MzaiProvider
+
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = MzaiProvider
+    await _init_mzai_provider(provider_instance)
+    provider_instance.provider._acompletion = AsyncMock(return_value=mock_completion)  # type: ignore[method-assign]
+
+    params = CompletionParams(
+        model_id="openai/gpt-oss-120b",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=False,
+    )
+
+    result = await provider_instance._acompletion(params)
+
+    assert result == mock_completion
+    mock_post_usage.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+async def test_platform_provider_mzai_skips_usage_events_streaming(
+    mock_post_usage: AsyncMock,
+    any_llm_key: str,
+    mock_streaming_chunks: list[ChatCompletionChunk],
+) -> None:
+    """Test that usage events are skipped for mzai provider (streaming)."""
+    from any_llm.providers.mzai import MzaiProvider
+
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = MzaiProvider
+    await _init_mzai_provider(provider_instance)
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        for chunk in mock_streaming_chunks:
+            yield chunk
+
+    provider_instance.provider._acompletion = AsyncMock(return_value=mock_stream())  # type: ignore[method-assign]
+
+    params = CompletionParams(
+        model_id="openai/gpt-oss-120b",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=True,
+    )
+
+    result = await provider_instance._acompletion(params)
+
+    # Consume the stream
+    chunks = []
+    async for chunk in result:  # type: ignore[union-attr]
+        chunks.append(chunk)
+
+    assert len(chunks) == len(mock_streaming_chunks)
+    mock_post_usage.assert_not_called()

@@ -54,7 +54,7 @@ async def test_agent_loop_parallel_tool_calls(
             }
         ]
 
-        result: ChatCompletion = await llm.acompletion(  # type: ignore[assignment]
+        result: ChatCompletion = await llm.acompletion(
             model=model_id,
             messages=messages,
             tools=[get_weather],
@@ -81,7 +81,7 @@ async def test_agent_loop_parallel_tool_calls(
                 }
             )
 
-        second_result: ChatCompletion = await llm.acompletion(  # type: ignore[assignment]
+        second_result: ChatCompletion = await llm.acompletion(
             model=model_id,
             messages=messages,
             tools=[get_weather],
@@ -133,7 +133,7 @@ async def test_agent_loop_sequential_tool_calls(
         while iteration < max_iterations:
             iteration += 1
 
-            result: ChatCompletion = await llm.acompletion(  # type: ignore[assignment]
+            result: ChatCompletion = await llm.acompletion(
                 model=model_id,
                 messages=messages,
                 tools=tools,
