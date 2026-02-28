@@ -144,7 +144,7 @@ def mock_streaming_chunks() -> list[ChatCompletionChunk]:
     ]
 
 
-def _get_single_span(exporter: InMemorySpanExporter):  # type: ignore[type-arg]
+def _get_single_span(exporter: InMemorySpanExporter) -> Any:
     spans = exporter.get_finished_spans()
     assert len(spans) == 1
     return spans[0]
@@ -1277,7 +1277,7 @@ async def test_trace_export_uses_bearer_token(
     mock_http_client = AsyncMock(spec=httpx.AsyncClient)
     captured: dict[str, Any] = {}
 
-    def _exporter_factory(*args: Any, **kwargs: Any) -> InMemorySpanExporter:  # type: ignore[type-arg]
+    def _exporter_factory(*args: Any, **kwargs: Any) -> InMemorySpanExporter:
         captured.update(kwargs)
         return InMemorySpanExporter()
 
@@ -1328,7 +1328,7 @@ async def test_trace_export_includes_version_header(
     mock_http_client = AsyncMock(spec=httpx.AsyncClient)
     captured: dict[str, Any] = {}
 
-    def _exporter_factory(*args: Any, **kwargs: Any) -> InMemorySpanExporter:  # type: ignore[type-arg]
+    def _exporter_factory(*args: Any, **kwargs: Any) -> InMemorySpanExporter:
         captured.update(kwargs)
         return InMemorySpanExporter()
 

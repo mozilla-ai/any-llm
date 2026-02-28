@@ -24,8 +24,7 @@ ANY_LLM_PLATFORM_API_URL = os.getenv("ANY_LLM_PLATFORM_URL", "https://platform-a
 TRACE_API_PATH = "/v1/traces"
 
 _trace_base_url = ANY_LLM_PLATFORM_API_URL
-if _trace_base_url.endswith("/api/v1"):
-    _trace_base_url = _trace_base_url[: -len("/api/v1")]
+_trace_base_url = _trace_base_url.removesuffix("/api/v1")
 ANY_LLM_PLATFORM_TRACE_URL = f"{_trace_base_url}{TRACE_API_PATH}"
 
 # Module-level cache: access_token -> TracerProvider
