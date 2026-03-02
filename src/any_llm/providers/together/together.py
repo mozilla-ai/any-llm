@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from pydantic import BaseModel
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -67,11 +67,10 @@ class TogetherProvider(AnyLLM):
         if converted_params.get("reasoning_effort") in ("auto", "none"):
             converted_params.pop("reasoning_effort")
         if params.response_format is not None:
-            if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
-                # Handle Pydantic model: convert to Together's json_schema format
+            if is_structured_output_type(params.response_format):
                 converted_params["response_format"] = {
                     "type": "json_schema",
-                    "schema": params.response_format.model_json_schema(),
+                    "schema": get_json_schema(params.response_format),
                 }
             elif isinstance(params.response_format, dict):
                 # Handle OpenAI-style dict format (e.g., {"type": "json_schema", "json_schema": {...}})

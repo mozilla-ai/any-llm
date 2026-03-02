@@ -2,7 +2,6 @@ from typing import Any
 
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
-from pydantic import BaseModel
 from typing_extensions import override
 
 from any_llm.providers.openai.xml_reasoning import XMLReasoningOpenAIProvider
@@ -11,6 +10,7 @@ from any_llm.providers.openai.xml_reasoning_utils import (
     convert_chat_completion_with_xml_reasoning,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 
 class PortkeyProvider(XMLReasoningOpenAIProvider):
@@ -53,12 +53,12 @@ class PortkeyProvider(XMLReasoningOpenAIProvider):
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for OpenAI API."""
-        if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
+        if is_structured_output_type(params.response_format):
             params.response_format = {
                 "type": "json_schema",
                 "json_schema": {
                     "name": "response_schema",
-                    "schema": params.response_format.model_json_schema(),
+                    "schema": get_json_schema(params.response_format),
                 },
             }
         converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})

@@ -11,7 +11,7 @@ from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatComple
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from openai.types.chat.parsed_chat_completion import ParsedChatCompletion as OpenAIParsedChatCompletion
 from openresponses_types import ResponseResource
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
@@ -31,6 +31,7 @@ from any_llm.types.completion import (
 )
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
+from any_llm.utils.structured_output import is_structured_output_type
 
 
 class BaseOpenAIProvider(AnyLLM):
@@ -175,7 +176,7 @@ class BaseOpenAIProvider(AnyLLM):
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 
         response_format = completion_kwargs.get("response_format")
-        use_parse = isinstance(response_format, type) and issubclass(response_format, BaseModel)
+        use_parse = is_structured_output_type(response_format)
 
         if response_format:
             if params.stream:

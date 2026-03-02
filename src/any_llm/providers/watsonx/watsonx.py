@@ -3,10 +3,10 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.utils.structured_output import is_structured_output_type
 
 MISSING_PACKAGES_ERROR: ImportError | None = None
 PYTHON_VERSION_INCOMPATIBLE = sys.version_info >= (3, 14)
@@ -25,9 +25,9 @@ else:
 
         from .utils import (
             _convert_models_list,
-            _convert_pydantic_to_watsonx_json,
             _convert_response,
             _convert_streaming_chunk,
+            _convert_structured_type_to_watsonx_json,
         )
     except ImportError as e:
         MISSING_PACKAGES_ERROR = e
@@ -144,8 +144,8 @@ class WatsonxProvider(AnyLLM):
 
         # Handle response_format by inlining schema guidance into the prompt
         response_format = params.response_format
-        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-            params.messages = _convert_pydantic_to_watsonx_json(response_format, params.messages)
+        if is_structured_output_type(response_format):
+            params.messages = _convert_structured_type_to_watsonx_json(response_format, params.messages)
 
         if params.reasoning_effort in ("auto", "none"):
             params.reasoning_effort = None

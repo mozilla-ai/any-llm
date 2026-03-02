@@ -10,7 +10,6 @@ from anthropic.types import (
     MessageStopEvent,
 )
 from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
-from pydantic import BaseModel
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.logging import logger
@@ -28,6 +27,7 @@ from any_llm.types.completion import (
     Reasoning,
 )
 from any_llm.types.model import Model
+from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 if TYPE_CHECKING:
     from openai.types.chat.chat_completion_message_custom_tool_call import (
@@ -358,10 +358,10 @@ def _convert_tool_choice(params: CompletionParams) -> dict[str, Any]:
     return {"type": tool_choice, "disable_parallel_tool_use": not parallel_tool_calls}
 
 
-def _convert_response_format(response_format: dict[str, Any] | type[BaseModel], provider_name: str) -> dict[str, Any]:
+def _convert_response_format(response_format: dict[str, Any] | type, provider_name: str) -> dict[str, Any]:
     """Convert any-llm response_format to Anthropic's output_config."""
-    if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-        schema = response_format.model_json_schema()
+    if is_structured_output_type(response_format):
+        schema = get_json_schema(response_format)
     elif isinstance(response_format, dict):
         if response_format.get("type") == "json_schema":
             schema = response_format["json_schema"]["schema"]

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -115,20 +115,16 @@ class CohereProvider(AnyLLM):
             yield self._convert_completion_chunk_response(chunk)
 
     @staticmethod
-    def _preprocess_response_format(response_format: type[BaseModel] | dict[str, Any]) -> dict[str, Any]:
-        # if response format is a BaseModel, generate model json schema
-        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-            return {"type": "json_object", "schema": response_format.model_json_schema()}
+    def _preprocess_response_format(response_format: type | dict[str, Any]) -> dict[str, Any]:
+        if is_structured_output_type(response_format):
+            return {"type": "json_object", "schema": get_json_schema(response_format)}
         # can either be json schema already in dict
         # or {"type": "json_object"} to just generate *a* JSON (JSON mode)
         # see docs here: https://docs.cohere.com/docs/structured-outputs#json-mode
         if isinstance(response_format, dict):
             return response_format
-        # For now, let Cohere API handle invalid schemas.
-        # Note that Cohere has a bunch of limitations on JSON schemas (e.g., no oneOf, numeric/str ranges, weird regex limitations)
-        # see docs here: https://docs.cohere.com/docs/structured-outputs#unsupported-schema-features
-        # Validation logic could/would eventually go here
-        return response_format
+        msg = f"Unsupported response_format: {response_format}"
+        raise ValueError(msg)
 
     @override
     async def _acompletion(
