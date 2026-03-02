@@ -296,6 +296,96 @@ async def test_completion_with_images() -> None:
 
 
 @pytest.mark.asyncio
+async def test_completion_with_pdf() -> None:
+    api_key = "test-api-key"
+    model = "model-id"
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What is in this PDF?"},
+                {
+                    "type": "file",
+                    "file": {
+                        "filename": "document.pdf",
+                        "file_data": "data:application/pdf;base64,JVBERi0xLjQKdGVzdA==",
+                    },
+                },
+            ],
+        }
+    ]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key=api_key)
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages))
+
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "What is in this PDF?"},
+                        {
+                            "type": "document",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "application/pdf",
+                                "data": "JVBERi0xLjQKdGVzdA==",
+                            },
+                        },
+                    ],
+                }
+            ],
+            max_tokens=DEFAULT_MAX_TOKENS,
+        )
+
+
+@pytest.mark.asyncio
+async def test_completion_with_pdf_url() -> None:
+    api_key = "test-api-key"
+    model = "model-id"
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Summarize this PDF."},
+                {
+                    "type": "file",
+                    "file": {
+                        "filename": "report.pdf",
+                        "file_data": "https://example.com/report.pdf",
+                    },
+                },
+            ],
+        }
+    ]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key=api_key)
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages))
+
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Summarize this PDF."},
+                        {
+                            "type": "document",
+                            "source": {"type": "url", "url": "https://example.com/report.pdf"},
+                        },
+                    ],
+                }
+            ],
+            max_tokens=DEFAULT_MAX_TOKENS,
+        )
+
+
+@pytest.mark.asyncio
 async def test_completion_with_parallel_tool_calls() -> None:
     """Test that parallel tool calls are correctly converted to Anthropic format.
 
