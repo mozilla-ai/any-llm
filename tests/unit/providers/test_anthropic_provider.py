@@ -13,6 +13,7 @@ from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.utils import (
     DEFAULT_MAX_TOKENS,
     REASONING_EFFORT_TO_ANTHROPIC_EFFORT,
+    REASONING_EFFORT_TO_THINKING_BUDGETS,
     _convert_response_format,
 )
 from any_llm.types.completion import CompletionParams, ReasoningEffort
@@ -229,9 +230,35 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
 
 @pytest.mark.parametrize("reasoning_effort", [None, *get_args(ReasoningEffort)])
 @pytest.mark.asyncio
-async def test_completion_with_custom_reasoning_effort(reasoning_effort: ReasoningEffort | None) -> None:
+async def test_completion_with_custom_reasoning_effort_legacy_model(reasoning_effort: ReasoningEffort | None) -> None:
     api_key = "test-api-key"
-    model = "model-id"
+    model = "claude-sonnet-4-20250514"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key=api_key)
+        await provider._acompletion(
+            CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort)
+        )
+
+        call_kwargs = mock_anthropic.return_value.messages.create.call_args[1]
+
+        if reasoning_effort is None or reasoning_effort == "none":
+            assert call_kwargs["thinking"] == {"type": "disabled"}
+        elif reasoning_effort == "auto":
+            assert "thinking" not in call_kwargs
+        else:
+            assert call_kwargs["thinking"] == {
+                "type": "enabled",
+                "budget_tokens": REASONING_EFFORT_TO_THINKING_BUDGETS[reasoning_effort],
+            }
+
+
+@pytest.mark.parametrize("reasoning_effort", [None, *get_args(ReasoningEffort)])
+@pytest.mark.asyncio
+async def test_completion_with_custom_reasoning_effort_adaptive_model(reasoning_effort: ReasoningEffort | None) -> None:
+    api_key = "test-api-key"
+    model = "claude-sonnet-4-6"
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_anthropic_provider() as mock_anthropic:
@@ -498,7 +525,7 @@ async def test_completion_with_response_format_and_reasoning_effort() -> None:
         city_name: str
 
     api_key = "test-api-key"
-    model = "model-id"
+    model = "claude-opus-4-6"
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_anthropic_provider() as mock_anthropic:
