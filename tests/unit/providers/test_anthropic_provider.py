@@ -75,7 +75,6 @@ async def test_completion_with_system_message() -> None:
             messages=[{"role": "user", "content": "Hello"}],
             system="You are a helpful assistant.",
             max_tokens=DEFAULT_MAX_TOKENS,
-            thinking={"type": "adaptive"},
         )
 
 
@@ -98,7 +97,6 @@ async def test_completion_with_multiple_system_messages() -> None:
             messages=[{"role": "user", "content": "Hello"}],
             system="First part.\nSecond part.",
             max_tokens=DEFAULT_MAX_TOKENS,
-            thinking={"type": "adaptive"},
         )
 
 
@@ -115,7 +113,7 @@ async def test_completion_with_kwargs() -> None:
         )
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
-            model=model, messages=messages, max_tokens=100, temperature=0.5, thinking={"type": "adaptive"}
+            model=model, messages=messages, max_tokens=100, temperature=0.5
         )
 
 
@@ -135,7 +133,6 @@ async def test_completion_with_tool_choice_required() -> None:
             model=model,
             messages=messages,
             max_tokens=DEFAULT_MAX_TOKENS,
-            thinking={"type": "adaptive"},
             **expected_kwargs,
         )
 
@@ -162,7 +159,6 @@ async def test_completion_with_tool_choice_specific_tool(tool_choice: dict[str, 
             model=model,
             messages=messages,
             max_tokens=DEFAULT_MAX_TOKENS,
-            thinking={"type": "adaptive"},
             **expected_kwargs,
         )
 
@@ -203,7 +199,6 @@ async def test_completion_with_tool_choice_and_parallel_tool_calls(parallel_tool
             messages=[{"role": "user", "content": "Hello"}],
             **expected_kwargs,
             max_tokens=DEFAULT_MAX_TOKENS,
-            thinking={"type": "adaptive"},
         )
 
 
@@ -229,7 +224,6 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
                 {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "foo", "content": "sunny"}]},
             ],
             max_tokens=DEFAULT_MAX_TOKENS,
-            thinking={"type": "adaptive"},
         )
 
 
@@ -251,8 +245,7 @@ async def test_completion_with_custom_reasoning_effort(reasoning_effort: Reasoni
         if reasoning_effort is None or reasoning_effort == "none":
             assert call_kwargs["thinking"] == {"type": "disabled"}
         elif reasoning_effort == "auto":
-            assert call_kwargs["thinking"] == {"type": "adaptive"}
-            assert "output_config" not in call_kwargs
+            assert "thinking" not in call_kwargs
         else:
             assert call_kwargs["thinking"] == {"type": "adaptive"}
             assert call_kwargs["output_config"] == {"effort": REASONING_EFFORT_TO_ANTHROPIC_EFFORT[reasoning_effort]}
@@ -298,7 +291,6 @@ async def test_completion_with_images() -> None:
                 }
             ],
             max_tokens=DEFAULT_MAX_TOKENS,
-            thinking={"type": "adaptive"},
         )
 
 
@@ -346,7 +338,6 @@ async def test_completion_with_pdf() -> None:
                 }
             ],
             max_tokens=DEFAULT_MAX_TOKENS,
-            thinking={"type": "adaptive"},
         )
 
 
@@ -390,7 +381,6 @@ async def test_completion_with_pdf_url() -> None:
                 }
             ],
             max_tokens=DEFAULT_MAX_TOKENS,
-            thinking={"type": "adaptive"},
         )
 
 
@@ -481,7 +471,6 @@ async def test_completion_with_parallel_tool_calls() -> None:
             ],
             system="You are a helpful assistant.",
             max_tokens=DEFAULT_MAX_TOKENS,
-            thinking={"type": "adaptive"},
         )
 
 
@@ -786,7 +775,6 @@ async def test_completion_strips_openai_specific_fields() -> None:
                 {"role": "user", "content": "Thanks"},
             ],
             max_tokens=DEFAULT_MAX_TOKENS,
-            thinking={"type": "adaptive"},
         )
 
 

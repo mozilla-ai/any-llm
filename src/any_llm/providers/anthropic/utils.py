@@ -410,9 +410,7 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
 
     if params.reasoning_effort is None or params.reasoning_effort == "none":
         result_kwargs["thinking"] = {"type": "disabled"}
-    elif params.reasoning_effort == "auto":
-        result_kwargs["thinking"] = {"type": "adaptive"}
-    else:
+    elif params.reasoning_effort != "auto":
         result_kwargs["thinking"] = {"type": "adaptive"}
         effort = REASONING_EFFORT_TO_ANTHROPIC_EFFORT[params.reasoning_effort]
         output_config = result_kwargs.get("output_config", {})
