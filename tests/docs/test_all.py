@@ -13,7 +13,18 @@ from any_llm.constants import LLMProvider
     ids=str,
 )
 def test_all_docs(doc_file: pathlib.Path) -> None:
-    if doc_file.name == "quickstart.md":
+    if doc_file.name == "index.md":
+        mock_response = Mock(choices=[Mock(message=Mock(content="Hello!"))])
+        with patch("any_llm.completion", return_value=mock_response):
+            check_md_file(fpath=doc_file, memory=True)  # type: ignore[no-untyped-call]
+    elif doc_file.name == "quickstart.md" and "gateway" in doc_file.parts:
+        mock_response = Mock(choices=[Mock(message=Mock(content="Hello!"))])
+        with (
+            patch("any_llm.completion", return_value=mock_response),
+            patch.dict("os.environ", {"GATEWAY_MASTER_KEY": "fake-gateway-key"}),
+        ):
+            check_md_file(fpath=doc_file, memory=True)  # type: ignore[no-untyped-call]
+    elif doc_file.name == "quickstart.md":
         mock_provider = Mock()
         mock_provider.completion.return_value = Mock(choices=[Mock(message=Mock(content="Hello!"))])
         mock_provider.get_provider_metadata.return_value = Mock(streaming=True, completion=True)
