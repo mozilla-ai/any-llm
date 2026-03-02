@@ -151,3 +151,56 @@ def test_base_provider_max_tokens_via_kwargs_also_remapped() -> None:
     result = BaseOpenAIProvider._convert_completion_params(params, max_tokens=1024)
     assert "max_tokens" not in result
     assert result["max_completion_tokens"] == 1024
+
+
+def test_base_provider_converts_dataclass_response_format_to_json_schema() -> None:
+    """Test that plain dataclasses are converted to JSON schema dicts."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class TestOutput:
+        name: str
+        value: int
+
+    params = CompletionParams(
+        model_id="model",
+        messages=[{"role": "user", "content": "hi"}],
+        response_format=TestOutput,
+    )
+    result = BaseOpenAIProvider._convert_completion_params(params)
+
+    assert result["response_format"]["type"] == "json_schema"
+    assert result["response_format"]["json_schema"]["name"] == "TestOutput"
+    assert "properties" in result["response_format"]["json_schema"]["schema"]
+
+
+@pytest.mark.asyncio
+async def test_acompletion_with_dataclass_uses_create_not_parse() -> None:
+    """Test that plain dataclasses use .create() instead of .parse()."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class TestOutput:
+        name: str
+
+    class TestProvider(BaseOpenAIProvider):
+        PROVIDER_NAME = "TestProvider"
+        ENV_API_KEY_NAME = "TEST_API_KEY"
+        PROVIDER_DOCUMENTATION_URL = "https://example.com"
+
+    with patch("any_llm.providers.openai.base.AsyncOpenAI") as mock_openai_class:
+        mock_client = AsyncMock()
+        mock_openai_class.return_value = mock_client
+        mock_client.chat.completions.create = AsyncMock(return_value=MagicMock())
+
+        provider = TestProvider(api_key="test-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="test-model",
+                messages=[{"role": "user", "content": "Hello"}],
+                response_format=TestOutput,
+            )
+        )
+
+        mock_client.chat.completions.create.assert_called_once()
+        mock_client.chat.completions.parse.assert_not_called()

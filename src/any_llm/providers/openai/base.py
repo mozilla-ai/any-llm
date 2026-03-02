@@ -11,7 +11,7 @@ from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatComple
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from openai.types.chat.parsed_chat_completion import ParsedChatCompletion as OpenAIParsedChatCompletion
 from openresponses_types import ResponseResource
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
@@ -31,7 +31,7 @@ from any_llm.types.completion import (
 )
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
-from any_llm.utils.structured_output import is_structured_output_type
+from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 
 class BaseOpenAIProvider(AnyLLM):
@@ -65,7 +65,18 @@ class BaseOpenAIProvider(AnyLLM):
         Remaps ``max_tokens`` to ``max_completion_tokens`` to follow the
         current OpenAI spec.  Providers whose API does not accept
         ``max_completion_tokens`` should override this method to remap back.
+
+        Plain dataclasses are converted to JSON schema dicts since the
+        OpenAI SDK's ``.parse()`` only supports Pydantic BaseModel types.
         """
+        if is_structured_output_type(params.response_format) and not issubclass(params.response_format, BaseModel):
+            params.response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": params.response_format.__name__,
+                    "schema": get_json_schema(params.response_format),
+                },
+            }
         converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
         converted_params.update(kwargs)
 
