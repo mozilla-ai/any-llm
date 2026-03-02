@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
-from pydantic import BaseModel
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
@@ -20,6 +19,7 @@ from any_llm.types.completion import (
     Function,
     Reasoning,
 )
+from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -119,9 +119,9 @@ class GoogleProvider(AnyLLM):
                 kwargs["stop_sequences"] = params.stop
 
         response_format = params.response_format
-        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+        if is_structured_output_type(response_format):
             kwargs["response_mime_type"] = "application/json"
-            kwargs["response_schema"] = response_format
+            kwargs["response_schema"] = get_json_schema(response_format)
 
         formatted_messages, system_instruction = _convert_messages(params.messages)
         if system_instruction:

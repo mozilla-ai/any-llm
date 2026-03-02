@@ -2,8 +2,6 @@ import json
 import uuid
 from typing import Any, Literal, cast
 
-from pydantic import BaseModel
-
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -16,6 +14,7 @@ from any_llm.types.completion import (
     CompletionUsage,
 )
 from any_llm.types.model import Model
+from any_llm.utils.structured_output import get_json_schema
 
 
 def _convert_response(response: dict[str, Any]) -> ChatCompletion:
@@ -127,22 +126,22 @@ def _convert_streaming_chunk(chunk: dict[str, Any]) -> ChatCompletionChunk:
     )
 
 
-def _convert_pydantic_to_watsonx_json(
-    pydantic_model: type[BaseModel], messages: list[dict[str, Any]]
+def _convert_structured_type_to_watsonx_json(
+    response_format: type, messages: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     """
-    Convert a Pydantic model to an inline JSON instruction for Watsonx.
+    Convert a structured type to an inline JSON instruction for Watsonx.
 
     This mirrors the generic JSON-mode prompt approach used for providers
     without native structured output support.
     """
-    schema = pydantic_model.model_json_schema()
+    schema = get_json_schema(response_format)
 
     modified_messages = messages.copy()
     if modified_messages and modified_messages[-1]["role"] == "user":
         original_content = modified_messages[-1]["content"]
         json_instruction = f"""
-Please respond with a JSON object that can be loaded into a pydantic model that matches the following schema:
+Please respond with a JSON object that matches the following schema:
 
 {json.dumps(schema, indent=2)}
 

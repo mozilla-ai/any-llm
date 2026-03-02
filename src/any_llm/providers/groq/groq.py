@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from openai import AsyncOpenAI, AsyncStream
-from pydantic import BaseModel
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
+from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 if TYPE_CHECKING:
     from openresponses_types import ResponseResource
@@ -135,12 +135,12 @@ class GroqProvider(AnyLLM):
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         if params.response_format:
-            if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
+            if is_structured_output_type(params.response_format):
                 kwargs["response_format"] = {
                     "type": "json_schema",
                     "json_schema": {
                         "name": params.response_format.__name__,
-                        "schema": params.response_format.model_json_schema(),
+                        "schema": get_json_schema(params.response_format),
                     },
                 }
             else:

@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -167,16 +167,12 @@ class OllamaProvider(AnyLLM):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using Ollama."""
 
+        output_format: dict[str, Any] | None = None
         if params.response_format is not None:
-            response_format = params.response_format
-            if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-                # response_format is a Pydantic model class
-                output_format = response_format.model_json_schema()
-            else:
-                # response_format is already a dict/schema
-                output_format = response_format
-        else:
-            output_format = None
+            if is_structured_output_type(params.response_format):
+                output_format = get_json_schema(params.response_format)
+            elif isinstance(params.response_format, dict):
+                output_format = params.response_format
 
         # (https://www.reddit.com/r/ollama/comments/1ked8x2/feeding_tool_output_back_to_llm/)
         cleaned_messages = []

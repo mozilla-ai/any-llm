@@ -1,3 +1,5 @@
+import dataclasses
+
 import pytest
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
@@ -9,6 +11,12 @@ from any_llm.types.completion import CompletionParams
 
 
 class PersonResponseFormat(BaseModel):
+    name: str
+    age: int
+
+
+@dataclasses.dataclass
+class PersonDataclass:
     name: str
     age: int
 
@@ -64,6 +72,28 @@ async def test_preprocess_messages_with_non_pydantic_response_format() -> None:
     processed_params = _preprocess_messages(params)
     assert processed_params.response_format == response_format
     assert processed_params.messages == messages
+
+
+@pytest.mark.asyncio
+async def test_preprocess_messages_with_dataclass() -> None:
+    """Test that a dataclass is converted to DeepSeek JSON format."""
+    messages = [{"role": "user", "content": "Generate a person"}]
+    params = CompletionParams(
+        model_id="deepseek-chat",
+        messages=messages,
+        response_format=PersonDataclass,
+    )
+
+    processed_params = _preprocess_messages(params)
+
+    assert processed_params.response_format == {"type": "json_object"}
+
+    assert len(processed_params.messages) == 1
+    assert processed_params.messages[0]["role"] == "user"
+    assert "JSON object" in processed_params.messages[0]["content"]
+    assert "Generate a person" in processed_params.messages[0]["content"]
+    assert "name" in processed_params.messages[0]["content"]
+    assert "age" in processed_params.messages[0]["content"]
 
 
 def test_convert_completion_response_extracts_cached_tokens() -> None:

@@ -182,6 +182,41 @@ def test_to_chat_completion_without_cached_tokens() -> None:
     assert result.usage.prompt_tokens_details is None
 
 
+@pytest.mark.asyncio
+async def test_completion_with_response_format_dataclass() -> None:
+    pytest.importorskip("groq")
+    from dataclasses import dataclass
+
+    from any_llm.providers.groq.groq import GroqProvider
+
+    @dataclass
+    class TestOutput:
+        foo: str
+
+    with (
+        patch("any_llm.providers.groq.groq.AsyncGroq") as mocked_groq,
+        patch("any_llm.providers.groq.groq.to_chat_completion") as mocked_to_chat_completion,
+    ):
+        provider = GroqProvider(api_key="test-api-key")
+
+        mock_response = Mock()
+        mocked_groq.return_value.chat.completions.create = AsyncMock(return_value=mock_response)
+        mocked_to_chat_completion.return_value = mock_response
+
+        await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Hello"}],
+                response_format=TestOutput,
+            ),
+        )
+        call_kwargs = mocked_groq.return_value.chat.completions.create.call_args[1]
+
+        assert call_kwargs["response_format"]["type"] == "json_schema"
+        assert call_kwargs["response_format"]["json_schema"]["name"] == "TestOutput"
+        assert "properties" in call_kwargs["response_format"]["json_schema"]["schema"]
+
+
 def test_streaming_chunk_extracts_cached_tokens() -> None:
     """Test that streaming chunks correctly extract cached tokens from Groq usage."""
     from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk

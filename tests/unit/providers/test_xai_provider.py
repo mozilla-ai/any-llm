@@ -58,6 +58,38 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
 
 
 @pytest.mark.asyncio
+async def test_dataclass_response_format_uses_sample_not_parse() -> None:
+    """Test that dataclass response_format uses sample() with protobuf schema, not parse()."""
+    from dataclasses import dataclass
+
+    from any_llm.providers.xai.xai import XaiProvider
+
+    @dataclass
+    class TestOutput:
+        name: str
+
+    with mock_xai_provider() as (mock_xai, _):
+        create_return = mock_xai.return_value.chat.create.return_value
+
+        provider = XaiProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="model",
+                messages=[{"role": "user", "content": "Hello"}],
+                response_format=TestOutput,
+            )
+        )
+
+        # Should call sample(), not parse()
+        create_return.sample.assert_called_once()
+        create_return.parse.assert_not_called()
+
+        # Should pass response_format protobuf to create()
+        _, call_kwargs = mock_xai.return_value.chat.create.call_args
+        assert call_kwargs["response_format"] is not None
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("reasoning_effort", ["auto", "none"])
 async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
     """Test that reasoning_effort 'auto' and 'none' are filtered from xAI API calls."""

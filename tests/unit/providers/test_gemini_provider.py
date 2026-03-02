@@ -198,6 +198,34 @@ async def test_completion_without_tool_choice() -> None:
 
 
 @pytest.mark.asyncio
+async def test_completion_with_dataclass_response_format() -> None:
+    """Test that dataclass response_format is converted to JSON schema for Gemini."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class TestOutput:
+        name: str
+        value: int
+
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key=api_key)
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages, response_format=TestOutput))
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+
+        assert generation_config.response_mime_type == "application/json"
+        assert isinstance(generation_config.response_schema, dict)
+        assert "properties" in generation_config.response_schema
+        assert "name" in generation_config.response_schema["properties"]
+        assert "value" in generation_config.response_schema["properties"]
+
+
+@pytest.mark.asyncio
 async def test_completion_with_stream_and_response_format_raises() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"

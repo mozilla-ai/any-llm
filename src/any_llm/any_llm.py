@@ -25,6 +25,7 @@ from any_llm.types.responses import Response, ResponseInputParam, ResponsesParam
 from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
 from any_llm.utils.decorators import BATCH_API_EXPERIMENTAL_MESSAGE, experimental
 from any_llm.utils.exception_handler import handle_exceptions
+from any_llm.utils.structured_output import is_structured_output_type, parse_json_content
 
 ResponseFormatT = TypeVar("ResponseFormatT", bound=BaseModel)
 
@@ -410,7 +411,7 @@ class AnyLLM(ABC):
         model: str,
         messages: list[dict[str, Any] | ChatCompletionMessage],
         *,
-        response_format: dict[str, Any] | type[BaseModel] | None = ...,
+        response_format: dict[str, Any] | type | None = ...,
         stream: bool | None = ...,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk] | ParsedChatCompletion[Any]: ...
@@ -420,7 +421,7 @@ class AnyLLM(ABC):
         model: str,
         messages: list[dict[str, Any] | ChatCompletionMessage],
         *,
-        response_format: dict[str, Any] | type[BaseModel] | None = None,
+        response_format: dict[str, Any] | type | None = None,
         stream: bool | None = None,
         allow_running_loop: bool | None = None,
         **kwargs: Any,
@@ -479,7 +480,7 @@ class AnyLLM(ABC):
         model: str,
         messages: list[dict[str, Any] | ChatCompletionMessage],
         *,
-        response_format: dict[str, Any] | type[BaseModel] | None = ...,
+        response_format: dict[str, Any] | type | None = ...,
         stream: bool | None = ...,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk] | ParsedChatCompletion[Any]: ...
@@ -495,7 +496,7 @@ class AnyLLM(ABC):
         temperature: float | None = None,
         top_p: float | None = None,
         max_tokens: int | None = None,
-        response_format: dict[str, Any] | type[BaseModel] | None = None,
+        response_format: dict[str, Any] | type | None = None,
         stream: bool | None = None,
         n: int | None = None,
         stop: str | list[str] | None = None,
@@ -582,7 +583,7 @@ class AnyLLM(ABC):
 
         result = await self._acompletion(params, **kwargs)
 
-        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+        if is_structured_output_type(response_format):
             if isinstance(result, ParsedChatCompletion):
                 parsed_completion = result
             elif isinstance(result, ChatCompletion):
@@ -598,7 +599,7 @@ class AnyLLM(ABC):
                     # to align with OpenAI SDK semantics (deferred to a future major version)
                     pass
                 elif choice.message.content and not choice.message.refusal:
-                    choice.message.parsed = response_format.model_validate_json(choice.message.content)
+                    choice.message.parsed = parse_json_content(response_format, choice.message.content)
             return parsed_completion
 
         return result

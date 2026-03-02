@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import dataclasses
+import json
 from typing import TYPE_CHECKING, Any
 
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.utils.structured_output import get_json_schema
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -140,9 +143,21 @@ class XaiProvider(AnyLLM):
 
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 
+        # For plain dataclasses, pass JSON schema via response_format on create()
+        # since xAI's parse() only supports Pydantic BaseModel.
+        response_format_pb = None
+        if params.response_format is not None and dataclasses.is_dataclass(params.response_format):
+            from xai_sdk.proto import chat_pb2
+
+            response_format_pb = chat_pb2.ResponseFormat(
+                format_type=chat_pb2.FORMAT_TYPE_JSON_SCHEMA,
+                schema=json.dumps(get_json_schema(params.response_format)),
+            )
+
         chat = self.client.chat.create(
             model=params.model_id,
             messages=xai_messages,
+            response_format=response_format_pb,
             **completion_kwargs,
         )
         if params.stream:
@@ -157,7 +172,7 @@ class XaiProvider(AnyLLM):
 
             return _stream()
 
-        if params.response_format:
+        if params.response_format is not None and not response_format_pb:
             response, _ = await chat.parse(shape=params.response_format)  # type: ignore[arg-type]
         else:
             response = await chat.sample()

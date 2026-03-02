@@ -1,3 +1,4 @@
+import dataclasses
 from contextlib import contextmanager
 from datetime import UTC
 from typing import Any, get_args
@@ -567,6 +568,19 @@ async def test_completion_with_response_format_dict_unknown_type_raises() -> Non
                 response_format={"type": "unknown"},
             )
         )
+
+
+def test_convert_response_format_dataclass() -> None:
+    @dataclasses.dataclass
+    class CityResponse:
+        city_name: str
+
+    result = _convert_response_format(CityResponse, "anthropic")
+    assert "format" in result
+    assert result["format"]["type"] == "json_schema"
+    assert "schema" in result["format"]
+    schema = result["format"]["schema"]
+    assert "city_name" in schema["properties"]
 
 
 def test_convert_response_format_non_dict_non_basemodel_raises() -> None:

@@ -137,8 +137,8 @@ class CompletionParams(BaseModel):
     max_tokens: int | None = None
     """Maximum number of tokens to generate"""
 
-    response_format: dict[str, Any] | type[BaseModel] | None = None
-    """Format specification for the response"""
+    response_format: dict[str, Any] | type | None = None
+    """Format specification for the response. Accepts Pydantic BaseModel subclasses, dataclass types, or dicts."""
 
     stream: bool | None = None
     """Whether to stream the response"""

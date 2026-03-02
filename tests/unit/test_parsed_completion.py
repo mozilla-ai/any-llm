@@ -1,3 +1,4 @@
+import dataclasses
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -9,6 +10,11 @@ from any_llm.types.completion import ChatCompletion
 
 
 class CityResponse(BaseModel):
+    city_name: str
+
+
+@dataclasses.dataclass
+class CityResponseDataclass:
     city_name: str
 
 
@@ -195,3 +201,83 @@ async def test_no_parsed_completion_with_dict_response_format(provider: AnyLLM) 
 
     assert isinstance(result, ChatCompletion)
     assert not isinstance(result, ParsedChatCompletion)
+
+
+@pytest.mark.asyncio
+async def test_parsed_completion_dataclass_from_content(provider: AnyLLM) -> None:
+    provider._acompletion = AsyncMock(return_value=_make_chat_completion())  # type: ignore[method-assign]
+
+    result = await provider.acompletion(
+        model="test-model",
+        messages=[{"role": "user", "content": "What is the capital of France?"}],
+        response_format=CityResponseDataclass,
+    )
+
+    assert isinstance(result, ParsedChatCompletion)
+    assert isinstance(result.choices[0].message.parsed, CityResponseDataclass)
+    assert result.choices[0].message.parsed.city_name == "Paris"
+
+
+@pytest.mark.asyncio
+async def test_parsed_completion_dataclass_refusal(provider: AnyLLM) -> None:
+    provider._acompletion = AsyncMock(  # type: ignore[method-assign]
+        return_value=_make_chat_completion(content=None, refusal="I cannot help with that"),
+    )
+
+    result = await provider.acompletion(
+        model="test-model",
+        messages=[{"role": "user", "content": "test"}],
+        response_format=CityResponseDataclass,
+    )
+
+    assert isinstance(result, ParsedChatCompletion)
+    assert result.choices[0].message.parsed is None
+    assert result.choices[0].message.refusal == "I cannot help with that"
+
+
+@pytest.mark.asyncio
+async def test_parsed_completion_dataclass_length_finish_reason(provider: AnyLLM) -> None:
+    provider._acompletion = AsyncMock(  # type: ignore[method-assign]
+        return_value=_make_chat_completion(finish_reason="length"),
+    )
+
+    result = await provider.acompletion(
+        model="test-model",
+        messages=[{"role": "user", "content": "test"}],
+        response_format=CityResponseDataclass,
+    )
+
+    assert isinstance(result, ParsedChatCompletion)
+    assert result.choices[0].message.parsed is None
+    assert result.choices[0].finish_reason == "length"
+
+
+@pytest.mark.asyncio
+async def test_parsed_completion_dataclass_invalid_json_raises_validation_error(provider: AnyLLM) -> None:
+    provider._acompletion = AsyncMock(  # type: ignore[method-assign]
+        return_value=_make_chat_completion(content='{"wrong_field": "value"}'),
+    )
+
+    with pytest.raises(ValidationError):
+        await provider.acompletion(
+            model="test-model",
+            messages=[{"role": "user", "content": "test"}],
+            response_format=CityResponseDataclass,
+        )
+
+
+@pytest.mark.asyncio
+async def test_parsed_completion_dataclass_no_content_no_refusal(provider: AnyLLM) -> None:
+    provider._acompletion = AsyncMock(  # type: ignore[method-assign]
+        return_value=_make_chat_completion(content=None),
+    )
+
+    result = await provider.acompletion(
+        model="test-model",
+        messages=[{"role": "user", "content": "test"}],
+        response_format=CityResponseDataclass,
+    )
+
+    assert isinstance(result, ParsedChatCompletion)
+    assert result.choices[0].message.parsed is None
+    assert result.choices[0].message.content is None

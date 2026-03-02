@@ -36,6 +36,60 @@ async def test_create_chat_completion_extracts_think_content() -> None:
 
 
 @pytest.mark.asyncio
+async def test_completion_with_dataclass_response_format() -> None:
+    """Test that dataclass response_format is converted to JSON schema."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class TestOutput:
+        name: str
+        value: int
+
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=Mock())
+
+        with patch.object(OllamaProvider, "_convert_completion_response", return_value=Mock()):
+            await provider._acompletion(
+                CompletionParams(
+                    model_id="llama3.1",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    response_format=TestOutput,
+                ),
+            )
+
+            call_kwargs = provider.client.chat.call_args[1]
+            assert isinstance(call_kwargs["format"], dict)
+            assert "properties" in call_kwargs["format"]
+            assert "name" in call_kwargs["format"]["properties"]
+            assert "value" in call_kwargs["format"]["properties"]
+
+
+@pytest.mark.asyncio
+async def test_completion_with_dict_response_format() -> None:
+    """Test that dict response_format is passed through unchanged."""
+    response_format = {"type": "json_object"}
+
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=Mock())
+
+        with patch.object(OllamaProvider, "_convert_completion_response", return_value=Mock()):
+            await provider._acompletion(
+                CompletionParams(
+                    model_id="llama3.1",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    response_format=response_format,
+                ),
+            )
+
+            call_kwargs = provider.client.chat.call_args[1]
+            assert call_kwargs["format"] == response_format
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("reasoning_effort", ["auto", "none"])
 async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
     """Test that reasoning_effort 'auto' and 'none' are filtered from Ollama API calls."""
