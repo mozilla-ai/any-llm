@@ -1,8 +1,12 @@
 """Tests for messages()/amessages() SDK API."""
 
+from typing import Any
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
 
 from any_llm.api import amessages
+from any_llm.types.messages import MessageResponse
 
 
 @pytest.mark.asyncio
@@ -151,3 +155,196 @@ def test_messages_exported_from_init() -> None:
     assert hasattr(any_llm, "amessages")
     assert "messages" in any_llm.__all__
     assert "amessages" in any_llm.__all__
+
+
+@pytest.mark.asyncio
+async def test_amessages_parameter_capture() -> None:
+    """Test that amessages correctly captures and passes all parameters."""
+    mock_provider = Mock()
+    mock_provider.amessages = AsyncMock(return_value=Mock())
+
+    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
+        mock_create.return_value = mock_provider
+
+        await amessages(
+            model="openai:gpt-4",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            system="Be helpful",
+            temperature=0.7,
+            top_p=0.9,
+            top_k=40,
+            stop_sequences=["END"],
+            tools=[{"name": "test", "input_schema": {}}],
+            tool_choice={"type": "auto"},
+            metadata={"user_id": "u1"},
+            thinking={"type": "enabled", "budget_tokens": 4096},
+            api_key="sk-test",
+            api_base="https://custom.example.com",
+        )
+
+        from any_llm.constants import LLMProvider
+
+        mock_create.assert_called_once_with(
+            LLMProvider.OPENAI,
+            api_key="sk-test",
+            api_base="https://custom.example.com",
+        )
+
+        mock_provider.amessages.assert_called_once()
+        call_args = mock_provider.amessages.call_args
+        assert call_args.kwargs["model"] == "gpt-4"
+        assert call_args.kwargs["messages"] == [{"role": "user", "content": "Hello"}]
+        assert call_args.kwargs["max_tokens"] == 1024
+        assert call_args.kwargs["system"] == "Be helpful"
+        assert call_args.kwargs["temperature"] == 0.7
+        assert call_args.kwargs["top_p"] == 0.9
+        assert call_args.kwargs["top_k"] == 40
+        assert call_args.kwargs["stop_sequences"] == ["END"]
+        assert call_args.kwargs["tools"] == [{"name": "test", "input_schema": {}}]
+        assert call_args.kwargs["tool_choice"] == {"type": "auto"}
+        assert call_args.kwargs["metadata"] == {"user_id": "u1"}
+        assert call_args.kwargs["thinking"] == {"type": "enabled", "budget_tokens": 4096}
+
+
+@pytest.mark.asyncio
+async def test_amessages_with_explicit_provider() -> None:
+    """Test amessages with explicit provider parameter."""
+    mock_provider = Mock()
+    mock_provider.amessages = AsyncMock(return_value=Mock())
+
+    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
+        mock_create.return_value = mock_provider
+
+        await amessages(
+            model="gpt-4",
+            messages=[{"role": "user", "content": "Hi"}],
+            max_tokens=100,
+            provider="openai",
+        )
+
+        from any_llm.constants import LLMProvider
+
+        mock_create.assert_called_once_with(LLMProvider.OPENAI, api_key=None, api_base=None)
+        call_args = mock_provider.amessages.call_args
+        assert call_args.kwargs["model"] == "gpt-4"
+
+
+@pytest.mark.asyncio
+async def test_amessages_with_client_args() -> None:
+    """Test amessages passes client_args to provider creation."""
+    mock_provider = Mock()
+    mock_provider.amessages = AsyncMock(return_value=Mock())
+
+    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
+        mock_create.return_value = mock_provider
+
+        await amessages(
+            model="openai:gpt-4",
+            messages=[{"role": "user", "content": "Hi"}],
+            max_tokens=100,
+            client_args={"timeout": 30},
+        )
+
+        from any_llm.constants import LLMProvider
+
+        mock_create.assert_called_once_with(LLMProvider.OPENAI, api_key=None, api_base=None, timeout=30)
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_non_streaming() -> None:
+    """Test default _amessages implementation converts Completions to Messages format."""
+    from any_llm.types.completion import (
+        ChatCompletion,
+        ChatCompletionMessage,
+        Choice,
+        CompletionUsage,
+    )
+    from any_llm.types.messages import MessageResponse, MessagesParams
+
+    mock_completion = ChatCompletion(
+        id="chatcmpl-test",
+        model="gpt-4",
+        created=0,
+        object="chat.completion",
+        choices=[Choice(index=0, finish_reason="stop", message=ChatCompletionMessage(role="assistant", content="Hi!"))],
+        usage=CompletionUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+    )
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_completion)
+
+    from any_llm.any_llm import AnyLLM
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert isinstance(result, MessageResponse)
+    assert result.id == "chatcmpl-test"
+    assert result.content[0].type == "text"
+    assert result.content[0].text == "Hi!"
+    assert result.stop_reason == "end_turn"
+    assert result.usage.input_tokens == 10
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming() -> None:
+    """Test default _amessages streaming converts ChatCompletionChunks to MessageStreamEvents."""
+    from any_llm.types.completion import (
+        ChatCompletionChunk,
+        ChoiceDelta,
+        ChunkChoice,
+    )
+    from any_llm.types.messages import MessagesParams
+
+    async def mock_stream() -> Any:
+        yield ChatCompletionChunk(
+            id="chunk-1",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hello"), finish_reason=None)],
+        )
+        yield ChatCompletionChunk(
+            id="chunk-2",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(), finish_reason="stop")],
+        )
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    from any_llm.any_llm import AnyLLM
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert not isinstance(result, MessageResponse)
+
+    events = []
+    async for event in result:
+        events.append(event)
+
+    types = [e.type for e in events]
+    assert "message_start" in types
+    assert "content_block_start" in types
+    assert "content_block_delta" in types
+    assert "content_block_stop" in types
+    assert "message_delta" in types
+    assert "message_stop" in types
+
+
+def test_supports_messages_flag() -> None:
+    """Test that SUPPORTS_MESSAGES defaults to True."""
+    from any_llm.any_llm import AnyLLM
+
+    assert AnyLLM.SUPPORTS_MESSAGES is True

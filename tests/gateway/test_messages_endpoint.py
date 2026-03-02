@@ -11,7 +11,7 @@ from any_llm.types.messages import MessageContentBlock, MessageResponse, Message
 
 
 def _make_message_response(**overrides: Any) -> MessageResponse:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": "msg_test123",
         "type": "message",
         "role": "assistant",
@@ -144,11 +144,13 @@ def test_messages_endpoint_with_tools(
         "model": "anthropic:claude-3-5-sonnet",
         "messages": [{"role": "user", "content": "What's the weather?"}],
         "max_tokens": 1024,
-        "tools": [{
-            "name": "get_weather",
-            "description": "Get weather info",
-            "input_schema": {"type": "object", "properties": {"city": {"type": "string"}}},
-        }],
+        "tools": [
+            {
+                "name": "get_weather",
+                "description": "Get weather info",
+                "input_schema": {"type": "object", "properties": {"city": {"type": "string"}}},
+            }
+        ],
         "metadata": {"user_id": "test-user"},
     }
 

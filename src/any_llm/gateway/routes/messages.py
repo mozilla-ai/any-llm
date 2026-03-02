@@ -17,7 +17,7 @@ from any_llm.gateway.log_config import logger
 from any_llm.gateway.rate_limit import check_rate_limit
 from any_llm.gateway.routes.chat import get_provider_kwargs, log_usage, rate_limit_headers
 from any_llm.types.completion import CompletionUsage
-from any_llm.types.messages import MessageResponse, MessageStreamEvent
+from any_llm.types.messages import MessageResponse, MessageStreamEvent  # noqa: TC001
 
 router = APIRouter(prefix="/v1", tags=["messages"])
 
@@ -48,6 +48,14 @@ def _anthropic_error(error_type: str, message: str, status_code: int) -> HTTPExc
     )
 
 
+_ERR_INVALID_REQUEST = "invalid_request_error"
+_ERR_API = "api_error"
+_MASTER_KEY_USER_REQUIRED = "When using master key, 'metadata.user_id' is required in request body"
+_API_KEY_VALIDATION_FAILED = "API key validation failed"
+_API_KEY_NO_USER = "API key has no associated user"
+_PROVIDER_ERROR = "The request could not be completed by the provider"
+
+
 def _resolve_user_id(
     request: MessagesRequest,
     api_key: APIKey | None,
@@ -59,19 +67,19 @@ def _resolve_user_id(
     if is_master_key:
         if not user_from_metadata:
             raise _anthropic_error(
-                "invalid_request_error",
-                "When using master key, 'metadata.user_id' is required in request body",
+                _ERR_INVALID_REQUEST,
+                _MASTER_KEY_USER_REQUIRED,
                 status.HTTP_400_BAD_REQUEST,
             )
-        return user_from_metadata
+        return str(user_from_metadata)
 
     if user_from_metadata:
-        return user_from_metadata
+        return str(user_from_metadata)
 
     if api_key is None:
-        raise _anthropic_error("api_error", "API key validation failed", status.HTTP_500_INTERNAL_SERVER_ERROR)
+        raise _anthropic_error(_ERR_API, _API_KEY_VALIDATION_FAILED, status.HTTP_500_INTERNAL_SERVER_ERROR)
     if not api_key.user_id:
-        raise _anthropic_error("api_error", "API key has no associated user", status.HTTP_500_INTERNAL_SERVER_ERROR)
+        raise _anthropic_error(_ERR_API, _API_KEY_NO_USER, status.HTTP_500_INTERNAL_SERVER_ERROR)
     return str(api_key.user_id)
 
 
@@ -218,8 +226,8 @@ async def create_message(
         )
         logger.error(f"Provider call failed for {provider}:{model}: {e}")
         raise _anthropic_error(
-            "api_error",
-            "The request could not be completed by the provider",
+            _ERR_API,
+            _PROVIDER_ERROR,
             status.HTTP_500_INTERNAL_SERVER_ERROR,
         ) from e
 
