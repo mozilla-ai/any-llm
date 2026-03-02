@@ -50,10 +50,11 @@ def _is_tool_call(message: dict[str, Any]) -> bool:
     return message["role"] == "assistant" and message.get("tool_calls") is not None
 
 
-def _convert_images_for_anthropic(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert images from OpenAI format to Anthropic format.
+def _convert_content_for_anthropic(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert content blocks from OpenAI format to Anthropic format.
     - Parse the "content" field block by block
-    - Convert image blocks to Anthropic format
+    - Convert image_url blocks to Anthropic image format
+    - Convert file blocks (PDFs) to Anthropic document format
     """
     converted_content = []
     for block in content:
@@ -71,6 +72,21 @@ def _convert_images_for_anthropic(content: list[dict[str, Any]]) -> list[dict[st
                 }
             else:
                 converted_block["source"] = {"type": "url", "url": url}
+            converted_content.append(converted_block)
+        elif block.get("type") == "file":
+            file_data = block.get("file", {}).get("file_data", "")
+            converted_block = {"type": "document"}
+            if file_data[:5] == "data:":
+                mime_part = file_data[5:]
+                semi_idx = mime_part.find(";")
+                media_type = mime_part[:semi_idx] if semi_idx != -1 else mime_part
+                converted_block["source"] = {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": file_data.split("base64,")[1],
+                }
+            else:
+                converted_block["source"] = {"type": "url", "url": file_data}
             converted_content.append(converted_block)
         else:
             converted_content.append(block)
@@ -136,7 +152,7 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
                 }
 
             if "content" in message and isinstance(message["content"], list):
-                message["content"] = _convert_images_for_anthropic(message["content"])
+                message["content"] = _convert_content_for_anthropic(message["content"])
 
             # Only keep Anthropic-compatible fields (strips OpenAI-specific fields like 'refusal')
             filtered_messages.append({"role": message["role"], "content": message.get("content", "")})
