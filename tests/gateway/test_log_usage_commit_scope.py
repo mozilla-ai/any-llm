@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from any_llm.gateway.db.models import UsageLog
-from any_llm.gateway.routes.chat import _log_usage
+from any_llm.gateway.routes.chat import log_usage
 from any_llm.types.completion import CompletionUsage
 
 
@@ -13,7 +13,7 @@ async def test_log_usage_creates_usage_log(test_db: Session) -> None:
     """Test that _log_usage successfully creates a usage log entry."""
     usage = CompletionUsage(prompt_tokens=100, completion_tokens=50, total_tokens=150)
 
-    await _log_usage(
+    await log_usage(
         db=test_db,
         api_key_obj=None,
         model="gpt-4o",
@@ -32,7 +32,7 @@ async def test_log_usage_creates_usage_log(test_db: Session) -> None:
 @pytest.mark.asyncio
 async def test_log_usage_records_error(test_db: Session) -> None:
     """Test that _log_usage records error status and message."""
-    await _log_usage(
+    await log_usage(
         db=test_db,
         api_key_obj=None,
         model="gpt-4o",

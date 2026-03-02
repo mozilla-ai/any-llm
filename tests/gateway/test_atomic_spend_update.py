@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from any_llm.gateway.db.models import ModelPricing, User
-from any_llm.gateway.routes.chat import _log_usage
+from any_llm.gateway.routes.chat import log_usage
 from any_llm.types.completion import CompletionUsage
 
 
@@ -25,7 +25,7 @@ async def test_spend_update_uses_sql_expression(test_db: Session) -> None:
 
     usage = CompletionUsage(prompt_tokens=1_000_000, completion_tokens=100_000, total_tokens=1_100_000)
 
-    await _log_usage(
+    await log_usage(
         db=test_db,
         api_key_obj=None,
         model="gpt-4o",
@@ -63,7 +63,7 @@ async def test_multiple_spend_updates_accumulate(test_db: Session) -> None:
 
     for _ in range(3):
         usage = CompletionUsage(prompt_tokens=1_000_000, completion_tokens=1_000_000, total_tokens=2_000_000)
-        await _log_usage(
+        await log_usage(
             db=test_db,
             api_key_obj=None,
             model="gpt-4o",

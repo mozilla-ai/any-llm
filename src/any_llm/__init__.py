@@ -1,7 +1,18 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from any_llm.any_llm import AnyLLM
-from any_llm.api import acompletion, aembedding, alist_models, aresponses, completion, embedding, list_models, responses
+from any_llm.api import (
+    acompletion,
+    aembedding,
+    alist_models,
+    amessages,
+    aresponses,
+    completion,
+    embedding,
+    list_models,
+    messages,
+    responses,
+)
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import (
     AnyLLMError,
@@ -44,9 +55,11 @@ __all__ = [
     "acompletion",
     "aembedding",
     "alist_models",
+    "amessages",
     "aresponses",
     "completion",
     "embedding",
     "list_models",
+    "messages",
     "responses",
 ]

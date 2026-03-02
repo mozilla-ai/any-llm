@@ -23,7 +23,7 @@ from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, Comple
 router = APIRouter(prefix="/v1/chat", tags=["chat"])
 
 
-def _rate_limit_headers(info: RateLimitInfo) -> dict[str, str]:
+def rate_limit_headers(info: RateLimitInfo) -> dict[str, str]:
     return {
         "X-RateLimit-Limit": str(info.limit),
         "X-RateLimit-Remaining": str(info.remaining),
@@ -57,7 +57,7 @@ class ChatCompletionRequest(BaseModel):
     response_format: dict[str, Any] | None = None
 
 
-def _get_provider_kwargs(
+def get_provider_kwargs(
     config: GatewayConfig,
     provider: LLMProvider,
 ) -> dict[str, Any]:
@@ -95,7 +95,7 @@ def _get_provider_kwargs(
     return kwargs
 
 
-async def _log_usage(
+async def log_usage(
     db: Session,
     api_key_obj: APIKey | None,
     model: str,
@@ -221,7 +221,7 @@ async def chat_completions(
 
     provider, model = AnyLLM.split_model_provider(request.model)
 
-    provider_kwargs = _get_provider_kwargs(config, provider)
+    provider_kwargs = get_provider_kwargs(config, provider)
 
     # User request fields take precedence over provider config defaults
     request_fields = request.model_dump(exclude_unset=True)
@@ -259,7 +259,7 @@ async def chat_completions(
                             completion_tokens=completion_tokens,
                             total_tokens=total_tokens,
                         )
-                        await _log_usage(
+                        await log_usage(
                             db=db,
                             api_key_obj=api_key,
                             model=model,
@@ -276,7 +276,7 @@ async def chat_completions(
                     yield f"data: {json.dumps(error_data)}\n\n"
                     yield "data: [DONE]\n\n"
                     try:
-                        await _log_usage(
+                        await log_usage(
                             db=db,
                             api_key_obj=api_key,
                             model=model,
@@ -289,11 +289,11 @@ async def chat_completions(
                         logger.error(f"Failed to log streaming error usage: {log_err}")
                     logger.error(f"Streaming error for {provider}:{model}: {e}")
 
-            rl_headers = _rate_limit_headers(rate_limit_info) if rate_limit_info else {}
+            rl_headers = rate_limit_headers(rate_limit_info) if rate_limit_info else {}
             return StreamingResponse(generate(), media_type="text/event-stream", headers=rl_headers)
 
         completion: ChatCompletion = await acompletion(**completion_kwargs)  # type: ignore[assignment]
-        await _log_usage(
+        await log_usage(
             db=db,
             api_key_obj=api_key,
             model=model,
@@ -304,7 +304,7 @@ async def chat_completions(
         )
 
     except Exception as e:
-        await _log_usage(
+        await log_usage(
             db=db,
             api_key_obj=api_key,
             model=model,
@@ -320,7 +320,7 @@ async def chat_completions(
         ) from e
 
     if rate_limit_info:
-        for key, value in _rate_limit_headers(rate_limit_info).items():
+        for key, value in rate_limit_headers(rate_limit_info).items():
             response.headers[key] = value
 
     return completion

@@ -36,23 +36,28 @@ def _extract_bearer_token(request: Request, config: GatewayConfig) -> str:
     """Extract and validate Bearer token from request header.
 
     Checks X-AnyLLM-Key first, then falls back to standard Authorization header
-    for OpenAI client compatibility.
+    for OpenAI client compatibility, then falls back to x-api-key header
+    for Anthropic client compatibility.
     """
     auth_header = request.headers.get(API_KEY_HEADER) or request.headers.get("Authorization")
 
-    if not auth_header:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Missing {API_KEY_HEADER} or Authorization header",
-        )
+    if auth_header:
+        if not auth_header.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid header format. Expected 'Bearer <token>'",
+            )
+        return auth_header[7:]
 
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid header format. Expected 'Bearer <token>'",
-        )
+    # Fallback: x-api-key header (Anthropic client compatibility, no Bearer prefix)
+    api_key = request.headers.get("x-api-key")
+    if api_key:
+        return api_key
 
-    return auth_header[7:]
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=f"Missing {API_KEY_HEADER} or Authorization header",
+    )
 
 
 def _verify_and_update_api_key(db: Session, token: str) -> APIKey:

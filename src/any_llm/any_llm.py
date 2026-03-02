@@ -20,6 +20,7 @@ from any_llm.types.completion import (
     ParsedChatCompletion,
     ReasoningEffort,
 )
+from any_llm.types.messages import MessageResponse, MessagesParams, MessageStreamEvent
 from any_llm.types.provider import PlatformKey, ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
@@ -80,6 +81,9 @@ class AnyLLM(ABC):
 
     SUPPORTS_BATCH: bool
     """OpenAI Batch Completion API"""
+
+    SUPPORTS_MESSAGES: bool = True
+    """Anthropic Messages API (all providers support it via conversion)"""
 
     API_BASE: str | None = None
     """This is used to set the API base for the provider.
@@ -362,6 +366,7 @@ class AnyLLM(ABC):
             responses=cls.SUPPORTS_RESPONSES,
             list_models=cls.SUPPORTS_LIST_MODELS,
             batch_completion=cls.SUPPORTS_BATCH,
+            messages=cls.SUPPORTS_MESSAGES,
             class_name=cls.__name__,
         )
 
@@ -612,6 +617,116 @@ class AnyLLM(ABC):
             raise NotImplementedError(msg)
         msg = "Subclasses must implement _acompletion method"
         raise NotImplementedError(msg)
+
+    def messages(
+        self,
+        *,
+        allow_running_loop: bool | None = None,
+        **kwargs: Any,
+    ) -> MessageResponse | Iterator[MessageStreamEvent]:
+        """Create a message using the Anthropic Messages API synchronously.
+
+        See [AnyLLM.amessages][any_llm.any_llm.AnyLLM.amessages]
+        """
+        if allow_running_loop is None:
+            allow_running_loop = INSIDE_NOTEBOOK
+        response = run_async_in_sync(self.amessages(**kwargs), allow_running_loop=allow_running_loop)
+        if isinstance(response, MessageResponse):
+            return response
+        return async_iter_to_sync_iter(response)
+
+    @handle_exceptions(wrap_streaming=True)
+    async def amessages(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        max_tokens: int,
+        *,
+        system: str | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        top_k: int | None = None,
+        stream: bool | None = None,
+        stop_sequences: list[str] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+        thinking: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
+        """Create a message using the Anthropic Messages API asynchronously.
+
+        All providers support this via automatic conversion to/from Chat Completions.
+        The Anthropic provider uses a native pass-through for efficiency.
+
+        Args:
+            model: Model identifier for the chosen provider.
+            messages: List of messages in Anthropic format.
+            max_tokens: Maximum number of tokens to generate.
+            system: System prompt.
+            temperature: Controls randomness (0.0 to 1.0).
+            top_p: Controls diversity via nucleus sampling.
+            top_k: Only sample from the top K options.
+            stream: Whether to stream the response.
+            stop_sequences: Custom stop sequences.
+            tools: List of tools in Anthropic format.
+            tool_choice: Controls which tool the model uses.
+            metadata: Request metadata.
+            thinking: Thinking/reasoning configuration.
+            **kwargs: Additional provider-specific arguments.
+
+        Returns:
+            MessageResponse or an async iterator of MessageStreamEvent (if streaming).
+
+        """
+        params = MessagesParams(
+            model=model,
+            messages=messages,
+            max_tokens=max_tokens,
+            system=system,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            stream=stream,
+            stop_sequences=stop_sequences,
+            tools=tools,
+            tool_choice=tool_choice,
+            metadata=metadata,
+            thinking=thinking,
+        )
+        return await self._amessages(params, **kwargs)
+
+    async def _amessages(
+        self, params: MessagesParams, **kwargs: Any
+    ) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
+        """Default implementation: converts Messages ↔ Completions format.
+
+        Providers with native Messages API support (e.g., Anthropic) override this
+        for direct pass-through.
+        """
+        from any_llm.types.completion import CompletionParams
+        from any_llm.utils.messages_compat import (
+            StreamingState,
+            chat_completion_chunk_to_message_stream_events,
+            chat_completion_to_message_response,
+            messages_params_to_completion_params,
+        )
+
+        completion_kwargs = messages_params_to_completion_params(params)
+        completion_params = CompletionParams(**completion_kwargs)
+        result = await self._acompletion(completion_params, **kwargs)
+
+        if isinstance(result, ChatCompletion):
+            return chat_completion_to_message_response(result)
+
+        async def convert_stream() -> AsyncIterator[MessageStreamEvent]:
+            state = StreamingState()
+            async for chunk in result:
+                events = chat_completion_chunk_to_message_stream_events(chunk, state)
+                for event in events:
+                    yield event
+
+        return convert_stream()
 
     def responses(self, **kwargs: Any) -> ResponseResource | Response | Iterator[ResponseStreamEvent]:
         """Create a response synchronously.

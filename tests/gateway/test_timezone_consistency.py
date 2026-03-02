@@ -4,13 +4,13 @@ import pytest
 from sqlalchemy.orm import Session
 
 from any_llm.gateway.db.models import UsageLog
-from any_llm.gateway.routes.chat import _log_usage
+from any_llm.gateway.routes.chat import log_usage
 
 
 @pytest.mark.asyncio
 async def test_usage_log_timestamp_is_timezone_aware(test_db: Session) -> None:
     """Test that usage log timestamps are stored with timezone info."""
-    await _log_usage(
+    await log_usage(
         db=test_db,
         api_key_obj=None,
         model="gpt-4o",
