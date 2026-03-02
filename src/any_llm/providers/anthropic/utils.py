@@ -49,18 +49,6 @@ REASONING_EFFORT_TO_ANTHROPIC_EFFORT = {
     "high": "high",
     "xhigh": "max",
 }
-REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 1024, "low": 2048, "medium": 8192, "high": 24576, "xhigh": 32768}
-ADAPTIVE_THINKING_MODELS = {"claude-opus-4-6", "claude-sonnet-4-6"}
-
-
-def _supports_adaptive_thinking(model_id: str) -> bool:
-    """Check if the model supports adaptive thinking mode.
-
-    Adaptive thinking (``thinking: {"type": "adaptive"}``) is only supported on
-    Claude Opus 4.6 and Sonnet 4.6.  Older models require the manual
-    ``thinking: {"type": "enabled", "budget_tokens": N}`` approach.
-    """
-    return any(prefix in model_id for prefix in ADAPTIVE_THINKING_MODELS)
 
 
 def _is_tool_call(message: dict[str, Any]) -> bool:
@@ -422,18 +410,14 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
 
     if params.reasoning_effort is None or params.reasoning_effort == "none":
         result_kwargs["thinking"] = {"type": "disabled"}
-    elif params.reasoning_effort != "auto":
-        if _supports_adaptive_thinking(params.model_id):
-            result_kwargs["thinking"] = {"type": "adaptive"}
-            effort = REASONING_EFFORT_TO_ANTHROPIC_EFFORT[params.reasoning_effort]
-            output_config = result_kwargs.get("output_config", {})
-            output_config["effort"] = effort
-            result_kwargs["output_config"] = output_config
-        else:
-            result_kwargs["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort],
-            }
+    elif params.reasoning_effort == "auto":
+        result_kwargs["thinking"] = {"type": "adaptive"}
+    else:
+        result_kwargs["thinking"] = {"type": "adaptive"}
+        effort = REASONING_EFFORT_TO_ANTHROPIC_EFFORT[params.reasoning_effort]
+        output_config = result_kwargs.get("output_config", {})
+        output_config["effort"] = effort
+        result_kwargs["output_config"] = output_config
 
     result_kwargs.update(
         params.model_dump(

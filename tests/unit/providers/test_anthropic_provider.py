@@ -13,7 +13,6 @@ from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.utils import (
     DEFAULT_MAX_TOKENS,
     REASONING_EFFORT_TO_ANTHROPIC_EFFORT,
-    REASONING_EFFORT_TO_THINKING_BUDGETS,
     _convert_response_format,
 )
 from any_llm.types.completion import CompletionParams, ReasoningEffort
@@ -76,6 +75,7 @@ async def test_completion_with_system_message() -> None:
             messages=[{"role": "user", "content": "Hello"}],
             system="You are a helpful assistant.",
             max_tokens=DEFAULT_MAX_TOKENS,
+            thinking={"type": "adaptive"},
         )
 
 
@@ -98,6 +98,7 @@ async def test_completion_with_multiple_system_messages() -> None:
             messages=[{"role": "user", "content": "Hello"}],
             system="First part.\nSecond part.",
             max_tokens=DEFAULT_MAX_TOKENS,
+            thinking={"type": "adaptive"},
         )
 
 
@@ -114,7 +115,7 @@ async def test_completion_with_kwargs() -> None:
         )
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
-            model=model, messages=messages, max_tokens=100, temperature=0.5
+            model=model, messages=messages, max_tokens=100, temperature=0.5, thinking={"type": "adaptive"}
         )
 
 
@@ -134,6 +135,7 @@ async def test_completion_with_tool_choice_required() -> None:
             model=model,
             messages=messages,
             max_tokens=DEFAULT_MAX_TOKENS,
+            thinking={"type": "adaptive"},
             **expected_kwargs,
         )
 
@@ -160,6 +162,7 @@ async def test_completion_with_tool_choice_specific_tool(tool_choice: dict[str, 
             model=model,
             messages=messages,
             max_tokens=DEFAULT_MAX_TOKENS,
+            thinking={"type": "adaptive"},
             **expected_kwargs,
         )
 
@@ -200,6 +203,7 @@ async def test_completion_with_tool_choice_and_parallel_tool_calls(parallel_tool
             messages=[{"role": "user", "content": "Hello"}],
             **expected_kwargs,
             max_tokens=DEFAULT_MAX_TOKENS,
+            thinking={"type": "adaptive"},
         )
 
 
@@ -225,14 +229,15 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
                 {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "foo", "content": "sunny"}]},
             ],
             max_tokens=DEFAULT_MAX_TOKENS,
+            thinking={"type": "adaptive"},
         )
 
 
 @pytest.mark.parametrize("reasoning_effort", [None, *get_args(ReasoningEffort)])
 @pytest.mark.asyncio
-async def test_completion_with_custom_reasoning_effort_legacy_model(reasoning_effort: ReasoningEffort | None) -> None:
+async def test_completion_with_custom_reasoning_effort(reasoning_effort: ReasoningEffort | None) -> None:
     api_key = "test-api-key"
-    model = "claude-sonnet-4-20250514"
+    model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_anthropic_provider() as mock_anthropic:
@@ -246,33 +251,8 @@ async def test_completion_with_custom_reasoning_effort_legacy_model(reasoning_ef
         if reasoning_effort is None or reasoning_effort == "none":
             assert call_kwargs["thinking"] == {"type": "disabled"}
         elif reasoning_effort == "auto":
-            assert "thinking" not in call_kwargs
-        else:
-            assert call_kwargs["thinking"] == {
-                "type": "enabled",
-                "budget_tokens": REASONING_EFFORT_TO_THINKING_BUDGETS[reasoning_effort],
-            }
-
-
-@pytest.mark.parametrize("reasoning_effort", [None, *get_args(ReasoningEffort)])
-@pytest.mark.asyncio
-async def test_completion_with_custom_reasoning_effort_adaptive_model(reasoning_effort: ReasoningEffort | None) -> None:
-    api_key = "test-api-key"
-    model = "claude-sonnet-4-6"
-    messages = [{"role": "user", "content": "Hello"}]
-
-    with mock_anthropic_provider() as mock_anthropic:
-        provider = AnthropicProvider(api_key=api_key)
-        await provider._acompletion(
-            CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort)
-        )
-
-        call_kwargs = mock_anthropic.return_value.messages.create.call_args[1]
-
-        if reasoning_effort is None or reasoning_effort == "none":
-            assert call_kwargs["thinking"] == {"type": "disabled"}
-        elif reasoning_effort == "auto":
-            assert "thinking" not in call_kwargs
+            assert call_kwargs["thinking"] == {"type": "adaptive"}
+            assert "output_config" not in call_kwargs
         else:
             assert call_kwargs["thinking"] == {"type": "adaptive"}
             assert call_kwargs["output_config"] == {"effort": REASONING_EFFORT_TO_ANTHROPIC_EFFORT[reasoning_effort]}
@@ -318,6 +298,7 @@ async def test_completion_with_images() -> None:
                 }
             ],
             max_tokens=DEFAULT_MAX_TOKENS,
+            thinking={"type": "adaptive"},
         )
 
 
@@ -365,6 +346,7 @@ async def test_completion_with_pdf() -> None:
                 }
             ],
             max_tokens=DEFAULT_MAX_TOKENS,
+            thinking={"type": "adaptive"},
         )
 
 
@@ -408,6 +390,7 @@ async def test_completion_with_pdf_url() -> None:
                 }
             ],
             max_tokens=DEFAULT_MAX_TOKENS,
+            thinking={"type": "adaptive"},
         )
 
 
@@ -498,6 +481,7 @@ async def test_completion_with_parallel_tool_calls() -> None:
             ],
             system="You are a helpful assistant.",
             max_tokens=DEFAULT_MAX_TOKENS,
+            thinking={"type": "adaptive"},
         )
 
 
@@ -802,6 +786,7 @@ async def test_completion_strips_openai_specific_fields() -> None:
                 {"role": "user", "content": "Thanks"},
             ],
             max_tokens=DEFAULT_MAX_TOKENS,
+            thinking={"type": "adaptive"},
         )
 
 
