@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Any
+from typing import Any, TypeGuard
 
 from pydantic import BaseModel, TypeAdapter
-from typing_extensions import TypeGuard
 
 
 def is_structured_output_type(response_format: Any) -> TypeGuard[type]:

@@ -140,6 +140,32 @@ def test_patch_messages_with_invalid_tool_sequence_raises_error() -> None:
         _patch_messages(messages)
 
 
+def test_preprocess_response_format_dataclass() -> None:
+    from dataclasses import dataclass
+
+    provider = _mk_provider()
+
+    @dataclass
+    class StructuredOutputDC:
+        foo: str
+        bar: int
+
+    result = provider._preprocess_response_format(StructuredOutputDC)
+
+    assert isinstance(result, dict)
+    assert result["type"] == "json_object"
+    assert "properties" in result["schema"]
+    assert "foo" in result["schema"]["properties"]
+    assert "bar" in result["schema"]["properties"]
+
+
+def test_preprocess_response_format_unsupported_raises() -> None:
+    provider = _mk_provider()
+
+    with pytest.raises(ValueError, match="Unsupported response_format"):
+        provider._preprocess_response_format("invalid")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("reasoning_effort", ["auto", "none"])
 async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
