@@ -316,7 +316,7 @@ def _create_openai_chunk_from_google_chunk(
         content=content or None,
         role="assistant",
         reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
-        tool_calls=tool_calls_list if tool_calls_list else None,
+        tool_calls=tool_calls_list or None,
     )
 
     choice = ChunkChoice(
