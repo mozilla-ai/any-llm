@@ -42,7 +42,13 @@ if TYPE_CHECKING:
     )
 
 DEFAULT_MAX_TOKENS = 8192
-REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 1024, "low": 2048, "medium": 8192, "high": 24576, "xhigh": 32768}
+REASONING_EFFORT_TO_ANTHROPIC_EFFORT = {
+    "minimal": "low",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "max",
+}
 
 
 def _is_tool_call(message: dict[str, Any]) -> bool:
@@ -405,10 +411,11 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
     if params.reasoning_effort is None or params.reasoning_effort == "none":
         result_kwargs["thinking"] = {"type": "disabled"}
     elif params.reasoning_effort != "auto":
-        result_kwargs["thinking"] = {
-            "type": "enabled",
-            "budget_tokens": REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort],
-        }
+        result_kwargs["thinking"] = {"type": "adaptive"}
+        effort = REASONING_EFFORT_TO_ANTHROPIC_EFFORT[params.reasoning_effort]
+        output_config = result_kwargs.get("output_config", {})
+        output_config["effort"] = effort
+        result_kwargs["output_config"] = output_config
 
     result_kwargs.update(
         params.model_dump(
