@@ -20,7 +20,7 @@ from any_llm.types.completion import (
     ParsedChatCompletion,
     ReasoningEffort,
 )
-from any_llm.types.messages import MessageResponse, MessagesParams, MessageStreamEvent
+from any_llm.types.messages import MessageResponse, MessagesParams, MessageStreamEvent, MessageUsage
 from any_llm.types.provider import PlatformKey, ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
@@ -721,10 +721,30 @@ class AnyLLM(ABC):
 
         async def convert_stream() -> AsyncIterator[MessageStreamEvent]:
             state = StreamingState()
+            emitted_stop = False
             async for chunk in result:
                 events = chat_completion_chunk_to_message_stream_events(chunk, state)
                 for event in events:
+                    if event.type == "message_stop":
+                        emitted_stop = True
                     yield event
+            # Some providers don't send a final chunk with finish_reason,
+            # so ensure the stream always ends with message_stop.
+            if state.started and not emitted_stop:
+                if state.current_block_type is not None:
+                    yield MessageStreamEvent(
+                        type="content_block_stop",
+                        index=state.current_block_index,
+                    )
+                yield MessageStreamEvent(
+                    type="message_delta",
+                    delta={"stop_reason": "end_turn"},
+                    usage=MessageUsage(
+                        input_tokens=state.input_tokens,
+                        output_tokens=state.output_tokens,
+                    ),
+                )
+                yield MessageStreamEvent(type="message_stop")
 
         return convert_stream()
 
