@@ -37,8 +37,10 @@ async def test_messages_non_streaming(
     assert isinstance(result, MessageResponse)
     assert result.role == "assistant"
     assert len(result.content) >= 1
-    assert result.content[0].type == "text"
-    assert result.content[0].text
+    # Some providers (e.g. llamacpp) may return thinking blocks before text blocks
+    text_blocks = [b for b in result.content if b.type == "text"]
+    assert len(text_blocks) >= 1
+    assert text_blocks[0].text
 
 
 @pytest.mark.asyncio
@@ -104,6 +106,8 @@ async def test_messages_with_system_prompt(
             pytest.skip("Local Model host is not set up, skipping")
         raise
     assert isinstance(result, MessageResponse)
-    assert result.content[0].text
+    text_blocks = [b for b in result.content if b.type == "text"]
+    assert len(text_blocks) >= 1
+    assert text_blocks[0].text
     assert result.usage.input_tokens >= 0
     assert result.usage.output_tokens >= 0
