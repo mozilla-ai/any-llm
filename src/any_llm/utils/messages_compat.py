@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import uuid
 from typing import TYPE_CHECKING, Any
 
 from any_llm.types.messages import (
@@ -419,8 +418,3 @@ def _close_current_block(state: StreamingState, events: list[MessageStreamEvent]
             )
         )
         state.current_block_type = None
-
-
-def generate_message_id() -> str:
-    """Generate a unique message ID in Anthropic format."""
-    return f"msg_{uuid.uuid4().hex[:24]}"

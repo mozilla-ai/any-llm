@@ -254,25 +254,10 @@ class BaseAnthropicProvider(AnyLLM, ABC):
             return MessageContentBlock(type="thinking", thinking=block.thinking)
         return MessageContentBlock(type=block.type)
 
-    @staticmethod
-    def _convert_native_message_to_response(message: Message) -> MessageResponse:
+    @classmethod
+    def _convert_native_message_to_response(cls, message: Message) -> MessageResponse:
         """Convert an Anthropic SDK Message to our MessageResponse."""
-        content_blocks: list[MessageContentBlock] = []
-        for block in message.content:
-            if block.type == "text":
-                content_blocks.append(MessageContentBlock(type="text", text=block.text))
-            elif block.type == "tool_use":
-                tool_input = block.input if isinstance(block.input, dict) else {}
-                content_blocks.append(
-                    MessageContentBlock(
-                        type="tool_use",
-                        id=block.id,
-                        name=block.name,
-                        input=tool_input,
-                    )
-                )
-            elif block.type == "thinking":
-                content_blocks.append(MessageContentBlock(type="thinking", thinking=block.thinking))
+        content_blocks = [cls._convert_native_content_block(block) for block in message.content]
 
         usage = MessageUsage(
             input_tokens=message.usage.input_tokens,

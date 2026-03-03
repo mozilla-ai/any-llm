@@ -481,18 +481,6 @@ def test_budget_to_reasoning_effort_xhigh() -> None:
     assert _budget_to_reasoning_effort(100000) == "xhigh"
 
 
-def test_generate_message_id_format() -> None:
-    """Test generate_message_id returns correctly formatted IDs."""
-    from any_llm.utils.messages_compat import generate_message_id
-
-    msg_id = generate_message_id()
-    assert msg_id.startswith("msg_")
-    assert len(msg_id) == 28
-
-    msg_id2 = generate_message_id()
-    assert msg_id != msg_id2
-
-
 def test_tool_choice_unknown_type_defaults_to_auto() -> None:
     """Test unknown tool_choice type falls back to 'auto'."""
     from any_llm.utils.messages_compat import _convert_tool_choice_to_openai
@@ -890,3 +878,131 @@ def test_stream_param_passed_through() -> None:
     )
     result = messages_params_to_completion_params(params)
     assert result["stream"] is True
+
+
+def test_thinking_unknown_type_ignored() -> None:
+    """Test that thinking config with unknown type produces no reasoning_effort."""
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Hi"}],
+        max_tokens=1024,
+        thinking={"type": "something_else"},
+    )
+    result = messages_params_to_completion_params(params)
+    assert "reasoning_effort" not in result
+
+
+def test_tool_call_without_function_attribute_skipped() -> None:
+    """Test that a custom tool call (no function attribute) is skipped."""
+    from openai.types.chat.chat_completion_message_custom_tool_call import (
+        ChatCompletionMessageCustomToolCall,
+        Custom,
+    )
+
+    custom_tc = ChatCompletionMessageCustomToolCall(id="tc_1", type="custom", custom=Custom(name="my_tool", input="{}"))
+    completion = ChatCompletion(
+        id="test",
+        model="test",
+        created=0,
+        object="chat.completion",
+        choices=[
+            Choice(
+                index=0,
+                finish_reason="tool_calls",
+                message=ChatCompletionMessage(
+                    role="assistant",
+                    content=None,
+                    tool_calls=[custom_tc],
+                ),
+            )
+        ],
+        usage=CompletionUsage(prompt_tokens=5, completion_tokens=3, total_tokens=8),
+    )
+    result = chat_completion_to_message_response(completion)
+    assert len(result.content) == 1
+    assert result.content[0].type == "text"
+    assert result.content[0].text == ""
+
+
+def test_streaming_consecutive_text_deltas_no_extra_block_start() -> None:
+    """Test that consecutive text deltas don't open a new block."""
+    state = StreamingState()
+
+    chunk1 = ChatCompletionChunk(
+        id="c1",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hello"), finish_reason=None)],
+    )
+    events1 = chat_completion_chunk_to_message_stream_events(chunk1, state)
+    assert sum(1 for e in events1 if e.type == "content_block_start") == 1
+
+    chunk2 = ChatCompletionChunk(
+        id="c2",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[ChunkChoice(index=0, delta=ChoiceDelta(content=" world"), finish_reason=None)],
+    )
+    events2 = chat_completion_chunk_to_message_stream_events(chunk2, state)
+    assert not any(e.type == "content_block_start" for e in events2)
+    assert any(e.type == "content_block_delta" for e in events2)
+
+
+def test_streaming_consecutive_thinking_deltas_no_extra_block_start() -> None:
+    """Test that consecutive thinking deltas don't open a new block."""
+    state = StreamingState()
+
+    chunk1 = ChatCompletionChunk(
+        id="c1",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[
+            ChunkChoice(
+                index=0,
+                delta=ChoiceDelta(reasoning=Reasoning(content="first thought")),
+                finish_reason=None,
+            )
+        ],
+    )
+    events1 = chat_completion_chunk_to_message_stream_events(chunk1, state)
+    assert sum(1 for e in events1 if e.type == "content_block_start") == 1
+
+    chunk2 = ChatCompletionChunk(
+        id="c2",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[
+            ChunkChoice(
+                index=0,
+                delta=ChoiceDelta(reasoning=Reasoning(content="more thinking")),
+                finish_reason=None,
+            )
+        ],
+    )
+    events2 = chat_completion_chunk_to_message_stream_events(chunk2, state)
+    assert not any(e.type == "content_block_start" for e in events2)
+    assert any(e.type == "content_block_delta" for e in events2)
+
+
+def test_streaming_usage_with_zero_tokens() -> None:
+    """Test that zero-value token counts don't overwrite previously tracked values."""
+    state = StreamingState()
+    state.started = True
+    state.input_tokens = 100
+    state.output_tokens = 50
+
+    chunk = ChatCompletionChunk(
+        id="c1",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
+        usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+    )
+    chat_completion_chunk_to_message_stream_events(chunk, state)
+    assert state.input_tokens == 100
+    assert state.output_tokens == 50

@@ -348,3 +348,64 @@ def test_supports_messages_flag() -> None:
     from any_llm.any_llm import AnyLLM
 
     assert AnyLLM.SUPPORTS_MESSAGES is True
+
+
+def test_sync_messages_returns_message_response() -> None:
+    """Test that the sync messages() wrapper returns MessageResponse for non-streaming."""
+    from any_llm.types.messages import MessageContentBlock, MessageUsage
+
+    mock_response = MessageResponse(
+        id="msg_test",
+        type="message",
+        role="assistant",
+        content=[MessageContentBlock(type="text", text="Hi!")],
+        model="test-model",
+        stop_reason="end_turn",
+        usage=MessageUsage(input_tokens=5, output_tokens=3),
+    )
+
+    mock_provider = Mock()
+    mock_provider.messages = Mock(return_value=mock_response)
+
+    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
+        mock_create.return_value = mock_provider
+
+        from any_llm.api import messages as sync_messages
+
+        result = sync_messages(
+            model="openai:gpt-4",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=100,
+        )
+
+    assert isinstance(result, MessageResponse)
+    assert result.content[0].text == "Hi!"
+
+
+@pytest.mark.asyncio
+async def test_amessages_constructs_params_correctly() -> None:
+    """Test that AnyLLM.amessages builds MessagesParams and delegates to _amessages."""
+    from any_llm.any_llm import AnyLLM
+    from any_llm.types.messages import MessagesParams
+
+    mock_response = Mock(spec=MessageResponse)
+    mock_provider = Mock()
+    mock_provider._amessages = AsyncMock(return_value=mock_response)
+
+    result = await AnyLLM.amessages(
+        mock_provider,
+        model="test-model",
+        messages=[{"role": "user", "content": "Hi"}],
+        max_tokens=512,
+        system="Be helpful",
+        temperature=0.5,
+    )
+    assert result is mock_response
+
+    call_args = mock_provider._amessages.call_args
+    params = call_args.args[0]
+    assert isinstance(params, MessagesParams)
+    assert params.model == "test-model"
+    assert params.max_tokens == 512
+    assert params.system == "Be helpful"
+    assert params.temperature == 0.5
