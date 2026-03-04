@@ -240,6 +240,33 @@ def test_convert_completion_params_with_pydantic_response_format() -> None:
     assert result["response_format"]["schema"]["properties"]["value"]["type"] == "integer"
 
 
+def test_convert_completion_params_with_dataclass_response_format() -> None:
+    """Test that dataclass response_format is converted correctly."""
+    from dataclasses import dataclass
+
+    from any_llm.providers.together.together import TogetherProvider
+
+    @dataclass
+    class TestSchema:
+        name: str
+        value: int
+
+    params = CompletionParams(
+        model_id="test-model",
+        messages=[{"role": "user", "content": "Hello"}],
+        response_format=TestSchema,
+    )
+
+    result = TogetherProvider._convert_completion_params(params)
+
+    assert "response_format" in result
+    assert result["response_format"]["type"] == "json_schema"
+    assert "schema" in result["response_format"]
+    assert "properties" in result["response_format"]["schema"]
+    assert "name" in result["response_format"]["schema"]["properties"]
+    assert "value" in result["response_format"]["schema"]["properties"]
+
+
 def test_convert_completion_params_with_dict_json_schema_response_format() -> None:
     """Test that OpenAI-style dict response_format with json_schema is converted correctly.
 

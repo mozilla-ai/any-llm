@@ -1,3 +1,4 @@
+import dataclasses
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -158,8 +159,22 @@ def test_convert_response_format_from_dict() -> None:
     assert result.strict is True
 
 
+def test_convert_response_format_from_dataclass() -> None:
+    @dataclasses.dataclass
+    class CityResponse:
+        city_name: str
+
+    result = _convert_response_format(CityResponse)
+
+    assert isinstance(result, JsonSchemaFormat)
+    assert result.name == "CityResponse"
+    assert "city_name" in result.schema["properties"]
+    assert result.schema["additionalProperties"] is False
+    assert result.strict is True
+
+
 def test_convert_response_format_from_dict_invalid() -> None:
     invalid_dict = {"type": "json_object"}
 
-    with pytest.raises(ValueError, match="Response format must be a Pydantic model or a dict with a json_schema key"):
+    with pytest.raises(ValueError, match="Response format must be a structured type or a dict with a json_schema key"):
         _convert_response_format(invalid_dict)

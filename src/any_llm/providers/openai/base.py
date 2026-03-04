@@ -31,6 +31,7 @@ from any_llm.types.completion import (
 )
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
+from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 
 class BaseOpenAIProvider(AnyLLM):
@@ -64,7 +65,18 @@ class BaseOpenAIProvider(AnyLLM):
         Remaps ``max_tokens`` to ``max_completion_tokens`` to follow the
         current OpenAI spec.  Providers whose API does not accept
         ``max_completion_tokens`` should override this method to remap back.
+
+        Plain dataclasses are converted to JSON schema dicts since the
+        OpenAI SDK's ``.parse()`` only supports Pydantic BaseModel types.
         """
+        if is_structured_output_type(params.response_format) and not issubclass(params.response_format, BaseModel):
+            params.response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": params.response_format.__name__,
+                    "schema": get_json_schema(params.response_format),
+                },
+            }
         converted_params = params.model_dump(
             exclude_none=True, exclude={"model_id", "messages", "prompt_cache_key", "prompt_cache_retention"}
         )
@@ -177,7 +189,7 @@ class BaseOpenAIProvider(AnyLLM):
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 
         response_format = completion_kwargs.get("response_format")
-        use_parse = isinstance(response_format, type) and issubclass(response_format, BaseModel)
+        use_parse = is_structured_output_type(response_format)
 
         if response_format:
             if params.stream:

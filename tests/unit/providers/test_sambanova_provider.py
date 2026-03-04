@@ -81,6 +81,43 @@ async def test_sambanova_preserves_dict_response_format(mock_openai_class: Magic
 
 @patch("any_llm.providers.openai.base.AsyncOpenAI")
 @pytest.mark.asyncio
+async def test_sambanova_converts_dataclass_response_format(mock_openai_class: MagicMock) -> None:
+    """Test that dataclass response_format is converted to JSON schema format."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class PersonDataclass:
+        name: str
+        age: int
+
+    mock_client = AsyncMock()
+    mock_openai_class.return_value = mock_client
+
+    mock_response = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+    provider = SambanovaProvider(api_key="test-key")
+
+    messages = [{"role": "user", "content": "Hello"}]
+    params = CompletionParams(model_id="test-model", messages=messages, response_format=PersonDataclass)
+
+    await provider._acompletion(params)
+
+    mock_client.chat.completions.create.assert_called_once()
+    call_args = mock_client.chat.completions.create.call_args
+
+    assert call_args is not None
+    kwargs = call_args.kwargs
+
+    assert kwargs["response_format"]["type"] == "json_schema"
+    assert kwargs["response_format"]["json_schema"]["name"] == "response_schema"
+    assert "properties" in kwargs["response_format"]["json_schema"]["schema"]
+    assert "name" in kwargs["response_format"]["json_schema"]["schema"]["properties"]
+    assert "age" in kwargs["response_format"]["json_schema"]["schema"]["properties"]
+
+
+@patch("any_llm.providers.openai.base.AsyncOpenAI")
+@pytest.mark.asyncio
 async def test_sambanova_without_response_format(mock_openai_class: MagicMock) -> None:
     """Test normal completion without response_format."""
     mock_client = AsyncMock()

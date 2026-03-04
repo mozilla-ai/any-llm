@@ -170,6 +170,45 @@ async def test_response_format(response_format: Any) -> None:
 
 
 @pytest.mark.asyncio
+async def test_response_format_dataclass() -> None:
+    """Test that dataclass response_format is properly converted for Mistral."""
+    from dataclasses import dataclass
+
+    mistralai = pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    @dataclass
+    class DataclassOutput:
+        foo: str
+        bar: int
+
+    with (
+        patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral,
+        patch("any_llm.providers.mistral.mistral._create_mistral_completion_from_response") as mock_converter,
+    ):
+        provider = MistralProvider(api_key="test-api-key")
+
+        mocked_mistral.return_value.chat.complete_async = AsyncMock(return_value=Mock())
+        mock_converter.return_value = Mock()
+
+        await provider._acompletion(
+            CompletionParams(
+                model_id="test-model",
+                messages=[{"role": "user", "content": "Hello"}],
+                response_format=DataclassOutput,
+            ),
+        )
+
+        completion_call_kwargs = mocked_mistral.return_value.chat.complete_async.call_args[1]
+        assert "response_format" in completion_call_kwargs
+
+        response_format_arg = completion_call_kwargs["response_format"]
+        assert isinstance(response_format_arg, mistralai.models.responseformat.ResponseFormat)
+        assert response_format_arg.type == "json_schema"
+        assert response_format_arg.json_schema.name == "DataclassOutput"
+
+
+@pytest.mark.asyncio
 async def test_user_parameter_excluded() -> None:
     """Test that the 'user' parameter is excluded when calling Mistral API."""
     pytest.importorskip("mistralai")

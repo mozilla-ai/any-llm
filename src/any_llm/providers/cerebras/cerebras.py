@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from pydantic import BaseModel
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -125,12 +125,12 @@ class CerebrasProvider(AnyLLM):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         if params.response_format:
             # See https://inference-docs.cerebras.ai/capabilities/structured-outputs for guide to creating schema
-            if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
+            if is_structured_output_type(params.response_format):
                 params.response_format = {
                     "type": "json_schema",
                     "json_schema": {
                         "name": "response_schema",
-                        "schema": params.response_format.model_json_schema(),
+                        "schema": get_json_schema(params.response_format),
                         "strict": True,
                     },
                 }

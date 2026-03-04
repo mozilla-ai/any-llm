@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -77,6 +78,16 @@ class MistralProvider(AnyLLM):
         if params.response_format is not None:
             if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
                 converted_params["response_format"] = response_format_from_pydantic_model(params.response_format)
+            elif is_structured_output_type(params.response_format):
+                converted_params["response_format"] = ResponseFormat.model_validate(
+                    {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": params.response_format.__name__,
+                            "schema": get_json_schema(params.response_format),
+                        },
+                    }
+                )
             elif isinstance(params.response_format, dict):
                 converted_params["response_format"] = ResponseFormat.model_validate(params.response_format)
 

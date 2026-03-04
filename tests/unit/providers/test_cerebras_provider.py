@@ -137,6 +137,46 @@ def test_convert_chunk_without_reasoning() -> None:
 
 
 @pytest.mark.asyncio
+async def test_completion_with_dataclass_response_format() -> None:
+    """Test that dataclass response_format is converted to JSON schema for Cerebras."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class TestOutput:
+        name: str
+        value: int
+
+    with patch("any_llm.providers.cerebras.cerebras.cerebras") as mock_cerebras:
+        mock_client = Mock()
+        mock_cerebras.AsyncCerebras.return_value = mock_client
+
+        mock_response = Mock()
+        mock_response.model_dump.return_value = {
+            "id": "test-id",
+            "model": "llama-3.3-70b",
+            "created": 1234567890,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hi"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        provider = CerebrasProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="llama-3.3-70b",
+                messages=[{"role": "user", "content": "Hello"}],
+                response_format=TestOutput,
+            ),
+        )
+
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert call_kwargs["response_format"]["type"] == "json_schema"
+        assert call_kwargs["response_format"]["json_schema"]["name"] == "response_schema"
+        assert call_kwargs["response_format"]["json_schema"]["strict"] is True
+        assert "properties" in call_kwargs["response_format"]["json_schema"]["schema"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("reasoning_effort", ["auto", "none"])
 async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
     """Test that reasoning_effort 'auto' and 'none' are filtered from Cerebras API calls."""

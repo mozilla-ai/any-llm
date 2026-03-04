@@ -2,7 +2,6 @@ from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
 
 from openresponses_types import ResponseResource
-from pydantic import BaseModel
 
 from any_llm import AnyLLM
 from any_llm.constants import LLMProvider
@@ -29,7 +28,7 @@ def completion(
     temperature: float | None = None,
     top_p: float | None = None,
     max_tokens: int | None = None,
-    response_format: dict[str, Any] | type[BaseModel] | None = None,
+    response_format: dict[str, Any] | type | None = None,
     stream: bool | None = None,
     n: int | None = None,
     stop: str | list[str] | None = None,
@@ -142,7 +141,7 @@ async def acompletion(
     temperature: float | None = None,
     top_p: float | None = None,
     max_tokens: int | None = None,
-    response_format: dict[str, Any] | type[BaseModel] | None = None,
+    response_format: dict[str, Any] | type | None = None,
     stream: bool | None = None,
     n: int | None = None,
     stop: str | list[str] | None = None,

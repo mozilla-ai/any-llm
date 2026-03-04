@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -90,7 +91,7 @@ async def test_create_and_retrieve_batch(
             assert cancelled_batch.status in ["cancelling", "cancelled"]
 
         finally:
-            tmp_file_path.unlink(missing_ok=True)
+            os.unlink(tmp_file_path)
 
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:
@@ -139,7 +140,7 @@ async def test_batch_with_api_functions(
 ) -> None:
     """Test batch operations using the top-level API functions."""
     try:
-        if provider not in [LLMProvider.OPENAI]:
+        if provider != LLMProvider.OPENAI:
             pytest.skip(f"{provider.value} does not support batch completions, skipping")
 
         model_id = provider_model_map[provider]
@@ -196,7 +197,7 @@ async def test_batch_with_api_functions(
             assert cancelled.id == batch.id
 
         finally:
-            tmp_file_path.unlink(missing_ok=True)
+            os.unlink(tmp_file_path)
 
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:

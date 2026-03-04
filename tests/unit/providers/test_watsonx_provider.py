@@ -99,6 +99,34 @@ async def test_watsonx_streaming() -> None:
         assert result_list is not None
 
 
+@pytest.mark.asyncio
+async def test_watsonx_with_dataclass_response_format() -> None:
+    """Test that dataclass response_format inlines JSON instruction into messages."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class TestOutput:
+        name: str
+        value: int
+
+    api_key = "test-api-key"
+    messages = [{"role": "user", "content": "Generate a person"}]
+
+    with mock_watsonx_provider() as (mock_model_instance, _mock_convert_response, _mock_model_inference):
+        provider = WatsonxProvider(api_key=api_key)
+        await provider._acompletion(
+            CompletionParams(model_id="test-model", messages=messages, response_format=TestOutput)
+        )
+
+        call_args = mock_model_instance.achat.call_args[1]
+        modified_messages = call_args["messages"]
+        assert len(modified_messages) == 1
+        assert "JSON object" in modified_messages[0]["content"]
+        assert "Generate a person" in modified_messages[0]["content"]
+        assert "name" in modified_messages[0]["content"]
+        assert "value" in modified_messages[0]["content"]
+
+
 def test_watsonx_SUPPORTS_COMPLETION_STREAMING() -> None:
     """Test that WatsonxProvider correctly advertises streaming support."""
     provider = WatsonxProvider(api_key="test-key")

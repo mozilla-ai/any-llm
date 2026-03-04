@@ -7,7 +7,6 @@ from azure.ai.inference.models import (
     JsonSchemaFormat,
     StreamingChatCompletionsUpdate,
 )
-from pydantic import BaseModel
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -26,6 +25,7 @@ from any_llm.types.completion import (
     Function,
     Usage,
 )
+from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 if TYPE_CHECKING:
     from openai.types.chat.chat_completion_message_custom_tool_call import (
@@ -41,17 +41,17 @@ if TYPE_CHECKING:
 
 
 def _convert_response_format(
-    response_format: type[BaseModel] | dict[str, Any],
+    response_format: type | dict[str, Any],
 ) -> JsonSchemaFormat | str | Any:
-    """Convert Pydantic model to Azure JsonSchemaFormat."""
-    if not isinstance(response_format, type) or not issubclass(response_format, BaseModel):
+    """Convert structured type or dict to Azure JsonSchemaFormat."""
+    if not is_structured_output_type(response_format):
         if not isinstance(response_format, dict):
-            err_msg = "Response format must be a Pydantic model or a dict"
+            err_msg = "Response format must be a structured type (Pydantic model, dataclass) or a dict"
             raise ValueError(err_msg)
         json_schema: dict[str, Any] = response_format.get("json_schema", {})
 
         if not json_schema or "schema" not in json_schema:
-            err_msg = "Response format must be a Pydantic model or a dict with a json_schema key containing a schema"
+            err_msg = "Response format must be a structured type or a dict with a json_schema key containing a schema"
             raise ValueError(err_msg)
         return JsonSchemaFormat(
             name=json_schema.get("name", ""),
@@ -60,7 +60,7 @@ def _convert_response_format(
             strict=json_schema.get("strict", True),
         )
 
-    schema = response_format.model_json_schema()
+    schema = get_json_schema(response_format)
     # Azure requires additionalProperties to be false for structured output
     schema["additionalProperties"] = False
 

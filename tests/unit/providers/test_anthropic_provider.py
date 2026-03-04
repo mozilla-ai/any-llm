@@ -1,3 +1,4 @@
+import dataclasses
 from contextlib import contextmanager
 from datetime import UTC
 from typing import Any, get_args
@@ -11,7 +12,7 @@ from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.utils import (
     DEFAULT_MAX_TOKENS,
-    REASONING_EFFORT_TO_THINKING_BUDGETS,
+    REASONING_EFFORT_TO_ANTHROPIC_EFFORT,
     _convert_response_format,
 )
 from any_llm.types.completion import CompletionParams, ReasoningEffort
@@ -246,10 +247,8 @@ async def test_completion_with_custom_reasoning_effort(reasoning_effort: Reasoni
         elif reasoning_effort == "auto":
             assert "thinking" not in call_kwargs
         else:
-            assert call_kwargs["thinking"] == {
-                "type": "enabled",
-                "budget_tokens": REASONING_EFFORT_TO_THINKING_BUDGETS[reasoning_effort],
-            }
+            assert call_kwargs["thinking"] == {"type": "adaptive"}
+            assert call_kwargs["output_config"] == {"effort": REASONING_EFFORT_TO_ANTHROPIC_EFFORT[reasoning_effort]}
 
 
 @pytest.mark.asyncio
@@ -287,6 +286,96 @@ async def test_completion_with_images() -> None:
                                 "media_type": "image/jpeg",
                                 "data": "qwertyuiopasdfghjklzxcvbnm",
                             },
+                        },
+                    ],
+                }
+            ],
+            max_tokens=DEFAULT_MAX_TOKENS,
+        )
+
+
+@pytest.mark.asyncio
+async def test_completion_with_pdf() -> None:
+    api_key = "test-api-key"
+    model = "model-id"
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What is in this PDF?"},
+                {
+                    "type": "file",
+                    "file": {
+                        "filename": "document.pdf",
+                        "file_data": "data:application/pdf;base64,JVBERi0xLjQKdGVzdA==",
+                    },
+                },
+            ],
+        }
+    ]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key=api_key)
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages))
+
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "What is in this PDF?"},
+                        {
+                            "type": "document",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "application/pdf",
+                                "data": "JVBERi0xLjQKdGVzdA==",
+                            },
+                        },
+                    ],
+                }
+            ],
+            max_tokens=DEFAULT_MAX_TOKENS,
+        )
+
+
+@pytest.mark.asyncio
+async def test_completion_with_pdf_url() -> None:
+    api_key = "test-api-key"
+    model = "model-id"
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Summarize this PDF."},
+                {
+                    "type": "file",
+                    "file": {
+                        "filename": "report.pdf",
+                        "file_data": "https://example.com/report.pdf",
+                    },
+                },
+            ],
+        }
+    ]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key=api_key)
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages))
+
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Summarize this PDF."},
+                        {
+                            "type": "document",
+                            "source": {"type": "url", "url": "https://example.com/report.pdf"},
                         },
                     ],
                 }
@@ -404,6 +493,30 @@ async def test_completion_with_response_format_basemodel() -> None:
 
 
 @pytest.mark.asyncio
+async def test_completion_with_response_format_and_reasoning_effort() -> None:
+    class MySchema(BaseModel):
+        city_name: str
+
+    api_key = "test-api-key"
+    model = "claude-opus-4-6"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key=api_key)
+        await provider._acompletion(
+            CompletionParams(model_id=model, messages=messages, response_format=MySchema, reasoning_effort="medium")
+        )
+
+        call_kwargs = mock_anthropic.return_value.messages.create.call_args[1]
+        expected_schema = transform_schema(MySchema.model_json_schema())
+        assert call_kwargs["output_config"] == {
+            "format": {"type": "json_schema", "schema": expected_schema},
+            "effort": "medium",
+        }
+        assert call_kwargs["thinking"] == {"type": "adaptive"}
+
+
+@pytest.mark.asyncio
 async def test_completion_with_response_format_dict_json_schema() -> None:
     api_key = "test-api-key"
     model = "model-id"
@@ -477,6 +590,19 @@ async def test_completion_with_response_format_dict_unknown_type_raises() -> Non
                 response_format={"type": "unknown"},
             )
         )
+
+
+def test_convert_response_format_dataclass() -> None:
+    @dataclasses.dataclass
+    class CityResponse:
+        city_name: str
+
+    result = _convert_response_format(CityResponse, "anthropic")
+    assert "format" in result
+    assert result["format"]["type"] == "json_schema"
+    assert "schema" in result["format"]
+    schema = result["format"]["schema"]
+    assert "city_name" in schema["properties"]
 
 
 def test_convert_response_format_non_dict_non_basemodel_raises() -> None:
