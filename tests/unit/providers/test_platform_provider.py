@@ -1,18 +1,24 @@
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import datetime
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 from uuid import UUID
 
 import httpx
 import pytest
 from any_llm_platform_client import DecryptedProviderKey
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import ValidationError
 
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import MissingApiKeyError
+from any_llm.providers.ollama import OllamaProvider
 from any_llm.providers.openai import OpenaiProvider
 from any_llm.providers.platform import PlatformProvider
-from any_llm.providers.platform.utils import post_completion_usage_event
+from any_llm.providers.platform.utils import export_completion_trace
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -138,6 +144,12 @@ def mock_streaming_chunks() -> list[ChatCompletionChunk]:
             ),
         ),
     ]
+
+
+def _get_single_span(exporter: InMemorySpanExporter) -> Any:
+    spans = exporter.get_finished_spans()
+    assert len(spans) == 1
+    return spans[0]
 
 
 def test_platform_key_valid_format() -> None:
@@ -303,6 +315,25 @@ async def test_ensure_provider_initialized_is_idempotent(
         mock_aget_key.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_ensure_provider_initialized_skips_key_decryption_for_keyless_provider(
+    any_llm_key: str,
+) -> None:
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OllamaProvider
+
+    with patch.object(
+        provider_instance.platform_client,
+        "aget_decrypted_provider_key",
+        new_callable=AsyncMock,
+    ) as mock_aget_key:
+        await provider_instance._ensure_provider_initialized()
+
+    mock_aget_key.assert_not_called()
+    assert provider_instance._provider_initialized is True
+    assert provider_instance.provider.PROVIDER_NAME == "ollama"
+
+
 def test_provider_getter_raises_before_init(
     any_llm_key: str,
 ) -> None:
@@ -314,8 +345,9 @@ def test_provider_getter_raises_before_init(
         _ = provider_instance.provider
 
 
-def test_prepare_creates_provider_without_api_key() -> None:
+def test_prepare_creates_provider_without_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test error handling when instantiating a PlatformProvider without an ANY_LLM_KEY set."""
+    monkeypatch.delenv("ANY_LLM_KEY", raising=False)
     with pytest.raises(MissingApiKeyError):
         PlatformProvider()
 
@@ -348,14 +380,14 @@ def test_supports_flags_reflect_wrapped_provider_capabilities(
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.export_completion_trace")
 async def test_acompletion_non_streaming_success(
-    mock_post_usage: AsyncMock,
+    mock_export_trace: AsyncMock,
     any_llm_key: str,
     mock_decrypted_provider_key: DecryptedProviderKey,
     mock_completion: ChatCompletion,
 ) -> None:
-    """Test that non-streaming completions correctly call the provider and post usage events."""
+    """Test that non-streaming completions correctly call the provider and export traces."""
     provider_instance = PlatformProvider(api_key=any_llm_key)
     provider_instance.provider = OpenaiProvider
     await _init_provider(provider_instance, mock_decrypted_provider_key)
@@ -367,24 +399,61 @@ async def test_acompletion_non_streaming_success(
         stream=False,
     )
 
-    result = await provider_instance._acompletion(params)
+    result = await provider_instance._acompletion(params, session_label="test-session")
 
     assert result == mock_completion
     provider_instance.provider._acompletion.assert_called_once_with(params=params)
 
-    call_args = mock_post_usage.call_args
+    call_args = mock_export_trace.call_args
     assert call_args.kwargs["client"] == provider_instance.client
     assert call_args.kwargs["any_llm_key"] == any_llm_key
     assert call_args.kwargs["provider"] == "openai"
+    assert call_args.kwargs["request_model"] == "gpt-4"
     assert call_args.kwargs["completion"] == mock_completion
-    assert call_args.kwargs["provider_key_id"] == "550e8400-e29b-41d4-a716-446655440000"
+    trace_id = call_args.kwargs["existing_span"].get_span_context().trace_id
+    assert call_args.kwargs["session_label"] == f"{trace_id:032x}"
+    assert call_args.kwargs["user_session_label"] == "test-session"
     assert "platform_client" in call_args.kwargs
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.export_completion_trace")
+async def test_acompletion_non_streaming_session_label_tracks_span_trace_id(
+    mock_export_trace: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+    mock_completion: ChatCompletion,
+) -> None:
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+    provider_instance.provider._acompletion = AsyncMock(return_value=mock_completion)  # type: ignore[method-assign]
+
+    params = CompletionParams(
+        model_id="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=False,
+    )
+
+    await provider_instance._acompletion(params)
+    await provider_instance._acompletion(params)
+
+    assert mock_export_trace.await_count == 2
+    first_label = mock_export_trace.await_args_list[0].kwargs["session_label"]
+    second_label = mock_export_trace.await_args_list[1].kwargs["session_label"]
+    first_trace_id = mock_export_trace.await_args_list[0].kwargs["existing_span"].get_span_context().trace_id
+    second_trace_id = mock_export_trace.await_args_list[1].kwargs["existing_span"].get_span_context().trace_id
+    assert isinstance(first_label, str)
+    assert first_label
+    assert second_label
+    assert first_label == f"{first_trace_id:032x}"
+    assert second_label == f"{second_trace_id:032x}"
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_completion_trace")
 async def test_acompletion_streaming_success(
-    mock_post_usage: AsyncMock,
+    mock_export_trace: AsyncMock,
     any_llm_key: str,
     mock_decrypted_provider_key: DecryptedProviderKey,
 ) -> None:
@@ -463,92 +532,132 @@ async def test_acompletion_streaming_success(
     assert collected_chunks == mock_chunks
     provider_instance.provider._acompletion.assert_called_once_with(params=params)
 
-    mock_post_usage.assert_called_once()
-    call_args = mock_post_usage.call_args
+    mock_export_trace.assert_called_once()
+    call_args = mock_export_trace.call_args
     assert call_args.kwargs["client"] == provider_instance.client
     assert call_args.kwargs["any_llm_key"] == any_llm_key
     assert call_args.kwargs["provider"] == "openai"
+    assert call_args.kwargs["request_model"] == "gpt-4"
     assert call_args.kwargs["completion"].usage.prompt_tokens == 10
     assert call_args.kwargs["completion"].usage.completion_tokens == 5
     assert call_args.kwargs["completion"].usage.total_tokens == 15
-    assert call_args.kwargs["provider_key_id"] == "550e8400-e29b-41d4-a716-446655440000"
+    assert "platform_client" in call_args.kwargs
 
 
 @pytest.mark.asyncio
-async def test_post_completion_usage_event_success(
+async def test_export_completion_trace_success(
     mock_platform_client: Mock,
     mock_completion: ChatCompletion,
 ) -> None:
-    """Test successful posting of completion usage event."""
+    """Test successful posting of completion trace."""
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
-    provider_key_id = UUID("550e8400-e29b-41d4-a716-446655440002")
 
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
 
     client = AsyncMock(spec=httpx.AsyncClient)
-    client.post = AsyncMock(return_value=mock_response)
 
-    await post_completion_usage_event(
-        platform_client=mock_platform_client,
-        client=client,
-        any_llm_key=any_llm_key,
-        provider="openai",
-        completion=mock_completion,
-        provider_key_id=str(provider_key_id),
-    )
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=mock_completion,
+            start_time_ns=100,
+            end_time_ns=200,
+        )
 
     mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
 
-    client.post.assert_called_once()
-
-    call_args = client.post.call_args
-    assert "/usage-events/" in call_args.args[0]
-    payload = call_args.kwargs["json"]
-    assert payload["provider_key_id"] == str(provider_key_id)
-    assert payload["provider"] == "openai"
-    assert payload["model"] == "gpt-4"
-    assert payload["data"]["input_tokens"] == "10"
-    assert payload["data"]["output_tokens"] == "5"
-    assert "id" in payload
-    assert "client_name" not in payload  # No client_name provided
+    span = _get_single_span(exporter)
+    assert span.kind.name == "CLIENT"
+    assert span.start_time == 100
+    assert span.end_time == 200
+    assert span.attributes["gen_ai.provider.name"] == "openai"
+    assert span.attributes["gen_ai.request.model"] == "gpt-4"
+    assert span.attributes["gen_ai.response.model"] == "gpt-4"
+    assert span.attributes["gen_ai.usage.input_tokens"] == 10
+    assert span.attributes["gen_ai.usage.output_tokens"] == 5
+    assert "anyllm.client_name" not in span.attributes
 
 
 @pytest.mark.asyncio
-async def test_post_completion_usage_event_with_client_name(
+async def test_export_completion_trace_with_client_name(
     mock_platform_client: Mock,
     mock_completion: ChatCompletion,
 ) -> None:
-    """Test posting completion usage event with client_name included."""
+    """Test posting completion trace with client_name included."""
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
-    provider_key_id = UUID("550e8400-e29b-41d4-a716-446655440002")
     client_name = "my-test-client"
 
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
 
     client = AsyncMock(spec=httpx.AsyncClient)
-    client.post = AsyncMock(return_value=mock_response)
 
-    await post_completion_usage_event(
-        platform_client=mock_platform_client,
-        client=client,
-        any_llm_key=any_llm_key,
-        provider="openai",
-        completion=mock_completion,
-        provider_key_id=str(provider_key_id),
-        client_name=client_name,
-    )
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=mock_completion,
+            start_time_ns=100,
+            end_time_ns=200,
+            client_name=client_name,
+            session_label="session-1",
+            user_session_label="my-user-label",
+            conversation_id="user-123",
+        )
 
-    call_args = client.post.call_args
-    payload = call_args.kwargs["json"]
-    assert payload["client_name"] == client_name
-    assert payload["provider"] == "openai"
-    assert payload["model"] == "gpt-4"
+    span = _get_single_span(exporter)
+    assert span.attributes["anyllm.client_name"] == client_name
+    assert span.attributes["anyllm.session_label"] == "session-1"
+    assert span.attributes["anyllm.user_session_label"] == "my-user-label"
+    assert span.attributes["gen_ai.conversation.id"] == "user-123"
 
 
 @pytest.mark.asyncio
-async def test_post_completion_usage_event_invalid_key_format() -> None:
+async def test_export_completion_trace_can_skip_session_label_attribute(
+    mock_platform_client: Mock,
+    mock_completion: ChatCompletion,
+) -> None:
+    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=mock_completion,
+            start_time_ns=100,
+            end_time_ns=200,
+            session_label="internal-session",
+            include_session_label_attribute=False,
+        )
+
+    spans = exporter.get_finished_spans()
+    llm_spans = [s for s in spans if s.name == "llm.request"]
+    assert len(llm_spans) == 1
+    llm_attrs = dict(llm_spans[0].attributes or {})
+    assert "anyllm.session_label" not in llm_attrs
+
+
+@pytest.mark.asyncio
+async def test_export_completion_trace_invalid_key_format() -> None:
     """Test error handling when ANY_LLM_KEY has invalid format."""
     from any_llm_platform_client import AnyLLMPlatformClient
 
@@ -580,13 +689,15 @@ async def test_post_completion_usage_event_invalid_key_format() -> None:
     client = AsyncMock(spec=httpx.AsyncClient)
 
     with pytest.raises(ValueError, match="Invalid ANY_LLM_KEY format"):
-        await post_completion_usage_event(
+        await export_completion_trace(
             platform_client=mock_platform_client,
             client=client,
             any_llm_key=invalid_key,
             provider="openai",
+            request_model="gpt-4",
             completion=completion,
-            provider_key_id="550e8400-e29b-41d4-a716-446655440000",
+            start_time_ns=100,
+            end_time_ns=200,
         )
 
 
@@ -676,7 +787,7 @@ def test_anyllm_instantiation_with_non_platform_key(
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.export_completion_trace")
 async def test_alist_models_delegates_to_provider(
     mock_post_usage: AsyncMock,
     any_llm_key: str,
@@ -697,7 +808,7 @@ async def test_alist_models_delegates_to_provider(
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.export_completion_trace")
 async def test_aembedding_delegates_to_provider(
     mock_post_usage: AsyncMock,
     any_llm_key: str,
@@ -718,7 +829,7 @@ async def test_aembedding_delegates_to_provider(
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.export_completion_trace")
 async def test_aresponses_delegates_to_provider(
     mock_post_usage: AsyncMock,
     any_llm_key: str,
@@ -740,7 +851,7 @@ async def test_aresponses_delegates_to_provider(
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.export_completion_trace")
 async def test_acreate_batch_delegates_to_provider(
     mock_post_usage: AsyncMock,
     any_llm_key: str,
@@ -771,7 +882,7 @@ async def test_acreate_batch_delegates_to_provider(
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.export_completion_trace")
 async def test_aretrieve_batch_delegates_to_provider(
     mock_post_usage: AsyncMock,
     any_llm_key: str,
@@ -792,7 +903,7 @@ async def test_aretrieve_batch_delegates_to_provider(
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.export_completion_trace")
 async def test_acancel_batch_delegates_to_provider(
     mock_post_usage: AsyncMock,
     any_llm_key: str,
@@ -813,7 +924,7 @@ async def test_acancel_batch_delegates_to_provider(
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.export_completion_trace")
 async def test_alist_batches_delegates_to_provider(
     mock_post_usage: AsyncMock,
     any_llm_key: str,
@@ -834,7 +945,7 @@ async def test_alist_batches_delegates_to_provider(
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.export_completion_trace")
 async def test_delegation_triggers_lazy_init(
     mock_post_usage: AsyncMock,
     any_llm_key: str,
@@ -862,123 +973,40 @@ async def test_delegation_triggers_lazy_init(
 
 
 @pytest.mark.asyncio
-async def test_post_completion_usage_event_with_performance_metrics(
+async def test_export_completion_trace_without_custom_performance_attributes(
     mock_platform_client: Mock,
     mock_completion: ChatCompletion,
 ) -> None:
-    """Test posting completion usage event with performance metrics included."""
+    """Test completion trace does not include custom performance attributes."""
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
-    provider_key_id = UUID("550e8400-e29b-41d4-a716-446655440002")
 
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
 
     client = AsyncMock(spec=httpx.AsyncClient)
-    client.post = AsyncMock(return_value=mock_response)
 
-    await post_completion_usage_event(
-        platform_client=mock_platform_client,
-        client=client,
-        any_llm_key=any_llm_key,
-        provider="openai",
-        completion=mock_completion,
-        provider_key_id=str(provider_key_id),
-        time_to_first_token_ms=50.0,
-        time_to_last_token_ms=200.0,
-        total_duration_ms=250.0,
-        tokens_per_second=25.0,
-        chunks_received=10,
-        avg_chunk_size=0.5,
-        inter_chunk_latency_variance_ms=5.0,
-    )
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=mock_completion,
+            start_time_ns=100,
+            end_time_ns=200,
+        )
 
-    mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
-    client.post.assert_called_once()
-
-    call_args = client.post.call_args
-    payload = call_args.kwargs["json"]
-    assert "performance" in payload["data"]
-    performance = payload["data"]["performance"]
-    assert performance["time_to_first_token_ms"] == 50.0
-    assert performance["time_to_last_token_ms"] == 200.0
-    assert performance["total_duration_ms"] == 250.0
-    assert performance["tokens_per_second"] == 25.0
-    assert performance["chunks_received"] == 10
-    assert performance["avg_chunk_size"] == 0.5
-    assert performance["inter_chunk_latency_variance_ms"] == 5.0
+    span = _get_single_span(exporter)
+    assert not any(key.startswith("anyllm.performance.") for key in span.attributes.keys())
 
 
 @pytest.mark.asyncio
-async def test_post_completion_usage_event_with_partial_performance_metrics(
-    mock_platform_client: Mock,
-    mock_completion: ChatCompletion,
-) -> None:
-    """Test posting completion usage event with only some performance metrics."""
-    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
-    provider_key_id = UUID("550e8400-e29b-41d4-a716-446655440002")
-
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
-
-    client = AsyncMock(spec=httpx.AsyncClient)
-    client.post = AsyncMock(return_value=mock_response)
-
-    await post_completion_usage_event(
-        platform_client=mock_platform_client,
-        client=client,
-        any_llm_key=any_llm_key,
-        provider="openai",
-        completion=mock_completion,
-        provider_key_id=str(provider_key_id),
-        total_duration_ms=250.0,
-        tokens_per_second=25.0,
-    )
-
-    call_args = client.post.call_args
-    payload = call_args.kwargs["json"]
-    assert "performance" in payload["data"]
-    performance = payload["data"]["performance"]
-    assert performance["total_duration_ms"] == 250.0
-    assert performance["tokens_per_second"] == 25.0
-    assert "time_to_first_token_ms" not in performance
-    assert "time_to_last_token_ms" not in performance
-    assert "chunks_received" not in performance
-
-
-@pytest.mark.asyncio
-async def test_post_completion_usage_event_without_performance_metrics(
-    mock_platform_client: Mock,
-    mock_completion: ChatCompletion,
-) -> None:
-    """Test posting completion usage event without any performance metrics."""
-    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
-    provider_key_id = UUID("550e8400-e29b-41d4-a716-446655440002")
-
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
-
-    client = AsyncMock(spec=httpx.AsyncClient)
-    client.post = AsyncMock(return_value=mock_response)
-
-    await post_completion_usage_event(
-        platform_client=mock_platform_client,
-        client=client,
-        any_llm_key=any_llm_key,
-        provider="openai",
-        completion=mock_completion,
-        provider_key_id=str(provider_key_id),
-    )
-
-    call_args = client.post.call_args
-    payload = call_args.kwargs["json"]
-    assert "performance" not in payload["data"]
-
-
-@pytest.mark.asyncio
-async def test_post_completion_usage_event_skips_when_no_usage(
+async def test_export_completion_trace_skips_when_no_usage(
     mock_platform_client: Mock,
 ) -> None:
-    """Test that post_completion_usage_event returns early when completion has no usage data."""
+    """Test that export_completion_trace still sends traces without usage attributes."""
     any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
 
     completion = ChatCompletion(
@@ -996,30 +1024,38 @@ async def test_post_completion_usage_event_skips_when_no_usage(
         usage=None,
     )
 
-    client = AsyncMock(spec=httpx.AsyncClient)
-    client.post = AsyncMock()
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
 
-    await post_completion_usage_event(
-        platform_client=mock_platform_client,
-        client=client,
-        any_llm_key=any_llm_key,
-        provider="openai",
-        completion=completion,
-        provider_key_id="550e8400-e29b-41d4-a716-446655440000",
-    )
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=completion,
+            start_time_ns=100,
+            end_time_ns=200,
+        )
 
     mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
-    client.post.assert_not_called()
+    span = _get_single_span(exporter)
+    assert "gen_ai.usage.input_tokens" not in span.attributes
+    assert "gen_ai.usage.output_tokens" not in span.attributes
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
-async def test_streaming_performance_metrics_tracking(
+@patch("any_llm.providers.platform.platform.export_completion_trace")
+async def test_streaming_trace_export_after_completion(
     mock_post_usage: AsyncMock,
     any_llm_key: str,
     mock_decrypted_provider_key: DecryptedProviderKey,
 ) -> None:
-    """Test that streaming completions correctly track performance metrics."""
+    """Test that streaming completions export trace data after completion."""
     mock_chunks = [
         ChatCompletionChunk(
             id="chatcmpl-123",
@@ -1107,25 +1143,21 @@ async def test_streaming_performance_metrics_tracking(
     mock_post_usage.assert_called_once()
 
     call_args = mock_post_usage.call_args
-    assert call_args.kwargs["time_to_first_token_ms"] is not None
-    assert call_args.kwargs["time_to_last_token_ms"] is not None
-    assert call_args.kwargs["total_duration_ms"] is not None
-    assert call_args.kwargs["tokens_per_second"] is not None
-    assert call_args.kwargs["chunks_received"] == 4
-    assert call_args.kwargs["avg_chunk_size"] is not None
-    # Inter-chunk latency variance requires at least 2 chunks
-    assert call_args.kwargs["inter_chunk_latency_variance_ms"] is not None
+    assert call_args.kwargs["request_model"] == "gpt-4"
+    completion = call_args.kwargs["completion"]
+    assert completion.usage is not None
+    assert completion.usage.completion_tokens == 5
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
-async def test_non_streaming_includes_total_duration(
+@patch("any_llm.providers.platform.platform.export_completion_trace")
+async def test_non_streaming_exports_trace_timing(
     mock_post_usage: AsyncMock,
     any_llm_key: str,
     mock_decrypted_provider_key: DecryptedProviderKey,
     mock_completion: ChatCompletion,
 ) -> None:
-    """Test that non-streaming completions include total_duration_ms metric."""
+    """Test that non-streaming completions export span timestamps."""
     provider_instance = PlatformProvider(api_key=any_llm_key)
     provider_instance.provider = OpenaiProvider
     await _init_provider(provider_instance, mock_decrypted_provider_key)
@@ -1141,12 +1173,11 @@ async def test_non_streaming_includes_total_duration(
 
     mock_post_usage.assert_called_once()
     call_args = mock_post_usage.call_args
-    assert call_args.kwargs["total_duration_ms"] is not None
-    assert call_args.kwargs["total_duration_ms"] > 0
+    assert call_args.kwargs["start_time_ns"] < call_args.kwargs["end_time_ns"]
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.export_completion_trace")
 async def test_stream_options_auto_injected_when_not_set(
     mock_post_usage: AsyncMock,
     any_llm_key: str,
@@ -1195,7 +1226,7 @@ async def test_stream_options_auto_injected_when_not_set(
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.export_completion_trace")
 async def test_stream_options_preserved_when_user_specifies_it(
     mock_post_usage: AsyncMock,
     any_llm_key: str,
@@ -1242,33 +1273,47 @@ async def test_stream_options_preserved_when_user_specifies_it(
 
 
 @pytest.mark.asyncio
-async def test_usage_event_uses_bearer_token(
+async def test_trace_export_uses_bearer_token(
     mock_platform_client: Mock,
     any_llm_key: str,
     mock_completion: ChatCompletion,
 ) -> None:
-    """Test that usage events use Bearer token authentication (v3.0)."""
-    mock_http_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
-    mock_http_client.post = AsyncMock(return_value=mock_response)
+    """Test that trace export uses Bearer token authentication."""
+    from any_llm.providers.platform import utils as platform_utils
 
-    await post_completion_usage_event(
-        platform_client=mock_platform_client,
-        client=mock_http_client,
-        any_llm_key=any_llm_key,
-        provider="openai",
-        completion=mock_completion,
-        provider_key_id="550e8400-e29b-41d4-a716-446655440000",
-        client_name="test-client",
-        total_duration_ms=100.0,
-    )
+    mock_http_client = AsyncMock(spec=httpx.AsyncClient)
+    captured: dict[str, Any] = {}
+
+    def _exporter_factory(*args: Any, **kwargs: Any) -> InMemorySpanExporter:
+        captured.update(kwargs)
+        return InMemorySpanExporter()
+
+    # Clear the provider cache so a new provider is created with our mocked exporter
+    original_providers = platform_utils._providers.copy()
+    platform_utils._providers.clear()
+    try:
+        with patch("any_llm.providers.platform.utils.OTLPSpanExporter", side_effect=_exporter_factory):
+            await export_completion_trace(
+                platform_client=mock_platform_client,
+                client=mock_http_client,
+                any_llm_key=any_llm_key,
+                provider="openai",
+                request_model="gpt-4",
+                completion=mock_completion,
+                start_time_ns=100,
+                end_time_ns=200,
+                client_name="test-client",
+            )
+    finally:
+        # Shutdown any providers created during the test and restore original state
+        for provider in platform_utils._providers.values():
+            provider.shutdown()
+        platform_utils._providers.clear()
+        platform_utils._providers.update(original_providers)
 
     mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
 
-    mock_http_client.post.assert_called_once()
-    call_args = mock_http_client.post.call_args
-    headers = call_args.kwargs["headers"]
+    headers = captured["headers"]
 
     assert "Authorization" in headers
     assert headers["Authorization"] == "Bearer mock-jwt-token-12345"
@@ -1277,38 +1322,51 @@ async def test_usage_event_uses_bearer_token(
 
 
 @pytest.mark.asyncio
-async def test_usage_event_includes_version_header(
+async def test_trace_export_includes_version_header(
     mock_platform_client: Mock,
     any_llm_key: str,
     mock_completion: ChatCompletion,
 ) -> None:
-    """Test that usage events include library version in User-Agent header."""
+    """Test that trace export includes library version in User-Agent header."""
     from any_llm import __version__
+    from any_llm.providers.platform import utils as platform_utils
 
     mock_http_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
-    mock_http_client.post = AsyncMock(return_value=mock_response)
+    captured: dict[str, Any] = {}
 
-    await post_completion_usage_event(
-        platform_client=mock_platform_client,
-        client=mock_http_client,
-        any_llm_key=any_llm_key,
-        provider="openai",
-        completion=mock_completion,
-        provider_key_id="550e8400-e29b-41d4-a716-446655440000",
-    )
+    def _exporter_factory(*args: Any, **kwargs: Any) -> InMemorySpanExporter:
+        captured.update(kwargs)
+        return InMemorySpanExporter()
 
-    mock_http_client.post.assert_called_once()
-    call_args = mock_http_client.post.call_args
-    headers = call_args.kwargs["headers"]
+    # Clear the provider cache so a new provider is created with our mocked exporter
+    original_providers = platform_utils._providers.copy()
+    platform_utils._providers.clear()
+    try:
+        with patch("any_llm.providers.platform.utils.OTLPSpanExporter", side_effect=_exporter_factory):
+            await export_completion_trace(
+                platform_client=mock_platform_client,
+                client=mock_http_client,
+                any_llm_key=any_llm_key,
+                provider="openai",
+                request_model="gpt-4",
+                completion=mock_completion,
+                start_time_ns=100,
+                end_time_ns=200,
+            )
+    finally:
+        for provider in platform_utils._providers.values():
+            provider.shutdown()
+        platform_utils._providers.clear()
+        platform_utils._providers.update(original_providers)
+
+    headers = captured["headers"]
 
     assert "User-Agent" in headers
     assert headers["User-Agent"] == f"python-any-llm/{__version__}"
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.export_completion_trace")
 async def test_acompletion_rejects_client_name_in_kwargs_when_not_initialized(
     mock_post_usage: AsyncMock,
     any_llm_key: str,
@@ -1337,7 +1395,7 @@ async def test_acompletion_rejects_client_name_in_kwargs_when_not_initialized(
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.export_completion_trace")
 async def test_acompletion_rejects_changing_existing_client_name(
     mock_post_usage: AsyncMock,
     any_llm_key: str,
@@ -1367,7 +1425,7 @@ async def test_acompletion_rejects_changing_existing_client_name(
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
+@patch("any_llm.providers.platform.platform.export_completion_trace")
 async def test_acompletion_rejects_same_client_name_in_kwargs(
     mock_post_usage: AsyncMock,
     any_llm_key: str,
@@ -1458,13 +1516,13 @@ async def _init_mzai_provider(provider: PlatformProvider) -> None:
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
-async def test_platform_provider_mzai_skips_usage_events_non_streaming(
-    mock_post_usage: AsyncMock,
+@patch("any_llm.providers.platform.platform.export_completion_trace")
+async def test_platform_provider_mzai_exports_traces_non_streaming(
+    mock_export_trace: AsyncMock,
     any_llm_key: str,
     mock_completion: ChatCompletion,
 ) -> None:
-    """Test that usage events are skipped for mzai provider (non-streaming)."""
+    """Test that traces are exported for mzai provider (non-streaming)."""
     from any_llm.providers.mzai import MzaiProvider
 
     provider_instance = PlatformProvider(api_key=any_llm_key)
@@ -1481,17 +1539,18 @@ async def test_platform_provider_mzai_skips_usage_events_non_streaming(
     result = await provider_instance._acompletion(params)
 
     assert result == mock_completion
-    mock_post_usage.assert_not_called()
+    mock_export_trace.assert_called_once()
+    assert mock_export_trace.call_args.kwargs["provider"] == "mzai"
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.post_completion_usage_event")
-async def test_platform_provider_mzai_skips_usage_events_streaming(
-    mock_post_usage: AsyncMock,
+@patch("any_llm.providers.platform.platform.export_completion_trace")
+async def test_platform_provider_mzai_exports_traces_streaming(
+    mock_export_trace: AsyncMock,
     any_llm_key: str,
     mock_streaming_chunks: list[ChatCompletionChunk],
 ) -> None:
-    """Test that usage events are skipped for mzai provider (streaming)."""
+    """Test that traces are exported for mzai provider (streaming)."""
     from any_llm.providers.mzai import MzaiProvider
 
     provider_instance = PlatformProvider(api_key=any_llm_key)
@@ -1518,4 +1577,502 @@ async def test_platform_provider_mzai_skips_usage_events_streaming(
         chunks.append(chunk)
 
     assert len(chunks) == len(mock_streaming_chunks)
-    mock_post_usage.assert_not_called()
+    mock_export_trace.assert_called_once()
+    assert mock_export_trace.call_args.kwargs["provider"] == "mzai"
+
+
+def test_tracer_provider_reused_for_same_token() -> None:
+    """Test that _get_or_create_tracer_provider returns the same provider for the same token."""
+    from any_llm.providers.platform import utils as platform_utils
+    from any_llm.providers.platform.utils import _get_or_create_tracer_provider
+
+    original_providers = platform_utils._providers.copy()
+    platform_utils._providers.clear()
+    try:
+        provider_a = _get_or_create_tracer_provider("token-aaa")
+        provider_b = _get_or_create_tracer_provider("token-aaa")
+        assert provider_a is provider_b
+
+        provider_c = _get_or_create_tracer_provider("token-bbb")
+        assert provider_c is not provider_a
+    finally:
+        for provider in platform_utils._providers.values():
+            provider.shutdown()
+        platform_utils._providers.clear()
+        platform_utils._providers.update(original_providers)
+
+
+def test_shutdown_telemetry_clears_providers() -> None:
+    """Test that shutdown_telemetry shuts down all providers and clears the cache."""
+    from any_llm.providers.platform import utils as platform_utils
+    from any_llm.providers.platform.utils import _get_or_create_tracer_provider, shutdown_telemetry
+
+    original_providers = platform_utils._providers.copy()
+    platform_utils._providers.clear()
+    try:
+        _get_or_create_tracer_provider("token-xxx")
+        _get_or_create_tracer_provider("token-yyy")
+        assert len(platform_utils._providers) == 2
+
+        shutdown_telemetry()
+
+        assert len(platform_utils._providers) == 0
+    finally:
+        # Restore original state (shutdown_telemetry already cleared, but be safe)
+        platform_utils._providers.clear()
+        platform_utils._providers.update(original_providers)
+
+
+@pytest.mark.asyncio
+async def test_export_completion_trace_inherits_parent_trace_context(
+    mock_platform_client: Mock,
+    mock_completion: ChatCompletion,
+) -> None:
+    """Test that spans inherit the caller's trace context when one is active."""
+    from opentelemetry import trace
+
+    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    parent_tracer = test_provider.get_tracer("test-app")
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    with trace.use_span(parent_tracer.start_span("parent.pipeline")):
+        with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+            await export_completion_trace(
+                platform_client=mock_platform_client,
+                client=client,
+                any_llm_key=any_llm_key,
+                provider="openai",
+                request_model="gpt-4",
+                completion=mock_completion,
+                start_time_ns=100,
+                end_time_ns=200,
+            )
+
+    spans = exporter.get_finished_spans()
+    # Only the child span is finished; parent is still open, so we manually end it
+    # to get both spans in the exporter.
+    # Actually, let's just check the child span has the right parent.
+    child_spans = [s for s in spans if s.name == "llm.request"]
+    assert len(child_spans) == 1
+    child_span = child_spans[0]
+
+    # The child span should have a parent span ID (non-zero means it has a parent)
+    assert child_span.parent is not None
+    assert child_span.parent.trace_id != 0
+    assert child_span.parent.span_id != 0
+
+
+@pytest.mark.asyncio
+async def test_export_completion_trace_creates_root_span_without_parent_context(
+    mock_platform_client: Mock,
+    mock_completion: ChatCompletion,
+) -> None:
+    """Test that spans are root spans when no caller trace context is active."""
+    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=mock_completion,
+            start_time_ns=100,
+            end_time_ns=200,
+        )
+
+    span = _get_single_span(exporter)
+    assert span.parent is None
+
+
+@pytest.mark.asyncio
+async def test_export_completion_trace_shares_trace_id_with_parent(
+    mock_platform_client: Mock,
+    mock_completion: ChatCompletion,
+) -> None:
+    """Test that child span shares the same trace_id as the parent span."""
+    from opentelemetry import trace
+
+    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    parent_tracer = test_provider.get_tracer("test-app")
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    parent_span = parent_tracer.start_span("rag.pipeline")
+    with trace.use_span(parent_span):
+        with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+            await export_completion_trace(
+                platform_client=mock_platform_client,
+                client=client,
+                any_llm_key=any_llm_key,
+                provider="openai",
+                request_model="gpt-4",
+                completion=mock_completion,
+                start_time_ns=100,
+                end_time_ns=200,
+            )
+    parent_span.end()
+
+    spans = exporter.get_finished_spans()
+    parent_spans = [s for s in spans if s.name == "rag.pipeline"]
+    child_spans = [s for s in spans if s.name == "llm.request"]
+    assert len(parent_spans) == 1
+    assert len(child_spans) == 1
+
+    parent_trace_id = parent_spans[0].context.trace_id
+    child_trace_id = child_spans[0].context.trace_id
+    assert parent_trace_id == child_trace_id
+
+    # The child's parent_span_id should match the parent span's span_id
+    assert child_spans[0].parent is not None
+    assert child_spans[0].parent.span_id == parent_spans[0].context.span_id
+
+
+@pytest.mark.asyncio
+async def test_same_session_label_is_metadata_not_trace_identity(
+    mock_platform_client: Mock,
+    mock_completion: ChatCompletion,
+) -> None:
+    """Test that same session_label does not force spans into one trace."""
+
+    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=mock_completion,
+            start_time_ns=100,
+            end_time_ns=200,
+            session_label="my-pipeline",
+        )
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=mock_completion,
+            start_time_ns=300,
+            end_time_ns=400,
+            session_label="my-pipeline",
+        )
+
+    request_spans = [s for s in exporter.get_finished_spans() if s.name == "llm.request"]
+    assert len(request_spans) == 2
+
+    assert request_spans[0].context.trace_id != request_spans[1].context.trace_id
+    assert request_spans[0].parent is None
+    assert request_spans[1].parent is None
+
+
+def test_same_session_label_across_event_loops_does_not_force_one_trace(
+    mock_platform_client: Mock,
+    mock_completion: ChatCompletion,
+) -> None:
+    """Test that session_label remains metadata across independent event loops."""
+
+    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+        asyncio.run(
+            export_completion_trace(
+                platform_client=mock_platform_client,
+                client=client,
+                any_llm_key=any_llm_key,
+                provider="openai",
+                request_model="gpt-4",
+                completion=mock_completion,
+                start_time_ns=100,
+                end_time_ns=200,
+                session_label="loop-session",
+            )
+        )
+        asyncio.run(
+            export_completion_trace(
+                platform_client=mock_platform_client,
+                client=client,
+                any_llm_key=any_llm_key,
+                provider="openai",
+                request_model="gpt-4",
+                completion=mock_completion,
+                start_time_ns=300,
+                end_time_ns=400,
+                session_label="loop-session",
+            )
+        )
+
+    request_spans = [s for s in exporter.get_finished_spans() if s.name == "llm.request"]
+    assert len(request_spans) == 2
+    assert request_spans[0].context.trace_id != request_spans[1].context.trace_id
+
+
+@pytest.mark.asyncio
+async def test_different_session_labels_get_different_traces(
+    mock_platform_client: Mock,
+    mock_completion: ChatCompletion,
+) -> None:
+    """Test that calls with different session_labels get different trace_ids."""
+    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=mock_completion,
+            start_time_ns=100,
+            end_time_ns=200,
+            session_label="pipeline-a",
+        )
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=mock_completion,
+            start_time_ns=300,
+            end_time_ns=400,
+            session_label="pipeline-b",
+        )
+
+    request_spans = [s for s in exporter.get_finished_spans() if s.name == "llm.request"]
+    assert len(request_spans) == 2
+
+    # Each span should have a different trace_id
+    assert request_spans[0].context.trace_id != request_spans[1].context.trace_id
+
+
+@pytest.mark.asyncio
+async def test_caller_otel_context_takes_priority_over_session_label(
+    mock_platform_client: Mock,
+    mock_completion: ChatCompletion,
+) -> None:
+    """Test that an active caller OTel span takes priority over session_label grouping."""
+    from opentelemetry import trace as trace_api
+
+    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    parent_tracer = test_provider.get_tracer("test-app")
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    parent_span = parent_tracer.start_span("user.pipeline")
+    with trace_api.use_span(parent_span):
+        with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+            await export_completion_trace(
+                platform_client=mock_platform_client,
+                client=client,
+                any_llm_key=any_llm_key,
+                provider="openai",
+                request_model="gpt-4",
+                completion=mock_completion,
+                start_time_ns=100,
+                end_time_ns=200,
+                session_label="my-session",
+            )
+    parent_span.end()
+
+    spans = exporter.get_finished_spans()
+    child_spans = [s for s in spans if s.name == "llm.request"]
+    parent_spans = [s for s in spans if s.name == "user.pipeline"]
+    assert len(child_spans) == 1
+    assert len(parent_spans) == 1
+
+    # The child should be parented to the caller's span, not a session span
+    assert child_spans[0].parent is not None
+    assert child_spans[0].parent.span_id == parent_spans[0].context.span_id
+    assert child_spans[0].context.trace_id == parent_spans[0].context.trace_id
+
+    # session_label is metadata; no synthetic session root span should be created
+    session_spans = [s for s in spans if s.name == "anyllm.session"]
+    assert len(session_spans) == 0
+
+
+@pytest.mark.asyncio
+async def test_session_label_is_attached_to_llm_span_attributes(
+    mock_platform_client: Mock,
+    mock_completion: ChatCompletion,
+) -> None:
+    """Test that session_label is attached to the exported llm.request span."""
+
+    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+        await export_completion_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4",
+            completion=mock_completion,
+            start_time_ns=100,
+            end_time_ns=200,
+            session_label="test-session",
+        )
+
+    spans = exporter.get_finished_spans()
+    llm_spans = [s for s in spans if s.name == "llm.request"]
+    assert len(llm_spans) == 1
+    assert llm_spans[0].attributes is not None
+    assert llm_spans[0].attributes["anyllm.session_label"] == "test-session"
+
+
+def test_shutdown_telemetry_clears_cached_state() -> None:
+    """Test that shutdown_telemetry clears all cached platform telemetry state."""
+    from any_llm.providers.platform import utils as platform_utils
+    from any_llm.providers.platform.utils import shutdown_telemetry
+
+    test_provider = Mock(spec=TracerProvider)
+    test_processor = Mock(spec=BatchSpanProcessor)
+
+    original_providers = platform_utils._providers.copy()
+    original_forward_processors = platform_utils._forward_processors.copy()
+    original_active_exports = platform_utils._active_trace_exports.copy()
+    platform_utils._providers.clear()
+    platform_utils._forward_processors.clear()
+    platform_utils._active_trace_exports.clear()
+    try:
+        platform_utils._providers["test-token"] = test_provider
+        platform_utils._forward_processors["test-token"] = test_processor
+        platform_utils._active_trace_exports[42] = ("test-token", 1)
+
+        shutdown_telemetry()
+
+        assert len(platform_utils._providers) == 0
+        assert len(platform_utils._forward_processors) == 0
+        assert len(platform_utils._active_trace_exports) == 0
+        test_provider.shutdown.assert_called_once_with()
+        test_processor.shutdown.assert_called_once_with()
+    finally:
+        platform_utils._providers.clear()
+        platform_utils._forward_processors.clear()
+        platform_utils._active_trace_exports.clear()
+        platform_utils._providers.update(original_providers)
+        platform_utils._forward_processors.update(original_forward_processors)
+        platform_utils._active_trace_exports.update(original_active_exports)
+
+
+def test_activate_trace_export_rejects_conflicting_token_for_same_trace_id() -> None:
+    from any_llm.providers.platform import utils as platform_utils
+
+    original_active = platform_utils._active_trace_exports.copy()
+    platform_utils._active_trace_exports.clear()
+    try:
+        with patch("any_llm.providers.platform.utils.logger.warning") as warning_mock:
+            platform_utils.activate_trace_export(99, "token-a")
+            platform_utils.activate_trace_export(99, "token-b")
+
+        assert platform_utils._active_trace_exports[99] == ("token-a", 1)
+        warning_mock.assert_called_once()
+    finally:
+        platform_utils._active_trace_exports.clear()
+        platform_utils._active_trace_exports.update(original_active)
+
+
+def test_scoped_trace_export_forwards_and_sanitizes_attributes() -> None:
+    from opentelemetry import trace as trace_api
+
+    from any_llm.providers.platform import utils as platform_utils
+
+    exporter = InMemorySpanExporter()
+    forward_processor = SimpleSpanProcessor(exporter)
+    test_provider = TracerProvider()
+
+    original_active = platform_utils._active_trace_exports.copy()
+    original_forward_holder = platform_utils._forwarding_processor_holder.copy()
+    platform_utils._active_trace_exports.clear()
+    platform_utils._forwarding_processor_holder.clear()
+
+    try:
+        with (
+            patch("any_llm.providers.platform.utils.trace.get_tracer_provider", return_value=test_provider),
+            patch("any_llm.providers.platform.utils._get_or_create_forward_processor", return_value=forward_processor),
+        ):
+            tracer = test_provider.get_tracer("test-app")
+            parent_span = tracer.start_span("pipeline")
+            trace_id = parent_span.get_span_context().trace_id
+            platform_utils.activate_trace_export(trace_id, "jwt-token")
+
+            with trace_api.use_span(parent_span, end_on_exit=False):
+                with tracer.start_as_current_span("child-operation") as child_span:
+                    child_span.set_attribute("gen_ai.request.model", "gpt-4")
+                    child_span.set_attribute("gen_ai.request.messages", "sensitive prompt content")
+                    child_span.add_event(
+                        "raw_payload",
+                        {
+                            "response.body": "sensitive response content",
+                            "latency_ms": 12,
+                        },
+                    )
+
+            parent_span.end()
+            platform_utils.deactivate_trace_export(trace_id)
+
+        forwarded_spans = exporter.get_finished_spans()
+        child_spans = [span for span in forwarded_spans if span.name == "child-operation"]
+        assert len(child_spans) == 1
+
+        child_attributes = dict(child_spans[0].attributes or {})
+        assert child_attributes["gen_ai.request.model"] == "gpt-4"
+        assert "gen_ai.request.messages" not in child_attributes
+
+        child_events = child_spans[0].events
+        assert len(child_events) == 1
+        event_attributes = dict(child_events[0].attributes or {})
+        assert "response.body" not in event_attributes
+        assert event_attributes["latency_ms"] == 12
+    finally:
+        platform_utils._active_trace_exports.clear()
+        platform_utils._active_trace_exports.update(original_active)
+        platform_utils._forwarding_processor_holder.clear()
+        platform_utils._forwarding_processor_holder.update(original_forward_holder)
