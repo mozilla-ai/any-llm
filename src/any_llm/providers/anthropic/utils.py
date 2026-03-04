@@ -225,11 +225,17 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
             cache_read = anthropic_usage.cache_read_input_tokens or 0
             cache_creation = anthropic_usage.cache_creation_input_tokens or 0
             total_prompt_tokens = anthropic_usage.input_tokens + cache_read + cache_creation
+            prompt_tokens_details = None
+            if cache_read or cache_creation:
+                prompt_tokens_details = PromptTokensDetails(
+                    cached_tokens=cache_read or None,
+                    cache_creation_input_tokens=cache_creation or None,
+                )
             chunk_dict["usage"] = {
                 "prompt_tokens": total_prompt_tokens,
                 "completion_tokens": anthropic_usage.output_tokens,
                 "total_tokens": total_prompt_tokens + anthropic_usage.output_tokens,
-                "prompt_tokens_details": PromptTokensDetails(cached_tokens=cache_read) if cache_read else None,
+                "prompt_tokens_details": prompt_tokens_details,
             }
 
     choice = {
@@ -287,11 +293,18 @@ def _convert_response(response: Message) -> ChatCompletion:
     cache_creation = response.usage.cache_creation_input_tokens or 0
     total_prompt_tokens = response.usage.input_tokens + cache_read + cache_creation
 
+    prompt_tokens_details = None
+    if cache_read or cache_creation:
+        prompt_tokens_details = PromptTokensDetails(
+            cached_tokens=cache_read or None,
+            cache_creation_input_tokens=cache_creation or None,
+        )
+
     usage = CompletionUsage(
         completion_tokens=response.usage.output_tokens,
         prompt_tokens=total_prompt_tokens,
         total_tokens=total_prompt_tokens + response.usage.output_tokens,
-        prompt_tokens_details=PromptTokensDetails(cached_tokens=cache_read) if cache_read else None,
+        prompt_tokens_details=prompt_tokens_details,
     )
 
     from typing import Literal

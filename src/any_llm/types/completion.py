@@ -32,6 +32,14 @@ class Reasoning(BaseModel):
     content: str
 
 
+class PromptTokensDetails(OpenAIPromptTokensDetails):
+    cache_creation_input_tokens: int | None = None
+
+
+class CompletionUsage(OpenAICompletionUsage):
+    prompt_tokens_details: PromptTokensDetails | None = None
+
+
 class ChatCompletionMessage(OpenAIChatCompletionMessage):
     reasoning: Reasoning | None = None
     annotations: list[dict[str, Any]] | None = None  # type: ignore[assignment]
@@ -43,6 +51,7 @@ class Choice(OpenAIChoice):
 
 class ChatCompletion(OpenAIChatCompletion):
     choices: list[Choice]  # type: ignore[assignment]
+    usage: CompletionUsage | None = None
 
 
 ContentType = TypeVar("ContentType")
@@ -70,6 +79,7 @@ class ChunkChoice(OpenAIChunkChoice):
 
 class ChatCompletionChunk(OpenAIChatCompletionChunk):
     choices: list[ChunkChoice]  # type: ignore[assignment]
+    usage: CompletionUsage | None = None
 
 
 class ChatCompletionMessageFunctionToolCall(OpenAIChatCompletionMessageFunctionToolCall):
@@ -88,8 +98,6 @@ class ChatCompletionMessageFunctionToolCall(OpenAIChatCompletionMessageFunctionT
 
 ChatCompletionMessageToolCall = ChatCompletionMessageFunctionToolCall | OpenAIChatCompletionMessageToolCall
 Function = OpenAIFunction
-CompletionUsage = OpenAICompletionUsage
-PromptTokensDetails = OpenAIPromptTokensDetails
 CreateEmbeddingResponse = OpenAICreateEmbeddingResponse
 Embedding = OpenAIEmbedding
 Usage = OpenAIUsage

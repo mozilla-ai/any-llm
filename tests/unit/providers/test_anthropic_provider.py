@@ -645,10 +645,11 @@ def test_convert_response_includes_cache_tokens_in_usage() -> None:
     assert result.usage.total_tokens == expected_total_tokens
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 13332
+    assert result.usage.prompt_tokens_details.cache_creation_input_tokens is None
 
 
 def test_convert_response_includes_cache_creation_tokens() -> None:
-    """Test that cache_creation_input_tokens are included in usage when writing to cache."""
+    """Test that cache_creation_input_tokens are exposed in prompt_tokens_details when writing to cache."""
     from datetime import datetime
     from unittest.mock import MagicMock
 
@@ -674,7 +675,9 @@ def test_convert_response_includes_cache_creation_tokens() -> None:
     assert result.usage is not None
     assert result.usage.prompt_tokens == expected_prompt_tokens
     assert result.usage.total_tokens == expected_total_tokens
-    assert result.usage.prompt_tokens_details is None
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cache_creation_input_tokens == 13332
+    assert result.usage.prompt_tokens_details.cached_tokens is None
 
 
 def test_convert_response_without_cache_tokens() -> None:
@@ -737,6 +740,74 @@ def test_streaming_chunk_includes_cache_tokens_in_usage() -> None:
     assert result.usage.total_tokens == expected_total_tokens
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 13332
+    assert result.usage.prompt_tokens_details.cache_creation_input_tokens is None
+
+
+def test_streaming_chunk_includes_cache_creation_tokens_in_usage() -> None:
+    """Test that streaming chunks expose cache_creation_input_tokens in prompt_tokens_details."""
+    from unittest.mock import MagicMock
+
+    from anthropic.types import MessageStopEvent, Usage
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    usage = Usage(
+        input_tokens=3,
+        output_tokens=122,
+        cache_read_input_tokens=0,
+        cache_creation_input_tokens=13332,
+    )
+
+    mock_message = MagicMock()
+    mock_message.usage = usage
+
+    chunk = MessageStopEvent(type="message_stop")
+    chunk.message = mock_message  # type: ignore[attr-defined]
+
+    result = _create_openai_chunk_from_anthropic_chunk(chunk, "claude-3-haiku")
+
+    expected_prompt_tokens = 3 + 0 + 13332
+    expected_total_tokens = expected_prompt_tokens + 122
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == expected_prompt_tokens
+    assert result.usage.completion_tokens == 122
+    assert result.usage.total_tokens == expected_total_tokens
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cache_creation_input_tokens == 13332
+    assert result.usage.prompt_tokens_details.cached_tokens is None
+
+
+def test_convert_response_includes_both_cache_fields() -> None:
+    """Test that both cache_read and cache_creation tokens are exposed in prompt_tokens_details."""
+    from datetime import datetime
+    from unittest.mock import MagicMock
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    mock_response = MagicMock()
+    mock_response.id = "msg_123"
+    mock_response.model = "claude-3-haiku"
+    mock_response.stop_reason = "end_turn"
+    mock_response.content = [MagicMock(type="text", text="Hello!")]
+    mock_response.created_at = datetime.now(UTC)
+
+    mock_response.usage.input_tokens = 5
+    mock_response.usage.output_tokens = 100
+    mock_response.usage.cache_read_input_tokens = 8000
+    mock_response.usage.cache_creation_input_tokens = 4000
+
+    result = _convert_response(mock_response)
+
+    expected_prompt_tokens = 5 + 8000 + 4000
+    expected_total_tokens = expected_prompt_tokens + 100
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == expected_prompt_tokens
+    assert result.usage.total_tokens == expected_total_tokens
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 8000
+    assert result.usage.prompt_tokens_details.cache_creation_input_tokens == 4000
 
 
 @pytest.mark.asyncio
