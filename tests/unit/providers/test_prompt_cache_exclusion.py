@@ -1,7 +1,5 @@
 """Verify that prompt_cache_key and prompt_cache_retention are excluded by non-OpenAI providers."""
 
-import pytest
-
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.completion import CompletionParams
 
