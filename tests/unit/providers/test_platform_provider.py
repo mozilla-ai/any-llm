@@ -2076,3 +2076,230 @@ def test_scoped_trace_export_forwards_and_sanitizes_attributes() -> None:
         platform_utils._active_trace_exports.update(original_active)
         platform_utils._forwarding_processor_holder.clear()
         platform_utils._forwarding_processor_holder.update(original_forward_holder)
+
+
+def test_require_secure_trace_endpoint_enforces_https_and_localhost(monkeypatch: pytest.MonkeyPatch) -> None:
+    from any_llm.providers.platform import utils as platform_utils
+
+    monkeypatch.setattr(platform_utils, "ANY_LLM_PLATFORM_TRACE_URL", "https://platform.any-llm.ai/v1/traces")
+    assert platform_utils._require_secure_trace_endpoint() == "https://platform.any-llm.ai/v1/traces"
+
+    monkeypatch.setattr(platform_utils, "ANY_LLM_PLATFORM_TRACE_URL", "http://localhost:4318/v1/traces")
+    with patch("any_llm.providers.platform.utils.logger.warning") as warning_mock:
+        assert platform_utils._require_secure_trace_endpoint() == "http://localhost:4318/v1/traces"
+    warning_mock.assert_called_once()
+
+    monkeypatch.setattr(platform_utils, "ANY_LLM_PLATFORM_TRACE_URL", "http://example.com/v1/traces")
+    with pytest.raises(ValueError, match="must use HTTPS"):
+        platform_utils._require_secure_trace_endpoint()
+
+
+def test_sanitize_attribute_mapping_handles_remove_and_redact_paths() -> None:
+    from any_llm.providers.platform import utils as platform_utils
+
+    removable = {
+        "gen_ai.request.model": "gpt-4",
+        "gen_ai.request.messages": "sensitive",
+    }
+    platform_utils._sanitize_attribute_mapping(removable)
+    assert "gen_ai.request.messages" not in removable
+    assert removable["gen_ai.request.model"] == "gpt-4"
+
+    class SetOnlyMapping:
+        def __init__(self) -> None:
+            self._data: dict[str, object] = {
+                "response.body": "sensitive",
+                "latency_ms": 10,
+            }
+
+        def __iter__(self):
+            return iter(self._data)
+
+        def keys(self):
+            return self._data.keys()
+
+        def __getitem__(self, key: str) -> object:
+            return self._data[key]
+
+        def __setitem__(self, key: str, value: object) -> None:
+            self._data[key] = value
+
+    set_only = SetOnlyMapping()
+    platform_utils._sanitize_attribute_mapping(set_only)
+    assert set_only._data["response.body"] == "[redacted]"
+    assert set_only._data["latency_ms"] == 10
+
+
+def test_get_or_create_forward_processor_caches_by_token() -> None:
+    from any_llm.providers.platform import utils as platform_utils
+
+    original = platform_utils._forward_processors.copy()
+    platform_utils._forward_processors.clear()
+    try:
+        processor = Mock()
+        with (
+            patch("any_llm.providers.platform.utils.OTLPSpanExporter", return_value=Mock()),
+            patch("any_llm.providers.platform.utils.BatchSpanProcessor", return_value=processor),
+        ):
+            first = platform_utils._get_or_create_forward_processor("token-a")
+            second = platform_utils._get_or_create_forward_processor("token-a")
+
+        assert first is processor
+        assert second is processor
+    finally:
+        platform_utils._forward_processors.clear()
+        platform_utils._forward_processors.update(original)
+
+
+def test_platform_scoped_processor_handles_empty_or_untracked_context() -> None:
+    from any_llm.providers.platform.utils import PlatformScopedForwardingSpanProcessor
+
+    processor = PlatformScopedForwardingSpanProcessor()
+    span_without_context = Mock()
+    span_without_context.context = None
+    processor.on_end(span_without_context)
+
+    span_with_untracked_trace = Mock()
+    span_with_untracked_trace.context = Mock(trace_id=999)
+    processor.on_end(span_with_untracked_trace)
+
+
+def test_platform_scoped_processor_shutdown_and_force_flush() -> None:
+    from any_llm.providers.platform import utils as platform_utils
+    from any_llm.providers.platform.utils import PlatformScopedForwardingSpanProcessor
+
+    original = platform_utils._forward_processors.copy()
+    platform_utils._forward_processors.clear()
+    try:
+        processor_a = Mock()
+        processor_a.force_flush.return_value = True
+        processor_b = Mock()
+        processor_b.force_flush.return_value = True
+        platform_utils._forward_processors["a"] = processor_a
+        platform_utils._forward_processors["b"] = processor_b
+
+        scoped = PlatformScopedForwardingSpanProcessor()
+        assert scoped.force_flush(timeout_millis=10)
+        scoped.shutdown()
+
+        processor_a.force_flush.assert_called_once_with(timeout_millis=10)
+        processor_b.force_flush.assert_called_once_with(timeout_millis=10)
+        processor_a.shutdown.assert_called_once_with()
+        processor_b.shutdown.assert_called_once_with()
+        assert platform_utils._forward_processors == {}
+    finally:
+        platform_utils._forward_processors.clear()
+        platform_utils._forward_processors.update(original)
+
+
+def test_activate_deactivate_trace_export_reference_counting() -> None:
+    from any_llm.providers.platform import utils as platform_utils
+
+    original = platform_utils._active_trace_exports.copy()
+    platform_utils._active_trace_exports.clear()
+    try:
+        platform_utils.activate_trace_export(7, "token-a")
+        platform_utils.activate_trace_export(7, "token-a")
+        assert platform_utils._active_trace_exports[7] == ("token-a", 2)
+
+        platform_utils.deactivate_trace_export(7)
+        assert platform_utils._active_trace_exports[7] == ("token-a", 1)
+
+        platform_utils.deactivate_trace_export(7)
+        assert 7 not in platform_utils._active_trace_exports
+
+        platform_utils.deactivate_trace_export(999)
+    finally:
+        platform_utils._active_trace_exports.clear()
+        platform_utils._active_trace_exports.update(original)
+
+
+def test_combine_chunks_without_usage_returns_completion_without_usage(any_llm_key: str) -> None:
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+
+    chunk = ChatCompletionChunk(
+        id="chatcmpl-123",
+        model="gpt-4",
+        created=1234567890,
+        object="chat.completion.chunk",
+        choices=[ChunkChoice(index=0, delta=ChoiceDelta(), finish_reason="stop")],
+        usage=None,
+    )
+
+    with patch("any_llm.providers.platform.platform.logger.warning") as warning_mock:
+        combined = provider_instance._combine_chunks([chunk])
+
+    warning_mock.assert_called_once()
+    assert combined.usage is None
+    assert combined.model == "gpt-4"
+
+
+@pytest.mark.asyncio
+async def test_stream_with_usage_tracking_ends_span_when_stream_yields_no_chunks(any_llm_key: str) -> None:
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    llm_span = Mock()
+
+    async def empty_stream() -> AsyncIterator[ChatCompletionChunk]:
+        if False:
+            yield
+
+    result = provider_instance._stream_with_usage_tracking(
+        stream=empty_stream(),
+        start_time_ns=100,
+        request_model="gpt-4",
+        conversation_id=None,
+        session_label="session",
+        user_session_label=None,
+        any_llm_key=any_llm_key,
+        llm_span=llm_span,
+        trace_id=123,
+        access_token=None,
+        trace_export_activated=False,
+    )
+
+    collected = [chunk async for chunk in result]
+    assert collected == []
+    llm_span.end.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_acompletion_sets_error_status_and_deactivates_trace_on_exception(
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+
+    mock_provider = Mock()
+    mock_provider.PROVIDER_NAME = "openai"
+    mock_provider._acompletion = AsyncMock(side_effect=RuntimeError("boom"))
+    provider_instance._provider = mock_provider
+
+    params = CompletionParams(
+        model_id="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=False,
+    )
+
+    mock_span = Mock()
+    mock_span.get_span_context.return_value = Mock(trace_id=456)
+    mock_tracer = Mock()
+    mock_tracer.start_span.return_value = mock_span
+    mock_provider_tp = Mock()
+    mock_provider_tp.get_tracer.return_value = mock_tracer
+
+    with (
+        patch.object(provider_instance.platform_client, "_aensure_valid_token", AsyncMock(return_value="jwt-token")),
+        patch("any_llm.providers.platform.platform._get_or_create_tracer_provider", return_value=mock_provider_tp),
+        patch("any_llm.providers.platform.platform.activate_trace_export"),
+        patch("any_llm.providers.platform.platform.deactivate_trace_export") as deactivate_mock,
+    ):
+        with pytest.raises(RuntimeError, match="boom"):
+            await provider_instance._acompletion(params)
+
+    mock_span.set_attribute.assert_any_call("error.type", "RuntimeError")
+    mock_span.set_status.assert_called_once()
+    mock_span.end.assert_called_once()
+    deactivate_mock.assert_called_once_with(456)

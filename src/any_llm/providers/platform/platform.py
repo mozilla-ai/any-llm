@@ -412,7 +412,7 @@ class PlatformProvider(AnyLLM):
             model=last_chunk.model,
             created=last_chunk.created,
             object="chat.completion",
-            usage=last_chunk.usage if last_chunk.usage else None,
+            usage=last_chunk.usage or None,
             choices=[],
         )
 
