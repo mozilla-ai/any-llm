@@ -2112,10 +2112,10 @@ def test_sanitize_attribute_mapping_handles_remove_and_redact_paths() -> None:
                 "latency_ms": 10,
             }
 
-        def __iter__(self):
+        def __iter__(self) -> Any:
             return iter(self._data)
 
-        def keys(self):
+        def keys(self) -> Any:
             return self._data.keys()
 
         def __getitem__(self, key: str) -> object:
