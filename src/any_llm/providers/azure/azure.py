@@ -147,7 +147,10 @@ class AzureProvider(AnyLLM):
         if params.response_format:
             azure_response_format = _convert_response_format(params.response_format)
 
-        call_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
+        call_kwargs = params.model_dump(
+            exclude_none=True,
+            exclude={"model_id", "messages", "response_format", "prompt_cache_key", "prompt_cache_retention"},
+        )
         if azure_response_format:
             call_kwargs["response_format"] = azure_response_format
 

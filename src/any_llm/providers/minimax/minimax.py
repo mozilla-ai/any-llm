@@ -59,6 +59,8 @@ class MinimaxProvider(XMLReasoningOpenAIProvider):
             param = "response_format"
             raise UnsupportedParameterError(param, "minimax")
         # Copy of the logic from the base implementation because you can't use super() in a static method
-        converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
+        converted_params = params.model_dump(
+            exclude_none=True, exclude={"model_id", "messages", "prompt_cache_key", "prompt_cache_retention"}
+        )
         converted_params.update(kwargs)
         return converted_params

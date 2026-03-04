@@ -68,6 +68,8 @@ class XaiProvider(AnyLLM):
                 "response_format",
                 "tools",
                 "tool_choice",
+                "prompt_cache_key",
+                "prompt_cache_retention",
             },
         )
         if converted_params.get("reasoning_effort") in ("auto", "none"):

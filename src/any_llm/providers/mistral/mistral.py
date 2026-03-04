@@ -71,7 +71,16 @@ class MistralProvider(AnyLLM):
         # Mistral does not support providing reasoning effort
         converted_params = params.model_dump(
             exclude_none=True,
-            exclude={"model_id", "messages", "response_format", "stream", "stream_options", "user"},
+            exclude={
+                "model_id",
+                "messages",
+                "response_format",
+                "stream",
+                "stream_options",
+                "user",
+                "prompt_cache_key",
+                "prompt_cache_retention",
+            },
         )
         converted_params["messages"] = _patch_messages(params.messages)
 

@@ -427,6 +427,8 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
                 "response_format",
                 "parallel_tool_calls",
                 "stream_options",
+                "prompt_cache_key",
+                "prompt_cache_retention",
             },
         )
     )

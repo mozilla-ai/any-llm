@@ -67,7 +67,15 @@ class WatsonxProvider(AnyLLM):
         """Convert CompletionParams to kwargs for Watsonx API."""
         # Watsonx does not support providing reasoning effort
         converted_params = params.model_dump(
-            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}
+            exclude_none=True,
+            exclude={
+                "model_id",
+                "messages",
+                "response_format",
+                "stream",
+                "prompt_cache_key",
+                "prompt_cache_retention",
+            },
         )
         if converted_params.get("reasoning_effort") in ("auto", "none"):
             converted_params.pop("reasoning_effort")

@@ -61,6 +61,8 @@ class PortkeyProvider(XMLReasoningOpenAIProvider):
                     "schema": get_json_schema(params.response_format),
                 },
             }
-        converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
+        converted_params = params.model_dump(
+            exclude_none=True, exclude={"model_id", "messages", "prompt_cache_key", "prompt_cache_retention"}
+        )
         converted_params.update(kwargs)
         return converted_params
