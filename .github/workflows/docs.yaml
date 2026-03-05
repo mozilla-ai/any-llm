@@ -4,18 +4,20 @@ on:
   push:
     branches: [main]
     paths:
-      - mkdocs.yml
       - 'docs/**'
       - 'src/**'
-      - 'scripts/hooks.py'
+      - 'scripts/generate_provider_table.py'
+      - 'scripts/generate_llms_txt.py'
+      - 'scripts/generate_openapi.py'
       - '.github/workflows/**'
       - 'pyproject.toml'
   pull_request:
     paths:
-      - mkdocs.yml
       - 'docs/**'
       - 'src/**'
-      - 'scripts/hooks.py'
+      - 'scripts/generate_provider_table.py'
+      - 'scripts/generate_llms_txt.py'
+      - 'scripts/generate_openapi.py'
       - '.github/workflows/**'
       - 'pyproject.toml'
   workflow_dispatch:
@@ -24,6 +26,8 @@ jobs:
   docs:
     permissions:
       contents: write
+      pages: write
+      id-token: write
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
@@ -37,19 +41,36 @@ jobs:
           python-version: 3.13
           activate-environment: true
 
-      - name: Configure git
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
-      - name: Install dependencies
-        run: |
-          uv sync --group docs --extra all
+      - name: Install Python dependencies
+        run: uv sync --group docs --extra all
+
+      - name: Install docs dependencies
+        working-directory: docs
+        run: npm ci
+
+      - name: Generate provider table
+        run: uv run python scripts/generate_provider_table.py
+
+      - name: Generate OpenAPI spec
+        run: uv run python scripts/generate_openapi.py
 
       - name: Build docs
-        if: github.event_name == 'pull_request'
-        run: mkdocs build -s
+        working-directory: docs
+        run: npm run build
+        env:
+          CI: true
 
-      - name: Publish docs
+      - name: Generate llms.txt
+        run: uv run python scripts/generate_llms_txt.py
+
+      - name: Deploy to GitHub Pages
         if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
-        run: mkdocs gh-deploy
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs/dist/any-llm

@@ -141,7 +141,7 @@ Documentation to update:
 - **docs/providers.md** when adding providers
 
 ```bash
-mkdocs serve
+cd docs && npm run dev
 ```
 
 ### 5. Commit Your Changes
