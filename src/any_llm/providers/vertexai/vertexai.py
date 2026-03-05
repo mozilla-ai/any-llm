@@ -22,6 +22,11 @@ class VertexaiProvider(GoogleProvider):
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         """Get Vertex AI client."""
+
+        # Ensure timeout is correctly configured if present.
+        if (timeout := kwargs.pop("timeout", None)) is not None:
+            GoogleProvider._merge_timeout_into_http_options(timeout, kwargs)
+
         self.client = genai.Client(
             vertexai=True,
             **kwargs,
