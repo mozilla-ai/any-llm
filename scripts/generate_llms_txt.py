@@ -93,16 +93,7 @@ def extract_description_from_markdown(content: str) -> str:
             continue
 
         if (
-            stripped.startswith("!!! ")
-            or stripped.startswith("<")
-            or stripped.startswith(":::")
-            or stripped.startswith("##")
-            or stripped.startswith("```")
-            or stripped.startswith("---")
-            or stripped.startswith("|")
-            or stripped.startswith("- ")
-            or stripped.startswith("* ")
-            or stripped.startswith("import ")
+            stripped.startswith(("!!! ", "<", ":::", "##", "```", "---", "|", "- ", "* ", "import "))
             or (stripped.startswith("[") and stripped.endswith("]"))
             or re.match(r"^\d+\.", stripped)
         ):
@@ -141,7 +132,7 @@ def get_all_content_files() -> list[str]:
 
     for root, _, files in os.walk(DOCS_CONTENT_DIR):
         for f in files:
-            if f.endswith(MARKDOWN_EXTENSION) or f.endswith(MDX_EXTENSION):
+            if f.endswith((MARKDOWN_EXTENSION, MDX_EXTENSION)):
                 rel_path = os.path.relpath(os.path.join(root, f), DOCS_CONTENT_DIR)
                 if rel_path not in ordered:
                     ordered.append(rel_path)
