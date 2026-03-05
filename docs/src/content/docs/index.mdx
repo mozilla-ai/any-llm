@@ -1,0 +1,73 @@
+---
+title: any-llm
+description: A Python library providing a single interface to different LLM providers including OpenAI, Anthropic, Mistral, and more
+template: splash
+hero:
+  title: One interface. Every LLM.
+  image:
+    file: ../../assets/any-llm-logo-mark.png
+  tagline: any-llm is a Python library providing a single interface to different LLM providers.
+  actions:
+    - text: Get Started
+      link: /any-llm/quickstart/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/mozilla-ai/any-llm
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+```python
+from any_llm import completion
+
+# Using the messages format
+response = completion(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "What is Python?"}],
+    provider="openai"
+)
+print(response)
+
+# Switch providers without changing your code
+response = completion(
+    model="claude-sonnet-4-5-20250929",
+    messages=[{"role": "user", "content": "What is Python?"}],
+    provider="anthropic"
+)
+print(response)
+```
+
+## Why any-llm
+
+<CardGrid>
+  <Card title="Switch providers in one line" icon="rocket">
+    Change from OpenAI to Anthropic, Mistral, or any other provider with a single parameter change.
+  </Card>
+  <Card title="Unified exception handling" icon="warning">
+    Consistent error handling across all providers with a unified exception hierarchy.
+  </Card>
+  <Card title="Simple API, powerful features" icon="star">
+    Streaming, tool calling, embeddings, reasoning, and more — all through one interface.
+  </Card>
+</CardGrid>
+
+## API Documentation
+
+`any-llm` provides two main interfaces:
+
+**Direct API Functions** (recommended for simple use cases):
+- [completion](/any-llm/api/completion/) - Chat completions with any provider
+- [embedding](/any-llm/api/embedding/) - Text embeddings
+- [responses](/any-llm/api/responses/) - [OpenResponses](https://www.openresponses.org/) API for agentic AI systems
+
+**AnyLLM Class** (recommended for advanced use cases):
+- [Provider API](/any-llm/api/any-llm/) - Lower-level provider interface with metadata access and reusability
+
+## For AI Systems
+
+This documentation is available in two AI-friendly formats:
+
+- **[llms.txt](https://mozilla-ai.github.io/any-llm/llms.txt)** - A structured overview with curated links to key documentation sections
+- **[llms-full.txt](https://mozilla-ai.github.io/any-llm/llms-full.txt)** - Complete documentation content concatenated into a single file

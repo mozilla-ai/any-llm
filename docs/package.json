@@ -1,0 +1,17 @@
+{
+  "name": "any-llm-docs",
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "cd .. && uv run python scripts/generate_api_docs.py && cd docs && astro dev",
+    "start": "cd .. && uv run python scripts/generate_api_docs.py && cd docs && astro dev",
+    "build": "cd .. && uv run python scripts/generate_api_docs.py && cd docs && astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.37.6",
+    "astro": "^5.18.0",
+    "sharp": "^0.34.5"
+  }
+}
