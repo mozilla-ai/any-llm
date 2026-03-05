@@ -2249,6 +2249,7 @@ async def test_stream_with_usage_tracking_ends_span_when_stream_yields_no_chunks
         conversation_id=None,
         session_label="session",
         user_session_label=None,
+        start_perf_counter_ns=100,
         any_llm_key=any_llm_key,
         llm_span=llm_span,
         trace_id=123,
@@ -2259,6 +2260,111 @@ async def test_stream_with_usage_tracking_ends_span_when_stream_yields_no_chunks
     collected = [chunk async for chunk in result]
     assert collected == []
     llm_span.end.assert_called_once()
+    llm_span.add_event.assert_not_called()
+    assert not any(
+        call.args and call.args[0] == "anyllm.performance.ttft_ms" for call in llm_span.set_attribute.call_args_list
+    )
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_completion_trace", new_callable=AsyncMock)
+async def test_stream_with_usage_tracking_records_ttft_once(
+    mock_export_trace: AsyncMock,
+    any_llm_key: str,
+) -> None:
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance._provider = Mock(PROVIDER_NAME="openai")
+    llm_span = Mock()
+
+    chunks = [
+        ChatCompletionChunk(
+            id="chatcmpl-123",
+            model="gpt-4",
+            created=1234567890,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hello"), finish_reason=None)],
+        ),
+        ChatCompletionChunk(
+            id="chatcmpl-123",
+            model="gpt-4",
+            created=1234567890,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(), finish_reason="stop")],
+            usage=CompletionUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+        ),
+    ]
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        for chunk in chunks:
+            yield chunk
+
+    with patch("any_llm.providers.platform.platform.time.perf_counter_ns", return_value=1_120_000_000):
+        result = provider_instance._stream_with_usage_tracking(
+            stream=mock_stream(),
+            start_time_ns=100,
+            request_model="gpt-4",
+            conversation_id=None,
+            session_label="session",
+            user_session_label=None,
+            start_perf_counter_ns=1_000_000_000,
+            any_llm_key=any_llm_key,
+            llm_span=llm_span,
+            trace_id=123,
+            access_token=None,
+            trace_export_activated=False,
+        )
+        collected = [chunk async for chunk in result]
+
+    assert collected == chunks
+    ttft_calls = [
+        call
+        for call in llm_span.set_attribute.call_args_list
+        if call.args and call.args[0] == "anyllm.performance.ttft_ms"
+    ]
+    assert len(ttft_calls) == 1
+    assert ttft_calls[0].args[1] == 120.0
+    llm_span.add_event.assert_called_once_with("llm.first_token", {"anyllm.performance.ttft_ms": 120.0})
+    mock_export_trace.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_completion_trace")
+async def test_acompletion_non_streaming_does_not_set_ttft_attribute(
+    mock_export_trace: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+    mock_completion: ChatCompletion,
+) -> None:
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+    provider_instance.provider._acompletion = AsyncMock(return_value=mock_completion)  # type: ignore[method-assign]
+
+    params = CompletionParams(
+        model_id="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=False,
+    )
+
+    mock_span = Mock()
+    mock_span.get_span_context.return_value = Mock(trace_id=456)
+    mock_tracer = Mock()
+    mock_tracer.start_span.return_value = mock_span
+    mock_provider_tp = Mock()
+    mock_provider_tp.get_tracer.return_value = mock_tracer
+
+    with (
+        patch.object(provider_instance.platform_client, "_aensure_valid_token", AsyncMock(return_value="jwt-token")),
+        patch("any_llm.providers.platform.platform._get_or_create_tracer_provider", return_value=mock_provider_tp),
+        patch("any_llm.providers.platform.platform.activate_trace_export"),
+        patch("any_llm.providers.platform.platform.deactivate_trace_export"),
+    ):
+        await provider_instance._acompletion(params)
+
+    assert not any(
+        call.args and call.args[0] == "anyllm.performance.ttft_ms" for call in mock_span.set_attribute.call_args_list
+    )
+    mock_export_trace.assert_awaited_once()
 
 
 @pytest.mark.asyncio

@@ -171,6 +171,7 @@ class PlatformProvider(AnyLLM):
 
         await self._ensure_provider_initialized()
         start_time_ns = time.time_ns()
+        start_perf_counter_ns = time.perf_counter_ns()
         any_llm_key = self.any_llm_key
         if any_llm_key is None:
             msg = "any_llm_key is required for platform provider"
@@ -258,6 +259,7 @@ class PlatformProvider(AnyLLM):
                 params.user,
                 session_trace_label,
                 user_session_label,
+                start_perf_counter_ns,
                 any_llm_key,
                 llm_span,
                 trace_id,
@@ -335,6 +337,7 @@ class PlatformProvider(AnyLLM):
         conversation_id: str | None,
         session_label: str,
         user_session_label: str | None,
+        start_perf_counter_ns: int,
         any_llm_key: str,
         llm_span: trace.Span,
         trace_id: int,
@@ -343,10 +346,16 @@ class PlatformProvider(AnyLLM):
     ) -> AsyncIterator[ChatCompletionChunk]:
         """Wrap the stream to export a trace after completion."""
         chunks: list[ChatCompletionChunk] = []
+        first_chunk_received = False
 
         try:
             with trace.use_span(llm_span, end_on_exit=False):
                 async for chunk in stream:
+                    if not first_chunk_received:
+                        first_chunk_received = True
+                        ttft_ms = (time.perf_counter_ns() - start_perf_counter_ns) / 1_000_000
+                        llm_span.set_attribute("anyllm.performance.ttft_ms", ttft_ms)
+                        llm_span.add_event("llm.first_token", {"anyllm.performance.ttft_ms": ttft_ms})
                     chunks.append(chunk)
                     yield chunk
 
