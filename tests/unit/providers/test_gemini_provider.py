@@ -1067,6 +1067,26 @@ def test_merge_timeout_does_not_override_http_options_object() -> None:
 
 
 @pytest.mark.asyncio
+async def test_timeout_kwarg_through_public_api() -> None:
+    """Test the exact reproduction case from issue #901: timeout via any_llm.acompletion."""
+    import any_llm
+
+    with mock_gemini_provider() as mock_genai:
+        await any_llm.acompletion(
+            model="gemini-pro",
+            provider="gemini",
+            messages=[{"role": "user", "content": "hello"}],
+            api_key="test-key",
+            timeout=120.0,
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        config = call_kwargs["config"]
+        assert config.http_options is not None
+        assert config.http_options.timeout == 120_000
+
+
+@pytest.mark.asyncio
 async def test_timeout_kwarg_routed_to_http_options() -> None:
     """Test that timeout kwarg is converted to HttpOptions on GenerateContentConfig."""
     with mock_gemini_provider() as mock_genai:
