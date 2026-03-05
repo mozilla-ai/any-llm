@@ -36,7 +36,7 @@ cd any-llm-gateway
 ### Generate master key
 
 First, generate a secure master key:
-```python
+```bash
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
