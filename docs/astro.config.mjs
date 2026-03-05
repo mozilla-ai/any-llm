@@ -41,6 +41,7 @@ export default defineConfig({
             { label: "Responses", slug: "api/responses" },
             { label: "Completion", slug: "api/completion" },
             { label: "Embedding", slug: "api/embedding" },
+            { label: "Messages", slug: "api/messages" },
             { label: "Exceptions", slug: "api/exceptions" },
             { label: "List Models", slug: "api/list-models" },
             { label: "Batch", slug: "api/batch" },
@@ -49,6 +50,7 @@ export default defineConfig({
               items: [
                 { label: "Completion", slug: "api/types/completion" },
                 { label: "Responses", slug: "api/types/responses" },
+                { label: "Messages", slug: "api/types/messages" },
                 { label: "Model", slug: "api/types/model" },
                 { label: "Provider", slug: "api/types/provider" },
                 { label: "Batch", slug: "api/types/batch" },

@@ -3,9 +3,9 @@
   "type": "module",
   "version": "0.0.1",
   "scripts": {
-    "dev": "astro dev",
-    "start": "astro dev",
-    "build": "astro build",
+    "dev": "cd .. && uv run python scripts/generate_api_docs.py && cd docs && astro dev",
+    "start": "cd .. && uv run python scripts/generate_api_docs.py && cd docs && astro dev",
+    "build": "cd .. && uv run python scripts/generate_api_docs.py && cd docs && astro build",
     "preview": "astro preview",
     "astro": "astro"
   },
