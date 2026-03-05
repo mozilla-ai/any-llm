@@ -1519,3 +1519,11 @@ async def test_platform_provider_mzai_skips_usage_events_streaming(
 
     assert len(chunks) == len(mock_streaming_chunks)
     mock_post_usage.assert_not_called()
+
+
+def test_client_args_not_passed_to_httpx_client(any_llm_key: str) -> None:
+    """Test that provider-specific client_args don't leak into the platform's httpx client."""
+    with patch("any_llm.providers.platform.platform.AnyLLMPlatformClient"):
+        provider = PlatformProvider(api_key=any_llm_key, http_options={"timeout": 30000})
+    assert isinstance(provider.client, httpx.AsyncClient)
+    assert provider.kwargs == {"http_options": {"timeout": 30000}}
