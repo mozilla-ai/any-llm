@@ -1276,6 +1276,7 @@ as well as what features the provider supports for each model, refer to the prov
 <ul>
 <li><strong>Key</strong>: Environment variable for the API key (e.g., <code>OPENAI_API_KEY</code>).</li>
 <li><strong>Base</strong>: Environment variable for a custom API base URL (e.g., <code>OPENAI_BASE_URL</code>). Useful for proxies or self-hosted endpoints.</li>
+<li><strong>Messages API</strong>: Provider supports the Anthropic-style <a href="https://docs.anthropic.com/en/api/messages">Messages API</a> via the <code>messages()</code> / <code>amessages()</code> functions. All providers support this through automatic conversion to/from Chat Completions format; providers with native support (e.g., Anthropic) use a direct pass-through.</li>
 <li><strong>Reasoning (Completions)</strong>: Provider can return reasoning traces alongside the assistant message via the completions and/or streaming endpoints. This does not indicate whether the provider offers separate "reasoning models". See <a href="https://github.com/mozilla-ai/any-llm/issues/95">this</a> discussion for more information.</li>
 <li><strong>Streaming (Completions)</strong>: Provider can stream completion results back as an iterator.</li>
 <li><strong>Image (Completions)</strong>: Provider supports passing an <code>image_data</code> parameter for vision capabilities, as defined by the OpenAI spec <a href="https://platform.openai.com/docs/api-reference/chat/create#chat_create-messages">here</a>.</li>
@@ -1291,6 +1292,7 @@ as well as what features the provider supports for each model, refer to the prov
 <th>ID</th>
 <th>Key</th>
 <th>Base</th>
+<th>Messages</th>
 <th>Responses</th>
 <th>Completion</th>
 <th>Streaming<br>(Completions)</th>
@@ -1306,6 +1308,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://docs.anthropic.com/en/home"><code>anthropic</code></a></td>
 <td>ANTHROPIC_API_KEY</td>
 <td>ANTHROPIC_BASE_URL</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1319,6 +1322,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://azure.microsoft.com/en-us/products/ai-services/openai-service"><code>azure</code></a></td>
 <td>AZURE_API_KEY</td>
 <td>AZURE_AI_CHAT_ENDPOINT</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1335,6 +1339,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td>✅</td>
 <td>✅</td>
 <td>✅</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1345,6 +1350,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://aws.amazon.com/bedrock/"><code>bedrock</code></a></td>
 <td>AWS_BEARER_TOKEN_BEDROCK</td>
 <td>AWS_ENDPOINT_URL_BEDROCK_RUNTIME</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1358,6 +1364,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://docs.cerebras.ai/"><code>cerebras</code></a></td>
 <td>CEREBRAS_API_KEY</td>
 <td>CEREBRAS_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1371,6 +1378,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://cohere.com/api"><code>cohere</code></a></td>
 <td>COHERE_API_KEY</td>
 <td>COHERE_BASE_URL</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1384,6 +1392,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://docs.databricks.com/"><code>databricks</code></a></td>
 <td>DATABRICKS_TOKEN</td>
 <td>DATABRICKS_HOST</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1397,6 +1406,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://platform.deepseek.com/"><code>deepseek</code></a></td>
 <td>DEEPSEEK_API_KEY</td>
 <td>DEEPSEEK_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1410,6 +1420,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://fireworks.ai/api"><code>fireworks</code></a></td>
 <td>FIREWORKS_API_KEY</td>
 <td>FIREWORKS_API_BASE</td>
+<td>✅</td>
 <td>✅</td>
 <td>✅</td>
 <td>✅</td>
@@ -1431,11 +1442,13 @@ as well as what features the provider supports for each model, refer to the prov
 <td>✅</td>
 <td>✅</td>
 <td>✅</td>
+<td>✅</td>
 </tr>
 <tr>
 <td><a href="https://ai.google.dev/gemini-api/docs"><code>gemini</code></a></td>
 <td>GEMINI_API_KEY/GOOGLE_API_KEY</td>
 <td>GOOGLE_GEMINI_BASE_URL</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1453,6 +1466,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td>✅</td>
 <td>✅</td>
 <td>✅</td>
+<td>✅</td>
 <td>❌</td>
 <td>❌</td>
 <td>✅</td>
@@ -1462,6 +1476,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://huggingface.co/docs/huggingface_hub/package_reference/inference_client"><code>huggingface</code></a></td>
 <td>HF_TOKEN</td>
 <td>HUGGINGFACE_API_BASE</td>
+<td>✅</td>
 <td>✅</td>
 <td>✅</td>
 <td>✅</td>
@@ -1475,6 +1490,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://inceptionlabs.ai/"><code>inception</code></a></td>
 <td>INCEPTION_API_KEY</td>
 <td>INCEPTION_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1488,6 +1504,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://www.llama.com/products/llama-api/"><code>llama</code></a></td>
 <td>LLAMA_API_KEY</td>
 <td>LLAMA_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1501,6 +1518,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://github.com/ggml-org/llama.cpp"><code>llamacpp</code></a></td>
 <td>None</td>
 <td>LLAMACPP_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1514,6 +1532,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://github.com/Mozilla-Ocho/llamafile"><code>llamafile</code></a></td>
 <td>None</td>
 <td>LLAMAFILE_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>❌</td>
@@ -1534,12 +1553,14 @@ as well as what features the provider supports for each model, refer to the prov
 <td>✅</td>
 <td>✅</td>
 <td>✅</td>
+<td>✅</td>
 <td>❌</td>
 </tr>
 <tr>
 <td><a href="https://www.minimax.io/platform_overview"><code>minimax</code></a></td>
 <td>MINIMAX_API_KEY</td>
 <td>MINIMAX_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1553,6 +1574,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://docs.mistral.ai/"><code>mistral</code></a></td>
 <td>MISTRAL_API_KEY</td>
 <td>MISTRAL_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1566,6 +1588,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://platform.moonshot.ai/"><code>moonshot</code></a></td>
 <td>MOONSHOT_API_KEY</td>
 <td>MOONSHOT_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1579,6 +1602,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://any-llm.ai"><code>mzai</code></a></td>
 <td>ANY_LLM_KEY</td>
 <td>ANY_LLM_PLATFORM_URL</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1592,6 +1616,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://studio.nebius.ai/"><code>nebius</code></a></td>
 <td>NEBIUS_API_KEY</td>
 <td>NEBIUS_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1605,6 +1630,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://github.com/ollama/ollama"><code>ollama</code></a></td>
 <td>None</td>
 <td>OLLAMA_HOST</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1621,6 +1647,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td>✅</td>
 <td>✅</td>
 <td>✅</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1631,6 +1658,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://openrouter.ai/docs"><code>openrouter</code></a></td>
 <td>OPENROUTER_API_KEY</td>
 <td>OPENROUTER_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1644,6 +1672,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://docs.perplexity.ai/"><code>perplexity</code></a></td>
 <td>PERPLEXITY_API_KEY</td>
 <td>PERPLEXITY_BASE_URL</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1657,6 +1686,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://portkey.ai/docs"><code>portkey</code></a></td>
 <td>PORTKEY_API_KEY</td>
 <td>PORTKEY_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1670,6 +1700,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://aws.amazon.com/sagemaker/"><code>sagemaker</code></a></td>
 <td>AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY</td>
 <td>SAGEMAKER_ENDPOINT_URL</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1683,6 +1714,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://sambanova.ai/"><code>sambanova</code></a></td>
 <td>SAMBANOVA_API_KEY</td>
 <td>SAMBANOVA_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1696,6 +1728,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://together.ai/"><code>together</code></a></td>
 <td>TOGETHER_API_KEY</td>
 <td>TOGETHER_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1709,6 +1742,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://cloud.google.com/vertex-ai/docs"><code>vertexai</code></a></td>
 <td></td>
 <td>VERTEXAI_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1722,6 +1756,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-claude"><code>vertexaianthropic</code></a></td>
 <td></td>
 <td>VERTEXAI_ANTHROPIC_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1735,6 +1770,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://docs.vllm.ai/"><code>vllm</code></a></td>
 <td>VLLM_API_KEY</td>
 <td>VLLM_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1748,6 +1784,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://docs.voyageai.com/"><code>voyage</code></a></td>
 <td>VOYAGE_API_KEY</td>
 <td>VOYAGE_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>❌</td>
 <td>❌</td>
@@ -1761,6 +1798,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://www.ibm.com/watsonx"><code>watsonx</code></a></td>
 <td>WATSONX_API_KEY</td>
 <td>WATSONX_URL</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1774,6 +1812,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://x.ai/"><code>xai</code></a></td>
 <td>XAI_API_KEY</td>
 <td>XAI_API_BASE</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
@@ -1787,6 +1826,7 @@ as well as what features the provider supports for each model, refer to the prov
 <td><a href="https://docs.z.ai/guides/develop/python/introduction"><code>zai</code></a></td>
 <td>ZAI_API_KEY</td>
 <td>ZAI_BASE_URL</td>
+<td>✅</td>
 <td>❌</td>
 <td>✅</td>
 <td>✅</td>
