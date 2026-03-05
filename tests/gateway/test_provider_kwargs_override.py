@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from any_llm import LLMProvider
 from any_llm.gateway.config import GatewayConfig
 from any_llm.gateway.db import Base, get_db
-from any_llm.gateway.routes.chat import _get_provider_kwargs
+from any_llm.gateway.routes.chat import get_provider_kwargs
 from any_llm.gateway.server import create_app
 from tests.gateway.conftest import _run_alembic_migrations
 
@@ -78,7 +78,7 @@ def test_provider_kwargs_do_not_contain_model() -> None:
         },
     )
 
-    kwargs = _get_provider_kwargs(config, LLMProvider.OPENAI)
+    kwargs = get_provider_kwargs(config, LLMProvider.OPENAI)
     assert "api_key" in kwargs
     assert "model" not in kwargs
     assert "messages" not in kwargs

@@ -6,6 +6,13 @@ from typing import TYPE_CHECKING, Any
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.types.messages import (
+    MessageContentBlock,
+    MessageResponse,
+    MessagesParams,
+    MessageStreamEvent,
+    MessageUsage,
+)
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -119,3 +126,152 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         message = await self.client.messages.create(**converted_kwargs)
 
         return self._convert_completion_response(message)
+
+    @override
+    async def _amessages(
+        self, params: MessagesParams, **kwargs: Any
+    ) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
+        """Native Anthropic Messages API pass-through.
+
+        Avoids double-conversion (Anthropic→OpenAI→Anthropic) by calling the
+        Anthropic SDK directly.
+        """
+        api_kwargs: dict[str, Any] = {
+            "model": params.model,
+            "messages": params.messages,
+            "max_tokens": params.max_tokens,
+        }
+        if params.system is not None:
+            api_kwargs["system"] = params.system
+        if params.temperature is not None:
+            api_kwargs["temperature"] = params.temperature
+        if params.top_p is not None:
+            api_kwargs["top_p"] = params.top_p
+        if params.top_k is not None:
+            api_kwargs["top_k"] = params.top_k
+        if params.stop_sequences is not None:
+            api_kwargs["stop_sequences"] = params.stop_sequences
+        if params.tools is not None:
+            api_kwargs["tools"] = params.tools
+        if params.tool_choice is not None:
+            api_kwargs["tool_choice"] = params.tool_choice
+        if params.metadata is not None:
+            api_kwargs["metadata"] = params.metadata
+        if params.thinking is not None:
+            api_kwargs["thinking"] = params.thinking
+        api_kwargs.update(kwargs)
+
+        if params.stream:
+            return self._stream_messages_async(**api_kwargs)
+
+        response: Message = await self.client.messages.create(**api_kwargs)
+        return self._convert_native_message_to_response(response)
+
+    async def _stream_messages_async(self, **kwargs: Any) -> AsyncIterator[MessageStreamEvent]:
+        """Stream Anthropic Messages API and yield MessageStreamEvents."""
+        from anthropic.types import (
+            ContentBlockDeltaEvent,
+            ContentBlockStartEvent,
+            ContentBlockStopEvent,
+            MessageStartEvent,
+            MessageStopEvent,
+        )
+
+        async with self.client.messages.stream(**kwargs) as stream:
+            async for event in stream:
+                if isinstance(event, MessageStartEvent):
+                    msg = event.message
+                    usage = MessageUsage(
+                        input_tokens=msg.usage.input_tokens,
+                        output_tokens=msg.usage.output_tokens,
+                        cache_creation_input_tokens=getattr(msg.usage, "cache_creation_input_tokens", None),
+                        cache_read_input_tokens=getattr(msg.usage, "cache_read_input_tokens", None),
+                    )
+                    resp = MessageResponse(
+                        id=msg.id,
+                        type="message",
+                        role=msg.role,
+                        content=[],
+                        model=msg.model,
+                        stop_reason=None,
+                        usage=usage,
+                    )
+                    yield MessageStreamEvent(type="message_start", message=resp)
+
+                elif isinstance(event, ContentBlockStartEvent):
+                    block = self._convert_native_content_block(event.content_block)
+                    yield MessageStreamEvent(
+                        type="content_block_start",
+                        index=event.index,
+                        content_block=block,
+                    )
+
+                elif isinstance(event, ContentBlockDeltaEvent):
+                    delta_dict: dict[str, Any] = {"type": event.delta.type}
+                    if event.delta.type == "text_delta":
+                        delta_dict["text"] = event.delta.text
+                    elif event.delta.type == "input_json_delta":
+                        delta_dict["partial_json"] = event.delta.partial_json
+                    elif event.delta.type == "thinking_delta":
+                        delta_dict["thinking"] = event.delta.thinking
+                    yield MessageStreamEvent(
+                        type="content_block_delta",
+                        index=event.index,
+                        delta=delta_dict,
+                    )
+
+                elif isinstance(event, ContentBlockStopEvent):
+                    yield MessageStreamEvent(type="content_block_stop", index=event.index)
+
+                elif isinstance(event, MessageStopEvent):
+                    msg_obj = event.message
+                    usage = MessageUsage(
+                        input_tokens=msg_obj.usage.input_tokens,
+                        output_tokens=msg_obj.usage.output_tokens,
+                        cache_creation_input_tokens=getattr(msg_obj.usage, "cache_creation_input_tokens", None),
+                        cache_read_input_tokens=getattr(msg_obj.usage, "cache_read_input_tokens", None),
+                    )
+                    yield MessageStreamEvent(
+                        type="message_delta",
+                        delta={"stop_reason": msg_obj.stop_reason},
+                        usage=usage,
+                    )
+                    yield MessageStreamEvent(type="message_stop")
+
+    @staticmethod
+    def _convert_native_content_block(block: Any) -> MessageContentBlock:
+        """Convert an Anthropic SDK content block to our MessageContentBlock."""
+        if block.type == "text":
+            return MessageContentBlock(type="text", text=block.text)
+        if block.type == "tool_use":
+            return MessageContentBlock(
+                type="tool_use",
+                id=block.id,
+                name=block.name,
+                input=block.input if isinstance(block.input, dict) else {},
+            )
+        if block.type == "thinking":
+            return MessageContentBlock(type="thinking", thinking=block.thinking)
+        return MessageContentBlock(type=block.type)
+
+    @classmethod
+    def _convert_native_message_to_response(cls, message: Message) -> MessageResponse:
+        """Convert an Anthropic SDK Message to our MessageResponse."""
+        content_blocks = [cls._convert_native_content_block(block) for block in message.content]
+
+        usage = MessageUsage(
+            input_tokens=message.usage.input_tokens,
+            output_tokens=message.usage.output_tokens,
+            cache_creation_input_tokens=getattr(message.usage, "cache_creation_input_tokens", None),
+            cache_read_input_tokens=getattr(message.usage, "cache_read_input_tokens", None),
+        )
+
+        return MessageResponse(
+            id=message.id,
+            type="message",
+            role=message.role,
+            content=content_blocks,
+            model=message.model,
+            stop_reason=message.stop_reason,
+            usage=usage,
+        )

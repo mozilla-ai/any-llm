@@ -19,6 +19,7 @@ class ProviderMetadata(BaseModel):
     pdf: bool
     class_name: str
     list_models: bool
+    messages: bool
     batch_completion: bool
 
 

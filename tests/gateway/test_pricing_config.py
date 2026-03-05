@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from any_llm.gateway.config import GatewayConfig, PricingConfig
 from any_llm.gateway.db import ModelPricing, get_db
 from any_llm.gateway.db.models import UsageLog
-from any_llm.gateway.routes.chat import _log_usage
+from any_llm.gateway.routes.chat import log_usage
 from any_llm.gateway.server import create_app
 from any_llm.types.completion import CompletionUsage
 
@@ -211,7 +211,7 @@ async def test_log_usage_finds_pricing_with_legacy_slash_format(test_db: Session
 
     usage = CompletionUsage(prompt_tokens=1000, completion_tokens=500, total_tokens=1500)
 
-    await _log_usage(
+    await log_usage(
         db=test_db,
         api_key_obj=None,
         model="gpt-4",
@@ -240,7 +240,7 @@ async def test_log_usage_finds_pricing_with_colon_format(test_db: Session) -> No
 
     usage = CompletionUsage(prompt_tokens=1000, completion_tokens=500, total_tokens=1500)
 
-    await _log_usage(
+    await log_usage(
         db=test_db,
         api_key_obj=None,
         model="gpt-4",

@@ -13,6 +13,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     ReasoningEffort,
 )
+from any_llm.types.messages import MessageResponse, MessageStreamEvent
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
 from any_llm.utils.decorators import BATCH_API_EXPERIMENTAL_MESSAGE, experimental
@@ -496,6 +497,152 @@ async def aresponses(
         prompt_cache_key=prompt_cache_key,
         prompt_cache_retention=prompt_cache_retention,
         conversation=conversation,
+        **kwargs,
+    )
+
+
+def messages(
+    model: str,
+    messages: list[dict[str, Any]],
+    max_tokens: int,
+    *,
+    provider: str | LLMProvider | None = None,
+    system: str | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    stream: bool | None = None,
+    stop_sequences: list[str] | None = None,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    thinking: dict[str, Any] | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> MessageResponse | Iterator[MessageStreamEvent]:
+    """Create a message using the Anthropic Messages API.
+
+    Args:
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter.
+            **Alternative**: Combined format 'provider:model'.
+        messages: List of messages in Anthropic format.
+        max_tokens: Maximum number of tokens to generate.
+        provider: Provider name to use for the request.
+        system: System prompt.
+        temperature: Controls randomness (0.0 to 1.0).
+        top_p: Controls diversity via nucleus sampling.
+        top_k: Only sample from the top K options.
+        stream: Whether to stream the response.
+        stop_sequences: Custom stop sequences.
+        tools: List of tools in Anthropic format.
+        tool_choice: Controls which tool the model uses.
+        metadata: Request metadata.
+        thinking: Thinking/reasoning configuration.
+        api_key: API key for the provider.
+        api_base: Base URL for the provider API.
+        client_args: Additional provider-specific arguments for client instantiation.
+        **kwargs: Additional provider-specific arguments.
+
+    Returns:
+        MessageResponse or an iterator of MessageStreamEvent (if streaming).
+
+    """
+    if provider is None:
+        provider_key, model_id = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = LLMProvider.from_string(provider)
+        model_id = model
+
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    return llm.messages(
+        model=model_id,
+        messages=messages,
+        max_tokens=max_tokens,
+        system=system,
+        temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
+        stream=stream,
+        stop_sequences=stop_sequences,
+        tools=tools,
+        tool_choice=tool_choice,
+        metadata=metadata,
+        thinking=thinking,
+        **kwargs,
+    )
+
+
+async def amessages(
+    model: str,
+    messages: list[dict[str, Any]],
+    max_tokens: int,
+    *,
+    provider: str | LLMProvider | None = None,
+    system: str | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    stream: bool | None = None,
+    stop_sequences: list[str] | None = None,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    thinking: dict[str, Any] | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
+    """Create a message using the Anthropic Messages API asynchronously.
+
+    Args:
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter.
+            **Alternative**: Combined format 'provider:model'.
+        messages: List of messages in Anthropic format.
+        max_tokens: Maximum number of tokens to generate.
+        provider: Provider name to use for the request.
+        system: System prompt.
+        temperature: Controls randomness (0.0 to 1.0).
+        top_p: Controls diversity via nucleus sampling.
+        top_k: Only sample from the top K options.
+        stream: Whether to stream the response.
+        stop_sequences: Custom stop sequences.
+        tools: List of tools in Anthropic format.
+        tool_choice: Controls which tool the model uses.
+        metadata: Request metadata.
+        thinking: Thinking/reasoning configuration.
+        api_key: API key for the provider.
+        api_base: Base URL for the provider API.
+        client_args: Additional provider-specific arguments for client instantiation.
+        **kwargs: Additional provider-specific arguments.
+
+    Returns:
+        MessageResponse or an async iterator of MessageStreamEvent (if streaming).
+
+    """
+    if provider is None:
+        provider_key, model_id = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = LLMProvider.from_string(provider)
+        model_id = model
+
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    return await llm.amessages(
+        model=model_id,
+        messages=messages,
+        max_tokens=max_tokens,
+        system=system,
+        temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
+        stream=stream,
+        stop_sequences=stop_sequences,
+        tools=tools,
+        tool_choice=tool_choice,
+        metadata=metadata,
+        thinking=thinking,
         **kwargs,
     )
 
