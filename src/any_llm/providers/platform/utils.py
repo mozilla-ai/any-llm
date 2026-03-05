@@ -51,7 +51,6 @@ def _require_secure_trace_endpoint() -> str:
     if ANY_LLM_PLATFORM_TRACE_URL.startswith("https://"):
         return ANY_LLM_PLATFORM_TRACE_URL
     if _is_localhost_url(ANY_LLM_PLATFORM_TRACE_URL):
-        logger.warning("Trace endpoint uses plain HTTP (%s) - allowed for localhost only", ANY_LLM_PLATFORM_TRACE_URL)
         return ANY_LLM_PLATFORM_TRACE_URL
     msg = f"ANY_LLM_PLATFORM_TRACE_URL must use HTTPS: {ANY_LLM_PLATFORM_TRACE_URL}"
     raise ValueError(msg)

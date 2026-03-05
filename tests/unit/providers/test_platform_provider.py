@@ -2085,9 +2085,7 @@ def test_require_secure_trace_endpoint_enforces_https_and_localhost(monkeypatch:
     assert platform_utils._require_secure_trace_endpoint() == "https://platform.any-llm.ai/v1/traces"
 
     monkeypatch.setattr(platform_utils, "ANY_LLM_PLATFORM_TRACE_URL", "http://localhost:4318/v1/traces")
-    with patch("any_llm.providers.platform.utils.logger.warning") as warning_mock:
-        assert platform_utils._require_secure_trace_endpoint() == "http://localhost:4318/v1/traces"
-    warning_mock.assert_called_once()
+    assert platform_utils._require_secure_trace_endpoint() == "http://localhost:4318/v1/traces"
 
     monkeypatch.setattr(platform_utils, "ANY_LLM_PLATFORM_TRACE_URL", "http://example.com/v1/traces")
     with pytest.raises(ValueError, match="must use HTTPS"):
