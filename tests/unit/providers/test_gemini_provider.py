@@ -1026,3 +1026,117 @@ def test_convert_completion_response_preserves_prompt_tokens_details() -> None:
     assert result.usage.prompt_tokens == 100
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 80
+
+
+def test_merge_timeout_creates_http_options_when_absent() -> None:
+    """Test that _merge_timeout_into_http_options creates HttpOptions when none exists."""
+    kwargs: dict[str, Any] = {}
+    GoogleProvider._merge_timeout_into_http_options(30.0, kwargs)
+    assert isinstance(kwargs["http_options"], types.HttpOptions)
+    assert kwargs["http_options"].timeout == 30_000
+
+
+def test_merge_timeout_sets_dict_http_options_when_missing() -> None:
+    """Test that _merge_timeout_into_http_options fills timeout on a dict without one."""
+    kwargs: dict[str, Any] = {"http_options": {"base_url": "https://example.com"}}
+    GoogleProvider._merge_timeout_into_http_options(15.0, kwargs)
+    assert kwargs["http_options"]["timeout"] == 15_000
+    assert kwargs["http_options"]["base_url"] == "https://example.com"
+
+
+def test_merge_timeout_does_not_override_dict_http_options() -> None:
+    """Test that _merge_timeout_into_http_options preserves existing dict timeout."""
+    kwargs: dict[str, Any] = {"http_options": {"timeout": 5_000}}
+    GoogleProvider._merge_timeout_into_http_options(60.0, kwargs)
+    assert kwargs["http_options"]["timeout"] == 5_000
+
+
+def test_merge_timeout_sets_http_options_object_when_missing() -> None:
+    """Test that _merge_timeout_into_http_options fills timeout on HttpOptions without one."""
+    kwargs: dict[str, Any] = {"http_options": types.HttpOptions(base_url="https://example.com")}
+    GoogleProvider._merge_timeout_into_http_options(20.0, kwargs)
+    assert kwargs["http_options"].timeout == 20_000
+    assert kwargs["http_options"].base_url == "https://example.com"
+
+
+def test_merge_timeout_does_not_override_http_options_object() -> None:
+    """Test that _merge_timeout_into_http_options preserves existing HttpOptions timeout."""
+    kwargs: dict[str, Any] = {"http_options": types.HttpOptions(timeout=5_000)}
+    GoogleProvider._merge_timeout_into_http_options(60.0, kwargs)
+    assert kwargs["http_options"].timeout == 5_000
+
+
+@pytest.mark.asyncio
+async def test_timeout_kwarg_through_public_api() -> None:
+    """Test the exact reproduction case from issue #901: timeout via any_llm.acompletion."""
+    import any_llm
+
+    with mock_gemini_provider() as mock_genai:
+        await any_llm.acompletion(
+            model="gemini-pro",
+            provider="gemini",
+            messages=[{"role": "user", "content": "hello"}],
+            api_key="test-key",
+            timeout=120.0,
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        config = call_kwargs["config"]
+        assert config.http_options is not None
+        assert config.http_options.timeout == 120_000
+
+
+@pytest.mark.asyncio
+async def test_timeout_kwarg_routed_to_http_options() -> None:
+    """Test that timeout kwarg is converted to HttpOptions on GenerateContentConfig."""
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-key")
+        await provider._acompletion(
+            CompletionParams(model_id="gemini-pro", messages=[{"role": "user", "content": "Hello"}]),
+            timeout=120.0,
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        config = call_kwargs["config"]
+        assert config.http_options is not None
+        assert config.http_options.timeout == 120_000
+
+
+@pytest.mark.asyncio
+async def test_timeout_kwarg_does_not_override_explicit_http_options_timeout() -> None:
+    """Test that explicit http_options timeout takes precedence over timeout kwarg."""
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-key")
+        await provider._acompletion(
+            CompletionParams(model_id="gemini-pro", messages=[{"role": "user", "content": "Hello"}]),
+            timeout=120.0,
+            http_options=types.HttpOptions(timeout=60_000),
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        config = call_kwargs["config"]
+        assert config.http_options is not None
+        assert config.http_options.timeout == 60_000
+
+
+def test_timeout_in_client_args_routed_to_http_options() -> None:
+    """Test that timeout in client_args is converted to HttpOptions at client init."""
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client:
+        GeminiProvider(api_key="test-key", timeout=30.0)
+        mock_client.assert_called_once()
+        call_kwargs = mock_client.call_args[1]
+        assert "http_options" in call_kwargs
+        assert call_kwargs["http_options"].timeout == 30_000
+
+
+def test_timeout_in_client_args_does_not_override_explicit_http_options() -> None:
+    """Test that explicit http_options timeout takes precedence over client_args timeout."""
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client:
+        GeminiProvider(
+            api_key="test-key",
+            timeout=30.0,
+            http_options=types.HttpOptions(timeout=10_000),
+        )
+        mock_client.assert_called_once()
+        call_kwargs = mock_client.call_args[1]
+        assert call_kwargs["http_options"].timeout == 10_000
