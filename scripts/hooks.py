@@ -46,8 +46,8 @@ def generate_provider_table(providers: list[ProviderMetadata]):
         return "No providers found."
 
     table_lines = [
-        "| ID | Key | Base | Responses | Completion | Streaming<br>(Completions) | Reasoning<br>(Completions) | Image <br>(Completions) | Embedding | List Models | Batch |",
-        "|----|-----|------|-----------|------------|--------------------------|--------------------------|-----------|-----------|-------------|-------|",
+        "| ID | Key | Base | Messages | Responses | Completion | Streaming<br>(Completions) | Reasoning<br>(Completions) | Image <br>(Completions) | Embedding | List Models | Batch |",
+        "|----|-----|------|----------|-----------|------------|--------------------------|--------------------------|-----------|-----------|-------------|-------|",
     ]
 
     for provider in providers:
@@ -58,6 +58,7 @@ def generate_provider_table(providers: list[ProviderMetadata]):
 
         provider_id_link = f"[`{provider_key}`]({provider.doc_url})"
 
+        messages_supported = "✅" if provider.messages else "❌"
         stream_supported = "✅" if provider.streaming else "❌"
         image_supported = "✅" if provider.image else "❌"
         embedding_supported = "✅" if provider.embedding else "❌"
@@ -68,7 +69,7 @@ def generate_provider_table(providers: list[ProviderMetadata]):
         batch_supported = "✅" if provider.batch_completion else "❌"
 
         row = (
-            f"| {provider_id_link} | {env_key} | {env_api_base} | {responses_supported} | {completion_supported} | "
+            f"| {provider_id_link} | {env_key} | {env_api_base} | {messages_supported} | {responses_supported} | {completion_supported} | "
             f"{stream_supported} | {reasoning_supported} | {image_supported} | {embedding_supported} | "
             f"{list_models_supported} | {batch_supported} |"
         )
