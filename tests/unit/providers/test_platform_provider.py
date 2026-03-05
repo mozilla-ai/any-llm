@@ -2407,3 +2407,11 @@ async def test_acompletion_sets_error_status_and_deactivates_trace_on_exception(
     mock_span.set_status.assert_called_once()
     mock_span.end.assert_called_once()
     deactivate_mock.assert_called_once_with(456)
+
+
+def test_client_args_not_passed_to_httpx_client(any_llm_key: str) -> None:
+    """Test that provider-specific client_args don't leak into the platform's httpx client."""
+    with patch("any_llm.providers.platform.platform.AnyLLMPlatformClient"):
+        provider = PlatformProvider(api_key=any_llm_key, http_options={"timeout": 30000})
+    assert isinstance(provider.client, httpx.AsyncClient)
+    assert provider.kwargs == {"http_options": {"timeout": 30000}}
