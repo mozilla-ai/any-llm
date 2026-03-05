@@ -2,27 +2,29 @@
 
 ## Docs
 
-- [Introduction](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/index.md): response = completion(
-- [Quickstart](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/quickstart.md): pip install any-llm-sdk[mistral,ollama]
-- [Providers](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/providers.md): any-llm supports the below providers. In order to discover information about what models are supported by a provider
-- [Api - Any Llm](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/any_llm.md)
-- [Api - Responses](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/responses.md)
-- [Api - Completion](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/completion.md)
-- [Api - Embedding](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/embedding.md)
-- [Api - Exceptions](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/exceptions.md): show_root_heading: false
-- [Api - List Models](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/list_models.md)
-- [Api - Batch](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/batch.md): The Batch API is experimental and subject to breaking changes in future versions. Use with caution in production environments.
-- [Api - Types - Completion](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/types/completion.md)
-- [Api - Types - Responses](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/types/responses.md)
-- [Api - Types - Model](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/types/model.md)
-- [Api - Types - Provider](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/types/provider.md)
-- [Api - Types - Batch](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/api/types/batch.md)
-- [Platform - Overview](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/platform/overview.md): The any-llm managed platform is a cloud-hosted service that provides secure API key vaulting and usage tracking for all your LLM providers. Instead of managing multiple provider API keys across your codebase, you get a single virtual key that works with any supported provider while keeping your credentials encrypted and your usage tracked.
-- [Gateway - Overview](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/overview.md): any-llm-gateway is a FastAPI-based proxy server that adds production-grade budget enforcement, API key management, and usage analytics on top of any-llm's multi-provider foundation. It sits between your applications and LLM providers, giving you complete control over costs, access, and observability.
-- [Gateway - Quickstart](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/quickstart.md): This guide will help you set up any-llm-gateway and make your first LLM completion request. The gateway acts as a proxy between your applications and LLM providers, providing cost control, usage tracking, and API key management.
-- [Gateway - Authentication](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/authentication.md): any-llm-gateway offers two authentication methods, each designed for different use cases. Understanding when to use each approach will help you secure your gateway effectively.
-- [Gateway - Budget-Management](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/budget-management.md): Budgets provide shared spending limits that can be assigned to multiple users. This allows you to create budget tiers (like "Free", "Pro", "Enterprise") and enforce spending limits across groups of users.
-- [Gateway - Configuration](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/configuration.md): The any-llm-gateway requires configuration to connect to your database, authenticate requests, and route to LLM providers. This guide covers the two main configuration approaches and how to set up model pricing for cost tracking.
-- [Gateway - Api-Reference](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/api-reference.md)
-- [Gateway - Troubleshooting](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/troubleshooting.md): Make sure the database URL is correct and the database is accessible:
-- [Gateway - Docker-Deployment](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/gateway/docker-deployment.md): This guide walks you through deploying any-llm-gateway using Docker and Docker Compose. Whether you're setting up a local development environment or deploying to production, this guide covers the essential steps and best practices for a secure, reliable deployment.
+- [Introduction](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/index.mdx): response = completion(
+- [Quickstart](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/quickstart.md): pip install any-llm-sdk[mistral,ollama]
+- [Providers](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/providers.md)
+- [Api - Any Llm](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/api/any-llm.md): # model_name = "claude-sonnet-4-20250514"
+- [Api - Responses](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/api/responses.md)
+- [Api - Completion](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/api/completion.md)
+- [Api - Embedding](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/api/embedding.md)
+- [Api - Messages](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/api/messages.md)
+- [Api - Exceptions](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/api/exceptions.md): print(f"Original: {e.original_exception}")
+- [Api - List Models](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/api/list-models.md)
+- [Api - Batch](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/api/batch.md): batch = create_batch(
+- [Api - Types - Completion](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/api/types/completion.md)
+- [Api - Types - Responses](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/api/types/responses.md)
+- [Api - Types - Messages](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/api/types/messages.md)
+- [Api - Types - Model](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/api/types/model.md)
+- [Api - Types - Provider](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/api/types/provider.md)
+- [Api - Types - Batch](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/api/types/batch.md): while batch.status not in ("completed", "failed", "expired", "cancelled"):
+- [Platform - Overview](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/platform/overview.md)
+- [Gateway - Overview](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/gateway/overview.md)
+- [Gateway - Quickstart](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/gateway/quickstart.md): image: ghcr.io/mozilla-ai/any-llm/gateway:latest
+- [Gateway - Authentication](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/gateway/authentication.md)
+- [Gateway - Budget Management](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/gateway/budget-management.md): curl -X POST http://localhost:8000/v1/budgets \
+- [Gateway - Configuration](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/gateway/configuration.md): input_price_per_million: 0.15
+- [Gateway - Api Reference](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/gateway/api-reference.md)
+- [Gateway - Troubleshooting](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/gateway/troubleshooting.md)
+- [Gateway - Docker Deployment](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/gateway/docker-deployment.md): curl http://localhost:8000/health
