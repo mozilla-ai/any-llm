@@ -1,0 +1,5 @@
+/* Limit Jupyter notebook output height */
+.jupyter-cell-output {
+    max-height: 300px;
+    overflow-y: auto;
+}

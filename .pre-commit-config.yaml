@@ -49,7 +49,7 @@ repos:
     rev: "v2.4.1"
     hooks:
       - id: codespell
-        exclude: CODE_OF_CONDUCT.md|tests/assets
+        exclude: CODE_OF_CONDUCT.md|tests/assets|package-lock\.json
 
   - repo: https://github.com/kynan/nbstripout
     rev: 0.9.1
