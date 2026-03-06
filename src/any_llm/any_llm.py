@@ -5,7 +5,7 @@ import importlib
 import os
 import warnings
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, overload
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, overload
 
 from openresponses_types import ResponseResource
 from pydantic import BaseModel
@@ -23,7 +23,7 @@ from any_llm.types.completion import (
 from any_llm.types.messages import MessageResponse, MessagesParams, MessageStreamEvent, MessageUsage
 from any_llm.types.provider import PlatformKey, ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
-from any_llm.utils.aio import async_iter_to_sync_iter, run_async_in_sync
+from any_llm.utils.aio import async_coro_to_sync_iter, async_iter_to_sync_iter, run_async_in_sync
 from any_llm.utils.decorators import BATCH_API_EXPERIMENTAL_MESSAGE, experimental
 from any_llm.utils.exception_handler import handle_exceptions
 from any_llm.utils.structured_output import is_structured_output_type, parse_json_content
@@ -31,7 +31,7 @@ from any_llm.utils.structured_output import is_structured_output_type, parse_jso
 ResponseFormatT = TypeVar("ResponseFormatT", bound=BaseModel)
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+    from collections.abc import AsyncIterator, Callable, Coroutine, Iterator, Sequence
 
     from any_llm.types.batch import Batch
     from any_llm.types.completion import ChatCompletionChunk, CreateEmbeddingResponse
@@ -437,6 +437,18 @@ class AnyLLM(ABC):
         """
         if allow_running_loop is None:
             allow_running_loop = INSIDE_NOTEBOOK
+        if stream:
+            return async_coro_to_sync_iter(
+                self.acompletion(
+                    model=model,
+                    messages=messages,
+                    response_format=response_format,
+                    stream=stream,
+                    **kwargs,
+                ),
+                allow_running_loop=allow_running_loop,
+            )
+
         response = run_async_in_sync(
             self.acompletion(model=model, messages=messages, response_format=response_format, stream=stream, **kwargs),
             allow_running_loop=allow_running_loop,
@@ -444,7 +456,7 @@ class AnyLLM(ABC):
         if isinstance(response, ChatCompletion):
             return response
 
-        return async_iter_to_sync_iter(response)
+        return async_iter_to_sync_iter(response, allow_running_loop=allow_running_loop)
 
     # Overloads let type checkers narrow the return type based on response_format and stream.
     @overload
@@ -509,6 +521,7 @@ class AnyLLM(ABC):
         frequency_penalty: float | None = None,
         seed: int | None = None,
         user: str | None = None,
+        session_label: str | None = None,
         parallel_tool_calls: bool | None = None,
         logprobs: bool | None = None,
         top_logprobs: int | None = None,
@@ -536,6 +549,7 @@ class AnyLLM(ABC):
             frequency_penalty: Penalize new tokens based on frequency in text
             seed: Random seed for reproducible results
             user: Unique identifier for the end user
+            session_label: Optional user session label metadata for platform traces; exported as anyllm.user_session_label
             parallel_tool_calls: Whether to allow parallel tool calls
             logprobs: Include token-level log probabilities in the response
             top_logprobs: Number of alternatives to return when logprobs are requested
@@ -585,6 +599,9 @@ class AnyLLM(ABC):
             max_completion_tokens=max_completion_tokens,
             reasoning_effort=reasoning_effort,
         )
+
+        if session_label is not None and self.PROVIDER_NAME == "platform":
+            kwargs["session_label"] = session_label
 
         result = await self._acompletion(params, **kwargs)
 
@@ -754,10 +771,16 @@ class AnyLLM(ABC):
         See [AnyLLM.aresponses][any_llm.any_llm.AnyLLM.aresponses]
         """
         allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        if kwargs.get("stream"):
+            return async_coro_to_sync_iter(
+                cast("Coroutine[Any, Any, AsyncIterator[ResponseStreamEvent]]", self.aresponses(**kwargs)),
+                allow_running_loop=allow_running_loop,
+            )
+
         response = run_async_in_sync(self.aresponses(**kwargs), allow_running_loop=allow_running_loop)
         if isinstance(response, (ResponseResource, Response)):
             return response
-        return async_iter_to_sync_iter(response)
+        return async_iter_to_sync_iter(response, allow_running_loop=allow_running_loop)
 
     @handle_exceptions(wrap_streaming=True)
     async def aresponses(

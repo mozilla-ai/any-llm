@@ -22,19 +22,19 @@ The managed platform solves these problems:
 
 - **Secure Key Vault**: Your provider API keys are encrypted client-side before storage—we never see your raw keys
 - **Single Virtual Key**: One `ANY_LLM_KEY` works across all providers
-- **Usage Analytics**: Track tokens, costs, and performance metrics without logging prompts or responses
+- **Trace Analytics**: Track tokens, costs, and performance metrics without logging prompts or responses
 - **Zero Infrastructure**: No servers to deploy, no databases to manage
 
 ## How it works
 
-The managed platform acts as a secure credential manager and usage tracker. Here's the flow:
+The managed platform acts as a secure credential manager and trace-based usage tracker. Here's the flow:
 
 1. **You add provider keys** to the platform dashboard (keys are encrypted in your browser before upload)
 2. **You get a virtual key** (`ANY_LLM_KEY`) that represents your project
 3. **Your application** uses the `PlatformProvider` with your virtual key
 4. **The SDK** authenticates with the platform, retrieves and decrypts your provider key client-side
 5. **Your request** goes directly to the LLM provider (OpenAI, Anthropic, etc.)
-6. **Usage metadata** (tokens, model, latency) is reported back—never your prompts or responses
+6. **OpenTelemetry spans produced during each platform-provider call** are reported back for analytics, with prompt/response content attributes redacted before export
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -52,7 +52,7 @@ The managed platform acts as a secure credential manager and usage tracker. Here
 │  2. Receive encrypted provider key                                      │
 │  3. Decrypt provider key locally (client-side)                          │
 │  4. Make request directly to provider                                   │
-│  5. Report usage metadata (tokens, latency) to platform                 │
+│  5. Report in-scope OTel spans (with content redaction) to platform     │
 └────────────────┬─────────────────────────────────────┬──────────────────┘
                  │                                     │
                  ▼                                     ▼
@@ -60,7 +60,7 @@ The managed platform acts as a secure credential manager and usage tracker. Here
 │   any-llm Managed Platform  │       │        LLM Provider                │
 │                             │       │   (OpenAI, Anthropic, etc.)        │
 │  • Encrypted key storage    │       │                                    │
-│  • Usage tracking           │       │   Your prompts/responses go        │
+│  • Trace tracking           │       │   Your prompts/responses go        │
 │  • Cost analytics           │       │   directly here—never through      │
 │  • Performance metrics      │       │   our platform                     │
 └─────────────────────────────┘       └────────────────────────────────────┘
@@ -77,9 +77,9 @@ Your provider API keys are encrypted in your browser using XChaCha20-Poly1305 be
 - You maintain full control over your credentials
 
 
-### Privacy-First Usage Tracking
+### Privacy-First Trace Tracking
 
-The platform tracks usage metadata to provide cost and performance insights:
+The platform tracks OpenTelemetry span data generated during each platform-provider request to provide cost and performance insights:
 
 **What we track for you:**
 
@@ -87,12 +87,15 @@ The platform tracks usage metadata to provide cost and performance insights:
 - Model name and provider
 - Request timestamps
 - Performance metrics (latency, throughput)
+- Additional OpenTelemetry span attributes/events emitted in the same request scope
 
 **What we never track:**
 
 - Your prompts
 - Model responses
 - Any content from your conversations
+
+Prompt/response payload attributes are removed from traces before export.
 
 ### Project Organization
 
