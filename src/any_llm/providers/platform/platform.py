@@ -77,7 +77,7 @@ class PlatformProvider(AnyLLM):
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
-        self.client = AsyncClient(**kwargs)
+        self.client = AsyncClient()
         # Initialize the platform client for authentication and trace export
         from .utils import ANY_LLM_PLATFORM_API_URL
 
