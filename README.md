@@ -25,7 +25,7 @@
 **Communicate with any LLM provider using a single, unified interface.**
 Switch between OpenAI, Anthropic, Mistral, Ollama, and more without changing your code.
 
-[Documentation](https://mozilla-ai.github.io/any-llm/) | [Try the Demos](#-try-it) | [Contributing](#-contributing)
+[Documentation](https://mozilla-ai.github.io/any-llm/) | [Platform (Beta)](https://any-llm.ai/) | [Try the Demos](#-try-it) | [Contributing](#-contributing)
 
 </div>
 
@@ -96,6 +96,10 @@ any-llm-gateway is an **optional** FastAPI-based proxy server that adds enterpri
 - **Multi-tenant Support** - Manage access and budgets across users and teams
 
 The gateway sits between your applications and LLM providers, exposing an OpenAI-compatible API that works with any supported provider.
+
+### Managed Platform (Beta)
+
+Prefer a hosted experience? The [any-llm platform](https://any-llm.ai/) provides a managed control plane for keys, usage tracking, and cost visibility across providers, while still building on the same `any-llm` interfaces.
 
 ### Quick Start
 ```bash
@@ -236,6 +240,7 @@ The landscape of LLM provider interfaces is fragmented. While OpenAI's API has b
 - **[Full Documentation](https://mozilla-ai.github.io/any-llm/)** - Complete guides and API reference
 - **[Supported Providers](https://mozilla-ai.github.io/any-llm/providers/)** - List of all supported LLM providers
 - **[Cookbook Examples](https://mozilla-ai.github.io/any-llm/cookbook/)** - In-depth usage examples
+- **[any-llm Platform (Beta)](https://any-llm.ai/)** - Hosted control plane for key management, usage tracking, and cost visibility
 
 
 ## Contributing
