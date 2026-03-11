@@ -348,6 +348,7 @@ class PlatformProvider(AnyLLM):
         chunks: list[ChatCompletionChunk] = []
         first_chunk_received = False
 
+        span_ended = False
         try:
             with trace.use_span(llm_span, end_on_exit=False):
                 async for chunk in stream:
@@ -383,12 +384,25 @@ class PlatformProvider(AnyLLM):
                 )
             else:
                 llm_span.end(end_time=time.time_ns())
+            span_ended = True
         except Exception as exc:
             llm_span.set_attribute("error.type", exc.__class__.__name__)
             llm_span.set_status(Status(StatusCode.ERROR, "llm request failed"))
             llm_span.end(end_time=time.time_ns())
+            span_ended = True
             raise
         finally:
+            if not span_ended:
+                end_time_ns = time.time_ns()
+                llm_span.set_attribute("anyllm.stream.cancelled", True)
+                if chunks:
+                    final_completion = self._combine_chunks(chunks)
+                    if final_completion.model:
+                        llm_span.set_attribute("gen_ai.response.model", final_completion.model)
+                    if final_completion.usage:
+                        llm_span.set_attribute("gen_ai.usage.input_tokens", final_completion.usage.prompt_tokens)
+                        llm_span.set_attribute("gen_ai.usage.output_tokens", final_completion.usage.completion_tokens)
+                llm_span.end(end_time=end_time_ns)
             if trace_export_activated:
                 deactivate_trace_export(trace_id)
 
