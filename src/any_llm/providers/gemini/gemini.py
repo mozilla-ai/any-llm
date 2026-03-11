@@ -38,4 +38,9 @@ class GeminiProvider(GoogleProvider):
             elif isinstance(http_options, types.HttpOptions) and http_options.base_url is None:
                 http_options.base_url = api_base
             kwargs["http_options"] = http_options
+
+        # Ensure timeout is correctly configured if present.
+        if (timeout := kwargs.pop("timeout", None)) is not None:
+            GoogleProvider._merge_timeout_into_http_options(timeout, kwargs)
+
         self.client = genai.Client(api_key=api_key, **kwargs)

@@ -77,10 +77,35 @@ class GoogleProvider(AnyLLM):
     client: genai.Client
 
     @staticmethod
+    def _merge_timeout_into_http_options(timeout: float, kwargs: dict[str, Any]) -> None:
+        """Apply a timeout (seconds) to kwargs["http_options"] as milliseconds.
+
+        Creates http_options if missing and only sets the timeout if one is not already
+        configured.
+        """
+        timeout_ms = int(timeout * 1000)
+        http_options = kwargs.get("http_options")
+
+        if http_options is None:
+            kwargs["http_options"] = types.HttpOptions(timeout=timeout_ms)
+            return
+
+        if isinstance(http_options, dict):
+            http_options.setdefault("timeout", timeout_ms)
+            return
+
+        if isinstance(http_options, types.HttpOptions) and http_options.timeout is None:
+            http_options.timeout = timeout_ms
+
+    @staticmethod
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Google API."""
         provider_name = kwargs.pop("provider_name")
+
+        # Ensure timeout is correctly configured if present.
+        if (timeout := kwargs.pop("timeout", None)) is not None:
+            GoogleProvider._merge_timeout_into_http_options(timeout, kwargs)
 
         if params.parallel_tool_calls is not None:
             error_message = "parallel_tool_calls"
