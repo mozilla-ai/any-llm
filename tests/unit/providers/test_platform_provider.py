@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from datetime import datetime
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
@@ -2407,6 +2407,249 @@ async def test_acompletion_sets_error_status_and_deactivates_trace_on_exception(
     mock_span.set_status.assert_called_once()
     mock_span.end.assert_called_once()
     deactivate_mock.assert_called_once_with(456)
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_completion_trace", new_callable=AsyncMock)
+@patch("any_llm.providers.platform.platform.deactivate_trace_export")
+async def test_stream_cancelled_with_chunks_exports_partial_trace(
+    mock_deactivate: Mock,
+    mock_export_trace: AsyncMock,
+    any_llm_key: str,
+) -> None:
+    """When a streaming request is cancelled after receiving some chunks, span attributes are set and the span is ended."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    llm_span = Mock()
+    trace_id = 123
+
+    chunks = [
+        ChatCompletionChunk(
+            id="chatcmpl-123",
+            model="gpt-4",
+            created=1234567890,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hello"), finish_reason=None)],
+        ),
+        ChatCompletionChunk(
+            id="chatcmpl-123",
+            model="gpt-4",
+            created=1234567890,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content=", world!"), finish_reason=None)],
+        ),
+        ChatCompletionChunk(
+            id="chatcmpl-123",
+            model="gpt-4",
+            created=1234567890,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(), finish_reason="stop")],
+            usage=CompletionUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+        ),
+    ]
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        for chunk in chunks:
+            yield chunk
+
+    stream = provider_instance._stream_with_usage_tracking(
+        stream=mock_stream(),
+        start_time_ns=100,
+        request_model="gpt-4",
+        conversation_id=None,
+        session_label="session",
+        user_session_label=None,
+        start_perf_counter_ns=100,
+        any_llm_key=any_llm_key,
+        llm_span=llm_span,
+        trace_id=trace_id,
+        access_token="token",  # noqa: S106
+        trace_export_activated=True,
+    )
+
+    # Consume only the first chunk, then close (simulates cancellation)
+    assert isinstance(stream, AsyncGenerator)
+    first = await stream.__anext__()
+    assert first == chunks[0]
+    await stream.aclose()
+
+    llm_span.set_attribute.assert_any_call("anyllm.stream.cancelled", True)
+    llm_span.end.assert_called_once()
+    mock_deactivate.assert_called_once_with(trace_id)
+    # export_completion_trace should NOT be called (we handle it synchronously via span attributes)
+    mock_export_trace.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_completion_trace", new_callable=AsyncMock)
+@patch("any_llm.providers.platform.platform.deactivate_trace_export")
+async def test_stream_cancelled_by_cancelled_error_exports_partial_trace(
+    mock_deactivate: Mock,
+    mock_export_trace: AsyncMock,
+    any_llm_key: str,
+) -> None:
+    """When a CancelledError interrupts the stream (e.g. Ctrl+C via sync bridge), the span is ended with partial data."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    llm_span = Mock()
+    trace_id = 789
+
+    chunks = [
+        ChatCompletionChunk(
+            id="chatcmpl-123",
+            model="gpt-4",
+            created=1234567890,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hello"), finish_reason=None)],
+        ),
+        ChatCompletionChunk(
+            id="chatcmpl-123",
+            model="gpt-4",
+            created=1234567890,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content=", world!"), finish_reason=None)],
+        ),
+    ]
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        for chunk in chunks:
+            yield chunk
+        raise asyncio.CancelledError
+
+    stream = provider_instance._stream_with_usage_tracking(
+        stream=mock_stream(),
+        start_time_ns=100,
+        request_model="gpt-4",
+        conversation_id=None,
+        session_label="session",
+        user_session_label=None,
+        start_perf_counter_ns=100,
+        any_llm_key=any_llm_key,
+        llm_span=llm_span,
+        trace_id=trace_id,
+        access_token="token",  # noqa: S106
+        trace_export_activated=True,
+    )
+
+    async def consume_stream() -> list[ChatCompletionChunk]:
+        result = []
+        async for chunk in stream:
+            result.append(chunk)
+        return result
+
+    with pytest.raises(asyncio.CancelledError):
+        await consume_stream()
+    llm_span.set_attribute.assert_any_call("anyllm.stream.cancelled", True)
+    llm_span.set_attribute.assert_any_call("gen_ai.response.model", "gpt-4")
+    llm_span.end.assert_called_once()
+    mock_deactivate.assert_called_once_with(trace_id)
+    mock_export_trace.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_completion_trace", new_callable=AsyncMock)
+@patch("any_llm.providers.platform.platform.deactivate_trace_export")
+async def test_stream_cancelled_with_usage_sets_token_attributes(
+    mock_deactivate: Mock,
+    mock_export_trace: AsyncMock,
+    any_llm_key: str,
+) -> None:
+    """When all chunks (including usage) are received but the stream is cancelled, token attributes are set."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    llm_span = Mock()
+    trace_id = 321
+
+    chunks = [
+        ChatCompletionChunk(
+            id="chatcmpl-123",
+            model="gpt-4",
+            created=1234567890,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
+        ),
+        ChatCompletionChunk(
+            id="chatcmpl-123",
+            model="gpt-4",
+            created=1234567890,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(), finish_reason="stop")],
+            usage=CompletionUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+        ),
+    ]
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        for chunk in chunks:
+            yield chunk
+
+    stream = provider_instance._stream_with_usage_tracking(
+        stream=mock_stream(),
+        start_time_ns=100,
+        request_model="gpt-4",
+        conversation_id=None,
+        session_label="session",
+        user_session_label=None,
+        start_perf_counter_ns=100,
+        any_llm_key=any_llm_key,
+        llm_span=llm_span,
+        trace_id=trace_id,
+        access_token="token",  # noqa: S106
+        trace_export_activated=True,
+    )
+
+    # Consume all chunks, then close before export_completion_trace runs
+    assert isinstance(stream, AsyncGenerator)
+    await stream.__anext__()
+    await stream.__anext__()
+    await stream.aclose()
+
+    llm_span.set_attribute.assert_any_call("anyllm.stream.cancelled", True)
+    llm_span.set_attribute.assert_any_call("gen_ai.response.model", "gpt-4")
+    llm_span.set_attribute.assert_any_call("gen_ai.usage.input_tokens", 10)
+    llm_span.set_attribute.assert_any_call("gen_ai.usage.output_tokens", 5)
+    llm_span.end.assert_called_once()
+    mock_deactivate.assert_called_once_with(trace_id)
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.deactivate_trace_export")
+async def test_stream_cancelled_with_no_chunks_ends_span(
+    mock_deactivate: Mock,
+    any_llm_key: str,
+) -> None:
+    """When a stream is cancelled before any chunks arrive, the span is ended with the cancelled attribute."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    llm_span = Mock()
+    trace_id = 654
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        raise asyncio.CancelledError
+        yield  # make this an async generator
+
+    stream = provider_instance._stream_with_usage_tracking(
+        stream=mock_stream(),
+        start_time_ns=100,
+        request_model="gpt-4",
+        conversation_id=None,
+        session_label="session",
+        user_session_label=None,
+        start_perf_counter_ns=100,
+        any_llm_key=any_llm_key,
+        llm_span=llm_span,
+        trace_id=trace_id,
+        access_token="token",  # noqa: S106
+        trace_export_activated=True,
+    )
+
+    async def consume_stream() -> list[ChatCompletionChunk]:
+        return [chunk async for chunk in stream]
+
+    with pytest.raises(asyncio.CancelledError):
+        await consume_stream()
+
+    llm_span.set_attribute.assert_any_call("anyllm.stream.cancelled", True)
+    llm_span.end.assert_called_once()
+    mock_deactivate.assert_called_once_with(trace_id)
+    # No usage or model attributes should be set when no chunks were received
+    usage_calls = [c for c in llm_span.set_attribute.call_args_list if c.args[0].startswith("gen_ai.usage")]
+    assert usage_calls == []
 
 
 def test_client_args_not_passed_to_httpx_client(any_llm_key: str) -> None:
