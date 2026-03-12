@@ -26,6 +26,7 @@ Provider source code is in [`src/any_llm/providers/`](https://github.com/mozilla
 | [`bedrock`](https://aws.amazon.com/bedrock/) | AWS_BEARER_TOKEN_BEDROCK | AWS_ENDPOINT_URL_BEDROCK_RUNTIME | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`cerebras`](https://docs.cerebras.ai/) | CEREBRAS_API_KEY | CEREBRAS_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`cohere`](https://cohere.com/api) | COHERE_API_KEY | COHERE_BASE_URL | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| [`copilot_sdk`](https://github.com/github/copilot-sdk) | COPILOT_GITHUB_TOKEN / GITHUB_TOKEN / GH_TOKEN | None | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | [`databricks`](https://docs.databricks.com/) | DATABRICKS_TOKEN | DATABRICKS_HOST | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
 | [`deepseek`](https://platform.deepseek.com/) | DEEPSEEK_API_KEY | DEEPSEEK_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`fireworks`](https://fireworks.ai/api) | FIREWORKS_API_KEY | FIREWORKS_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
