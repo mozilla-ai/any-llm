@@ -6,34 +6,17 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from any_llm.types.completion import CreateEmbeddingResponse, Embedding, Usage
 
-def _mock_embedding_response() -> Any:
-    """Build a mock CreateEmbeddingResponse."""
-    from unittest.mock import MagicMock
 
-    usage = MagicMock()
-    usage.prompt_tokens = 10
-    usage.total_tokens = 10
-
-    embedding = MagicMock()
-    embedding.embedding = [0.1, 0.2, 0.3]
-    embedding.index = 0
-    embedding.object = "embedding"
-
-    resp = MagicMock()
-    resp.data = [embedding]
-    resp.model = "text-embedding-3-small"
-    resp.object = "list"
-    resp.usage = usage
-    resp.model_dump = MagicMock(
-        return_value={
-            "data": [{"embedding": [0.1, 0.2, 0.3], "index": 0, "object": "embedding"}],
-            "model": "text-embedding-3-small",
-            "object": "list",
-            "usage": {"prompt_tokens": 10, "total_tokens": 10},
-        }
+def _mock_embedding_response() -> CreateEmbeddingResponse:
+    """Build a real CreateEmbeddingResponse for testing."""
+    return CreateEmbeddingResponse(
+        data=[Embedding(embedding=[0.1, 0.2, 0.3], index=0, object="embedding")],
+        model="text-embedding-3-small",
+        object="list",
+        usage=Usage(prompt_tokens=10, total_tokens=10),
     )
-    return resp
 
 
 def test_embeddings_requires_auth(client: TestClient) -> None:
