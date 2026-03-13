@@ -36,6 +36,7 @@ This repo uses `uv` for local dev (Python 3.11+). For the full, up-to-date comma
 - **Override decorator**: When overriding methods from base classes (like `AnyLLM`), always use the `@override` decorator from `typing_extensions`. This is enforced by mypy's `explicit-override` error code. For static methods, the order is `@staticmethod` followed by `@override`.
 - Prefer direct attribute access (e.g., `obj.field`) over `getattr(obj, "field")` when the field is typed. This enables `ruff` and `mypy` to catch errors at lint time. Only use `getattr`/`setattr` when working with truly dynamic attributes or when type information is unavailable.
 - Please add code comments if you find them helpful to accomplish your objective. However, please remove any comments you added that describe obvious behavior before finishing your task.
+- Never use emdashes or -- in any comments or descriptions.
 
 ## Testing Guidelines
 

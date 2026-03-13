@@ -1,13 +1,14 @@
-import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from any_llm.any_llm import AnyLLM
-from any_llm.gateway.db import Budget, BudgetResetLog, ModelPricing, User
-
-logger = logging.getLogger(__name__)
+from any_llm.exceptions import AnyLLMError
+from any_llm.gateway.db import Budget, BudgetResetLog, User
+from any_llm.gateway.log_config import logger
+from any_llm.gateway.pricing import find_model_pricing
 
 
 def calculate_next_reset(start: datetime, duration_sec: int) -> datetime:
@@ -24,17 +25,17 @@ def calculate_next_reset(start: datetime, duration_sec: int) -> datetime:
     return start + timedelta(seconds=duration_sec)
 
 
-def reset_user_budget(db: Session, user: User, budget: Budget) -> None:
+def reset_user_budget(db: Session, user: User, budget: Budget, now: datetime) -> None:
     """Reset user's budget spend and schedule next reset.
 
     Args:
         db: Database session
         user: User object to reset
         budget: Budget object associated with user
+        now: Current timestamp to use for reset timing
 
     """
     previous_spend = user.spend
-    now = datetime.now(UTC)
 
     user.spend = 0.0
     user.budget_started_at = now
@@ -52,7 +53,13 @@ def reset_user_budget(db: Session, user: User, budget: Budget) -> None:
         next_reset_at=user.next_budget_reset_at,
     )
     db.add(reset_log)
-    db.commit()
+
+    try:
+        db.commit()
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error("Failed to commit budget reset for user '%s': %s", user.user_id, e)
+        raise
 
 
 async def validate_user_budget(db: Session, user_id: str, model: str | None = None) -> User:
@@ -89,7 +96,7 @@ async def validate_user_budget(db: Session, user_id: str, model: str | None = No
         if budget:
             now = datetime.now(UTC)
             if user.next_budget_reset_at and now >= user.next_budget_reset_at:
-                reset_user_budget(db, user, budget)
+                reset_user_budget(db, user, budget, now)
 
             if budget.max_budget is not None:
                 if user.spend >= budget.max_budget:
@@ -116,18 +123,11 @@ def _is_model_free(db: Session, model: str) -> bool:
     """
     try:
         provider, model_name = AnyLLM.split_model_provider(model)
-        model_key = f"{provider.value}:{model_name}" if provider else model_name
-        model_key_legacy = f"{provider.value}/{model_name}" if provider else None
-
-        pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key).first()
-        if not pricing and model_key_legacy:
-            pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key_legacy).first()
-
+        provider_str = provider.value if provider else None
+        pricing = find_model_pricing(db, provider_str, model_name)
         if pricing:
             return pricing.input_price_per_million == 0 and pricing.output_price_per_million == 0
-    except Exception:
-        # If we can't determine the provider or pricing, treat as not free
-        warning_msg = "Failed to determine provider pricing: {e}"
-        logger.warning(warning_msg)
+    except (AnyLLMError, ValueError, SQLAlchemyError) as e:
+        logger.warning("Failed to determine provider pricing: %s", e)
 
     return False
