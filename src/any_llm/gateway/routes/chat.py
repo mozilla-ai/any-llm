@@ -158,9 +158,7 @@ async def log_usage(
             logger.warning(f"No pricing configured for '{model_ref}'. Usage will be tracked without cost.")
 
     try:
-        nested = db.begin_nested()
         db.add(usage_log)
-        nested.commit()
         db.commit()
     except Exception as e:
         logger.error(f"Failed to log usage to database: {e}")
