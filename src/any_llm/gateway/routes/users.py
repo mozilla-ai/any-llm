@@ -3,6 +3,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from any_llm.gateway.auth import verify_master_key
@@ -143,7 +144,11 @@ async def create_user(
         if budget.budget_duration_sec:
             user.next_budget_reset_at = calculate_next_reset(now, budget.budget_duration_sec)
 
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise
     db.refresh(user)
 
     return UserResponse.from_model(user)
@@ -215,7 +220,11 @@ async def update_user(
     if request.metadata is not None:
         user.metadata_ = request.metadata
 
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise
     db.refresh(user)
 
     return UserResponse.from_model(user)
@@ -237,7 +246,12 @@ async def delete_user(
 
     db.query(APIKey).filter(APIKey.user_id == user_id).update({"is_active": False}, synchronize_session="fetch")
     user.deleted_at = datetime.now(UTC)
-    db.commit()
+
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise
 
 
 @router.get("/{user_id}/usage", dependencies=[Depends(verify_master_key)])

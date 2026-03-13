@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from any_llm.any_llm import AnyLLM
@@ -50,7 +51,11 @@ async def set_pricing(
         )
         db.add(pricing)
 
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise
     db.refresh(pricing)
 
     return PricingResponse(
@@ -121,4 +126,8 @@ async def delete_pricing(
         )
 
     db.delete(pricing)
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise
