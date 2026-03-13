@@ -36,6 +36,21 @@ class UserResponse(BaseModel):
     updated_at: str
     metadata: dict[str, Any]
 
+    @classmethod
+    def from_model(cls, user: User) -> "UserResponse":
+        return cls(
+            user_id=user.user_id,
+            alias=user.alias,
+            spend=float(user.spend),
+            budget_id=user.budget_id,
+            budget_started_at=user.budget_started_at.isoformat() if user.budget_started_at else None,
+            next_budget_reset_at=user.next_budget_reset_at.isoformat() if user.next_budget_reset_at else None,
+            blocked=bool(user.blocked),
+            created_at=user.created_at.isoformat(),
+            updated_at=user.updated_at.isoformat(),
+            metadata=dict(user.metadata_) if user.metadata_ else {},
+        )
+
 
 class UpdateUserRequest(BaseModel):
     """Request model for updating a user."""
@@ -62,6 +77,24 @@ class UsageLogResponse(BaseModel):
     cost: float | None
     status: str
     error_message: str | None
+
+    @classmethod
+    def from_model(cls, log: UsageLog) -> "UsageLogResponse":
+        return cls(
+            id=log.id,
+            user_id=log.user_id,
+            api_key_id=log.api_key_id,
+            timestamp=log.timestamp.isoformat(),
+            model=log.model,
+            provider=log.provider,
+            endpoint=log.endpoint,
+            prompt_tokens=log.prompt_tokens,
+            completion_tokens=log.completion_tokens,
+            total_tokens=log.total_tokens,
+            cost=log.cost,
+            status=log.status,
+            error_message=log.error_message,
+        )
 
 
 @router.post("", dependencies=[Depends(verify_master_key)])
@@ -113,18 +146,7 @@ async def create_user(
     db.commit()
     db.refresh(user)
 
-    return UserResponse(
-        user_id=user.user_id,
-        alias=user.alias,
-        spend=float(user.spend),
-        budget_id=user.budget_id,
-        budget_started_at=user.budget_started_at.isoformat() if user.budget_started_at else None,
-        next_budget_reset_at=user.next_budget_reset_at.isoformat() if user.next_budget_reset_at else None,
-        blocked=bool(user.blocked),
-        created_at=user.created_at.isoformat(),
-        updated_at=user.updated_at.isoformat(),
-        metadata=dict(user.metadata_) if user.metadata_ else {},
-    )
+    return UserResponse.from_model(user)
 
 
 @router.get("", dependencies=[Depends(verify_master_key)])
@@ -136,21 +158,7 @@ async def list_users(
     """List all users with pagination."""
     users = db.query(User).filter(User.deleted_at.is_(None)).offset(skip).limit(limit).all()
 
-    return [
-        UserResponse(
-            user_id=user.user_id,
-            alias=user.alias,
-            spend=float(user.spend),
-            budget_id=user.budget_id,
-            budget_started_at=user.budget_started_at.isoformat() if user.budget_started_at else None,
-            next_budget_reset_at=user.next_budget_reset_at.isoformat() if user.next_budget_reset_at else None,
-            blocked=bool(user.blocked),
-            created_at=user.created_at.isoformat(),
-            updated_at=user.updated_at.isoformat(),
-            metadata=dict(user.metadata_) if user.metadata_ else {},
-        )
-        for user in users
-    ]
+    return [UserResponse.from_model(user) for user in users]
 
 
 @router.get("/{user_id}", dependencies=[Depends(verify_master_key)])
@@ -167,18 +175,7 @@ async def get_user(
             detail=f"User with id '{user_id}' not found",
         )
 
-    return UserResponse(
-        user_id=user.user_id,
-        alias=user.alias,
-        spend=float(user.spend),
-        budget_id=user.budget_id,
-        budget_started_at=user.budget_started_at.isoformat() if user.budget_started_at else None,
-        next_budget_reset_at=user.next_budget_reset_at.isoformat() if user.next_budget_reset_at else None,
-        blocked=bool(user.blocked),
-        created_at=user.created_at.isoformat(),
-        updated_at=user.updated_at.isoformat(),
-        metadata=dict(user.metadata_) if user.metadata_ else {},
-    )
+    return UserResponse.from_model(user)
 
 
 @router.patch("/{user_id}", dependencies=[Depends(verify_master_key)])
@@ -221,18 +218,7 @@ async def update_user(
     db.commit()
     db.refresh(user)
 
-    return UserResponse(
-        user_id=user.user_id,
-        alias=user.alias,
-        spend=float(user.spend),
-        budget_id=user.budget_id,
-        budget_started_at=user.budget_started_at.isoformat() if user.budget_started_at else None,
-        next_budget_reset_at=user.next_budget_reset_at.isoformat() if user.next_budget_reset_at else None,
-        blocked=bool(user.blocked),
-        created_at=user.created_at.isoformat(),
-        updated_at=user.updated_at.isoformat(),
-        metadata=dict(user.metadata_) if user.metadata_ else {},
-    )
+    return UserResponse.from_model(user)
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(verify_master_key)])
@@ -278,21 +264,4 @@ async def get_user_usage(
         .all()
     )
 
-    return [
-        UsageLogResponse(
-            id=log.id,
-            user_id=log.user_id,
-            api_key_id=log.api_key_id,
-            timestamp=log.timestamp.isoformat(),
-            model=log.model,
-            provider=log.provider,
-            endpoint=log.endpoint,
-            prompt_tokens=log.prompt_tokens,
-            completion_tokens=log.completion_tokens,
-            total_tokens=log.total_tokens,
-            cost=log.cost,
-            status=log.status,
-            error_message=log.error_message,
-        )
-        for log in usage_logs
-    ]
+    return [UsageLogResponse.from_model(log) for log in usage_logs]

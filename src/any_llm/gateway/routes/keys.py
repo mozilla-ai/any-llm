@@ -46,6 +46,19 @@ class KeyInfo(BaseModel):
     is_active: bool
     metadata: dict[str, Any]
 
+    @classmethod
+    def from_model(cls, key: APIKey) -> "KeyInfo":
+        return cls(
+            id=str(key.id),
+            key_name=str(key.key_name) if key.key_name else None,
+            user_id=str(key.user_id) if key.user_id else None,
+            created_at=key.created_at.isoformat(),
+            last_used_at=key.last_used_at.isoformat() if key.last_used_at else None,
+            expires_at=key.expires_at.isoformat() if key.expires_at else None,
+            is_active=bool(key.is_active),
+            metadata=dict(key.metadata_) if key.metadata_ else {},
+        )
+
 
 class UpdateKeyRequest(BaseModel):
     """Request model for updating a key."""
@@ -107,15 +120,10 @@ async def create_key(
     db.commit()
     db.refresh(db_key)
 
+    key_info = KeyInfo.from_model(db_key)
     return CreateKeyResponse(
-        id=str(db_key.id),
+        **key_info.model_dump(exclude={"last_used_at"}),
         key=api_key,
-        key_name=str(db_key.key_name) if db_key.key_name else None,
-        user_id=str(db_key.user_id) if db_key.user_id else None,
-        created_at=db_key.created_at.isoformat(),
-        expires_at=db_key.expires_at.isoformat() if db_key.expires_at else None,
-        is_active=bool(db_key.is_active),
-        metadata=dict(db_key.metadata_) if db_key.metadata_ else {},
     )
 
 
@@ -131,19 +139,7 @@ async def list_keys(
     """
     keys = db.query(APIKey).offset(skip).limit(limit).all()
 
-    return [
-        KeyInfo(
-            id=str(key.id),
-            key_name=str(key.key_name) if key.key_name else None,
-            user_id=str(key.user_id) if key.user_id else None,
-            created_at=key.created_at.isoformat(),
-            last_used_at=key.last_used_at.isoformat() if key.last_used_at else None,
-            expires_at=key.expires_at.isoformat() if key.expires_at else None,
-            is_active=bool(key.is_active),
-            metadata=dict(key.metadata_) if key.metadata_ else {},
-        )
-        for key in keys
-    ]
+    return [KeyInfo.from_model(key) for key in keys]
 
 
 @router.get("/{key_id}", dependencies=[Depends(verify_master_key)])
@@ -163,16 +159,7 @@ async def get_key(
             detail=f"API key with id '{key_id}' not found",
         )
 
-    return KeyInfo(
-        id=str(key.id),
-        key_name=str(key.key_name) if key.key_name else None,
-        user_id=str(key.user_id) if key.user_id else None,
-        created_at=key.created_at.isoformat(),
-        last_used_at=key.last_used_at.isoformat() if key.last_used_at else None,
-        expires_at=key.expires_at.isoformat() if key.expires_at else None,
-        is_active=bool(key.is_active),
-        metadata=dict(key.metadata_) if key.metadata_ else {},
-    )
+    return KeyInfo.from_model(key)
 
 
 @router.patch("/{key_id}", dependencies=[Depends(verify_master_key)])
@@ -205,16 +192,7 @@ async def update_key(
     db.commit()
     db.refresh(key)
 
-    return KeyInfo(
-        id=str(key.id),
-        key_name=str(key.key_name) if key.key_name else None,
-        user_id=str(key.user_id) if key.user_id else None,
-        created_at=key.created_at.isoformat(),
-        last_used_at=key.last_used_at.isoformat() if key.last_used_at else None,
-        expires_at=key.expires_at.isoformat() if key.expires_at else None,
-        is_active=bool(key.is_active),
-        metadata=dict(key.metadata_) if key.metadata_ else {},
-    )
+    return KeyInfo.from_model(key)
 
 
 @router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(verify_master_key)])
