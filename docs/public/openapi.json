@@ -380,6 +380,69 @@
         "title": "CreateUserRequest",
         "type": "object"
       },
+      "EmbeddingRequest": {
+        "description": "OpenAI-compatible embedding request.",
+        "properties": {
+          "dimensions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimensions"
+          },
+          "encoding_format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encoding Format"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "Input text to embed",
+            "title": "Input"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User"
+          }
+        },
+        "required": [
+          "model",
+          "input"
+        ],
+        "title": "EmbeddingRequest",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1419,6 +1482,46 @@
         "summary": "Chat Completions",
         "tags": [
           "chat"
+        ]
+      }
+    },
+    "/v1/embeddings": {
+      "post": {
+        "description": "OpenAI-compatible embeddings endpoint.\n\nAuthentication modes:\n- Master key + user field: Use specified user (must exist)\n- API key + user field: Use specified user (must exist)\n- API key without user field: Use virtual user created with API key",
+        "operationId": "create_embedding_v1_embeddings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmbeddingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Embedding",
+        "tags": [
+          "embeddings"
         ]
       }
     },
