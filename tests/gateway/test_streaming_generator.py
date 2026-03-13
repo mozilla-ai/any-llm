@@ -1,5 +1,7 @@
 """Tests for the shared streaming_generator utility."""
 
+from collections.abc import AsyncIterator
+
 import pytest
 
 from any_llm.gateway.streaming import (
@@ -8,6 +10,9 @@ from any_llm.gateway.streaming import (
     streaming_generator,
 )
 from any_llm.types.completion import CompletionUsage
+
+_PROVIDER_CRASHED = "provider crashed"
+_LOGGING_FAILED = "logging failed too"
 
 
 def _format_chunk(chunk: str) -> str:
@@ -20,7 +25,7 @@ def _extract_usage(chunk: str) -> CompletionUsage | None:
     return None
 
 
-async def _items(*values: str):
+async def _items(*values: str) -> AsyncIterator[str]:
     for v in values:
         yield v
 
@@ -93,9 +98,9 @@ async def test_streaming_generator_error_openai_format() -> None:
     async def on_error(error: str) -> None:
         error_logged.append(error)
 
-    async def _failing_stream():
+    async def _failing_stream() -> AsyncIterator[str]:
         yield "hello"
-        raise RuntimeError("provider crashed")
+        raise RuntimeError(_PROVIDER_CRASHED)
 
     events: list[str] = []
     async for event in streaming_generator(
@@ -112,7 +117,7 @@ async def test_streaming_generator_error_openai_format() -> None:
     assert events[0] == "data: hello\n\n"
     assert "server_error" in events[1]
     assert events[2] == "data: [DONE]\n\n"
-    assert error_logged == ["provider crashed"]
+    assert error_logged == [_PROVIDER_CRASHED]
 
 
 @pytest.mark.asyncio
@@ -126,8 +131,8 @@ async def test_streaming_generator_error_anthropic_format() -> None:
     async def on_error(error: str) -> None:
         error_logged.append(error)
 
-    async def _failing_stream():
-        raise RuntimeError("provider crashed")
+    async def _failing_stream() -> AsyncIterator[str]:
+        raise RuntimeError(_PROVIDER_CRASHED)
         yield  # pragma: no cover
 
     events: list[str] = []
@@ -145,7 +150,7 @@ async def test_streaming_generator_error_anthropic_format() -> None:
     assert len(events) == 1
     assert "api_error" in events[0]
     assert events[0].startswith("event: error\n")
-    assert error_logged == ["provider crashed"]
+    assert error_logged == [_PROVIDER_CRASHED]
 
 
 @pytest.mark.asyncio
@@ -156,10 +161,10 @@ async def test_streaming_generator_error_logging_failure_is_swallowed() -> None:
         pytest.fail("on_complete should not be called on error")
 
     async def on_error(error: str) -> None:
-        raise RuntimeError("logging failed too")
+        raise RuntimeError(_LOGGING_FAILED)
 
-    async def _failing_stream():
-        raise RuntimeError("provider crashed")
+    async def _failing_stream() -> AsyncIterator[str]:
+        raise RuntimeError(_PROVIDER_CRASHED)
         yield  # pragma: no cover
 
     events: list[str] = []
