@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from any_llm.gateway.auth.models import hash_key
@@ -91,7 +92,10 @@ def _verify_and_update_api_key(db: Session, token: str) -> APIKey:
         )
 
     api_key.last_used_at = datetime.now(UTC)
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
 
     return api_key
 

@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from any_llm.gateway.auth import verify_master_key
@@ -48,7 +49,14 @@ async def create_budget(
     )
 
     db.add(budget)
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None
     db.refresh(budget)
 
     return BudgetResponse(
@@ -124,7 +132,14 @@ async def update_budget(
     if request.budget_duration_sec is not None:
         budget.budget_duration_sec = request.budget_duration_sec
 
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None
     db.refresh(budget)
 
     return BudgetResponse(
@@ -151,4 +166,11 @@ async def delete_budget(
         )
 
     db.delete(budget)
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None

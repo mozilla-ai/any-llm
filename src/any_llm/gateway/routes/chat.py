@@ -6,6 +6,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from any_llm import AnyLLM, LLMProvider, acompletion
@@ -160,8 +161,8 @@ async def log_usage(
     try:
         db.add(usage_log)
         db.commit()
-    except Exception as e:
-        logger.error(f"Failed to log usage to database: {e}")
+    except SQLAlchemyError as e:
+        logger.error("Failed to log usage to database: %s", e)
         db.rollback()
 
 

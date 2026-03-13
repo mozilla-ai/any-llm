@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from any_llm.gateway.db.models import UsageLog
@@ -76,7 +77,7 @@ async def test_log_usage_rollback_on_commit_failure(test_db: Session) -> None:
     usage = CompletionUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15)
 
     with (
-        patch.object(test_db, "commit", side_effect=RuntimeError("db gone")),
+        patch.object(test_db, "commit", side_effect=OperationalError("db", {}, Exception("db gone"))),
         patch.object(test_db, "rollback", wraps=test_db.rollback) as mock_rollback,
     ):
         await log_usage(

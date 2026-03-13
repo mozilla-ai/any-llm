@@ -1,9 +1,11 @@
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from any_llm.any_llm import AnyLLM
+from any_llm.exceptions import AnyLLMError
 from any_llm.gateway.db import Budget, BudgetResetLog, User
 from any_llm.gateway.log_config import logger
 from any_llm.gateway.pricing import find_model_pricing
@@ -51,7 +53,13 @@ def reset_user_budget(db: Session, user: User, budget: Budget, now: datetime) ->
         next_reset_at=user.next_budget_reset_at,
     )
     db.add(reset_log)
-    db.commit()
+
+    try:
+        db.commit()
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error("Failed to commit budget reset for user '%s': %s", user.user_id, e)
+        raise
 
 
 async def validate_user_budget(db: Session, user_id: str, model: str | None = None) -> User:
@@ -119,7 +127,7 @@ def _is_model_free(db: Session, model: str) -> bool:
         pricing = find_model_pricing(db, provider_str, model_name)
         if pricing:
             return pricing.input_price_per_million == 0 and pricing.output_price_per_million == 0
-    except Exception as e:
+    except (AnyLLMError, ValueError, SQLAlchemyError) as e:
         logger.warning("Failed to determine provider pricing: %s", e)
 
     return False

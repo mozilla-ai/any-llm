@@ -4,6 +4,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from any_llm.gateway.auth import generate_api_key, hash_key, verify_master_key
@@ -117,7 +118,14 @@ async def create_key(
     )
 
     db.add(db_key)
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None
     db.refresh(db_key)
 
     key_info = KeyInfo.from_model(db_key)
@@ -189,7 +197,14 @@ async def update_key(
     if request.metadata is not None:
         key.metadata_ = request.metadata
 
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None
     db.refresh(key)
 
     return KeyInfo.from_model(key)
@@ -213,4 +228,11 @@ async def delete_key(
         )
 
     db.delete(key)
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None

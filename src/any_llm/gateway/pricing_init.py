@@ -1,5 +1,6 @@
 """Pricing initialization from configuration."""
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from any_llm.any_llm import AnyLLM
@@ -61,5 +62,9 @@ def initialize_pricing_from_config(config: GatewayConfig, db: Session) -> None:
         db.add(new_pricing)
         logger.info(f"Added pricing for '{model_key}': input=${input_price}/M, output=${output_price}/M")
 
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise
     logger.info("Pricing initialization complete")
