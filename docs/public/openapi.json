@@ -677,6 +677,57 @@
         "title": "MessagesRequest",
         "type": "object"
       },
+      "ModelListResponse": {
+        "description": "OpenAI-compatible model list response.",
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ModelObject"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "object": {
+            "default": "list",
+            "title": "Object",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "ModelListResponse",
+        "type": "object"
+      },
+      "ModelObject": {
+        "description": "OpenAI-compatible model object.",
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "object": {
+            "default": "model",
+            "title": "Object",
+            "type": "string"
+          },
+          "owned_by": {
+            "title": "Owned By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created",
+          "owned_by"
+        ],
+        "title": "ModelObject",
+        "type": "object"
+      },
       "PricingResponse": {
         "description": "Response model for model pricing.",
         "properties": {
@@ -1791,6 +1842,71 @@
         "summary": "Create Message",
         "tags": [
           "messages"
+        ]
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "description": "List all available models.\n\nReturns models derived from the model_pricing table in an\nOpenAI-compatible format.",
+        "operationId": "list_models_v1_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Models",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/models/{model_id}": {
+      "get": {
+        "description": "Get details for a specific model.",
+        "operationId": "get_model_v1_models__model_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelObject"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Model",
+        "tags": [
+          "models"
         ]
       }
     },
