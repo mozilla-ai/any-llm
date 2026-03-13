@@ -24,17 +24,17 @@ def calculate_next_reset(start: datetime, duration_sec: int) -> datetime:
     return start + timedelta(seconds=duration_sec)
 
 
-def reset_user_budget(db: Session, user: User, budget: Budget) -> None:
+def reset_user_budget(db: Session, user: User, budget: Budget, now: datetime) -> None:
     """Reset user's budget spend and schedule next reset.
 
     Args:
         db: Database session
         user: User object to reset
         budget: Budget object associated with user
+        now: Current timestamp to use for reset timing
 
     """
     previous_spend = user.spend
-    now = datetime.now(UTC)
 
     user.spend = 0.0
     user.budget_started_at = now
@@ -89,7 +89,7 @@ async def validate_user_budget(db: Session, user_id: str, model: str | None = No
         if budget:
             now = datetime.now(UTC)
             if user.next_budget_reset_at and now >= user.next_budget_reset_at:
-                reset_user_budget(db, user, budget)
+                reset_user_budget(db, user, budget, now)
 
             if budget.max_budget is not None:
                 if user.spend >= budget.max_budget:
