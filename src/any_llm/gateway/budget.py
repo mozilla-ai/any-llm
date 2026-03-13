@@ -125,9 +125,8 @@ def _is_model_free(db: Session, model: str) -> bool:
 
         if pricing:
             return pricing.input_price_per_million == 0 and pricing.output_price_per_million == 0
-    except Exception:
+    except Exception as e:
         # If we can't determine the provider or pricing, treat as not free
-        warning_msg = "Failed to determine provider pricing: {e}"
-        logger.warning(warning_msg)
+        logger.warning("Failed to determine provider pricing: %s", e)
 
     return False
