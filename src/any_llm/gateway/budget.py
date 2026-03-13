@@ -1,4 +1,3 @@
-import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
@@ -6,8 +5,7 @@ from sqlalchemy.orm import Session
 
 from any_llm.any_llm import AnyLLM
 from any_llm.gateway.db import Budget, BudgetResetLog, ModelPricing, User
-
-logger = logging.getLogger(__name__)
+from any_llm.gateway.log_config import logger
 
 
 def calculate_next_reset(start: datetime, duration_sec: int) -> datetime:
