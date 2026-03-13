@@ -1,4 +1,3 @@
-import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -18,6 +17,7 @@ from any_llm.gateway.config import GatewayConfig
 from any_llm.gateway.db import APIKey, ModelPricing, UsageLog, User, get_db
 from any_llm.gateway.log_config import logger
 from any_llm.gateway.rate_limit import RateLimitInfo, check_rate_limit
+from any_llm.gateway.streaming import OPENAI_STREAM_FORMAT, streaming_generator
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionUsage
 
 router = APIRouter(prefix="/v1/chat", tags=["chat"])
@@ -230,67 +230,55 @@ async def chat_completions(
     try:
         if request.stream:
 
-            async def generate() -> AsyncIterator[str]:
-                prompt_tokens = 0
-                completion_tokens = 0
-                total_tokens = 0
+            def _format_chunk(chunk: ChatCompletionChunk) -> str:
+                return f"data: {chunk.model_dump_json()}\n\n"
 
-                try:
-                    stream: AsyncIterator[ChatCompletionChunk] = await acompletion(**completion_kwargs)  # type: ignore[assignment]
-                    async for chunk in stream:
-                        if chunk.usage:
-                            # Take the last non-zero value for each field. This works for
-                            # providers that report cumulative totals (last = total) and
-                            # providers that only report usage on the final chunk.
-                            if chunk.usage.prompt_tokens:
-                                prompt_tokens = chunk.usage.prompt_tokens
-                            if chunk.usage.completion_tokens:
-                                completion_tokens = chunk.usage.completion_tokens
-                            if chunk.usage.total_tokens:
-                                total_tokens = chunk.usage.total_tokens
+            def _extract_usage(chunk: ChatCompletionChunk) -> CompletionUsage | None:
+                if not chunk.usage:
+                    return None
+                return CompletionUsage(
+                    prompt_tokens=chunk.usage.prompt_tokens or 0,
+                    completion_tokens=chunk.usage.completion_tokens or 0,
+                    total_tokens=chunk.usage.total_tokens or 0,
+                )
 
-                        yield f"data: {chunk.model_dump_json()}\n\n"
-                    yield "data: [DONE]\n\n"
+            async def _on_complete(usage_data: CompletionUsage) -> None:
+                await log_usage(
+                    db=db,
+                    api_key_obj=api_key,
+                    model=model,
+                    provider=provider,
+                    endpoint="/v1/chat/completions",
+                    user_id=user_id,
+                    usage_override=usage_data,
+                )
 
-                    # Log aggregated usage
-                    if prompt_tokens or completion_tokens or total_tokens:
-                        usage_data = CompletionUsage(
-                            prompt_tokens=prompt_tokens,
-                            completion_tokens=completion_tokens,
-                            total_tokens=total_tokens,
-                        )
-                        await log_usage(
-                            db=db,
-                            api_key_obj=api_key,
-                            model=model,
-                            provider=provider,
-                            endpoint="/v1/chat/completions",
-                            user_id=user_id,
-                            usage_override=usage_data,
-                        )
-                    else:
-                        # This should never happen.
-                        logger.warning(f"No usage data received from streaming response for model {model}")
-                except Exception as e:
-                    error_data = {"error": {"message": "An error occurred during streaming", "type": "server_error"}}
-                    yield f"data: {json.dumps(error_data)}\n\n"
-                    yield "data: [DONE]\n\n"
-                    try:
-                        await log_usage(
-                            db=db,
-                            api_key_obj=api_key,
-                            model=model,
-                            provider=provider,
-                            endpoint="/v1/chat/completions",
-                            user_id=user_id,
-                            error=str(e),
-                        )
-                    except Exception as log_err:
-                        logger.error(f"Failed to log streaming error usage: {log_err}")
-                    logger.error(f"Streaming error for {provider}:{model}: {e}")
+            async def _on_error(error: str) -> None:
+                await log_usage(
+                    db=db,
+                    api_key_obj=api_key,
+                    model=model,
+                    provider=provider,
+                    endpoint="/v1/chat/completions",
+                    user_id=user_id,
+                    error=error,
+                )
 
+            stream: AsyncIterator[ChatCompletionChunk] = await acompletion(**completion_kwargs)  # type: ignore[assignment]
             rl_headers = rate_limit_headers(rate_limit_info) if rate_limit_info else {}
-            return StreamingResponse(generate(), media_type="text/event-stream", headers=rl_headers)
+            return StreamingResponse(
+                streaming_generator(
+                    stream=stream,
+                    format_chunk=_format_chunk,
+                    extract_usage=_extract_usage,
+                    fmt=OPENAI_STREAM_FORMAT,
+                    on_complete=_on_complete,
+                    on_error=_on_error,
+                    label=f"{provider}:{model}",
+                ),
+                media_type="text/event-stream",
+                headers=rl_headers,
+            )
 
         completion: ChatCompletion = await acompletion(**completion_kwargs)  # type: ignore[assignment]
         await log_usage(
