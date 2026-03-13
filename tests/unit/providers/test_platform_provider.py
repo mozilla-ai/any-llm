@@ -2652,6 +2652,110 @@ async def test_stream_cancelled_with_no_chunks_ends_span(
     assert usage_calls == []
 
 
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_completion_trace", new_callable=AsyncMock)
+async def test_streaming_trace_export_failure_does_not_crash_consumer(
+    mock_export_trace: AsyncMock,
+    any_llm_key: str,
+) -> None:
+    """Trace export failure after streaming must not propagate to the consumer."""
+    mock_export_trace.side_effect = RuntimeError("platform unavailable")
+
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance._provider = Mock(PROVIDER_NAME="openai")
+    llm_span = Mock()
+
+    chunks = [
+        ChatCompletionChunk(
+            id="chatcmpl-1",
+            model="gpt-4",
+            created=1234567890,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
+        ),
+        ChatCompletionChunk(
+            id="chatcmpl-1",
+            model="gpt-4",
+            created=1234567890,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(), finish_reason="stop")],
+            usage=CompletionUsage(prompt_tokens=5, completion_tokens=2, total_tokens=7),
+        ),
+    ]
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        for chunk in chunks:
+            yield chunk
+
+    result = provider_instance._stream_with_usage_tracking(
+        stream=mock_stream(),
+        start_time_ns=100,
+        request_model="gpt-4",
+        conversation_id=None,
+        session_label="session",
+        user_session_label=None,
+        start_perf_counter_ns=100,
+        any_llm_key=any_llm_key,
+        llm_span=llm_span,
+        trace_id=123,
+        access_token=None,
+        trace_export_activated=False,
+    )
+
+    collected = [chunk async for chunk in result]
+    assert collected == chunks
+    mock_export_trace.assert_awaited_once()
+    llm_span.set_status.assert_called_once()
+    llm_span.end.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_completion_trace", new_callable=AsyncMock)
+async def test_non_streaming_trace_export_failure_still_returns_completion(
+    mock_export_trace: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+    mock_completion: ChatCompletion,
+) -> None:
+    """Trace export failure for non-streaming must not prevent returning the completion."""
+    mock_export_trace.side_effect = RuntimeError("platform unavailable")
+
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+    provider_instance.provider._acompletion = AsyncMock(return_value=mock_completion)  # type: ignore[method-assign]
+
+    params = CompletionParams(
+        model_id="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=False,
+    )
+
+    mock_span = Mock()
+    mock_span.get_span_context.return_value = Mock(trace_id=456)
+    mock_tracer = Mock()
+    mock_tracer.start_span.return_value = mock_span
+    mock_provider_tp = Mock()
+    mock_provider_tp.get_tracer.return_value = mock_tracer
+
+    with (
+        patch(
+            "any_llm.providers.platform.platform._get_or_create_tracer_provider",
+            return_value=mock_provider_tp,
+        ),
+        patch(
+            "any_llm.providers.platform.platform.activate_trace_export",
+        ),
+        patch(
+            "any_llm.providers.platform.platform.deactivate_trace_export",
+        ),
+    ):
+        result = await provider_instance._acompletion(params)
+
+    assert result == mock_completion
+    mock_export_trace.assert_awaited_once()
+
+
 def test_client_args_not_passed_to_httpx_client(any_llm_key: str) -> None:
     """Test that provider-specific client_args don't leak into the platform's httpx client."""
     with patch("any_llm.providers.platform.platform.AnyLLMPlatformClient"):
