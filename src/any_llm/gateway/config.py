@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -86,11 +87,15 @@ def _resolve_env_vars(config: dict[str, Any]) -> dict[str, Any]:
         return {key: _resolve_env_vars(value) for key, value in config.items()}
     if isinstance(config, list):
         return [_resolve_env_vars(item) for item in config]
-    if isinstance(config, str) and config.startswith("${") and config.endswith("}"):
-        env_var = config[2:-1]
-        value = os.getenv(env_var)
-        if value is None:
-            msg = f"Environment variable '{env_var}' is not set (referenced in config as '${{{env_var}}}')"
-            raise ValueError(msg)
-        return value
+    if isinstance(config, str) and "${" in config:
+
+        def _replace(match: re.Match[str]) -> str:
+            env_var = match.group(1)
+            value = os.getenv(env_var)
+            if value is None:
+                msg = f"Environment variable '{env_var}' is not set (referenced in config as '${{{env_var}}}')"
+                raise ValueError(msg)
+            return value
+
+        return re.sub(r"\$\{([^}]+)}", _replace, config)
     return config
