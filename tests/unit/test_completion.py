@@ -195,6 +195,8 @@ async def test_provider_factory_can_create_all_supported_providers() -> None:
         kwargs: dict[str, Any] = {"api_key": "test_key"}
         if provider_name in ("azure", "azureopenai"):
             kwargs["api_base"] = "test_api_base"
+        if provider_name == "azureanthropic":
+            kwargs["resource"] = "test-resource"
         if provider_name == "bedrock":
             kwargs["region_name"] = "us-east-1"
         if provider_name == "vertexai":
