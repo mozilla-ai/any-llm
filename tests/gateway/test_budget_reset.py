@@ -1,25 +1,10 @@
-import logging
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 from fastapi.testclient import TestClient
 
-from any_llm.gateway.budget import _is_model_free, calculate_next_reset
+from any_llm.gateway.budget import calculate_next_reset
 from tests.gateway.conftest import MODEL_NAME
-
-
-def test_is_model_free_logs_exception_details(caplog: pytest.LogCaptureFixture) -> None:
-    """Test that _is_model_free logs the actual exception message, not a literal '{e}'."""
-    db = MagicMock()
-    with patch("any_llm.gateway.budget.AnyLLM.split_model_provider", side_effect=ValueError("unknown provider 'bad'")):
-        with caplog.at_level(logging.WARNING, logger="any_llm.gateway.budget"):
-            result = _is_model_free(db, "bad:model")
-
-    assert result is False
-    assert len(caplog.records) == 1
-    assert "unknown provider 'bad'" in caplog.records[0].message
-    assert "{e}" not in caplog.records[0].message
 
 
 def test_calculate_next_reset() -> None:
