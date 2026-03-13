@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -41,7 +42,15 @@ async def test_embedding_unsupported_provider_raises_not_implemented(provider: L
     """Test that calling embedding on a provider that doesn't support it raises NotImplementedError."""
     cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_EMBEDDING:
+        client_args: dict[str, Any] = {}
+        if provider == LLMProvider.AZUREANTHROPIC:
+            client_args["resource"] = "test-resource"
         with pytest.raises(NotImplementedError, match=None):
-            await aembedding(f"{provider.value}/does-not-matter", inputs="Hello world", api_key="test_key")
+            await aembedding(
+                f"{provider.value}/does-not-matter",
+                inputs="Hello world",
+                api_key="test_key",
+                client_args=client_args or None,
+            )
     else:
         pytest.skip(f"{provider.value} supports embeddings, skipping")
