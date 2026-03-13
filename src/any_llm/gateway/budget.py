@@ -5,6 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from any_llm.any_llm import AnyLLM
+from any_llm.exceptions import AnyLLMError
 from any_llm.gateway.db import Budget, BudgetResetLog, User
 from any_llm.gateway.log_config import logger
 from any_llm.gateway.pricing import find_model_pricing
@@ -126,7 +127,7 @@ def _is_model_free(db: Session, model: str) -> bool:
         pricing = find_model_pricing(db, provider_str, model_name)
         if pricing:
             return pricing.input_price_per_million == 0 and pricing.output_price_per_million == 0
-    except (ValueError, SQLAlchemyError) as e:
+    except (AnyLLMError, ValueError, SQLAlchemyError) as e:
         logger.warning("Failed to determine provider pricing: %s", e)
 
     return False

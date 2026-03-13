@@ -18,7 +18,7 @@ def test_create_user_rollback_on_commit_failure(
     client: TestClient,
     master_key_header: dict[str, str],
 ) -> None:
-    """create_user rolls back and propagates error when commit fails."""
+    """create_user rolls back and returns 500 when commit fails."""
     with patch(
         "any_llm.gateway.routes.users.Session.commit",
         side_effect=OperationalError("db", {}, Exception("connection lost")),
@@ -28,7 +28,7 @@ def test_create_user_rollback_on_commit_failure(
             json={"user_id": "fail-user"},
             headers=master_key_header,
         )
-        assert resp.status_code == 500
+    assert resp.status_code == 500
 
 
 def test_delete_user_rollback_on_commit_failure(
@@ -43,7 +43,7 @@ def test_delete_user_rollback_on_commit_failure(
         side_effect=OperationalError("db", {}, Exception("connection lost")),
     ):
         resp = client.delete("/v1/users/del-fail-user", headers=master_key_header)
-        assert resp.status_code == 500
+    assert resp.status_code == 500
 
     # User should still be active because the commit was rolled back
     resp = client.get("/v1/users/del-fail-user", headers=master_key_header)
@@ -64,7 +64,7 @@ def test_create_key_rollback_on_commit_failure(
             json={"key_name": "fail-key"},
             headers=master_key_header,
         )
-        assert resp.status_code == 500
+    assert resp.status_code == 500
 
 
 def test_create_budget_rollback_on_commit_failure(
@@ -81,7 +81,7 @@ def test_create_budget_rollback_on_commit_failure(
             json={"max_budget": 100.0},
             headers=master_key_header,
         )
-        assert resp.status_code == 500
+    assert resp.status_code == 500
 
 
 def test_set_pricing_rollback_on_commit_failure(
@@ -102,7 +102,7 @@ def test_set_pricing_rollback_on_commit_failure(
             },
             headers=master_key_header,
         )
-        assert resp.status_code == 500
+    assert resp.status_code == 500
 
 
 def test_reset_user_budget_rollback_on_commit_failure(test_db: Session) -> None:
@@ -119,15 +119,22 @@ def test_reset_user_budget_rollback_on_commit_failure(test_db: Session) -> None:
     with (
         patch.object(test_db, "commit", side_effect=OperationalError("db", {}, Exception("disk full"))),
         patch.object(test_db, "rollback", wraps=test_db.rollback) as mock_rollback,
-        pytest.raises(OperationalError),
     ):
-        reset_user_budget(test_db, user, budget, now)
+        with pytest.raises(OperationalError):
+            reset_user_budget(test_db, user, budget, now)
+
         mock_rollback.assert_called_once()
 
 
 def test_is_model_free_catches_value_error(test_db: Session) -> None:
     """_is_model_free returns False on ValueError from split_model_provider."""
     result = _is_model_free(test_db, "completely-invalid-model-string-no-provider")
+    assert result is False
+
+
+def test_is_model_free_catches_unsupported_provider_error(test_db: Session) -> None:
+    """_is_model_free returns False on UnsupportedProviderError from split_model_provider."""
+    result = _is_model_free(test_db, "unknown:some-model")
     assert result is False
 
 

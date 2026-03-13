@@ -148,7 +148,10 @@ async def create_user(
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        raise
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None
     db.refresh(user)
 
     return UserResponse.from_model(user)
@@ -224,7 +227,10 @@ async def update_user(
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        raise
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None
     db.refresh(user)
 
     return UserResponse.from_model(user)
@@ -251,7 +257,10 @@ async def delete_user(
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        raise
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None
 
 
 @router.get("/{user_id}/usage", dependencies=[Depends(verify_master_key)])

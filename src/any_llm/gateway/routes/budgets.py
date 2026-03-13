@@ -53,7 +53,10 @@ async def create_budget(
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        raise
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None
     db.refresh(budget)
 
     return BudgetResponse(
@@ -133,7 +136,10 @@ async def update_budget(
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        raise
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None
     db.refresh(budget)
 
     return BudgetResponse(
@@ -164,4 +170,7 @@ async def delete_budget(
         db.commit()
     except SQLAlchemyError:
         db.rollback()
-        raise
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None
