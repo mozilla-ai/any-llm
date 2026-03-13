@@ -29,9 +29,7 @@ class AzureanthropicProvider(BaseAnthropicProvider):
     PROVIDER_NAME = "azureanthropic"
     ENV_API_KEY_NAME = "AZURE_ANTHROPIC_API_KEY"
     ENV_API_BASE_NAME = "AZURE_ANTHROPIC_API_BASE"
-    PROVIDER_DOCUMENTATION_URL = (
-        "https://learn.microsoft.com/en-us/azure/ai-foundry/model-inference/concepts/models"
-    )
+    PROVIDER_DOCUMENTATION_URL = "https://learn.microsoft.com/en-us/azure/ai-foundry/model-inference/concepts/models"
 
     SUPPORTS_LIST_MODELS = False
 
@@ -43,9 +41,15 @@ class AzureanthropicProvider(BaseAnthropicProvider):
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         resource = kwargs.pop("resource", None) or os.getenv("AZURE_ANTHROPIC_RESOURCE")
 
-        self.client = AsyncAnthropicFoundry(
-            api_key=api_key,
-            resource=resource,
-            base_url=api_base,
-            **kwargs,
-        )
+        if api_base is not None:
+            self.client = AsyncAnthropicFoundry(
+                base_url=api_base,
+                api_key=api_key,
+                **kwargs,
+            )
+        else:
+            self.client = AsyncAnthropicFoundry(
+                resource=resource,
+                api_key=api_key,
+                **kwargs,
+            )

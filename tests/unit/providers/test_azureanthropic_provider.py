@@ -30,7 +30,7 @@ async def test_azureanthropic_client_created_with_api_key_and_resource() -> None
             CompletionParams(model_id="claude-sonnet-4-5-20250514", messages=[{"role": "user", "content": "Hello"}])
         )
 
-        mock_foundry.assert_called_once_with(api_key=api_key, resource=resource, base_url=None)
+        mock_foundry.assert_called_once_with(resource=resource, api_key=api_key)
 
 
 @pytest.mark.asyncio
@@ -50,7 +50,7 @@ async def test_azureanthropic_client_uses_env_vars() -> None:
             CompletionParams(model_id="claude-sonnet-4-5-20250514", messages=[{"role": "user", "content": "Hello"}])
         )
 
-        mock_foundry.assert_called_once_with(api_key="env-key", resource="env-resource", base_url=None)
+        mock_foundry.assert_called_once_with(resource="env-resource", api_key="env-key")
 
 
 @pytest.mark.asyncio
@@ -63,7 +63,7 @@ async def test_azureanthropic_client_without_resource() -> None:
             CompletionParams(model_id="claude-sonnet-4-5-20250514", messages=[{"role": "user", "content": "Hello"}])
         )
 
-        mock_foundry.assert_called_once_with(api_key=api_key, resource=None, base_url=None)
+        mock_foundry.assert_called_once_with(resource=None, api_key=api_key)
 
 
 @pytest.mark.asyncio
@@ -79,7 +79,7 @@ async def test_azureanthropic_client_with_api_base() -> None:
             CompletionParams(model_id="claude-sonnet-4-5-20250514", messages=[{"role": "user", "content": "Hello"}])
         )
 
-        mock_foundry.assert_called_once_with(api_key=api_key, resource=None, base_url="https://custom.azure.endpoint")
+        mock_foundry.assert_called_once_with(base_url="https://custom.azure.endpoint", api_key=api_key)
 
 
 @pytest.mark.asyncio
@@ -99,7 +99,7 @@ async def test_azureanthropic_constructor_arg_overrides_env_var() -> None:
             CompletionParams(model_id="claude-sonnet-4-5-20250514", messages=[{"role": "user", "content": "Hello"}])
         )
 
-        mock_foundry.assert_called_once_with(api_key="arg-key", resource="arg-resource", base_url=None)
+        mock_foundry.assert_called_once_with(resource="arg-resource", api_key="arg-key")
 
 
 @pytest.mark.asyncio
