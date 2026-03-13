@@ -14,8 +14,9 @@ from any_llm.gateway.auth.dependencies import get_config
 from any_llm.gateway.auth.vertex_auth import setup_vertex_environment
 from any_llm.gateway.budget import validate_user_budget
 from any_llm.gateway.config import GatewayConfig
-from any_llm.gateway.db import APIKey, ModelPricing, UsageLog, User, get_db
+from any_llm.gateway.db import APIKey, UsageLog, User, get_db
 from any_llm.gateway.log_config import logger
+from any_llm.gateway.pricing import find_model_pricing
 from any_llm.gateway.rate_limit import RateLimitInfo, check_rate_limit
 from any_llm.gateway.streaming import OPENAI_STREAM_FORMAT, streaming_generator
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionUsage
@@ -141,12 +142,7 @@ async def log_usage(
         usage_log.completion_tokens = usage_data.completion_tokens
         usage_log.total_tokens = usage_data.total_tokens
 
-        model_key = f"{provider}:{model}" if provider else model
-        model_key_legacy = f"{provider}/{model}" if provider else None
-        pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key).first()
-        if not pricing and model_key_legacy:
-            pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key_legacy).first()
-
+        pricing = find_model_pricing(db, provider, model)
         if pricing:
             cost = (usage_data.prompt_tokens / 1_000_000) * pricing.input_price_per_million + (
                 usage_data.completion_tokens / 1_000_000
@@ -158,8 +154,8 @@ async def log_usage(
                     {User.spend: User.spend + cost}
                 )
         else:
-            attempted = f"'{model_key}'" + (f" or '{model_key_legacy}'" if model_key_legacy else "")
-            logger.warning(f"No pricing configured for {attempted}. Usage will be tracked without cost.")
+            model_ref = f"{provider}:{model}" if provider else model
+            logger.warning(f"No pricing configured for '{model_ref}'. Usage will be tracked without cost.")
 
     try:
         nested = db.begin_nested()

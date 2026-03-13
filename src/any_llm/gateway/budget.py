@@ -4,8 +4,9 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from any_llm.any_llm import AnyLLM
-from any_llm.gateway.db import Budget, BudgetResetLog, ModelPricing, User
+from any_llm.gateway.db import Budget, BudgetResetLog, User
 from any_llm.gateway.log_config import logger
+from any_llm.gateway.pricing import find_model_pricing
 
 
 def calculate_next_reset(start: datetime, duration_sec: int) -> datetime:
@@ -114,17 +115,11 @@ def _is_model_free(db: Session, model: str) -> bool:
     """
     try:
         provider, model_name = AnyLLM.split_model_provider(model)
-        model_key = f"{provider.value}:{model_name}" if provider else model_name
-        model_key_legacy = f"{provider.value}/{model_name}" if provider else None
-
-        pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key).first()
-        if not pricing and model_key_legacy:
-            pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key_legacy).first()
-
+        provider_str = provider.value if provider else None
+        pricing = find_model_pricing(db, provider_str, model_name)
         if pricing:
             return pricing.input_price_per_million == 0 and pricing.output_price_per_million == 0
     except Exception as e:
-        # If we can't determine the provider or pricing, treat as not free
         logger.warning("Failed to determine provider pricing: %s", e)
 
     return False
