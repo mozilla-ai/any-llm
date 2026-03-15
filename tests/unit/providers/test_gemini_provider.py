@@ -779,6 +779,44 @@ def test_convert_messages_parallel_tool_calls_only_first_gets_skip_sentinel() ->
     assert assistant_message.parts[1].thought_signature is None
 
 
+@pytest.mark.parametrize(
+    ("tool_content", "expected_response"),
+    [
+        ('{"temp": "20C"}', {"temp": "20C"}),
+        ("[]", {"result": []}),
+        ("1", {"result": 1}),
+    ],
+)
+def test_convert_messages_tool_response_normalizes_non_objects(
+    tool_content: str, expected_response: dict[str, Any]
+) -> None:
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "What is the weather?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_123",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": '{"location": "Paris"}'},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_123", "name": "get_weather", "content": tool_content},
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    tool_message = formatted_messages[2]
+    assert tool_message.role == "function"
+    assert tool_message.parts is not None
+    assert len(tool_message.parts) == 1
+    function_response = tool_message.parts[0].function_response
+    assert function_response is not None
+    assert function_response.response == expected_response
+
+
 def test_streaming_completion_with_tool_call_without_args() -> None:
     """Test streaming chunks handle function calls with args=None."""
     from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
