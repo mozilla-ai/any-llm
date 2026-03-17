@@ -130,7 +130,9 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[types.Conten
         elif message["role"] == "tool":
             try:
                 content_json = json.loads(message["content"])
-                part = types.Part.from_function_response(name=message.get("name", "unknown"), response=content_json)
+                part = types.Part.from_function_response(
+                    name=message.get("name", "unknown"), response=_normalize_tool_response(content_json)
+                )
                 formatted_messages.append(types.Content(role="function", parts=[part]))
             except json.JSONDecodeError:
                 part = types.Part.from_function_response(
@@ -139,6 +141,12 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[types.Conten
                 formatted_messages.append(types.Content(role="function", parts=[part]))
 
     return formatted_messages, system_instruction
+
+
+def _normalize_tool_response(response: Any) -> dict[str, Any]:
+    if isinstance(response, dict):
+        return response
+    return {"result": response}
 
 
 def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, Any]:
