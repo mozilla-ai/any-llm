@@ -18,7 +18,7 @@ from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.ollama import OllamaProvider
 from any_llm.providers.openai import OpenaiProvider
 from any_llm.providers.platform import PlatformProvider
-from any_llm.providers.platform.utils import export_completion_trace
+from any_llm.providers.platform.utils import export_completion_trace, export_responses_trace
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -829,25 +829,168 @@ async def test_aembedding_delegates_to_provider(
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.export_completion_trace")
-async def test_aresponses_delegates_to_provider(
-    mock_post_usage: AsyncMock,
+@patch("any_llm.providers.platform.platform.export_responses_trace")
+async def test_aresponses_non_streaming_exports_trace(
+    mock_export_trace: AsyncMock,
     any_llm_key: str,
     mock_decrypted_provider_key: DecryptedProviderKey,
 ) -> None:
-    """Test that _aresponses delegates to the wrapped provider."""
+    """Test that non-streaming responses correctly call the provider and export traces."""
     provider_instance = PlatformProvider(api_key=any_llm_key)
     provider_instance.provider = OpenaiProvider
     await _init_provider(provider_instance, mock_decrypted_provider_key)
 
+    mock_usage = Mock()
+    mock_usage.input_tokens = 20
+    mock_usage.output_tokens = 10
     mock_response = Mock()
+    mock_response.usage = mock_usage
+    mock_response.model = "gpt-4.1"
+
+    mock_params = Mock(spec=["model", "user", "stream"])
+    mock_params.model = "gpt-4.1"
+    mock_params.user = None
+    mock_params.stream = False
+
     provider_instance.provider._aresponses = AsyncMock(return_value=mock_response)  # type: ignore[method-assign]
 
-    mock_params = Mock()
     result = await provider_instance._aresponses(mock_params)
 
     assert result == mock_response
     provider_instance.provider._aresponses.assert_called_once_with(mock_params)
+
+    mock_export_trace.assert_called_once()
+    call_args = mock_export_trace.call_args
+    assert call_args.kwargs["any_llm_key"] == any_llm_key
+    assert call_args.kwargs["provider"] == "openai"
+    assert call_args.kwargs["request_model"] == "gpt-4.1"
+    assert call_args.kwargs["response_model"] == "gpt-4.1"
+    assert call_args.kwargs["input_tokens"] == 20
+    assert call_args.kwargs["output_tokens"] == 10
+    assert "existing_span" in call_args.kwargs
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_responses_trace")
+async def test_aresponses_streaming_exports_trace(
+    mock_export_trace: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Test that streaming responses wrap the iterator and export usage from the completed event."""
+    completed_usage = Mock()
+    completed_usage.input_tokens = 15
+    completed_usage.output_tokens = 8
+
+    completed_response = Mock()
+    completed_response.usage = completed_usage
+    completed_response.model = "gpt-4.1"
+
+    mock_events = [
+        Mock(type="response.output_text.delta"),
+        Mock(type="response.output_text.delta"),
+        Mock(type="response.completed", response=completed_response),
+    ]
+
+    async def mock_stream():  # type: ignore[no-untyped-def]
+        for event in mock_events:
+            yield event
+
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+
+    provider_instance.provider._aresponses = AsyncMock(return_value=mock_stream())  # type: ignore[method-assign, no-untyped-call]
+
+    mock_params = Mock(spec=["model", "user", "stream"])
+    mock_params.model = "gpt-4.1"
+    mock_params.user = None
+    mock_params.stream = True
+
+    result = await provider_instance._aresponses(mock_params)
+
+    collected_events = []
+    async for event in result:  # type: ignore[union-attr]
+        collected_events.append(event)
+
+    assert len(collected_events) == 3
+    assert collected_events == mock_events
+
+    mock_export_trace.assert_called_once()
+    call_args = mock_export_trace.call_args
+    assert call_args.kwargs["provider"] == "openai"
+    assert call_args.kwargs["request_model"] == "gpt-4.1"
+    assert call_args.kwargs["response_model"] == "gpt-4.1"
+    assert call_args.kwargs["input_tokens"] == 15
+    assert call_args.kwargs["output_tokens"] == 8
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_responses_trace")
+async def test_aresponses_streaming_without_completed_event(
+    mock_export_trace: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Test that streaming still exports a trace even without a response.completed event."""
+    mock_events = [
+        Mock(type="response.output_text.delta"),
+        Mock(type="response.output_text.done"),
+    ]
+
+    async def mock_stream():  # type: ignore[no-untyped-def]
+        for event in mock_events:
+            yield event
+
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+
+    provider_instance.provider._aresponses = AsyncMock(return_value=mock_stream())  # type: ignore[method-assign, no-untyped-call]
+
+    mock_params = Mock(spec=["model", "user", "stream"])
+    mock_params.model = "gpt-4.1"
+    mock_params.user = None
+    mock_params.stream = True
+
+    result = await provider_instance._aresponses(mock_params)
+
+    collected_events = []
+    async for event in result:  # type: ignore[union-attr]
+        collected_events.append(event)
+
+    assert len(collected_events) == 2
+
+    mock_export_trace.assert_called_once()
+    call_args = mock_export_trace.call_args
+    assert call_args.kwargs["input_tokens"] is None
+    assert call_args.kwargs["output_tokens"] is None
+    assert call_args.kwargs["response_model"] is None
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_responses_trace")
+async def test_aresponses_sets_error_status_on_exception(
+    mock_export_trace: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Test that _aresponses sets error status on the span when the provider raises."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+
+    provider_instance.provider._aresponses = AsyncMock(side_effect=RuntimeError("provider error"))  # type: ignore[method-assign]
+
+    mock_params = Mock(spec=["model", "user", "stream"])
+    mock_params.model = "gpt-4.1"
+    mock_params.user = None
+    mock_params.stream = False
+
+    with pytest.raises(RuntimeError, match="provider error"):
+        await provider_instance._aresponses(mock_params)
+
+    mock_export_trace.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -2650,6 +2793,555 @@ async def test_stream_cancelled_with_no_chunks_ends_span(
     # No usage or model attributes should be set when no chunks were received
     usage_calls = [c for c in llm_span.set_attribute.call_args_list if c.args[0].startswith("gen_ai.usage")]
     assert usage_calls == []
+
+
+@pytest.mark.asyncio
+async def test_export_responses_trace_success(
+    mock_platform_client: Mock,
+) -> None:
+    """Test successful posting of responses trace with all optional fields."""
+    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+        await export_responses_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4.1",
+            response_model="gpt-4.1",
+            input_tokens=20,
+            output_tokens=10,
+            start_time_ns=100,
+            end_time_ns=200,
+        )
+
+    mock_platform_client._aensure_valid_token.assert_called_once_with(any_llm_key)
+
+    span = _get_single_span(exporter)
+    assert span.kind.name == "CLIENT"
+    assert span.start_time == 100
+    assert span.end_time == 200
+    assert span.attributes["gen_ai.provider.name"] == "openai"
+    assert span.attributes["gen_ai.request.model"] == "gpt-4.1"
+    assert span.attributes["gen_ai.response.model"] == "gpt-4.1"
+    assert span.attributes["gen_ai.usage.input_tokens"] == 20
+    assert span.attributes["gen_ai.usage.output_tokens"] == 10
+    assert "anyllm.client_name" not in span.attributes
+    assert "anyllm.session_label" not in span.attributes
+    assert "anyllm.user_session_label" not in span.attributes
+    assert "gen_ai.conversation.id" not in span.attributes
+
+
+@pytest.mark.asyncio
+async def test_export_responses_trace_with_optional_attributes(
+    mock_platform_client: Mock,
+) -> None:
+    """Test responses trace includes optional attributes when provided."""
+    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+        await export_responses_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="anthropic",
+            request_model="claude-sonnet-4-6",
+            response_model="claude-sonnet-4-6",
+            input_tokens=50,
+            output_tokens=30,
+            start_time_ns=100,
+            end_time_ns=200,
+            client_name="my-app",
+            session_label="sess-abc",
+            user_session_label="user-label-1",
+            conversation_id="conv-42",
+        )
+
+    span = _get_single_span(exporter)
+    assert span.attributes["anyllm.client_name"] == "my-app"
+    assert span.attributes["anyllm.session_label"] == "sess-abc"
+    assert span.attributes["anyllm.user_session_label"] == "user-label-1"
+    assert span.attributes["gen_ai.conversation.id"] == "conv-42"
+
+
+@pytest.mark.asyncio
+async def test_export_responses_trace_with_none_optional_fields(
+    mock_platform_client: Mock,
+) -> None:
+    """Test that None optional fields are omitted from span attributes."""
+    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+        await export_responses_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4.1",
+            response_model=None,
+            input_tokens=None,
+            output_tokens=None,
+            start_time_ns=100,
+            end_time_ns=200,
+        )
+
+    span = _get_single_span(exporter)
+    assert span.attributes["gen_ai.provider.name"] == "openai"
+    assert span.attributes["gen_ai.request.model"] == "gpt-4.1"
+    assert "gen_ai.response.model" not in span.attributes
+    assert "gen_ai.usage.input_tokens" not in span.attributes
+    assert "gen_ai.usage.output_tokens" not in span.attributes
+
+
+@pytest.mark.asyncio
+async def test_export_responses_trace_uses_existing_span(
+    mock_platform_client: Mock,
+) -> None:
+    """Test that export_responses_trace uses an existing span when provided."""
+    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    existing_span = Mock()
+
+    await export_responses_trace(
+        platform_client=mock_platform_client,
+        client=client,
+        any_llm_key=any_llm_key,
+        provider="openai",
+        request_model="gpt-4.1",
+        response_model="gpt-4.1",
+        input_tokens=10,
+        output_tokens=5,
+        start_time_ns=100,
+        end_time_ns=200,
+        existing_span=existing_span,
+    )
+
+    existing_span.set_attribute.assert_any_call("gen_ai.provider.name", "openai")
+    existing_span.set_attribute.assert_any_call("gen_ai.request.model", "gpt-4.1")
+    existing_span.set_attribute.assert_any_call("gen_ai.response.model", "gpt-4.1")
+    existing_span.set_attribute.assert_any_call("gen_ai.usage.input_tokens", 10)
+    existing_span.set_attribute.assert_any_call("gen_ai.usage.output_tokens", 5)
+    existing_span.end.assert_called_once_with(end_time=200)
+
+
+@pytest.mark.asyncio
+async def test_export_responses_trace_uses_provided_access_token(
+    mock_platform_client: Mock,
+) -> None:
+    """Test that export_responses_trace uses access_token directly when provided."""
+    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+        await export_responses_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4.1",
+            response_model=None,
+            input_tokens=None,
+            output_tokens=None,
+            start_time_ns=100,
+            end_time_ns=200,
+            access_token="pre-fetched-token",  # noqa: S106
+        )
+
+    mock_platform_client._aensure_valid_token.assert_not_called()
+    span = _get_single_span(exporter)
+    assert span.attributes["gen_ai.provider.name"] == "openai"
+
+
+@pytest.mark.asyncio
+async def test_export_responses_trace_inherits_parent_trace_context(
+    mock_platform_client: Mock,
+) -> None:
+    """Test that responses trace spans inherit the caller's trace context."""
+    from opentelemetry import trace
+
+    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    parent_tracer = test_provider.get_tracer("test-app")
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    with trace.use_span(parent_tracer.start_span("parent.pipeline")):
+        with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+            await export_responses_trace(
+                platform_client=mock_platform_client,
+                client=client,
+                any_llm_key=any_llm_key,
+                provider="openai",
+                request_model="gpt-4.1",
+                response_model=None,
+                input_tokens=None,
+                output_tokens=None,
+                start_time_ns=100,
+                end_time_ns=200,
+            )
+
+    child_spans = [s for s in exporter.get_finished_spans() if s.name == "llm.request"]
+    assert len(child_spans) == 1
+    child_span = child_spans[0]
+    assert child_span.parent is not None
+    assert child_span.parent.trace_id != 0
+    assert child_span.parent.span_id != 0
+
+
+@pytest.mark.asyncio
+async def test_export_responses_trace_creates_root_span_without_parent(
+    mock_platform_client: Mock,
+) -> None:
+    """Test that responses trace spans are root spans when no caller context is active."""
+    any_llm_key = "ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+
+    exporter = InMemorySpanExporter()
+    test_provider = TracerProvider()
+    test_provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    with patch("any_llm.providers.platform.utils._get_or_create_tracer_provider", return_value=test_provider):
+        await export_responses_trace(
+            platform_client=mock_platform_client,
+            client=client,
+            any_llm_key=any_llm_key,
+            provider="openai",
+            request_model="gpt-4.1",
+            response_model=None,
+            input_tokens=None,
+            output_tokens=None,
+            start_time_ns=100,
+            end_time_ns=200,
+        )
+
+    span = _get_single_span(exporter)
+    assert span.parent is None
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_responses_trace", new_callable=AsyncMock)
+@patch("any_llm.providers.platform.platform.deactivate_trace_export")
+async def test_responses_stream_cancelled_with_events_exports_partial_trace(
+    mock_deactivate: Mock,
+    mock_export_trace: AsyncMock,
+    any_llm_key: str,
+) -> None:
+    """When a responses stream is cancelled after receiving events, span attributes are set and the span is ended."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    llm_span = Mock()
+    trace_id = 123
+
+    completed_usage = Mock()
+    completed_usage.input_tokens = 15
+    completed_usage.output_tokens = 8
+
+    completed_response = Mock()
+    completed_response.usage = completed_usage
+    completed_response.model = "gpt-4.1"
+
+    mock_events = [
+        Mock(type="response.output_text.delta"),
+        Mock(type="response.output_text.delta"),
+        Mock(type="response.completed", response=completed_response),
+    ]
+
+    async def mock_stream() -> AsyncIterator[Any]:
+        for event in mock_events:
+            yield event
+
+    stream = provider_instance._stream_responses_with_usage_tracking(
+        stream=mock_stream(),
+        start_time_ns=100,
+        request_model="gpt-4.1",
+        conversation_id=None,
+        session_label="session",
+        user_session_label=None,
+        start_perf_counter_ns=100,
+        any_llm_key=any_llm_key,
+        llm_span=llm_span,
+        trace_id=trace_id,
+        access_token="token",  # noqa: S106
+        trace_export_activated=True,
+    )
+
+    assert isinstance(stream, AsyncGenerator)
+    first = await stream.__anext__()
+    assert first == mock_events[0]
+    await stream.aclose()
+
+    llm_span.set_attribute.assert_any_call("anyllm.stream.cancelled", True)
+    llm_span.end.assert_called_once()
+    mock_deactivate.assert_called_once_with(trace_id)
+    mock_export_trace.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_responses_trace", new_callable=AsyncMock)
+@patch("any_llm.providers.platform.platform.deactivate_trace_export")
+async def test_responses_stream_cancelled_with_usage_sets_token_attributes(
+    mock_deactivate: Mock,
+    mock_export_trace: AsyncMock,
+    any_llm_key: str,
+) -> None:
+    """When all events including usage are received but stream is cancelled, token attributes are set."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    llm_span = Mock()
+    trace_id = 321
+
+    completed_usage = Mock()
+    completed_usage.input_tokens = 10
+    completed_usage.output_tokens = 5
+
+    completed_response = Mock()
+    completed_response.usage = completed_usage
+    completed_response.model = "gpt-4.1"
+
+    mock_events = [
+        Mock(type="response.output_text.delta"),
+        Mock(type="response.completed", response=completed_response),
+    ]
+
+    async def mock_stream() -> AsyncIterator[Any]:
+        for event in mock_events:
+            yield event
+
+    stream = provider_instance._stream_responses_with_usage_tracking(
+        stream=mock_stream(),
+        start_time_ns=100,
+        request_model="gpt-4.1",
+        conversation_id=None,
+        session_label="session",
+        user_session_label=None,
+        start_perf_counter_ns=100,
+        any_llm_key=any_llm_key,
+        llm_span=llm_span,
+        trace_id=trace_id,
+        access_token="token",  # noqa: S106
+        trace_export_activated=True,
+    )
+
+    assert isinstance(stream, AsyncGenerator)
+    await stream.__anext__()
+    await stream.__anext__()
+    await stream.aclose()
+
+    llm_span.set_attribute.assert_any_call("anyllm.stream.cancelled", True)
+    llm_span.set_attribute.assert_any_call("gen_ai.response.model", "gpt-4.1")
+    llm_span.set_attribute.assert_any_call("gen_ai.usage.input_tokens", 10)
+    llm_span.set_attribute.assert_any_call("gen_ai.usage.output_tokens", 5)
+    llm_span.end.assert_called_once()
+    mock_deactivate.assert_called_once_with(trace_id)
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.deactivate_trace_export")
+async def test_responses_stream_cancelled_with_no_events_ends_span(
+    mock_deactivate: Mock,
+    any_llm_key: str,
+) -> None:
+    """When a responses stream is cancelled before any events, the span is ended with the cancelled attribute."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    llm_span = Mock()
+    trace_id = 654
+
+    async def mock_stream() -> AsyncIterator[Any]:
+        raise asyncio.CancelledError
+        yield  # make this an async generator
+
+    stream = provider_instance._stream_responses_with_usage_tracking(
+        stream=mock_stream(),
+        start_time_ns=100,
+        request_model="gpt-4.1",
+        conversation_id=None,
+        session_label="session",
+        user_session_label=None,
+        start_perf_counter_ns=100,
+        any_llm_key=any_llm_key,
+        llm_span=llm_span,
+        trace_id=trace_id,
+        access_token="token",  # noqa: S106
+        trace_export_activated=True,
+    )
+
+    async def consume_stream() -> list[Any]:
+        return [event async for event in stream]
+
+    with pytest.raises(asyncio.CancelledError):
+        await consume_stream()
+
+    llm_span.set_attribute.assert_any_call("anyllm.stream.cancelled", True)
+    llm_span.end.assert_called_once()
+    mock_deactivate.assert_called_once_with(trace_id)
+    usage_calls = [c for c in llm_span.set_attribute.call_args_list if c.args[0].startswith("gen_ai.usage")]
+    assert usage_calls == []
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_responses_trace", new_callable=AsyncMock)
+@patch("any_llm.providers.platform.platform.deactivate_trace_export")
+async def test_responses_stream_error_sets_error_status_on_span(
+    mock_deactivate: Mock,
+    mock_export_trace: AsyncMock,
+    any_llm_key: str,
+) -> None:
+    """When a responses stream raises an error, the span records the error and is ended."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    llm_span = Mock()
+    trace_id = 456
+
+    async def mock_stream() -> AsyncIterator[Any]:
+        yield Mock(type="response.output_text.delta")
+        msg = "stream failed"
+        raise RuntimeError(msg)
+
+    stream = provider_instance._stream_responses_with_usage_tracking(
+        stream=mock_stream(),
+        start_time_ns=100,
+        request_model="gpt-4.1",
+        conversation_id=None,
+        session_label="session",
+        user_session_label=None,
+        start_perf_counter_ns=100,
+        any_llm_key=any_llm_key,
+        llm_span=llm_span,
+        trace_id=trace_id,
+        access_token="token",  # noqa: S106
+        trace_export_activated=True,
+    )
+
+    with pytest.raises(RuntimeError, match="stream failed"):
+        async for _ in stream:
+            pass
+
+    llm_span.set_attribute.assert_any_call("error.type", "RuntimeError")
+    llm_span.set_status.assert_called_once()
+    llm_span.end.assert_called_once()
+    mock_deactivate.assert_called_once_with(trace_id)
+    mock_export_trace.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_responses_trace")
+async def test_aresponses_non_streaming_with_conversation_id(
+    mock_export_trace: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Test that _aresponses passes conversation_id through to trace export."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+
+    mock_usage = Mock()
+    mock_usage.input_tokens = 20
+    mock_usage.output_tokens = 10
+    mock_response = Mock()
+    mock_response.usage = mock_usage
+    mock_response.model = "gpt-4.1"
+
+    mock_params = Mock(spec=["model", "user", "stream"])
+    mock_params.model = "gpt-4.1"
+    mock_params.user = "user-42"
+    mock_params.stream = False
+
+    provider_instance.provider._aresponses = AsyncMock(return_value=mock_response)  # type: ignore[method-assign]
+
+    await provider_instance._aresponses(mock_params)
+
+    call_args = mock_export_trace.call_args
+    assert call_args.kwargs["conversation_id"] == "user-42"
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_responses_trace")
+async def test_aresponses_non_streaming_with_session_label(
+    mock_export_trace: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Test that _aresponses forwards the session_label kwarg to trace export."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+
+    mock_usage = Mock()
+    mock_usage.input_tokens = 5
+    mock_usage.output_tokens = 3
+    mock_response = Mock()
+    mock_response.usage = mock_usage
+    mock_response.model = "gpt-4.1"
+
+    mock_params = Mock(spec=["model", "user", "stream"])
+    mock_params.model = "gpt-4.1"
+    mock_params.user = None
+    mock_params.stream = False
+
+    provider_instance.provider._aresponses = AsyncMock(return_value=mock_response)  # type: ignore[method-assign]
+
+    await provider_instance._aresponses(mock_params, session_label="my-session")
+
+    call_args = mock_export_trace.call_args
+    assert call_args.kwargs["user_session_label"] == "my-session"
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_responses_trace")
+async def test_aresponses_non_streaming_without_usage(
+    mock_export_trace: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Test that _aresponses handles responses without usage gracefully."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+
+    mock_response = Mock()
+    mock_response.usage = None
+    mock_response.model = "gpt-4.1"
+
+    mock_params = Mock(spec=["model", "user", "stream"])
+    mock_params.model = "gpt-4.1"
+    mock_params.user = None
+    mock_params.stream = False
+
+    provider_instance.provider._aresponses = AsyncMock(return_value=mock_response)  # type: ignore[method-assign]
+
+    await provider_instance._aresponses(mock_params)
+
+    call_args = mock_export_trace.call_args
+    assert call_args.kwargs["input_tokens"] is None
+    assert call_args.kwargs["output_tokens"] is None
+    assert call_args.kwargs["response_model"] == "gpt-4.1"
 
 
 def test_client_args_not_passed_to_httpx_client(any_llm_key: str) -> None:
