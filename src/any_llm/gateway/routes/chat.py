@@ -19,6 +19,7 @@ from any_llm.gateway.db import APIKey, UsageLog, User, get_db
 from any_llm.gateway.log_config import logger
 from any_llm.gateway.pricing import find_model_pricing
 from any_llm.gateway.rate_limit import RateLimitInfo, check_rate_limit
+from any_llm.gateway.routes._helpers import resolve_user_id
 from any_llm.gateway.streaming import OPENAI_STREAM_FORMAT, streaming_generator
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionUsage
 
@@ -187,28 +188,23 @@ async def chat_completions(
     """
     api_key, is_master_key = auth_result
 
-    user_id: str
-    if is_master_key:
-        if not request.user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="When using master key, 'user' field is required in request body",
-            )
-        user_id = request.user
-    elif request.user:
-        user_id = request.user
-    else:
-        if api_key is None:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="API key validation failed",
-            )
-        if not api_key.user_id:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="API key has no associated user",
-            )
-        user_id = str(api_key.user_id)
+    user_id = resolve_user_id(
+        user_id_from_request=request.user,
+        api_key=api_key,
+        is_master_key=is_master_key,
+        master_key_error=HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="When using master key, 'user' field is required in request body",
+        ),
+        no_api_key_error=HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="API key validation failed",
+        ),
+        no_user_error=HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="API key has no associated user",
+        ),
+    )
 
     rate_limit_info = check_rate_limit(raw_request, user_id)
 

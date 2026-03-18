@@ -13,6 +13,7 @@ from any_llm.gateway.config import GatewayConfig
 from any_llm.gateway.db import APIKey, get_db
 from any_llm.gateway.log_config import logger
 from any_llm.gateway.rate_limit import check_rate_limit
+from any_llm.gateway.routes._helpers import resolve_user_id
 from any_llm.gateway.routes.chat import get_provider_kwargs, log_usage, rate_limit_headers
 from any_llm.gateway.streaming import ANTHROPIC_STREAM_FORMAT, streaming_generator
 from any_llm.types.completion import CompletionUsage
@@ -55,33 +56,6 @@ _API_KEY_NO_USER = "API key has no associated user"
 _PROVIDER_ERROR = "The request could not be completed by the provider"
 
 
-def _resolve_user_id(
-    request: MessagesRequest,
-    api_key: APIKey | None,
-    is_master_key: bool,
-) -> str:
-    """Resolve user_id from request metadata, API key, or master key context."""
-    user_from_metadata = request.metadata.get("user_id") if request.metadata else None
-
-    if is_master_key:
-        if not user_from_metadata:
-            raise _anthropic_error(
-                _ERR_INVALID_REQUEST,
-                _MASTER_KEY_USER_REQUIRED,
-                status.HTTP_400_BAD_REQUEST,
-            )
-        return str(user_from_metadata)
-
-    if user_from_metadata:
-        return str(user_from_metadata)
-
-    if api_key is None:
-        raise _anthropic_error(_ERR_API, _API_KEY_VALIDATION_FAILED, status.HTTP_500_INTERNAL_SERVER_ERROR)
-    if not api_key.user_id:
-        raise _anthropic_error(_ERR_API, _API_KEY_NO_USER, status.HTTP_500_INTERNAL_SERVER_ERROR)
-    return str(api_key.user_id)
-
-
 @router.post("/messages", response_model=None)
 async def create_message(
     raw_request: Request,
@@ -93,7 +67,27 @@ async def create_message(
 ) -> dict[str, Any] | StreamingResponse:
     """Anthropic Messages API-compatible endpoint."""
     api_key, is_master_key = auth_result
-    user_id = _resolve_user_id(request, api_key, is_master_key)
+    user_from_metadata = request.metadata.get("user_id") if request.metadata else None
+    user_id = resolve_user_id(
+        user_id_from_request=str(user_from_metadata) if user_from_metadata else None,
+        api_key=api_key,
+        is_master_key=is_master_key,
+        master_key_error=_anthropic_error(
+            _ERR_INVALID_REQUEST,
+            _MASTER_KEY_USER_REQUIRED,
+            status.HTTP_400_BAD_REQUEST,
+        ),
+        no_api_key_error=_anthropic_error(
+            _ERR_API,
+            _API_KEY_VALIDATION_FAILED,
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+        ),
+        no_user_error=_anthropic_error(
+            _ERR_API,
+            _API_KEY_NO_USER,
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+        ),
+    )
 
     rate_limit_info = check_rate_limit(raw_request, user_id)
 
