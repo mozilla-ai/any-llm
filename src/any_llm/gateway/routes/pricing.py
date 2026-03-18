@@ -29,6 +29,17 @@ class PricingResponse(BaseModel):
     created_at: str
     updated_at: str
 
+    @classmethod
+    def from_model(cls, pricing: "ModelPricing") -> "PricingResponse":
+        """Create a PricingResponse from a ModelPricing ORM model."""
+        return cls(
+            model_key=pricing.model_key,
+            input_price_per_million=pricing.input_price_per_million,
+            output_price_per_million=pricing.output_price_per_million,
+            created_at=pricing.created_at.isoformat(),
+            updated_at=pricing.updated_at.isoformat(),
+        )
+
 
 @router.post("", dependencies=[Depends(verify_master_key)])
 async def set_pricing(
@@ -61,13 +72,7 @@ async def set_pricing(
         ) from None
     db.refresh(pricing)
 
-    return PricingResponse(
-        model_key=pricing.model_key,
-        input_price_per_million=pricing.input_price_per_million,
-        output_price_per_million=pricing.output_price_per_million,
-        created_at=pricing.created_at.isoformat(),
-        updated_at=pricing.updated_at.isoformat(),
-    )
+    return PricingResponse.from_model(pricing)
 
 
 @router.get("")
@@ -79,16 +84,7 @@ async def list_pricing(
     """List all model pricing."""
     pricings = db.query(ModelPricing).offset(skip).limit(limit).all()
 
-    return [
-        PricingResponse(
-            model_key=pricing.model_key,
-            input_price_per_million=pricing.input_price_per_million,
-            output_price_per_million=pricing.output_price_per_million,
-            created_at=pricing.created_at.isoformat(),
-            updated_at=pricing.updated_at.isoformat(),
-        )
-        for pricing in pricings
-    ]
+    return [PricingResponse.from_model(pricing) for pricing in pricings]
 
 
 @router.get("/{model_key}")
@@ -105,13 +101,7 @@ async def get_pricing(
             detail=f"Pricing for model '{model_key}' not found",
         )
 
-    return PricingResponse(
-        model_key=pricing.model_key,
-        input_price_per_million=pricing.input_price_per_million,
-        output_price_per_million=pricing.output_price_per_million,
-        created_at=pricing.created_at.isoformat(),
-        updated_at=pricing.updated_at.isoformat(),
-    )
+    return PricingResponse.from_model(pricing)
 
 
 @router.delete("/{model_key}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(verify_master_key)])
