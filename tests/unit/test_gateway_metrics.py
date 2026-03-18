@@ -1,25 +1,12 @@
 """Unit tests for gateway Prometheus metrics — no database required."""
 
-from typing import Any
-from unittest.mock import MagicMock, patch
-
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from starlette.requests import Request
-from starlette.responses import PlainTextResponse
 
 from any_llm.gateway.config import GatewayConfig
 from any_llm.gateway.metrics import (
-    ACTIVE_REQUESTS,
-    AUTH_FAILURES,
-    BUDGET_EXCEEDED,
-    RATE_LIMIT_HITS,
     REGISTRY,
-    REQUEST_COST_DOLLARS,
-    REQUEST_DURATION_SECONDS,
-    REQUESTS,
-    TOKENS,
     MetricsMiddleware,
     metrics_endpoint,
     record_auth_failure,

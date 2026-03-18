@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING
 
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
-from starlette.requests import Request
 from starlette.responses import Response
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
+    from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 REGISTRY = CollectorRegistry()
 
