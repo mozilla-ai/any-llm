@@ -658,7 +658,7 @@ async def test_export_completion_trace_can_skip_session_label_attribute(
 
 @pytest.mark.asyncio
 async def test_export_completion_trace_invalid_key_format() -> None:
-    """Test error handling when ANY_LLM_KEY has invalid format."""
+    """Test that an invalid ANY_LLM_KEY format is caught internally and does not raise."""
     from any_llm_platform_client import AnyLLMPlatformClient
 
     invalid_key = "INVALID_KEY_FORMAT"
@@ -688,17 +688,16 @@ async def test_export_completion_trace_invalid_key_format() -> None:
 
     client = AsyncMock(spec=httpx.AsyncClient)
 
-    with pytest.raises(ValueError, match="Invalid ANY_LLM_KEY format"):
-        await export_completion_trace(
-            platform_client=mock_platform_client,
-            client=client,
-            any_llm_key=invalid_key,
-            provider="openai",
-            request_model="gpt-4",
-            completion=completion,
-            start_time_ns=100,
-            end_time_ns=200,
-        )
+    await export_completion_trace(
+        platform_client=mock_platform_client,
+        client=client,
+        any_llm_key=invalid_key,
+        provider="openai",
+        request_model="gpt-4",
+        completion=completion,
+        start_time_ns=100,
+        end_time_ns=200,
+    )
 
 
 @patch("any_llm.any_llm.importlib.import_module")
@@ -2796,107 +2795,45 @@ async def test_stream_cancelled_with_no_chunks_ends_span(
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.export_completion_trace", new_callable=AsyncMock)
-async def test_streaming_trace_export_failure_does_not_crash_consumer(
-    mock_export_trace: AsyncMock,
-    any_llm_key: str,
+async def test_export_completion_trace_failure_does_not_raise(
+    mock_platform_client: Mock,
 ) -> None:
-    """Trace export failure after streaming must not propagate to the consumer."""
-    mock_export_trace.side_effect = RuntimeError("platform unavailable")
+    """Errors inside export_completion_trace are caught internally and never propagate."""
+    mock_platform_client._aensure_valid_token = AsyncMock(side_effect=RuntimeError("platform unavailable"))
+    client = AsyncMock(spec=httpx.AsyncClient)
 
-    provider_instance = PlatformProvider(api_key=any_llm_key)
-    provider_instance._provider = Mock(PROVIDER_NAME="openai")
-    llm_span = Mock()
-
-    chunks = [
-        ChatCompletionChunk(
-            id="chatcmpl-1",
-            model="gpt-4",
-            created=1234567890,
-            object="chat.completion.chunk",
-            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
-        ),
-        ChatCompletionChunk(
-            id="chatcmpl-1",
-            model="gpt-4",
-            created=1234567890,
-            object="chat.completion.chunk",
-            choices=[ChunkChoice(index=0, delta=ChoiceDelta(), finish_reason="stop")],
-            usage=CompletionUsage(prompt_tokens=5, completion_tokens=2, total_tokens=7),
-        ),
-    ]
-
-    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
-        for chunk in chunks:
-            yield chunk
-
-    result = provider_instance._stream_with_usage_tracking(
-        stream=mock_stream(),
-        start_time_ns=100,
+    await export_completion_trace(
+        platform_client=mock_platform_client,
+        client=client,
+        any_llm_key="ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=",
+        provider="openai",
         request_model="gpt-4",
-        conversation_id=None,
-        session_label="session",
-        user_session_label=None,
-        start_perf_counter_ns=100,
-        any_llm_key=any_llm_key,
-        llm_span=llm_span,
-        trace_id=123,
-        access_token=None,
-        trace_export_activated=False,
+        completion=None,
+        start_time_ns=100,
+        end_time_ns=200,
     )
-
-    collected = [chunk async for chunk in result]
-    assert collected == chunks
-    mock_export_trace.assert_awaited_once()
-    llm_span.set_status.assert_called_once()
-    llm_span.end.assert_called_once()
 
 
 @pytest.mark.asyncio
-@patch("any_llm.providers.platform.platform.export_completion_trace", new_callable=AsyncMock)
-async def test_non_streaming_trace_export_failure_still_returns_completion(
-    mock_export_trace: AsyncMock,
-    any_llm_key: str,
-    mock_decrypted_provider_key: DecryptedProviderKey,
-    mock_completion: ChatCompletion,
+async def test_export_responses_trace_failure_does_not_raise(
+    mock_platform_client: Mock,
 ) -> None:
-    """Trace export failure for non-streaming must not prevent returning the completion."""
-    mock_export_trace.side_effect = RuntimeError("platform unavailable")
+    """Errors inside export_responses_trace are caught internally and never propagate."""
+    mock_platform_client._aensure_valid_token = AsyncMock(side_effect=RuntimeError("platform unavailable"))
+    client = AsyncMock(spec=httpx.AsyncClient)
 
-    provider_instance = PlatformProvider(api_key=any_llm_key)
-    provider_instance.provider = OpenaiProvider
-    await _init_provider(provider_instance, mock_decrypted_provider_key)
-    provider_instance.provider._acompletion = AsyncMock(return_value=mock_completion)  # type: ignore[method-assign]
-
-    params = CompletionParams(
-        model_id="gpt-4",
-        messages=[{"role": "user", "content": "Hello"}],
-        stream=False,
+    await export_responses_trace(
+        platform_client=mock_platform_client,
+        client=client,
+        any_llm_key="ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=",
+        provider="openai",
+        request_model="gpt-4.1",
+        response_model=None,
+        input_tokens=None,
+        output_tokens=None,
+        start_time_ns=100,
+        end_time_ns=200,
     )
-
-    mock_span = Mock()
-    mock_span.get_span_context.return_value = Mock(trace_id=456)
-    mock_tracer = Mock()
-    mock_tracer.start_span.return_value = mock_span
-    mock_provider_tp = Mock()
-    mock_provider_tp.get_tracer.return_value = mock_tracer
-
-    with (
-        patch(
-            "any_llm.providers.platform.platform._get_or_create_tracer_provider",
-            return_value=mock_provider_tp,
-        ),
-        patch(
-            "any_llm.providers.platform.platform.activate_trace_export",
-        ),
-        patch(
-            "any_llm.providers.platform.platform.deactivate_trace_export",
-        ),
-    ):
-        result = await provider_instance._acompletion(params)
-
-    assert result == mock_completion
-    mock_export_trace.assert_awaited_once()
 
 
 @pytest.mark.asyncio

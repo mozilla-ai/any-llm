@@ -232,28 +232,22 @@ class PlatformProvider(AnyLLM):
             if not params.stream:
                 end_time_ns = time.time_ns()
 
-                try:
-                    await export_completion_trace(
-                        platform_client=self.platform_client,
-                        client=self.client,
-                        any_llm_key=any_llm_key,
-                        provider=self.provider.PROVIDER_NAME,
-                        request_model=params.model_id,
-                        completion=cast("ChatCompletion", completion),
-                        start_time_ns=start_time_ns,
-                        end_time_ns=end_time_ns,
-                        client_name=self.client_name,
-                        session_label=session_trace_label,
-                        user_session_label=user_session_label,
-                        conversation_id=params.user,
-                        access_token=access_token,
-                        existing_span=llm_span,
-                    )
-                except Exception as trace_err:
-                    logger.error("Failed to export completion trace: %s", trace_err)
-                    llm_span.set_attribute("error.type", trace_err.__class__.__name__)
-                    llm_span.set_status(Status(StatusCode.ERROR, "trace export failed"))
-                    llm_span.end(end_time=end_time_ns)
+                await export_completion_trace(
+                    platform_client=self.platform_client,
+                    client=self.client,
+                    any_llm_key=any_llm_key,
+                    provider=self.provider.PROVIDER_NAME,
+                    request_model=params.model_id,
+                    completion=cast("ChatCompletion", completion),
+                    start_time_ns=start_time_ns,
+                    end_time_ns=end_time_ns,
+                    client_name=self.client_name,
+                    session_label=session_trace_label,
+                    user_session_label=user_session_label,
+                    conversation_id=params.user,
+                    access_token=access_token,
+                    existing_span=llm_span,
+                )
                 if trace_export_activated:
                     deactivate_trace_export(trace_id)
                 return completion
@@ -471,36 +465,27 @@ class PlatformProvider(AnyLLM):
                     chunks.append(chunk)
                     yield chunk
 
-            # After stream completes, reconstruct completion for usage tracking.
-            # Trace export errors must not propagate to the consumer since all
-            # content chunks have already been delivered.
             if chunks:
                 end_time_ns = time.time_ns()
 
                 # Combine chunks into a single ChatCompletion-like object (do this once)
                 final_completion = self._combine_chunks(chunks)
-                try:
-                    await export_completion_trace(
-                        platform_client=self.platform_client,
-                        client=self.client,
-                        any_llm_key=any_llm_key,
-                        provider=self.provider.PROVIDER_NAME,
-                        request_model=request_model,
-                        completion=final_completion,
-                        start_time_ns=start_time_ns,
-                        end_time_ns=end_time_ns,
-                        client_name=self.client_name,
-                        session_label=session_label,
-                        user_session_label=user_session_label,
-                        conversation_id=conversation_id,
-                        access_token=access_token,
-                        existing_span=llm_span,
-                    )
-                except Exception as trace_err:
-                    logger.error("Failed to export completion trace after streaming: %s", trace_err)
-                    llm_span.set_attribute("error.type", trace_err.__class__.__name__)
-                    llm_span.set_status(Status(StatusCode.ERROR, "trace export failed"))
-                    llm_span.end(end_time=end_time_ns)
+                await export_completion_trace(
+                    platform_client=self.platform_client,
+                    client=self.client,
+                    any_llm_key=any_llm_key,
+                    provider=self.provider.PROVIDER_NAME,
+                    request_model=request_model,
+                    completion=final_completion,
+                    start_time_ns=start_time_ns,
+                    end_time_ns=end_time_ns,
+                    client_name=self.client_name,
+                    session_label=session_label,
+                    user_session_label=user_session_label,
+                    conversation_id=conversation_id,
+                    access_token=access_token,
+                    existing_span=llm_span,
+                )
             else:
                 llm_span.end(end_time=time.time_ns())
             span_ended = True
