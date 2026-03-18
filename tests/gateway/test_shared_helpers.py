@@ -157,9 +157,7 @@ def test_pricing_response_from_model() -> None:
     assert resp.updated_at == "2025-03-02T00:00:00+00:00"
 
 
-def test_get_active_user_via_budget_endpoint(
-    client: TestClient, master_key_header: dict[str, str]
-) -> None:
+def test_get_active_user_via_budget_endpoint(client: TestClient, master_key_header: dict[str, str]) -> None:
     """Verify get_active_user is wired correctly through the users API."""
     client.post(
         "/v1/users",
@@ -171,9 +169,7 @@ def test_get_active_user_via_budget_endpoint(
     assert resp.json()["user_id"] == "helper-test-user"
 
 
-def test_get_active_user_returns_none_for_deleted(
-    client: TestClient, master_key_header: dict[str, str]
-) -> None:
+def test_get_active_user_returns_none_for_deleted(client: TestClient, master_key_header: dict[str, str]) -> None:
     """Deleted users should not be returned by get_active_user."""
     client.post(
         "/v1/users",
@@ -185,16 +181,12 @@ def test_get_active_user_returns_none_for_deleted(
     assert resp.status_code == 404
 
 
-def test_get_active_user_returns_none_for_nonexistent(
-    client: TestClient, master_key_header: dict[str, str]
-) -> None:
+def test_get_active_user_returns_none_for_nonexistent(client: TestClient, master_key_header: dict[str, str]) -> None:
     resp = client.get("/v1/users/nonexistent-user", headers=master_key_header)
     assert resp.status_code == 404
 
 
-def test_budget_from_model_roundtrip(
-    client: TestClient, master_key_header: dict[str, str]
-) -> None:
+def test_budget_from_model_roundtrip(client: TestClient, master_key_header: dict[str, str]) -> None:
     """BudgetResponse.from_model produces the same output the API returns."""
     resp = client.post(
         "/v1/budgets",
@@ -207,9 +199,7 @@ def test_budget_from_model_roundtrip(
     assert data["budget_duration_sec"] == 3600
 
 
-def test_pricing_from_model_roundtrip(
-    client: TestClient, master_key_header: dict[str, str]
-) -> None:
+def test_pricing_from_model_roundtrip(client: TestClient, master_key_header: dict[str, str]) -> None:
     """PricingResponse.from_model produces the same output the API returns."""
     resp = client.post(
         "/v1/pricing",
@@ -227,9 +217,7 @@ def test_pricing_from_model_roundtrip(
     assert data["output_price_per_million"] == 10.0
 
 
-def test_resolve_user_id_chat_master_key_requires_user(
-    client: TestClient, master_key_header: dict[str, str]
-) -> None:
+def test_resolve_user_id_chat_master_key_requires_user(client: TestClient, master_key_header: dict[str, str]) -> None:
     """Chat endpoint with master key but no user field should return 400."""
     resp = client.post(
         "/v1/chat/completions",
