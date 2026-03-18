@@ -465,7 +465,6 @@ class PlatformProvider(AnyLLM):
                     chunks.append(chunk)
                     yield chunk
 
-            # After stream completes, reconstruct completion for usage tracking
             if chunks:
                 end_time_ns = time.time_ns()
 

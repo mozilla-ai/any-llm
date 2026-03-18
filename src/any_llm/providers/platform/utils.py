@@ -327,49 +327,57 @@ async def export_completion_trace(
 
     Uses JWT Bearer token authentication to authenticate with the platform API.
     Prompts and responses are never included in trace attributes.
+
+    Errors are logged but never raised so that a trace export failure cannot
+    crash the caller after a successful LLM request.
     """
-    token = access_token or await platform_client._aensure_valid_token(any_llm_key)
+    try:
+        token = access_token or await platform_client._aensure_valid_token(any_llm_key)
 
-    if existing_span is not None:
-        span = existing_span
-    else:
-        provider_instance = _get_or_create_tracer_provider(token)
-        tracer = provider_instance.get_tracer("any-llm", __version__)
-
-        # Context resolution priority:
-        # 1. Caller's active OTel span (explicit instrumentation) takes precedence.
-        # 2. No active context -> create an independent root span.
-        current_ctx = otel_context.get_current()
-        caller_span = trace.get_current_span(current_ctx)
-        caller_has_active_span = caller_span.get_span_context().is_valid
-
-        parent_ctx = current_ctx if caller_has_active_span else None
-
-        if parent_ctx is not None:
-            span = tracer.start_span("llm.request", kind=SpanKind.CLIENT, start_time=start_time_ns, context=parent_ctx)
+        if existing_span is not None:
+            span = existing_span
         else:
-            span = tracer.start_span("llm.request", kind=SpanKind.CLIENT, start_time=start_time_ns)
+            provider_instance = _get_or_create_tracer_provider(token)
+            tracer = provider_instance.get_tracer("any-llm", __version__)
 
-    span.set_attribute("gen_ai.provider.name", provider)
-    span.set_attribute("gen_ai.request.model", request_model)
+            # Context resolution priority:
+            # 1. Caller's active OTel span (explicit instrumentation) takes precedence.
+            # 2. No active context -> create an independent root span.
+            current_ctx = otel_context.get_current()
+            caller_span = trace.get_current_span(current_ctx)
+            caller_has_active_span = caller_span.get_span_context().is_valid
 
-    if completion is not None:
-        span.set_attribute("gen_ai.response.model", completion.model)
-        usage = completion.usage
-        if usage is not None:
-            span.set_attribute("gen_ai.usage.input_tokens", usage.prompt_tokens)
-            span.set_attribute("gen_ai.usage.output_tokens", usage.completion_tokens)
+            parent_ctx = current_ctx if caller_has_active_span else None
 
-    if conversation_id is not None:
-        span.set_attribute("gen_ai.conversation.id", conversation_id)
-    if client_name is not None:
-        span.set_attribute("anyllm.client_name", client_name)
-    if session_label is not None and include_session_label_attribute:
-        span.set_attribute("anyllm.session_label", session_label)
-    if user_session_label is not None:
-        span.set_attribute("anyllm.user_session_label", user_session_label)
+            if parent_ctx is not None:
+                span = tracer.start_span(
+                    "llm.request", kind=SpanKind.CLIENT, start_time=start_time_ns, context=parent_ctx
+                )
+            else:
+                span = tracer.start_span("llm.request", kind=SpanKind.CLIENT, start_time=start_time_ns)
 
-    span.end(end_time=end_time_ns)
+        span.set_attribute("gen_ai.provider.name", provider)
+        span.set_attribute("gen_ai.request.model", request_model)
+
+        if completion is not None:
+            span.set_attribute("gen_ai.response.model", completion.model)
+            usage = completion.usage
+            if usage is not None:
+                span.set_attribute("gen_ai.usage.input_tokens", usage.prompt_tokens)
+                span.set_attribute("gen_ai.usage.output_tokens", usage.completion_tokens)
+
+        if conversation_id is not None:
+            span.set_attribute("gen_ai.conversation.id", conversation_id)
+        if client_name is not None:
+            span.set_attribute("anyllm.client_name", client_name)
+        if session_label is not None and include_session_label_attribute:
+            span.set_attribute("anyllm.session_label", session_label)
+        if user_session_label is not None:
+            span.set_attribute("anyllm.user_session_label", user_session_label)
+
+        span.end(end_time=end_time_ns)
+    except Exception:
+        logger.error("Failed to export completion trace", exc_info=True)
 
 
 async def export_responses_trace(
@@ -394,43 +402,51 @@ async def export_responses_trace(
 
     Uses JWT Bearer token authentication to authenticate with the platform API.
     Prompts and responses are never included in trace attributes.
+
+    Errors are logged but never raised so that a trace export failure cannot
+    crash the caller after a successful LLM request.
     """
-    token = access_token or await platform_client._aensure_valid_token(any_llm_key)
+    try:
+        token = access_token or await platform_client._aensure_valid_token(any_llm_key)
 
-    if existing_span is not None:
-        span = existing_span
-    else:
-        provider_instance = _get_or_create_tracer_provider(token)
-        tracer = provider_instance.get_tracer("any-llm", __version__)
-
-        current_ctx = otel_context.get_current()
-        caller_span = trace.get_current_span(current_ctx)
-        caller_has_active_span = caller_span.get_span_context().is_valid
-
-        parent_ctx = current_ctx if caller_has_active_span else None
-
-        if parent_ctx is not None:
-            span = tracer.start_span("llm.request", kind=SpanKind.CLIENT, start_time=start_time_ns, context=parent_ctx)
+        if existing_span is not None:
+            span = existing_span
         else:
-            span = tracer.start_span("llm.request", kind=SpanKind.CLIENT, start_time=start_time_ns)
+            provider_instance = _get_or_create_tracer_provider(token)
+            tracer = provider_instance.get_tracer("any-llm", __version__)
 
-    span.set_attribute("gen_ai.provider.name", provider)
-    span.set_attribute("gen_ai.request.model", request_model)
+            current_ctx = otel_context.get_current()
+            caller_span = trace.get_current_span(current_ctx)
+            caller_has_active_span = caller_span.get_span_context().is_valid
 
-    if response_model is not None:
-        span.set_attribute("gen_ai.response.model", response_model)
-    if input_tokens is not None:
-        span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
-    if output_tokens is not None:
-        span.set_attribute("gen_ai.usage.output_tokens", output_tokens)
+            parent_ctx = current_ctx if caller_has_active_span else None
 
-    if conversation_id is not None:
-        span.set_attribute("gen_ai.conversation.id", conversation_id)
-    if client_name is not None:
-        span.set_attribute("anyllm.client_name", client_name)
-    if session_label is not None:
-        span.set_attribute("anyllm.session_label", session_label)
-    if user_session_label is not None:
-        span.set_attribute("anyllm.user_session_label", user_session_label)
+            if parent_ctx is not None:
+                span = tracer.start_span(
+                    "llm.request", kind=SpanKind.CLIENT, start_time=start_time_ns, context=parent_ctx
+                )
+            else:
+                span = tracer.start_span("llm.request", kind=SpanKind.CLIENT, start_time=start_time_ns)
 
-    span.end(end_time=end_time_ns)
+        span.set_attribute("gen_ai.provider.name", provider)
+        span.set_attribute("gen_ai.request.model", request_model)
+
+        if response_model is not None:
+            span.set_attribute("gen_ai.response.model", response_model)
+        if input_tokens is not None:
+            span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
+        if output_tokens is not None:
+            span.set_attribute("gen_ai.usage.output_tokens", output_tokens)
+
+        if conversation_id is not None:
+            span.set_attribute("gen_ai.conversation.id", conversation_id)
+        if client_name is not None:
+            span.set_attribute("anyllm.client_name", client_name)
+        if session_label is not None:
+            span.set_attribute("anyllm.session_label", session_label)
+        if user_session_label is not None:
+            span.set_attribute("anyllm.user_session_label", user_session_label)
+
+        span.end(end_time=end_time_ns)
+    except Exception:
+        logger.error("Failed to export responses trace", exc_info=True)

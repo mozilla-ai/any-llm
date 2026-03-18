@@ -658,7 +658,7 @@ async def test_export_completion_trace_can_skip_session_label_attribute(
 
 @pytest.mark.asyncio
 async def test_export_completion_trace_invalid_key_format() -> None:
-    """Test error handling when ANY_LLM_KEY has invalid format."""
+    """Test that an invalid ANY_LLM_KEY format is caught internally and does not raise."""
     from any_llm_platform_client import AnyLLMPlatformClient
 
     invalid_key = "INVALID_KEY_FORMAT"
@@ -688,17 +688,16 @@ async def test_export_completion_trace_invalid_key_format() -> None:
 
     client = AsyncMock(spec=httpx.AsyncClient)
 
-    with pytest.raises(ValueError, match="Invalid ANY_LLM_KEY format"):
-        await export_completion_trace(
-            platform_client=mock_platform_client,
-            client=client,
-            any_llm_key=invalid_key,
-            provider="openai",
-            request_model="gpt-4",
-            completion=completion,
-            start_time_ns=100,
-            end_time_ns=200,
-        )
+    await export_completion_trace(
+        platform_client=mock_platform_client,
+        client=client,
+        any_llm_key=invalid_key,
+        provider="openai",
+        request_model="gpt-4",
+        completion=completion,
+        start_time_ns=100,
+        end_time_ns=200,
+    )
 
 
 @patch("any_llm.any_llm.importlib.import_module")
@@ -2793,6 +2792,48 @@ async def test_stream_cancelled_with_no_chunks_ends_span(
     # No usage or model attributes should be set when no chunks were received
     usage_calls = [c for c in llm_span.set_attribute.call_args_list if c.args[0].startswith("gen_ai.usage")]
     assert usage_calls == []
+
+
+@pytest.mark.asyncio
+async def test_export_completion_trace_failure_does_not_raise(
+    mock_platform_client: Mock,
+) -> None:
+    """Errors inside export_completion_trace are caught internally and never propagate."""
+    mock_platform_client._aensure_valid_token = AsyncMock(side_effect=RuntimeError("platform unavailable"))
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    await export_completion_trace(
+        platform_client=mock_platform_client,
+        client=client,
+        any_llm_key="ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=",
+        provider="openai",
+        request_model="gpt-4",
+        completion=None,
+        start_time_ns=100,
+        end_time_ns=200,
+    )
+
+
+@pytest.mark.asyncio
+async def test_export_responses_trace_failure_does_not_raise(
+    mock_platform_client: Mock,
+) -> None:
+    """Errors inside export_responses_trace are caught internally and never propagate."""
+    mock_platform_client._aensure_valid_token = AsyncMock(side_effect=RuntimeError("platform unavailable"))
+    client = AsyncMock(spec=httpx.AsyncClient)
+
+    await export_responses_trace(
+        platform_client=mock_platform_client,
+        client=client,
+        any_llm_key="ANY.v1.kid123.fingerprint456-YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=",
+        provider="openai",
+        request_model="gpt-4.1",
+        response_model=None,
+        input_tokens=None,
+        output_tokens=None,
+        start_time_ns=100,
+        end_time_ns=200,
+    )
 
 
 @pytest.mark.asyncio
