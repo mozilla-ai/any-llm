@@ -1,14 +1,12 @@
 """Tests for shared gateway helpers: get_active_user, resolve_user_id, from_model factories."""
 
 from datetime import UTC, datetime
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from any_llm.gateway.db import User, get_active_user
 from any_llm.gateway.routes._helpers import resolve_user_id
 from any_llm.gateway.routes.budgets import BudgetResponse
 from any_llm.gateway.routes.pricing import PricingResponse
