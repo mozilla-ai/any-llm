@@ -8,6 +8,7 @@ from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import AnyLLMError
 from any_llm.gateway.db import Budget, BudgetResetLog, User
 from any_llm.gateway.log_config import logger
+from any_llm.gateway.metrics import record_budget_exceeded
 from any_llm.gateway.pricing import find_model_pricing
 
 
@@ -102,6 +103,7 @@ async def validate_user_budget(db: Session, user_id: str, model: str | None = No
                 if user.spend >= budget.max_budget:
                     if model and _is_model_free(db, model):
                         return user
+                    record_budget_exceeded(user_id)
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail=f"User '{user_id}' has exceeded budget limit",

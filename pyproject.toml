@@ -133,6 +133,7 @@ gateway = [
   "click>=8.1.0",
   "python-dotenv>=1.0.0",
   "psycopg2-binary>=2.9.9",
+  "prometheus-client>=0.20.0",
 ]
 zai = []
 

@@ -51,6 +51,10 @@ class GatewayConfig(BaseSettings):
         default_factory=dict,
         description="Pre-configured model USD pricing (model_key -> {input_price_per_million, output_price_per_million})",
     )
+    enable_metrics: bool = Field(
+        default=False,
+        description="Enable Prometheus metrics endpoint at /metrics",
+    )
 
 
 def load_config(config_path: str | None = None) -> GatewayConfig:

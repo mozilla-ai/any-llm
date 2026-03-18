@@ -17,6 +17,7 @@ from any_llm.gateway.budget import validate_user_budget
 from any_llm.gateway.config import GatewayConfig
 from any_llm.gateway.db import APIKey, UsageLog, User, get_db
 from any_llm.gateway.log_config import logger
+from any_llm.gateway.metrics import record_cost, record_tokens
 from any_llm.gateway.pricing import find_model_pricing
 from any_llm.gateway.rate_limit import RateLimitInfo, check_rate_limit
 from any_llm.gateway.streaming import OPENAI_STREAM_FORMAT, streaming_generator
@@ -143,12 +144,15 @@ async def log_usage(
         usage_log.completion_tokens = usage_data.completion_tokens
         usage_log.total_tokens = usage_data.total_tokens
 
+        record_tokens(str(provider or ""), model, usage_data.prompt_tokens, usage_data.completion_tokens)
+
         pricing = find_model_pricing(db, provider, model)
         if pricing:
             cost = (usage_data.prompt_tokens / 1_000_000) * pricing.input_price_per_million + (
                 usage_data.completion_tokens / 1_000_000
             ) * pricing.output_price_per_million
             usage_log.cost = cost
+            record_cost(str(provider or ""), model, cost)
 
             if user_id:
                 db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).update(

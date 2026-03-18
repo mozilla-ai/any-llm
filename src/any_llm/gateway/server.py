@@ -45,6 +45,11 @@ def create_app(config: GatewayConfig) -> FastAPI:
             allow_headers=["Content-Type", "Authorization", "X-AnyLLM-Key", "x-api-key"],
         )
 
+    if config.enable_metrics:
+        from any_llm.gateway.metrics import MetricsMiddleware
+
+        app.add_middleware(MetricsMiddleware)
+
     if config.rate_limit_rpm is not None:
         app.state.rate_limiter = RateLimiter(config.rate_limit_rpm)
     else:
@@ -59,5 +64,10 @@ def create_app(config: GatewayConfig) -> FastAPI:
     app.include_router(budgets.router)
     app.include_router(pricing.router)
     app.include_router(health.router)
+
+    if config.enable_metrics:
+        from any_llm.gateway.metrics import metrics_endpoint
+
+        app.add_route("/metrics", metrics_endpoint, methods=["GET"])
 
     return app
