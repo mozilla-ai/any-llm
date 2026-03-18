@@ -69,6 +69,7 @@ def _verify_and_update_api_key(db: Session, token: str) -> APIKey:
     try:
         key_hash = hash_key(token)
     except ValueError as e:
+        record_auth_failure("invalid_format")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid API key format: {e}",

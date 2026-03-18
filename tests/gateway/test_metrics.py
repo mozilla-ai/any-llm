@@ -281,13 +281,15 @@ def test_auth_failure_metric_missing_credentials(metrics_client: TestClient) -> 
 
 
 def test_auth_failure_metric_invalid_key(metrics_client: TestClient) -> None:
+    # Use a valid-format key (gw- prefix, 50+ chars) that doesn't exist in the DB
+    fake_key = "gw-" + "a" * 48
     labels = {"reason": "invalid_key"}
     before = _sample("gateway_auth_failures_total", labels)
 
     resp = metrics_client.post(
         "/v1/chat/completions",
         json={"model": "openai:gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]},
-        headers={API_KEY_HEADER: "Bearer sk-invalid-key-that-does-not-exist"},
+        headers={API_KEY_HEADER: f"Bearer {fake_key}"},
     )
     assert resp.status_code == 401
 
