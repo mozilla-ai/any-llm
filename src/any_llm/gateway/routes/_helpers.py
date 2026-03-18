@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from fastapi import HTTPException
+from typing import TYPE_CHECKING
 
-from any_llm.gateway.db import APIKey
+if TYPE_CHECKING:
+    from fastapi import HTTPException
+
+    from any_llm.gateway.db import APIKey
 
 
 def resolve_user_id(
