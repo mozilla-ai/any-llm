@@ -27,6 +27,7 @@ Provider source code is in [`src/any_llm/providers/`](https://github.com/mozilla
 | [`bedrock`](https://aws.amazon.com/bedrock/) | AWS_BEARER_TOKEN_BEDROCK | AWS_ENDPOINT_URL_BEDROCK_RUNTIME | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`cerebras`](https://docs.cerebras.ai/) | CEREBRAS_API_KEY | CEREBRAS_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`cohere`](https://cohere.com/api) | COHERE_API_KEY | COHERE_BASE_URL | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| [`copilot_sdk`](https://github.com/github/copilot-sdk) | COPILOT_GITHUB_TOKEN | COPILOT_CLI_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
 | [`databricks`](https://docs.databricks.com/) | DATABRICKS_TOKEN | DATABRICKS_HOST | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
 | [`deepseek`](https://platform.deepseek.com/) | DEEPSEEK_API_KEY | DEEPSEEK_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`fireworks`](https://fireworks.ai/api) | FIREWORKS_API_KEY | FIREWORKS_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
@@ -60,3 +61,81 @@ Provider source code is in [`src/any_llm/providers/`](https://github.com/mozilla
 | [`xai`](https://x.ai/) | XAI_API_KEY | XAI_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`zai`](https://docs.z.ai/guides/develop/python/introduction) | ZAI_API_KEY | ZAI_BASE_URL | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 <!-- PROVIDER-TABLE-END -->
+
+## Provider Notes
+
+### `copilot_sdk` — GitHub Copilot SDK
+
+The `copilot_sdk` provider communicates with GitHub Copilot models via the
+[`github-copilot-sdk`](https://pypi.org/project/github-copilot-sdk/) Python package,
+which bundles the Copilot CLI binary for your platform.
+
+#### Installation
+
+Install the platform-specific wheel:
+
+```bash
+pip install any-llm-sdk[copilot_sdk]
+```
+
+> **Note**: `github-copilot-sdk` ships separate wheels per OS and CPU architecture
+> (e.g. `macosx_arm64`, `linux_x86_64`). `pip` selects the correct wheel automatically
+> on supported platforms. If installation fails, check [PyPI](https://pypi.org/project/github-copilot-sdk/#files)
+> for available platform tags.
+
+#### Authentication
+
+Two modes are supported, checked in order:
+
+1. **Token mode** — set one of these environment variables:
+
+   ```bash
+   export COPILOT_GITHUB_TOKEN="ghp_your_token"
+   # or
+   export GITHUB_TOKEN="ghp_your_token"
+   # or
+   export GH_TOKEN="ghp_your_token"
+   ```
+
+   Alternatively, pass `api_key` directly to `AnyLLM.create()`.
+
+2. **Logged-in CLI user** — if no token is set, the provider uses the credentials
+   from the local `gh` / `copilot` CLI session (run `gh auth login` first). No
+   environment variable is required in this mode.
+
+#### Configuration
+
+| Environment Variable | Purpose | Default |
+| --- | --- | --- |
+| `COPILOT_GITHUB_TOKEN` | GitHub token with Copilot access | — |
+| `GITHUB_TOKEN` / `GH_TOKEN` | Fallback token sources | — |
+| `COPILOT_CLI_URL` | Connect to an external CLI server instead of spawning one (e.g. `localhost:9000`) | — |
+| `COPILOT_CLI_PATH` | Override the Copilot CLI binary path | PATH lookup |
+
+#### Usage
+
+```python
+from any_llm import AnyLLM
+
+# Token auth (or set COPILOT_GITHUB_TOKEN in environment)
+llm = AnyLLM.create("copilot_sdk")
+
+# List available models
+models = llm.list_models()
+
+# Completion with reasoning
+response = llm.completion(
+    model="claude-sonnet-4-5",
+    messages=[{"role": "user", "content": "Explain async generators in Python."}],
+    reasoning_effort="high",
+)
+print(response.choices[0].message.content)
+
+# Streaming
+for chunk in llm.completion(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Hello!"}],
+    stream=True,
+):
+    print(chunk.choices[0].delta.content or "", end="", flush=True)
+```
