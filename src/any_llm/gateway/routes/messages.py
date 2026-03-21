@@ -28,7 +28,7 @@ class MessagesRequest(BaseModel):
     model: str
     messages: list[dict[str, Any]] = Field(min_length=1)
     max_tokens: int
-    system: str | None = None
+    system: str | list[dict[str, Any]] | None = None
     temperature: float | None = None
     top_p: float | None = None
     top_k: int | None = None
@@ -38,6 +38,7 @@ class MessagesRequest(BaseModel):
     tool_choice: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
     thinking: dict[str, Any] | None = None
+    cache_control: dict[str, Any] | None = None
 
 
 def _anthropic_error(error_type: str, message: str, status_code: int) -> HTTPException:
@@ -127,6 +128,8 @@ async def create_message(
         call_kwargs["metadata"] = request.metadata
     if request.thinking is not None:
         call_kwargs["thinking"] = request.thinking
+    if request.cache_control is not None:
+        call_kwargs["cache_control"] = request.cache_control
 
     # Pass provider credentials
     if "api_key" in provider_kwargs:

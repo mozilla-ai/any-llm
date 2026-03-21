@@ -659,7 +659,7 @@ class AnyLLM(ABC):
         messages: list[dict[str, Any]],
         max_tokens: int,
         *,
-        system: str | None = None,
+        system: str | list[dict[str, Any]] | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
         top_k: int | None = None,
@@ -669,6 +669,7 @@ class AnyLLM(ABC):
         tool_choice: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         thinking: dict[str, Any] | None = None,
+        cache_control: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
         """Create a message using the Anthropic Messages API asynchronously.
@@ -680,7 +681,7 @@ class AnyLLM(ABC):
             model: Model identifier for the chosen provider.
             messages: List of messages in Anthropic format.
             max_tokens: Maximum number of tokens to generate.
-            system: System prompt.
+            system: System prompt (string or list of content blocks with optional cache_control).
             temperature: Controls randomness (0.0 to 1.0).
             top_p: Controls diversity via nucleus sampling.
             top_k: Only sample from the top K options.
@@ -690,6 +691,7 @@ class AnyLLM(ABC):
             tool_choice: Controls which tool the model uses.
             metadata: Request metadata.
             thinking: Thinking/reasoning configuration.
+            cache_control: Cache control configuration for prompt caching.
             **kwargs: Additional provider-specific arguments.
 
         Returns:
@@ -710,6 +712,7 @@ class AnyLLM(ABC):
             tool_choice=tool_choice,
             metadata=metadata,
             thinking=thinking,
+            cache_control=cache_control,
         )
         return await self._amessages(params, **kwargs)
 

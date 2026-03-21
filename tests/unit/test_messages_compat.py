@@ -275,13 +275,16 @@ def test_chat_completion_tool_calls_response_to_message() -> None:
         ],
         usage=CompletionUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30),
     )
+    from any_llm.types.messages import ToolUseBlock
+
     result = chat_completion_to_message_response(completion)
     assert result.stop_reason == "tool_use"
     assert len(result.content) == 1
-    assert result.content[0].type == "tool_use"
-    assert result.content[0].name == "get_weather"
-    assert result.content[0].input == {"city": "London"}
-    assert result.content[0].id == "call_abc"
+    block = result.content[0]
+    assert isinstance(block, ToolUseBlock)
+    assert block.name == "get_weather"
+    assert block.input == {"city": "London"}
+    assert block.id == "call_abc"
 
 
 def test_chat_completion_reasoning_response_to_message() -> None:
@@ -704,12 +707,18 @@ def test_chat_completion_tool_calls_invalid_json() -> None:
             )
         ],
     )
+    from any_llm.types.messages import ToolUseBlock
+
     result = chat_completion_to_message_response(completion)
-    assert result.content[0].input == {}
+    block = result.content[0]
+    assert isinstance(block, ToolUseBlock)
+    assert block.input == {}
 
 
 def test_chat_completion_tool_calls_empty_arguments() -> None:
     """Test tool call with empty/None arguments falls back to empty dict."""
+    from any_llm.types.messages import ToolUseBlock
+
     completion = ChatCompletion(
         id="test",
         model="test",
@@ -732,7 +741,9 @@ def test_chat_completion_tool_calls_empty_arguments() -> None:
         ],
     )
     result = chat_completion_to_message_response(completion)
-    assert result.content[0].input == {}
+    block = result.content[0]
+    assert isinstance(block, ToolUseBlock)
+    assert block.input == {}
 
 
 def test_streaming_usage_tracking() -> None:

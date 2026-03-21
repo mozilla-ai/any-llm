@@ -474,6 +474,18 @@
       "MessagesRequest": {
         "description": "Anthropic Messages API-compatible request.",
         "properties": {
+          "cache_control": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Control"
+          },
           "max_tokens": {
             "title": "Max Tokens",
             "type": "integer"
@@ -526,6 +538,13 @@
             "anyOf": [
               {
                 "type": "string"
+              },
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
               },
               {
                 "type": "null"

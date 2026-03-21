@@ -1,14 +1,57 @@
 from typing import Any
 
+from anthropic.types import Message as AnthropicMessage
+from anthropic.types import TextBlock as AnthropicTextBlock
+from anthropic.types import ThinkingBlock as AnthropicThinkingBlock
+from anthropic.types import ToolUseBlock as AnthropicToolUseBlock
+from anthropic.types import Usage as AnthropicUsage
 from pydantic import BaseModel, ConfigDict
+
+MessageUsage = AnthropicUsage
+
+TextBlock = AnthropicTextBlock
+
+ToolUseBlock = AnthropicToolUseBlock
+
+
+class ThinkingBlock(AnthropicThinkingBlock):
+    signature: str = ""
+
+
+ContentBlock = TextBlock | ToolUseBlock | ThinkingBlock
+
+MessageContentBlock = ContentBlock
+
+
+class MessageResponse(AnthropicMessage):
+    content: list[ContentBlock]  # type: ignore[assignment]
+    stop_reason: str | None = None  # type: ignore[assignment]
+
+
+class MessageStreamEvent(BaseModel):
+    """Server-sent event for Messages API streaming."""
+
+    type: str
+    """Event type (message_start, content_block_start, content_block_delta, content_block_stop, message_delta, message_stop)"""
+
+    index: int | None = None
+    """Content block index"""
+
+    content_block: ContentBlock | None = None
+    """Content block (for content_block_start)"""
+
+    delta: dict[str, Any] | None = None
+    """Delta update"""
+
+    message: MessageResponse | None = None
+    """Full message (for message_start)"""
+
+    usage: MessageUsage | None = None
+    """Usage information (for message_delta)"""
 
 
 class MessagesParams(BaseModel):
-    """Normalized parameters for Anthropic Messages API.
-
-    This model is used internally to pass structured parameters from the public
-    API layer to provider implementations. Matches the Anthropic Messages API format.
-    """
+    """Normalized parameters for Anthropic Messages API."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -21,8 +64,8 @@ class MessagesParams(BaseModel):
     max_tokens: int
     """Maximum number of tokens to generate (required by Anthropic API)"""
 
-    system: str | None = None
-    """System prompt"""
+    system: str | list[dict[str, Any]] | None = None
+    """System prompt (string or list of content blocks with optional cache_control)"""
 
     temperature: float | None = None
     """Controls randomness in the response (0.0 to 1.0)"""
@@ -51,67 +94,5 @@ class MessagesParams(BaseModel):
     thinking: dict[str, Any] | None = None
     """Thinking/reasoning configuration"""
 
-
-class MessageContentBlock(BaseModel):
-    """Content block in a Messages API response."""
-
-    type: str
-    """Block type: 'text', 'tool_use', or 'thinking'"""
-
-    text: str | None = None
-    """Text content (for type='text')"""
-
-    id: str | None = None
-    """Tool use ID (for type='tool_use')"""
-
-    name: str | None = None
-    """Tool name (for type='tool_use')"""
-
-    input: dict[str, Any] | None = None
-    """Tool input (for type='tool_use')"""
-
-    thinking: str | None = None
-    """Thinking content (for type='thinking')"""
-
-
-class MessageUsage(BaseModel):
-    """Token usage information for Messages API."""
-
-    input_tokens: int
-    output_tokens: int
-    cache_creation_input_tokens: int | None = None
-    cache_read_input_tokens: int | None = None
-
-
-class MessageResponse(BaseModel):
-    """Full response from the Messages API."""
-
-    id: str
-    type: str = "message"
-    role: str = "assistant"
-    content: list[MessageContentBlock]
-    model: str
-    stop_reason: str | None = None
-    usage: MessageUsage
-
-
-class MessageStreamEvent(BaseModel):
-    """Server-sent event for Messages API streaming."""
-
-    type: str
-    """Event type (message_start, content_block_start, content_block_delta, content_block_stop, message_delta, message_stop)"""
-
-    index: int | None = None
-    """Content block index"""
-
-    content_block: MessageContentBlock | None = None
-    """Content block (for content_block_start)"""
-
-    delta: dict[str, Any] | None = None
-    """Delta update"""
-
-    message: MessageResponse | None = None
-    """Full message (for message_start)"""
-
-    usage: MessageUsage | None = None
-    """Usage information (for message_delta)"""
+    cache_control: dict[str, Any] | None = None
+    """Cache control configuration for prompt caching"""

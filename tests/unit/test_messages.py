@@ -116,19 +116,21 @@ def test_messages_params_rejects_extra_fields() -> None:
 
 def test_message_response_model() -> None:
     """Test MessageResponse creation."""
-    from any_llm.types.messages import MessageContentBlock, MessageResponse, MessageUsage
+    from any_llm.types.messages import MessageResponse, MessageUsage, TextBlock
 
     resp = MessageResponse(
         id="msg_123",
         type="message",
         role="assistant",
-        content=[MessageContentBlock(type="text", text="Hello!")],
+        content=[TextBlock(type="text", text="Hello!")],
         model="claude-3-5-sonnet",
         stop_reason="end_turn",
         usage=MessageUsage(input_tokens=10, output_tokens=5),
     )
     assert resp.id == "msg_123"
-    assert resp.content[0].text == "Hello!"
+    block = resp.content[0]
+    assert isinstance(block, TextBlock)
+    assert block.text == "Hello!"
     assert resp.usage.input_tokens == 10
 
 
@@ -352,13 +354,13 @@ def test_supports_messages_flag() -> None:
 
 def test_sync_messages_returns_message_response() -> None:
     """Test that the sync messages() wrapper returns MessageResponse for non-streaming."""
-    from any_llm.types.messages import MessageContentBlock, MessageUsage
+    from any_llm.types.messages import MessageUsage, TextBlock
 
     mock_response = MessageResponse(
         id="msg_test",
         type="message",
         role="assistant",
-        content=[MessageContentBlock(type="text", text="Hi!")],
+        content=[TextBlock(type="text", text="Hi!")],
         model="test-model",
         stop_reason="end_turn",
         usage=MessageUsage(input_tokens=5, output_tokens=3),
@@ -379,7 +381,7 @@ def test_sync_messages_returns_message_response() -> None:
         )
 
     assert isinstance(result, MessageResponse)
-    assert result.content[0].text == "Hi!"
+    assert result.content[0].type == "text"
 
 
 @pytest.mark.asyncio

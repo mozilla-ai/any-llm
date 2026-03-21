@@ -6,10 +6,13 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from any_llm.types.messages import (
-    MessageContentBlock,
+    ContentBlock,
     MessageResponse,
     MessageStreamEvent,
     MessageUsage,
+    TextBlock,
+    ThinkingBlock,
+    ToolUseBlock,
 )
 
 if TYPE_CHECKING:
@@ -203,7 +206,7 @@ def _budget_to_reasoning_effort(budget: int) -> str:
 
 def chat_completion_to_message_response(completion: ChatCompletion) -> MessageResponse:
     """Convert an OpenAI ChatCompletion to an Anthropic MessageResponse."""
-    content_blocks: list[MessageContentBlock] = []
+    content_blocks: list[ContentBlock] = []
     stop_reason = "end_turn"
 
     if completion.choices:
@@ -211,10 +214,10 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
         msg = choice.message
 
         if msg.reasoning:
-            content_blocks.append(MessageContentBlock(type="thinking", thinking=msg.reasoning.content))
+            content_blocks.append(ThinkingBlock(type="thinking", thinking=msg.reasoning.content))
 
         if msg.content:
-            content_blocks.append(MessageContentBlock(type="text", text=msg.content))
+            content_blocks.append(TextBlock(type="text", text=msg.content))
 
         if msg.tool_calls:
             for tc in msg.tool_calls:
@@ -226,7 +229,7 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
                 except (json.JSONDecodeError, TypeError):
                     tool_input = {}
                 content_blocks.append(
-                    MessageContentBlock(
+                    ToolUseBlock(
                         type="tool_use",
                         id=tc.id,
                         name=fn.name,
@@ -238,7 +241,7 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
         stop_reason = _finish_reason_to_stop_reason(finish_reason)
 
     if not content_blocks:
-        content_blocks.append(MessageContentBlock(type="text", text=""))
+        content_blocks.append(TextBlock(type="text", text=""))
 
     usage = MessageUsage(input_tokens=0, output_tokens=0)
     if completion.usage:
@@ -332,7 +335,7 @@ def chat_completion_chunk_to_message_stream_events(
                 MessageStreamEvent(
                     type="content_block_start",
                     index=state.current_block_index,
-                    content_block=MessageContentBlock(type="thinking", thinking=""),
+                    content_block=ThinkingBlock(type="thinking", thinking=""),
                 )
             )
         events.append(
@@ -352,7 +355,7 @@ def chat_completion_chunk_to_message_stream_events(
                 MessageStreamEvent(
                     type="content_block_start",
                     index=state.current_block_index,
-                    content_block=MessageContentBlock(type="text", text=""),
+                    content_block=TextBlock(type="text", text=""),
                 )
             )
         if delta.content:
@@ -376,10 +379,10 @@ def chat_completion_chunk_to_message_stream_events(
                     MessageStreamEvent(
                         type="content_block_start",
                         index=state.current_block_index,
-                        content_block=MessageContentBlock(
+                        content_block=ToolUseBlock(
                             type="tool_use",
-                            id=state.tool_call_id,
-                            name=state.tool_call_name,
+                            id=state.tool_call_id or "",
+                            name=state.tool_call_name or "",
                             input={},
                         ),
                     )
