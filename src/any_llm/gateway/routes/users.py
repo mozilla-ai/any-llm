@@ -3,11 +3,12 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from any_llm.gateway.auth import verify_master_key
 from any_llm.gateway.budget import calculate_next_reset
-from any_llm.gateway.db import APIKey, Budget, UsageLog, User, get_db
+from any_llm.gateway.db import APIKey, Budget, UsageLog, User, get_active_user, get_db
 
 router = APIRouter(prefix="/v1/users", tags=["users"])
 
@@ -36,6 +37,21 @@ class UserResponse(BaseModel):
     updated_at: str
     metadata: dict[str, Any]
 
+    @classmethod
+    def from_model(cls, user: User) -> "UserResponse":
+        return cls(
+            user_id=user.user_id,
+            alias=user.alias,
+            spend=float(user.spend),
+            budget_id=user.budget_id,
+            budget_started_at=user.budget_started_at.isoformat() if user.budget_started_at else None,
+            next_budget_reset_at=user.next_budget_reset_at.isoformat() if user.next_budget_reset_at else None,
+            blocked=bool(user.blocked),
+            created_at=user.created_at.isoformat(),
+            updated_at=user.updated_at.isoformat(),
+            metadata=dict(user.metadata_) if user.metadata_ else {},
+        )
+
 
 class UpdateUserRequest(BaseModel):
     """Request model for updating a user."""
@@ -62,6 +78,24 @@ class UsageLogResponse(BaseModel):
     cost: float | None
     status: str
     error_message: str | None
+
+    @classmethod
+    def from_model(cls, log: UsageLog) -> "UsageLogResponse":
+        return cls(
+            id=log.id,
+            user_id=log.user_id,
+            api_key_id=log.api_key_id,
+            timestamp=log.timestamp.isoformat(),
+            model=log.model,
+            provider=log.provider,
+            endpoint=log.endpoint,
+            prompt_tokens=log.prompt_tokens,
+            completion_tokens=log.completion_tokens,
+            total_tokens=log.total_tokens,
+            cost=log.cost,
+            status=log.status,
+            error_message=log.error_message,
+        )
 
 
 @router.post("", dependencies=[Depends(verify_master_key)])
@@ -110,21 +144,17 @@ async def create_user(
         if budget.budget_duration_sec:
             user.next_budget_reset_at = calculate_next_reset(now, budget.budget_duration_sec)
 
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None
     db.refresh(user)
 
-    return UserResponse(
-        user_id=user.user_id,
-        alias=user.alias,
-        spend=float(user.spend),
-        budget_id=user.budget_id,
-        budget_started_at=user.budget_started_at.isoformat() if user.budget_started_at else None,
-        next_budget_reset_at=user.next_budget_reset_at.isoformat() if user.next_budget_reset_at else None,
-        blocked=bool(user.blocked),
-        created_at=user.created_at.isoformat(),
-        updated_at=user.updated_at.isoformat(),
-        metadata=dict(user.metadata_) if user.metadata_ else {},
-    )
+    return UserResponse.from_model(user)
 
 
 @router.get("", dependencies=[Depends(verify_master_key)])
@@ -136,21 +166,7 @@ async def list_users(
     """List all users with pagination."""
     users = db.query(User).filter(User.deleted_at.is_(None)).offset(skip).limit(limit).all()
 
-    return [
-        UserResponse(
-            user_id=user.user_id,
-            alias=user.alias,
-            spend=float(user.spend),
-            budget_id=user.budget_id,
-            budget_started_at=user.budget_started_at.isoformat() if user.budget_started_at else None,
-            next_budget_reset_at=user.next_budget_reset_at.isoformat() if user.next_budget_reset_at else None,
-            blocked=bool(user.blocked),
-            created_at=user.created_at.isoformat(),
-            updated_at=user.updated_at.isoformat(),
-            metadata=dict(user.metadata_) if user.metadata_ else {},
-        )
-        for user in users
-    ]
+    return [UserResponse.from_model(user) for user in users]
 
 
 @router.get("/{user_id}", dependencies=[Depends(verify_master_key)])
@@ -159,7 +175,7 @@ async def get_user(
     db: Annotated[Session, Depends(get_db)],
 ) -> UserResponse:
     """Get details of a specific user."""
-    user = db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).first()
+    user = get_active_user(db, user_id)
 
     if not user:
         raise HTTPException(
@@ -167,18 +183,7 @@ async def get_user(
             detail=f"User with id '{user_id}' not found",
         )
 
-    return UserResponse(
-        user_id=user.user_id,
-        alias=user.alias,
-        spend=float(user.spend),
-        budget_id=user.budget_id,
-        budget_started_at=user.budget_started_at.isoformat() if user.budget_started_at else None,
-        next_budget_reset_at=user.next_budget_reset_at.isoformat() if user.next_budget_reset_at else None,
-        blocked=bool(user.blocked),
-        created_at=user.created_at.isoformat(),
-        updated_at=user.updated_at.isoformat(),
-        metadata=dict(user.metadata_) if user.metadata_ else {},
-    )
+    return UserResponse.from_model(user)
 
 
 @router.patch("/{user_id}", dependencies=[Depends(verify_master_key)])
@@ -188,7 +193,7 @@ async def update_user(
     db: Annotated[Session, Depends(get_db)],
 ) -> UserResponse:
     """Update a user."""
-    user = db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).first()
+    user = get_active_user(db, user_id)
 
     if not user:
         raise HTTPException(
@@ -218,21 +223,17 @@ async def update_user(
     if request.metadata is not None:
         user.metadata_ = request.metadata
 
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None
     db.refresh(user)
 
-    return UserResponse(
-        user_id=user.user_id,
-        alias=user.alias,
-        spend=float(user.spend),
-        budget_id=user.budget_id,
-        budget_started_at=user.budget_started_at.isoformat() if user.budget_started_at else None,
-        next_budget_reset_at=user.next_budget_reset_at.isoformat() if user.next_budget_reset_at else None,
-        blocked=bool(user.blocked),
-        created_at=user.created_at.isoformat(),
-        updated_at=user.updated_at.isoformat(),
-        metadata=dict(user.metadata_) if user.metadata_ else {},
-    )
+    return UserResponse.from_model(user)
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(verify_master_key)])
@@ -241,7 +242,7 @@ async def delete_user(
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     """Delete a user."""
-    user = db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).first()
+    user = get_active_user(db, user_id)
 
     if not user:
         raise HTTPException(
@@ -251,7 +252,15 @@ async def delete_user(
 
     db.query(APIKey).filter(APIKey.user_id == user_id).update({"is_active": False}, synchronize_session="fetch")
     user.deleted_at = datetime.now(UTC)
-    db.commit()
+
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None
 
 
 @router.get("/{user_id}/usage", dependencies=[Depends(verify_master_key)])
@@ -278,21 +287,4 @@ async def get_user_usage(
         .all()
     )
 
-    return [
-        UsageLogResponse(
-            id=log.id,
-            user_id=log.user_id,
-            api_key_id=log.api_key_id,
-            timestamp=log.timestamp.isoformat(),
-            model=log.model,
-            provider=log.provider,
-            endpoint=log.endpoint,
-            prompt_tokens=log.prompt_tokens,
-            completion_tokens=log.completion_tokens,
-            total_tokens=log.total_tokens,
-            cost=log.cost,
-            status=log.status,
-            error_message=log.error_message,
-        )
-        for log in usage_logs
-    ]
+    return [UsageLogResponse.from_model(log) for log in usage_logs]

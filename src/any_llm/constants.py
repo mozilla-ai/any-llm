@@ -19,6 +19,7 @@ class LLMProvider(StrEnum):
     ANTHROPIC = "anthropic"
     BEDROCK = "bedrock"
     AZURE = "azure"
+    AZUREANTHROPIC = "azureanthropic"
     AZUREOPENAI = "azureopenai"
     CEREBRAS = "cerebras"
     COHERE = "cohere"

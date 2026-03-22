@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from any_llm.gateway.auth import verify_master_key
@@ -28,6 +29,17 @@ class BudgetResponse(BaseModel):
     created_at: str
     updated_at: str
 
+    @classmethod
+    def from_model(cls, budget: "Budget") -> "BudgetResponse":
+        """Create a BudgetResponse from a Budget ORM model."""
+        return cls(
+            budget_id=budget.budget_id,
+            max_budget=budget.max_budget,
+            budget_duration_sec=budget.budget_duration_sec,
+            created_at=budget.created_at.isoformat(),
+            updated_at=budget.updated_at.isoformat(),
+        )
+
 
 class UpdateBudgetRequest(BaseModel):
     """Request model for updating a budget."""
@@ -48,16 +60,17 @@ async def create_budget(
     )
 
     db.add(budget)
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None
     db.refresh(budget)
 
-    return BudgetResponse(
-        budget_id=budget.budget_id,
-        max_budget=budget.max_budget,
-        budget_duration_sec=budget.budget_duration_sec,
-        created_at=budget.created_at.isoformat(),
-        updated_at=budget.updated_at.isoformat(),
-    )
+    return BudgetResponse.from_model(budget)
 
 
 @router.get("", dependencies=[Depends(verify_master_key)])
@@ -69,16 +82,7 @@ async def list_budgets(
     """List all budgets with pagination."""
     budgets = db.query(Budget).offset(skip).limit(limit).all()
 
-    return [
-        BudgetResponse(
-            budget_id=budget.budget_id,
-            max_budget=budget.max_budget,
-            budget_duration_sec=budget.budget_duration_sec,
-            created_at=budget.created_at.isoformat(),
-            updated_at=budget.updated_at.isoformat(),
-        )
-        for budget in budgets
-    ]
+    return [BudgetResponse.from_model(budget) for budget in budgets]
 
 
 @router.get("/{budget_id}", dependencies=[Depends(verify_master_key)])
@@ -95,13 +99,7 @@ async def get_budget(
             detail=f"Budget with id '{budget_id}' not found",
         )
 
-    return BudgetResponse(
-        budget_id=budget.budget_id,
-        max_budget=budget.max_budget,
-        budget_duration_sec=budget.budget_duration_sec,
-        created_at=budget.created_at.isoformat(),
-        updated_at=budget.updated_at.isoformat(),
-    )
+    return BudgetResponse.from_model(budget)
 
 
 @router.patch("/{budget_id}", dependencies=[Depends(verify_master_key)])
@@ -124,16 +122,17 @@ async def update_budget(
     if request.budget_duration_sec is not None:
         budget.budget_duration_sec = request.budget_duration_sec
 
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None
     db.refresh(budget)
 
-    return BudgetResponse(
-        budget_id=budget.budget_id,
-        max_budget=budget.max_budget,
-        budget_duration_sec=budget.budget_duration_sec,
-        created_at=budget.created_at.isoformat(),
-        updated_at=budget.updated_at.isoformat(),
-    )
+    return BudgetResponse.from_model(budget)
 
 
 @router.delete("/{budget_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(verify_master_key)])
@@ -151,4 +150,11 @@ async def delete_budget(
         )
 
     db.delete(budget)
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error",
+        ) from None

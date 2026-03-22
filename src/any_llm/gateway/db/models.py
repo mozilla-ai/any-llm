@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey
+from sqlalchemy import JSON, DateTime, ForeignKey, Index
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -144,6 +144,7 @@ class UsageLog(Base):
     """Usage log model for tracking API requests."""
 
     __tablename__ = "usage_logs"
+    __table_args__ = (Index("ix_usage_logs_user_id_timestamp", "user_id", "timestamp"),)
 
     id: Mapped[str] = mapped_column(primary_key=True, default=lambda: str(uuid.uuid4()))
     api_key_id: Mapped[str | None] = mapped_column(ForeignKey("api_keys.id", ondelete="SET NULL"), index=True)
