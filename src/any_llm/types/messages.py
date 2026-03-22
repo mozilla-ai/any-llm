@@ -1,11 +1,42 @@
 from typing import Any
 
+from anthropic.types import InputJSONDelta, MessageDeltaUsage, TextDelta, ThinkingDelta
 from anthropic.types import Message as AnthropicMessage
+from anthropic.types import RawContentBlockDeltaEvent as ContentBlockDeltaEvent
+from anthropic.types import RawContentBlockStartEvent as ContentBlockStartEvent
+from anthropic.types import RawContentBlockStopEvent as ContentBlockStopEvent
+from anthropic.types import RawMessageDeltaEvent as MessageDeltaEvent
+from anthropic.types import RawMessageStartEvent as MessageStartEvent
+from anthropic.types import RawMessageStopEvent as MessageStopEvent
 from anthropic.types import TextBlock as AnthropicTextBlock
 from anthropic.types import ThinkingBlock as AnthropicThinkingBlock
 from anthropic.types import ToolUseBlock as AnthropicToolUseBlock
 from anthropic.types import Usage as AnthropicUsage
+from anthropic.types.raw_message_delta_event import Delta as MessageDelta
 from pydantic import BaseModel, ConfigDict
+
+__all__ = [
+    "ContentBlock",
+    "ContentBlockDeltaEvent",
+    "ContentBlockStartEvent",
+    "ContentBlockStopEvent",
+    "InputJSONDelta",
+    "MessageContentBlock",
+    "MessageDelta",
+    "MessageDeltaEvent",
+    "MessageDeltaUsage",
+    "MessageResponse",
+    "MessageStartEvent",
+    "MessageStopEvent",
+    "MessageStreamEvent",
+    "MessageUsage",
+    "MessagesParams",
+    "TextBlock",
+    "TextDelta",
+    "ThinkingBlock",
+    "ThinkingDelta",
+    "ToolUseBlock",
+]
 
 MessageUsage = AnthropicUsage
 
@@ -28,26 +59,14 @@ class MessageResponse(AnthropicMessage):
     stop_reason: str | None = None  # type: ignore[assignment]
 
 
-class MessageStreamEvent(BaseModel):
-    """Server-sent event for Messages API streaming."""
-
-    type: str
-    """Event type (message_start, content_block_start, content_block_delta, content_block_stop, message_delta, message_stop)"""
-
-    index: int | None = None
-    """Content block index"""
-
-    content_block: ContentBlock | None = None
-    """Content block (for content_block_start)"""
-
-    delta: dict[str, Any] | None = None
-    """Delta update"""
-
-    message: MessageResponse | None = None
-    """Full message (for message_start)"""
-
-    usage: MessageUsage | None = None
-    """Usage information (for message_delta)"""
+MessageStreamEvent = (
+    MessageStartEvent
+    | MessageDeltaEvent
+    | MessageStopEvent
+    | ContentBlockStartEvent
+    | ContentBlockDeltaEvent
+    | ContentBlockStopEvent
+)
 
 
 class MessagesParams(BaseModel):

@@ -17,7 +17,12 @@ from any_llm.gateway.log_config import logger
 from any_llm.gateway.rate_limit import check_rate_limit
 from any_llm.gateway.routes.chat import get_provider_kwargs, log_usage, rate_limit_headers
 from any_llm.types.completion import CompletionUsage
-from any_llm.types.messages import MessageResponse, MessageStreamEvent  # noqa: TC001
+from any_llm.types.messages import (
+    MessageDeltaEvent,
+    MessageResponse,
+    MessageStartEvent,
+    MessageStreamEvent,
+)
 
 router = APIRouter(prefix="/v1", tags=["messages"])
 
@@ -151,11 +156,14 @@ async def create_message(
                 try:
                     stream: AsyncIterator[MessageStreamEvent] = await amessages(**call_kwargs)  # type: ignore[assignment]
                     async for event in stream:
-                        if event.usage:
+                        if isinstance(event, MessageDeltaEvent):
                             if event.usage.input_tokens:
                                 input_tokens = event.usage.input_tokens
                             if event.usage.output_tokens:
                                 output_tokens = event.usage.output_tokens
+                        elif isinstance(event, MessageStartEvent):
+                            if event.message.usage.input_tokens:
+                                input_tokens = event.message.usage.input_tokens
                         yield f"event: {event.type}\ndata: {event.model_dump_json(exclude_none=True)}\n\n"
                     yield "event: done\ndata: {}\n\n"
 

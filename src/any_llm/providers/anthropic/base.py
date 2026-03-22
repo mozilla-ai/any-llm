@@ -7,6 +7,7 @@ from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.types.messages import (
+    ContentBlockStartEvent,
     MessageResponse,
     MessagesParams,
     MessageStreamEvent,
@@ -167,63 +168,46 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         return self._convert_native_message_to_response(response)
 
     async def _stream_messages_async(self, **kwargs: Any) -> AsyncIterator[MessageStreamEvent]:
-        """Stream Anthropic Messages API and yield MessageStreamEvents."""
+        """Stream Anthropic Messages API and yield SDK event types directly."""
         from anthropic.types import (
-            ContentBlockDeltaEvent,
-            ContentBlockStartEvent,
-            ContentBlockStopEvent,
-            MessageStartEvent,
-            MessageStopEvent,
+            RawContentBlockDeltaEvent,
+            RawContentBlockStartEvent,
+            RawContentBlockStopEvent,
+            RawMessageDeltaEvent,
+            RawMessageStartEvent,
+            RawMessageStopEvent,
+        )
+        from anthropic.types import (
+            ThinkingBlock as AnthropicThinkingBlock,
+        )
+
+        raw_types = (
+            RawMessageStartEvent,
+            RawMessageDeltaEvent,
+            RawMessageStopEvent,
+            RawContentBlockStartEvent,
+            RawContentBlockDeltaEvent,
+            RawContentBlockStopEvent,
         )
 
         async with self.client.messages.stream(**kwargs) as stream:
             async for event in stream:
-                if isinstance(event, MessageStartEvent):
-                    msg = event.message
-                    resp = MessageResponse(
-                        id=msg.id,
-                        type="message",
-                        role=msg.role,
-                        content=[],
-                        model=msg.model,
-                        stop_reason=None,
-                        usage=msg.usage,
-                    )
-                    yield MessageStreamEvent(type="message_start", message=resp)
-
-                elif isinstance(event, ContentBlockStartEvent):
-                    block = self._convert_native_content_block(event.content_block)
-                    yield MessageStreamEvent(
+                if not isinstance(event, raw_types):
+                    continue
+                if isinstance(event, RawContentBlockStartEvent) and isinstance(
+                    event.content_block, AnthropicThinkingBlock
+                ):
+                    yield ContentBlockStartEvent(
                         type="content_block_start",
                         index=event.index,
-                        content_block=block,
+                        content_block=ThinkingBlock(
+                            type="thinking",
+                            thinking=event.content_block.thinking,
+                            signature=event.content_block.signature,
+                        ),
                     )
-
-                elif isinstance(event, ContentBlockDeltaEvent):
-                    delta_dict: dict[str, Any] = {"type": event.delta.type}
-                    if event.delta.type == "text_delta":
-                        delta_dict["text"] = event.delta.text
-                    elif event.delta.type == "input_json_delta":
-                        delta_dict["partial_json"] = event.delta.partial_json
-                    elif event.delta.type == "thinking_delta":
-                        delta_dict["thinking"] = event.delta.thinking
-                    yield MessageStreamEvent(
-                        type="content_block_delta",
-                        index=event.index,
-                        delta=delta_dict,
-                    )
-
-                elif isinstance(event, ContentBlockStopEvent):
-                    yield MessageStreamEvent(type="content_block_stop", index=event.index)
-
-                elif isinstance(event, MessageStopEvent):
-                    msg_obj = event.message
-                    yield MessageStreamEvent(
-                        type="message_delta",
-                        delta={"stop_reason": msg_obj.stop_reason},
-                        usage=msg_obj.usage,
-                    )
-                    yield MessageStreamEvent(type="message_stop")
+                else:
+                    yield event
 
     @staticmethod
     def _convert_native_content_block(block: AnthropicContentBlock) -> ContentBlock:

@@ -7,11 +7,21 @@ from typing import TYPE_CHECKING, Any
 
 from any_llm.types.messages import (
     ContentBlock,
+    ContentBlockDeltaEvent,
+    ContentBlockStartEvent,
+    ContentBlockStopEvent,
+    InputJSONDelta,
+    MessageDelta,
+    MessageDeltaEvent,
+    MessageDeltaUsage,
     MessageResponse,
-    MessageStreamEvent,
+    MessageStartEvent,
+    MessageStopEvent,
     MessageUsage,
     TextBlock,
+    TextDelta,
     ThinkingBlock,
+    ThinkingDelta,
     ToolUseBlock,
 )
 
@@ -291,13 +301,27 @@ class StreamingState:
 def chat_completion_chunk_to_message_stream_events(
     chunk: ChatCompletionChunk,
     state: StreamingState,
-) -> list[MessageStreamEvent]:
+) -> list[
+    MessageStartEvent
+    | MessageDeltaEvent
+    | MessageStopEvent
+    | ContentBlockStartEvent
+    | ContentBlockDeltaEvent
+    | ContentBlockStopEvent
+]:
     """Convert a ChatCompletionChunk to a list of MessageStreamEvents.
 
     This is stateful: it tracks the current content block index and type to emit
     the correct lifecycle events (start/delta/stop).
     """
-    events: list[MessageStreamEvent] = []
+    events: list[
+        MessageStartEvent
+        | MessageDeltaEvent
+        | MessageStopEvent
+        | ContentBlockStartEvent
+        | ContentBlockDeltaEvent
+        | ContentBlockStopEvent
+    ] = []
     state.model = chunk.model
 
     if chunk.usage:
@@ -318,7 +342,7 @@ def chat_completion_chunk_to_message_stream_events(
             stop_reason=None,
             usage=usage,
         )
-        events.append(MessageStreamEvent(type="message_start", message=msg))
+        events.append(MessageStartEvent(type="message_start", message=msg))
 
     if not chunk.choices:
         return events
@@ -332,17 +356,17 @@ def chat_completion_chunk_to_message_stream_events(
             state.current_block_index += 1
             state.current_block_type = "thinking"
             events.append(
-                MessageStreamEvent(
+                ContentBlockStartEvent(
                     type="content_block_start",
                     index=state.current_block_index,
                     content_block=ThinkingBlock(type="thinking", thinking=""),
                 )
             )
         events.append(
-            MessageStreamEvent(
+            ContentBlockDeltaEvent(
                 type="content_block_delta",
                 index=state.current_block_index,
-                delta={"type": "thinking_delta", "thinking": delta.reasoning.content},
+                delta=ThinkingDelta(type="thinking_delta", thinking=delta.reasoning.content),
             )
         )
 
@@ -352,7 +376,7 @@ def chat_completion_chunk_to_message_stream_events(
             state.current_block_index += 1
             state.current_block_type = "text"
             events.append(
-                MessageStreamEvent(
+                ContentBlockStartEvent(
                     type="content_block_start",
                     index=state.current_block_index,
                     content_block=TextBlock(type="text", text=""),
@@ -360,10 +384,10 @@ def chat_completion_chunk_to_message_stream_events(
             )
         if delta.content:
             events.append(
-                MessageStreamEvent(
+                ContentBlockDeltaEvent(
                     type="content_block_delta",
                     index=state.current_block_index,
-                    delta={"type": "text_delta", "text": delta.content},
+                    delta=TextDelta(type="text_delta", text=delta.content),
                 )
             )
 
@@ -376,7 +400,7 @@ def chat_completion_chunk_to_message_stream_events(
                 state.tool_call_id = tc.id
                 state.tool_call_name = tc.function.name if tc.function else ""
                 events.append(
-                    MessageStreamEvent(
+                    ContentBlockStartEvent(
                         type="content_block_start",
                         index=state.current_block_index,
                         content_block=ToolUseBlock(
@@ -389,10 +413,10 @@ def chat_completion_chunk_to_message_stream_events(
                 )
             if tc.function and tc.function.arguments:
                 events.append(
-                    MessageStreamEvent(
+                    ContentBlockDeltaEvent(
                         type="content_block_delta",
                         index=state.current_block_index,
-                        delta={"type": "input_json_delta", "partial_json": tc.function.arguments},
+                        delta=InputJSONDelta(type="input_json_delta", partial_json=tc.function.arguments),
                     )
                 )
 
@@ -400,22 +424,32 @@ def chat_completion_chunk_to_message_stream_events(
         _close_current_block(state, events)
         stop_reason = _finish_reason_to_stop_reason(choice.finish_reason)
         events.append(
-            MessageStreamEvent(
+            MessageDeltaEvent(
                 type="message_delta",
-                delta={"stop_reason": stop_reason},
-                usage=MessageUsage(input_tokens=state.input_tokens, output_tokens=state.output_tokens),
+                delta=MessageDelta(stop_reason=stop_reason),  # type: ignore[arg-type]
+                usage=MessageDeltaUsage(output_tokens=state.output_tokens, input_tokens=state.input_tokens),
             )
         )
-        events.append(MessageStreamEvent(type="message_stop"))
+        events.append(MessageStopEvent(type="message_stop"))
 
     return events
 
 
-def _close_current_block(state: StreamingState, events: list[MessageStreamEvent]) -> None:
+def _close_current_block(
+    state: StreamingState,
+    events: list[
+        MessageStartEvent
+        | MessageDeltaEvent
+        | MessageStopEvent
+        | ContentBlockStartEvent
+        | ContentBlockDeltaEvent
+        | ContentBlockStopEvent
+    ],
+) -> None:
     """Emit a content_block_stop event for the current block if one is open."""
     if state.current_block_type is not None:
         events.append(
-            MessageStreamEvent(
+            ContentBlockStopEvent(
                 type="content_block_stop",
                 index=state.current_block_index,
             )

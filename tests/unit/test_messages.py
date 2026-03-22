@@ -134,19 +134,70 @@ def test_message_response_model() -> None:
     assert resp.usage.input_tokens == 10
 
 
-def test_message_stream_event_model() -> None:
-    """Test MessageStreamEvent creation."""
-    from any_llm.types.messages import MessageStreamEvent
+def test_message_stream_event_types() -> None:
+    """Test that the individual stream event types can be constructed."""
+    from any_llm.types.messages import (
+        ContentBlockDeltaEvent,
+        ContentBlockStartEvent,
+        ContentBlockStopEvent,
+        MessageDelta,
+        MessageDeltaEvent,
+        MessageDeltaUsage,
+        MessageResponse,
+        MessageStartEvent,
+        MessageStopEvent,
+        MessageUsage,
+        TextBlock,
+        TextDelta,
+    )
 
-    event = MessageStreamEvent(
+    delta_event = ContentBlockDeltaEvent(
         type="content_block_delta",
         index=0,
-        delta={"type": "text_delta", "text": "Hello"},
+        delta=TextDelta(type="text_delta", text="Hello"),
     )
-    assert event.type == "content_block_delta"
-    assert event.index == 0
-    assert event.delta is not None
-    assert event.delta["text"] == "Hello"
+    assert delta_event.type == "content_block_delta"
+    assert delta_event.index == 0
+    assert isinstance(delta_event.delta, TextDelta)
+    assert delta_event.delta.text == "Hello"
+
+    start_event = ContentBlockStartEvent(
+        type="content_block_start",
+        index=0,
+        content_block=TextBlock(type="text", text=""),
+    )
+    assert start_event.type == "content_block_start"
+    assert start_event.index == 0
+
+    stop_event = ContentBlockStopEvent(type="content_block_stop", index=0)
+    assert stop_event.type == "content_block_stop"
+
+    msg_start = MessageStartEvent(
+        type="message_start",
+        message=MessageResponse(
+            id="msg_test",
+            type="message",
+            role="assistant",
+            content=[],
+            model="test",
+            stop_reason=None,
+            usage=MessageUsage(input_tokens=0, output_tokens=0),
+        ),
+    )
+    assert msg_start.type == "message_start"
+    assert msg_start.message.id == "msg_test"
+
+    msg_delta = MessageDeltaEvent(
+        type="message_delta",
+        delta=MessageDelta(stop_reason="end_turn"),
+        usage=MessageDeltaUsage(output_tokens=5),
+    )
+    assert msg_delta.type == "message_delta"
+    assert msg_delta.delta.stop_reason == "end_turn"
+    assert msg_delta.usage.output_tokens == 5
+
+    msg_stop = MessageStopEvent(type="message_stop")
+    assert msg_stop.type == "message_stop"
 
 
 def test_messages_exported_from_init() -> None:

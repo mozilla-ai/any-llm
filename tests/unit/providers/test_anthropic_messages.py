@@ -8,9 +8,14 @@ from anthropic.types import Message, TextBlock, ThinkingBlock, ToolUseBlock, Usa
 
 from any_llm.providers.anthropic.base import BaseAnthropicProvider
 from any_llm.types.messages import (
+    ContentBlockDeltaEvent,
+    ContentBlockStartEvent,
+    ContentBlockStopEvent,
+    MessageDeltaEvent,
     MessageResponse,
     MessagesParams,
-    MessageStreamEvent,
+    MessageStartEvent,
+    MessageStopEvent,
 )
 from any_llm.types.messages import (
     ThinkingBlock as AnyLLMThinkingBlock,
@@ -288,15 +293,27 @@ async def test_amessages_streaming_delegates_to_stream_method() -> None:
 
 @pytest.mark.asyncio
 async def test_stream_messages_async_emits_events() -> None:
-    """Test _stream_messages_async converts Anthropic stream events to MessageStreamEvents."""
+    """Test _stream_messages_async yields SDK event types directly."""
     from anthropic.types import (
-        ContentBlockDeltaEvent,
-        ContentBlockStartEvent,
-        ContentBlockStopEvent,
-        MessageStartEvent,
-        MessageStopEvent,
+        ContentBlockDeltaEvent as SDKContentBlockDeltaEvent,
+    )
+    from anthropic.types import (
+        ContentBlockStartEvent as SDKContentBlockStartEvent,
+    )
+    from anthropic.types import (
+        ContentBlockStopEvent as SDKContentBlockStopEvent,
+    )
+    from anthropic.types import (
+        MessageDeltaUsage,
         TextDelta,
     )
+    from anthropic.types import (
+        MessageStartEvent as SDKMessageStartEvent,
+    )
+    from anthropic.types import (
+        MessageStopEvent as SDKMessageStopEvent,
+    )
+    from anthropic.types.raw_message_delta_event import Delta as SDKDelta
 
     usage_start = Usage(input_tokens=10, output_tokens=0)
     msg = Message(
@@ -308,23 +325,22 @@ async def test_stream_messages_async_emits_events() -> None:
         stop_reason=None,
         usage=usage_start,
     )
-    stop_event = MessageStopEvent(type="message_stop")
-    stop_event.message = Message(  # type: ignore[attr-defined]
-        id="msg_123",
-        type="message",
-        role="assistant",
-        content=[TextBlock(type="text", text="Hello!")],
-        model="claude-3-5-sonnet",
-        stop_reason="end_turn",
-        usage=Usage(input_tokens=10, output_tokens=5),
-    )
+
+    from anthropic.types import RawMessageDeltaEvent
 
     events_list: list[Any] = [
-        MessageStartEvent(type="message_start", message=msg),
-        ContentBlockStartEvent(type="content_block_start", index=0, content_block=TextBlock(type="text", text="")),
-        ContentBlockDeltaEvent(type="content_block_delta", index=0, delta=TextDelta(type="text_delta", text="Hello!")),
-        ContentBlockStopEvent(type="content_block_stop", index=0),
-        stop_event,
+        SDKMessageStartEvent(type="message_start", message=msg),
+        SDKContentBlockStartEvent(type="content_block_start", index=0, content_block=TextBlock(type="text", text="")),
+        SDKContentBlockDeltaEvent(
+            type="content_block_delta", index=0, delta=TextDelta(type="text_delta", text="Hello!")
+        ),
+        SDKContentBlockStopEvent(type="content_block_stop", index=0),
+        RawMessageDeltaEvent(
+            type="message_delta",
+            delta=SDKDelta(stop_reason="end_turn"),
+            usage=MessageDeltaUsage(output_tokens=5),
+        ),
+        SDKMessageStopEvent(type="message_stop"),
     ]
 
     class MockStream:
@@ -351,9 +367,15 @@ async def test_stream_messages_async_emits_events() -> None:
 
     provider = MagicMock(spec=BaseAnthropicProvider)
     provider.client = mock_client
-    provider._convert_native_content_block = BaseAnthropicProvider._convert_native_content_block
 
-    collected: list[MessageStreamEvent] = []
+    collected: list[
+        MessageStartEvent
+        | MessageDeltaEvent
+        | MessageStopEvent
+        | ContentBlockStartEvent
+        | ContentBlockStopEvent
+        | ContentBlockDeltaEvent
+    ] = []
     async for event in BaseAnthropicProvider._stream_messages_async(
         provider, model="claude-3-5-sonnet", messages=[], max_tokens=1024
     ):
@@ -367,20 +389,16 @@ async def test_stream_messages_async_emits_events() -> None:
     assert "message_delta" in types
     assert "message_stop" in types
 
-    msg_start = next(e for e in collected if e.type == "message_start")
-    assert msg_start.message is not None
+    msg_start = next(e for e in collected if isinstance(e, MessageStartEvent))
     assert msg_start.message.id == "msg_123"
     assert msg_start.message.usage.input_tokens == 10
 
-    text_delta = next(e for e in collected if e.type == "content_block_delta")
-    assert text_delta.delta is not None
-    assert text_delta.delta["type"] == "text_delta"
-    assert text_delta.delta["text"] == "Hello!"
+    text_delta = next(e for e in collected if isinstance(e, ContentBlockDeltaEvent))
+    assert text_delta.delta.type == "text_delta"
+    assert text_delta.delta.text == "Hello!"
 
-    msg_delta = next(e for e in collected if e.type == "message_delta")
-    assert msg_delta.delta is not None
-    assert msg_delta.delta["stop_reason"] == "end_turn"
-    assert msg_delta.usage is not None
+    msg_delta = next(e for e in collected if isinstance(e, MessageDeltaEvent))
+    assert msg_delta.delta.stop_reason == "end_turn"
     assert msg_delta.usage.output_tokens == 5
 
 

@@ -20,7 +20,16 @@ from any_llm.types.completion import (
     ParsedChatCompletion,
     ReasoningEffort,
 )
-from any_llm.types.messages import MessageResponse, MessagesParams, MessageStreamEvent, MessageUsage
+from any_llm.types.messages import (
+    ContentBlockStopEvent,
+    MessageDelta,
+    MessageDeltaEvent,
+    MessageDeltaUsage,
+    MessageResponse,
+    MessagesParams,
+    MessageStopEvent,
+    MessageStreamEvent,
+)
 from any_llm.types.provider import PlatformKey, ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import async_coro_to_sync_iter, async_iter_to_sync_iter, run_async_in_sync
@@ -745,26 +754,26 @@ class AnyLLM(ABC):
             async for chunk in result:
                 events = chat_completion_chunk_to_message_stream_events(chunk, state)
                 for event in events:
-                    if event.type == "message_stop":
+                    if isinstance(event, MessageStopEvent):
                         emitted_stop = True
                     yield event
             # Some providers don't send a final chunk with finish_reason,
             # so ensure the stream always ends with message_stop.
             if state.started and not emitted_stop:
                 if state.current_block_type is not None:
-                    yield MessageStreamEvent(
+                    yield ContentBlockStopEvent(
                         type="content_block_stop",
                         index=state.current_block_index,
                     )
-                yield MessageStreamEvent(
+                yield MessageDeltaEvent(
                     type="message_delta",
-                    delta={"stop_reason": "end_turn"},
-                    usage=MessageUsage(
-                        input_tokens=state.input_tokens,
+                    delta=MessageDelta(stop_reason="end_turn"),
+                    usage=MessageDeltaUsage(
                         output_tokens=state.output_tokens,
+                        input_tokens=state.input_tokens,
                     ),
                 )
-                yield MessageStreamEvent(type="message_stop")
+                yield MessageStopEvent(type="message_stop")
 
         return convert_stream()
 
