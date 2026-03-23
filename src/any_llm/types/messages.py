@@ -1,6 +1,6 @@
 from typing import Any
 
-from anthropic.types import InputJSONDelta, MessageDeltaUsage, TextDelta, ThinkingDelta
+from anthropic.types import InputJSONDelta, MessageDeltaUsage, StopReason, TextDelta, ThinkingDelta
 from anthropic.types import Message as AnthropicMessage
 from anthropic.types import RawContentBlockDeltaEvent as ContentBlockDeltaEvent
 from anthropic.types import RawContentBlockStartEvent as ContentBlockStartEvent
@@ -31,6 +31,7 @@ __all__ = [
     "MessageStreamEvent",
     "MessageUsage",
     "MessagesParams",
+    "StopReason",
     "TextBlock",
     "TextDelta",
     "ThinkingBlock",
@@ -55,8 +56,7 @@ MessageContentBlock = ContentBlock
 
 
 class MessageResponse(AnthropicMessage):
-    content: list[ContentBlock]  # type: ignore[assignment]
-    stop_reason: str | None = None  # type: ignore[assignment]
+    pass
 
 
 MessageStreamEvent = (

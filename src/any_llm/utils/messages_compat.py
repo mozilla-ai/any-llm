@@ -6,7 +6,6 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from any_llm.types.messages import (
-    ContentBlock,
     ContentBlockDeltaEvent,
     ContentBlockStartEvent,
     ContentBlockStopEvent,
@@ -18,6 +17,7 @@ from any_llm.types.messages import (
     MessageStartEvent,
     MessageStopEvent,
     MessageUsage,
+    StopReason,
     TextBlock,
     TextDelta,
     ThinkingBlock,
@@ -26,6 +26,8 @@ from any_llm.types.messages import (
 )
 
 if TYPE_CHECKING:
+    from anthropic.types import ContentBlock as SDKContentBlock
+
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
     from any_llm.types.messages import MessagesParams
 
@@ -216,8 +218,8 @@ def _budget_to_reasoning_effort(budget: int) -> str:
 
 def chat_completion_to_message_response(completion: ChatCompletion) -> MessageResponse:
     """Convert an OpenAI ChatCompletion to an Anthropic MessageResponse."""
-    content_blocks: list[ContentBlock] = []
-    stop_reason = "end_turn"
+    content_blocks: list[SDKContentBlock] = []
+    stop_reason: StopReason = "end_turn"
 
     if completion.choices:
         choice = completion.choices[0]
@@ -271,9 +273,9 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
     )
 
 
-def _finish_reason_to_stop_reason(finish_reason: str | None) -> str:
+def _finish_reason_to_stop_reason(finish_reason: str | None) -> StopReason:
     """Map OpenAI finish_reason to Anthropic stop_reason."""
-    mapping = {
+    mapping: dict[str, StopReason] = {
         "stop": "end_turn",
         "length": "max_tokens",
         "tool_calls": "tool_use",
@@ -426,7 +428,7 @@ def chat_completion_chunk_to_message_stream_events(
         events.append(
             MessageDeltaEvent(
                 type="message_delta",
-                delta=MessageDelta(stop_reason=stop_reason),  # type: ignore[arg-type]
+                delta=MessageDelta(stop_reason=stop_reason),
                 usage=MessageDeltaUsage(output_tokens=state.output_tokens, input_tokens=state.input_tokens),
             )
         )
