@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from any_llm.gateway.config import API_KEY_HEADER
-from any_llm.types.messages import MessageContentBlock, MessageResponse, MessageUsage
+from any_llm.types.messages import MessageResponse, MessageUsage, TextBlock, ToolUseBlock
 
 
 def _make_message_response(**overrides: Any) -> MessageResponse:
@@ -15,7 +15,7 @@ def _make_message_response(**overrides: Any) -> MessageResponse:
         "id": "msg_test123",
         "type": "message",
         "role": "assistant",
-        "content": [MessageContentBlock(type="text", text="Hello!")],
+        "content": [TextBlock(type="text", text="Hello!")],
         "model": "claude-3-5-sonnet",
         "stop_reason": "end_turn",
         "usage": MessageUsage(input_tokens=10, output_tokens=5),
@@ -130,7 +130,7 @@ def test_messages_endpoint_with_tools(
     """Test message completion with tools."""
     tool_use_response = _make_message_response(
         content=[
-            MessageContentBlock(
+            ToolUseBlock(
                 type="tool_use",
                 id="toolu_123",
                 name="get_weather",

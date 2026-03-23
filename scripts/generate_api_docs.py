@@ -1647,16 +1647,19 @@ def generate_types_messages_page() -> str:
             "",
             "### `MessageStreamEvent`",
             "",
-            "Server-sent event for Messages API streaming.",
+            "Union of Anthropic SDK stream event types, re-exported from the `anthropic` package:",
+            "",
+            "- `MessageStartEvent` — `type: 'message_start'`, `message: Message`",
+            "- `MessageDeltaEvent` — `type: 'message_delta'`, `delta: Delta`, `usage: MessageDeltaUsage`",
+            "- `MessageStopEvent` — `type: 'message_stop'`",
+            "- `ContentBlockStartEvent` — `type: 'content_block_start'`, `index: int`, `content_block: ContentBlock`",
+            "- `ContentBlockDeltaEvent` — `type: 'content_block_delta'`, `index: int`, `delta: RawContentBlockDelta`",
+            "- `ContentBlockStopEvent` — `type: 'content_block_stop'`, `index: int`",
             "",
             "**Import:** `from any_llm.types.messages import MessageStreamEvent`",
             "",
         ]
     )
-
-    table = _pydantic_field_table(messages_types.MessageStreamEvent)
-    if table:
-        parts.append(table)
 
     parts.extend(
         [

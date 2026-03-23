@@ -12,6 +12,7 @@ dependencies = [
   "pydantic>2,<3",
   "openai>=1.99.3",
   "openresponses-types>=2.3.0.post1",
+  "anthropic>=0.83.0",
   "rich",
   "httpx",
   "typing_extensions>=4.4.0",
@@ -35,9 +36,7 @@ mistral = [
   "mistralai>=1.9.3",
 ]
 
-anthropic = [
-  "anthropic>=0.83.0",
-]
+anthropic = []
 
 gemini = [
   "google-genai",

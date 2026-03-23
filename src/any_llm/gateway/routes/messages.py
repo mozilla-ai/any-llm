@@ -17,7 +17,12 @@ from any_llm.gateway.routes._helpers import resolve_user_id
 from any_llm.gateway.routes.chat import get_provider_kwargs, log_usage, rate_limit_headers
 from any_llm.gateway.streaming import ANTHROPIC_STREAM_FORMAT, streaming_generator
 from any_llm.types.completion import CompletionUsage
-from any_llm.types.messages import MessageResponse, MessageStreamEvent
+from any_llm.types.messages import (
+    MessageDeltaEvent,
+    MessageResponse,
+    MessageStartEvent,
+    MessageStreamEvent,
+)
 
 router = APIRouter(prefix="/v1", tags=["messages"])
 
@@ -28,7 +33,7 @@ class MessagesRequest(BaseModel):
     model: str
     messages: list[dict[str, Any]] = Field(min_length=1)
     max_tokens: int
-    system: str | None = None
+    system: str | list[dict[str, Any]] | None = None
     temperature: float | None = None
     top_p: float | None = None
     top_k: int | None = None
@@ -38,6 +43,7 @@ class MessagesRequest(BaseModel):
     tool_choice: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
     thinking: dict[str, Any] | None = None
+    cache_control: dict[str, Any] | None = None
 
 
 def _anthropic_error(error_type: str, message: str, status_code: int) -> HTTPException:
@@ -109,15 +115,23 @@ async def create_message(
                 return f"event: {event.type}\ndata: {event.model_dump_json(exclude_none=True)}\n\n"
 
             def _extract_usage(event: MessageStreamEvent) -> CompletionUsage | None:
-                if not event.usage:
-                    return None
-                input_tokens = event.usage.input_tokens or 0
-                output_tokens = event.usage.output_tokens or 0
-                return CompletionUsage(
-                    prompt_tokens=input_tokens,
-                    completion_tokens=output_tokens,
-                    total_tokens=input_tokens + output_tokens,
-                )
+                if isinstance(event, MessageDeltaEvent):
+                    input_tokens = event.usage.input_tokens or 0
+                    output_tokens = event.usage.output_tokens or 0
+                    return CompletionUsage(
+                        prompt_tokens=input_tokens,
+                        completion_tokens=output_tokens,
+                        total_tokens=input_tokens + output_tokens,
+                    )
+                if isinstance(event, MessageStartEvent):
+                    input_tokens = event.message.usage.input_tokens or 0
+                    if input_tokens:
+                        return CompletionUsage(
+                            prompt_tokens=input_tokens,
+                            completion_tokens=0,
+                            total_tokens=input_tokens,
+                        )
+                return None
 
             async def _on_complete(usage_data: CompletionUsage) -> None:
                 await log_usage(
