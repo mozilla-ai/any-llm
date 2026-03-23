@@ -17,9 +17,6 @@ from any_llm.types.messages import (
     MessageStartEvent,
     MessageStopEvent,
 )
-from any_llm.types.messages import (
-    ThinkingBlock as AnyLLMThinkingBlock,
-)
 
 
 def _make_usage(**overrides: Any) -> Usage:
@@ -40,49 +37,6 @@ def _make_message(**overrides: Any) -> Message:
     }
     defaults.update(overrides)
     return Message(**defaults)
-
-
-def test_convert_native_content_block_text() -> None:
-    """Test converting an Anthropic text content block."""
-    block = TextBlock(type="text", text="Hello!")
-    result = BaseAnthropicProvider._convert_native_content_block(block)
-    assert result.type == "text"
-    assert result.text == "Hello!"
-
-
-def test_convert_native_content_block_tool_use() -> None:
-    """Test converting an Anthropic tool_use content block."""
-    block = ToolUseBlock(type="tool_use", id="toolu_123", name="get_weather", input={"city": "London"})
-    result = BaseAnthropicProvider._convert_native_content_block(block)
-    assert result.type == "tool_use"
-    assert result.id == "toolu_123"
-    assert result.name == "get_weather"
-    assert result.input == {"city": "London"}
-
-
-def test_convert_native_content_block_thinking() -> None:
-    """Test converting an Anthropic thinking content block wraps as our ThinkingBlock."""
-    block = ThinkingBlock(type="thinking", thinking="Reasoning here", signature="sig123")
-    result = BaseAnthropicProvider._convert_native_content_block(block)
-    assert isinstance(result, AnyLLMThinkingBlock)
-    assert result.type == "thinking"
-    assert result.thinking == "Reasoning here"
-    assert result.signature == "sig123"
-
-
-def test_convert_native_content_block_thinking_preserves_empty_signature() -> None:
-    """Test that ThinkingBlock with empty signature is preserved."""
-    block = ThinkingBlock(type="thinking", thinking="test", signature="")
-    result = BaseAnthropicProvider._convert_native_content_block(block)
-    assert isinstance(result, AnyLLMThinkingBlock)
-    assert result.signature == ""
-
-
-def test_convert_native_content_block_passes_through_other_types() -> None:
-    """Test that non-ThinkingBlock content blocks are passed through as-is."""
-    block = TextBlock(type="text", text="Hi!")
-    result = BaseAnthropicProvider._convert_native_content_block(block)
-    assert result is block
 
 
 def test_convert_native_message_to_response_text() -> None:
@@ -161,7 +115,6 @@ async def test_amessages_non_streaming() -> None:
     provider = Mock(spec=BaseAnthropicProvider)
     provider.client = mock_client
     provider._convert_native_message_to_response = BaseAnthropicProvider._convert_native_message_to_response
-    provider._convert_native_content_block = BaseAnthropicProvider._convert_native_content_block
 
     params = MessagesParams(
         model="claude-3-5-sonnet",
@@ -191,7 +144,6 @@ async def test_amessages_non_streaming_with_all_params() -> None:
     provider = Mock(spec=BaseAnthropicProvider)
     provider.client = mock_client
     provider._convert_native_message_to_response = BaseAnthropicProvider._convert_native_message_to_response
-    provider._convert_native_content_block = BaseAnthropicProvider._convert_native_content_block
 
     params = MessagesParams(
         model="claude-3-5-sonnet",
@@ -233,7 +185,6 @@ async def test_amessages_cache_control_passthrough() -> None:
     provider = Mock(spec=BaseAnthropicProvider)
     provider.client = mock_client
     provider._convert_native_message_to_response = BaseAnthropicProvider._convert_native_message_to_response
-    provider._convert_native_content_block = BaseAnthropicProvider._convert_native_content_block
 
     params = MessagesParams(
         model="claude-3-5-sonnet",
@@ -258,7 +209,6 @@ async def test_amessages_none_params_not_included() -> None:
     provider = Mock(spec=BaseAnthropicProvider)
     provider.client = mock_client
     provider._convert_native_message_to_response = BaseAnthropicProvider._convert_native_message_to_response
-    provider._convert_native_content_block = BaseAnthropicProvider._convert_native_content_block
 
     params = MessagesParams(
         model="claude-3-5-sonnet",
@@ -413,7 +363,6 @@ async def test_amessages_kwargs_passthrough() -> None:
     provider = Mock(spec=BaseAnthropicProvider)
     provider.client = mock_client
     provider._convert_native_message_to_response = BaseAnthropicProvider._convert_native_message_to_response
-    provider._convert_native_content_block = BaseAnthropicProvider._convert_native_content_block
 
     params = MessagesParams(
         model="claude-3-5-sonnet",
@@ -437,7 +386,6 @@ async def test_amessages_system_list_form() -> None:
     provider = Mock(spec=BaseAnthropicProvider)
     provider.client = mock_client
     provider._convert_native_message_to_response = BaseAnthropicProvider._convert_native_message_to_response
-    provider._convert_native_content_block = BaseAnthropicProvider._convert_native_content_block
 
     system_blocks = [
         {"type": "text", "text": "You are helpful.", "cache_control": {"type": "ephemeral"}},

@@ -31,12 +31,10 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
     from anthropic import AsyncAnthropic, AsyncAnthropicVertex
-    from anthropic.types import ContentBlock as AnthropicContentBlock
     from anthropic.types import Message
     from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
-    from any_llm.types.messages import ContentBlock
     from any_llm.types.model import Model
 
 
@@ -134,31 +132,8 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         self, params: MessagesParams, **kwargs: Any
     ) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
         """Native Anthropic Messages API pass-through."""
-        api_kwargs: dict[str, Any] = {
-            "model": params.model,
-            "messages": params.messages,
-            "max_tokens": params.max_tokens,
-        }
-        if params.system is not None:
-            api_kwargs["system"] = params.system
-        if params.temperature is not None:
-            api_kwargs["temperature"] = params.temperature
-        if params.top_p is not None:
-            api_kwargs["top_p"] = params.top_p
-        if params.top_k is not None:
-            api_kwargs["top_k"] = params.top_k
-        if params.stop_sequences is not None:
-            api_kwargs["stop_sequences"] = params.stop_sequences
-        if params.tools is not None:
-            api_kwargs["tools"] = params.tools
-        if params.tool_choice is not None:
-            api_kwargs["tool_choice"] = params.tool_choice
-        if params.metadata is not None:
-            api_kwargs["metadata"] = params.metadata
-        if params.thinking is not None:
-            api_kwargs["thinking"] = params.thinking
-        if params.cache_control is not None:
-            api_kwargs["cache_control"] = params.cache_control
+        api_kwargs = params.model_dump(exclude_none=True)
+        api_kwargs.pop("stream", None)
         api_kwargs.update(kwargs)
 
         if params.stream:
@@ -210,25 +185,6 @@ class BaseAnthropicProvider(AnyLLM, ABC):
                     yield event
 
     @staticmethod
-    def _convert_native_content_block(block: AnthropicContentBlock) -> ContentBlock:
-        """Convert an Anthropic SDK content block, wrapping ThinkingBlock to make signature optional."""
-        from anthropic.types import ThinkingBlock as AnthropicThinkingBlock
-
-        if isinstance(block, AnthropicThinkingBlock):
-            return ThinkingBlock(type="thinking", thinking=block.thinking, signature=block.signature)
-        return block  # type: ignore[return-value]
-
-    @classmethod
-    def _convert_native_message_to_response(cls, message: Message) -> MessageResponse:
+    def _convert_native_message_to_response(message: Message) -> MessageResponse:
         """Convert an Anthropic SDK Message to our MessageResponse."""
-        content_blocks = [cls._convert_native_content_block(block) for block in message.content]
-
-        return MessageResponse(
-            id=message.id,
-            type="message",
-            role=message.role,
-            content=content_blocks,
-            model=message.model,
-            stop_reason=message.stop_reason,
-            usage=message.usage,
-        )
+        return MessageResponse.model_validate(message, from_attributes=True)
