@@ -1093,7 +1093,7 @@ def messages(
     max_tokens: int,
     *,
     provider: str | LLMProvider | None = None,
-    system: str | None = None,
+    system: str | list[dict[str, Any]] | None = None,
     temperature: float | None = None,
     top_p: float | None = None,
     top_k: int | None = None,
@@ -1103,11 +1103,12 @@ def messages(
     tool_choice: dict[str, Any] | None = None,
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
+    cache_control: dict[str, Any] | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> MessageResponse | Iterator[MessageStreamEvent]
+) -> MessageResponse | Iterator[anthropic.types.raw_message_start_event.RawMessageStartEvent | anthropic.types.raw_message_delta_event.RawMessageDeltaEvent | anthropic.types.raw_message_stop_event.RawMessageStopEvent | anthropic.types.raw_content_block_start_event.RawContentBlockStartEvent | anthropic.types.raw_content_block_delta_event.RawContentBlockDeltaEvent | anthropic.types.raw_content_block_stop_event.RawContentBlockStopEvent]
 ```
 
 ## `any_llm.amessages()`
@@ -1121,7 +1122,7 @@ async def amessages(
     max_tokens: int,
     *,
     provider: str | LLMProvider | None = None,
-    system: str | None = None,
+    system: str | list[dict[str, Any]] | None = None,
     temperature: float | None = None,
     top_p: float | None = None,
     top_k: int | None = None,
@@ -1131,11 +1132,12 @@ async def amessages(
     tool_choice: dict[str, Any] | None = None,
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
+    cache_control: dict[str, Any] | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> MessageResponse | AsyncIterator[MessageStreamEvent]
+) -> MessageResponse | AsyncIterator[anthropic.types.raw_message_start_event.RawMessageStartEvent | anthropic.types.raw_message_delta_event.RawMessageDeltaEvent | anthropic.types.raw_message_stop_event.RawMessageStopEvent | anthropic.types.raw_content_block_start_event.RawContentBlockStartEvent | anthropic.types.raw_content_block_delta_event.RawContentBlockDeltaEvent | anthropic.types.raw_content_block_stop_event.RawContentBlockStopEvent]
 ```
 
 ## Parameters
@@ -1146,7 +1148,7 @@ async def amessages(
 | `messages` | `list[dict[str, Any]]` | *required* | List of messages in Anthropic format. |
 | `max_tokens` | `int` | *required* | Maximum number of tokens to generate. |
 | `provider` | `str \| LLMProvider \| None` | None | Provider name to use for the request. |
-| `system` | `str \| None` | None | System prompt. |
+| `system` | `str \| list[dict[str, Any]] \| None` | None | System prompt (string or list of content blocks with optional cache_control). |
 | `temperature` | `float \| None` | None | Controls randomness (0.0 to 1.0). |
 | `top_p` | `float \| None` | None | Controls diversity via nucleus sampling. |
 | `top_k` | `int \| None` | None | Only sample from the top K options. |
@@ -1156,6 +1158,7 @@ async def amessages(
 | `tool_choice` | `dict[str, Any] \| None` | None | Controls which tool the model uses. |
 | `metadata` | `dict[str, Any] \| None` | None | Request metadata. |
 | `thinking` | `dict[str, Any] \| None` | None | Thinking/reasoning configuration. |
+| `cache_control` | `dict[str, Any] \| None` | None | Cache control configuration for prompt caching. |
 | `api_key` | `str \| None` | None | API key for the provider. |
 | `api_base` | `str \| None` | None | Base URL for the provider API. |
 | `client_args` | `dict[str, Any] \| None` | None | Additional provider-specific arguments for client instantiation. |
@@ -1934,15 +1937,6 @@ Full response from the Messages API.
 
 **Import:** `from any_llm.types.messages import MessageResponse`
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `str` |  |
-| `type` | `str` |  |
-| `role` | `str` |  |
-| `content` | `list[MessageContentBlock]` |  |
-| `model` | `str` |  |
-| `stop_reason` | `str \| None` |  |
-| `usage` | `MessageUsage` |  |
 
 ### `MessageContentBlock`
 
@@ -1950,14 +1944,6 @@ Content block in a Messages API response.
 
 **Import:** `from any_llm.types.messages import MessageContentBlock`
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `type` | `str` | Block type: 'text', 'tool_use', or 'thinking' |
-| `text` | `str \| None` | Text content (for type='text') |
-| `id` | `str \| None` | Tool use ID (for type='tool_use') |
-| `name` | `str \| None` | Tool name (for type='tool_use') |
-| `input` | `dict[str, Any] \| None` | Tool input (for type='tool_use') |
-| `thinking` | `str \| None` | Thinking content (for type='thinking') |
 
 ### `MessageUsage`
 
@@ -1967,25 +1953,28 @@ Token usage information for Messages API.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `input_tokens` | `int` |  |
-| `output_tokens` | `int` |  |
-| `cache_creation_input_tokens` | `int \| None` |  |
-| `cache_read_input_tokens` | `int \| None` |  |
+| `cache_creation` | `CacheCreation \| None` | Breakdown of cached tokens by TTL |
+| `cache_creation_input_tokens` | `int \| None` | The number of input tokens used to create the cache entry. |
+| `cache_read_input_tokens` | `int \| None` | The number of input tokens read from the cache. |
+| `inference_geo` | `str \| None` | The geographic region where inference was performed for this request. |
+| `input_tokens` | `int` | The number of input tokens which were used. |
+| `output_tokens` | `int` | The number of output tokens which were used. |
+| `server_tool_use` | `ServerToolUsage \| None` | The number of server tool requests. |
+| `service_tier` | `Literal['standard', 'priority', 'batch'] \| None` | If the request used the priority, standard, or batch tier. |
 
 ### `MessageStreamEvent`
 
-Server-sent event for Messages API streaming.
+Union of Anthropic SDK stream event types, re-exported from the `anthropic` package:
+
+- `MessageStartEvent` — `type: 'message_start'`, `message: Message`
+- `MessageDeltaEvent` — `type: 'message_delta'`, `delta: Delta`, `usage: MessageDeltaUsage`
+- `MessageStopEvent` — `type: 'message_stop'`
+- `ContentBlockStartEvent` — `type: 'content_block_start'`, `index: int`, `content_block: ContentBlock`
+- `ContentBlockDeltaEvent` — `type: 'content_block_delta'`, `index: int`, `delta: RawContentBlockDelta`
+- `ContentBlockStopEvent` — `type: 'content_block_stop'`, `index: int`
 
 **Import:** `from any_llm.types.messages import MessageStreamEvent`
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `type` | `str` | Event type (message_start, content_block_start, content_block_delta, content_block_stop, message_delta, message_stop) |
-| `index` | `int \| None` | Content block index |
-| `content_block` | `MessageContentBlock \| None` | Content block (for content_block_start) |
-| `delta` | `dict[str, Any] \| None` | Delta update |
-| `message` | `MessageResponse \| None` | Full message (for message_start) |
-| `usage` | `MessageUsage \| None` | Usage information (for message_delta) |
 
 ## Internal Types
 
@@ -2000,7 +1989,7 @@ Normalized parameters for the Anthropic Messages API, used internally to pass st
 | `model` | `str` | Model identifier |
 | `messages` | `list[dict[str, Any]]` | List of messages for the conversation |
 | `max_tokens` | `int` | Maximum number of tokens to generate (required by Anthropic API) |
-| `system` | `str \| None` | System prompt |
+| `system` | `str \| list[dict[str, Any]] \| None` | System prompt (string or list of content blocks with optional cache_control) |
 | `temperature` | `float \| None` | Controls randomness in the response (0.0 to 1.0) |
 | `top_p` | `float \| None` | Controls diversity via nucleus sampling |
 | `top_k` | `int \| None` | Only sample from the top K options for each subsequent token |
@@ -2010,6 +1999,7 @@ Normalized parameters for the Anthropic Messages API, used internally to pass st
 | `tool_choice` | `dict[str, Any] \| None` | Controls which tool the model uses |
 | `metadata` | `dict[str, Any] \| None` | Request metadata |
 | `thinking` | `dict[str, Any] \| None` | Thinking/reasoning configuration |
+| `cache_control` | `dict[str, Any] \| None` | Cache control configuration for prompt caching |
 
 
 ---
