@@ -513,7 +513,7 @@ def messages(
     max_tokens: int,
     *,
     provider: str | LLMProvider | None = None,
-    system: str | None = None,
+    system: str | list[dict[str, Any]] | None = None,
     temperature: float | None = None,
     top_p: float | None = None,
     top_k: int | None = None,
@@ -523,6 +523,7 @@ def messages(
     tool_choice: dict[str, Any] | None = None,
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
+    cache_control: dict[str, Any] | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
@@ -536,7 +537,7 @@ def messages(
         messages: List of messages in Anthropic format.
         max_tokens: Maximum number of tokens to generate.
         provider: Provider name to use for the request.
-        system: System prompt.
+        system: System prompt (string or list of content blocks with optional cache_control).
         temperature: Controls randomness (0.0 to 1.0).
         top_p: Controls diversity via nucleus sampling.
         top_k: Only sample from the top K options.
@@ -546,6 +547,7 @@ def messages(
         tool_choice: Controls which tool the model uses.
         metadata: Request metadata.
         thinking: Thinking/reasoning configuration.
+        cache_control: Cache control configuration for prompt caching.
         api_key: API key for the provider.
         api_base: Base URL for the provider API.
         client_args: Additional provider-specific arguments for client instantiation.
@@ -576,6 +578,7 @@ def messages(
         tool_choice=tool_choice,
         metadata=metadata,
         thinking=thinking,
+        cache_control=cache_control,
         **kwargs,
     )
 
@@ -586,7 +589,7 @@ async def amessages(
     max_tokens: int,
     *,
     provider: str | LLMProvider | None = None,
-    system: str | None = None,
+    system: str | list[dict[str, Any]] | None = None,
     temperature: float | None = None,
     top_p: float | None = None,
     top_k: int | None = None,
@@ -596,6 +599,7 @@ async def amessages(
     tool_choice: dict[str, Any] | None = None,
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
+    cache_control: dict[str, Any] | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
@@ -609,7 +613,7 @@ async def amessages(
         messages: List of messages in Anthropic format.
         max_tokens: Maximum number of tokens to generate.
         provider: Provider name to use for the request.
-        system: System prompt.
+        system: System prompt (string or list of content blocks with optional cache_control).
         temperature: Controls randomness (0.0 to 1.0).
         top_p: Controls diversity via nucleus sampling.
         top_k: Only sample from the top K options.
@@ -619,6 +623,7 @@ async def amessages(
         tool_choice: Controls which tool the model uses.
         metadata: Request metadata.
         thinking: Thinking/reasoning configuration.
+        cache_control: Cache control configuration for prompt caching.
         api_key: API key for the provider.
         api_base: Base URL for the provider API.
         client_args: Additional provider-specific arguments for client instantiation.
@@ -649,6 +654,7 @@ async def amessages(
         tool_choice=tool_choice,
         metadata=metadata,
         thinking=thinking,
+        cache_control=cache_control,
         **kwargs,
     )
 
