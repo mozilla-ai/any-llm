@@ -29,6 +29,8 @@ Switch between OpenAI, Anthropic, Mistral, Ollama, and more without changing you
 
 </div>
 
+> **Coming from LiteLLM?** Install `any-llm-sdk` with extras for the providers you need (`pip install 'any-llm-sdk[openai,anthropic]'` or `[all]` for every provider), then replace all references of `litellm` with `any_llm` in your imports — the rest of the API is the same.
+
 ## Quickstart
 
 ```python
