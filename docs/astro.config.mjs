@@ -35,6 +35,12 @@ export default defineConfig({
         { label: "Quickstart", slug: "quickstart" },
         { label: "Providers", slug: "providers" },
         {
+          label: "Cookbooks",
+          items: [
+            { label: "Getting Started", slug: "cookbooks/any-llm-getting-started" },
+          ],
+        },
+        {
           label: "API Reference",
           items: [
             { label: "AnyLLM", slug: "api/any-llm" },
