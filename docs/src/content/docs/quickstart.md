@@ -193,44 +193,6 @@ any-llm automatically converts your Python functions to OpenAI tools format. Fun
 - Type annotations for all parameters
 - A return type annotation
 
-## Provider Configuration
-
-Use `client_args` to pass provider-specific arguments to the underlying SDK client during initialization. This is useful for custom timeouts, headers, or provider-specific options.
-
-```python
-from any_llm import completion
-
-response = completion(
-    model="mistral-small-latest",
-    provider="mistral",
-    messages=[{"role": "user", "content": "Hello!"}],
-    client_args={"timeout": 120},
-)
-```
-
-### AWS Bedrock: Custom boto3 Client
-
-For AWS Bedrock, you can pass a pre-built `boto3` client. This is useful when you have custom credential configurations (IAM roles, STS assumed roles, named profiles, etc.) that are easier to set up on a boto3 client directly:
-
-```python
-import boto3
-from any_llm import completion
-
-my_client = boto3.client(
-    "bedrock-runtime",
-    region_name="us-west-2",
-)
-
-response = completion(
-    model="anthropic.claude-3-sonnet-20240229-v1:0",
-    provider="bedrock",
-    messages=[{"role": "user", "content": "Hello!"}],
-    client_args={"client": my_client},
-)
-```
-
-When a custom `client` is provided, any-llm skips credential verification and uses the client directly.
-
 ## Exception Handling
 
 The `any-llm` package provides a unified exception hierarchy that works consistently across all LLM providers.
