@@ -63,8 +63,7 @@ print(response.choices[0].message.content)
 >
 > # after
 > from any_llm import completion
-> response = completion(model="gpt-4o", provider="openai", messages=[...])
-> # or: model="openai:gpt-4o"  — no provider arg needed
+> response = completion(model="openai:gpt-4o", messages=[...])
 > ```
 >
 > See [Supported Providers](https://mozilla-ai.github.io/any-llm/providers/) to map your existing model strings.
