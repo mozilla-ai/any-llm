@@ -32,7 +32,7 @@ Switch between OpenAI, Anthropic, Mistral, Ollama, and more without changing you
 > **Coming from LiteLLM?** Install `any-llm-sdk` with extras for the providers you need (or `[all]`), then swap your imports — the rest of the API is the same:
 >
 > ```bash
-> pip install 'any-llm-sdk[openai,anthropic]'
+> pip install 'any-llm-sdk[openai,anthropic]'  # or [all]
 > ```
 > ```python
 > # before
