@@ -28,3 +28,4 @@
 - [Gateway - Api Reference](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/gateway/api-reference.md)
 - [Gateway - Troubleshooting](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/gateway/troubleshooting.md)
 - [Gateway - Docker Deployment](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/gateway/docker-deployment.md): curl http://localhost:8000/health
+- [Cookbooks - Any Llm Getting Started](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/cookbooks/any-llm-getting-started.mdx): # This is needed because any-llm uses async functions for API calls
