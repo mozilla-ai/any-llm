@@ -36,10 +36,6 @@ if TYPE_CHECKING:
     from any_llm.types.model import Model
 
 
-# ---------------------------------------------------------------------------
-# Message / prompt helpers
-# ---------------------------------------------------------------------------
-
 def _messages_to_prompt(messages: list[dict[str, Any]]) -> str:
     """Flatten an OpenAI-style messages list into a single prompt string.
 
@@ -128,10 +124,6 @@ def _cleanup_temp_files(paths: list[str]) -> None:
             pass
 
 
-# ---------------------------------------------------------------------------
-# Response / chunk builders
-# ---------------------------------------------------------------------------
-
 def _build_chat_completion(
     content: str,
     model_id: str,
@@ -146,7 +138,7 @@ def _build_chat_completion(
     )
 
     return ChatCompletion(
-        id=f"copilot-sdk-{int(time.time())}",
+        id=f"copilotsdk-{time.time_ns()}",
         choices=[
             Choice(
                 finish_reason="stop",
@@ -175,7 +167,7 @@ def _build_chunk(delta: str, model_id: str, *, is_reasoning: bool = False) -> "C
     )
 
     return ChatCompletionChunk(
-        id=f"copilot-sdk-{time.time_ns()}",
+        id=f"copilotsdk-{time.time_ns()}",
         choices=[
             ChunkChoice(
                 delta=ChoiceDelta(
@@ -200,42 +192,30 @@ def _copilot_model_to_openai(info: "CopilotModelInfo") -> "Model":
     return OpenAIModel(id=info.id, created=0, owned_by="github-copilot", object="model")
 
 
-# ---------------------------------------------------------------------------
-# Provider
-# ---------------------------------------------------------------------------
-
-class CopilotSdkProvider(AnyLLM):
+class CopilotsdkProvider(AnyLLM):
     """GitHub Copilot SDK provider for any-llm.
 
     Communicates with the Copilot CLI via JSON-RPC using the ``github-copilot-sdk``
-    Python package.  Authentication supports two modes (checked in order):
+    Python package. Authentication supports two modes (checked in order):
 
     1. **Token mode** — set ``COPILOT_GITHUB_TOKEN``, ``GITHUB_TOKEN``, or
        ``GH_TOKEN`` in the environment (or pass ``api_key`` explicitly).
-    2. **Logged-in CLI user** — if no token is found, the Copilot CLI uses the
-       credentials from the local user's authenticated ``gh`` / ``copilot`` CLI session.
+    2. **Logged-in CLI user** — if no token is found, the Copilot CLI uses
+       the credentials from the local user's ``gh`` / ``copilot`` CLI session.
 
-    The Copilot CLI binary must be installed and reachable on ``PATH`` (or pointed
-    to via ``COPILOT_CLI_PATH``).  The platform-specific ``github-copilot-sdk``
-    wheel (e.g. ``github-copilot-sdk==X.Y.Z`` targeting your OS/arch) bundles the
-    binary automatically.  An external CLI server can be used instead by setting
-    ``COPILOT_CLI_URL`` (e.g. ``localhost:9000``).
-
-    **Supported features:**
-
-    * Completion (non-streaming and streaming)
-    * Reasoning (``reasoning_effort``: ``low`` / ``medium`` / ``high`` / ``xhigh``)
-    * Image attachments via ``image_url`` content blocks (``data:`` URIs only)
-    * Model listing
+    Supports completion (streaming and non-streaming), reasoning
+    (``reasoning_effort``), image attachments via ``data:`` URIs, and model
+    listing. The binary is bundled by the ``github-copilot-sdk`` wheel;
+    ``COPILOT_CLI_URL`` overrides to an external server.
 
     Environment variables:
         COPILOT_GITHUB_TOKEN: GitHub token with Copilot access (optional).
-        GITHUB_TOKEN / GH_TOKEN: Fallback GitHub token sources (optional).
+        GITHUB_TOKEN / GH_TOKEN: Fallback token sources (optional).
         COPILOT_CLI_URL: Connect to an external CLI server instead of spawning one.
         COPILOT_CLI_PATH: Override the CLI binary path (default: PATH lookup).
     """
 
-    PROVIDER_NAME = "copilot_sdk"
+    PROVIDER_NAME = "copilotsdk"
     ENV_API_KEY_NAME = "COPILOT_GITHUB_TOKEN"
     ENV_API_BASE_NAME = "COPILOT_CLI_URL"
     PROVIDER_DOCUMENTATION_URL = "https://github.com/github/copilot-sdk"
@@ -255,8 +235,6 @@ class CopilotSdkProvider(AnyLLM):
     # Internal state — populated lazily on first call.
     _copilot_client: "CopilotClient | None"
 
-    # ------------------------------------------------------------------ auth --
-
     @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         """API key is optional: logged-in CLI mode works without any token."""
@@ -268,8 +246,6 @@ class CopilotSdkProvider(AnyLLM):
         )
         # Return None (not empty string) so copilot-sdk uses logged-in credentials.
         return resolved or None
-
-    # ---------------------------------------------------------- client init --
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
@@ -312,13 +288,12 @@ class CopilotSdkProvider(AnyLLM):
 
         return self._copilot_client
 
-    # --------------------------------------------------- completion (async) --
-
     def _build_session_cfg(self, params: "CompletionParams", streaming: bool) -> dict[str, Any]:
         """Build a SessionConfig dict from CompletionParams."""
-        # approve_all silently grants any permissions the session requests
-        # (e.g. tool calls).  This mirrors how the Copilot CLI behaves in
-        # non-interactive mode and is appropriate for programmatic usage.
+        # PermissionHandler.approve_all silently grants any permissions the session
+        # requests (e.g. tool calls). This mirrors how the Copilot CLI behaves in
+        # non-interactive mode and is appropriate for programmatic usage. Callers
+        # that need a more restrictive policy can subclass and override this method.
         cfg: dict[str, Any] = {"on_permission_request": PermissionHandler.approve_all}
         if params.model_id:
             cfg["model"] = params.model_id
@@ -353,7 +328,10 @@ class CopilotSdkProvider(AnyLLM):
             elif etype == SessionEventType.SESSION_IDLE:
                 queue.put_nowait(None)  # sentinel — streaming complete normally
             elif etype == SessionEventType.SESSION_ERROR:
-                queue.put_nowait(("error", getattr(getattr(event, "data", None), "message", "Copilot session error")))
+                # SDK SESSION_ERROR event fields are untyped; use getattr with a
+                # default so this path is safe even if the schema changes.
+                error_msg = getattr(getattr(event, "data", None), "message", "Copilot session error")
+                queue.put_nowait(("error", error_msg))
 
         unsubscribe = session.on(on_event)
         try:
@@ -403,6 +381,8 @@ class CopilotSdkProvider(AnyLLM):
             def on_reasoning(event: Any) -> None:
                 nonlocal reasoning_content
                 if event.type == SessionEventType.ASSISTANT_REASONING:
+                    # SDK reasoning event fields are untyped; defensive access is
+                    # intentional here so a schema change doesn't cause an AttributeError.
                     reasoning_content = (
                         getattr(getattr(event, "data", None), "content", None) or None
                     )
@@ -421,8 +401,6 @@ class CopilotSdkProvider(AnyLLM):
             await session.disconnect()
             _cleanup_temp_files(temp_paths)
 
-    # -------------------------------------------------- model listing (async) --
-
     @override
     async def _alist_models(self, **kwargs: Any) -> "Sequence[Model]":
         """List models available through the Copilot CLI."""
@@ -430,34 +408,32 @@ class CopilotSdkProvider(AnyLLM):
         models = await client.list_models()
         return [_copilot_model_to_openai(m) for m in models]
 
-    # ------------ Required abstract stubs (unused — _acompletion overridden) --
-
     @staticmethod
     @override
     def _convert_completion_params(params: "CompletionParams", **kwargs: Any) -> dict[str, Any]:
-        raise NotImplementedError("CopilotSdkProvider overrides _acompletion directly")
+        raise NotImplementedError("CopilotsdkProvider overrides _acompletion directly")
 
     @staticmethod
     @override
     def _convert_completion_response(response: Any) -> "ChatCompletion":
-        raise NotImplementedError("CopilotSdkProvider overrides _acompletion directly")
+        raise NotImplementedError("CopilotsdkProvider overrides _acompletion directly")
 
     @staticmethod
     @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> "ChatCompletionChunk":
-        raise NotImplementedError("CopilotSdkProvider overrides _acompletion directly")
+        raise NotImplementedError("CopilotsdkProvider overrides _acompletion directly")
 
     @staticmethod
     @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
-        raise NotImplementedError("CopilotSdkProvider does not support embeddings")
+        raise NotImplementedError("CopilotsdkProvider does not support embeddings")
 
     @staticmethod
     @override
     def _convert_embedding_response(response: Any) -> "CreateEmbeddingResponse":
-        raise NotImplementedError("CopilotSdkProvider does not support embeddings")
+        raise NotImplementedError("CopilotsdkProvider does not support embeddings")
 
     @staticmethod
     @override
     def _convert_list_models_response(response: Any) -> "Sequence[Model]":
-        raise NotImplementedError("CopilotSdkProvider uses _alist_models directly")
+        raise NotImplementedError("CopilotsdkProvider uses _alist_models directly")

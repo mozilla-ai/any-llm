@@ -27,7 +27,7 @@ Provider source code is in [`src/any_llm/providers/`](https://github.com/mozilla
 | [`bedrock`](https://aws.amazon.com/bedrock/) | AWS_BEARER_TOKEN_BEDROCK | AWS_ENDPOINT_URL_BEDROCK_RUNTIME | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`cerebras`](https://docs.cerebras.ai/) | CEREBRAS_API_KEY | CEREBRAS_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`cohere`](https://cohere.com/api) | COHERE_API_KEY | COHERE_BASE_URL | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
-| [`copilot_sdk`](https://github.com/github/copilot-sdk) | COPILOT_GITHUB_TOKEN | COPILOT_CLI_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| [`copilotsdk`](https://github.com/github/copilot-sdk) | COPILOT_GITHUB_TOKEN | COPILOT_CLI_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
 | [`databricks`](https://docs.databricks.com/) | DATABRICKS_TOKEN | DATABRICKS_HOST | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
 | [`deepseek`](https://platform.deepseek.com/) | DEEPSEEK_API_KEY | DEEPSEEK_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`fireworks`](https://fireworks.ai/api) | FIREWORKS_API_KEY | FIREWORKS_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
@@ -64,9 +64,9 @@ Provider source code is in [`src/any_llm/providers/`](https://github.com/mozilla
 
 ## Provider Notes
 
-### `copilot_sdk` — GitHub Copilot SDK
+### `copilotsdk` — GitHub Copilot SDK
 
-The `copilot_sdk` provider communicates with GitHub Copilot models via the
+The `copilotsdk` provider communicates with GitHub Copilot models via the
 [`github-copilot-sdk`](https://pypi.org/project/github-copilot-sdk/) Python package,
 which bundles the Copilot CLI binary for your platform.
 
@@ -75,7 +75,7 @@ which bundles the Copilot CLI binary for your platform.
 Install the platform-specific wheel:
 
 ```bash
-pip install any-llm-sdk[copilot_sdk]
+pip install any-llm-sdk[copilotsdk]
 ```
 
 > **Note**: `github-copilot-sdk` ships separate wheels per OS and CPU architecture
@@ -118,7 +118,7 @@ Two modes are supported, checked in order:
 from any_llm import AnyLLM
 
 # Token auth (or set COPILOT_GITHUB_TOKEN in environment)
-llm = AnyLLM.create("copilot_sdk")
+llm = AnyLLM.create("copilotsdk")
 
 # List available models
 models = llm.list_models()
