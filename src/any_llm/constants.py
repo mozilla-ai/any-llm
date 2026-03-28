@@ -54,6 +54,7 @@ class LLMProvider(StrEnum):
     PERPLEXITY = "perplexity"
     MINIMAX = "minimax"
     ZAI = "zai"
+    COPILOTSDK = "copilotsdk"
     GATEWAY = "gateway"
 
     @classmethod

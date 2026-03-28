@@ -149,6 +149,7 @@ def test_providers_raise_MissingApiKeyError(provider: LLMProvider) -> None:
         LLMProvider.VERTEXAI,
         LLMProvider.VLLM,
         LLMProvider.GATEWAY,
+        LLMProvider.COPILOTSDK,  # uses CLI auth; no API key required
     ):
         pytest.skip("This provider handles `api_key` differently.")
     with patch.dict(os.environ, {}, clear=True):

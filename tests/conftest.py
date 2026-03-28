@@ -81,6 +81,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.LLAMACPP: "N/A",
         LLMProvider.MINIMAX: "MiniMax-M2",
         LLMProvider.ZAI: "glm-4-32b-0414-128k",
+        LLMProvider.COPILOTSDK: "gpt-4o",
     }
 
 
@@ -151,6 +152,7 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
             "api_base": "https://mlrun-me8bof5t-eastus2.cognitiveservices.azure.com/",
             "api_version": "2025-03-01-preview",
         },
+        LLMProvider.COPILOTSDK: {},
     }
 
 
