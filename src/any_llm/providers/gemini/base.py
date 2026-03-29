@@ -64,8 +64,8 @@ class GoogleProvider(AnyLLM):
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
-    SUPPORTS_COMPLETION_IMAGE = False  # TODO: Add image support https://github.com/mozilla-ai/any-llm/issues/415
-    SUPPORTS_COMPLETION_PDF = False
+    SUPPORTS_COMPLETION_IMAGE = True
+    SUPPORTS_COMPLETION_PDF = True
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
@@ -151,7 +151,7 @@ class GoogleProvider(AnyLLM):
             kwargs["response_mime_type"] = "application/json"
             kwargs["response_schema"] = response_format.get("json_schema", {}).get("schema", {})
 
-        formatted_messages, system_instruction = _convert_messages(params.messages)
+        formatted_messages, system_instruction = _convert_messages(params.messages, provider_name=provider_name)
         if system_instruction:
             kwargs["system_instruction"] = system_instruction
 
