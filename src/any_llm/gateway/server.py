@@ -14,12 +14,20 @@ from any_llm.gateway.routes import budgets, chat, embeddings, health, keys, mess
 _PUBLIC_PREFIXES = ("/health",)
 
 
-class CacheControlMiddleware(BaseHTTPMiddleware):
-    """Prevent CDN/proxy caches from storing authenticated responses."""
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses.
+
+    Sets standard security headers on every response, plus cache-control
+    headers on non-health endpoints to prevent CDN/proxy caches from
+    storing authenticated responses.
+    """
 
     @override
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         if not request.url.path.startswith(_PUBLIC_PREFIXES):
             response.headers["Cache-Control"] = "private, no-store, no-cache"
             response.headers["Vary"] = "Authorization"
@@ -51,7 +59,7 @@ def create_app(config: GatewayConfig) -> FastAPI:
         version=__version__,
     )
 
-    app.add_middleware(CacheControlMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
 
     if config.cors_allow_origins:
         allow_credentials = "*" not in config.cors_allow_origins

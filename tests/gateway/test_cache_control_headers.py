@@ -1,15 +1,15 @@
-"""Tests for Cache-Control headers added by CacheControlMiddleware."""
+"""Tests for security headers added by SecurityHeadersMiddleware."""
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from any_llm.gateway.server import CacheControlMiddleware
+from any_llm.gateway.server import SecurityHeadersMiddleware
 
 
 def _make_app() -> FastAPI:
-    """Create a minimal FastAPI app with CacheControlMiddleware for testing."""
+    """Create a minimal FastAPI app with SecurityHeadersMiddleware for testing."""
     app = FastAPI()
-    app.add_middleware(CacheControlMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
 
     @app.get("/v1/users")
     def list_users() -> list[str]:
@@ -87,3 +87,21 @@ def test_cache_headers_on_budgets_endpoint() -> None:
         response = client.get("/v1/budgets")
         assert response.headers["Cache-Control"] == "private, no-store, no-cache"
         assert "Authorization" in response.headers.get("Vary", "")
+
+
+def test_security_headers_on_all_responses() -> None:
+    """All responses must include X-Content-Type-Options, X-Frame-Options, and Referrer-Policy."""
+    with TestClient(_make_app()) as client:
+        response = client.get("/v1/users")
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+
+
+def test_security_headers_on_health_endpoints() -> None:
+    """Health endpoints must also include security headers (just not cache headers)."""
+    with TestClient(_make_app()) as client:
+        response = client.get("/health")
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
