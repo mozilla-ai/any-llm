@@ -51,6 +51,25 @@ print(response.choices[0].message.content)
 **That's it!** Change the provider name and add provider-specific keys to switch between LLM providers.
 
 
+> **Coming from LiteLLM?** Your API keys and environment variables carry over unchanged. Install the SDK with extras for the providers you need, then update your import and model strings:
+>
+> ```bash
+> pip install 'any-llm-sdk[openai,anthropic]'  # or [all] for everything
+> ```
+> ```python
+> # before
+> from litellm import completion
+> response = completion(model="openai/gpt-4o", messages=[...])
+>
+> # after
+> from any_llm import completion
+> response = completion(model="openai:gpt-4o", messages=[...])
+> ```
+>
+> See [Supported Providers](https://mozilla-ai.github.io/any-llm/providers/) to map your existing model strings.
+
+That's the full migration — no proxy, no extra config.
+
 ## Installation
 
 ### Requirements
