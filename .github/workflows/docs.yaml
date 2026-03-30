@@ -10,6 +10,7 @@ on:
       - 'scripts/generate_llms_txt.py'
       - 'scripts/generate_openapi.py'
       - 'scripts/generate_api_docs.py'
+      - 'scripts/generate_cookbooks.py'
       - '.github/workflows/**'
       - 'pyproject.toml'
   pull_request:
@@ -20,6 +21,7 @@ on:
       - 'scripts/generate_llms_txt.py'
       - 'scripts/generate_openapi.py'
       - 'scripts/generate_api_docs.py'
+      - 'scripts/generate_cookbooks.py'
       - '.github/workflows/**'
       - 'pyproject.toml'
   workflow_dispatch:
@@ -63,6 +65,9 @@ jobs:
 
       - name: Generate API docs
         run: uv run python scripts/generate_api_docs.py
+
+      - name: Generate cookbook pages
+        run: uv run python scripts/generate_cookbooks.py
 
       - name: Build docs
         working-directory: docs

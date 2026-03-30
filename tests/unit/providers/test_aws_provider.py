@@ -52,6 +52,51 @@ def test_boto3_client_created_without_api_base() -> None:
         mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None)
 
 
+def test_custom_client_used_when_provided() -> None:
+    """Test that a user-provided boto3 client is used instead of creating a new one."""
+    custom_client = Mock()
+    custom_client.converse.return_value = {"output": {"message": {"content": [{"text": "response"}]}}}
+
+    with (
+        patch("any_llm.providers.bedrock.bedrock._convert_response"),
+        patch("boto3.client") as mock_boto3_client,
+    ):
+        provider = BedrockProvider(client=custom_client)
+
+        provider._completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
+
+        mock_boto3_client.assert_not_called()
+        custom_client.converse.assert_called_once()
+
+
+def test_custom_client_skips_credential_verification() -> None:
+    """Test that credential verification is skipped when a custom client is provided."""
+    custom_client = Mock()
+
+    with (
+        patch("boto3.Session") as mock_session,
+        patch("boto3.client"),
+    ):
+        BedrockProvider(client=custom_client)
+
+        mock_session.assert_not_called()
+
+
+def test_custom_client_kwargs_not_forwarded_to_boto3() -> None:
+    """Test that the 'client' kwarg is consumed and not forwarded to boto3.client."""
+    custom_client = Mock()
+    custom_client.converse.return_value = {"output": {"message": {"content": [{"text": "response"}]}}}
+
+    with (
+        patch("any_llm.providers.bedrock.bedrock._convert_response"),
+        patch("boto3.client"),
+    ):
+        provider = BedrockProvider(client=custom_client, region_name="us-west-2")
+
+        assert provider.client is custom_client
+        assert provider.kwargs == {"region_name": "us-west-2"}
+
+
 def test_completion_with_kwargs() -> None:
     """Test that additional kwargs are passed correctly to converse method."""
     model_id = "model-id"
