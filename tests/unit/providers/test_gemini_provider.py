@@ -294,6 +294,39 @@ async def test_completion_with_dataclass_response_format() -> None:
 
 
 @pytest.mark.asyncio
+async def test_completion_with_dict_json_schema_response_format() -> None:
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Hello"}]
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "TestOutput",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "value": {"type": "integer"},
+                },
+                "required": ["name", "value"],
+            },
+        },
+    }
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key=api_key)
+        await provider._acompletion(
+            CompletionParams(model_id=model, messages=messages, response_format=response_format)
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+
+        assert generation_config.response_mime_type == "application/json"
+        assert generation_config.response_schema == response_format["json_schema"]["schema"]
+
+
+@pytest.mark.asyncio
 async def test_completion_with_stream_and_response_format_raises() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
