@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from any_llm.gateway.server import SecurityHeadersMiddleware
+from any_llm.gateway.main import SecurityHeadersMiddleware
 
 
 def _make_app() -> FastAPI:

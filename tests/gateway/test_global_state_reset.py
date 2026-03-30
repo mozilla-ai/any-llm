@@ -2,9 +2,9 @@
 
 import pytest
 
-from any_llm.gateway.auth.dependencies import get_config, reset_config, set_config
-from any_llm.gateway.config import GatewayConfig
-from any_llm.gateway.db.session import reset_db
+from any_llm.gateway.api.deps import get_config, reset_config, set_config
+from any_llm.gateway.core.config import GatewayConfig
+from any_llm.gateway.core.database import reset_db
 
 
 def test_reset_config_clears_state() -> None:

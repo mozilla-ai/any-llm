@@ -31,7 +31,7 @@ def test_embeddings_with_api_key(
 ) -> None:
     """POST /v1/embeddings works with API key authentication."""
     mock_resp = _mock_embedding_response()
-    with patch("any_llm.gateway.routes.embeddings.aembedding", new_callable=AsyncMock, return_value=mock_resp):
+    with patch("any_llm.gateway.api.routes.embeddings.aembedding", new_callable=AsyncMock, return_value=mock_resp):
         resp = client.post(
             "/v1/embeddings",
             json={"model": "openai:text-embedding-3-small", "input": "hello"},
@@ -49,7 +49,7 @@ def test_embeddings_master_key_requires_user(
 ) -> None:
     """POST /v1/embeddings with master key requires 'user' field."""
     mock_resp = _mock_embedding_response()
-    with patch("any_llm.gateway.routes.embeddings.aembedding", new_callable=AsyncMock, return_value=mock_resp):
+    with patch("any_llm.gateway.api.routes.embeddings.aembedding", new_callable=AsyncMock, return_value=mock_resp):
         resp = client.post(
             "/v1/embeddings",
             json={"model": "openai:text-embedding-3-small", "input": "hello"},
@@ -66,7 +66,7 @@ def test_embeddings_master_key_with_user(
 ) -> None:
     """POST /v1/embeddings with master key + user field succeeds."""
     mock_resp = _mock_embedding_response()
-    with patch("any_llm.gateway.routes.embeddings.aembedding", new_callable=AsyncMock, return_value=mock_resp):
+    with patch("any_llm.gateway.api.routes.embeddings.aembedding", new_callable=AsyncMock, return_value=mock_resp):
         resp = client.post(
             "/v1/embeddings",
             json={
@@ -85,7 +85,7 @@ def test_embeddings_list_input(
 ) -> None:
     """POST /v1/embeddings accepts a list of strings as input."""
     mock_resp = _mock_embedding_response()
-    with patch("any_llm.gateway.routes.embeddings.aembedding", new_callable=AsyncMock, return_value=mock_resp):
+    with patch("any_llm.gateway.api.routes.embeddings.aembedding", new_callable=AsyncMock, return_value=mock_resp):
         resp = client.post(
             "/v1/embeddings",
             json={"model": "openai:text-embedding-3-small", "input": ["hello", "world"]},
@@ -100,7 +100,7 @@ def test_embeddings_provider_error(
 ) -> None:
     """POST /v1/embeddings returns 500 when the provider fails."""
     with patch(
-        "any_llm.gateway.routes.embeddings.aembedding",
+        "any_llm.gateway.api.routes.embeddings.aembedding",
         new_callable=AsyncMock,
         side_effect=RuntimeError("provider down"),
     ):
@@ -123,7 +123,7 @@ def test_embeddings_logs_usage(
     mock_resp = _mock_embedding_response()
     user_id = api_key_obj["user_id"]
 
-    with patch("any_llm.gateway.routes.embeddings.aembedding", new_callable=AsyncMock, return_value=mock_resp):
+    with patch("any_llm.gateway.api.routes.embeddings.aembedding", new_callable=AsyncMock, return_value=mock_resp):
         resp = client.post(
             "/v1/embeddings",
             json={"model": "openai:text-embedding-3-small", "input": "hello"},
@@ -151,7 +151,7 @@ def test_embeddings_logs_error_on_failure(
     user_id = api_key_obj["user_id"]
 
     with patch(
-        "any_llm.gateway.routes.embeddings.aembedding",
+        "any_llm.gateway.api.routes.embeddings.aembedding",
         new_callable=AsyncMock,
         side_effect=RuntimeError("provider down"),
     ):
@@ -179,7 +179,7 @@ def test_embeddings_optional_fields(
     """POST /v1/embeddings forwards optional OpenAI fields."""
     mock_resp = _mock_embedding_response()
     values = {"encoding_format": "float", "dimensions": 256}
-    with patch("any_llm.gateway.routes.embeddings.aembedding", new_callable=AsyncMock, return_value=mock_resp) as mock:
+    with patch("any_llm.gateway.api.routes.embeddings.aembedding", new_callable=AsyncMock, return_value=mock_resp) as mock:
         resp = client.post(
             "/v1/embeddings",
             json={
@@ -215,7 +215,7 @@ def test_embeddings_cost_tracked_with_pricing(
     mock_resp = _mock_embedding_response()
     user_id = api_key_obj["user_id"]
 
-    with patch("any_llm.gateway.routes.embeddings.aembedding", new_callable=AsyncMock, return_value=mock_resp):
+    with patch("any_llm.gateway.api.routes.embeddings.aembedding", new_callable=AsyncMock, return_value=mock_resp):
         resp = client.post(
             "/v1/embeddings",
             json={"model": "openai:text-embedding-3-small", "input": "hello"},

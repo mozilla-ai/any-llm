@@ -3,8 +3,8 @@
 import pytest
 from sqlalchemy.orm import Session
 
-from any_llm.gateway.db.models import ModelPricing, User
-from any_llm.gateway.routes.chat import log_usage
+from any_llm.gateway.models.entities import ModelPricing, User
+from any_llm.gateway.api.routes.chat import log_usage
 from any_llm.types.completion import CompletionUsage
 
 

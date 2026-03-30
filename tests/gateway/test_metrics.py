@@ -9,10 +9,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from any_llm.gateway.config import API_KEY_HEADER, GatewayConfig
+from any_llm.gateway.core.config import API_KEY_HEADER, GatewayConfig
 from any_llm.gateway.db import Base, get_db
 from any_llm.gateway.metrics import REGISTRY
-from any_llm.gateway.server import create_app
+from any_llm.gateway.main import create_app
 from tests.gateway.conftest import _run_alembic_migrations
 
 
@@ -161,7 +161,7 @@ def test_token_metrics_recorded(metrics_client: TestClient) -> None:
     async def mock_acompletion(**kwargs: Any) -> ChatCompletion:
         return mock_response
 
-    with patch("any_llm.gateway.routes.chat.acompletion", new=mock_acompletion):
+    with patch("any_llm.gateway.api.routes.chat.acompletion", new=mock_acompletion):
         resp = _chat_request(metrics_client, user_id)
 
     assert resp.status_code == 200
@@ -207,7 +207,7 @@ def test_cost_metric_recorded_with_pricing(metrics_client: TestClient) -> None:
     async def mock_acompletion(**kwargs: Any) -> ChatCompletion:
         return mock_response
 
-    with patch("any_llm.gateway.routes.chat.acompletion", new=mock_acompletion):
+    with patch("any_llm.gateway.api.routes.chat.acompletion", new=mock_acompletion):
         resp = _chat_request(metrics_client, user_id)
 
     assert resp.status_code == 200
@@ -227,7 +227,7 @@ def test_rate_limit_hit_metric(metrics_rate_limit_client: TestClient) -> None:
         msg = "short-circuit"
         raise RuntimeError(msg)
 
-    with patch("any_llm.gateway.routes.chat.acompletion", new=mock_acompletion):
+    with patch("any_llm.gateway.api.routes.chat.acompletion", new=mock_acompletion):
         # Exhaust rate limit (rpm=2)
         for _ in range(2):
             _chat_request(metrics_rate_limit_client, user_id)

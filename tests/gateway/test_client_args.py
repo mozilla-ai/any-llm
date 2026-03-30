@@ -7,9 +7,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from any_llm.gateway.config import GatewayConfig
+from any_llm.gateway.core.config import GatewayConfig
 from any_llm.gateway.db import get_db
-from any_llm.gateway.server import create_app
+from any_llm.gateway.main import create_app
 from tests.gateway.conftest import _run_alembic_migrations
 
 
@@ -90,7 +90,7 @@ async def test_client_args_passed_to_acompletion(
     )
     assert response.status_code == 200
 
-    with patch("any_llm.gateway.routes.chat.acompletion", new=mock_acompletion):
+    with patch("any_llm.gateway.api.routes.chat.acompletion", new=mock_acompletion):
         client_with_client_args.post(
             "/v1/chat/completions",
             json={
@@ -121,7 +121,7 @@ async def test_provider_config_without_client_args(
         captured_kwargs.update(kwargs)
         raise MockCompletionError
 
-    with patch("any_llm.gateway.routes.chat.acompletion", new=mock_acompletion):
+    with patch("any_llm.gateway.api.routes.chat.acompletion", new=mock_acompletion):
         client.post(
             "/v1/chat/completions",
             json={

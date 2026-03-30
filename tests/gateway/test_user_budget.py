@@ -2,7 +2,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from any_llm.gateway.config import API_KEY_HEADER, GatewayConfig
+from any_llm.gateway.core.config import API_KEY_HEADER, GatewayConfig
 
 
 def test_create_user(client: TestClient, master_key_header: dict[str, str]) -> None:

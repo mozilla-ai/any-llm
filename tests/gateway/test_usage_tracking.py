@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from any_llm.gateway.config import GatewayConfig
-from any_llm.gateway.db.models import UsageLog, User
+from any_llm.gateway.core.config import GatewayConfig
+from any_llm.gateway.models.entities import UsageLog, User
 from tests.gateway.conftest import MODEL_NAME
 
 

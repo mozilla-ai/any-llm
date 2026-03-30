@@ -16,9 +16,9 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from testcontainers.postgres import PostgresContainer
 
-from any_llm.gateway.config import API_KEY_HEADER, GatewayConfig
+from any_llm.gateway.core.config import API_KEY_HEADER, GatewayConfig
 from any_llm.gateway.db import Base, get_db
-from any_llm.gateway.server import create_app
+from any_llm.gateway.main import create_app
 
 MODEL_NAME = "gemini:gemini-2.5-flash"
 

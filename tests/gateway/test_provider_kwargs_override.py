@@ -10,10 +10,10 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from any_llm import LLMProvider
-from any_llm.gateway.config import GatewayConfig
+from any_llm.gateway.core.config import GatewayConfig
 from any_llm.gateway.db import Base, get_db
-from any_llm.gateway.routes.chat import get_provider_kwargs
-from any_llm.gateway.server import create_app
+from any_llm.gateway.api.routes.chat import get_provider_kwargs
+from any_llm.gateway.main import create_app
 from tests.gateway.conftest import _run_alembic_migrations
 
 
@@ -105,7 +105,7 @@ async def test_user_model_not_overridden_by_provider_config(
     )
     assert response.status_code == 200
 
-    with patch("any_llm.gateway.routes.chat.acompletion", new=mock_acompletion):
+    with patch("any_llm.gateway.api.routes.chat.acompletion", new=mock_acompletion):
         client_with_model_in_provider.post(
             "/v1/chat/completions",
             json={
@@ -134,7 +134,7 @@ async def test_unset_optional_fields_do_not_override_provider_defaults(
 
     master_key_header = {"X-AnyLLM-Key": "Bearer test-master-key"}
 
-    with patch("any_llm.gateway.routes.chat.acompletion", new=mock_acompletion):
+    with patch("any_llm.gateway.api.routes.chat.acompletion", new=mock_acompletion):
         client_with_model_in_provider.post(
             "/v1/chat/completions",
             json={
