@@ -829,7 +829,12 @@ def test_convert_messages_with_base64_pdf() -> None:
     messages = [
         {
             "role": "user",
-            "content": [{"type": "file", "file": {"filename": "document.pdf", "file_data": f"data:application/pdf;base64,{pdf_b64}"}}],
+            "content": [
+                {
+                    "type": "file",
+                    "file": {"filename": "document.pdf", "file_data": f"data:application/pdf;base64,{pdf_b64}"},
+                }
+            ],
         }
     ]
 
@@ -851,7 +856,13 @@ def test_convert_messages_mixed_text_and_media() -> None:
             "content": [
                 {"type": "text", "text": "Compare these"},
                 {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
-                {"type": "file", "file": {"filename": "document.pdf", "file_data": f"data:application/pdf;base64,{base64.b64encode(TEST_PDF_BYTES).decode('utf-8')}"}},
+                {
+                    "type": "file",
+                    "file": {
+                        "filename": "document.pdf",
+                        "file_data": f"data:application/pdf;base64,{base64.b64encode(TEST_PDF_BYTES).decode('utf-8')}",
+                    },
+                },
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
             ],
         }
