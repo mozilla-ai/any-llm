@@ -84,61 +84,66 @@ def _convert_tool_choice(tool_choice: str) -> types.ToolConfig:
 
 def _parse_data_uri(data_uri: str, field_name: str, provider_name: str) -> tuple[str, bytes]:
     if not data_uri.startswith("data:"):
-        raise InvalidRequestError(f"{field_name} must be a data URI", provider_name=provider_name)
+        msg = f"{field_name} must be a data URI"
+        raise InvalidRequestError(msg, provider_name=provider_name)
     if "base64," not in data_uri:
-        raise InvalidRequestError(f"{field_name} must be a base64-encoded data URI", provider_name=provider_name)
+        msg = f"{field_name} must be a base64-encoded data URI"
+        raise InvalidRequestError(msg, provider_name=provider_name)
 
     mime_part = data_uri[5:]
     semi_idx = mime_part.find(";")
     mime_type = mime_part[:semi_idx] if semi_idx != -1 else mime_part
     if not mime_type:
-        raise InvalidRequestError(f"{field_name} is missing a MIME type", provider_name=provider_name)
+        msg = f"{field_name} is missing a MIME type"
+        raise InvalidRequestError(msg, provider_name=provider_name)
 
     encoded_data = data_uri.split("base64,", 1)[1]
     if not encoded_data:
-        raise InvalidRequestError(f"{field_name} is missing base64 data", provider_name=provider_name)
+        msg = f"{field_name} is missing base64 data"
+        raise InvalidRequestError(msg, provider_name=provider_name)
 
     try:
         raw_data = base64.b64decode(encoded_data, validate=True)
     except binascii.Error as exc:
-        raise InvalidRequestError(f"{field_name} contains invalid base64 data", exc, provider_name) from exc
+        msg = f"{field_name} contains invalid base64 data"
+        raise InvalidRequestError(msg, exc, provider_name) from exc
     return mime_type, raw_data
 
 
 def _validate_inline_size(raw_data: bytes, field_name: str, provider_name: str) -> None:
     if len(raw_data) > _INLINE_SIZE_LIMIT:
-        raise InvalidRequestError(
-            f"{field_name} exceeds the 20 MB inline upload limit for {provider_name} ({len(raw_data)} bytes)",
-            provider_name=provider_name,
-        )
+        msg = f"{field_name} exceeds the 20 MB inline upload limit for {provider_name} ({len(raw_data)} bytes)"
+        raise InvalidRequestError(msg, provider_name=provider_name)
 
 
 def _convert_image_url_to_part(block: dict[str, Any], provider_name: str) -> types.Part:
     url = block.get("image_url", {}).get("url")
     if not isinstance(url, str) or not url:
-        raise InvalidRequestError("image_url.url is required for image content", provider_name=provider_name)
+        msg = "image_url.url is required for image content"
+        raise InvalidRequestError(msg, provider_name=provider_name)
 
     if url.startswith("data:"):
         mime_type, raw_data = _parse_data_uri(url, "image_url.url", provider_name)
         _validate_inline_size(raw_data, "image_url.url", provider_name)
         return types.Part.from_bytes(data=raw_data, mime_type=mime_type)
 
-    mime_type, _ = mimetypes.guess_type(url)
-    return types.Part.from_uri(file_uri=url, mime_type=mime_type or "image/jpeg")
+    guessed_type, _ = mimetypes.guess_type(url)
+    return types.Part.from_uri(file_uri=url, mime_type=guessed_type or "image/jpeg")
 
 
 def _convert_file_to_part(block: dict[str, Any], provider_name: str) -> types.Part:
     file_data = block.get("file", {}).get("file_data")
     if not isinstance(file_data, str) or not file_data:
-        raise InvalidRequestError("file.file_data is required for file content", provider_name=provider_name)
+        msg = "file.file_data is required for file content"
+        raise InvalidRequestError(msg, provider_name=provider_name)
 
     if file_data.startswith("data:"):
         mime_type, raw_data = _parse_data_uri(file_data, "file.file_data", provider_name)
         _validate_inline_size(raw_data, "file.file_data", provider_name)
         return types.Part.from_bytes(data=raw_data, mime_type=mime_type)
 
-    mime_type, _ = mimetypes.guess_type(file_data)
-    return types.Part.from_uri(file_uri=file_data, mime_type=mime_type or "application/octet-stream")
+    guessed_type, _ = mimetypes.guess_type(file_data)
+    return types.Part.from_uri(file_uri=file_data, mime_type=guessed_type or "application/octet-stream")
 
 
 def _convert_messages(
