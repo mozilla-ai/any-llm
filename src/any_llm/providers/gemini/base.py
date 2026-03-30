@@ -147,9 +147,16 @@ class GoogleProvider(AnyLLM):
         if is_structured_output_type(response_format):
             kwargs["response_mime_type"] = "application/json"
             kwargs["response_schema"] = get_json_schema(response_format)
-        elif isinstance(response_format, dict) and response_format.get("type") == "json_schema":
-            kwargs["response_mime_type"] = "application/json"
-            kwargs["response_schema"] = response_format.get("json_schema", {}).get("schema", {})
+        elif isinstance(response_format, dict):
+            response_type = response_format.get("type")
+            if response_type == "json_schema":
+                kwargs["response_mime_type"] = "application/json"
+                kwargs["response_schema"] = response_format["json_schema"]["schema"]
+            elif response_type == "json_object":
+                kwargs["response_mime_type"] = "application/json"
+            else:
+                msg = f"Unsupported response_format type: {response_type}"
+                raise ValueError(msg)
 
         formatted_messages, system_instruction = _convert_messages(params.messages)
         if system_instruction:
