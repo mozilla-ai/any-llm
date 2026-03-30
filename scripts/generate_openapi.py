@@ -13,8 +13,8 @@ import json
 import sys
 from pathlib import Path
 
-from any_llm.gateway.config import GatewayConfig
-from any_llm.gateway.server import create_app
+from any_llm.gateway.core.config import GatewayConfig
+from any_llm.gateway.main import create_app
 
 
 def generate_openapi_spec() -> dict:

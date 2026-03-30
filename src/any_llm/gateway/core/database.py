@@ -1,0 +1,72 @@
+from collections.abc import Generator
+from pathlib import Path
+from typing import Any
+
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import Session, sessionmaker
+
+_engine = None
+_SessionLocal = None
+
+
+def init_db(database_url: str, auto_migrate: bool = True) -> None:
+    """Initialize database connection and optionally run migrations.
+
+    Args:
+        database_url: Database connection URL
+        auto_migrate: If True, automatically run migrations to head. If False, skip migrations.
+    """
+    global _engine, _SessionLocal  # noqa: PLW0603
+
+    engine_kwargs: dict[str, Any] = {"pool_pre_ping": True}
+    if database_url.startswith("sqlite"):
+        engine_kwargs["connect_args"] = {"check_same_thread": False}
+
+    _engine = create_engine(database_url, **engine_kwargs)
+
+    if _engine.dialect.name == "sqlite":
+
+        @event.listens_for(_engine, "connect")
+        def _set_sqlite_pragma(dbapi_connection: Any, _: Any) -> None:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+    _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
+
+    if auto_migrate:
+        alembic_cfg = Config()
+        alembic_dir = Path(__file__).parent.parent / "alembic"
+        alembic_cfg.set_main_option("script_location", str(alembic_dir))
+        alembic_cfg.set_main_option("sqlalchemy.url", database_url)
+
+        command.upgrade(alembic_cfg, "head")
+
+
+def get_db() -> Generator[Session]:
+    """Get database session for dependency injection."""
+    if _SessionLocal is None:
+        msg = "Database not initialized. Call init_db() first."
+        raise RuntimeError(msg)
+
+    db = _SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def reset_db() -> None:
+    """Reset database state. Intended for testing only.
+
+    Disposes the engine connection pool and clears the module-level references
+    so that init_db() can be called again with different parameters.
+    """
+    global _engine, _SessionLocal  # noqa: PLW0603
+
+    if _engine is not None:
+        _engine.dispose()
+    _engine = None
+    _SessionLocal = None
