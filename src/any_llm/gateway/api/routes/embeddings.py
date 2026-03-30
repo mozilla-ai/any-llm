@@ -18,7 +18,7 @@ from any_llm.gateway.models.entities import APIKey, UsageLog, User
 from any_llm.gateway.log_config import logger
 from any_llm.gateway.services.pricing_service import find_model_pricing
 from any_llm.gateway.rate_limit import check_rate_limit
-from any_llm.gateway.routes.chat import get_provider_kwargs, rate_limit_headers
+from any_llm.gateway.api.routes.chat import get_provider_kwargs, rate_limit_headers
 from any_llm.types.completion import CreateEmbeddingResponse
 
 router = APIRouter(prefix="/v1", tags=["embeddings"])
