@@ -48,6 +48,10 @@ class BedrockProvider(AnyLLM):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
+    def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        self._custom_client: Any = kwargs.pop("client", None)
+        super().__init__(api_key=api_key, api_base=api_base, **kwargs)
+
     @staticmethod
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
@@ -101,10 +105,17 @@ class BedrockProvider(AnyLLM):
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.api_base = api_base
         self.kwargs = kwargs
-        self.client = boto3.client("bedrock-runtime", endpoint_url=api_base, **kwargs)
+        if self._custom_client is not None:
+            self.client = self._custom_client
+        else:
+            self.client = boto3.client("bedrock-runtime", endpoint_url=api_base, **kwargs)
 
     @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
+        # Skip credential verification when a pre-built client is provided
+        if self._custom_client is not None:
+            return api_key
+
         session = boto3.Session()  # type: ignore[attr-defined]
         credentials = session.get_credentials()
 
