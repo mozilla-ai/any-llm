@@ -35,7 +35,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         LLMProvider.HUGGINGFACE: "Qwen/Qwen2.5-72B-Instruct",
         LLMProvider.NEBIUS: "openai/gpt-oss-20b",
-        LLMProvider.SAMBANOVA: "DeepSeek-R1-Distill-Llama-70B",
+        LLMProvider.SAMBANOVA: "DeepSeek-R1-0528",
         LLMProvider.TOGETHER: "openai/gpt-oss-20b",
         LLMProvider.PORTKEY: "@nebius-any-llm/Qwen/Qwen3-32B",
         LLMProvider.MINIMAX: "MiniMax-M2",
