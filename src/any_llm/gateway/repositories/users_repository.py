@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from any_llm.gateway.db.models import User
+from any_llm.gateway.models.entities import User
 
 
 def get_active_user(db: Session, user_id: str, *, for_update: bool = False) -> User | None:

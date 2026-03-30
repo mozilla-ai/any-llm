@@ -28,10 +28,10 @@ def test_reset_db_allows_reinit() -> None:
     We can't fully test init_db without a database, but we can verify
     reset_db doesn't raise and clears the module state.
     """
-    from any_llm.gateway.db import session
+    from any_llm.gateway.core import database
 
     # Verify the function exists and runs without error when nothing is initialized
     reset_db()
 
-    assert session._engine is None
-    assert session._SessionLocal is None
+    assert database._engine is None
+    assert database._SessionLocal is None
