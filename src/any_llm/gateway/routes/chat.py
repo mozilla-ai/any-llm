@@ -56,6 +56,7 @@ class ChatCompletionRequest(BaseModel):
     max_completion_tokens: int | None = None
     top_p: float | None = None
     stream: bool = False
+    stream_options: dict[str, Any] | None = None
     tools: list[dict[str, Any]] | None = None
     tool_choice: str | dict[str, Any] | None = None
     response_format: dict[str, Any] | None = None
@@ -221,6 +222,9 @@ async def chat_completions(
     # User request fields take precedence over provider config defaults
     request_fields = request.model_dump(exclude_unset=True)
     completion_kwargs = {**provider_kwargs, **request_fields}
+
+    if request.stream and completion_kwargs.get("stream_options") is None:
+        completion_kwargs["stream_options"] = {"include_usage": True}
 
     try:
         if request.stream:
