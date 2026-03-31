@@ -35,21 +35,21 @@ _ROOT_TUTORIAL_HTML = """<!doctype html>
         line-height: 1.5;
       }
       h1 {
-        font-size: 38px;
+        font-size: 32px;
         margin: 6px 0 10px;
       }
       .sub {
-        font-size: 32px;
+        font-size: 20px;
         margin-bottom: 16px;
       }
       .link {
-        font-size: 36px;
+        font-size: 20px;
         font-weight: 700;
         color: #0f62fe;
         text-decoration: underline;
       }
       .note {
-        font-size: 36px;
+        font-size: 16px;
       }
       .block {
         background: #e5e7eb;
@@ -64,7 +64,7 @@ _ROOT_TUTORIAL_HTML = """<!doctype html>
       code {
         color: #111827;
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-        font-size: 28px;
+        font-size: 14px;
       }
     </style>
   </head>

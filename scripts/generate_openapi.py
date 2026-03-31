@@ -27,7 +27,7 @@ def generate_openapi_spec() -> dict:
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         database_url = f"sqlite:///{Path(tmpdir) / 'openapi.db'}"
-        config = GatewayConfig(database_url=database_url)
+        config = GatewayConfig(database_url=database_url, bootstrap_api_key=False)
         app = create_app(config)
         return app.openapi()
 
