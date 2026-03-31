@@ -7,10 +7,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from any_llm.gateway.services.budget_service import _is_model_free, reset_user_budget
+from any_llm.gateway.api.routes.chat import log_usage
 from any_llm.gateway.core.config import API_KEY_HEADER
 from any_llm.gateway.models.entities import Budget, User
-from any_llm.gateway.api.routes.chat import log_usage
+from any_llm.gateway.services.budget_service import _is_model_free, reset_user_budget
 from any_llm.types.completion import CompletionUsage
 
 

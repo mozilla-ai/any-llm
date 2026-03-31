@@ -179,7 +179,9 @@ def test_embeddings_optional_fields(
     """POST /v1/embeddings forwards optional OpenAI fields."""
     mock_resp = _mock_embedding_response()
     values = {"encoding_format": "float", "dimensions": 256}
-    with patch("any_llm.gateway.api.routes.embeddings.aembedding", new_callable=AsyncMock, return_value=mock_resp) as mock:
+    with patch(
+        "any_llm.gateway.api.routes.embeddings.aembedding", new_callable=AsyncMock, return_value=mock_resp
+    ) as mock:
         resp = client.post(
             "/v1/embeddings",
             json={

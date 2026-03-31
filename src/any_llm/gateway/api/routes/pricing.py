@@ -6,8 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from any_llm.any_llm import AnyLLM
-from any_llm.gateway.api.deps import verify_master_key
-from any_llm.gateway.api.deps import get_db
+from any_llm.gateway.api.deps import get_db, verify_master_key
 from any_llm.gateway.models.entities import ModelPricing
 
 router = APIRouter(prefix="/v1/pricing", tags=["pricing"])

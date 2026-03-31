@@ -9,16 +9,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from any_llm import AnyLLM, aembedding
-from any_llm.gateway.api.deps import verify_api_key_or_master_key
-from any_llm.gateway.api.deps import get_config
-from any_llm.gateway.services.budget_service import validate_user_budget
-from any_llm.gateway.core.config import GatewayConfig
-from any_llm.gateway.api.deps import get_db
-from any_llm.gateway.models.entities import APIKey, UsageLog, User
-from any_llm.gateway.log_config import logger
-from any_llm.gateway.services.pricing_service import find_model_pricing
-from any_llm.gateway.rate_limit import check_rate_limit
+from any_llm.gateway.api.deps import get_config, get_db, verify_api_key_or_master_key
 from any_llm.gateway.api.routes.chat import get_provider_kwargs, rate_limit_headers
+from any_llm.gateway.core.config import GatewayConfig
+from any_llm.gateway.log_config import logger
+from any_llm.gateway.models.entities import APIKey, UsageLog, User
+from any_llm.gateway.rate_limit import check_rate_limit
+from any_llm.gateway.services.budget_service import validate_user_budget
+from any_llm.gateway.services.pricing_service import find_model_pricing
 from any_llm.types.completion import CreateEmbeddingResponse
 
 router = APIRouter(prefix="/v1", tags=["embeddings"])

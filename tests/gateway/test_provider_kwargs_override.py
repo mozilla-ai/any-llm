@@ -10,9 +10,9 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from any_llm import LLMProvider
+from any_llm.gateway.api.routes.chat import get_provider_kwargs
 from any_llm.gateway.core.config import GatewayConfig
 from any_llm.gateway.db import Base, get_db
-from any_llm.gateway.api.routes.chat import get_provider_kwargs
 from any_llm.gateway.main import create_app
 from tests.gateway.conftest import _run_alembic_migrations
 

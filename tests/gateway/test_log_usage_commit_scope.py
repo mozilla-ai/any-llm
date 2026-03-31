@@ -6,8 +6,8 @@ import pytest
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from any_llm.gateway.models.entities import UsageLog
 from any_llm.gateway.api.routes.chat import log_usage
+from any_llm.gateway.models.entities import UsageLog
 from any_llm.types.completion import CompletionUsage
 
 

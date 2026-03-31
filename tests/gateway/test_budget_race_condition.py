@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
-from any_llm.gateway.services.budget_service import validate_user_budget
 from any_llm.gateway.models.entities import Budget, User
+from any_llm.gateway.services.budget_service import validate_user_budget
 
 
 @pytest.mark.asyncio

@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from any_llm.gateway.core.config import API_KEY_HEADER, GatewayConfig
 from any_llm.gateway.db import Base, get_db
-from any_llm.gateway.metrics import REGISTRY
 from any_llm.gateway.main import create_app
+from any_llm.gateway.metrics import REGISTRY
 from tests.gateway.conftest import _run_alembic_migrations
 
 

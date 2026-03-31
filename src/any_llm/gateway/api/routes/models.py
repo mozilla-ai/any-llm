@@ -7,8 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from any_llm.gateway.api.deps import verify_api_key_or_master_key
-from any_llm.gateway.api.deps import get_db
+from any_llm.gateway.api.deps import get_db, verify_api_key_or_master_key
 from any_llm.gateway.models.entities import ModelPricing
 
 router = APIRouter(prefix="/v1", tags=["models"])

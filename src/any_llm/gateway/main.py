@@ -6,12 +6,12 @@ from typing_extensions import override
 
 from any_llm.gateway import __version__
 from any_llm.gateway.api.deps import set_config
-from any_llm.gateway.services.bootstrap_service import bootstrap_first_api_key
+from any_llm.gateway.api.main import register_routers
 from any_llm.gateway.core.config import GatewayConfig
 from any_llm.gateway.core.database import get_db, init_db
-from any_llm.gateway.services.pricing_init_service import initialize_pricing_from_config
 from any_llm.gateway.rate_limit import RateLimiter
-from any_llm.gateway.api.main import register_routers
+from any_llm.gateway.services.bootstrap_service import bootstrap_first_api_key
+from any_llm.gateway.services.pricing_init_service import initialize_pricing_from_config
 
 _PUBLIC_PREFIXES = ("/health",)
 

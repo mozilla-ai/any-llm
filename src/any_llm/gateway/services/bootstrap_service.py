@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from any_llm.gateway.auth import generate_api_key, hash_key
 from any_llm.gateway.core.config import GatewayConfig
-from any_llm.gateway.models.entities import APIKey, User
 from any_llm.gateway.log_config import logger
+from any_llm.gateway.models.entities import APIKey, User
 
 
 def bootstrap_first_api_key(config: GatewayConfig, db: Session) -> None:

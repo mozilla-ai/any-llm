@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from any_llm.any_llm import AnyLLM
 from any_llm.gateway.core.config import GatewayConfig
-from any_llm.gateway.models.entities import ModelPricing
 from any_llm.gateway.log_config import logger
+from any_llm.gateway.models.entities import ModelPricing
 
 
 def initialize_pricing_from_config(config: GatewayConfig, db: Session) -> None:
