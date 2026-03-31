@@ -87,7 +87,7 @@ docker run -d \
   -v $(pwd)/config.yml:/app/config.yml \
   -e DATABASE_URL="postgresql://user:pass@host:5432/dbname" \
   ghcr.io/mozilla-ai/any-llm/gateway:latest \
-  any-llm-gateway serve --config /app/config.yml
+  gateway serve --config /app/config.yml
 ```
 
 Replace the `DATABASE_URL` with your actual PostgreSQL connection string. The format is: `postgresql://username:password@hostname:port/database_name`

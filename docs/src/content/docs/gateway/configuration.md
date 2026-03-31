@@ -22,11 +22,14 @@ Create a `config.yml` file with your database connection, master key, and provid
 > ```
 
 ```yaml
-#Database connection
-database_url: "postgresql://gateway:gateway@localhost:5432/gateway_db"
+# Database connection (optional; defaults to sqlite:///./any-llm-gateway.db)
+# database_url: "sqlite:///./any-llm-gateway.db"
 
 #Master key for admin access
 master_key: "your-secure-master-key"
+
+# Create one first-use API key automatically when no keys exist
+bootstrap_api_key: true
 
 ## LLM Provider Credentials
 providers:
@@ -49,22 +52,27 @@ pricing:
 Start the gateway with your config file:
 
 ```bash
-any-llm-gateway serve --config config.yml
+gateway serve --config config.yml
 ```
+
+On first startup with an empty database, the gateway creates a bootstrap API key and prints it in logs.
 
 ## Option 2: Environment Variables
 Configure the gateway entirely through environment variables—useful for containerized deployments:
 
 ```bash
-#Required settings
+# Optional if you want PostgreSQL instead of default SQLite
 export DATABASE_URL="postgresql://gateway:gateway@localhost:5432/gateway_db"
 export GATEWAY_MASTER_KEY="your-secure-master-key"
+export GATEWAY_BOOTSTRAP_API_KEY=true
 export GATEWAY_HOST="0.0.0.0"
 export GATEWAY_PORT=8000
 
-any-llm-gateway serve
+gateway serve
 ```
 > **Note**: Model pricing cannot be set via environment variables. Use the config file or the [Pricing API](#dynamic-pricing-via-api) instead.
+
+`any-llm-gateway` is deprecated and will be removed in a future major version.
 
 
 ## Model Pricing Configuration

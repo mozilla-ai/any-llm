@@ -9,7 +9,7 @@ services:
     volumes:
       - ./config.yml:/app/config.yml
       - ./service_account.json:/app/service_account.json
-    command: ["any-llm-gateway", "serve", "--config", "/app/config.yml"]
+    command: ["gateway", "serve", "--config", "/app/config.yml"]
     depends_on:
       postgres:
         condition: service_healthy

@@ -59,7 +59,8 @@ _ROOT_TUTORIAL_HTML = """<!doctype html>
       }
       pre {
         margin: 0;
-        overflow-x: auto;
+        white-space: pre-wrap;
+        overflow-wrap: break-word;
       }
       code {
         color: #111827;
@@ -75,7 +76,12 @@ _ROOT_TUTORIAL_HTML = """<!doctype html>
         <a class="link" href="https://mozilla-ai.github.io/any-llm/gateway/quickstart/">Gateway Quickstart</a>
       </div>
 
-      <p class="note">On first startup, the gateway prints a bootstrap API key in logs. Use that value as <code>YOUR_GATEWAY_KEY</code>.</p>
+      <p class="note">On first startup, the gateway prints a bootstrap API key in logs. Export it as <code>GATEWAY_API_KEY</code> and use that value in your client.</p>
+
+      <div class="block">
+        <pre><code>export GATEWAY_API_KEY=YOUR_BOOTSTRAP_GATEWAY_KEY
+</code></pre>
+      </div>
 
       <div class="block">
         <pre><code>pip install openai
@@ -83,10 +89,12 @@ _ROOT_TUTORIAL_HTML = """<!doctype html>
       </div>
 
       <div class="block">
-        <pre><code>from openai import OpenAI
+         <pre><code>import os
+
+from openai import OpenAI
 
 client = OpenAI(
-    api_key="YOUR_GATEWAY_KEY",
+    api_key=os.environ["GATEWAY_API_KEY"],
     base_url="http://0.0.0.0:8000/v1",
 )
 

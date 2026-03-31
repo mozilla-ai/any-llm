@@ -14,7 +14,7 @@ Managing LLM costs and access at scale is challenging. Give users unrestricted a
 - **Cost Control**: Set budgets that automatically enforce or track spending limits
 - **Access Management**: Issue, revoke, and monitor API keys generated for user access without exposing provider credentials
 - **Complete Visibility**: Track every request with full token counts, costs, and metadata
-- **Production-Ready**: Deploy with Docker and Postgres, Kubernetes-ready
+- **Production-Ready**: SQLite quickstart, PostgreSQL for production, Kubernetes-ready
 
 ## How it works
 
@@ -83,9 +83,9 @@ Track spending per user, view detailed usage history, and get the observability 
 
 ### Production-Ready Deployment
 
-- **Quick Start**: Deploy with Docker in minutes
+- **Quick Start**: Run locally with `uvx` and SQLite in minutes
 - **Flexible Configuration**: Configure via YAML or environment variables
-- **Database**: Designed for PostgreSQL
+- **Database**: SQLite by default, PostgreSQL supported
 - **Kubernetes Ready**: Built-in liveness and readiness probes
 
 ### Performance Impact

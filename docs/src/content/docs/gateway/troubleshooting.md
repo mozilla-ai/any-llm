@@ -5,7 +5,9 @@ description: Common issues and solutions for the any-llm gateway
 
 ## Database connection errors
 
-Make sure the database URL is correct and the database is accessible:
+If you are using the default SQLite setup, check file permissions for `any-llm-gateway.db` and make sure your current directory is writable.
+
+If you are using PostgreSQL, make sure the database URL is correct and the database is accessible:
 
 ```bash
 python -c "from sqlalchemy import create_engine; engine = create_engine('postgresql://user:pass@host/db'); print('OK')"

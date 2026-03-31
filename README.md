@@ -121,6 +121,19 @@ The gateway sits between your applications and LLM providers, exposing an OpenAI
 Prefer a hosted experience? The [any-llm platform](https://any-llm.ai/) provides a managed control plane for keys, usage tracking, and cost visibility across providers, while still building on the same `any-llm` interfaces.
 
 ### Quick Start
+
+Run locally with SQLite (default database):
+
+```bash
+uvx --from 'any-llm-sdk[gateway]' gateway serve
+```
+
+Then set a provider key and optional master key using environment variables or a config file.
+
+`any-llm-gateway` still works, but is deprecated in favor of `gateway`.
+
+Or run with Docker:
+
 ```bash
 docker run \
   -e GATEWAY_MASTER_KEY="your-secure-master-key" \

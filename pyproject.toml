@@ -137,6 +137,7 @@ gateway = [
 zai = []
 
 [project.scripts]
+gateway = "any_llm.gateway.cli:main"
 any-llm-gateway = "any_llm.gateway.cli:main"
 
 [project.urls]
