@@ -179,7 +179,7 @@ from any_llm import completion
 response = completion(
     provider="gateway",
     model="openai:gpt-4o",
-    api_base="http://0.0.0.0:8000/v1",
+    api_base="http://localhost:8000/v1",
     api_key="YOUR_BOOTSTRAP_GATEWAY_KEY",
     messages=[{"role": "user", "content": "Hello!"}],
 )

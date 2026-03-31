@@ -95,7 +95,7 @@ from openai import OpenAI
 
 client = OpenAI(
     api_key=os.environ["GATEWAY_API_KEY"],
-    base_url="http://0.0.0.0:8000/v1",
+    base_url="http://localhost:8000/v1",
 )
 
 response = client.chat.completions.create(

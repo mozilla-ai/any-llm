@@ -12,4 +12,4 @@ gateway-dev:
 	uv run --env-file .env uvicorn any_llm.gateway.dev:create_dev_app --factory --reload --host "$${GATEWAY_HOST:-0.0.0.0}" --port "$${GATEWAY_PORT:-8000}" --reload-dir src/any_llm/gateway
 
 gateway-test:
-	uv run pytest -v tests/gateway
+	uv run pytest -v tests/gateway tests/unit/test_gateway_*.py
