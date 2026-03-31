@@ -5,7 +5,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from any_llm.gateway.db.models import Base
+from any_llm.gateway.models.entities import Base
 
 logger = logging.getLogger("alembic")
 
@@ -26,11 +26,7 @@ target_metadata = Base.metadata
 # Get database URL from config (if already set programmatically) or environment variables
 # Priority: Programmatically set URL -> GATEWAY_DATABASE_URL -> DATABASE_URL -> default
 if config.get_main_option("sqlalchemy.url") is None:
-    database_url = (
-        os.getenv("GATEWAY_DATABASE_URL")
-        or os.getenv("DATABASE_URL")
-        or "postgresql://gateway:gateway@localhost:5432/gateway"
-    )
+    database_url = os.getenv("GATEWAY_DATABASE_URL") or os.getenv("DATABASE_URL") or "sqlite:///./any-llm-gateway.db"
     config.set_main_option("sqlalchemy.url", database_url)
 
 # other values from the config, defined by the needs of env.py,

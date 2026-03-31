@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from any_llm.gateway.config import API_KEY_HEADER
-from any_llm.gateway.db.models import APIKey, BudgetResetLog, UsageLog
+from any_llm.gateway.core.config import API_KEY_HEADER
+from any_llm.gateway.models.entities import APIKey, BudgetResetLog, UsageLog
 from tests.gateway.conftest import MODEL_NAME
 
 
@@ -70,7 +70,7 @@ def test_delete_user_preserves_budget_reset_logs(
     )
 
     initial_time = datetime(2025, 10, 1, 12, 0, 0, tzinfo=UTC)
-    with patch("any_llm.gateway.routes.users.datetime") as mock_dt:
+    with patch("any_llm.gateway.api.routes.users.datetime") as mock_dt:
         mock_dt.now.return_value = initial_time
         client.post(
             "/v1/users",
@@ -80,8 +80,8 @@ def test_delete_user_preserves_budget_reset_logs(
 
     time_after_reset = initial_time + timedelta(seconds=61)
     with (
-        patch("any_llm.gateway.budget.datetime") as mock_dt_budget,
-        patch("any_llm.gateway.routes.chat.datetime") as mock_dt_chat,
+        patch("any_llm.gateway.services.budget_service.datetime") as mock_dt_budget,
+        patch("any_llm.gateway.api.routes.chat.datetime") as mock_dt_chat,
     ):
         mock_dt_budget.now.return_value = time_after_reset
         mock_dt_chat.now.return_value = time_after_reset

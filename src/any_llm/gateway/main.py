@@ -1,17 +1,107 @@
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from typing_extensions import override
 
 from any_llm.gateway import __version__
-from any_llm.gateway.auth.dependencies import set_config
-from any_llm.gateway.config import GatewayConfig
-from any_llm.gateway.db import get_db, init_db
-from any_llm.gateway.pricing_init import initialize_pricing_from_config
+from any_llm.gateway.api.deps import set_config
+from any_llm.gateway.api.main import register_routers
+from any_llm.gateway.core.config import GatewayConfig
+from any_llm.gateway.core.database import get_db, init_db
 from any_llm.gateway.rate_limit import RateLimiter
-from any_llm.gateway.routes import budgets, chat, embeddings, health, keys, messages, models, pricing, users
+from any_llm.gateway.services.bootstrap_service import bootstrap_first_api_key
+from any_llm.gateway.services.pricing_init_service import initialize_pricing_from_config
 
 _PUBLIC_PREFIXES = ("/health",)
+
+_ROOT_TUTORIAL_HTML = """<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Gateway</title>
+    <style>
+      body {
+        background: #efefef;
+        color: #111827;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+        margin: 0;
+      }
+      main {
+        margin: 16px auto;
+        max-width: 860px;
+        padding: 0 16px;
+        line-height: 1.5;
+      }
+      h1 {
+        font-size: 32px;
+        margin: 6px 0 10px;
+      }
+      .sub {
+        font-size: 20px;
+        margin-bottom: 16px;
+      }
+      .link {
+        font-size: 20px;
+        font-weight: 700;
+        color: #0f62fe;
+        text-decoration: underline;
+      }
+      .note {
+        font-size: 16px;
+      }
+      .block {
+        background: #e5e7eb;
+        border-radius: 2px;
+        margin: 18px 0;
+        padding: 18px;
+      }
+      pre {
+        margin: 0;
+        overflow-x: auto;
+      }
+      code {
+        color: #111827;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>AI Gateway (Proxy Server)</h1>
+      <div class="sub">
+        <a class="link" href="https://mozilla-ai.github.io/any-llm/gateway/quickstart/">Gateway Quickstart</a>
+      </div>
+
+      <p class="note">On first startup, the gateway prints a bootstrap API key in logs. Use that value as <code>YOUR_GATEWAY_KEY</code>.</p>
+
+      <div class="block">
+        <pre><code>pip install openai
+</code></pre>
+      </div>
+
+      <div class="block">
+        <pre><code>from openai import OpenAI
+
+client = OpenAI(
+    api_key="YOUR_GATEWAY_KEY",
+    base_url="http://0.0.0.0:8000/v1",
+)
+
+response = client.chat.completions.create(
+    model="openai:gpt-4o",
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+
+print(response.choices[0].message.content)
+</code></pre>
+      </div>
+    </main>
+  </body>
+</html>
+"""
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -49,6 +139,7 @@ def create_app(config: GatewayConfig) -> FastAPI:
 
     db = next(get_db())
     try:
+        bootstrap_first_api_key(config, db)
         initialize_pricing_from_config(config, db)
     finally:
         db.close()
@@ -58,6 +149,10 @@ def create_app(config: GatewayConfig) -> FastAPI:
         description="A clean FastAPI gateway for any-llm with API key management",
         version=__version__,
     )
+
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    async def root_tutorial() -> str:
+        return _ROOT_TUTORIAL_HTML
 
     app.add_middleware(SecurityHeadersMiddleware)
 
@@ -81,15 +176,7 @@ def create_app(config: GatewayConfig) -> FastAPI:
     else:
         app.state.rate_limiter = None
 
-    app.include_router(chat.router)
-    app.include_router(messages.router)
-    app.include_router(embeddings.router)
-    app.include_router(models.router)
-    app.include_router(keys.router)
-    app.include_router(users.router)
-    app.include_router(budgets.router)
-    app.include_router(pricing.router)
-    app.include_router(health.router)
+    register_routers(app)
 
     if config.enable_metrics:
         from any_llm.gateway.metrics import metrics_endpoint

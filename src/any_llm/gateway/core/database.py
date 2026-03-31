@@ -1,9 +1,10 @@
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 _engine = None
@@ -19,7 +20,20 @@ def init_db(database_url: str, auto_migrate: bool = True) -> None:
     """
     global _engine, _SessionLocal  # noqa: PLW0603
 
-    _engine = create_engine(database_url, pool_pre_ping=True)
+    engine_kwargs: dict[str, Any] = {"pool_pre_ping": True}
+    if database_url.startswith("sqlite"):
+        engine_kwargs["connect_args"] = {"check_same_thread": False}
+
+    _engine = create_engine(database_url, **engine_kwargs)
+
+    if _engine.dialect.name == "sqlite":
+
+        @event.listens_for(_engine, "connect")
+        def _set_sqlite_pragma(dbapi_connection: Any, _: Any) -> None:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
     _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
 
     if auto_migrate:

@@ -7,9 +7,9 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from any_llm.gateway.routes._helpers import resolve_user_id
-from any_llm.gateway.routes.budgets import BudgetResponse
-from any_llm.gateway.routes.pricing import PricingResponse
+from any_llm.gateway.api.routes._helpers import resolve_user_id
+from any_llm.gateway.api.routes.budgets import BudgetResponse
+from any_llm.gateway.api.routes.pricing import PricingResponse
 
 
 def _make_error(detail: str, status_code: int = 400) -> HTTPException:

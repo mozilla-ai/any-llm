@@ -7,8 +7,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from any_llm.gateway.auth import generate_api_key, hash_key, verify_master_key
-from any_llm.gateway.db import APIKey, User, get_db
+from any_llm.gateway.api.deps import get_db, verify_master_key
+from any_llm.gateway.auth.models import generate_api_key, hash_key
+from any_llm.gateway.models.entities import APIKey, User
 
 router = APIRouter(prefix="/v1/keys", tags=["keys"])
 

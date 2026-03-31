@@ -6,10 +6,11 @@ from sqlalchemy.orm import Session
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import AnyLLMError
-from any_llm.gateway.db import Budget, BudgetResetLog, User, get_active_user
 from any_llm.gateway.log_config import logger
 from any_llm.gateway.metrics import record_budget_exceeded
-from any_llm.gateway.pricing import find_model_pricing
+from any_llm.gateway.models.entities import Budget, BudgetResetLog, User
+from any_llm.gateway.repositories.users_repository import get_active_user
+from any_llm.gateway.services.pricing_service import find_model_pricing
 
 
 def calculate_next_reset(start: datetime, duration_sec: int) -> datetime:

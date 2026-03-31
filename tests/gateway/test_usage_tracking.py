@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from typing import Any
 
 import pytest
@@ -7,12 +8,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from any_llm.gateway.config import GatewayConfig
-from any_llm.gateway.db.models import UsageLog, User
+from any_llm.gateway.core.config import GatewayConfig
+from any_llm.gateway.models.entities import UsageLog, User
 from tests.gateway.conftest import MODEL_NAME
+
+_HAS_GEMINI_KEY = bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not _HAS_GEMINI_KEY, reason="requires GEMINI_API_KEY or GOOGLE_API_KEY")
 async def test_completion_accuracy(
     client: TestClient,
     api_key_header: dict[str, str],
@@ -109,6 +113,7 @@ async def test_completion_accuracy(
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not _HAS_GEMINI_KEY, reason="requires GEMINI_API_KEY or GOOGLE_API_KEY")
 async def test_streaming_completion_accuracy(
     client: TestClient,
     api_key_header: dict[str, str],
