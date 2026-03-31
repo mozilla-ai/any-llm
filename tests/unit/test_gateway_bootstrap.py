@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -6,7 +8,7 @@ from any_llm.gateway.db import APIKey, User
 from any_llm.gateway.main import create_app
 
 
-def test_create_app_bootstraps_first_api_key(tmp_path) -> None:
+def test_create_app_bootstraps_first_api_key(tmp_path: Path) -> None:
     database_path = tmp_path / "bootstrap.db"
     config = GatewayConfig(database_url=f"sqlite:///{database_path}")
     create_app(config)
@@ -25,7 +27,7 @@ def test_create_app_bootstraps_first_api_key(tmp_path) -> None:
     assert users[0].user_id == keys[0].user_id
 
 
-def test_create_app_does_not_create_second_bootstrap_key(tmp_path) -> None:
+def test_create_app_does_not_create_second_bootstrap_key(tmp_path: Path) -> None:
     database_path = tmp_path / "bootstrap-once.db"
     config = GatewayConfig(database_url=f"sqlite:///{database_path}")
 
@@ -40,7 +42,7 @@ def test_create_app_does_not_create_second_bootstrap_key(tmp_path) -> None:
     assert key_count == 1
 
 
-def test_create_app_skips_bootstrap_when_disabled(tmp_path) -> None:
+def test_create_app_skips_bootstrap_when_disabled(tmp_path: Path) -> None:
     database_path = tmp_path / "no-bootstrap.db"
     config = GatewayConfig(database_url=f"sqlite:///{database_path}", bootstrap_api_key=False)
 

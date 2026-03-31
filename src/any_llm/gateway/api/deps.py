@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 from any_llm.gateway.auth.models import hash_key
 from any_llm.gateway.core.config import API_KEY_HEADER, GatewayConfig
 from any_llm.gateway.core.database import get_db
-from any_llm.gateway.models.entities import APIKey
 from any_llm.gateway.metrics import record_auth_failure
+from any_llm.gateway.models.entities import APIKey
 
 _config: GatewayConfig | None = None
 
@@ -191,3 +191,14 @@ async def verify_api_key_or_master_key(
 
     api_key = _verify_and_update_api_key(db, token)
     return api_key, False
+
+
+__all__ = [
+    "get_config",
+    "get_db",
+    "reset_config",
+    "set_config",
+    "verify_api_key",
+    "verify_api_key_or_master_key",
+    "verify_master_key",
+]

@@ -1,10 +1,12 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from any_llm.gateway.core.config import GatewayConfig
 from any_llm.gateway.main import create_app
 
 
-def test_root_tutorial_page_is_available(tmp_path):
+def test_root_tutorial_page_is_available(tmp_path: Path) -> None:
     database_path = tmp_path / "gateway-root-test.db"
     config = GatewayConfig(database_url=f"sqlite:///{database_path}")
     app = create_app(config)

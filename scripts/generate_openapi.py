@@ -11,6 +11,7 @@ to a JSON file. It can be run in two modes:
 import argparse
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 from any_llm.gateway.core.config import GatewayConfig
@@ -24,9 +25,11 @@ def generate_openapi_spec() -> dict:
         OpenAPI specification as a dictionary
 
     """
-    config = GatewayConfig(database_url="sqlite:///:memory:")
-    app = create_app(config)
-    return app.openapi()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        database_url = f"sqlite:///{Path(tmpdir) / 'openapi.db'}"
+        config = GatewayConfig(database_url=database_url)
+        app = create_app(config)
+        return app.openapi()
 
 
 def write_spec(spec: dict, output_path: Path) -> None:
