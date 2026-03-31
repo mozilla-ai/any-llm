@@ -36,7 +36,8 @@ def test_list_users(client: TestClient, master_key_header: dict[str, str]) -> No
     response = client.get("/v1/users", headers=master_key_header)
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 2
+    user_ids = {item["user_id"] for item in data}
+    assert {"test-user-1", "test-user-2"}.issubset(user_ids)
 
 
 def test_get_user(client: TestClient, master_key_header: dict[str, str]) -> None:

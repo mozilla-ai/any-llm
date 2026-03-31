@@ -1,10 +1,14 @@
 from datetime import UTC, datetime, timedelta
+import os
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from any_llm.gateway.services.budget_service import calculate_next_reset
 from tests.gateway.conftest import MODEL_NAME
+
+_HAS_GEMINI_KEY = bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
 
 
 def test_calculate_next_reset() -> None:
@@ -116,6 +120,7 @@ def test_nonexistent_budget_returns_404(client: TestClient, master_key_header: d
     assert "not found" in response.json()["detail"].lower()
 
 
+@pytest.mark.skipif(not _HAS_GEMINI_KEY, reason="requires GEMINI_API_KEY or GOOGLE_API_KEY")
 def test_budget_actually_resets_when_duration_passes(
     client: TestClient,
     master_key_header: dict[str, str],
