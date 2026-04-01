@@ -3,7 +3,7 @@
 from sqlalchemy.orm import Session
 
 from any_llm.gateway.db import ModelPricing
-from any_llm.gateway.pricing import find_model_pricing
+from any_llm.gateway.services.pricing_service import find_model_pricing
 
 
 def test_find_pricing_colon_format(test_db: Session) -> None:
