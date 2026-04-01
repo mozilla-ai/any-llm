@@ -104,6 +104,18 @@
             "title": "Stream",
             "type": "boolean"
           },
+          "stream_options": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stream Options"
+          },
           "temperature": {
             "anyOf": [
               {
