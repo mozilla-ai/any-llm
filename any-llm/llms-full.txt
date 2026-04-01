@@ -591,7 +591,7 @@ def responses(
     api_base: str | None = None,
     instructions: str | None = None,
     max_tool_calls: int | None = None,
-    parallel_tool_calls: int | None = None,
+    parallel_tool_calls: bool | None = None,
     reasoning: Any | None = None,
     text: Any | None = None,
     presence_penalty: float | None = None,
@@ -633,7 +633,7 @@ async def aresponses(
     api_base: str | None = None,
     instructions: str | None = None,
     max_tool_calls: int | None = None,
-    parallel_tool_calls: int | None = None,
+    parallel_tool_calls: bool | None = None,
     reasoning: Any | None = None,
     text: Any | None = None,
     presence_penalty: float | None = None,
@@ -672,7 +672,7 @@ async def aresponses(
 | `api_base` | `str \| None` | None | Base URL for the provider API |
 | `instructions` | `str \| None` | None | A system (or developer) message inserted into the model's context. |
 | `max_tool_calls` | `int \| None` | None | The maximum number of total calls to built-in tools that can be processed in a response. This maximum number applies across all built-in tool calls, not per individual tool. Any further attempts to call a tool by the model will be ignored. |
-| `parallel_tool_calls` | `int \| None` | None | Whether to allow the model to run tool calls in parallel. |
+| `parallel_tool_calls` | `bool \| None` | None | Whether to allow the model to run tool calls in parallel. |
 | `reasoning` | `Any \| None` | None | Configuration options for reasoning models. |
 | `text` | `Any \| None` | None | Configuration options for a text response from the model. Can be plain text or structured JSON data. |
 | `presence_penalty` | `float \| None` | None | Penalizes new tokens based on whether they appear in the text so far. |
