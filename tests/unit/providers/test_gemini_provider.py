@@ -17,6 +17,9 @@ from any_llm.providers.gemini.utils import (
 )
 from any_llm.types.completion import CompletionParams, PromptTokensDetails, ReasoningEffort
 
+TEST_IMAGE_BYTES = b"test-image-bytes"
+TEST_PDF_BYTES = b"%PDF-1.4\ntest"
+
 
 TEST_IMAGE_BYTES = b"test-image-bytes"
 TEST_PDF_BYTES = b"%PDF-1.4\ntest"
@@ -855,7 +858,9 @@ def test_convert_messages_with_base64_image() -> None:
 
     formatted_messages, _ = _convert_messages(messages)
 
-    image_part = formatted_messages[0].parts[0]
+    parts = formatted_messages[0].parts
+    assert parts is not None
+    image_part = parts[0]
     assert image_part.inline_data is not None
     assert image_part.inline_data.mime_type == "image/jpeg"
     assert image_part.inline_data.data == TEST_IMAGE_BYTES
@@ -871,7 +876,9 @@ def test_convert_messages_with_url_image() -> None:
 
     formatted_messages, _ = _convert_messages(messages)
 
-    image_part = formatted_messages[0].parts[0]
+    parts = formatted_messages[0].parts
+    assert parts is not None
+    image_part = parts[0]
     assert image_part.file_data is not None
     assert image_part.file_data.file_uri == "https://example.com/a.png"
     assert image_part.file_data.mime_type == "image/png"
@@ -882,13 +889,20 @@ def test_convert_messages_with_base64_pdf() -> None:
     messages = [
         {
             "role": "user",
-            "content": [{"type": "file", "file": {"filename": "document.pdf", "file_data": f"data:application/pdf;base64,{pdf_b64}"}}],
+            "content": [
+                {
+                    "type": "file",
+                    "file": {"filename": "document.pdf", "file_data": f"data:application/pdf;base64,{pdf_b64}"},
+                }
+            ],
         }
     ]
 
     formatted_messages, _ = _convert_messages(messages)
 
-    file_part = formatted_messages[0].parts[0]
+    parts = formatted_messages[0].parts
+    assert parts is not None
+    file_part = parts[0]
     assert file_part.inline_data is not None
     assert file_part.inline_data.mime_type == "application/pdf"
     assert file_part.inline_data.data == TEST_PDF_BYTES
@@ -902,7 +916,13 @@ def test_convert_messages_mixed_text_and_media() -> None:
             "content": [
                 {"type": "text", "text": "Compare these"},
                 {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
-                {"type": "file", "file": {"filename": "document.pdf", "file_data": f"data:application/pdf;base64,{base64.b64encode(TEST_PDF_BYTES).decode('utf-8')}"}},
+                {
+                    "type": "file",
+                    "file": {
+                        "filename": "document.pdf",
+                        "file_data": f"data:application/pdf;base64,{base64.b64encode(TEST_PDF_BYTES).decode('utf-8')}",
+                    },
+                },
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
             ],
         }
@@ -911,6 +931,7 @@ def test_convert_messages_mixed_text_and_media() -> None:
     formatted_messages, _ = _convert_messages(messages)
 
     parts = formatted_messages[0].parts
+    assert parts is not None
     assert len(parts) == 4
     assert parts[0].text == "Compare these"
     assert parts[1].file_data is not None
