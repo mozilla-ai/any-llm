@@ -21,6 +21,10 @@ TEST_IMAGE_BYTES = b"test-image-bytes"
 TEST_PDF_BYTES = b"%PDF-1.4\ntest"
 
 
+TEST_IMAGE_BYTES = b"test-image-bytes"
+TEST_PDF_BYTES = b"%PDF-1.4\ntest"
+
+
 @contextmanager
 def mock_gemini_provider():  # type: ignore[no-untyped-def]
     with (
