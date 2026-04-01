@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import os
 import tempfile
+import warnings
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -30,7 +32,6 @@ def _make_provider(**kwargs: Any) -> CopilotsdkProvider:
     provider._resolved_token = kwargs.get("api_key")
     provider._cli_url = kwargs.get("api_base")
     provider._cli_path = None
-    provider._extra_kwargs = {}
     provider._copilot_client = None
     provider._client_lock = asyncio.Lock()
     return provider
@@ -185,6 +186,7 @@ def test_init_client_stores_token_and_url() -> None:
     assert provider._resolved_token == "my-token"
     assert provider._cli_url == "localhost:9000"
     assert provider._copilot_client is None
+    assert not hasattr(provider, "_extra_kwargs")
 
 
 def test_init_client_reads_cli_url_from_env() -> None:
@@ -629,3 +631,125 @@ async def test_acompletion_image_attachments_forwarded() -> None:
     assert "attachments" in call_kwargs
     assert len(call_kwargs["attachments"]) == 1
     assert call_kwargs["attachments"][0]["type"] == "file"
+
+
+def test_messages_to_prompt_tool_role_warns() -> None:
+    messages = [{"role": "tool", "content": "tool result"}]
+    with pytest.warns(UserWarning, match="unsupported message role 'tool'"):
+        result = _messages_to_prompt(messages)
+    assert "tool result" in result
+
+
+def test_messages_to_prompt_function_role_warns() -> None:
+    messages = [{"role": "function", "content": "fn result"}]
+    with pytest.warns(UserWarning, match="unsupported message role 'function'"):
+        _messages_to_prompt(messages)
+
+
+def test_extract_attachments_oversized_skipped(caplog: Any) -> None:
+    from any_llm.providers.copilotsdk.copilotsdk import _MAX_BASE64_DECODE_BYTES
+
+    oversized_bytes = b"\x00" * (_MAX_BASE64_DECODE_BYTES + 1)
+    url = f"data:image/jpeg;base64,{base64.b64encode(oversized_bytes).decode()}"
+    messages = [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": url}}]}]
+    with caplog.at_level(logging.WARNING, logger="any_llm.providers.copilotsdk.copilotsdk"):
+        attachments, temp_paths = _extract_attachments(messages)
+    assert attachments == []
+    assert temp_paths == []
+    assert any("exceeds" in r.message for r in caplog.records)
+
+
+def test_extract_attachments_malformed_logs_warning(caplog: Any) -> None:
+    messages = [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,NOT_VALID!!"}}]}]
+    with caplog.at_level(logging.WARNING, logger="any_llm.providers.copilotsdk.copilotsdk"):
+        attachments, temp_paths = _extract_attachments(messages)
+    assert attachments == []
+    assert any("failed to decode" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_acompletion_warns_unsupported_params() -> None:
+    provider = _make_provider(api_key="test-token")
+
+    mock_event = MagicMock()
+    mock_event.data.content = "ok"
+    mock_session = _make_session(send_and_wait_result=mock_event)
+    mock_client = AsyncMock()
+    mock_client.create_session = AsyncMock(return_value=mock_session)
+
+    with patch.object(provider, "_ensure_client", AsyncMock(return_value=mock_client)):
+        params = CompletionParams(
+            model_id="gpt-4o",
+            messages=[{"role": "user", "content": "Hi"}],
+            temperature=0.5,
+            max_tokens=100,
+        )
+        with pytest.warns(UserWarning, match="'temperature'.*'max_tokens'|'max_tokens'.*'temperature'"):
+            await provider._acompletion(params)
+
+
+@pytest.mark.asyncio
+async def test_acompletion_no_warn_for_default_params() -> None:
+    provider = _make_provider(api_key="test-token")
+
+    mock_event = MagicMock()
+    mock_event.data.content = "ok"
+    mock_session = _make_session(send_and_wait_result=mock_event)
+    mock_client = AsyncMock()
+    mock_client.create_session = AsyncMock(return_value=mock_session)
+
+    with patch.object(provider, "_ensure_client", AsyncMock(return_value=mock_client)):
+        params = CompletionParams(
+            model_id="gpt-4o",
+            messages=[{"role": "user", "content": "Hi"}],
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            await provider._acompletion(params)
+
+
+@pytest.mark.asyncio
+async def test_streaming_times_out_when_no_events() -> None:
+    provider = _make_provider(api_key="test-token")
+
+    mock_session = MagicMock()
+    mock_session.on = MagicMock(return_value=lambda: None)
+    mock_session.disconnect = AsyncMock()
+    mock_session.send = AsyncMock()
+
+    mock_client = AsyncMock()
+    mock_client.create_session = AsyncMock(return_value=mock_session)
+
+    with patch.object(provider, "_ensure_client", AsyncMock(return_value=mock_client)):
+        with patch("any_llm.providers.copilotsdk.copilotsdk._STREAM_TIMEOUT_SECONDS", 0.01):
+            params = CompletionParams(
+                model_id="gpt-4o",
+                messages=[{"role": "user", "content": "Hi"}],
+                stream=True,
+            )
+            stream = await provider._acompletion(params)
+            with pytest.raises(RuntimeError, match="timed out"):
+                async for _ in stream:
+                    pass
+
+    mock_session.disconnect.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_close_stops_client() -> None:
+    provider = _make_provider(api_key="test-token")
+
+    mock_client = AsyncMock()
+    mock_client.stop = AsyncMock()
+    provider._copilot_client = mock_client
+
+    await provider.close()
+
+    mock_client.stop.assert_called_once()
+    assert provider._copilot_client is None
+
+
+@pytest.mark.asyncio
+async def test_close_is_noop_when_no_client() -> None:
+    provider = _make_provider(api_key="test-token")
+    await provider.close()
