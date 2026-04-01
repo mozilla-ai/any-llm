@@ -82,7 +82,7 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
             tool_call = chunk.delta.message.tool_calls
             delta["tool_calls"] = [
                 {
-                    "index": 0,
+                    "index": getattr(chunk, "index", None) or 0,
                     "id": getattr(tool_call, "id", ""),
                     "type": "function",
                     "function": {
@@ -107,7 +107,7 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
         ):
             delta["tool_calls"] = [
                 {
-                    "index": 0,
+                    "index": getattr(chunk, "index", None) or 0,
                     "function": {
                         "arguments": getattr(chunk.delta.message.tool_calls.function, "arguments", ""),
                     },

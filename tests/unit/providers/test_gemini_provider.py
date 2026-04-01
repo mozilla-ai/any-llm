@@ -21,6 +21,10 @@ TEST_IMAGE_BYTES = b"test-image-bytes"
 TEST_PDF_BYTES = b"%PDF-1.4\ntest"
 
 
+TEST_IMAGE_BYTES = b"test-image-bytes"
+TEST_PDF_BYTES = b"%PDF-1.4\ntest"
+
+
 @contextmanager
 def mock_gemini_provider():  # type: ignore[no-untyped-def]
     with (
@@ -291,6 +295,62 @@ async def test_completion_with_dataclass_response_format() -> None:
         assert "properties" in generation_config.response_schema
         assert "name" in generation_config.response_schema["properties"]
         assert "value" in generation_config.response_schema["properties"]
+
+
+@pytest.mark.asyncio
+async def test_completion_with_dict_json_schema_response_format() -> None:
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Hello"}]
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "TestOutput",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "value": {"type": "integer"},
+                },
+                "required": ["name", "value"],
+            },
+        },
+    }
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key=api_key)
+        await provider._acompletion(
+            CompletionParams(model_id=model, messages=messages, response_format=response_format)
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+
+        assert generation_config.response_mime_type == "application/json"
+        assert generation_config.response_schema == response_format["json_schema"]["schema"]
+
+
+@pytest.mark.asyncio
+async def test_completion_with_json_object_response_format() -> None:
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key=api_key)
+        await provider._acompletion(
+            CompletionParams(
+                model_id=model,
+                messages=messages,
+                response_format={"type": "json_object"},
+            )
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+
+        assert generation_config.response_mime_type == "application/json"
+        assert generation_config.response_schema is None
 
 
 @pytest.mark.asyncio
