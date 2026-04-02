@@ -190,7 +190,9 @@ def test_responses_endpoint_preserves_encrypted_reasoning_fields(
         usage=_FakeUsage(input_tokens=8, output_tokens=3),
     )
 
-    with patch("any_llm.gateway.api.routes.responses.aresponses", new_callable=AsyncMock, return_value=mock_response) as mock_aresponses:
+    with patch(
+        "any_llm.gateway.api.routes.responses.aresponses", new_callable=AsyncMock, return_value=mock_response
+    ) as mock_aresponses:
         response = client.post(
             "/v1/responses",
             json={
