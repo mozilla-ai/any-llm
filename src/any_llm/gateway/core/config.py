@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -71,6 +72,8 @@ def load_config(config_path: str | None = None) -> GatewayConfig:
         GatewayConfig instance with merged configuration
 
     """
+    _load_dotenv(config_path)
+
     config_dict: dict[str, Any] = {}
 
     if config_path and Path(config_path).exists():
@@ -80,6 +83,20 @@ def load_config(config_path: str | None = None) -> GatewayConfig:
                 config_dict = _resolve_env_vars(yaml_config)
 
     return GatewayConfig(**config_dict)
+
+
+def _load_dotenv(config_path: str | None = None) -> None:
+    """Load .env files into process environment without overriding existing vars."""
+    candidate_paths: list[Path] = [Path.cwd() / ".env"]
+    if config_path:
+        candidate_paths.insert(0, Path(config_path).resolve().parent / ".env")
+
+    seen: set[Path] = set()
+    for dotenv_path in candidate_paths:
+        if dotenv_path in seen or not dotenv_path.exists():
+            continue
+        seen.add(dotenv_path)
+        load_dotenv(dotenv_path=dotenv_path, override=False)
 
 
 def _resolve_env_vars(config: dict[str, Any]) -> dict[str, Any]:
