@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from any_llm.gateway.config import _resolve_env_vars
+from any_llm.gateway.core.config import _resolve_env_vars
 
 
 def test_resolve_existing_env_var() -> None:

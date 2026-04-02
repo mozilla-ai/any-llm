@@ -5,9 +5,9 @@ from typing import Any
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from any_llm.gateway.config import GatewayConfig
+from any_llm.gateway.core.config import GatewayConfig
 from any_llm.gateway.db import get_db
-from any_llm.gateway.server import create_app
+from any_llm.gateway.main import create_app
 
 
 def test_cors_disabled_by_default(postgres_url: str, test_db: Session) -> None:

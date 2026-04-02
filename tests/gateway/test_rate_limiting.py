@@ -11,10 +11,10 @@ from pydantic import ValidationError
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from any_llm.gateway.config import API_KEY_HEADER, GatewayConfig
+from any_llm.gateway.core.config import API_KEY_HEADER, GatewayConfig
 from any_llm.gateway.db import Base, get_db
+from any_llm.gateway.main import create_app
 from any_llm.gateway.rate_limit import RateLimiter, RateLimitInfo
-from any_llm.gateway.server import create_app
 from tests.gateway.conftest import _run_alembic_migrations
 
 
@@ -259,7 +259,7 @@ def test_rate_limit_headers_on_success(rate_limit_client: TestClient) -> None:
     async def mock_acompletion(**kwargs: Any) -> ChatCompletion:
         return mock_response
 
-    with patch("any_llm.gateway.routes.chat.acompletion", new=mock_acompletion):
+    with patch("any_llm.gateway.api.routes.chat.acompletion", new=mock_acompletion):
         resp = _chat_request(rate_limit_client, user_id)
 
     assert resp.status_code == 200
@@ -278,7 +278,7 @@ def test_rate_limit_returns_429_with_retry_after(rate_limit_client: TestClient) 
     async def mock_acompletion(**kwargs: Any) -> None:
         raise _MockCompletionError
 
-    with patch("any_llm.gateway.routes.chat.acompletion", new=mock_acompletion):
+    with patch("any_llm.gateway.api.routes.chat.acompletion", new=mock_acompletion):
         # Exhaust the limit (rpm=3)
         for _ in range(3):
             _chat_request(rate_limit_client, user_id)
@@ -297,7 +297,7 @@ def test_no_rate_limit_allows_unlimited(no_rate_limit_client: TestClient) -> Non
     async def mock_acompletion(**kwargs: Any) -> None:
         raise _MockCompletionError
 
-    with patch("any_llm.gateway.routes.chat.acompletion", new=mock_acompletion):
+    with patch("any_llm.gateway.api.routes.chat.acompletion", new=mock_acompletion):
         # Should never get 429
         for _ in range(10):
             resp = _chat_request(no_rate_limit_client, user_id)

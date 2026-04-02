@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from any_llm.gateway.db.models import User
+from any_llm.gateway.models.entities import User
 
 
 def get_active_user(db: Session, user_id: str, *, for_update: bool = False) -> User | None:
@@ -16,6 +16,6 @@ def get_active_user(db: Session, user_id: str, *, for_update: bool = False) -> U
 
     """
     query = db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None))
-    if for_update:
+    if for_update and (not db.bind or db.bind.dialect.name != "sqlite"):
         query = query.with_for_update()
     return query.first()

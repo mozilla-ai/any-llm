@@ -2,7 +2,7 @@
 
 from sqlalchemy.orm import Session
 
-from any_llm.gateway.db import ModelPricing
+from any_llm.gateway.models.entities import ModelPricing
 
 
 def find_model_pricing(db: Session, provider: str | None, model: str) -> ModelPricing | None:

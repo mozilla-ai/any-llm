@@ -3,7 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from any_llm.gateway.config import PricingConfig
+from any_llm.gateway.core.config import PricingConfig
 
 
 def test_negative_pricing_rejected(client: TestClient, master_key_header: dict[str, str]) -> None:

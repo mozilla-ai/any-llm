@@ -5,8 +5,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from any_llm.gateway.auth import verify_master_key
-from any_llm.gateway.db import Budget, get_db
+from any_llm.gateway.api.deps import get_db, verify_master_key
+from any_llm.gateway.models.entities import Budget
 
 router = APIRouter(prefix="/v1/budgets", tags=["budgets"])
 

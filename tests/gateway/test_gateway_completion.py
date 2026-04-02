@@ -1,4 +1,5 @@
 import json
+import os
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -10,7 +11,11 @@ if TYPE_CHECKING:
     from tests.gateway.conftest import LiveServer
 
 
+_HAS_GEMINI_KEY = bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
+
+
 @pytest.mark.asyncio
+@pytest.mark.skipif(not _HAS_GEMINI_KEY, reason="requires GEMINI_API_KEY or GOOGLE_API_KEY")
 async def test_chat_completion_with_provider_model_format(
     client: TestClient,
     api_key_header: dict[str, str],
@@ -36,6 +41,7 @@ async def test_chat_completion_with_provider_model_format(
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not _HAS_GEMINI_KEY, reason="requires GEMINI_API_KEY or GOOGLE_API_KEY")
 async def test_chat_completion_streaming(
     client: TestClient,
     api_key_header: dict[str, str],
@@ -71,6 +77,7 @@ async def test_chat_completion_streaming(
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not _HAS_GEMINI_KEY, reason="requires GEMINI_API_KEY or GOOGLE_API_KEY")
 async def test_chat_completion_with_reasoning(
     client: TestClient,
     api_key_header: dict[str, str],
@@ -101,6 +108,7 @@ async def test_chat_completion_with_reasoning(
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not _HAS_GEMINI_KEY, reason="requires GEMINI_API_KEY or GOOGLE_API_KEY")
 async def test_chat_completion_with_temperature(
     client: TestClient,
     api_key_header: dict[str, str],
@@ -162,6 +170,7 @@ async def test_chat_completion_with_invalid_api_key_fails(
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not _HAS_GEMINI_KEY, reason="requires GEMINI_API_KEY or GOOGLE_API_KEY")
 async def test_chat_completion_multi_turn_conversation(
     client: TestClient,
     api_key_header: dict[str, str],
@@ -192,6 +201,7 @@ async def test_chat_completion_multi_turn_conversation(
     assert "alice" in content
 
 
+@pytest.mark.skipif(not _HAS_GEMINI_KEY, reason="requires GEMINI_API_KEY or GOOGLE_API_KEY")
 def test_completion_with_openai_client(live_server: "LiveServer") -> None:
     """Test chat completion using the OpenAI SDK client with Authorization header."""
     from openai import OpenAI
