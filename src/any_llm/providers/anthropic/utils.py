@@ -187,7 +187,7 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
             delta = {
                 "tool_calls": [
                     {
-                        "index": chunk.index,
+                        "index": 0,
                         "id": chunk.content_block.id,
                         "type": "function",
                         "function": {"name": chunk.content_block.name, "arguments": ""},
@@ -204,7 +204,7 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
             delta = {
                 "tool_calls": [
                     {
-                        "index": chunk.index,
+                        "index": 0,
                         "function": {"arguments": chunk.delta.partial_json},
                     }
                 ]
