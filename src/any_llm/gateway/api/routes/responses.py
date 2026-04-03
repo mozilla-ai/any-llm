@@ -2,6 +2,7 @@ from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
+from openai.types.responses import ResponseUsage
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
@@ -22,7 +23,11 @@ router = APIRouter(prefix="/v1", tags=["responses"])
 
 
 class ResponsesRequest(BaseModel):
-    """OpenAI-compatible responses request."""
+    """OpenAI-compatible responses request.
+
+    ``extra="allow"`` lets Responses-only fields (reasoning, include, etc.)
+    pass through without being declared explicitly on this model.
+    """
 
     model_config = ConfigDict(extra="allow")
 
@@ -32,24 +37,14 @@ class ResponsesRequest(BaseModel):
     user: str | None = None
 
 
-def _usage_to_completion_usage(usage: Any) -> CompletionUsage | None:
+def _usage_to_completion_usage(usage: ResponseUsage | None) -> CompletionUsage | None:
     if usage is None:
         return None
 
-    prompt_tokens = getattr(usage, "input_tokens", None)
-    completion_tokens = getattr(usage, "output_tokens", None)
-    total_tokens = getattr(usage, "total_tokens", None)
-
-    if prompt_tokens is None and completion_tokens is None and total_tokens is None:
-        return None
-
-    prompt = prompt_tokens or 0
-    completion = completion_tokens or 0
-    total = total_tokens if total_tokens is not None else prompt + completion
     return CompletionUsage(
-        prompt_tokens=prompt,
-        completion_tokens=completion,
-        total_tokens=total,
+        prompt_tokens=usage.input_tokens,
+        completion_tokens=usage.output_tokens,
+        total_tokens=usage.total_tokens,
     )
 
 
@@ -98,6 +93,7 @@ async def create_response(
 
     # Request fields take precedence over provider config defaults.
     request_fields = request.model_dump(exclude_unset=True)
+    # OpenAI uses "input"; the SDK parameter is "input_data".
     request_fields["input_data"] = request_fields.pop("input")
     call_kwargs: dict[str, Any] = {**provider_kwargs, **request_fields}
 
@@ -110,7 +106,8 @@ async def create_response(
             def _extract_usage(event: ResponseStreamEvent) -> CompletionUsage | None:
                 if event.type != "response.completed":
                     return None
-                return _usage_to_completion_usage(getattr(getattr(event, "response", None), "usage", None))
+                response_obj = getattr(event, "response", None)
+                return _usage_to_completion_usage(response_obj.usage if response_obj else None)
 
             async def _on_complete(usage_data: CompletionUsage) -> None:
                 await log_usage(
@@ -151,7 +148,7 @@ async def create_response(
             )
 
         result = await aresponses(**call_kwargs)
-        usage_data = _usage_to_completion_usage(getattr(result, "usage", None))
+        usage_data = _usage_to_completion_usage(cast("ResponseUsage | None", result.usage))  # type: ignore[union-attr]
         await log_usage(
             db=db,
             api_key_obj=api_key,

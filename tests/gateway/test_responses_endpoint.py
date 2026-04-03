@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
+from any_llm.gateway.core.config import API_KEY_HEADER
+
 
 class _FakeUsage:
     def __init__(self, input_tokens: int, output_tokens: int, total_tokens: int | None = None) -> None:
@@ -212,3 +214,126 @@ def test_responses_endpoint_preserves_encrypted_reasoning_fields(
     mock_aresponses.assert_awaited_once()
     assert mock_aresponses.await_args.kwargs["reasoning"] == {"effort": "high"}
     assert mock_aresponses.await_args.kwargs["include"] == ["reasoning.encrypted_content"]
+
+
+def test_responses_endpoint_bearer_auth(
+    client: TestClient,
+    api_key_obj: dict[str, Any],
+) -> None:
+    """Test authentication via standard Bearer token with a regular API key."""
+    mock_response = _FakeResponse(
+        payload={"id": "resp_123", "object": "response", "model": "gpt-4.1-mini", "output": []},
+        usage=_FakeUsage(input_tokens=10, output_tokens=5),
+    )
+
+    with patch("any_llm.gateway.api.routes.responses.aresponses", new_callable=AsyncMock, return_value=mock_response):
+        response = client.post(
+            "/v1/responses",
+            json={"model": "openai:gpt-4.1-mini", "input": "Hello"},
+            headers={API_KEY_HEADER: f"Bearer {api_key_obj['key']}"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "resp_123"
+
+
+def test_responses_endpoint_provider_error_non_streaming(
+    client: TestClient,
+    master_key_header: dict[str, str],
+    test_user: dict[str, Any],
+) -> None:
+    """Test that a non-streaming provider error returns 500."""
+    with patch(
+        "any_llm.gateway.api.routes.responses.aresponses",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("Provider unavailable"),
+    ):
+        response = client.post(
+            "/v1/responses",
+            json={"model": "openai:gpt-4.1-mini", "input": "Hello", "user": test_user["user_id"]},
+            headers=master_key_header,
+        )
+
+    assert response.status_code == 500
+    assert "provider" in response.json()["detail"].lower()
+
+
+def test_responses_endpoint_provider_error_streaming(
+    client: TestClient,
+    master_key_header: dict[str, str],
+    test_user: dict[str, Any],
+) -> None:
+    """Test that a streaming provider creation error returns 500."""
+    with patch(
+        "any_llm.gateway.api.routes.responses.aresponses",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("Provider unavailable"),
+    ):
+        response = client.post(
+            "/v1/responses",
+            json={
+                "model": "openai:gpt-4.1-mini",
+                "input": "Hello",
+                "user": test_user["user_id"],
+                "stream": True,
+            },
+            headers=master_key_header,
+        )
+
+    assert response.status_code == 500
+    assert "provider" in response.json()["detail"].lower()
+
+
+def test_responses_endpoint_no_usage_data(
+    client: TestClient,
+    master_key_header: dict[str, str],
+    test_user: dict[str, Any],
+) -> None:
+    """Test non-streaming response when the provider returns no usage data."""
+    mock_response = _FakeResponse(
+        payload={"id": "resp_789", "object": "response", "model": "gpt-4.1-mini", "output": []},
+        usage=None,
+    )
+
+    with patch("any_llm.gateway.api.routes.responses.aresponses", new_callable=AsyncMock, return_value=mock_response):
+        response = client.post(
+            "/v1/responses",
+            json={"model": "openai:gpt-4.1-mini", "input": "Hello", "user": test_user["user_id"]},
+            headers=master_key_header,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "resp_789"
+
+
+def test_responses_endpoint_streaming_mid_stream_error(
+    client: TestClient,
+    master_key_header: dict[str, str],
+    test_user: dict[str, Any],
+) -> None:
+    """Test that a mid-stream error emits an SSE error event."""
+
+    async def mock_stream() -> AsyncIterator[_FakeStreamEvent]:
+        yield _FakeStreamEvent(
+            "response.output_text.delta",
+            {"type": "response.output_text.delta", "delta": "Hi"},
+        )
+        msg = "Stream interrupted"
+        raise RuntimeError(msg)
+
+    with patch("any_llm.gateway.api.routes.responses.aresponses", new_callable=AsyncMock, return_value=mock_stream()):
+        response = client.post(
+            "/v1/responses",
+            json={
+                "model": "openai:gpt-4.1-mini",
+                "input": "Hello",
+                "user": test_user["user_id"],
+                "stream": True,
+            },
+            headers=master_key_header,
+        )
+
+    assert response.status_code == 200
+    raw = response.text
+    assert "event: error" in raw
+    assert "server_error" in raw
