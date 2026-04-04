@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from any_llm.gateway.api.routes import budgets, chat, embeddings, health, keys, messages, models, pricing, users
+from any_llm.gateway.api.routes import budgets, chat, embeddings, health, keys, messages, models, pricing, usage, users
 
 
 def register_routers(app: FastAPI) -> None:
@@ -12,4 +12,5 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(users.router)
     app.include_router(budgets.router)
     app.include_router(pricing.router)
+    app.include_router(usage.router)
     app.include_router(health.router)
