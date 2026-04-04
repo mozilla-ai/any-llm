@@ -144,6 +144,7 @@ def test_budget_response_from_model_nullable_fields() -> None:
 def test_pricing_response_from_model() -> None:
     pricing = MagicMock()
     pricing.model_key = "openai:gpt-4"
+    pricing.effective_at = datetime(2025, 1, 1, tzinfo=UTC)
     pricing.input_price_per_million = 30.0
     pricing.output_price_per_million = 60.0
     pricing.created_at = datetime(2025, 3, 1, tzinfo=UTC)
@@ -151,6 +152,7 @@ def test_pricing_response_from_model() -> None:
 
     resp = PricingResponse.from_model(pricing)
     assert resp.model_key == "openai:gpt-4"
+    assert resp.effective_at == "2025-01-01T00:00:00+00:00"
     assert resp.input_price_per_million == 30.0
     assert resp.output_price_per_million == 60.0
     assert resp.created_at == "2025-03-01T00:00:00+00:00"
