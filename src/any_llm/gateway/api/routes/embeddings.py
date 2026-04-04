@@ -110,7 +110,7 @@ async def create_embedding(
         )
 
         if result.usage:
-            pricing = find_model_pricing(db, provider, model)
+            pricing = find_model_pricing(db, provider, model, as_of=usage_log.timestamp)
             if pricing:
                 cost = (result.usage.prompt_tokens / 1_000_000) * pricing.input_price_per_million
                 usage_log.cost = cost

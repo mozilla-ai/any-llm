@@ -147,7 +147,7 @@ async def log_usage(
 
         record_tokens(str(provider or ""), model, usage_data.prompt_tokens, usage_data.completion_tokens)
 
-        pricing = find_model_pricing(db, provider, model)
+        pricing = find_model_pricing(db, provider, model, as_of=usage_log.timestamp)
         if pricing:
             cost = (usage_data.prompt_tokens / 1_000_000) * pricing.input_price_per_million + (
                 usage_data.completion_tokens / 1_000_000
