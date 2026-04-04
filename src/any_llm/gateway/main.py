@@ -148,6 +148,9 @@ def create_app(config: GatewayConfig) -> FastAPI:
         title="any-llm-gateway",
         description="A clean FastAPI gateway for any-llm with API key management",
         version=__version__,
+        docs_url="/docs" if config.enable_docs else None,
+        redoc_url="/redoc" if config.enable_docs else None,
+        openapi_url="/openapi.json" if config.enable_docs else None,
     )
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
