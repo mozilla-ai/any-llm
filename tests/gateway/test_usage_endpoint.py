@@ -254,3 +254,50 @@ def test_list_usage_skip_negative_rejected(
     """Negative skip should return 422."""
     response = client.get("/v1/usage", params={"skip": -1}, headers=master_key_header)
     assert response.status_code == 422
+
+
+def test_list_usage_filter_by_epoch_seconds(
+    client: TestClient,
+    master_key_header: dict[str, str],
+    db_session: Session,
+) -> None:
+    """start_date and end_date accept Unix epoch seconds (int)."""
+    base = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
+    for i in range(5):
+        _make_log(db_session, user_id="user-1", timestamp=base + timedelta(hours=i))
+    db_session.commit()
+
+    start_epoch = int((base + timedelta(hours=1)).timestamp())
+    end_epoch = int((base + timedelta(hours=4)).timestamp())
+
+    response = client.get(
+        "/v1/usage",
+        params={"start_date": start_epoch, "end_date": end_epoch},
+        headers=master_key_header,
+    )
+    assert response.status_code == 200
+    # [13:00, 14:00, 15:00] — 16:00 excluded by end_date
+    assert len(response.json()) == 3
+
+
+def test_list_usage_filter_by_iso_string(
+    client: TestClient,
+    master_key_header: dict[str, str],
+    db_session: Session,
+) -> None:
+    """start_date and end_date accept ISO 8601 datetime strings."""
+    base = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
+    for i in range(5):
+        _make_log(db_session, user_id="user-1", timestamp=base + timedelta(hours=i))
+    db_session.commit()
+
+    response = client.get(
+        "/v1/usage",
+        params={
+            "start_date": (base + timedelta(hours=1)).isoformat(),
+            "end_date": (base + timedelta(hours=4)).isoformat(),
+        },
+        headers=master_key_header,
+    )
+    assert response.status_code == 200
+    assert len(response.json()) == 3

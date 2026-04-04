@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from any_llm.gateway.api.deps import get_db, verify_master_key
 from any_llm.gateway.models.entities import UsageLog
+from any_llm.utils.timestamp import to_datetime
 
 router = APIRouter(prefix="/v1/usage", tags=["usage"])
 
@@ -57,13 +58,13 @@ class UsageEntry(BaseModel):
 @router.get("", dependencies=[Depends(verify_master_key)])
 async def list_usage(
     db: Annotated[Session, Depends(get_db)],
-    start_date: datetime | None = Query(
+    start_date: int | datetime | None = Query(
         default=None,
-        description="Return logs with timestamp >= start_date (ISO 8601)",
+        description="Return logs with timestamp >= start_date (ISO 8601 or Unix epoch seconds)",
     ),
-    end_date: datetime | None = Query(
+    end_date: int | datetime | None = Query(
         default=None,
-        description="Return logs with timestamp < end_date (ISO 8601)",
+        description="Return logs with timestamp < end_date (ISO 8601 or Unix epoch seconds)",
     ),
     user_id: str | None = Query(default=None, description="Filter to a single user"),
     skip: Annotated[int, Query(ge=0)] = 0,
@@ -72,12 +73,16 @@ async def list_usage(
     """List usage logs ordered by timestamp (most recent first).
 
     Supports optional filters for time range and user. Paginated via skip/limit.
+    Timestamps accept either ISO 8601 strings or Unix epoch seconds (int).
     """
+    start = to_datetime(start_date)
+    end = to_datetime(end_date)
+
     query = db.query(UsageLog)
-    if start_date is not None:
-        query = query.filter(UsageLog.timestamp >= start_date)
-    if end_date is not None:
-        query = query.filter(UsageLog.timestamp < end_date)
+    if start is not None:
+        query = query.filter(UsageLog.timestamp >= start)
+    if end is not None:
+        query = query.filter(UsageLog.timestamp < end)
     if user_id is not None:
         query = query.filter(UsageLog.user_id == user_id)
 
