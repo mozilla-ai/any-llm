@@ -15,5 +15,6 @@ def test_to_datetime_passes_through_datetime() -> None:
 
 
 def test_to_datetime_converts_epoch_seconds() -> None:
-    result = to_datetime(1775385600)
-    assert result == datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
+    expected = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
+    result = to_datetime(int(expected.timestamp()))
+    assert result == expected
