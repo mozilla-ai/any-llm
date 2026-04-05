@@ -294,6 +294,43 @@ async def test_completion_with_dataclass_response_format() -> None:
 
 
 @pytest.mark.asyncio
+async def test_completion_with_dict_json_schema_response_format() -> None:
+    """Test that OpenAI dict response_format is converted to JSON schema for Gemini."""
+    openai_json_schema = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "TestOutput",
+            "schema": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "value": {"type": "integer"}},
+                "required": ["name", "value"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    }
+
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key=api_key)
+        await provider._acompletion(
+            CompletionParams(model_id=model, messages=messages, response_format=openai_json_schema)
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+
+        assert generation_config.response_mime_type == "application/json"
+        assert isinstance(generation_config.response_schema, dict)
+        assert "properties" in generation_config.response_schema
+        assert "name" in generation_config.response_schema["properties"]
+        assert "value" in generation_config.response_schema["properties"]
+
+
+@pytest.mark.asyncio
 async def test_completion_with_stream_and_response_format_raises() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
