@@ -1,0 +1,14 @@
+# Gateway config used by the load-test setup.
+# Points the OpenAI provider at the local fake_provider running on :9999.
+providers:
+  openai:
+    api_key: "fake-key-not-used-by-upstream"
+    api_base: "http://localhost:9999/v1"
+
+# Include pricing so log_usage exercises the full DB write path
+# (pricing lookup + spend update + usage log insert). This is what we want
+# to stress under load.
+pricing:
+  "openai:fake":
+    input_price_per_million: 1.0
+    output_price_per_million: 2.0
