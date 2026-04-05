@@ -215,25 +215,8 @@ cp "/tmp/k6-${LABEL}.txt" "$RESULTS_DIR/k6-${LABEL}.txt"
 cp "/tmp/k6-${LABEL}.json" "$RESULTS_DIR/k6-${LABEL}.json" 2>/dev/null || true
 cp "/tmp/gateway-stats-${LABEL}.csv" "$RESULTS_DIR/gateway-stats-${LABEL}.csv"
 
-{
-  echo "# Load test run: $LABEL"
-  echo ""
-  echo "- branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
-  echo "- commit: $(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-  echo "- date:   $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-  echo "- VUS=$VUS  DURATION=$DURATION  WORKERS=$WORKERS"
-  echo "- FAKE_DELAY_MS=$FAKE_DELAY_MS  FAKE_JITTER_SIGMA=$FAKE_JITTER_SIGMA  RNG_SEED=$RNG_SEED"
-  echo "- BUDGET_STRATEGY=$BUDGET_STRATEGY  LOG_WRITER_STRATEGY=$LOG_WRITER_STRATEGY"
-  echo ""
-  echo "## gateway process stats"
-  echo '```'
-  printf '%s\n' "$STATS_SUMMARY"
-  echo '```'
-} > "$RESULTS_DIR/run-${LABEL}.md"
-
 echo ""
 echo "[done] results saved to $RESULTS_DIR:"
 echo "  k6-${LABEL}.txt        k6 summary"
 echo "  k6-${LABEL}.json       k6 full metrics"
 echo "  gateway-stats-${LABEL}.csv  gateway process cpu/rss samples"
-echo "  run-${LABEL}.md        metadata + stats summary"
