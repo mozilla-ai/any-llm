@@ -42,6 +42,10 @@ WORKERS="${WORKERS:-1}"
 #   BUDGET_STRATEGY=cas         lock-free conditional UPDATE, no FOR UPDATE (recommended)
 #   BUDGET_STRATEGY=disabled    skip validate_user_budget entirely
 BUDGET_STRATEGY="${BUDGET_STRATEGY:-for_update}"
+# Usage log writer strategy:
+#   LOG_WRITER_STRATEGY=single  write each event inline, 1 txn per event (default)
+#   LOG_WRITER_STRATEGY=batch   queue + flush in batches (up to 100 rows / 1s)
+LOG_WRITER_STRATEGY="${LOG_WRITER_STRATEGY:-single}"
 # Fixed seed by default so the jitter sampler produces the same sequence
 # across sync vs async runs. Override with RNG_SEED to vary.
 RNG_SEED="${RNG_SEED:-42}"
@@ -87,10 +91,11 @@ uv run --extra gateway python tests/load/fake_provider.py \
 FAKE_PID=$!
 
 # --- Gateway ------------------------------------------------------------------
-echo "[setup] starting gateway on :$GATEWAY_PORT ($LABEL, $WORKERS workers, budget_strategy=$BUDGET_STRATEGY)"
+echo "[setup] starting gateway on :$GATEWAY_PORT ($LABEL, $WORKERS workers, budget=$BUDGET_STRATEGY, log_writer=$LOG_WRITER_STRATEGY)"
 export GATEWAY_MASTER_KEY="loadtest-master-key"
 export GATEWAY_BOOTSTRAP_API_KEY="true"
 export GATEWAY_BUDGET_STRATEGY="$BUDGET_STRATEGY"
+export GATEWAY_LOG_WRITER_STRATEGY="$LOG_WRITER_STRATEGY"
 uv run --extra gateway any-llm-gateway serve \
   --config tests/load/gateway-config.yml \
   --host 127.0.0.1 --port "$GATEWAY_PORT" --workers "$WORKERS" \
@@ -151,6 +156,40 @@ k6 run \
 
 mv load_results.json "/tmp/k6-${LABEL}.json" 2>/dev/null || true
 
+# --- Verify log rows persisted ------------------------------------------------
+# Shut the gateway down cleanly FIRST so any BatchLogWriter lifespan hook drains.
+# Then count rows in usage_logs; compare vs k6's iteration count.
+echo ""
+echo "[verify] stopping gateway to drain log writer"
+kill -TERM "$GATEWAY_PID" 2>/dev/null || true
+wait "$GATEWAY_PID" 2>/dev/null || true
+
+if [[ -z "${TEST_DATABASE_URL:-}" ]]; then
+  LOG_COUNT=$(docker exec loadtest-pg psql -U loadtest -d loadtest -At -c "SELECT COUNT(*) FROM usage_logs" 2>/dev/null || echo "?")
+else
+  LOG_COUNT=$(psql "$TEST_DATABASE_URL" -At -c "SELECT COUNT(*) FROM usage_logs" 2>/dev/null || echo "?")
+fi
+# k6 iteration count (total requests made across warmup + main scenarios)
+ITERATIONS=$(python3 -c "
+import json, sys
+d = json.load(open('/tmp/k6-${LABEL}.json'))
+try:
+    print(int(d['metrics']['iterations']['values']['count']))
+except Exception:
+    print('?')
+" 2>/dev/null || echo "?")
+echo ""
+echo "=== usage_logs persistence check ($LABEL) ==="
+echo "  k6 iterations completed : $ITERATIONS"
+echo "  rows in usage_logs      : $LOG_COUNT"
+if [[ "$LOG_COUNT" =~ ^[0-9]+$ ]] && [[ "$ITERATIONS" =~ ^[0-9]+$ ]]; then
+  if [[ "$LOG_COUNT" -eq "$ITERATIONS" ]]; then
+    echo "  coverage                : 100% (no rows dropped)"
+  else
+    echo "  coverage                : $((LOG_COUNT * 100 / ITERATIONS))% ($((ITERATIONS - LOG_COUNT)) rows dropped)"
+  fi
+fi
+
 # --- Summarize gateway process stats -----------------------------------------
 STATS_SUMMARY=""
 if [[ -s "/tmp/gateway-stats-${LABEL}.csv" ]]; then
@@ -184,7 +223,7 @@ cp "/tmp/gateway-stats-${LABEL}.csv" "$RESULTS_DIR/gateway-stats-${LABEL}.csv"
   echo "- date:   $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   echo "- VUS=$VUS  DURATION=$DURATION  WORKERS=$WORKERS"
   echo "- FAKE_DELAY_MS=$FAKE_DELAY_MS  FAKE_JITTER_SIGMA=$FAKE_JITTER_SIGMA  RNG_SEED=$RNG_SEED"
-  echo "- BUDGET_STRATEGY=$BUDGET_STRATEGY"
+  echo "- BUDGET_STRATEGY=$BUDGET_STRATEGY  LOG_WRITER_STRATEGY=$LOG_WRITER_STRATEGY"
   echo ""
   echo "## gateway process stats"
   echo '```'

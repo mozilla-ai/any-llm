@@ -14,6 +14,7 @@ from any_llm.gateway.core.config import GatewayConfig
 from any_llm.gateway.core.database import create_session, init_db
 from any_llm.gateway.rate_limit import RateLimiter
 from any_llm.gateway.services.bootstrap_service import bootstrap_first_api_key
+from any_llm.gateway.services.log_writer import create_log_writer
 from any_llm.gateway.services.pricing_init_service import initialize_pricing_from_config
 
 _PUBLIC_PREFIXES = ("/health",)
@@ -140,12 +141,18 @@ def create_app(config: GatewayConfig) -> FastAPI:
     init_db(config.database_url, auto_migrate=config.auto_migrate)
     set_config(config)
 
+    log_writer = create_log_writer(config.log_writer_strategy, create_session)
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         async with create_session() as db:
             await bootstrap_first_api_key(config, db)
             await initialize_pricing_from_config(config, db)
-        yield
+        await log_writer.start()
+        try:
+            yield
+        finally:
+            await log_writer.stop()
 
     app = FastAPI(
         title="any-llm-gateway",
@@ -153,6 +160,7 @@ def create_app(config: GatewayConfig) -> FastAPI:
         version=__version__,
         lifespan=lifespan,
     )
+    app.state.log_writer = log_writer
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     async def root_tutorial() -> str:

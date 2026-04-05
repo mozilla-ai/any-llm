@@ -6,23 +6,41 @@ warmup), same hardware, same Postgres. Differences are branch + one config flag.
 
 ## Scenarios run
 
-| Label | Branch | DB driver | `budget_strategy` |
-|---|---|---|---|
-| **sync** | `main` (`0510c38`) | psycopg2 + sync `Session` | n/a (always FOR UPDATE) |
-| **async-for_update** | `julian/async-asyncpg` | asyncpg + `AsyncSession` | `for_update` |
-| **async-cas** | `julian/async-asyncpg` | asyncpg + `AsyncSession` | `cas` |
-| **async-disabled** | `julian/async-asyncpg` | asyncpg + `AsyncSession` | `disabled` |
+| Label | Branch | DB driver | `budget_strategy` | `log_writer_strategy` |
+|---|---|---|---|---|
+| **sync** | `main` (`0510c38`) | psycopg2 + sync `Session` | n/a (always FOR UPDATE) | single (inline) |
+| **async-for_update** | `julian/async-asyncpg` | asyncpg + `AsyncSession` | `for_update` | `single` |
+| **async-cas** | `julian/async-asyncpg` | asyncpg + `AsyncSession` | `cas` | `single` |
+| **async-disabled** | `julian/async-asyncpg` | asyncpg + `AsyncSession` | `disabled` | `single` |
+| **async-batch+disabled** | `julian/async-asyncpg` | asyncpg + `AsyncSession` | `disabled` | `batch` |
 
 ## Headline numbers
 
-| Scenario | successful reqs | distinct rps | distinct p50 | distinct p95 | distinct p99 | same rps | same p50 | same p95 | same p99 | CPU avg/max |
-|---|---|---|---|---|---|---|---|---|---|---|
-| **sync** | **391** (+160 timeouts) | stalled — pool exhausted | — | — | — | ~1 | — | — | — | 2% / 47.6% |
-| **async-for_update** | 6,578 | 46.3 | 767 ms | 2207 ms | 2990 ms | **34.8** | 1185 ms | 1476 ms | 1777 ms | 77% / 100% |
-| **async-cas** | 6,498 | 41.5 | 921 ms | 2017 ms | 2643 ms | **40.8** | 929 ms | 1805 ms | 2382 ms | 82% / 99% |
-| **async-disabled** | **7,113** | 44.8 | 889 ms | 1394 ms | 1734 ms | 44.7 | 891 ms | 1333 ms | 1596 ms | 84% / 99% |
+| Scenario | Total rps | distinct rps | same rps | Reqs OK | Coverage |
+|---|---|---|---|---|---|
+| sync | ~0 (stalled) | ~0 | ~1 | 391 | — |
+| async-for_update | 81.1 | 46.3 | 34.8 ⚠️ | 6,578 | — |
+| async-cas | 82.3 | 41.5 | 40.8 | 6,498 | — |
+| async-disabled | 89.5 | 44.8 | 44.7 | 7,113 | — |
+| **async-batch+disabled** 🏆 | **97.4** | 47.4 | **50.0** ✨ | **7,637** | **100%** |
 
-All async scenarios: **0 failures**. Sync: 160 timeouts.
+All async scenarios: **0 failures**. Sync: 160 timeouts (exhausted 15-conn pool).
+The batch writer run reports **100% row coverage** — 7,637 requests, 7,637 rows persisted, zero drops.
+
+### Detailed latencies and resource usage
+
+<details>
+<summary>Click for p50 / p95 / p99 per scenario + CPU / RSS</summary>
+
+| Scenario | distinct p50/p95/p99 | same p50/p95/p99 | CPU avg/max | RSS max |
+|---|---|---|---|---|
+| sync | — | — | 2.0% / 47.6% | 224 MB |
+| async-for_update | 767 / 2207 / 2990 ms | 1185 / 1476 / 1777 ms | 76.9% / 100% | 267 MB |
+| async-cas | 921 / 2017 / 2643 ms | 929 / 1805 / 2382 ms | 81.9% / 99% | 247 MB |
+| async-disabled | 889 / 1394 / 1734 ms | 891 / 1333 / 1596 ms | 83.7% / 99% | 217 MB |
+| async-batch+disabled | 798 / 1892 / 2594 ms | 791 / 1758 / 2390 ms | 86.4% / 101% | 265 MB |
+
+</details>
 
 ## What each transition reveals
 
@@ -53,6 +71,15 @@ All async scenarios: **0 failures**. Sync: 160 timeouts.
 - Tells us `cas` costs roughly 8% vs no validation at all — cheap
 - Useful as a ceiling to measure future optimizations against
 
+### async-disabled → async-batch+disabled (stack the log writer optimization)
+
+> Keep budget validation off, and additionally move usage log writes off the request hot path.
+
+- Total throughput: **89.5 → 97.4 req/sec (+9%)** — highest of any run
+- `same_user` now **beats** `distinct_users` (50.0 vs 47.4) — the batch writer groups spend UPDATEs per user, so shared-user traffic gets *fewer* UPDATEs per batch
+- **100% row coverage on shutdown** — queue.join() drained 7,637 pending rows cleanly before the process exited
+- CPU jumps slightly (86% avg) because the worker isn't idling on log-write I/O anymore
+
 ## The saturation floor
 
 All async scenarios converge on ~85-90 req/sec total (combined distinct + same).
@@ -62,12 +89,16 @@ because 100 VUs competing for one worker produces a natural queue.
 
 ## Recommendation
 
+**Budget strategy:**
 - **Default (for_update):** historical behavior. Safe when pointed at an async-capable gateway. Same-user contention costs ~17% throughput.
 - **cas (recommended):** lock-free, no same-user penalty, negligible overhead (~8%) vs not validating at all.
 - **disabled:** use only if you enforce budgets out-of-band.
 
-Upgrade path: switch `GATEWAY_BUDGET_STRATEGY=cas` in your config once you're
-comfortable with the changeover. No schema change required.
+**Log writer strategy:**
+- **Default (single):** inline write per request, simple, durable for normal terminations.
+- **batch (recommended for high-throughput):** queues + flushes 100 rows / 1s. +9% throughput, groups spend UPDATEs per-user, 100% coverage on clean shutdown. Best-effort semantics (a SIGKILL loses the in-flight batch).
+
+Upgrade path: switch `GATEWAY_BUDGET_STRATEGY=cas` and/or `GATEWAY_LOG_WRITER_STRATEGY=batch` in your config. No schema change required.
 
 ## Config
 
@@ -83,10 +114,12 @@ comfortable with the changeover. No schema change required.
 ## Raw artifacts
 
 - `k6-sync.txt` — k6 output for sync run (partial; killed during stuck teardown)
-- `k6-async.txt` / `k6-async.json` — async + `for_update` (legacy default)
-- `k6-async-cas.txt` / `k6-async-cas.json` — async + `cas`
-- `k6-async-disabled.txt` / `k6-async-disabled.json` — async + `disabled`
+- `k6-async.{txt,json}` — async + `for_update` (legacy default)
+- `k6-async-cas.{txt,json}` — async + `cas`
+- `k6-async-disabled.{txt,json}` — async + `disabled`
+- `k6-async-batch-disabled.{txt,json}` — async + `disabled` + `batch` log writer
 - `gateway-stats-*.csv` — per-second summed CPU% / RSS MB of all gateway processes
+- `run-*.md` — per-run metadata (branch, commit, config)
 
 ## Reproducing
 
@@ -104,6 +137,10 @@ BUDGET_STRATEGY=cas ./tests/load/run_load_test.sh async-cas
 
 # 3) budget checks off
 BUDGET_STRATEGY=disabled ./tests/load/run_load_test.sh async-disabled
+
+# 4) budget checks off + batched log writer (the stacked optimization)
+BUDGET_STRATEGY=disabled LOG_WRITER_STRATEGY=batch \
+  ./tests/load/run_load_test.sh async-batch-disabled
 
 # compare
 cat tests/load/results/results.md

@@ -69,6 +69,34 @@ AUTH_FAILURES = Counter(
     registry=REGISTRY,
 )
 
+USAGE_LOG_QUEUE_DEPTH = Gauge(
+    "gateway_usage_log_queue_depth",
+    "Usage log entries currently waiting to be flushed (BatchLogWriter only)",
+    registry=REGISTRY,
+)
+
+USAGE_LOG_BATCH_SIZE = Histogram(
+    "gateway_usage_log_batch_size",
+    "Number of usage log rows per flushed batch",
+    ["writer"],
+    registry=REGISTRY,
+    buckets=(1, 2, 5, 10, 25, 50, 100, 200, 500),
+)
+
+USAGE_LOG_FLUSH_DURATION_SECONDS = Histogram(
+    "gateway_usage_log_flush_duration_seconds",
+    "Time spent writing a batch of usage log rows to the DB",
+    ["writer", "result"],
+    registry=REGISTRY,
+)
+
+USAGE_LOG_ROWS = Counter(
+    "gateway_usage_log_rows",
+    "Usage log rows by outcome (written, dropped)",
+    ["writer", "result"],
+    registry=REGISTRY,
+)
+
 
 _PROMETHEUS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 
@@ -141,3 +169,16 @@ def record_budget_exceeded(user_id: str) -> None:
 def record_auth_failure(reason: str) -> None:
     """Record an authentication failure."""
     AUTH_FAILURES.labels(reason=reason).inc()
+
+
+def record_usage_log_flush(writer: str, size: int, duration_s: float, success: bool) -> None:
+    """Record a LogWriter flush (single event or batch)."""
+    result = "success" if success else "error"
+    USAGE_LOG_BATCH_SIZE.labels(writer=writer).observe(size)
+    USAGE_LOG_FLUSH_DURATION_SECONDS.labels(writer=writer, result=result).observe(duration_s)
+    USAGE_LOG_ROWS.labels(writer=writer, result="written" if success else "dropped").inc(size)
+
+
+def set_usage_log_queue_depth(depth: int) -> None:
+    """Update the batch log writer's queue depth gauge."""
+    USAGE_LOG_QUEUE_DEPTH.set(depth)

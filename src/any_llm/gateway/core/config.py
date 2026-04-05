@@ -89,6 +89,17 @@ class GatewayConfig(BaseSettings):
         default=True,
         description="Create a first-use API key on startup when no API keys exist",
     )
+    log_writer_strategy: str = Field(
+        default="single",
+        description=(
+            "How usage log rows are written to the DB. "
+            "'single' (default): write each event inline on the request path, one transaction per event. "
+            "'batch': enqueue events and flush in batches of up to 100 rows or every 1s, whichever "
+            "comes first. Write happens in a background task, so the request hot path doesn't "
+            "block on log-writing DB round-trips. 'At most once' semantics — a crashed worker "
+            "loses up to one batch of in-flight rows."
+        ),
+    )
     budget_strategy: str = Field(
         default="for_update",
         description=(

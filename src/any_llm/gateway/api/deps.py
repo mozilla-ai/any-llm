@@ -12,6 +12,7 @@ from any_llm.gateway.core.config import API_KEY_HEADER, GatewayConfig
 from any_llm.gateway.core.database import get_db
 from any_llm.gateway.metrics import record_auth_failure
 from any_llm.gateway.models.entities import APIKey
+from any_llm.gateway.services.log_writer import LogWriter
 
 _config: GatewayConfig | None = None
 
@@ -34,6 +35,11 @@ def reset_config() -> None:
     """Reset config state. Intended for testing only."""
     global _config  # noqa: PLW0603
     _config = None
+
+
+def get_log_writer(request: Request) -> LogWriter:
+    """Return the app's LogWriter (set in main.py lifespan)."""
+    return request.app.state.log_writer  # type: ignore[no-any-return]
 
 
 def _extract_bearer_token(request: Request, config: GatewayConfig) -> str:
@@ -197,6 +203,7 @@ async def verify_api_key_or_master_key(
 __all__ = [
     "get_config",
     "get_db",
+    "get_log_writer",
     "reset_config",
     "set_config",
     "verify_api_key",
