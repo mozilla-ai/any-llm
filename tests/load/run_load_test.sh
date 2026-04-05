@@ -37,6 +37,11 @@ DURATION="${DURATION:-30s}"
 GATEWAY_PORT="${GATEWAY_PORT:-4000}"
 FAKE_PORT="${FAKE_PORT:-9999}"
 WORKERS="${WORKERS:-1}"
+# Budget validation strategy. One env var gives all three benchmark scenarios:
+#   BUDGET_STRATEGY=for_update  FOR UPDATE held across entire request (legacy default)
+#   BUDGET_STRATEGY=cas         lock-free conditional UPDATE, no FOR UPDATE (recommended)
+#   BUDGET_STRATEGY=disabled    skip validate_user_budget entirely
+BUDGET_STRATEGY="${BUDGET_STRATEGY:-for_update}"
 # Fixed seed by default so the jitter sampler produces the same sequence
 # across sync vs async runs. Override with RNG_SEED to vary.
 RNG_SEED="${RNG_SEED:-42}"
@@ -82,9 +87,10 @@ uv run --extra gateway python tests/load/fake_provider.py \
 FAKE_PID=$!
 
 # --- Gateway ------------------------------------------------------------------
-echo "[setup] starting gateway on :$GATEWAY_PORT ($LABEL, $WORKERS workers)"
+echo "[setup] starting gateway on :$GATEWAY_PORT ($LABEL, $WORKERS workers, budget_strategy=$BUDGET_STRATEGY)"
 export GATEWAY_MASTER_KEY="loadtest-master-key"
 export GATEWAY_BOOTSTRAP_API_KEY="true"
+export GATEWAY_BUDGET_STRATEGY="$BUDGET_STRATEGY"
 uv run --extra gateway any-llm-gateway serve \
   --config tests/load/gateway-config.yml \
   --host 127.0.0.1 --port "$GATEWAY_PORT" --workers "$WORKERS" \
@@ -178,6 +184,7 @@ cp "/tmp/gateway-stats-${LABEL}.csv" "$RESULTS_DIR/gateway-stats-${LABEL}.csv"
   echo "- date:   $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   echo "- VUS=$VUS  DURATION=$DURATION  WORKERS=$WORKERS"
   echo "- FAKE_DELAY_MS=$FAKE_DELAY_MS  FAKE_JITTER_SIGMA=$FAKE_JITTER_SIGMA  RNG_SEED=$RNG_SEED"
+  echo "- BUDGET_STRATEGY=$BUDGET_STRATEGY"
   echo ""
   echo "## gateway process stats"
   echo '```'

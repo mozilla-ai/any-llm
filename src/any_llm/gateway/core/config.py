@@ -35,6 +35,36 @@ class GatewayConfig(BaseSettings):
         default=True,
         description="Automatically run database migrations on startup",
     )
+    db_pool_size: int = Field(
+        default=10,
+        ge=1,
+        description=(
+            "Number of persistent connections maintained in the DB pool per worker. "
+            "SQLAlchemy default is 5. For async workloads with many concurrent in-flight "
+            "queries, 10-20 is typical."
+        ),
+    )
+    db_max_overflow: int = Field(
+        default=20,
+        ge=0,
+        description=(
+            "Extra connections the pool can open above db_pool_size during bursts. "
+            "Total max connections per worker = db_pool_size + db_max_overflow. "
+            "SQLAlchemy default is 10."
+        ),
+    )
+    db_pool_timeout: float = Field(
+        default=30.0,
+        ge=0,
+        description="Seconds to wait for an available connection before raising TimeoutError.",
+    )
+    db_pool_recycle: int = Field(
+        default=-1,
+        description=(
+            "Recycle connections older than this many seconds. -1 disables recycling. "
+            "Set to 300-600 behind proxies/load-balancers that drop idle TCP connections."
+        ),
+    )
     host: str = Field(default="0.0.0.0", description="Host to bind the server to")  # noqa: S104
     port: int = Field(default=8000, description="Port to bind the server to")
     master_key: str | None = Field(default=None, description="Master key for protecting management endpoints")
@@ -58,6 +88,19 @@ class GatewayConfig(BaseSettings):
     bootstrap_api_key: bool = Field(
         default=True,
         description="Create a first-use API key on startup when no API keys exist",
+    )
+    budget_strategy: str = Field(
+        default="for_update",
+        description=(
+            "How per-user budget validation runs on the request hot path. "
+            "'for_update' (default): FOR UPDATE held across the entire request, including the LLM "
+            "call. This is the historical behavior — kept as the default for backwards compatibility. "
+            "'cas' (recommended): lock-free — reset via atomic conditional UPDATE "
+            "(WHERE next_budget_reset_at < now). No explicit FOR UPDATE. Hot-path reads are "
+            "unlocked, so concurrent requests for the same user never serialize. "
+            "'disabled': skip validate_user_budget entirely — no user existence check, no blocked "
+            "check, no budget check. Cost tracking via log_usage still runs."
+        ),
     )
 
 

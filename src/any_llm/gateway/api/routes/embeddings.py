@@ -76,7 +76,7 @@ async def create_embedding(
 
     rate_limit_info = check_rate_limit(raw_request, user_id)
 
-    _ = await validate_user_budget(db, user_id, request.model)
+    _ = await validate_user_budget(db, user_id, request.model, strategy=config.budget_strategy)
 
     provider, model = AnyLLM.split_model_provider(request.model)
 

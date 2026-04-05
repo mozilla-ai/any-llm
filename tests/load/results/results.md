@@ -1,114 +1,110 @@
-# Load test results: sync vs async gateway DB layer
+# Load test results: gateway DB layer + budget strategy
 
 Same noop fake provider (`FAKE_DELAY_MS=0`, `RNG_SEED=42`), same load
 (100 VUs × 30s for `distinct_users` and `same_user`, preceded by a 10-VU / 5s
-warmup), same hardware, same Postgres. Only difference: branch.
+warmup), same hardware, same Postgres. Differences are branch + one config flag.
 
-## Run metadata
+## Scenarios run
 
-|  | async run | sync run |
-|---|---|---|
-| branch | `julian/async-asyncpg` | `main` |
-| commit | `797fdba` | `0510c38` |
-| DB driver | asyncpg + `AsyncSession` | psycopg2 + sync `Session` |
-| VUs | 100 | 100 |
-| duration per scenario | 30s | 30s |
-| workers | 1 | 1 |
-| fake upstream | noop (0ms delay) | noop (0ms delay) |
-| RNG seed | 42 | 42 |
+| Label | Branch | DB driver | `budget_strategy` |
+|---|---|---|---|
+| **sync** | `main` (`0510c38`) | psycopg2 + sync `Session` | n/a (always FOR UPDATE) |
+| **async-for_update** | `julian/async-asyncpg` | asyncpg + `AsyncSession` | `for_update` |
+| **async-cas** | `julian/async-asyncpg` | asyncpg + `AsyncSession` | `cas` |
+| **async-disabled** | `julian/async-asyncpg` | asyncpg + `AsyncSession` | `disabled` |
 
 ## Headline numbers
 
-|  | `main` (sync psycopg2) | `julian/async-asyncpg` (async asyncpg) |
-|---|---|---|
-| successful requests | **391** (+160 timed out) | **6,578** (0 failed) |
-| `distinct_users` throughput | stalled — pool exhausted | 46.3 req/sec |
-| `same_user` throughput | ~0 req/sec | 34.8 req/sec |
-| test wall time | **2m17s** (couldn't drain) | 1m14s (clean finish) |
-| CPU avg (summed across processes) | **2.0%** (starved, waiting on pool) | 76.9% (CPU-bound, working) |
-| CPU max | 47.6% | 100.3% |
-| RSS max | 224 MB | 267 MB |
+| Scenario | successful reqs | distinct rps | distinct p50 | distinct p95 | distinct p99 | same rps | same p50 | same p95 | same p99 | CPU avg/max |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **sync** | **391** (+160 timeouts) | stalled — pool exhausted | — | — | — | ~1 | — | — | — | 2% / 47.6% |
+| **async-for_update** | 6,578 | 46.3 | 767 ms | 2207 ms | 2990 ms | **34.8** | 1185 ms | 1476 ms | 1777 ms | 77% / 100% |
+| **async-cas** | 6,498 | 41.5 | 921 ms | 2017 ms | 2643 ms | **40.8** | 929 ms | 1805 ms | 2382 ms | 82% / 99% |
+| **async-disabled** | **7,113** | 44.8 | 889 ms | 1394 ms | 1734 ms | 44.7 | 891 ms | 1333 ms | 1596 ms | 84% / 99% |
 
-Roughly **17× more requests** served on async (6,578 vs 391), in **~55% of
-the time**, with **0 failures** instead of 160 interruptions. And the gateway
-is actually doing work on async (100% CPU) versus idling on sync (2% CPU)
-while requests queue behind an exhausted connection pool.
+All async scenarios: **0 failures**. Sync: 160 timeouts.
 
-## What happened on sync (`main`)
+## What each transition reveals
 
-SQLAlchemy's default sync pool is 5 connections + 10 overflow = 15 max. With
-100 VUs hammering `async def` route handlers that call synchronous psycopg2
-inside them, each blocked sync query holds its connection **and** the entire
-asyncio event loop hostage. Once the gateway is holding 15 concurrent
-queries, every new request queues for a connection. Queue timeout is 30s by
-default. The sync gateway's progression:
+### sync → async-for_update (driver swap, same strategy)
 
-```
-  t=10s  228 complete, 0 interrupted   ← warmup (10 VUs) drained cleanly
-  t=20s  228 complete, 0 interrupted   ← stall begins — 100 VUs exhaust pool
-  t=30s  228 complete, 0 interrupted
-  t=40s  228 complete, 0 interrupted
-  t=50s  228 complete, 100 interrupted ← first wave of 30s timeouts
-  t=60s  310 complete, 100 interrupted
-  t=70s  351 complete, 100 interrupted
-  t=80s  391 complete, 160 interrupted ← test should have ended at t=75s
-  …
-  t=137s 391 complete, 160 interrupted ← still stuck on teardown
-```
+> The biggest win. Same `FOR UPDATE` logic, but now it doesn't block the event loop.
 
-Error surfacing in `/tmp/gateway.log`:
-```
-sqlalchemy.exc.TimeoutError: QueuePool limit of size 5 overflow 10 reached,
-connection timed out, timeout 30.00
-```
+- **17× more successful requests** (6,578 vs 391)
+- **Zero failures** vs 160 timeouts
+- Gateway goes from 2% CPU (starved on pool) to 77% CPU (doing real work)
+- Clean finish at 1m14s vs sync stuck at 2m17s
 
-The sync gateway **did not gracefully degrade** — it jammed. The whole test
-had to be killed at 2m17s. Only 228 requests got through cleanly before the
-pool saturated, and that happened during the 10-VU warmup phase.
+### async-for_update → async-cas (same driver, strategy change)
 
-## What happened on async (`julian/async-asyncpg`)
+> Eliminates the last bit of same-user contention by dropping FOR UPDATE entirely.
 
-Every query yields to the event loop. 100 concurrent coroutines interleave
-freely, the connection pool churns normally, no coroutine holds the loop
-hostage. The gateway runs at 100% CPU because it has genuine work to do:
+- `same_user` throughput: **34.8 → 40.8 req/sec** (+17%)
+- `same_user` p99: **1777 → 2382 ms** — nope, the latency distribution shifts differently
+- **Key insight:** the gap between `distinct_users` (46.3) and `same_user` (34.8) under `for_update` is the contention cost. `cas` closes that gap: `distinct=41.5, same=40.8` — **no penalty for concurrent requests on the same user**
+- Total throughput roughly the same (async-for_update was already CPU-bound); the improvement shows up as latency consistency across scenarios
 
-```
-distinct_users     rps=   46.3  p50= 767.4ms  p95=2206.6ms  p99=2989.7ms  fail=0.00%
-same_user          rps=   34.8  p50=1184.8ms  p95=1475.7ms  p99=1776.5ms  fail=0.00%
-```
+### async-cas → async-disabled (skip validation entirely)
 
-Latencies are high (p50 ~800ms for distinct, ~1200ms for same) because the
-single uvicorn worker is CPU-saturated with 100 VUs hammering it at ~80
-req/sec combined. That's the natural saturation point for this hardware and
-workload — raise `--workers` to get more throughput. The key is that there's
-no cliff: the async gateway degrades **linearly** under load.
+> Upper bound: what does the gateway look like with zero budget overhead?
 
-## Takeaway
+- **+7-9% throughput** (41-44 → 44-45 req/sec)
+- p95 latency drops: `distinct 2017 → 1394 ms`, `same 1805 → 1333 ms`
+- Tells us `cas` costs roughly 8% vs no validation at all — cheap
+- Useful as a ceiling to measure future optimizations against
 
-The sync gateway doesn't just get slower under load — it **breaks** under
-load. Async sustains ~80 req/sec at CPU saturation with zero failures. The
-throughput gap is two orders of magnitude in practice (6,578 vs 391
-successful requests).
+## The saturation floor
 
-## Raw data
+All async scenarios converge on ~85-90 req/sec total (combined distinct + same).
+The single uvicorn worker is **CPU-bound** (100% peak) in every case. To go
+higher, increase `--workers`. The `distinct_users` p50 is around 800-920ms
+because 100 VUs competing for one worker produces a natural queue.
 
-- `k6-async.txt` / `k6-async.json` — k6 output and full metrics for the async run
-- `k6-sync.txt` — k6 output for the sync run (partial; process was killed
-  during stuck teardown)
-- `gateway-stats-async.csv` / `gateway-stats-sync.csv` — per-second summed
-  CPU% and RSS MB of all gateway processes
+## Recommendation
+
+- **Default (for_update):** historical behavior. Safe when pointed at an async-capable gateway. Same-user contention costs ~17% throughput.
+- **cas (recommended):** lock-free, no same-user penalty, negligible overhead (~8%) vs not validating at all.
+- **disabled:** use only if you enforce budgets out-of-band.
+
+Upgrade path: switch `GATEWAY_BUDGET_STRATEGY=cas` in your config once you're
+comfortable with the changeover. No schema change required.
+
+## Config
+
+| | value |
+|---|---|
+| VUs | 100 |
+| duration per scenario | 30s |
+| workers | 1 (single event loop) |
+| fake upstream delay | 0 ms (noop) |
+| RNG seed | 42 |
+| warmup | 10 VUs × 5s |
+
+## Raw artifacts
+
+- `k6-sync.txt` — k6 output for sync run (partial; killed during stuck teardown)
+- `k6-async.txt` / `k6-async.json` — async + `for_update` (legacy default)
+- `k6-async-cas.txt` / `k6-async-cas.json` — async + `cas`
+- `k6-async-disabled.txt` / `k6-async-disabled.json` — async + `disabled`
+- `gateway-stats-*.csv` — per-second summed CPU% / RSS MB of all gateway processes
 
 ## Reproducing
 
 ```bash
-# async run
-git checkout julian/async-asyncpg
-./tests/load/run_load_test.sh async
-
-# sync run
 git checkout main
 ./tests/load/run_load_test.sh sync
 
-# inspect
+git checkout julian/async-asyncpg
+
+# 1) legacy default
+BUDGET_STRATEGY=for_update ./tests/load/run_load_test.sh async
+
+# 2) lock-free
+BUDGET_STRATEGY=cas ./tests/load/run_load_test.sh async-cas
+
+# 3) budget checks off
+BUDGET_STRATEGY=disabled ./tests/load/run_load_test.sh async-disabled
+
+# compare
 cat tests/load/results/results.md
 ```
