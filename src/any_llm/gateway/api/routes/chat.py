@@ -6,8 +6,9 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import update
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from any_llm import AnyLLM, LLMProvider, acompletion
 from any_llm.gateway.api.deps import get_config, get_db, verify_api_key_or_master_key
@@ -100,7 +101,7 @@ def get_provider_kwargs(
 
 
 async def log_usage(
-    db: Session,
+    db: AsyncSession,
     api_key_obj: APIKey | None,
     model: str,
     provider: str | None,
@@ -147,7 +148,7 @@ async def log_usage(
 
         record_tokens(str(provider or ""), model, usage_data.prompt_tokens, usage_data.completion_tokens)
 
-        pricing = find_model_pricing(db, provider, model)
+        pricing = await find_model_pricing(db, provider, model)
         if pricing:
             cost = (usage_data.prompt_tokens / 1_000_000) * pricing.input_price_per_million + (
                 usage_data.completion_tokens / 1_000_000
@@ -156,8 +157,10 @@ async def log_usage(
             record_cost(str(provider or ""), model, cost)
 
             if user_id:
-                db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).update(
-                    {User.spend: User.spend + cost}
+                await db.execute(
+                    update(User)
+                    .where(User.user_id == user_id, User.deleted_at.is_(None))
+                    .values(spend=User.spend + cost)
                 )
         else:
             model_ref = f"{provider}:{model}" if provider else model
@@ -165,10 +168,10 @@ async def log_usage(
 
     try:
         db.add(usage_log)
-        db.commit()
+        await db.commit()
     except SQLAlchemyError as e:
         logger.error("Failed to log usage to database: %s", e)
-        db.rollback()
+        await db.rollback()
 
 
 @router.post("/completions", response_model=None)
@@ -177,7 +180,7 @@ async def chat_completions(
     response: Response,
     request: ChatCompletionRequest,
     auth_result: Annotated[tuple[APIKey | None, bool], Depends(verify_api_key_or_master_key)],
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     config: Annotated[GatewayConfig, Depends(get_config)],
 ) -> ChatCompletion | StreamingResponse:
     """OpenAI-compatible chat completions endpoint.

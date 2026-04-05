@@ -22,7 +22,8 @@ def test_reset_config_clears_state() -> None:
         get_config()
 
 
-def test_reset_db_allows_reinit() -> None:
+@pytest.mark.asyncio
+async def test_reset_db_allows_reinit() -> None:
     """Test that reset_db clears state so init_db can be called again.
 
     We can't fully test init_db without a database, but we can verify
@@ -31,7 +32,7 @@ def test_reset_db_allows_reinit() -> None:
     from any_llm.gateway.core import database
 
     # Verify the function exists and runs without error when nothing is initialized
-    reset_db()
+    await reset_db()
 
     assert database._engine is None
     assert database._SessionLocal is None

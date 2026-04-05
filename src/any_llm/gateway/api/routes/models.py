@@ -5,7 +5,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from any_llm.gateway.api.deps import get_db, verify_api_key_or_master_key
 from any_llm.gateway.models.entities import ModelPricing
@@ -43,24 +44,24 @@ def _model_from_pricing(pricing: ModelPricing) -> ModelObject:
 
 @router.get("/models", dependencies=[Depends(verify_api_key_or_master_key)])
 async def list_models(
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ModelListResponse:
     """List all available models.
 
     Returns models derived from the model_pricing table in an
     OpenAI-compatible format.
     """
-    pricings = db.query(ModelPricing).order_by(ModelPricing.model_key).all()
+    pricings = (await db.execute(select(ModelPricing).order_by(ModelPricing.model_key))).scalars().all()
     return ModelListResponse(data=[_model_from_pricing(p) for p in pricings])
 
 
 @router.get("/models/{model_id:path}", dependencies=[Depends(verify_api_key_or_master_key)])
 async def get_model(
     model_id: str,
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ModelObject:
     """Get details for a specific model."""
-    pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_id).first()
+    pricing = (await db.execute(select(ModelPricing).where(ModelPricing.model_key == model_id))).scalar_one_or_none()
 
     if not pricing:
         raise HTTPException(

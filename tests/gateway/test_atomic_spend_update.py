@@ -1,7 +1,8 @@
 """Tests for atomic spend update via SQL expression."""
 
 import pytest
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from any_llm.gateway.api.routes.chat import log_usage
 from any_llm.gateway.models.entities import ModelPricing, User
@@ -9,9 +10,8 @@ from any_llm.types.completion import CompletionUsage
 
 
 @pytest.mark.asyncio
-async def test_spend_update_uses_sql_expression(test_db: Session) -> None:
+async def test_spend_update_uses_sql_expression(test_db: AsyncSession) -> None:
     """Test that _log_usage updates spend atomically via SQL, not Python read-modify-write."""
-    # Set up user with initial spend
     user = User(user_id="atomic-user", spend=5.0)
     test_db.add(user)
 
@@ -21,7 +21,7 @@ async def test_spend_update_uses_sql_expression(test_db: Session) -> None:
         output_price_per_million=10.0,
     )
     test_db.add(pricing)
-    test_db.commit()
+    await test_db.commit()
 
     usage = CompletionUsage(prompt_tokens=1_000_000, completion_tokens=100_000, total_tokens=1_100_000)
 
@@ -35,9 +35,8 @@ async def test_spend_update_uses_sql_expression(test_db: Session) -> None:
         usage_override=usage,
     )
 
-    # Refresh from database
     test_db.expire_all()
-    updated_user = test_db.query(User).filter(User.user_id == "atomic-user").first()
+    updated_user = (await test_db.execute(select(User).where(User.user_id == "atomic-user"))).scalar_one_or_none()
     assert updated_user is not None
 
     # Expected cost: (1M / 1M) * 2.5 + (100K / 1M) * 10.0 = 2.5 + 1.0 = 3.5
@@ -48,7 +47,7 @@ async def test_spend_update_uses_sql_expression(test_db: Session) -> None:
 
 
 @pytest.mark.asyncio
-async def test_multiple_spend_updates_accumulate(test_db: Session) -> None:
+async def test_multiple_spend_updates_accumulate(test_db: AsyncSession) -> None:
     """Test that multiple sequential spend updates accumulate correctly."""
     user = User(user_id="multi-spend-user", spend=0.0)
     test_db.add(user)
@@ -59,7 +58,7 @@ async def test_multiple_spend_updates_accumulate(test_db: Session) -> None:
         output_price_per_million=10.0,
     )
     test_db.add(pricing)
-    test_db.commit()
+    await test_db.commit()
 
     for _ in range(3):
         usage = CompletionUsage(prompt_tokens=1_000_000, completion_tokens=1_000_000, total_tokens=2_000_000)
@@ -74,7 +73,9 @@ async def test_multiple_spend_updates_accumulate(test_db: Session) -> None:
         )
 
     test_db.expire_all()
-    updated_user = test_db.query(User).filter(User.user_id == "multi-spend-user").first()
+    updated_user = (
+        await test_db.execute(select(User).where(User.user_id == "multi-spend-user"))
+    ).scalar_one_or_none()
     assert updated_user is not None
 
     # Each call: (1M/1M)*10 + (1M/1M)*10 = 20.0, x3 = 60.0

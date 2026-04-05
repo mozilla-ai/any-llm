@@ -2,21 +2,23 @@ import os
 import socket
 import threading
 import time
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
+import pytest_asyncio
 import uvicorn
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
 from any_llm.gateway.core.config import API_KEY_HEADER, GatewayConfig
+from any_llm.gateway.core.database import _to_async_url
 from any_llm.gateway.db import Base, get_db
 from any_llm.gateway.main import create_app
 
@@ -33,6 +35,18 @@ def _run_alembic_migrations(database_url: str) -> None:
     command.upgrade(alembic_cfg, "head")
 
 
+def _drop_all_sync(database_url: str) -> None:
+    """Drop all tables (sync, uses psycopg2). Used for test teardown."""
+    engine = create_engine(database_url, pool_pre_ping=True)
+    try:
+        Base.metadata.drop_all(bind=engine)
+        with engine.connect() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS alembic_version CASCADE"))
+            conn.commit()
+    finally:
+        engine.dispose()
+
+
 @pytest.fixture(scope="session")
 def postgres_url() -> Generator[str]:
     """Get PostgreSQL URL from environment or start temporary container."""
@@ -47,35 +61,34 @@ def postgres_url() -> Generator[str]:
             postgres.stop()
 
 
-@pytest.fixture
-def test_db(postgres_url: str) -> Generator[Session]:
-    """Create a test database session."""
-    engine = create_engine(postgres_url, pool_pre_ping=True)
+@pytest_asyncio.fixture
+async def test_db(postgres_url: str) -> AsyncGenerator[AsyncSession]:
+    """Create a test database session (async)."""
     _run_alembic_migrations(postgres_url)
+    engine = create_async_engine(_to_async_url(postgres_url), pool_pre_ping=True)
+    session_factory = async_sessionmaker(engine, autocommit=False, autoflush=False, expire_on_commit=False)
 
-    testing_session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    db = testing_session_local()
+    async with session_factory() as db:
+        try:
+            yield db
+        finally:
+            await db.close()
 
-    try:
-        yield db
-    finally:
-        db.close()
-        Base.metadata.drop_all(bind=engine)
-        with engine.connect() as conn:
-            conn.execute(text("DROP TABLE IF EXISTS alembic_version CASCADE"))
-            conn.commit()
+    await engine.dispose()
+    _drop_all_sync(postgres_url)
 
 
-@pytest.fixture
-def db_session(test_config: GatewayConfig) -> Generator[Session]:
+@pytest_asyncio.fixture
+async def db_session(test_config: GatewayConfig) -> AsyncGenerator[AsyncSession]:
     """Create a standalone DB session for verifying state outside the test client."""
-    engine = create_engine(test_config.database_url, pool_pre_ping=True)
-    session = sessionmaker(autocommit=False, autoflush=False, bind=engine)()
-    try:
-        yield session
-    finally:
-        session.close()
-        engine.dispose()
+    engine = create_async_engine(_to_async_url(test_config.database_url), pool_pre_ping=True)
+    session_factory = async_sessionmaker(engine, autocommit=False, autoflush=False, expire_on_commit=False)
+    async with session_factory() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
+    await engine.dispose()
 
 
 @pytest.fixture(scope="session")
@@ -93,19 +106,14 @@ def test_config(postgres_url: str) -> GatewayConfig:
 @pytest.fixture
 def client(test_config: GatewayConfig) -> Generator[TestClient]:
     """Create a test client for the FastAPI app."""
-    from sqlalchemy import text
-
     _run_alembic_migrations(test_config.database_url)
-    engine = create_engine(test_config.database_url, pool_pre_ping=True)
+    engine = create_async_engine(_to_async_url(test_config.database_url), pool_pre_ping=True)
+    session_factory = async_sessionmaker(engine, autocommit=False, autoflush=False, expire_on_commit=False)
     app = create_app(test_config)
 
-    def override_get_db() -> Generator[Session]:
-        testing_session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-        db = testing_session_local()
-        try:
+    async def override_get_db() -> AsyncGenerator[AsyncSession]:
+        async with session_factory() as db:
             yield db
-        finally:
-            db.close()
 
     app.dependency_overrides[get_db] = override_get_db
 
@@ -113,10 +121,7 @@ def client(test_config: GatewayConfig) -> Generator[TestClient]:
         with TestClient(app) as test_client:
             yield test_client
     finally:
-        Base.metadata.drop_all(bind=engine)
-        with engine.connect() as conn:
-            conn.execute(text("DROP TABLE IF EXISTS alembic_version CASCADE"))
-            conn.commit()
+        _drop_all_sync(test_config.database_url)
 
 
 @pytest.fixture
@@ -199,7 +204,6 @@ class LiveServer:
 @pytest.fixture
 def live_server(test_config: GatewayConfig, api_key_obj: dict[str, Any]) -> Generator[LiveServer]:
     """Start a live uvicorn server and yield its URL and API key."""
-    # Find an available port
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]

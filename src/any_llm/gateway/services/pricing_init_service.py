@@ -1,7 +1,8 @@
 """Pricing initialization from configuration."""
 
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from any_llm.any_llm import AnyLLM
 from any_llm.gateway.core.config import GatewayConfig
@@ -9,7 +10,7 @@ from any_llm.gateway.log_config import logger
 from any_llm.gateway.models.entities import ModelPricing
 
 
-def initialize_pricing_from_config(config: GatewayConfig, db: Session) -> None:
+async def initialize_pricing_from_config(config: GatewayConfig, db: AsyncSession) -> None:
     """Initialize model pricing from configuration file.
 
     Loads pricing from config.pricing and stores it in the database.
@@ -43,7 +44,9 @@ def initialize_pricing_from_config(config: GatewayConfig, db: Session) -> None:
         input_price = pricing_config.input_price_per_million
         output_price = pricing_config.output_price_per_million
 
-        existing_pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key).first()
+        existing_pricing = (
+            await db.execute(select(ModelPricing).where(ModelPricing.model_key == model_key))
+        ).scalar_one_or_none()
 
         if existing_pricing:
             logger.warning(
@@ -63,8 +66,8 @@ def initialize_pricing_from_config(config: GatewayConfig, db: Session) -> None:
         logger.info(f"Added pricing for '{model_key}': input=${input_price}/M, output=${output_price}/M")
 
     try:
-        db.commit()
+        await db.commit()
     except SQLAlchemyError:
-        db.rollback()
+        await db.rollback()
         raise
     logger.info("Pricing initialization complete")

@@ -3,19 +3,21 @@
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from any_llm.gateway.core.config import API_KEY_HEADER
 from any_llm.gateway.models.entities import APIKey, BudgetResetLog, UsageLog
 from tests.gateway.conftest import MODEL_NAME
 
 
-def test_delete_user_preserves_usage_logs(
+@pytest.mark.asyncio
+async def test_delete_user_preserves_usage_logs(
     client: TestClient,
     master_key_header: dict[str, str],
-    db_session: Session,
+    db_session: AsyncSession,
 ) -> None:
     """Soft-deleting a user preserves FK links in usage logs; API keys are deactivated, not deleted."""
     client.post("/v1/users", json={"user_id": "del-user"}, headers=master_key_header)
@@ -32,7 +34,7 @@ def test_delete_user_preserves_usage_logs(
         headers={API_KEY_HEADER: f"Bearer {api_key}"},
     )
 
-    logs_before = db_session.query(UsageLog).filter(UsageLog.user_id == "del-user").all()
+    logs_before = (await db_session.execute(select(UsageLog).where(UsageLog.user_id == "del-user"))).scalars().all()
     assert len(logs_before) > 0
     log_id = logs_before[0].id
     assert logs_before[0].api_key_id is not None
@@ -41,19 +43,20 @@ def test_delete_user_preserves_usage_logs(
     assert response.status_code == 204
 
     db_session.expire_all()
-    log_after = db_session.query(UsageLog).filter(UsageLog.id == log_id).first()
+    log_after = (await db_session.execute(select(UsageLog).where(UsageLog.id == log_id))).scalar_one_or_none()
     assert log_after is not None, "Usage log should survive user deletion"
     assert log_after.user_id == "del-user", "user_id FK should be preserved (soft-delete keeps user row)"
     assert log_after.api_key_id is not None, "api_key_id should be preserved (api keys deactivated, not deleted)"
     assert log_after.model is not None, "Usage log data should be preserved"
 
 
-def test_delete_user_preserves_budget_reset_logs(
+@pytest.mark.asyncio
+async def test_delete_user_preserves_budget_reset_logs(
     client: TestClient,
     master_key_header: dict[str, str],
     api_key_header: dict[str, str],
     test_messages: list[dict[str, str]],
-    db_session: Session,
+    db_session: AsyncSession,
 ) -> None:
     """Soft-deleting a user preserves FK links in budget reset logs."""
     budget_resp = client.post(
@@ -91,7 +94,11 @@ def test_delete_user_preserves_budget_reset_logs(
             headers=api_key_header,
         )
 
-    reset_logs_before = db_session.query(BudgetResetLog).filter(BudgetResetLog.user_id == "reset-user").all()
+    reset_logs_before = (
+        (await db_session.execute(select(BudgetResetLog).where(BudgetResetLog.user_id == "reset-user")))
+        .scalars()
+        .all()
+    )
     assert len(reset_logs_before) > 0
     reset_log_id = reset_logs_before[0].id
 
@@ -99,7 +106,9 @@ def test_delete_user_preserves_budget_reset_logs(
     assert response.status_code == 204
 
     db_session.expire_all()
-    reset_log_after = db_session.query(BudgetResetLog).filter(BudgetResetLog.id == reset_log_id).first()
+    reset_log_after = (
+        await db_session.execute(select(BudgetResetLog).where(BudgetResetLog.id == reset_log_id))
+    ).scalar_one_or_none()
     assert reset_log_after is not None, "Budget reset log should survive user deletion"
     assert reset_log_after.user_id == "reset-user", "user_id FK should be preserved (soft-delete keeps user row)"
     assert reset_log_after.previous_spend is not None, "Reset log data should be preserved"
@@ -165,10 +174,11 @@ def test_recreate_soft_deleted_user(
     assert get_resp.status_code == 200
 
 
-def test_soft_delete_deactivates_api_keys(
+@pytest.mark.asyncio
+async def test_soft_delete_deactivates_api_keys(
     client: TestClient,
     master_key_header: dict[str, str],
-    db_session: Session,
+    db_session: AsyncSession,
 ) -> None:
     """API keys should be deactivated (not deleted) when a user is soft-deleted."""
     client.post("/v1/users", json={"user_id": "key-del-user"}, headers=master_key_header)
@@ -182,7 +192,7 @@ def test_soft_delete_deactivates_api_keys(
     client.delete("/v1/users/key-del-user", headers=master_key_header)
 
     db_session.expire_all()
-    key = db_session.query(APIKey).filter(APIKey.id == key_id).first()
+    key = (await db_session.execute(select(APIKey).where(APIKey.id == key_id))).scalar_one_or_none()
     assert key is not None, "API key should still exist after user soft-delete"
     assert key.is_active is False, "API key should be deactivated when user is soft-deleted"
 
@@ -219,10 +229,11 @@ def test_get_user_usage_after_soft_delete(
     assert usage_after.json()[0]["user_id"] == "usage-del-user"
 
 
-def test_cascade_delete_api_keys_on_hard_delete(
+@pytest.mark.asyncio
+async def test_cascade_delete_api_keys_on_hard_delete(
     client: TestClient,
     master_key_header: dict[str, str],
-    db_session: Session,
+    db_session: AsyncSession,
 ) -> None:
     """Raw SQL DELETE on users should cascade to api_keys via ondelete='CASCADE'."""
     client.post("/v1/users", json={"user_id": "cascade-user"}, headers=master_key_header)
@@ -234,8 +245,8 @@ def test_cascade_delete_api_keys_on_hard_delete(
     key_id = key_resp.json()["id"]
 
     db_session.expire_all()
-    db_session.execute(text("DELETE FROM users WHERE user_id = :uid"), {"uid": "cascade-user"})
-    db_session.commit()
+    await db_session.execute(text("DELETE FROM users WHERE user_id = :uid"), {"uid": "cascade-user"})
+    await db_session.commit()
 
-    key = db_session.query(APIKey).filter(APIKey.id == key_id).first()
+    key = (await db_session.execute(select(APIKey).where(APIKey.id == key_id))).scalar_one_or_none()
     assert key is None, "API key should be cascade-deleted when user row is hard-deleted"

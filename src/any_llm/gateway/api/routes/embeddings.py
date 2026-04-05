@@ -6,7 +6,8 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from any_llm import AnyLLM, aembedding
 from any_llm.gateway.api.deps import get_config, get_db, verify_api_key_or_master_key
@@ -38,7 +39,7 @@ async def create_embedding(
     response: Response,
     request: EmbeddingRequest,
     auth_result: Annotated[tuple[APIKey | None, bool], Depends(verify_api_key_or_master_key)],
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     config: Annotated[GatewayConfig, Depends(get_config)],
 ) -> CreateEmbeddingResponse:
     """OpenAI-compatible embeddings endpoint.
@@ -110,13 +111,15 @@ async def create_embedding(
         )
 
         if result.usage:
-            pricing = find_model_pricing(db, provider, model)
+            pricing = await find_model_pricing(db, provider, model)
             if pricing:
                 cost = (result.usage.prompt_tokens / 1_000_000) * pricing.input_price_per_million
                 usage_log.cost = cost
 
-                db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).update(
-                    {User.spend: User.spend + cost}
+                await db.execute(
+                    update(User)
+                    .where(User.user_id == user_id, User.deleted_at.is_(None))
+                    .values(spend=User.spend + cost)
                 )
             else:
                 model_ref = f"{provider}:{model}" if provider else model
@@ -124,10 +127,10 @@ async def create_embedding(
 
         try:
             db.add(usage_log)
-            db.commit()
+            await db.commit()
         except Exception as e:
             logger.error(f"Failed to log usage to database: {e}")
-            db.rollback()
+            await db.rollback()
 
     except HTTPException:
         raise
@@ -145,10 +148,10 @@ async def create_embedding(
         )
         try:
             db.add(error_log)
-            db.commit()
+            await db.commit()
         except Exception as log_err:
             logger.error(f"Failed to log usage to database: {log_err}")
-            db.rollback()
+            await db.rollback()
 
         logger.error(f"Provider call failed for {provider}:{model}: {e}")
         raise HTTPException(

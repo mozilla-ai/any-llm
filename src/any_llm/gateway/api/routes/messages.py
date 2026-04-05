@@ -3,7 +3,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from any_llm import AnyLLM, amessages
 from any_llm.gateway.api.deps import get_config, get_db, verify_api_key_or_master_key
@@ -67,7 +67,7 @@ async def create_message(
     response: Response,
     request: MessagesRequest,
     auth_result: Annotated[tuple[APIKey | None, bool], Depends(verify_api_key_or_master_key)],
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     config: Annotated[GatewayConfig, Depends(get_config)],
 ) -> dict[str, Any] | StreamingResponse:
     """Anthropic Messages API-compatible endpoint."""

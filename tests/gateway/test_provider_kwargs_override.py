@@ -1,20 +1,20 @@
 """Tests for provider kwargs not overriding user request fields."""
 
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Generator
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from any_llm import LLMProvider
 from any_llm.gateway.api.routes.chat import get_provider_kwargs
 from any_llm.gateway.core.config import GatewayConfig
-from any_llm.gateway.db import Base, get_db
+from any_llm.gateway.core.database import _to_async_url
+from any_llm.gateway.db import get_db
 from any_llm.gateway.main import create_app
-from tests.gateway.conftest import _run_alembic_migrations
+from tests.gateway.conftest import _drop_all_sync, _run_alembic_migrations
 
 
 class _MockCompletionError(Exception):
@@ -43,16 +43,13 @@ def config_with_model_in_provider(postgres_url: str) -> GatewayConfig:
 def client_with_model_in_provider(config_with_model_in_provider: GatewayConfig) -> Generator[TestClient]:
     """Create a test client whose provider config contains a conflicting 'model' key."""
     _run_alembic_migrations(config_with_model_in_provider.database_url)
-    engine = create_engine(config_with_model_in_provider.database_url, pool_pre_ping=True)
+    engine = create_async_engine(_to_async_url(config_with_model_in_provider.database_url), pool_pre_ping=True)
+    session_factory = async_sessionmaker(engine, autocommit=False, autoflush=False, expire_on_commit=False)
     app = create_app(config_with_model_in_provider)
 
-    def override_get_db() -> Generator[Session]:
-        testing_session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-        db = testing_session_local()
-        try:
+    async def override_get_db() -> AsyncGenerator[AsyncSession]:
+        async with session_factory() as db:
             yield db
-        finally:
-            db.close()
 
     app.dependency_overrides[get_db] = override_get_db
 
@@ -60,10 +57,7 @@ def client_with_model_in_provider(config_with_model_in_provider: GatewayConfig) 
         with TestClient(app) as test_client:
             yield test_client
     finally:
-        Base.metadata.drop_all(bind=engine)
-        with engine.connect() as conn:
-            conn.execute(text("DROP TABLE IF EXISTS alembic_version CASCADE"))
-            conn.commit()
+        _drop_all_sync(config_with_model_in_provider.database_url)
 
 
 def test_provider_kwargs_do_not_contain_model() -> None:

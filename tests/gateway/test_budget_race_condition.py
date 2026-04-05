@@ -29,7 +29,7 @@ async def test_validate_user_budget_uses_for_update(
         budget_id="race-budget",
     )
     test_db.add(user)
-    test_db.commit()
+    await test_db.commit()
 
     # Should pass -- spend is under budget
     result = await validate_user_budget(test_db, "race-user")
@@ -55,7 +55,7 @@ async def test_budget_check_rejects_at_limit(
         budget_id="full-budget",
     )
     test_db.add(user)
-    test_db.commit()
+    await test_db.commit()
 
     with pytest.raises(HTTPException) as exc_info:
         await validate_user_budget(test_db, "full-user")

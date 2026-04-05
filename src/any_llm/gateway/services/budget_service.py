@@ -1,8 +1,9 @@
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import AnyLLMError
@@ -27,7 +28,7 @@ def calculate_next_reset(start: datetime, duration_sec: int) -> datetime:
     return start + timedelta(seconds=duration_sec)
 
 
-def reset_user_budget(db: Session, user: User, budget: Budget, now: datetime) -> None:
+async def reset_user_budget(db: AsyncSession, user: User, budget: Budget, now: datetime) -> None:
     """Reset user's budget spend and schedule next reset.
 
     Args:
@@ -57,14 +58,14 @@ def reset_user_budget(db: Session, user: User, budget: Budget, now: datetime) ->
     db.add(reset_log)
 
     try:
-        db.commit()
+        await db.commit()
     except SQLAlchemyError as e:
-        db.rollback()
+        await db.rollback()
         logger.error("Failed to commit budget reset for user '%s': %s", user.user_id, e)
         raise
 
 
-async def validate_user_budget(db: Session, user_id: str, model: str | None = None) -> User:
+async def validate_user_budget(db: AsyncSession, user_id: str, model: str | None = None) -> User:
     """Validate user exists, is not blocked, and has available budget.
 
     Args:
@@ -79,7 +80,7 @@ async def validate_user_budget(db: Session, user_id: str, model: str | None = No
         HTTPException: If user is blocked, doesn't exist, or exceeded budget
 
     """
-    user = get_active_user(db, user_id, for_update=True)
+    user = await get_active_user(db, user_id, for_update=True)
 
     if not user:
         raise HTTPException(
@@ -94,15 +95,17 @@ async def validate_user_budget(db: Session, user_id: str, model: str | None = No
         )
 
     if user.budget_id:
-        budget = db.query(Budget).filter(Budget.budget_id == user.budget_id).first()
+        budget = (
+            await db.execute(select(Budget).where(Budget.budget_id == user.budget_id))
+        ).scalar_one_or_none()
         if budget:
             now = datetime.now(UTC)
             if user.next_budget_reset_at and now >= user.next_budget_reset_at:
-                reset_user_budget(db, user, budget, now)
+                await reset_user_budget(db, user, budget, now)
 
             if budget.max_budget is not None:
                 if user.spend >= budget.max_budget:
-                    if model and _is_model_free(db, model):
+                    if model and await _is_model_free(db, model):
                         return user
                     record_budget_exceeded(user_id)
                     raise HTTPException(
@@ -113,7 +116,7 @@ async def validate_user_budget(db: Session, user_id: str, model: str | None = No
     return user
 
 
-def _is_model_free(db: Session, model: str) -> bool:
+async def _is_model_free(db: AsyncSession, model: str) -> bool:
     """Check if a model is free (both input and output prices are 0).
 
     Args:
@@ -127,7 +130,7 @@ def _is_model_free(db: Session, model: str) -> bool:
     try:
         provider, model_name = AnyLLM.split_model_provider(model)
         provider_str = provider.value if provider else None
-        pricing = find_model_pricing(db, provider_str, model_name)
+        pricing = await find_model_pricing(db, provider_str, model_name)
         if pricing:
             return pricing.input_price_per_million == 0 and pricing.output_price_per_million == 0
     except (AnyLLMError, ValueError, SQLAlchemyError) as e:
