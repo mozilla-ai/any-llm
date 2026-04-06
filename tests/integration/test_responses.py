@@ -2,7 +2,7 @@ from typing import Any
 
 import httpx
 import pytest
-from openai import APIConnectionError
+from openai import APIConnectionError, NotFoundError, PermissionDeniedError
 from openresponses_types import ResponseResource
 
 from any_llm import AnyLLM, LLMProvider
@@ -32,6 +32,10 @@ async def test_responses_async(
         if provider in EXPECTED_PROVIDERS:
             raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
+    except (PermissionDeniedError, NotFoundError):
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} model not accessible, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
         if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")

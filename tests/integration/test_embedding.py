@@ -2,7 +2,7 @@ from typing import Any
 
 import httpx
 import pytest
-from openai import APIConnectionError
+from openai import APIConnectionError, NotFoundError, PermissionDeniedError
 
 from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
@@ -28,6 +28,10 @@ async def test_embedding_providers_async(
         if provider in EXPECTED_PROVIDERS:
             raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
+    except (PermissionDeniedError, NotFoundError):
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} model not accessible, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
         pytest.skip(f"{provider.value} connection failed, skipping")
     except Exception as e:

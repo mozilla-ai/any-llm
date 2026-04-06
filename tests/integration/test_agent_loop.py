@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 import pytest
-from openai import APIConnectionError
+from openai import APIConnectionError, NotFoundError, PermissionDeniedError
 from openai.types.chat.chat_completion_message_function_tool_call import (
     ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
 )
@@ -38,7 +38,7 @@ async def test_agent_loop_parallel_tool_calls(
     provider_model_map: dict[LLMProvider, str],
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
-    if provider in (*LOCAL_PROVIDERS, LLMProvider.PERPLEXITY):
+    if provider in (*LOCAL_PROVIDERS, LLMProvider.PERPLEXITY, LLMProvider.TOGETHER):
         pytest.skip(f"{provider} does not support tools, skipping")
 
     try:
@@ -93,6 +93,10 @@ async def test_agent_loop_parallel_tool_calls(
         if provider in EXPECTED_PROVIDERS:
             raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
+    except (PermissionDeniedError, NotFoundError):
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} model not accessible, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
         if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
@@ -105,7 +109,7 @@ async def test_agent_loop_sequential_tool_calls(
     provider_model_map: dict[LLMProvider, str],
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
-    if provider in (*LOCAL_PROVIDERS, LLMProvider.PERPLEXITY):
+    if provider in (*LOCAL_PROVIDERS, LLMProvider.PERPLEXITY, LLMProvider.TOGETHER):
         pytest.skip(f"{provider} does not support tools, skipping")
 
     try:
@@ -172,6 +176,10 @@ async def test_agent_loop_sequential_tool_calls(
         if provider in EXPECTED_PROVIDERS:
             raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
+    except (PermissionDeniedError, NotFoundError):
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} model not accessible, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
         if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")

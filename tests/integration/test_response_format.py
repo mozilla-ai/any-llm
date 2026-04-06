@@ -4,7 +4,7 @@ from typing import Any
 
 import httpx
 import pytest
-from openai import APIConnectionError
+from openai import APIConnectionError, NotFoundError, PermissionDeniedError
 from pydantic import BaseModel
 
 from any_llm import AnyLLM, LLMProvider, ParsedChatCompletion
@@ -55,6 +55,10 @@ async def test_response_format(
         if provider in EXPECTED_PROVIDERS:
             raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
+    except (PermissionDeniedError, NotFoundError):
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} model not accessible, skipping")
     except UnsupportedParameterError:
         pytest.skip(f"{provider.value} does not support response_format, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
@@ -106,6 +110,10 @@ async def test_response_format_dataclass(
         if provider in EXPECTED_PROVIDERS:
             raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
+    except (PermissionDeniedError, NotFoundError):
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} model not accessible, skipping")
     except UnsupportedParameterError:
         pytest.skip(f"{provider.value} does not support response_format, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
