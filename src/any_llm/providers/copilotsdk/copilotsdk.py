@@ -338,7 +338,7 @@ class CopilotsdkProvider(AnyLLM):
         when the generator exits (normally or via exception/cancellation).
         """
         queue: asyncio.Queue[tuple[str, str] | None] = asyncio.Queue()
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def on_event(event: Any) -> None:
             etype = event.type
