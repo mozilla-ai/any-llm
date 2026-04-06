@@ -17,7 +17,6 @@ from any_llm.providers.gemini.utils import (
 )
 from any_llm.types.completion import CompletionParams, PromptTokensDetails, ReasoningEffort
 
-
 TEST_IMAGE_BYTES = b"test-image-bytes"
 TEST_PDF_BYTES = b"%PDF-1.4\ntest"
 
