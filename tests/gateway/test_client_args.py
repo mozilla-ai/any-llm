@@ -4,10 +4,10 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from any_llm.gateway.core.config import GatewayConfig
-from any_llm.gateway.core.database import _to_async_url
+from any_llm.gateway.core.database import _make_async_engine
 from any_llm.gateway.db import get_db
 from any_llm.gateway.main import create_app
 from tests.gateway.conftest import _drop_all_sync, _run_alembic_migrations
@@ -43,7 +43,7 @@ def config_with_client_args(postgres_url: str) -> GatewayConfig:
 def client_with_client_args(config_with_client_args: GatewayConfig) -> Generator[TestClient]:
     """Create a test client with client_args configured."""
     _run_alembic_migrations(config_with_client_args.database_url)
-    engine = create_async_engine(_to_async_url(config_with_client_args.database_url), pool_pre_ping=True)
+    engine = _make_async_engine(config_with_client_args.database_url)
     session_factory = async_sessionmaker(engine, autocommit=False, autoflush=False, expire_on_commit=False)
     app = create_app(config_with_client_args)
 

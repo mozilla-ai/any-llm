@@ -14,11 +14,11 @@ from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from testcontainers.postgres import PostgresContainer
 
 from any_llm.gateway.core.config import API_KEY_HEADER, GatewayConfig
-from any_llm.gateway.core.database import _to_async_url
+from any_llm.gateway.core.database import _make_async_engine
 from any_llm.gateway.db import Base, get_db
 from any_llm.gateway.main import create_app
 
@@ -65,7 +65,7 @@ def postgres_url() -> Generator[str]:
 async def test_db(postgres_url: str) -> AsyncGenerator[AsyncSession]:
     """Create a test database session (async)."""
     _run_alembic_migrations(postgres_url)
-    engine = create_async_engine(_to_async_url(postgres_url), pool_pre_ping=True)
+    engine = _make_async_engine(postgres_url)
     session_factory = async_sessionmaker(engine, autocommit=False, autoflush=False, expire_on_commit=False)
 
     async with session_factory() as db:
@@ -81,7 +81,7 @@ async def test_db(postgres_url: str) -> AsyncGenerator[AsyncSession]:
 @pytest_asyncio.fixture
 async def db_session(test_config: GatewayConfig) -> AsyncGenerator[AsyncSession]:
     """Create a standalone DB session for verifying state outside the test client."""
-    engine = create_async_engine(_to_async_url(test_config.database_url), pool_pre_ping=True)
+    engine = _make_async_engine(test_config.database_url)
     session_factory = async_sessionmaker(engine, autocommit=False, autoflush=False, expire_on_commit=False)
     async with session_factory() as session:
         try:
@@ -107,7 +107,7 @@ def test_config(postgres_url: str) -> GatewayConfig:
 def client(test_config: GatewayConfig) -> Generator[TestClient]:
     """Create a test client for the FastAPI app."""
     _run_alembic_migrations(test_config.database_url)
-    engine = create_async_engine(_to_async_url(test_config.database_url), pool_pre_ping=True)
+    engine = _make_async_engine(test_config.database_url)
     session_factory = async_sessionmaker(engine, autocommit=False, autoflush=False, expire_on_commit=False)
     app = create_app(test_config)
 

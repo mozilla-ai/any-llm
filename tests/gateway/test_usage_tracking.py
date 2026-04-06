@@ -6,10 +6,10 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from any_llm.gateway.core.config import GatewayConfig
-from any_llm.gateway.core.database import _to_async_url
+from any_llm.gateway.core.database import _make_async_engine
 from any_llm.gateway.models.entities import UsageLog, User
 from tests.gateway.conftest import MODEL_NAME
 
@@ -27,7 +27,7 @@ async def test_completion_accuracy(
     test_messages: list[dict[str, str]],
     model_pricing: dict[str, Any],
 ) -> None:
-    engine = create_async_engine(_to_async_url(test_config.database_url))
+    engine = _make_async_engine(test_config.database_url)
     session_local = async_sessionmaker(engine, autocommit=False, autoflush=False, expire_on_commit=False)
 
     # Capture initial user spend
@@ -123,7 +123,7 @@ async def test_streaming_completion_accuracy(
     model_pricing: dict[str, Any],
 ) -> None:
     """Test that streaming requests correctly aggregate usage, calculate costs, and update user spend."""
-    engine = create_async_engine(_to_async_url(test_config.database_url))
+    engine = _make_async_engine(test_config.database_url)
     session_local = async_sessionmaker(engine, autocommit=False, autoflush=False, expire_on_commit=False)
 
     async with session_local() as db:
@@ -251,7 +251,7 @@ async def test_failed_request_logs_error(
 
     assert response.status_code == 500
 
-    engine = create_async_engine(_to_async_url(test_config.database_url))
+    engine = _make_async_engine(test_config.database_url)
     session_local = async_sessionmaker(engine, autocommit=False, autoflush=False, expire_on_commit=False)
 
     async with session_local() as db:

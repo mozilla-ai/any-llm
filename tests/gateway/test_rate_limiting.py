@@ -8,10 +8,10 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from any_llm.gateway.core.config import API_KEY_HEADER, GatewayConfig
-from any_llm.gateway.core.database import _to_async_url
+from any_llm.gateway.core.database import _make_async_engine
 from any_llm.gateway.db import get_db
 from any_llm.gateway.main import create_app
 from any_llm.gateway.rate_limit import RateLimiter, RateLimitInfo
@@ -177,7 +177,7 @@ def _make_rate_limit_client(
         rate_limit_rpm=rate_limit_rpm,
     )
     _run_alembic_migrations(postgres_url)
-    engine = create_async_engine(_to_async_url(postgres_url), pool_pre_ping=True)
+    engine = _make_async_engine(postgres_url)
     session_factory = async_sessionmaker(engine, autocommit=False, autoflush=False, expire_on_commit=False)
     app = create_app(config)
 
