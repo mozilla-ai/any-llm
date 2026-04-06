@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from google.genai import types
 
-from any_llm.exceptions import UnsupportedParameterError
+from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.providers.gemini import GeminiProvider
 from any_llm.providers.gemini.base import REASONING_EFFORT_TO_THINKING_BUDGETS, GoogleProvider
 from any_llm.providers.gemini.utils import (
@@ -16,6 +16,9 @@ from any_llm.providers.gemini.utils import (
     _create_openai_chunk_from_google_chunk,
 )
 from any_llm.types.completion import CompletionParams, PromptTokensDetails, ReasoningEffort
+
+TEST_IMAGE_BYTES = b"test-image-bytes"
+TEST_PDF_BYTES = b"%PDF-1.4\ntest"
 
 
 @contextmanager
@@ -154,6 +157,71 @@ async def test_completion_with_content_list() -> None:
         contents = call_kwargs["contents"]
 
         assert contents[0].parts[0].text == "Hello"
+
+
+@pytest.mark.asyncio
+async def test_completion_with_images() -> None:
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    image_b64 = base64.b64encode(TEST_IMAGE_BYTES).decode("utf-8")
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What is in these images?"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+            ],
+        }
+    ]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key=api_key)
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages))
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        contents = call_kwargs["contents"]
+
+        assert contents[0].parts[0].text == "What is in these images?"
+        assert contents[0].parts[1].file_data is not None
+        assert contents[0].parts[1].file_data.file_uri == "https://example.com/a.png"
+        assert contents[0].parts[1].file_data.mime_type == "image/png"
+        assert contents[0].parts[2].inline_data is not None
+        assert contents[0].parts[2].inline_data.mime_type == "image/jpeg"
+        assert contents[0].parts[2].inline_data.data == TEST_IMAGE_BYTES
+
+
+@pytest.mark.asyncio
+async def test_completion_with_pdf() -> None:
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    pdf_b64 = base64.b64encode(TEST_PDF_BYTES).decode("utf-8")
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Summarize this PDF"},
+                {
+                    "type": "file",
+                    "file": {
+                        "filename": "document.pdf",
+                        "file_data": f"data:application/pdf;base64,{pdf_b64}",
+                    },
+                },
+            ],
+        }
+    ]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key=api_key)
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages))
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        contents = call_kwargs["contents"]
+
+        assert contents[0].parts[1].inline_data is not None
+        assert contents[0].parts[1].inline_data.mime_type == "application/pdf"
+        assert contents[0].parts[1].inline_data.data == TEST_PDF_BYTES
 
 
 @pytest.mark.parametrize(
@@ -719,6 +787,126 @@ def test_convert_messages_with_thought_signature_in_extra_content() -> None:
     assert assistant_message.parts[0].thought_signature == original_bytes
 
 
+def test_convert_messages_with_base64_image() -> None:
+    image_b64 = base64.b64encode(TEST_IMAGE_BYTES).decode("utf-8")
+    messages = [
+        {
+            "role": "user",
+            "content": [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}],
+        }
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[0].parts
+    assert parts is not None
+    image_part = parts[0]
+    assert image_part.inline_data is not None
+    assert image_part.inline_data.mime_type == "image/jpeg"
+    assert image_part.inline_data.data == TEST_IMAGE_BYTES
+
+
+def test_convert_messages_with_url_image() -> None:
+    messages = [
+        {
+            "role": "user",
+            "content": [{"type": "image_url", "image_url": {"url": "https://example.com/a.png"}}],
+        }
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[0].parts
+    assert parts is not None
+    image_part = parts[0]
+    assert image_part.file_data is not None
+    assert image_part.file_data.file_uri == "https://example.com/a.png"
+    assert image_part.file_data.mime_type == "image/png"
+
+
+def test_convert_messages_with_base64_pdf() -> None:
+    pdf_b64 = base64.b64encode(TEST_PDF_BYTES).decode("utf-8")
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": {"filename": "document.pdf", "file_data": f"data:application/pdf;base64,{pdf_b64}"},
+                }
+            ],
+        }
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[0].parts
+    assert parts is not None
+    file_part = parts[0]
+    assert file_part.inline_data is not None
+    assert file_part.inline_data.mime_type == "application/pdf"
+    assert file_part.inline_data.data == TEST_PDF_BYTES
+
+
+def test_convert_messages_mixed_text_and_media() -> None:
+    image_b64 = base64.b64encode(TEST_IMAGE_BYTES).decode("utf-8")
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Compare these"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
+                {
+                    "type": "file",
+                    "file": {
+                        "filename": "document.pdf",
+                        "file_data": f"data:application/pdf;base64,{base64.b64encode(TEST_PDF_BYTES).decode('utf-8')}",
+                    },
+                },
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+            ],
+        }
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[0].parts
+    assert parts is not None
+    assert len(parts) == 4
+    assert parts[0].text == "Compare these"
+    assert parts[1].file_data is not None
+    assert parts[2].inline_data is not None
+    assert parts[2].inline_data.mime_type == "application/pdf"
+    assert parts[3].inline_data is not None
+    assert parts[3].inline_data.mime_type == "image/jpeg"
+
+
+def test_convert_messages_oversized_image_raises_invalid_request() -> None:
+    oversized_bytes = b"a" * (20 * 1024 * 1024 + 1)
+    oversized_b64 = base64.b64encode(oversized_bytes).decode("utf-8")
+    messages = [
+        {
+            "role": "user",
+            "content": [{"type": "image_url", "image_url": {"url": f"data:image/png;base64,{oversized_b64}"}}],
+        }
+    ]
+
+    with pytest.raises(InvalidRequestError, match="20 MB inline upload limit"):
+        _convert_messages(messages)
+
+
+def test_convert_messages_invalid_base64_raises_invalid_request() -> None:
+    messages = [
+        {
+            "role": "user",
+            "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,not-valid-***"}}],
+        }
+    ]
+
+    with pytest.raises(InvalidRequestError, match="invalid base64"):
+        _convert_messages(messages)
+
+
 def test_convert_messages_without_thought_signature_uses_skip_sentinel() -> None:
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": "What is the weather?"},
@@ -777,6 +965,44 @@ def test_convert_messages_parallel_tool_calls_only_first_gets_skip_sentinel() ->
     assert assistant_message.parts[0].thought_signature is not None
     # Second tool call should have None (no sentinel)
     assert assistant_message.parts[1].thought_signature is None
+
+
+@pytest.mark.parametrize(
+    ("tool_content", "expected_response"),
+    [
+        ('{"temp": "20C"}', {"temp": "20C"}),
+        ("[]", {"result": []}),
+        ("1", {"result": 1}),
+    ],
+)
+def test_convert_messages_tool_response_normalizes_non_objects(
+    tool_content: str, expected_response: dict[str, Any]
+) -> None:
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "What is the weather?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_123",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": '{"location": "Paris"}'},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_123", "name": "get_weather", "content": tool_content},
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    tool_message = formatted_messages[2]
+    assert tool_message.role == "function"
+    assert tool_message.parts is not None
+    assert len(tool_message.parts) == 1
+    function_response = tool_message.parts[0].function_response
+    assert function_response is not None
+    assert function_response.response == expected_response
 
 
 def test_streaming_completion_with_tool_call_without_args() -> None:

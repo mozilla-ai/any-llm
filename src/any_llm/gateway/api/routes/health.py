@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy import text
 
 from any_llm.gateway import __version__
-from any_llm.gateway.db import get_db
+from any_llm.gateway.api.deps import get_db
 from any_llm.gateway.log_config import logger
 
 router = APIRouter(prefix="/health", tags=["health"])

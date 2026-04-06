@@ -28,8 +28,8 @@ class GatewayConfig(BaseSettings):
     )
 
     database_url: str = Field(
-        default="postgresql://postgres:postgres@localhost:5432/any_llm_gateway",
-        description="Database connection URL for PostgreSQL",
+        default="sqlite:///./any-llm-gateway.db",
+        description="Database connection URL (SQLite default for local use; PostgreSQL recommended for production)",
     )
     auto_migrate: bool = Field(
         default=True,
@@ -50,6 +50,14 @@ class GatewayConfig(BaseSettings):
     pricing: dict[str, PricingConfig] = Field(
         default_factory=dict,
         description="Pre-configured model USD pricing (model_key -> {input_price_per_million, output_price_per_million})",
+    )
+    enable_metrics: bool = Field(
+        default=False,
+        description="Enable Prometheus metrics endpoint at /metrics",
+    )
+    bootstrap_api_key: bool = Field(
+        default=True,
+        description="Create a first-use API key on startup when no API keys exist",
     )
 
 

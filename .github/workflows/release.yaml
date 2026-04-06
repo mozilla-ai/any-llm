@@ -13,6 +13,18 @@ jobs:
       id-token: write
     runs-on: ubuntu-latest
     steps:
+      - name: Validate release tag matches release name
+        if: github.event_name == 'release'
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          TAG="${TAG#v}"
+          NAME="${{ github.event.release.name }}"
+          NAME="${NAME#v}"
+          if [ "$TAG" != "$NAME" ]; then
+            echo "::error::Release tag '$TAG' does not match release name '$NAME'. Delete this release, fix the tag, and try again."
+            exit 1
+          fi
+
       - name: Check out the repository
         uses: actions/checkout@v6
         with:

@@ -10,15 +10,16 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from any_llm import AnyLLM, LLMProvider, acompletion
-from any_llm.gateway.auth import verify_api_key_or_master_key
-from any_llm.gateway.auth.dependencies import get_config
+from any_llm.gateway.api.deps import get_config, get_db, verify_api_key_or_master_key
+from any_llm.gateway.api.routes._helpers import resolve_user_id
 from any_llm.gateway.auth.vertex_auth import setup_vertex_environment
-from any_llm.gateway.budget import validate_user_budget
-from any_llm.gateway.config import GatewayConfig
-from any_llm.gateway.db import APIKey, UsageLog, User, get_db
+from any_llm.gateway.core.config import GatewayConfig
 from any_llm.gateway.log_config import logger
-from any_llm.gateway.pricing import find_model_pricing
+from any_llm.gateway.metrics import record_cost, record_tokens
+from any_llm.gateway.models.entities import APIKey, UsageLog, User
 from any_llm.gateway.rate_limit import RateLimitInfo, check_rate_limit
+from any_llm.gateway.services.budget_service import validate_user_budget
+from any_llm.gateway.services.pricing_service import find_model_pricing
 from any_llm.gateway.streaming import OPENAI_STREAM_FORMAT, streaming_generator
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionUsage
 
@@ -54,6 +55,7 @@ class ChatCompletionRequest(BaseModel):
     max_completion_tokens: int | None = None
     top_p: float | None = None
     stream: bool = False
+    stream_options: dict[str, Any] | None = None
     tools: list[dict[str, Any]] | None = None
     tool_choice: str | dict[str, Any] | None = None
     response_format: dict[str, Any] | None = None
@@ -143,12 +145,15 @@ async def log_usage(
         usage_log.completion_tokens = usage_data.completion_tokens
         usage_log.total_tokens = usage_data.total_tokens
 
+        record_tokens(str(provider or ""), model, usage_data.prompt_tokens, usage_data.completion_tokens)
+
         pricing = find_model_pricing(db, provider, model)
         if pricing:
             cost = (usage_data.prompt_tokens / 1_000_000) * pricing.input_price_per_million + (
                 usage_data.completion_tokens / 1_000_000
             ) * pricing.output_price_per_million
             usage_log.cost = cost
+            record_cost(str(provider or ""), model, cost)
 
             if user_id:
                 db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).update(
@@ -187,28 +192,23 @@ async def chat_completions(
     """
     api_key, is_master_key = auth_result
 
-    user_id: str
-    if is_master_key:
-        if not request.user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="When using master key, 'user' field is required in request body",
-            )
-        user_id = request.user
-    elif request.user:
-        user_id = request.user
-    else:
-        if api_key is None:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="API key validation failed",
-            )
-        if not api_key.user_id:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="API key has no associated user",
-            )
-        user_id = str(api_key.user_id)
+    user_id = resolve_user_id(
+        user_id_from_request=request.user,
+        api_key=api_key,
+        is_master_key=is_master_key,
+        master_key_error=HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="When using master key, 'user' field is required in request body",
+        ),
+        no_api_key_error=HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="API key validation failed",
+        ),
+        no_user_error=HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="API key has no associated user",
+        ),
+    )
 
     rate_limit_info = check_rate_limit(raw_request, user_id)
 
@@ -221,6 +221,9 @@ async def chat_completions(
     # User request fields take precedence over provider config defaults
     request_fields = request.model_dump(exclude_unset=True)
     completion_kwargs = {**provider_kwargs, **request_fields}
+
+    if request.stream and completion_kwargs.get("stream_options") is None:
+        completion_kwargs["stream_options"] = {"include_usage": True}
 
     try:
         if request.stream:

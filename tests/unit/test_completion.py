@@ -64,6 +64,7 @@ async def test_aresponses_parameter_capture() -> None:
             temperature=0.5,
             stream=True,
             instructions="Be helpful",
+            parallel_tool_calls=True,
             api_key="mistral-key-456",
             api_base="https://custom-mistral.example.com/v1",
             another_custom_param="another_value",
@@ -83,6 +84,7 @@ async def test_aresponses_parameter_capture() -> None:
         assert call_args.kwargs["temperature"] == 0.5
         assert call_args.kwargs["stream"] is True
         assert call_args.kwargs["instructions"] == "Be helpful"
+        assert call_args.kwargs["parallel_tool_calls"] is True
         assert call_args.kwargs["another_custom_param"] == "another_value"
 
 

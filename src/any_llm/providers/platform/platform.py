@@ -25,6 +25,7 @@ from .utils import (
     activate_trace_export,
     deactivate_trace_export,
     export_completion_trace,
+    export_responses_trace,
 )
 
 if TYPE_CHECKING:
@@ -278,8 +279,112 @@ class PlatformProvider(AnyLLM):
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
     ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+        user_session_label = kwargs.pop("session_label", None)
+
         await self._ensure_provider_initialized()
-        return await self.provider._aresponses(params, **kwargs)
+        start_time_ns = time.time_ns()
+        start_perf_counter_ns = time.perf_counter_ns()
+        any_llm_key = self.any_llm_key
+        if any_llm_key is None:
+            msg = "any_llm_key is required for platform provider"
+            raise ValueError(msg)
+
+        access_token: str | None = None
+        trace_export_activated = False
+        try:
+            access_token = await self.platform_client._aensure_valid_token(any_llm_key)
+        except Exception as exc:
+            logger.debug("Unable to obtain access token for trace export: %s", exc)
+
+        if access_token is not None:
+            provider_tp = _get_or_create_tracer_provider(access_token)
+            tracer = provider_tp.get_tracer("any-llm", __version__)
+        else:
+            tracer = trace.get_tracer("any-llm", __version__)
+
+        llm_span = tracer.start_span(
+            "llm.request",
+            kind=SpanKind.CLIENT,
+            start_time=start_time_ns,
+        )
+        llm_span.set_attribute("gen_ai.provider.name", self.provider.PROVIDER_NAME)
+        llm_span.set_attribute("gen_ai.request.model", params.model)
+        if params.user is not None:
+            llm_span.set_attribute("gen_ai.conversation.id", params.user)
+        if self.client_name is not None:
+            llm_span.set_attribute("anyllm.client_name", self.client_name)
+        session_trace_label = f"{llm_span.get_span_context().trace_id:032x}"
+        llm_span.set_attribute("anyllm.session_label", session_trace_label)
+        if user_session_label is not None:
+            llm_span.set_attribute("anyllm.user_session_label", user_session_label)
+
+        trace_id = llm_span.get_span_context().trace_id
+        try:
+            if access_token is not None:
+                activate_trace_export(trace_id, access_token)
+                trace_export_activated = True
+        except Exception as exc:
+            logger.debug("Unable to activate scoped OpenTelemetry export: %s", exc)
+
+        try:
+            with trace.use_span(llm_span, end_on_exit=False):
+                result = await self.provider._aresponses(params, **kwargs)
+
+            if not params.stream:
+                end_time_ns = time.time_ns()
+                response_model: str | None = None
+                input_tokens: int | None = None
+                output_tokens: int | None = None
+
+                usage = getattr(result, "usage", None)
+                if usage is not None:
+                    input_tokens = usage.input_tokens
+                    output_tokens = usage.output_tokens
+                response_model = getattr(result, "model", None)
+
+                await export_responses_trace(
+                    platform_client=self.platform_client,
+                    client=self.client,
+                    any_llm_key=any_llm_key,
+                    provider=self.provider.PROVIDER_NAME,
+                    request_model=params.model,
+                    response_model=response_model,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    start_time_ns=start_time_ns,
+                    end_time_ns=end_time_ns,
+                    client_name=self.client_name,
+                    session_label=session_trace_label,
+                    user_session_label=user_session_label,
+                    conversation_id=params.user,
+                    access_token=access_token,
+                    existing_span=llm_span,
+                )
+                if trace_export_activated:
+                    deactivate_trace_export(trace_id)
+                return result
+
+            return self._stream_responses_with_usage_tracking(
+                cast("AsyncIterator[ResponseStreamEvent]", result),
+                start_time_ns,
+                params.model,
+                params.user,
+                session_trace_label,
+                user_session_label,
+                start_perf_counter_ns,
+                any_llm_key,
+                llm_span,
+                trace_id,
+                access_token,
+                trace_export_activated,
+            )
+        except Exception as exc:
+            llm_span.set_attribute("error.type", exc.__class__.__name__)
+            llm_span.set_status(Status(StatusCode.ERROR, "llm request failed"))
+            llm_span.end(end_time=time.time_ns())
+            if trace_export_activated:
+                deactivate_trace_export(trace_id)
+            raise
 
     @override
     async def _aembedding(self, model: str, inputs: str | list[str], **kwargs: Any) -> CreateEmbeddingResponse:
@@ -360,7 +465,6 @@ class PlatformProvider(AnyLLM):
                     chunks.append(chunk)
                     yield chunk
 
-            # After stream completes, reconstruct completion for usage tracking
             if chunks:
                 end_time_ns = time.time_ns()
 
@@ -438,6 +542,86 @@ class PlatformProvider(AnyLLM):
             usage=last_chunk.usage or None,
             choices=[],
         )
+
+    async def _stream_responses_with_usage_tracking(
+        self,
+        stream: AsyncIterator[ResponseStreamEvent],
+        start_time_ns: int,
+        request_model: str,
+        conversation_id: str | None,
+        session_label: str,
+        user_session_label: str | None,
+        start_perf_counter_ns: int,
+        any_llm_key: str,
+        llm_span: trace.Span,
+        trace_id: int,
+        access_token: str | None,
+        trace_export_activated: bool,
+    ) -> AsyncIterator[ResponseStreamEvent]:
+        """Wrap a Responses API stream to export a trace after completion."""
+        first_event_received = False
+        response_model: str | None = None
+        input_tokens: int | None = None
+        output_tokens: int | None = None
+
+        span_ended = False
+        try:
+            with trace.use_span(llm_span, end_on_exit=False):
+                async for event in stream:
+                    if not first_event_received:
+                        first_event_received = True
+                        ttft_ms = (time.perf_counter_ns() - start_perf_counter_ns) / 1_000_000
+                        llm_span.set_attribute("anyllm.performance.ttft_ms", ttft_ms)
+                        llm_span.add_event("llm.first_token", {"anyllm.performance.ttft_ms": ttft_ms})
+
+                    if event.type == "response.completed":
+                        usage = getattr(event.response, "usage", None)
+                        if usage is not None:
+                            input_tokens = usage.input_tokens
+                            output_tokens = usage.output_tokens
+                        response_model = getattr(event.response, "model", None)
+
+                    yield event
+
+            end_time_ns = time.time_ns()
+            await export_responses_trace(
+                platform_client=self.platform_client,
+                client=self.client,
+                any_llm_key=any_llm_key,
+                provider=self.provider.PROVIDER_NAME,
+                request_model=request_model,
+                response_model=response_model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                start_time_ns=start_time_ns,
+                end_time_ns=end_time_ns,
+                client_name=self.client_name,
+                session_label=session_label,
+                user_session_label=user_session_label,
+                conversation_id=conversation_id,
+                access_token=access_token,
+                existing_span=llm_span,
+            )
+            span_ended = True
+        except Exception as exc:
+            llm_span.set_attribute("error.type", exc.__class__.__name__)
+            llm_span.set_status(Status(StatusCode.ERROR, "llm request failed"))
+            llm_span.end(end_time=time.time_ns())
+            span_ended = True
+            raise
+        finally:
+            if not span_ended:
+                end_time_ns = time.time_ns()
+                llm_span.set_attribute("anyllm.stream.cancelled", True)
+                if response_model is not None:
+                    llm_span.set_attribute("gen_ai.response.model", response_model)
+                if input_tokens is not None:
+                    llm_span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
+                if output_tokens is not None:
+                    llm_span.set_attribute("gen_ai.usage.output_tokens", output_tokens)
+                llm_span.end(end_time=end_time_ns)
+            if trace_export_activated:
+                deactivate_trace_export(trace_id)
 
     @property
     def provider(self) -> AnyLLM:

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 from fastapi import HTTPException, Request, status
 
+from any_llm.gateway.metrics import record_rate_limit_hit
+
 
 @dataclass
 class RateLimitInfo:
@@ -57,6 +59,7 @@ class RateLimiter:
         if len(current) >= self._rpm:
             oldest = current[0]
             retry_after = math.ceil(oldest - cutoff)
+            record_rate_limit_hit(user_id)
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Rate limit exceeded",

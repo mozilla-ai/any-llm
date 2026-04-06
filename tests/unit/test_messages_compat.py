@@ -275,13 +275,16 @@ def test_chat_completion_tool_calls_response_to_message() -> None:
         ],
         usage=CompletionUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30),
     )
+    from any_llm.types.messages import ToolUseBlock
+
     result = chat_completion_to_message_response(completion)
     assert result.stop_reason == "tool_use"
     assert len(result.content) == 1
-    assert result.content[0].type == "tool_use"
-    assert result.content[0].name == "get_weather"
-    assert result.content[0].input == {"city": "London"}
-    assert result.content[0].id == "call_abc"
+    block = result.content[0]
+    assert isinstance(block, ToolUseBlock)
+    assert block.name == "get_weather"
+    assert block.input == {"city": "London"}
+    assert block.id == "call_abc"
 
 
 def test_chat_completion_reasoning_response_to_message() -> None:
@@ -340,9 +343,12 @@ def test_streaming_text_events() -> None:
     assert "content_block_delta" in types1
 
     # Verify text delta content
+    from any_llm.types.messages import ContentBlockDeltaEvent, TextDelta
+
     text_delta = next(e for e in events1 if e.type == "content_block_delta")
-    assert text_delta.delta is not None
-    assert text_delta.delta["text"] == "Hello"
+    assert isinstance(text_delta, ContentBlockDeltaEvent)
+    assert isinstance(text_delta.delta, TextDelta)
+    assert text_delta.delta.text == "Hello"
 
     # Final chunk with finish_reason
     chunk2 = ChatCompletionChunk(
@@ -415,10 +421,13 @@ def test_streaming_tool_call_events() -> None:
             )
         ],
     )
+    from any_llm.types.messages import ContentBlockDeltaEvent, InputJSONDelta
+
     events2 = chat_completion_chunk_to_message_stream_events(chunk2, state)
     delta_event = next(e for e in events2 if e.type == "content_block_delta")
-    assert delta_event.delta is not None
-    assert delta_event.delta["partial_json"] == '{"city":"London"}'
+    assert isinstance(delta_event, ContentBlockDeltaEvent)
+    assert isinstance(delta_event.delta, InputJSONDelta)
+    assert delta_event.delta.partial_json == '{"city":"London"}'
 
 
 def test_optional_params_not_included_when_none() -> None:
@@ -704,12 +713,18 @@ def test_chat_completion_tool_calls_invalid_json() -> None:
             )
         ],
     )
+    from any_llm.types.messages import ToolUseBlock
+
     result = chat_completion_to_message_response(completion)
-    assert result.content[0].input == {}
+    block = result.content[0]
+    assert isinstance(block, ToolUseBlock)
+    assert block.input == {}
 
 
 def test_chat_completion_tool_calls_empty_arguments() -> None:
     """Test tool call with empty/None arguments falls back to empty dict."""
+    from any_llm.types.messages import ToolUseBlock
+
     completion = ChatCompletion(
         id="test",
         model="test",
@@ -732,7 +747,9 @@ def test_chat_completion_tool_calls_empty_arguments() -> None:
         ],
     )
     result = chat_completion_to_message_response(completion)
-    assert result.content[0].input == {}
+    block = result.content[0]
+    assert isinstance(block, ToolUseBlock)
+    assert block.input == {}
 
 
 def test_streaming_usage_tracking() -> None:
@@ -838,9 +855,11 @@ def test_streaming_finish_reason_length() -> None:
         choices=[ChunkChoice(index=0, delta=ChoiceDelta(), finish_reason="length")],
     )
     events = chat_completion_chunk_to_message_stream_events(chunk, state)
+    from any_llm.types.messages import MessageDeltaEvent
+
     delta_event = next(e for e in events if e.type == "message_delta")
-    assert delta_event.delta is not None
-    assert delta_event.delta["stop_reason"] == "max_tokens"
+    assert isinstance(delta_event, MessageDeltaEvent)
+    assert delta_event.delta.stop_reason == "max_tokens"
 
 
 def test_close_current_block_when_none() -> None:

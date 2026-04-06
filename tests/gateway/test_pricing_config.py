@@ -6,11 +6,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from any_llm.gateway.config import GatewayConfig, PricingConfig
+from any_llm.gateway.api.routes.chat import log_usage
+from any_llm.gateway.core.config import GatewayConfig, PricingConfig
 from any_llm.gateway.db import ModelPricing, get_db
-from any_llm.gateway.db.models import UsageLog
-from any_llm.gateway.routes.chat import log_usage
-from any_llm.gateway.server import create_app
+from any_llm.gateway.main import create_app
+from any_llm.gateway.models.entities import UsageLog
 from any_llm.types.completion import CompletionUsage
 
 

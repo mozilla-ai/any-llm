@@ -12,6 +12,7 @@ dependencies = [
   "pydantic>2,<3",
   "openai>=1.99.3",
   "openresponses-types>=2.3.0.post1",
+  "anthropic>=0.83.0",
   "rich",
   "httpx",
   "typing_extensions>=4.4.0",
@@ -39,9 +40,7 @@ mistral = [
   "mistralai>=1.9.3",
 ]
 
-anthropic = [
-  "anthropic>=0.83.0",
-]
+anthropic = []
 
 gemini = [
   "google-genai",
@@ -137,6 +136,7 @@ gateway = [
   "click>=8.1.0",
   "python-dotenv>=1.0.0",
   "psycopg2-binary>=2.9.9",
+  "prometheus-client>=0.20.0",
 ]
 zai = []
 
@@ -147,6 +147,9 @@ any-llm-gateway = "any_llm.gateway.cli:main"
 Documentation = "https://mozilla-ai.github.io/any-llm/"
 Issues = "https://github.com/mozilla-ai/any-llm/issues"
 Source = "https://github.com/mozilla-ai/any-llm"
+
+[tool.uv]
+exclude-newer = "7 days"
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
@@ -270,7 +273,7 @@ lint = [
 
 tests = [
   "pytest>=8,<10",
-  "pytest-cov>=6.2.1,<7",
+  "pytest-cov>=6.2.1,<8",
   "pytest-asyncio>=0.26.0",
   "pytest-rerunfailures>=16.0",
   "mktestdocs>=0.2.4",

@@ -3,6 +3,7 @@ from unittest.mock import patch
 from google.genai import types
 
 from any_llm.providers.vertexai import VertexaiProvider
+from any_llm.types.completion import CompletionParams
 
 
 def test_vertexai_initialization_without_api_key() -> None:
@@ -29,3 +30,26 @@ def test_vertexai_timeout_does_not_override_explicit_http_options() -> None:
         mock_client.assert_called_once()
         call_kwargs = mock_client.call_args[1]
         assert call_kwargs["http_options"].timeout == 10_000
+
+
+def test_vertexai_completion_params_include_image_parts() -> None:
+    params = CompletionParams(
+        model_id="gemini-2.5-flash",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Describe this image"},
+                    {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
+                ],
+            }
+        ],
+    )
+
+    converted = VertexaiProvider._convert_completion_params(params, provider_name="vertexai")
+    parts = converted["contents"][0].parts
+
+    assert parts[0].text == "Describe this image"
+    assert parts[1].file_data is not None
+    assert parts[1].file_data.file_uri == "https://example.com/a.png"
+    assert parts[1].file_data.mime_type == "image/png"

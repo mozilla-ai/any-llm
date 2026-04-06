@@ -32,7 +32,7 @@ Provider source code is in [`src/any_llm/providers/`](https://github.com/mozilla
 | [`deepseek`](https://platform.deepseek.com/) | DEEPSEEK_API_KEY | DEEPSEEK_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`fireworks`](https://fireworks.ai/api) | FIREWORKS_API_KEY | FIREWORKS_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
 | [`gateway`](https://github.com/mozilla-ai/any-llm) | GATEWAY_API_KEY | GATEWAY_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [`gemini`](https://ai.google.dev/gemini-api/docs) | GEMINI_API_KEY/GOOGLE_API_KEY | GOOGLE_GEMINI_BASE_URL | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
+| [`gemini`](https://ai.google.dev/gemini-api/docs) | GEMINI_API_KEY/GOOGLE_API_KEY | GOOGLE_GEMINI_BASE_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`groq`](https://groq.com/api) | GROQ_API_KEY | GROQ_BASE_URL | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`huggingface`](https://huggingface.co/docs/huggingface_hub/package_reference/inference_client) | HF_TOKEN | HUGGINGFACE_API_BASE | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | [`inception`](https://inceptionlabs.ai/) | INCEPTION_API_KEY | INCEPTION_API_BASE | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
@@ -53,7 +53,7 @@ Provider source code is in [`src/any_llm/providers/`](https://github.com/mozilla
 | [`sagemaker`](https://aws.amazon.com/sagemaker/) | AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY | SAGEMAKER_ENDPOINT_URL | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | [`sambanova`](https://sambanova.ai/) | SAMBANOVA_API_KEY | SAMBANOVA_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`together`](https://together.ai/) | TOGETHER_API_KEY | TOGETHER_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| [`vertexai`](https://cloud.google.com/vertex-ai/docs) |  | VERTEXAI_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
+| [`vertexai`](https://cloud.google.com/vertex-ai/docs) |  | VERTEXAI_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`vertexaianthropic`](https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-claude) |  | VERTEXAI_ANTHROPIC_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | [`vllm`](https://docs.vllm.ai/) | VLLM_API_KEY | VLLM_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`voyage`](https://docs.voyageai.com/) | VOYAGE_API_KEY | VOYAGE_API_BASE | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
@@ -139,3 +139,7 @@ for chunk in llm.completion(
 ):
     print(chunk.choices[0].delta.content or "", end="", flush=True)
 ```
+
+### `gemini` / `vertexai` — Inline Media
+
+Gemini and Vertex AI completions also support PDF inputs in OpenAI-compatible `file` content blocks, including base64 data URIs and URI-based file references.

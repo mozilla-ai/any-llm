@@ -7,8 +7,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from any_llm.gateway.auth.models import hash_key
-from any_llm.gateway.config import API_KEY_HEADER, GatewayConfig
-from any_llm.gateway.db import APIKey, get_db
+from any_llm.gateway.core.config import API_KEY_HEADER, GatewayConfig
+from any_llm.gateway.core.database import get_db
+from any_llm.gateway.metrics import record_auth_failure
+from any_llm.gateway.models.entities import APIKey
 
 _config: GatewayConfig | None = None
 
@@ -44,6 +46,7 @@ def _extract_bearer_token(request: Request, config: GatewayConfig) -> str:
 
     if auth_header:
         if not auth_header.startswith("Bearer "):
+            record_auth_failure("invalid_format")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid header format. Expected 'Bearer <token>'",
@@ -55,6 +58,7 @@ def _extract_bearer_token(request: Request, config: GatewayConfig) -> str:
     if api_key:
         return api_key
 
+    record_auth_failure("missing_credentials")
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail=f"Missing {API_KEY_HEADER} or Authorization header",
@@ -66,6 +70,7 @@ def _verify_and_update_api_key(db: Session, token: str) -> APIKey:
     try:
         key_hash = hash_key(token)
     except ValueError as e:
+        record_auth_failure("invalid_format")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid API key format: {e}",
@@ -74,18 +79,21 @@ def _verify_and_update_api_key(db: Session, token: str) -> APIKey:
     api_key = db.query(APIKey).filter(APIKey.key_hash == key_hash).first()
 
     if not api_key:
+        record_auth_failure("invalid_key")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",
         )
 
     if not api_key.is_active:
+        record_auth_failure("inactive_key")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="API key is inactive",
         )
 
     if api_key.expires_at and api_key.expires_at < datetime.now(UTC):
+        record_auth_failure("expired_key")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="API key has expired",
@@ -183,3 +191,14 @@ async def verify_api_key_or_master_key(
 
     api_key = _verify_and_update_api_key(db, token)
     return api_key, False
+
+
+__all__ = [
+    "get_config",
+    "get_db",
+    "reset_config",
+    "set_config",
+    "verify_api_key",
+    "verify_api_key_or_master_key",
+    "verify_master_key",
+]

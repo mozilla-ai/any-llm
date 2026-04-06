@@ -6,9 +6,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from any_llm.gateway.auth import verify_master_key
-from any_llm.gateway.budget import calculate_next_reset
-from any_llm.gateway.db import APIKey, Budget, UsageLog, User, get_db
+from any_llm.gateway.api.deps import get_db, verify_master_key
+from any_llm.gateway.models.entities import APIKey, Budget, UsageLog, User
+from any_llm.gateway.repositories.users_repository import get_active_user
+from any_llm.gateway.services.budget_service import calculate_next_reset
 
 router = APIRouter(prefix="/v1/users", tags=["users"])
 
@@ -175,7 +176,7 @@ async def get_user(
     db: Annotated[Session, Depends(get_db)],
 ) -> UserResponse:
     """Get details of a specific user."""
-    user = db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).first()
+    user = get_active_user(db, user_id)
 
     if not user:
         raise HTTPException(
@@ -193,7 +194,7 @@ async def update_user(
     db: Annotated[Session, Depends(get_db)],
 ) -> UserResponse:
     """Update a user."""
-    user = db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).first()
+    user = get_active_user(db, user_id)
 
     if not user:
         raise HTTPException(
@@ -242,7 +243,7 @@ async def delete_user(
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     """Delete a user."""
-    user = db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).first()
+    user = get_active_user(db, user_id)
 
     if not user:
         raise HTTPException(

@@ -20,7 +20,16 @@ from any_llm.types.completion import (
     ParsedChatCompletion,
     ReasoningEffort,
 )
-from any_llm.types.messages import MessageResponse, MessagesParams, MessageStreamEvent, MessageUsage
+from any_llm.types.messages import (
+    ContentBlockStopEvent,
+    MessageDelta,
+    MessageDeltaEvent,
+    MessageDeltaUsage,
+    MessageResponse,
+    MessagesParams,
+    MessageStopEvent,
+    MessageStreamEvent,
+)
 from any_llm.types.provider import PlatformKey, ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import async_coro_to_sync_iter, async_iter_to_sync_iter, run_async_in_sync
@@ -659,7 +668,7 @@ class AnyLLM(ABC):
         messages: list[dict[str, Any]],
         max_tokens: int,
         *,
-        system: str | None = None,
+        system: str | list[dict[str, Any]] | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
         top_k: int | None = None,
@@ -669,6 +678,7 @@ class AnyLLM(ABC):
         tool_choice: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         thinking: dict[str, Any] | None = None,
+        cache_control: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
         """Create a message using the Anthropic Messages API asynchronously.
@@ -680,7 +690,7 @@ class AnyLLM(ABC):
             model: Model identifier for the chosen provider.
             messages: List of messages in Anthropic format.
             max_tokens: Maximum number of tokens to generate.
-            system: System prompt.
+            system: System prompt (string or list of content blocks with optional cache_control).
             temperature: Controls randomness (0.0 to 1.0).
             top_p: Controls diversity via nucleus sampling.
             top_k: Only sample from the top K options.
@@ -690,6 +700,7 @@ class AnyLLM(ABC):
             tool_choice: Controls which tool the model uses.
             metadata: Request metadata.
             thinking: Thinking/reasoning configuration.
+            cache_control: Cache control configuration for prompt caching.
             **kwargs: Additional provider-specific arguments.
 
         Returns:
@@ -710,6 +721,7 @@ class AnyLLM(ABC):
             tool_choice=tool_choice,
             metadata=metadata,
             thinking=thinking,
+            cache_control=cache_control,
         )
         return await self._amessages(params, **kwargs)
 
@@ -742,26 +754,26 @@ class AnyLLM(ABC):
             async for chunk in result:
                 events = chat_completion_chunk_to_message_stream_events(chunk, state)
                 for event in events:
-                    if event.type == "message_stop":
+                    if isinstance(event, MessageStopEvent):
                         emitted_stop = True
                     yield event
             # Some providers don't send a final chunk with finish_reason,
             # so ensure the stream always ends with message_stop.
             if state.started and not emitted_stop:
                 if state.current_block_type is not None:
-                    yield MessageStreamEvent(
+                    yield ContentBlockStopEvent(
                         type="content_block_stop",
                         index=state.current_block_index,
                     )
-                yield MessageStreamEvent(
+                yield MessageDeltaEvent(
                     type="message_delta",
-                    delta={"stop_reason": "end_turn"},
-                    usage=MessageUsage(
-                        input_tokens=state.input_tokens,
+                    delta=MessageDelta(stop_reason="end_turn"),
+                    usage=MessageDeltaUsage(
                         output_tokens=state.output_tokens,
+                        input_tokens=state.input_tokens,
                     ),
                 )
-                yield MessageStreamEvent(type="message_stop")
+                yield MessageStopEvent(type="message_stop")
 
         return convert_stream()
 
@@ -796,7 +808,7 @@ class AnyLLM(ABC):
         stream: bool | None = None,
         instructions: str | None = None,
         max_tool_calls: int | None = None,
-        parallel_tool_calls: int | None = None,
+        parallel_tool_calls: bool | None = None,
         reasoning: Any | None = None,
         text: Any | None = None,
         presence_penalty: float | None = None,
@@ -878,7 +890,7 @@ class AnyLLM(ABC):
             stream=stream,
             instructions=instructions,
             max_tool_calls=max_tool_calls,
-            parallel_tool_calls=bool(parallel_tool_calls),
+            parallel_tool_calls=parallel_tool_calls,
             reasoning=reasoning,
             text=text,
             presence_penalty=presence_penalty,

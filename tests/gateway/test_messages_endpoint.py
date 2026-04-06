@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from any_llm.gateway.config import API_KEY_HEADER
-from any_llm.types.messages import MessageContentBlock, MessageResponse, MessageUsage
+from any_llm.gateway.core.config import API_KEY_HEADER
+from any_llm.types.messages import MessageResponse, MessageUsage, TextBlock, ToolUseBlock
 
 
 def _make_message_response(**overrides: Any) -> MessageResponse:
@@ -15,7 +15,7 @@ def _make_message_response(**overrides: Any) -> MessageResponse:
         "id": "msg_test123",
         "type": "message",
         "role": "assistant",
-        "content": [MessageContentBlock(type="text", text="Hello!")],
+        "content": [TextBlock(type="text", text="Hello!")],
         "model": "claude-3-5-sonnet",
         "stop_reason": "end_turn",
         "usage": MessageUsage(input_tokens=10, output_tokens=5),
@@ -43,7 +43,7 @@ def test_messages_endpoint_basic_completion(
     mock_response = _make_message_response()
     messages_request_body["metadata"] = {"user_id": "test-user"}
 
-    with patch("any_llm.gateway.routes.messages.amessages", new_callable=AsyncMock, return_value=mock_response):
+    with patch("any_llm.gateway.api.routes.messages.amessages", new_callable=AsyncMock, return_value=mock_response):
         response = client.post(
             "/v1/messages",
             json=messages_request_body,
@@ -79,7 +79,7 @@ def test_messages_endpoint_x_api_key_header(
     """Test authentication via x-api-key header (Anthropic client compatibility)."""
     mock_response = _make_message_response()
 
-    with patch("any_llm.gateway.routes.messages.amessages", new_callable=AsyncMock, return_value=mock_response):
+    with patch("any_llm.gateway.api.routes.messages.amessages", new_callable=AsyncMock, return_value=mock_response):
         response = client.post(
             "/v1/messages",
             json=messages_request_body,
@@ -97,7 +97,7 @@ def test_messages_endpoint_master_key_requires_user(
     """Test that master key auth requires user_id in metadata."""
     mock_response = _make_message_response()
 
-    with patch("any_llm.gateway.routes.messages.amessages", new_callable=AsyncMock, return_value=mock_response):
+    with patch("any_llm.gateway.api.routes.messages.amessages", new_callable=AsyncMock, return_value=mock_response):
         response = client.post(
             "/v1/messages",
             json=messages_request_body,
@@ -130,7 +130,7 @@ def test_messages_endpoint_with_tools(
     """Test message completion with tools."""
     tool_use_response = _make_message_response(
         content=[
-            MessageContentBlock(
+            ToolUseBlock(
                 type="tool_use",
                 id="toolu_123",
                 name="get_weather",
@@ -154,7 +154,7 @@ def test_messages_endpoint_with_tools(
         "metadata": {"user_id": "test-user"},
     }
 
-    with patch("any_llm.gateway.routes.messages.amessages", new_callable=AsyncMock, return_value=tool_use_response):
+    with patch("any_llm.gateway.api.routes.messages.amessages", new_callable=AsyncMock, return_value=tool_use_response):
         response = client.post(
             "/v1/messages",
             json=request_body,
@@ -178,7 +178,7 @@ def test_messages_endpoint_provider_error_format(
     messages_request_body["metadata"] = {"user_id": "test-user"}
 
     with patch(
-        "any_llm.gateway.routes.messages.amessages",
+        "any_llm.gateway.api.routes.messages.amessages",
         new_callable=AsyncMock,
         side_effect=RuntimeError("Provider unavailable"),
     ):
@@ -202,7 +202,7 @@ def test_messages_endpoint_bearer_auth(
     """Test authentication via standard Bearer token."""
     mock_response = _make_message_response()
 
-    with patch("any_llm.gateway.routes.messages.amessages", new_callable=AsyncMock, return_value=mock_response):
+    with patch("any_llm.gateway.api.routes.messages.amessages", new_callable=AsyncMock, return_value=mock_response):
         response = client.post(
             "/v1/messages",
             json=messages_request_body,

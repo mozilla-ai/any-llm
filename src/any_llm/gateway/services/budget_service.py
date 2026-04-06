@@ -6,9 +6,11 @@ from sqlalchemy.orm import Session
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import AnyLLMError
-from any_llm.gateway.db import Budget, BudgetResetLog, User
 from any_llm.gateway.log_config import logger
-from any_llm.gateway.pricing import find_model_pricing
+from any_llm.gateway.metrics import record_budget_exceeded
+from any_llm.gateway.models.entities import Budget, BudgetResetLog, User
+from any_llm.gateway.repositories.users_repository import get_active_user
+from any_llm.gateway.services.pricing_service import find_model_pricing
 
 
 def calculate_next_reset(start: datetime, duration_sec: int) -> datetime:
@@ -77,7 +79,7 @@ async def validate_user_budget(db: Session, user_id: str, model: str | None = No
         HTTPException: If user is blocked, doesn't exist, or exceeded budget
 
     """
-    user = db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).with_for_update().first()
+    user = get_active_user(db, user_id, for_update=True)
 
     if not user:
         raise HTTPException(
@@ -102,6 +104,7 @@ async def validate_user_budget(db: Session, user_id: str, model: str | None = No
                 if user.spend >= budget.max_budget:
                     if model and _is_model_free(db, model):
                         return user
+                    record_budget_exceeded(user_id)
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail=f"User '{user_id}' has exceeded budget limit",

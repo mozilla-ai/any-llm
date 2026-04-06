@@ -4,104 +4,44 @@ from typing import Any, Self
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
+from anthropic.types import Message, TextBlock, ThinkingBlock, ToolUseBlock, Usage
 
 from any_llm.providers.anthropic.base import BaseAnthropicProvider
 from any_llm.types.messages import (
+    ContentBlockDeltaEvent,
+    ContentBlockStartEvent,
+    ContentBlockStopEvent,
+    MessageDeltaEvent,
     MessageResponse,
     MessagesParams,
-    MessageStreamEvent,
+    MessageStartEvent,
+    MessageStopEvent,
 )
 
 
-def _make_mock_message(**overrides: Any) -> Mock:
-    """Create a mock Anthropic SDK Message object."""
-    msg = Mock()
-    msg.id = overrides.get("id", "msg_test123")
-    msg.role = overrides.get("role", "assistant")
-    msg.model = overrides.get("model", "claude-3-5-sonnet")
-    msg.stop_reason = overrides.get("stop_reason", "end_turn")
-    msg.type = "message"
-
-    usage = Mock()
-    usage.input_tokens = overrides.get("input_tokens", 10)
-    usage.output_tokens = overrides.get("output_tokens", 5)
-    usage.cache_creation_input_tokens = overrides.get("cache_creation_input_tokens", None)
-    usage.cache_read_input_tokens = overrides.get("cache_read_input_tokens", None)
-    msg.usage = usage
-
-    msg.content = overrides.get("content", [])
-    return msg
+def _make_usage(**overrides: Any) -> Usage:
+    defaults: dict[str, Any] = {"input_tokens": 10, "output_tokens": 5}
+    defaults.update(overrides)
+    return Usage(**defaults)
 
 
-def _make_text_block(text: str = "Hello!") -> Mock:
-    block = Mock()
-    block.type = "text"
-    block.text = text
-    return block
-
-
-def _make_tool_use_block(tool_id: str = "toolu_123", name: str = "get_weather", tool_input: Any = None) -> Mock:
-    block = Mock()
-    block.type = "tool_use"
-    block.id = tool_id
-    block.name = name
-    block.input = tool_input if tool_input is not None else {"city": "London"}
-    return block
-
-
-def _make_thinking_block(thinking: str = "Let me think...") -> Mock:
-    block = Mock()
-    block.type = "thinking"
-    block.thinking = thinking
-    return block
-
-
-def test_convert_native_content_block_text() -> None:
-    """Test converting an Anthropic text content block."""
-    block = _make_text_block("Hello!")
-    result = BaseAnthropicProvider._convert_native_content_block(block)
-    assert result.type == "text"
-    assert result.text == "Hello!"
-
-
-def test_convert_native_content_block_tool_use() -> None:
-    """Test converting an Anthropic tool_use content block."""
-    block = _make_tool_use_block()
-    result = BaseAnthropicProvider._convert_native_content_block(block)
-    assert result.type == "tool_use"
-    assert result.id == "toolu_123"
-    assert result.name == "get_weather"
-    assert result.input == {"city": "London"}
-
-
-def test_convert_native_content_block_tool_use_non_dict_input() -> None:
-    """Test tool_use block with non-dict input falls back to empty dict."""
-    block = _make_tool_use_block(tool_input="not a dict")
-    result = BaseAnthropicProvider._convert_native_content_block(block)
-    assert result.input == {}
-
-
-def test_convert_native_content_block_thinking() -> None:
-    """Test converting an Anthropic thinking content block."""
-    block = _make_thinking_block("Reasoning here")
-    result = BaseAnthropicProvider._convert_native_content_block(block)
-    assert result.type == "thinking"
-    assert result.thinking == "Reasoning here"
-
-
-def test_convert_native_content_block_unknown_type() -> None:
-    """Test converting an unknown content block type returns minimal block."""
-    block = Mock()
-    block.type = "custom_block"
-    result = BaseAnthropicProvider._convert_native_content_block(block)
-    assert result.type == "custom_block"
-    assert result.text is None
-    assert result.id is None
+def _make_message(**overrides: Any) -> Message:
+    defaults: dict[str, Any] = {
+        "id": "msg_test123",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-3-5-sonnet",
+        "stop_reason": "end_turn",
+        "content": [],
+        "usage": _make_usage(),
+    }
+    defaults.update(overrides)
+    return Message(**defaults)
 
 
 def test_convert_native_message_to_response_text() -> None:
     """Test converting an Anthropic Message with text content."""
-    msg = _make_mock_message(content=[_make_text_block("Hello!")])
+    msg = _make_message(content=[TextBlock(type="text", text="Hello!")])
     result = BaseAnthropicProvider._convert_native_message_to_response(msg)
     assert isinstance(result, MessageResponse)
     assert result.id == "msg_test123"
@@ -117,8 +57,8 @@ def test_convert_native_message_to_response_text() -> None:
 
 def test_convert_native_message_to_response_tool_use() -> None:
     """Test converting an Anthropic Message with tool_use content."""
-    msg = _make_mock_message(
-        content=[_make_tool_use_block()],
+    msg = _make_message(
+        content=[ToolUseBlock(type="tool_use", id="toolu_123", name="get_weather", input={"city": "London"})],
         stop_reason="tool_use",
     )
     result = BaseAnthropicProvider._convert_native_message_to_response(msg)
@@ -129,19 +69,12 @@ def test_convert_native_message_to_response_tool_use() -> None:
     assert result.content[0].input == {"city": "London"}
 
 
-def test_convert_native_message_to_response_tool_use_non_dict_input() -> None:
-    """Test tool_use block with non-dict input in full message conversion."""
-    msg = _make_mock_message(content=[_make_tool_use_block(tool_input="string_input")])
-    result = BaseAnthropicProvider._convert_native_message_to_response(msg)
-    assert result.content[0].input == {}
-
-
 def test_convert_native_message_to_response_thinking() -> None:
     """Test converting an Anthropic Message with thinking content."""
-    msg = _make_mock_message(
+    msg = _make_message(
         content=[
-            _make_thinking_block("Let me reason..."),
-            _make_text_block("The answer is 42."),
+            ThinkingBlock(type="thinking", thinking="Let me reason...", signature="sig"),
+            TextBlock(type="text", text="The answer is 42."),
         ]
     )
     result = BaseAnthropicProvider._convert_native_message_to_response(msg)
@@ -154,10 +87,9 @@ def test_convert_native_message_to_response_thinking() -> None:
 
 def test_convert_native_message_to_response_cache_tokens() -> None:
     """Test that cache token fields are extracted from usage."""
-    msg = _make_mock_message(
-        content=[_make_text_block()],
-        cache_creation_input_tokens=100,
-        cache_read_input_tokens=50,
+    msg = _make_message(
+        content=[TextBlock(type="text", text="Hello!")],
+        usage=_make_usage(cache_creation_input_tokens=100, cache_read_input_tokens=50),
     )
     result = BaseAnthropicProvider._convert_native_message_to_response(msg)
     assert result.usage.cache_creation_input_tokens == 100
@@ -165,11 +97,8 @@ def test_convert_native_message_to_response_cache_tokens() -> None:
 
 
 def test_convert_native_message_to_response_no_cache_tokens() -> None:
-    """Test that cache tokens default to None when not present."""
-    msg = _make_mock_message(content=[_make_text_block()])
-    # Remove cache attributes to test getattr fallback
-    del msg.usage.cache_creation_input_tokens
-    del msg.usage.cache_read_input_tokens
+    """Test that cache tokens default to None when not set."""
+    msg = _make_message(content=[TextBlock(type="text", text="Hello!")])
     result = BaseAnthropicProvider._convert_native_message_to_response(msg)
     assert result.usage.cache_creation_input_tokens is None
     assert result.usage.cache_read_input_tokens is None
@@ -178,7 +107,7 @@ def test_convert_native_message_to_response_no_cache_tokens() -> None:
 @pytest.mark.asyncio
 async def test_amessages_non_streaming() -> None:
     """Test _amessages non-streaming calls client.messages.create."""
-    mock_message = _make_mock_message(content=[_make_text_block("Hi!")])
+    mock_message = _make_message(content=[TextBlock(type="text", text="Hi!")])
 
     mock_client = Mock()
     mock_client.messages.create = AsyncMock(return_value=mock_message)
@@ -194,7 +123,9 @@ async def test_amessages_non_streaming() -> None:
     )
     result = await BaseAnthropicProvider._amessages(provider, params)
     assert isinstance(result, MessageResponse)
-    assert result.content[0].text == "Hi!"
+    block = result.content[0]
+    assert isinstance(block, TextBlock)
+    assert block.text == "Hi!"
 
     mock_client.messages.create.assert_called_once()
     call_kwargs = mock_client.messages.create.call_args.kwargs
@@ -205,7 +136,7 @@ async def test_amessages_non_streaming() -> None:
 @pytest.mark.asyncio
 async def test_amessages_non_streaming_with_all_params() -> None:
     """Test _amessages passes all optional params to API."""
-    mock_message = _make_mock_message(content=[_make_text_block()])
+    mock_message = _make_message(content=[TextBlock(type="text", text="Hello!")])
 
     mock_client = Mock()
     mock_client.messages.create = AsyncMock(return_value=mock_message)
@@ -244,9 +175,33 @@ async def test_amessages_non_streaming_with_all_params() -> None:
 
 
 @pytest.mark.asyncio
+async def test_amessages_cache_control_passthrough() -> None:
+    """Test that cache_control is passed through to the API call."""
+    mock_message = _make_message(content=[TextBlock(type="text", text="Hello!")])
+
+    mock_client = Mock()
+    mock_client.messages.create = AsyncMock(return_value=mock_message)
+
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = mock_client
+    provider._convert_native_message_to_response = BaseAnthropicProvider._convert_native_message_to_response
+
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        cache_control={"type": "ephemeral"},
+    )
+    await BaseAnthropicProvider._amessages(provider, params)
+
+    call_kwargs = mock_client.messages.create.call_args.kwargs
+    assert call_kwargs["cache_control"] == {"type": "ephemeral"}
+
+
+@pytest.mark.asyncio
 async def test_amessages_none_params_not_included() -> None:
     """Test that None optional params are not passed to the API."""
-    mock_message = _make_mock_message(content=[_make_text_block()])
+    mock_message = _make_message(content=[TextBlock(type="text", text="Hello!")])
 
     mock_client = Mock()
     mock_client.messages.create = AsyncMock(return_value=mock_message)
@@ -267,6 +222,7 @@ async def test_amessages_none_params_not_included() -> None:
     assert "temperature" not in call_kwargs
     assert "tools" not in call_kwargs
     assert "thinking" not in call_kwargs
+    assert "cache_control" not in call_kwargs
 
 
 @pytest.mark.asyncio
@@ -287,18 +243,27 @@ async def test_amessages_streaming_delegates_to_stream_method() -> None:
 
 @pytest.mark.asyncio
 async def test_stream_messages_async_emits_events() -> None:
-    """Test _stream_messages_async converts Anthropic stream events to MessageStreamEvents."""
+    """Test _stream_messages_async yields SDK event types directly."""
     from anthropic.types import (
-        ContentBlockDeltaEvent,
-        ContentBlockStartEvent,
-        ContentBlockStopEvent,
-        Message,
-        MessageStartEvent,
-        MessageStopEvent,
-        TextBlock,
-        TextDelta,
-        Usage,
+        ContentBlockDeltaEvent as SDKContentBlockDeltaEvent,
     )
+    from anthropic.types import (
+        ContentBlockStartEvent as SDKContentBlockStartEvent,
+    )
+    from anthropic.types import (
+        ContentBlockStopEvent as SDKContentBlockStopEvent,
+    )
+    from anthropic.types import (
+        MessageDeltaUsage,
+        TextDelta,
+    )
+    from anthropic.types import (
+        MessageStartEvent as SDKMessageStartEvent,
+    )
+    from anthropic.types import (
+        MessageStopEvent as SDKMessageStopEvent,
+    )
+    from anthropic.types.raw_message_delta_event import Delta as SDKDelta
 
     usage_start = Usage(input_tokens=10, output_tokens=0)
     msg = Message(
@@ -310,23 +275,22 @@ async def test_stream_messages_async_emits_events() -> None:
         stop_reason=None,
         usage=usage_start,
     )
-    stop_event = MessageStopEvent(type="message_stop")
-    stop_event.message = Message(  # type: ignore[attr-defined]
-        id="msg_123",
-        type="message",
-        role="assistant",
-        content=[TextBlock(type="text", text="Hello!")],
-        model="claude-3-5-sonnet",
-        stop_reason="end_turn",
-        usage=Usage(input_tokens=10, output_tokens=5),
-    )
+
+    from anthropic.types import RawMessageDeltaEvent
 
     events_list: list[Any] = [
-        MessageStartEvent(type="message_start", message=msg),
-        ContentBlockStartEvent(type="content_block_start", index=0, content_block=TextBlock(type="text", text="")),
-        ContentBlockDeltaEvent(type="content_block_delta", index=0, delta=TextDelta(type="text_delta", text="Hello!")),
-        ContentBlockStopEvent(type="content_block_stop", index=0),
-        stop_event,
+        SDKMessageStartEvent(type="message_start", message=msg),
+        SDKContentBlockStartEvent(type="content_block_start", index=0, content_block=TextBlock(type="text", text="")),
+        SDKContentBlockDeltaEvent(
+            type="content_block_delta", index=0, delta=TextDelta(type="text_delta", text="Hello!")
+        ),
+        SDKContentBlockStopEvent(type="content_block_stop", index=0),
+        RawMessageDeltaEvent(
+            type="message_delta",
+            delta=SDKDelta(stop_reason="end_turn"),
+            usage=MessageDeltaUsage(output_tokens=5),
+        ),
+        SDKMessageStopEvent(type="message_stop"),
     ]
 
     class MockStream:
@@ -353,9 +317,15 @@ async def test_stream_messages_async_emits_events() -> None:
 
     provider = MagicMock(spec=BaseAnthropicProvider)
     provider.client = mock_client
-    provider._convert_native_content_block = BaseAnthropicProvider._convert_native_content_block
 
-    collected: list[MessageStreamEvent] = []
+    collected: list[
+        MessageStartEvent
+        | MessageDeltaEvent
+        | MessageStopEvent
+        | ContentBlockStartEvent
+        | ContentBlockStopEvent
+        | ContentBlockDeltaEvent
+    ] = []
     async for event in BaseAnthropicProvider._stream_messages_async(
         provider, model="claude-3-5-sonnet", messages=[], max_tokens=1024
     ):
@@ -369,27 +339,23 @@ async def test_stream_messages_async_emits_events() -> None:
     assert "message_delta" in types
     assert "message_stop" in types
 
-    msg_start = next(e for e in collected if e.type == "message_start")
-    assert msg_start.message is not None
+    msg_start = next(e for e in collected if isinstance(e, MessageStartEvent))
     assert msg_start.message.id == "msg_123"
     assert msg_start.message.usage.input_tokens == 10
 
-    text_delta = next(e for e in collected if e.type == "content_block_delta")
-    assert text_delta.delta is not None
-    assert text_delta.delta["type"] == "text_delta"
-    assert text_delta.delta["text"] == "Hello!"
+    text_delta = next(e for e in collected if isinstance(e, ContentBlockDeltaEvent))
+    assert text_delta.delta.type == "text_delta"
+    assert text_delta.delta.text == "Hello!"
 
-    msg_delta = next(e for e in collected if e.type == "message_delta")
-    assert msg_delta.delta is not None
-    assert msg_delta.delta["stop_reason"] == "end_turn"
-    assert msg_delta.usage is not None
+    msg_delta = next(e for e in collected if isinstance(e, MessageDeltaEvent))
+    assert msg_delta.delta.stop_reason == "end_turn"
     assert msg_delta.usage.output_tokens == 5
 
 
 @pytest.mark.asyncio
 async def test_amessages_kwargs_passthrough() -> None:
     """Test that extra kwargs are passed through to the API call."""
-    mock_message = _make_mock_message(content=[_make_text_block()])
+    mock_message = _make_message(content=[TextBlock(type="text", text="Hello!")])
 
     mock_client = Mock()
     mock_client.messages.create = AsyncMock(return_value=mock_message)
@@ -407,3 +373,30 @@ async def test_amessages_kwargs_passthrough() -> None:
 
     call_kwargs = mock_client.messages.create.call_args.kwargs
     assert call_kwargs["custom_kwarg"] == "value"
+
+
+@pytest.mark.asyncio
+async def test_amessages_system_list_form() -> None:
+    """Test that system param accepts list of content blocks."""
+    mock_message = _make_message(content=[TextBlock(type="text", text="Hello!")])
+
+    mock_client = Mock()
+    mock_client.messages.create = AsyncMock(return_value=mock_message)
+
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = mock_client
+    provider._convert_native_message_to_response = BaseAnthropicProvider._convert_native_message_to_response
+
+    system_blocks = [
+        {"type": "text", "text": "You are helpful.", "cache_control": {"type": "ephemeral"}},
+    ]
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        system=system_blocks,
+    )
+    await BaseAnthropicProvider._amessages(provider, params)
+
+    call_kwargs = mock_client.messages.create.call_args.kwargs
+    assert call_kwargs["system"] == system_blocks
