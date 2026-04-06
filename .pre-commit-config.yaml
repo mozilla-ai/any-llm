@@ -19,7 +19,7 @@ repos:
         exclude: (\.md|\.ambr)$
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: "v0.15.4"
+    rev: "v0.15.8"
     hooks:
       - id: ruff
         args:
@@ -46,7 +46,7 @@ repos:
         verbose: true
 
   - repo: https://github.com/codespell-project/codespell
-    rev: "v2.4.1"
+    rev: "v2.4.2"
     hooks:
       - id: codespell
         exclude: CODE_OF_CONDUCT.md|tests/assets|package-lock\.json
