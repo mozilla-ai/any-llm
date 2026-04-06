@@ -298,18 +298,19 @@ async def test_completion_with_dict_json_schema_response_format() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
-    response_format = {
+    expected_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "value": {"type": "integer"},
+        },
+        "required": ["name", "value"],
+    }
+    response_format: dict[str, Any] = {
         "type": "json_schema",
         "json_schema": {
             "name": "TestOutput",
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "value": {"type": "integer"},
-                },
-                "required": ["name", "value"],
-            },
+            "schema": expected_schema,
         },
     }
 
@@ -323,7 +324,7 @@ async def test_completion_with_dict_json_schema_response_format() -> None:
         generation_config = call_kwargs["config"]
 
         assert generation_config.response_mime_type == "application/json"
-        assert generation_config.response_schema == response_format["json_schema"]["schema"]
+        assert generation_config.response_schema == expected_schema
 
 
 @pytest.mark.asyncio
