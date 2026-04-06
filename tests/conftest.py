@@ -73,7 +73,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.FIREWORKS: "accounts/fireworks/models/gpt-oss-20b",
         LLMProvider.GROQ: "openai/gpt-oss-20b",
         LLMProvider.PORTKEY: "@any-llm-test/gpt-4.1-mini",
-        LLMProvider.LLAMA: "Llama-4-Maverick-17B-128E-Instruct-FP8",
+        LLMProvider.LLAMA: "Llama-3.3-8B-Instruct",
         LLMProvider.AZURE: "openai/gpt-4.1-nano",
         LLMProvider.AZUREOPENAI: "gpt-4.1-nano",
         LLMProvider.PERPLEXITY: "sonar",
