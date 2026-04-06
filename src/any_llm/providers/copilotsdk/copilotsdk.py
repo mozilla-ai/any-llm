@@ -1,12 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import logging
-import mimetypes
 import os
-import tempfile
-import time
 import warnings
 from typing import TYPE_CHECKING, Any
 
@@ -14,20 +9,21 @@ from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 
-# Eagerly initialise the MIME-type database so that mimetypes.guess_extension()
-# is thread-safe from the very first call (lazy initialisation is not thread-safe).
-mimetypes.init()
-
-logger = logging.getLogger(__name__)
-
-_MAX_BASE64_DECODE_BYTES = 20 * 1024 * 1024  # 20 MiB
 _STREAM_TIMEOUT_SECONDS = 300
 
 MISSING_PACKAGES_ERROR: ImportError | None = None
 try:
     from copilot import CopilotClient, PermissionHandler
     from copilot.generated.session_events import SessionEventType
-    from copilot.types import ModelInfo as CopilotModelInfo
+
+    from .utils import (
+        _build_chat_completion,
+        _build_chunk,
+        _cleanup_temp_files,
+        _copilot_model_to_openai,
+        _extract_attachments,
+        _messages_to_prompt,
+    )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
@@ -43,184 +39,14 @@ if TYPE_CHECKING:
     from any_llm.types.model import Model
 
 
-def _messages_to_prompt(messages: list[dict[str, Any]]) -> str:
-    """Flatten an OpenAI-style messages list into a single prompt string.
-
-    System messages become an instruction header; prior conversational turns
-    are formatted as a transcript; the final user message is the prompt.
-    Image content blocks are intentionally omitted here — they are forwarded
-    as file attachments via :func:`_extract_attachments`.
-    """
-    system_parts: list[str] = []
-    conversation_parts: list[str] = []
-
-    for msg in messages:
-        role = msg.get("role", "user")
-        content = msg.get("content", "")
-        # Multimodal content blocks: extract text only; images handled separately.
-        if isinstance(content, list):
-            content = " ".join(
-                block.get("text", "")
-                for block in content
-                if isinstance(block, dict) and block.get("type") == "text"
-            )
-
-        if role == "system":
-            system_parts.append(str(content))
-        elif role == "assistant":
-            conversation_parts.append(f"Assistant: {content}")
-        elif role == "user":
-            conversation_parts.append(f"User: {content}")
-        else:
-            warnings.warn(
-                f"CopilotsdkProvider: unsupported message role '{role}' — rendered as User turn.",
-                stacklevel=2,
-            )
-            conversation_parts.append(f"User: {content}")
-
-    parts: list[str] = []
-    if system_parts:
-        parts.append("\n".join(system_parts))
-    if conversation_parts:
-        parts.append("\n\n".join(conversation_parts))
-    return "\n\n".join(parts)
-
-
-def _extract_attachments(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
-    """Extract ``image_url`` content blocks from messages as file attachments.
-
-    Decodes base64 ``data:`` URIs to temporary files on disk, which the
-    Copilot SDK then passes to the CLI as ``FileAttachment`` objects.
-
-    Returns:
-        (attachments, temp_paths) where ``temp_paths`` must be cleaned up
-        by the caller after the ``session.send()`` call completes.
-    """
-    attachments: list[dict[str, Any]] = []
-    temp_paths: list[str] = []
-
-    for msg in messages:
-        content = msg.get("content", "")
-        if not isinstance(content, list):
-            continue
-        for block in content:
-            if not isinstance(block, dict) or block.get("type") != "image_url":
-                continue
-            url = (block.get("image_url") or {}).get("url", "")
-            if not url.startswith("data:"):
-                # HTTP/HTTPS URLs would need downloading — skipped for now.
-                continue
-            try:
-                header, b64data = url.split(",", 1)
-                mime = header.split(";")[0].split(":")[1]
-                ext = mimetypes.guess_extension(mime) or ".bin"
-                # guess_extension returns ".jpe" for image/jpeg on some platforms.
-                if ext == ".jpe":
-                    ext = ".jpg"
-                raw = base64.b64decode(b64data, validate=True)
-                if len(raw) > _MAX_BASE64_DECODE_BYTES:
-                    logger.warning(
-                        "CopilotsdkProvider: skipping image attachment — decoded size exceeds %d MiB limit",
-                        _MAX_BASE64_DECODE_BYTES // (1024 * 1024),
-                    )
-                    continue
-                with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as fh:
-                    fh.write(raw)
-                    temp_paths.append(fh.name)
-                    attachments.append({"type": "file", "path": fh.name})
-            except Exception:  # noqa: BLE001
-                logger.warning("CopilotsdkProvider: failed to decode image attachment — skipping.", exc_info=True)
-
-    return attachments, temp_paths
-
-
-def _cleanup_temp_files(paths: list[str]) -> None:
-    """Remove temporary image files created by :func:`_extract_attachments`."""
-    for path in paths:
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
-
-
-def _build_chat_completion(
-    content: str,
-    model_id: str,
-    reasoning: str | None = None,
-) -> "ChatCompletion":
-    """Wrap a plain text response into an OpenAI-compatible ChatCompletion."""
-    from any_llm.types.completion import (  # noqa: PLC0415
-        ChatCompletion,
-        ChatCompletionMessage,
-        Choice,
-        Reasoning,
-    )
-
-    return ChatCompletion(
-        id=f"copilotsdk-{time.time_ns()}",
-        choices=[
-            Choice(
-                finish_reason="stop",
-                index=0,
-                message=ChatCompletionMessage(
-                    role="assistant",
-                    content=content,
-                    reasoning=Reasoning(content=reasoning) if reasoning else None,
-                ),
-                logprobs=None,
-            )
-        ],
-        created=int(time.time()),
-        model=model_id,
-        object="chat.completion",
-        # The Copilot SDK does not expose token counts, so usage is omitted.
-        # Gateway budget tracking will not function for this provider.
-    )
-
-
-def _build_chunk(delta: str, model_id: str, *, is_reasoning: bool = False) -> "ChatCompletionChunk":
-    """Wrap a streaming delta into an OpenAI-compatible ChatCompletionChunk."""
-    from any_llm.types.completion import (  # noqa: PLC0415
-        ChatCompletionChunk,
-        ChunkChoice,
-        ChoiceDelta,
-        Reasoning,
-    )
-
-    return ChatCompletionChunk(
-        id=f"copilotsdk-{time.time_ns()}",
-        choices=[
-            ChunkChoice(
-                delta=ChoiceDelta(
-                    role="assistant",
-                    content=None if is_reasoning else delta,
-                    reasoning=Reasoning(content=delta) if is_reasoning else None,
-                ),
-                finish_reason=None,
-                index=0,
-            )
-        ],
-        created=int(time.time()),
-        model=model_id,
-        object="chat.completion.chunk",
-    )
-
-
-def _copilot_model_to_openai(info: "CopilotModelInfo") -> "Model":
-    """Convert a copilot-sdk ModelInfo to an OpenAI-compatible Model."""
-    from openai.types.model import Model as OpenAIModel  # noqa: PLC0415
-
-    return OpenAIModel(id=info.id, created=0, owned_by="github-copilot", object="model")
-
-
 class CopilotsdkProvider(AnyLLM):
     """GitHub Copilot SDK provider for any-llm.
 
     Communicates with the Copilot CLI via JSON-RPC using the ``github-copilot-sdk``
     Python package. Authentication supports two modes (checked in order):
 
-    1. **Token mode** — set ``COPILOT_GITHUB_TOKEN``, ``GITHUB_TOKEN``, or
-       ``GH_TOKEN`` in the environment (or pass ``api_key`` explicitly).
+    1. **Token mode** — set ``COPILOT_GITHUB_TOKEN`` in the environment (or pass
+       ``api_key`` explicitly).
     2. **Logged-in CLI user** — if no token is found, the Copilot CLI uses
        the credentials from the local user's ``gh`` / ``copilot`` CLI session.
 
@@ -231,7 +57,6 @@ class CopilotsdkProvider(AnyLLM):
 
     Environment variables:
         COPILOT_GITHUB_TOKEN: GitHub token with Copilot access (optional).
-        GITHUB_TOKEN / GH_TOKEN: Fallback token sources (optional).
         COPILOT_CLI_URL: Connect to an external CLI server instead of spawning one.
         COPILOT_CLI_PATH: Override the CLI binary path (default: PATH lookup).
     """
@@ -254,17 +79,12 @@ class CopilotsdkProvider(AnyLLM):
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     # Internal state — populated lazily on first call.
-    _copilot_client: "CopilotClient | None"
+    _copilot_client: CopilotClient | None
 
     @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         """API key is optional: logged-in CLI mode works without any token."""
-        resolved = (
-            api_key
-            or os.getenv("COPILOT_GITHUB_TOKEN")
-            or os.getenv("GITHUB_TOKEN")
-            or os.getenv("GH_TOKEN")
-        )
+        resolved = api_key or os.getenv("COPILOT_GITHUB_TOKEN")
         # Return None (not empty string) so copilot-sdk uses logged-in credentials.
         return resolved or None
 
@@ -277,7 +97,7 @@ class CopilotsdkProvider(AnyLLM):
         self._copilot_client = None
         self._client_lock = asyncio.Lock()
 
-    async def _ensure_client(self) -> "CopilotClient":
+    async def _ensure_client(self) -> CopilotClient:
         """Lazily create and start a CopilotClient, reusing it across calls.
 
         The lock prevents concurrent coroutines from each spawning a separate
@@ -308,7 +128,7 @@ class CopilotsdkProvider(AnyLLM):
 
         return self._copilot_client
 
-    def _build_session_cfg(self, params: "CompletionParams", streaming: bool) -> dict[str, Any]:
+    def _build_session_cfg(self, params: CompletionParams, streaming: bool) -> dict[str, Any]:
         """Build a SessionConfig dict from CompletionParams."""
         # PermissionHandler.approve_all silently grants any permissions the session
         # requests (e.g. tool calls). This mirrors how the Copilot CLI behaves in
@@ -330,7 +150,7 @@ class CopilotsdkProvider(AnyLLM):
         msg_opts: dict[str, Any],
         model_id: str,
         temp_paths: list[str],
-    ) -> "AsyncIterator[ChatCompletionChunk]":
+    ) -> AsyncIterator[ChatCompletionChunk]:
         """Async generator that streams chunks from a live Copilot session.
 
         Bridges the SDK's event-callback model to an async iterator via an
@@ -360,11 +180,12 @@ class CopilotsdkProvider(AnyLLM):
             while True:
                 try:
                     item = await asyncio.wait_for(queue.get(), timeout=_STREAM_TIMEOUT_SECONDS)
-                except asyncio.TimeoutError:
-                    raise RuntimeError(
+                except TimeoutError:
+                    msg = (
                         f"Copilot streaming timed out after {_STREAM_TIMEOUT_SECONDS}s "
                         "waiting for the next event (SESSION_IDLE or SESSION_ERROR never arrived)."
                     )
+                    raise RuntimeError(msg) from None
                 if item is None:
                     break
                 kind, delta = item
@@ -376,7 +197,7 @@ class CopilotsdkProvider(AnyLLM):
             await session.disconnect()
             _cleanup_temp_files(temp_paths)
 
-    def _warn_unsupported_params(self, params: "CompletionParams") -> None:
+    def _warn_unsupported_params(self, params: CompletionParams) -> None:
         """Emit a warning for any CompletionParams fields that this provider cannot honour."""
         unsupported_names = [
             name
@@ -401,9 +222,9 @@ class CopilotsdkProvider(AnyLLM):
     @override
     async def _acompletion(
         self,
-        params: "CompletionParams",
+        params: CompletionParams,
         **kwargs: Any,
-    ) -> "ChatCompletion | AsyncIterator[ChatCompletionChunk]":
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Send a completion request via a fresh Copilot session."""
         self._warn_unsupported_params(params)
         client = await self._ensure_client()
@@ -459,7 +280,7 @@ class CopilotsdkProvider(AnyLLM):
                 self._copilot_client = None
 
     @override
-    async def _alist_models(self, **kwargs: Any) -> "Sequence[Model]":
+    async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         """List models available through the Copilot CLI."""
         client = await self._ensure_client()
         models = await client.list_models()
@@ -467,30 +288,36 @@ class CopilotsdkProvider(AnyLLM):
 
     @staticmethod
     @override
-    def _convert_completion_params(params: "CompletionParams", **kwargs: Any) -> dict[str, Any]:
-        raise NotImplementedError("CopilotsdkProvider overrides _acompletion directly")
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        msg = "CopilotsdkProvider overrides _acompletion directly"
+        raise NotImplementedError(msg)
 
     @staticmethod
     @override
-    def _convert_completion_response(response: Any) -> "ChatCompletion":
-        raise NotImplementedError("CopilotsdkProvider overrides _acompletion directly")
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        msg = "CopilotsdkProvider overrides _acompletion directly"
+        raise NotImplementedError(msg)
 
     @staticmethod
     @override
-    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> "ChatCompletionChunk":
-        raise NotImplementedError("CopilotsdkProvider overrides _acompletion directly")
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        msg = "CopilotsdkProvider overrides _acompletion directly"
+        raise NotImplementedError(msg)
 
     @staticmethod
     @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
-        raise NotImplementedError("CopilotsdkProvider does not support embeddings")
+        msg = "CopilotsdkProvider does not support embeddings"
+        raise NotImplementedError(msg)
 
     @staticmethod
     @override
-    def _convert_embedding_response(response: Any) -> "CreateEmbeddingResponse":
-        raise NotImplementedError("CopilotsdkProvider does not support embeddings")
+    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
+        msg = "CopilotsdkProvider does not support embeddings"
+        raise NotImplementedError(msg)
 
     @staticmethod
     @override
-    def _convert_list_models_response(response: Any) -> "Sequence[Model]":
-        raise NotImplementedError("CopilotsdkProvider uses _alist_models directly")
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        msg = "CopilotsdkProvider uses _alist_models directly"
+        raise NotImplementedError(msg)

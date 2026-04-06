@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import logging
 import os
 import tempfile
 import warnings
@@ -12,8 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from any_llm.providers.copilotsdk.copilotsdk import (
-    CopilotsdkProvider,
+from any_llm.providers.copilotsdk.copilotsdk import CopilotsdkProvider
+from any_llm.providers.copilotsdk.utils import (
     _build_chat_completion,
     _build_chunk,
     _cleanup_temp_files,
@@ -164,17 +163,25 @@ def test_api_key_falls_back_to_copilot_env() -> None:
     assert result == "copilot-env"
 
 
-def test_api_key_falls_back_to_github_token() -> None:
+def test_github_token_env_var_is_not_used() -> None:
     provider = object.__new__(CopilotsdkProvider)
     env = {"COPILOT_GITHUB_TOKEN": "", "GITHUB_TOKEN": "gh-token"}
     with patch.dict(os.environ, env, clear=False):
         result = provider._verify_and_set_api_key(None)
-    assert result == "gh-token"
+    assert result is None
 
 
-def test_api_key_returns_none_when_all_absent() -> None:
+def test_gh_token_env_var_is_not_used() -> None:
     provider = object.__new__(CopilotsdkProvider)
-    env = {"COPILOT_GITHUB_TOKEN": "", "GITHUB_TOKEN": "", "GH_TOKEN": ""}
+    env = {"COPILOT_GITHUB_TOKEN": "", "GITHUB_TOKEN": "", "GH_TOKEN": "gh-token"}
+    with patch.dict(os.environ, env, clear=False):
+        result = provider._verify_and_set_api_key(None)
+    assert result is None
+
+
+def test_api_key_returns_none_when_copilot_token_absent() -> None:
+    provider = object.__new__(CopilotsdkProvider)
+    env = {"COPILOT_GITHUB_TOKEN": ""}
     with patch.dict(os.environ, env, clear=False):
         result = provider._verify_and_set_api_key(None)
     assert result is None
@@ -183,7 +190,7 @@ def test_api_key_returns_none_when_all_absent() -> None:
 def test_init_client_stores_token_and_url() -> None:
     provider = object.__new__(CopilotsdkProvider)
     provider._init_client(api_key="my-token", api_base="localhost:9000")
-    assert provider._resolved_token == "my-token"
+    assert provider._resolved_token == "my-token"  # noqa: S105
     assert provider._cli_url == "localhost:9000"
     assert provider._copilot_client is None
     assert not hasattr(provider, "_extra_kwargs")
@@ -249,7 +256,7 @@ def test_cleanup_temp_files_removes_files() -> None:
 
 
 def test_cleanup_temp_files_tolerates_missing() -> None:
-    _cleanup_temp_files(["/tmp/does-not-exist-copilotsdk-test-xyz"])
+    _cleanup_temp_files(["/tmp/does-not-exist-copilotsdk-test-xyz"])  # noqa: S108
 
 
 @pytest.mark.asyncio
@@ -372,7 +379,7 @@ async def test_acompletion_captures_reasoning() -> None:
     message_event.type = SessionEventType.ASSISTANT_MESSAGE
 
     reasoning_event = MagicMock()
-    reasoning_event.data.content = "Because 6×7=42."
+    reasoning_event.data.content = "Because 6x7=42."
     reasoning_event.type = SessionEventType.ASSISTANT_REASONING
 
     def fake_on(callback: Any) -> Any:
@@ -390,13 +397,13 @@ async def test_acompletion_captures_reasoning() -> None:
     with patch.object(provider, "_ensure_client", AsyncMock(return_value=mock_client)):
         params = CompletionParams(
             model_id="gpt-4o",
-            messages=[{"role": "user", "content": "What is 6×7?"}],
+            messages=[{"role": "user", "content": "What is 6x7?"}],
         )
         result = await provider._acompletion(params)
 
     assert result.choices[0].message.content == "42"
     assert result.choices[0].message.reasoning is not None
-    assert result.choices[0].message.reasoning.content == "Because 6×7=42."
+    assert result.choices[0].message.reasoning.content == "Because 6x7=42."
 
 
 @pytest.mark.asyncio
@@ -646,25 +653,30 @@ def test_messages_to_prompt_function_role_warns() -> None:
         _messages_to_prompt(messages)
 
 
-def test_extract_attachments_oversized_skipped(caplog: Any) -> None:
-    from any_llm.providers.copilotsdk.copilotsdk import _MAX_BASE64_DECODE_BYTES
+def test_extract_attachments_oversized_skipped() -> None:
+    from any_llm.providers.copilotsdk import utils as utils_module
+    from any_llm.providers.copilotsdk.utils import _MAX_BASE64_DECODE_BYTES
 
     oversized_bytes = b"\x00" * (_MAX_BASE64_DECODE_BYTES + 1)
     url = f"data:image/jpeg;base64,{base64.b64encode(oversized_bytes).decode()}"
     messages = [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": url}}]}]
-    with caplog.at_level(logging.WARNING, logger="any_llm.providers.copilotsdk.copilotsdk"):
+    with patch.object(utils_module.logger, "warning") as mock_warning:
         attachments, temp_paths = _extract_attachments(messages)
     assert attachments == []
     assert temp_paths == []
-    assert any("exceeds" in r.message for r in caplog.records)
+    mock_warning.assert_called_once()
+    assert "exceeds" in mock_warning.call_args[0][0]
 
 
-def test_extract_attachments_malformed_logs_warning(caplog: Any) -> None:
+def test_extract_attachments_malformed_logs_warning() -> None:
+    from any_llm.providers.copilotsdk import utils as utils_module
+
     messages = [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,NOT_VALID!!"}}]}]
-    with caplog.at_level(logging.WARNING, logger="any_llm.providers.copilotsdk.copilotsdk"):
-        attachments, temp_paths = _extract_attachments(messages)
+    with patch.object(utils_module.logger, "warning") as mock_warning:
+        attachments, _temp_paths = _extract_attachments(messages)
     assert attachments == []
-    assert any("failed to decode" in r.message for r in caplog.records)
+    mock_warning.assert_called_once()
+    assert "failed to decode" in mock_warning.call_args[0][0]
 
 
 @pytest.mark.asyncio

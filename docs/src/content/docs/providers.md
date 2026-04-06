@@ -67,78 +67,10 @@ Provider source code is in [`src/any_llm/providers/`](https://github.com/mozilla
 ### `copilotsdk` — GitHub Copilot SDK
 
 The `copilotsdk` provider communicates with GitHub Copilot models via the
-[`github-copilot-sdk`](https://pypi.org/project/github-copilot-sdk/) Python package,
-which bundles the Copilot CLI binary for your platform.
-
-#### Installation
-
-Install the platform-specific wheel:
-
-```bash
-pip install any-llm-sdk[copilotsdk]
-```
-
-> **Note**: `github-copilot-sdk` ships separate wheels per OS and CPU architecture
-> (e.g. `macosx_arm64`, `linux_x86_64`). `pip` selects the correct wheel automatically
-> on supported platforms. If installation fails, check [PyPI](https://pypi.org/project/github-copilot-sdk/#files)
-> for available platform tags.
-
-#### Authentication
-
-Two modes are supported, checked in order:
-
-1. **Token mode** — set one of these environment variables:
-
-   ```bash
-   export COPILOT_GITHUB_TOKEN="ghp_your_token"
-   # or
-   export GITHUB_TOKEN="ghp_your_token"
-   # or
-   export GH_TOKEN="ghp_your_token"
-   ```
-
-   Alternatively, pass `api_key` directly to `AnyLLM.create()`.
-
-2. **Logged-in CLI user** — if no token is set, the provider uses the credentials
-   from the local `gh` / `copilot` CLI session (run `gh auth login` first). No
-   environment variable is required in this mode.
-
-#### Configuration
-
-| Environment Variable | Purpose | Default |
-| --- | --- | --- |
-| `COPILOT_GITHUB_TOKEN` | GitHub token with Copilot access | — |
-| `GITHUB_TOKEN` / `GH_TOKEN` | Fallback token sources | — |
-| `COPILOT_CLI_URL` | Connect to an external CLI server instead of spawning one (e.g. `localhost:9000`) | — |
-| `COPILOT_CLI_PATH` | Override the Copilot CLI binary path | PATH lookup |
-
-#### Usage
-
-```python
-from any_llm import AnyLLM
-
-# Token auth (or set COPILOT_GITHUB_TOKEN in environment)
-llm = AnyLLM.create("copilotsdk")
-
-# List available models
-models = llm.list_models()
-
-# Completion with reasoning
-response = llm.completion(
-    model="claude-sonnet-4-5",
-    messages=[{"role": "user", "content": "Explain async generators in Python."}],
-    reasoning_effort="high",
-)
-print(response.choices[0].message.content)
-
-# Streaming
-for chunk in llm.completion(
-    model="gpt-4o",
-    messages=[{"role": "user", "content": "Hello!"}],
-    stream=True,
-):
-    print(chunk.choices[0].delta.content or "", end="", flush=True)
-```
+[`github-copilot-sdk`](https://pypi.org/project/github-copilot-sdk/) package, which bundles the Copilot CLI binary
+for your platform. Install with `pip install any-llm-sdk[copilotsdk]`. Authentication uses the `COPILOT_GITHUB_TOKEN`
+environment variable or the local `gh` / `copilot` CLI session (run `gh auth login`; no token required). See the
+[SDK documentation](https://pypi.org/project/github-copilot-sdk/) for platform wheels and configuration details.
 
 ### `gemini` / `vertexai` — Inline Media
 
