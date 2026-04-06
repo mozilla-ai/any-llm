@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import mimetypes
 import os
 import tempfile
 import time
+import warnings
 from typing import TYPE_CHECKING, Any
 
 from typing_extensions import override
@@ -15,6 +17,11 @@ from any_llm.any_llm import AnyLLM
 # Eagerly initialise the MIME-type database so that mimetypes.guess_extension()
 # is thread-safe from the very first call (lazy initialisation is not thread-safe).
 mimetypes.init()
+
+logger = logging.getLogger(__name__)
+
+_MAX_BASE64_DECODE_BYTES = 20 * 1024 * 1024  # 20 MiB
+_STREAM_TIMEOUT_SECONDS = 300
 
 MISSING_PACKAGES_ERROR: ImportError | None = None
 try:
@@ -62,7 +69,13 @@ def _messages_to_prompt(messages: list[dict[str, Any]]) -> str:
             system_parts.append(str(content))
         elif role == "assistant":
             conversation_parts.append(f"Assistant: {content}")
+        elif role == "user":
+            conversation_parts.append(f"User: {content}")
         else:
+            warnings.warn(
+                f"CopilotsdkProvider: unsupported message role '{role}' — rendered as User turn.",
+                stacklevel=2,
+            )
             conversation_parts.append(f"User: {content}")
 
     parts: list[str] = []
@@ -105,12 +118,18 @@ def _extract_attachments(messages: list[dict[str, Any]]) -> tuple[list[dict[str,
                 if ext == ".jpe":
                     ext = ".jpg"
                 raw = base64.b64decode(b64data, validate=True)
+                if len(raw) > _MAX_BASE64_DECODE_BYTES:
+                    logger.warning(
+                        "CopilotsdkProvider: skipping image attachment — decoded size exceeds %d MiB limit",
+                        _MAX_BASE64_DECODE_BYTES // (1024 * 1024),
+                    )
+                    continue
                 with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as fh:
                     fh.write(raw)
                     temp_paths.append(fh.name)
                     attachments.append({"type": "file", "path": fh.name})
             except Exception:  # noqa: BLE001
-                pass  # Skip malformed data URIs rather than failing the whole request.
+                logger.warning("CopilotsdkProvider: failed to decode image attachment — skipping.", exc_info=True)
 
     return attachments, temp_paths
 
@@ -154,6 +173,8 @@ def _build_chat_completion(
         created=int(time.time()),
         model=model_id,
         object="chat.completion",
+        # The Copilot SDK does not expose token counts, so usage is omitted.
+        # Gateway budget tracking will not function for this provider.
     )
 
 
@@ -253,7 +274,6 @@ class CopilotsdkProvider(AnyLLM):
         self._resolved_token: str | None = api_key
         self._cli_url: str | None = api_base or os.getenv("COPILOT_CLI_URL")
         self._cli_path: str | None = os.getenv("COPILOT_CLI_PATH") or None
-        self._extra_kwargs = kwargs
         self._copilot_client = None
         self._client_lock = asyncio.Lock()
 
@@ -318,26 +338,33 @@ class CopilotsdkProvider(AnyLLM):
         when the generator exits (normally or via exception/cancellation).
         """
         queue: asyncio.Queue[tuple[str, str] | None] = asyncio.Queue()
+        loop = asyncio.get_event_loop()
 
         def on_event(event: Any) -> None:
             etype = event.type
             if etype == SessionEventType.ASSISTANT_MESSAGE_DELTA:
-                queue.put_nowait(("content", event.data.delta_content or ""))
+                loop.call_soon_threadsafe(queue.put_nowait, ("content", event.data.delta_content or ""))
             elif etype == SessionEventType.ASSISTANT_REASONING_DELTA:
-                queue.put_nowait(("reasoning", event.data.delta_content or ""))
+                loop.call_soon_threadsafe(queue.put_nowait, ("reasoning", event.data.delta_content or ""))
             elif etype == SessionEventType.SESSION_IDLE:
-                queue.put_nowait(None)  # sentinel — streaming complete normally
+                loop.call_soon_threadsafe(queue.put_nowait, None)
             elif etype == SessionEventType.SESSION_ERROR:
                 # SDK SESSION_ERROR event fields are untyped; use getattr with a
                 # default so this path is safe even if the schema changes.
                 error_msg = getattr(getattr(event, "data", None), "message", "Copilot session error")
-                queue.put_nowait(("error", error_msg))
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", error_msg))
 
         unsubscribe = session.on(on_event)
         try:
             await session.send(msg_opts)
             while True:
-                item = await queue.get()
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=_STREAM_TIMEOUT_SECONDS)
+                except asyncio.TimeoutError:
+                    raise RuntimeError(
+                        f"Copilot streaming timed out after {_STREAM_TIMEOUT_SECONDS}s "
+                        "waiting for the next event (SESSION_IDLE or SESSION_ERROR never arrived)."
+                    )
                 if item is None:
                     break
                 kind, delta = item
@@ -349,6 +376,28 @@ class CopilotsdkProvider(AnyLLM):
             await session.disconnect()
             _cleanup_temp_files(temp_paths)
 
+    def _warn_unsupported_params(self, params: "CompletionParams") -> None:
+        """Emit a warning for any CompletionParams fields that this provider cannot honour."""
+        unsupported_names = [
+            name
+            for name, value in {
+                "temperature": params.temperature,
+                "max_tokens": params.max_tokens,
+                "top_p": params.top_p,
+                "stop": params.stop,
+                "tools": params.tools,
+                "tool_choice": params.tool_choice,
+            }.items()
+            if value is not None
+        ]
+        if unsupported_names:
+            joined = ", ".join(f"'{n}'" for n in unsupported_names)
+            warnings.warn(
+                f"CopilotsdkProvider does not support {joined} — "
+                "these values will be ignored.",
+                stacklevel=3,
+            )
+
     @override
     async def _acompletion(
         self,
@@ -356,6 +405,7 @@ class CopilotsdkProvider(AnyLLM):
         **kwargs: Any,
     ) -> "ChatCompletion | AsyncIterator[ChatCompletionChunk]":
         """Send a completion request via a fresh Copilot session."""
+        self._warn_unsupported_params(params)
         client = await self._ensure_client()
         prompt = _messages_to_prompt(params.messages)
         model_id = params.model_id or self.PROVIDER_NAME
@@ -400,6 +450,13 @@ class CopilotsdkProvider(AnyLLM):
         finally:
             await session.disconnect()
             _cleanup_temp_files(temp_paths)
+
+    async def close(self) -> None:
+        """Stop the underlying CopilotClient and release the spawned CLI process."""
+        async with self._client_lock:
+            if self._copilot_client is not None:
+                await self._copilot_client.stop()
+                self._copilot_client = None
 
     @override
     async def _alist_models(self, **kwargs: Any) -> "Sequence[Model]":
