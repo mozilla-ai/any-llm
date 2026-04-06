@@ -144,6 +144,9 @@ Documentation = "https://mozilla-ai.github.io/any-llm/"
 Issues = "https://github.com/mozilla-ai/any-llm/issues"
 Source = "https://github.com/mozilla-ai/any-llm"
 
+[tool.uv]
+exclude-newer = "7 days"
+
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
 "any_llm.gateway" = ["alembic.ini", "alembic/**/*"]
@@ -266,7 +269,7 @@ lint = [
 
 tests = [
   "pytest>=8,<10",
-  "pytest-cov>=6.2.1,<7",
+  "pytest-cov>=6.2.1,<8",
   "pytest-asyncio>=0.26.0",
   "pytest-rerunfailures>=16.0",
   "mktestdocs>=0.2.4",

@@ -294,6 +294,104 @@ async def test_completion_with_dataclass_response_format() -> None:
 
 
 @pytest.mark.asyncio
+async def test_completion_with_dict_json_schema_response_format() -> None:
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Hello"}]
+    expected_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "value": {"type": "integer"},
+        },
+        "required": ["name", "value"],
+    }
+    response_format: dict[str, Any] = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "TestOutput",
+            "schema": expected_schema,
+        },
+    }
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key=api_key)
+        await provider._acompletion(
+            CompletionParams(model_id=model, messages=messages, response_format=response_format)
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+
+        assert generation_config.response_mime_type == "application/json"
+        assert generation_config.response_schema == expected_schema
+
+
+@pytest.mark.asyncio
+async def test_completion_with_json_object_response_format() -> None:
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key=api_key)
+        await provider._acompletion(
+            CompletionParams(
+                model_id=model,
+                messages=messages,
+                response_format={"type": "json_object"},
+            )
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+
+        assert generation_config.response_mime_type == "application/json"
+        assert generation_config.response_schema is None
+
+
+@pytest.mark.asyncio
+async def test_completion_with_text_response_format_is_no_op() -> None:
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key=api_key)
+        await provider._acompletion(
+            CompletionParams(
+                model_id=model,
+                messages=messages,
+                response_format={"type": "text"},
+            )
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+
+        assert generation_config.response_mime_type is None
+        assert generation_config.response_schema is None
+
+
+@pytest.mark.asyncio
+async def test_completion_with_unsupported_dict_response_format_raises() -> None:
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_gemini_provider():
+        provider = GeminiProvider(api_key=api_key)
+        with pytest.raises(ValueError, match="Unsupported response_format type: unsupported"):
+            await provider._acompletion(
+                CompletionParams(
+                    model_id=model,
+                    messages=messages,
+                    response_format={"type": "unsupported"},
+                )
+            )
+
+
+@pytest.mark.asyncio
 async def test_completion_with_stream_and_response_format_raises() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
