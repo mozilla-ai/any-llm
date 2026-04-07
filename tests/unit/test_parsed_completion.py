@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from any_llm import AnyLLM, ParsedChatCompletion
+from any_llm import AnyLLM, AnyLLMError, ParsedChatCompletion
 from any_llm.exceptions import ContentFilterFinishReasonError, LengthFinishReasonError
 from any_llm.types.completion import ChatCompletion
 
@@ -251,6 +251,28 @@ async def test_parsed_completion_dataclass_length_finish_reason(provider: AnyLLM
 
     assert isinstance(exc_info.value.completion, ParsedChatCompletion)
     assert exc_info.value.completion.choices[0].finish_reason == "length"
+
+
+@pytest.mark.asyncio
+async def test_parsed_completion_dataclass_content_filter_finish_reason(provider: AnyLLM) -> None:
+    provider._acompletion = AsyncMock(  # type: ignore[method-assign]
+        return_value=_make_chat_completion(finish_reason="content_filter", content=None),
+    )
+
+    with pytest.raises(ContentFilterFinishReasonError) as exc_info:
+        await provider.acompletion(
+            model="test-model",
+            messages=[{"role": "user", "content": "test"}],
+            response_format=CityResponseDataclass,
+        )
+
+    assert isinstance(exc_info.value.completion, ParsedChatCompletion)
+    assert exc_info.value.completion.choices[0].finish_reason == "content_filter"
+
+
+def test_finish_reason_errors_are_any_llm_errors() -> None:
+    assert issubclass(LengthFinishReasonError, AnyLLMError)
+    assert issubclass(ContentFilterFinishReasonError, AnyLLMError)
 
 
 @pytest.mark.asyncio
