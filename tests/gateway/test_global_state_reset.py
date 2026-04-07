@@ -3,6 +3,7 @@
 import pytest
 
 from any_llm.gateway.api.deps import get_config, reset_config, set_config
+from any_llm.gateway.core import database
 from any_llm.gateway.core.config import GatewayConfig
 from any_llm.gateway.core.database import reset_db
 
@@ -29,8 +30,6 @@ async def test_reset_db_allows_reinit() -> None:
     We can't fully test init_db without a database, but we can verify
     reset_db doesn't raise and clears the module state.
     """
-    from any_llm.gateway.core import database
-
     # Verify the function exists and runs without error when nothing is initialized
     await reset_db()
 

@@ -13,6 +13,7 @@ from any_llm.gateway.core.database import _make_async_engine
 from any_llm.gateway.db import get_db
 from any_llm.gateway.main import create_app
 from any_llm.gateway.metrics import REGISTRY
+from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, Choice, CompletionUsage
 from tests.gateway.conftest import _drop_all_sync, _run_alembic_migrations
 
 
@@ -128,8 +129,6 @@ def test_request_duration_recorded(metrics_client: TestClient) -> None:
 
 
 def test_token_metrics_recorded(metrics_client: TestClient) -> None:
-    from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, Choice, CompletionUsage
-
     user_id = _create_user(metrics_client)
 
     mock_response = ChatCompletion(
@@ -164,8 +163,6 @@ def test_token_metrics_recorded(metrics_client: TestClient) -> None:
 
 
 def test_cost_metric_recorded_with_pricing(metrics_client: TestClient) -> None:
-    from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, Choice, CompletionUsage
-
     user_id = _create_user(metrics_client, user_id="cost-user")
 
     # Set up pricing

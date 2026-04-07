@@ -6,11 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from any_llm.gateway.api.routes.chat import log_usage
 from any_llm.gateway.models.entities import ModelPricing, User
+from any_llm.gateway.services.log_writer import LogWriter
 from any_llm.types.completion import CompletionUsage
 
 
 @pytest.mark.asyncio
-async def test_spend_update_uses_sql_expression(test_db: AsyncSession) -> None:
+async def test_spend_update_uses_sql_expression(test_db: AsyncSession, log_writer: LogWriter) -> None:
     """Test that _log_usage updates spend atomically via SQL, not Python read-modify-write."""
     user = User(user_id="atomic-user", spend=5.0)
     test_db.add(user)
@@ -27,6 +28,7 @@ async def test_spend_update_uses_sql_expression(test_db: AsyncSession) -> None:
 
     await log_usage(
         db=test_db,
+        log_writer=log_writer,
         api_key_obj=None,
         model="gpt-4o",
         provider="openai",
@@ -47,7 +49,7 @@ async def test_spend_update_uses_sql_expression(test_db: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
-async def test_multiple_spend_updates_accumulate(test_db: AsyncSession) -> None:
+async def test_multiple_spend_updates_accumulate(test_db: AsyncSession, log_writer: LogWriter) -> None:
     """Test that multiple sequential spend updates accumulate correctly."""
     user = User(user_id="multi-spend-user", spend=0.0)
     test_db.add(user)
@@ -64,6 +66,7 @@ async def test_multiple_spend_updates_accumulate(test_db: AsyncSession) -> None:
         usage = CompletionUsage(prompt_tokens=1_000_000, completion_tokens=1_000_000, total_tokens=2_000_000)
         await log_usage(
             db=test_db,
+            log_writer=log_writer,
             api_key_obj=None,
             model="gpt-4o",
             provider="openai",

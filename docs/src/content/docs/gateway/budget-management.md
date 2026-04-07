@@ -99,4 +99,4 @@ budget_strategy: cas
 | `cas` | Lock-free. Hot-path reads unlocked. Reset is an atomic conditional UPDATE (`WHERE next_budget_reset_at < now`), no explicit `FOR UPDATE`. | **Recommended.** Concurrent requests for the same user never serialize. |
 | `disabled` | Skip `validate_user_budget` entirely — no user existence check, no blocked check, no budget check. | Usage-tracking-only deployments where budget/user enforcement happens out-of-band. Cost tracking via `log_usage` still runs. |
 
-If you need user-blocked enforcement **without** budget checks, use `split` or `cas` and simply don't assign a `budget_id` to users — the gateway will still 404 on deleted users and 403 on blocked users while skipping all lock-taking budget logic.
+If you need user-blocked enforcement **without** budget checks, use `cas` and simply don't assign a `budget_id` to users — the gateway will still 404 on deleted users and 403 on blocked users while skipping all lock-taking budget logic.

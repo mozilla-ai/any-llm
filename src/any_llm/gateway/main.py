@@ -138,7 +138,14 @@ def create_app(config: GatewayConfig) -> FastAPI:
         Configured FastAPI application
 
     """
-    init_db(config.database_url, auto_migrate=config.auto_migrate)
+    init_db(
+        config.database_url,
+        auto_migrate=config.auto_migrate,
+        pool_size=config.db_pool_size,
+        max_overflow=config.db_max_overflow,
+        pool_timeout=config.db_pool_timeout,
+        pool_recycle=config.db_pool_recycle,
+    )
     set_config(config)
 
     log_writer = create_log_writer(config.log_writer_strategy, create_session)

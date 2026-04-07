@@ -13,6 +13,7 @@ from any_llm.gateway.core.config import GatewayConfig, PricingConfig
 from any_llm.gateway.db import ModelPricing, get_db
 from any_llm.gateway.main import create_app
 from any_llm.gateway.models.entities import UsageLog
+from any_llm.gateway.services.log_writer import LogWriter
 from any_llm.types.completion import CompletionUsage
 
 
@@ -199,7 +200,7 @@ async def test_pricing_initialization_with_no_config(postgres_url: str, test_db:
 
 
 @pytest.mark.asyncio
-async def test_log_usage_finds_pricing_with_legacy_slash_format(test_db: AsyncSession) -> None:
+async def test_log_usage_finds_pricing_with_legacy_slash_format(test_db: AsyncSession, log_writer: LogWriter) -> None:
     """Test that _log_usage falls back to legacy slash format when colon format is not found."""
     legacy_pricing = ModelPricing(
         model_key="openai/gpt-4",
@@ -213,6 +214,7 @@ async def test_log_usage_finds_pricing_with_legacy_slash_format(test_db: AsyncSe
 
     await log_usage(
         db=test_db,
+        log_writer=log_writer,
         api_key_obj=None,
         model="gpt-4",
         provider="openai",
@@ -228,7 +230,7 @@ async def test_log_usage_finds_pricing_with_legacy_slash_format(test_db: AsyncSe
 
 
 @pytest.mark.asyncio
-async def test_log_usage_finds_pricing_with_colon_format(test_db: AsyncSession) -> None:
+async def test_log_usage_finds_pricing_with_colon_format(test_db: AsyncSession, log_writer: LogWriter) -> None:
     """Test that _log_usage finds pricing with canonical colon format."""
     pricing = ModelPricing(
         model_key="openai:gpt-4",
@@ -242,6 +244,7 @@ async def test_log_usage_finds_pricing_with_colon_format(test_db: AsyncSession) 
 
     await log_usage(
         db=test_db,
+        log_writer=log_writer,
         api_key_obj=None,
         model="gpt-4",
         provider="openai",

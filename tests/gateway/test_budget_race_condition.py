@@ -5,6 +5,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from fastapi import HTTPException
 
 from any_llm.gateway.models.entities import Budget, User
 from any_llm.gateway.services import budget_service
@@ -39,8 +40,6 @@ async def test_budget_check_rejects_at_limit(
     test_db: Any,
 ) -> None:
     """Test that a user at or over budget limit is rejected."""
-    from fastapi import HTTPException
-
     budget = Budget(
         budget_id="full-budget",
         max_budget=10.0,

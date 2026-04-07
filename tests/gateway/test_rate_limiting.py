@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from any_llm.gateway.core.config import API_KEY_HEADER, GatewayConfig
 from any_llm.gateway.core.database import _make_async_engine
 from any_llm.gateway.db import get_db
+from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, Choice, CompletionUsage
 from any_llm.gateway.main import create_app
 from any_llm.gateway.rate_limit import RateLimiter, RateLimitInfo
 from tests.gateway.conftest import _drop_all_sync, _run_alembic_migrations
@@ -231,8 +232,6 @@ def _chat_request(client: TestClient, user_id: str, master_key: str = "test-mast
 
 def test_rate_limit_headers_on_success(rate_limit_client: TestClient) -> None:
     """Test that successful responses include rate limit headers."""
-    from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, Choice, CompletionUsage
-
     user_id = _create_test_user(rate_limit_client)
 
     mock_response = ChatCompletion(

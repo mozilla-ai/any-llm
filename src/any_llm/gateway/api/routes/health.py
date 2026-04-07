@@ -1,6 +1,7 @@
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from any_llm.gateway import __version__
@@ -35,7 +36,7 @@ async def health_liveness() -> str:
 
 
 @router.get("/readiness")
-async def health_readiness() -> dict[str, Any]:
+async def health_readiness(db: Annotated[AsyncSession, Depends(get_db)]) -> dict[str, Any]:
     """Readiness probe endpoint.
 
     Checks if the gateway is ready to serve requests by validating:
@@ -52,10 +53,10 @@ async def health_readiness() -> dict[str, Any]:
         HTTPException: 503 if service is not ready
 
     """
-    db_gen = get_db()
     try:
-        db = await anext(db_gen)
-    except StopAsyncIteration as e:
+        await db.execute(text("SELECT 1"))
+    except Exception as e:
+        logger.error(f"Database connectivity check failed: {e}")
         raise HTTPException(
             status_code=503,
             detail={
@@ -65,28 +66,8 @@ async def health_readiness() -> dict[str, Any]:
             },
         ) from e
 
-    try:
-        try:
-            await db.execute(text("SELECT 1"))
-            db_status = "connected"
-        except Exception as e:
-            logger.error(f"Database connectivity check failed: {e}")
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "status": "unhealthy",
-                    "database": "unavailable",
-                    "version": __version__,
-                },
-            ) from e
-    finally:
-        try:
-            await anext(db_gen)
-        except StopAsyncIteration:
-            pass
-
     return {
         "status": "healthy",
-        "database": db_status,
+        "database": "connected",
         "version": __version__,
     }

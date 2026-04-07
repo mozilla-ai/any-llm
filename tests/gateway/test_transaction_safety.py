@@ -7,10 +7,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from datetime import UTC, datetime
+
 from any_llm.gateway.api.routes.chat import log_usage
 from any_llm.gateway.core.config import API_KEY_HEADER
 from any_llm.gateway.models.entities import Budget, User
 from any_llm.gateway.services.budget_service import _is_model_free, reset_user_budget
+from any_llm.gateway.services.log_writer import LogWriter
 from any_llm.types.completion import CompletionUsage
 
 
@@ -97,8 +100,6 @@ def test_set_pricing_rollback_on_commit_failure(
 @pytest.mark.asyncio
 async def test_reset_user_budget_rollback_on_commit_failure(test_db: AsyncSession) -> None:
     """reset_user_budget rolls back and re-raises when commit fails."""
-    from datetime import UTC, datetime
-
     user = User(user_id="reset-fail-user", spend=50.0)
     budget = Budget(max_budget=100.0, budget_duration_sec=3600)
     test_db.add_all([user, budget])
@@ -177,15 +178,20 @@ def test_auth_commit_failure_does_not_break_verification(
 
 
 @pytest.mark.asyncio
-async def test_log_usage_catches_sqlalchemy_error(test_db: AsyncSession) -> None:
-    """log_usage catches SQLAlchemyError and rolls back without raising."""
+async def test_log_usage_catches_sqlalchemy_error(test_db: AsyncSession, log_writer: LogWriter) -> None:
+    """log_usage does not raise when the LogWriter encounters a SQLAlchemy error.
+
+    Persistence is delegated to the LogWriter, which catches errors internally.
+    """
     usage = CompletionUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15)
 
-    with patch.object(
-        test_db, "commit", new=AsyncMock(side_effect=OperationalError("db", {}, Exception("gone")))
+    with patch(
+        "any_llm.gateway.services.log_writer._persist_entries",
+        side_effect=OperationalError("db", {}, Exception("gone")),
     ):
         await log_usage(
             db=test_db,
+            log_writer=log_writer,
             api_key_obj=None,
             model="gpt-4o",
             provider="openai",
@@ -195,16 +201,18 @@ async def test_log_usage_catches_sqlalchemy_error(test_db: AsyncSession) -> None
 
 
 @pytest.mark.asyncio
-async def test_log_usage_does_not_catch_non_db_errors(test_db: AsyncSession) -> None:
-    """log_usage does not swallow non-SQLAlchemy exceptions like RuntimeError."""
+async def test_log_usage_does_not_raise_on_writer_errors(test_db: AsyncSession, log_writer: LogWriter) -> None:
+    """LogWriter handles all exceptions internally — even non-DB errors don't propagate."""
     usage = CompletionUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15)
 
-    with (
-        patch.object(test_db, "commit", new=AsyncMock(side_effect=RuntimeError("unexpected"))),
-        pytest.raises(RuntimeError, match="unexpected"),
+    with patch(
+        "any_llm.gateway.services.log_writer._persist_entries",
+        side_effect=RuntimeError("unexpected"),
     ):
+        # Should not raise — the writer catches all exceptions
         await log_usage(
             db=test_db,
+            log_writer=log_writer,
             api_key_obj=None,
             model="gpt-4o",
             provider="openai",

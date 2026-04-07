@@ -21,6 +21,7 @@ from any_llm.gateway.core.config import API_KEY_HEADER, GatewayConfig
 from any_llm.gateway.core.database import _make_async_engine
 from any_llm.gateway.db import Base, get_db
 from any_llm.gateway.main import create_app
+from any_llm.gateway.services.log_writer import LogWriter, SingleLogWriter
 
 MODEL_NAME = "gemini:gemini-2.5-flash"
 
@@ -76,6 +77,20 @@ async def test_db(postgres_url: str) -> AsyncGenerator[AsyncSession]:
 
     await engine.dispose()
     _drop_all_sync(postgres_url)
+
+
+@pytest_asyncio.fixture
+async def log_writer(postgres_url: str) -> AsyncGenerator[LogWriter]:
+    """Create a SingleLogWriter for tests that call log_usage() directly."""
+    engine = _make_async_engine(postgres_url)
+    session_factory = async_sessionmaker(engine, autocommit=False, autoflush=False, expire_on_commit=False)
+    writer = SingleLogWriter(session_factory)
+    await writer.start()
+    try:
+        yield writer
+    finally:
+        await writer.stop()
+        await engine.dispose()
 
 
 @pytest_asyncio.fixture

@@ -129,7 +129,10 @@ async def validate_user_budget(
             return None
         case "cas":
             return await _validate_cas(db, user_id, model)
+        case "for_update":
+            return await _validate_for_update(db, user_id, model)
         case _:
+            logger.warning("Unrecognized budget_strategy '%s', falling back to 'for_update'", strategy)
             return await _validate_for_update(db, user_id, model)
 
 
@@ -151,7 +154,12 @@ async def _validate_cas(db: AsyncSession, user_id: str, model: str | None) -> Us
 
     now = datetime.now(UTC)
     if user.next_budget_reset_at and now >= user.next_budget_reset_at:
-        await _claim_reset_cas(db, user, budget, now)
+        won_reset = await _claim_reset_cas(db, user, budget, now)
+        if not won_reset:
+            # Another request won the CAS race and reset the budget.
+            # Refresh so we see the post-reset spend (0.0) instead of
+            # the stale pre-reset value, which could cause a false 403.
+            await db.refresh(user)
 
     await _enforce_budget_limit(db, user, budget, model, user_id)
     return user

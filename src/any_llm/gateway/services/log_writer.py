@@ -143,7 +143,10 @@ def create_log_writer(strategy: str, session_factory: SessionFactory) -> LogWrit
     match strategy:
         case "batch":
             return BatchLogWriter(session_factory)
+        case "single":
+            return SingleLogWriter(session_factory)
         case _:
+            logger.warning("Unrecognized log_writer_strategy '%s', falling back to 'single'", strategy)
             return SingleLogWriter(session_factory)
 
 

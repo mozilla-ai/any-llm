@@ -88,12 +88,24 @@ def _to_sync_url(database_url: str) -> str:
     return database_url
 
 
-def init_db(database_url: str, auto_migrate: bool = True) -> None:
+def init_db(
+    database_url: str,
+    auto_migrate: bool = True,
+    *,
+    pool_size: int = 10,
+    max_overflow: int = 20,
+    pool_timeout: float = 30.0,
+    pool_recycle: int = -1,
+) -> None:
     """Initialize the async database engine and optionally run migrations.
 
     Args:
         database_url: Database connection URL (sync or async form accepted)
         auto_migrate: If True, automatically run Alembic migrations to head.
+        pool_size: Number of persistent connections in the pool.
+        max_overflow: Extra connections above pool_size during bursts.
+        pool_timeout: Seconds to wait for an available connection.
+        pool_recycle: Recycle connections older than this many seconds (-1 disables).
     """
     global _engine, _SessionLocal  # noqa: PLW0603
 
@@ -101,8 +113,16 @@ def init_db(database_url: str, auto_migrate: bool = True) -> None:
     sync_url = _to_sync_url(database_url) if database_url != async_url else _to_sync_url(async_url)
 
     engine_kwargs: dict[str, Any] = {"pool_pre_ping": True}
+
+    # SQLite uses StaticPool / NullPool; pool tuning only applies to PostgreSQL
     if async_url.startswith("sqlite+aiosqlite://"):
         async_connect_args["check_same_thread"] = False
+    else:
+        engine_kwargs["pool_size"] = pool_size
+        engine_kwargs["max_overflow"] = max_overflow
+        engine_kwargs["pool_timeout"] = pool_timeout
+        engine_kwargs["pool_recycle"] = pool_recycle
+
     if async_connect_args:
         engine_kwargs["connect_args"] = async_connect_args
 
