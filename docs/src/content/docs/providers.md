@@ -27,6 +27,7 @@ Provider source code is in [`src/any_llm/providers/`](https://github.com/mozilla
 | [`bedrock`](https://aws.amazon.com/bedrock/) | AWS_BEARER_TOKEN_BEDROCK | AWS_ENDPOINT_URL_BEDROCK_RUNTIME | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`cerebras`](https://docs.cerebras.ai/) | CEREBRAS_API_KEY | CEREBRAS_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`cohere`](https://cohere.com/api) | COHERE_API_KEY | COHERE_BASE_URL | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| [`copilotsdk`](https://github.com/github/copilot-sdk) | COPILOT_GITHUB_TOKEN | COPILOT_CLI_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
 | [`databricks`](https://docs.databricks.com/) | DATABRICKS_TOKEN | DATABRICKS_HOST | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
 | [`deepseek`](https://platform.deepseek.com/) | DEEPSEEK_API_KEY | DEEPSEEK_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`fireworks`](https://fireworks.ai/api) | FIREWORKS_API_KEY | FIREWORKS_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
@@ -60,5 +61,17 @@ Provider source code is in [`src/any_llm/providers/`](https://github.com/mozilla
 | [`xai`](https://x.ai/) | XAI_API_KEY | XAI_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`zai`](https://docs.z.ai/guides/develop/python/introduction) | ZAI_API_KEY | ZAI_BASE_URL | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 <!-- PROVIDER-TABLE-END -->
+
+## Provider Notes
+
+### `copilotsdk` — GitHub Copilot SDK
+
+The `copilotsdk` provider communicates with GitHub Copilot models via the
+[`github-copilot-sdk`](https://pypi.org/project/github-copilot-sdk/) package, which bundles the Copilot CLI binary
+for your platform. Install with `pip install any-llm-sdk[copilotsdk]`. Authentication uses the `COPILOT_GITHUB_TOKEN`
+environment variable or the local `gh` / `copilot` CLI session (run `gh auth login`; no token required). See the
+[SDK documentation](https://pypi.org/project/github-copilot-sdk/) for platform wheels and configuration details.
+
+### `gemini` / `vertexai` — Inline Media
 
 Gemini and Vertex AI completions also support PDF inputs in OpenAI-compatible `file` content blocks, including base64 data URIs and URI-based file references.
