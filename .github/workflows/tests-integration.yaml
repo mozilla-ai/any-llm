@@ -47,7 +47,7 @@ jobs:
     steps:
       - name: Set expected providers for integration tests
         id: set_providers
-        run: echo "expected_providers=anthropic,azureopenai,bedrock,cerebras,cohere,deepseek,fireworks,gemini,groq,huggingface,inception,llama,mistral,moonshot,nebius,openai,openrouter,perplexity,portkey,together,sambanova,voyage,xai,zai,minimax" >> $GITHUB_OUTPUT
+        run: echo "expected_providers=anthropic,azureopenai,bedrock,cerebras,cohere,deepseek,fireworks,gemini,groq,huggingface,inception,mistral,moonshot,nebius,openai,openrouter,perplexity,portkey,together,sambanova,voyage,xai,zai,minimax" >> $GITHUB_OUTPUT
 
       - name: Set expected providers for local integration tests
         id: set_local_providers
