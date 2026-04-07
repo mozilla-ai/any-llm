@@ -1236,14 +1236,17 @@ All exceptions inherit from `AnyLLMError`:
 AnyLLMError
 ├── AuthenticationError
 ├── ContentFilterError
+├── ContentFilterFinishReasonError
 ├── ContextLengthExceededError
 ├── InvalidRequestError
+├── LengthFinishReasonError
 ├── MissingApiKeyError
 ├── ModelNotFoundError
 ├── ProviderError
 ├── RateLimitError
 ├── UnsupportedParameterError
-└── UnsupportedProviderError
+├── UnsupportedProviderError
+└── _FinishReasonError
 ```
 
 ## `AnyLLMError`
