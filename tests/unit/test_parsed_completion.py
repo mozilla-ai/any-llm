@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from any_llm import AnyLLM, ParsedChatCompletion
+from any_llm import AnyLLM, AnyLLMError, ParsedChatCompletion
+from any_llm.exceptions import ContentFilterFinishReasonError, LengthFinishReasonError
 from any_llm.types.completion import ChatCompletion
 
 
@@ -76,16 +77,16 @@ async def test_parsed_completion_length_finish_reason(provider: AnyLLM) -> None:
         return_value=_make_chat_completion(finish_reason="length"),
     )
 
-    result = await provider.acompletion(
-        model="test-model",
-        messages=[{"role": "user", "content": "test"}],
-        response_format=CityResponse,
-    )
+    with pytest.raises(LengthFinishReasonError) as exc_info:
+        await provider.acompletion(
+            model="test-model",
+            messages=[{"role": "user", "content": "test"}],
+            response_format=CityResponse,
+        )
 
-    assert isinstance(result, ParsedChatCompletion)
-    assert result.choices[0].message.parsed is None
-    assert result.choices[0].finish_reason == "length"
-    assert result.choices[0].message.content == '{"city_name": "Paris"}'
+    assert isinstance(exc_info.value.completion, ParsedChatCompletion)
+    assert exc_info.value.completion.choices[0].finish_reason == "length"
+    assert exc_info.value.completion.choices[0].message.content == '{"city_name": "Paris"}'
 
 
 @pytest.mark.asyncio
@@ -94,15 +95,15 @@ async def test_parsed_completion_content_filter_finish_reason(provider: AnyLLM) 
         return_value=_make_chat_completion(finish_reason="content_filter", content=None),
     )
 
-    result = await provider.acompletion(
-        model="test-model",
-        messages=[{"role": "user", "content": "test"}],
-        response_format=CityResponse,
-    )
+    with pytest.raises(ContentFilterFinishReasonError) as exc_info:
+        await provider.acompletion(
+            model="test-model",
+            messages=[{"role": "user", "content": "test"}],
+            response_format=CityResponse,
+        )
 
-    assert isinstance(result, ParsedChatCompletion)
-    assert result.choices[0].message.parsed is None
-    assert result.choices[0].finish_reason == "content_filter"
+    assert isinstance(exc_info.value.completion, ParsedChatCompletion)
+    assert exc_info.value.completion.choices[0].finish_reason == "content_filter"
 
 
 @pytest.mark.asyncio
@@ -241,15 +242,37 @@ async def test_parsed_completion_dataclass_length_finish_reason(provider: AnyLLM
         return_value=_make_chat_completion(finish_reason="length"),
     )
 
-    result = await provider.acompletion(
-        model="test-model",
-        messages=[{"role": "user", "content": "test"}],
-        response_format=CityResponseDataclass,
+    with pytest.raises(LengthFinishReasonError) as exc_info:
+        await provider.acompletion(
+            model="test-model",
+            messages=[{"role": "user", "content": "test"}],
+            response_format=CityResponseDataclass,
+        )
+
+    assert isinstance(exc_info.value.completion, ParsedChatCompletion)
+    assert exc_info.value.completion.choices[0].finish_reason == "length"
+
+
+@pytest.mark.asyncio
+async def test_parsed_completion_dataclass_content_filter_finish_reason(provider: AnyLLM) -> None:
+    provider._acompletion = AsyncMock(  # type: ignore[method-assign]
+        return_value=_make_chat_completion(finish_reason="content_filter", content=None),
     )
 
-    assert isinstance(result, ParsedChatCompletion)
-    assert result.choices[0].message.parsed is None
-    assert result.choices[0].finish_reason == "length"
+    with pytest.raises(ContentFilterFinishReasonError) as exc_info:
+        await provider.acompletion(
+            model="test-model",
+            messages=[{"role": "user", "content": "test"}],
+            response_format=CityResponseDataclass,
+        )
+
+    assert isinstance(exc_info.value.completion, ParsedChatCompletion)
+    assert exc_info.value.completion.choices[0].finish_reason == "content_filter"
+
+
+def test_finish_reason_errors_are_any_llm_errors() -> None:
+    assert issubclass(LengthFinishReasonError, AnyLLMError)
+    assert issubclass(ContentFilterFinishReasonError, AnyLLMError)
 
 
 @pytest.mark.asyncio
