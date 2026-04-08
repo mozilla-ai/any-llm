@@ -44,6 +44,7 @@ pricing:
   openai:gpt-4:
     input_price_per_million: 0.15
     output_price_per_million: 0.6
+    effective_at: "2025-05-01T00:00:00Z"  # optional, defaults to now
 ```
 
 Start the gateway with your config file:
@@ -82,6 +83,22 @@ pricing:
     output_price_per_million: 1.5
 ```
 
+Each pricing entry supports an optional `effective_at` field (ISO 8601 datetime) that records when this price takes effect. This enables accurate historical cost tracking when providers change their rates:
+
+```yaml
+pricing:
+  openai:gpt-4:
+    input_price_per_million: 30.0
+    output_price_per_million: 60.0
+    effective_at: "2025-01-01T00:00:00Z"
+  openai:gpt-4:
+    input_price_per_million: 25.0
+    output_price_per_million: 50.0
+    effective_at: "2025-06-01T00:00:00Z"
+```
+
+When `effective_at` is omitted, it defaults to the current time. Cost lookups always use the price that was in effect at the time of the API request.
+
 ### Dynamic Pricing via API
 
 You can also set or update pricing dynamically using the API:
@@ -90,20 +107,28 @@ curl -X POST http://localhost:8000/v1/pricing \
   -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "openai:gpt-4",
+    "model_key": "openai:gpt-4",
     "input_price_per_million": 30.0,
-    "output_price_per_million": 60.0
+    "output_price_per_million": 60.0,
+    "effective_at": "2025-06-01T00:00:00Z"
   }'
+```
+
+To view the full pricing history for a model:
+```bash
+curl http://localhost:8000/v1/pricing/openai:gpt-4/history
 ```
 
 This is useful for:
 - Updating pricing without restarting the gateway
 - Managing pricing in production environments
-- Adjusting rates as provider pricing changes
+- Recording price changes with specific effective dates
+- Querying historical prices for auditing
 
 **Important notes:**
-- Database pricing takes precedence - config only sets initial values
-- If pricing for the model already exists in the database, config values are ignored (with a warning logged)
+- Pricing is keyed by `(model_key, effective_at)`. Multiple entries per model are supported for different effective dates.
+- Database entries take precedence: if a config entry with the same model key and effective date already exists in the database, the config value is skipped.
+- Cost is always computed using the price in effect at the time of the API request, not the latest price.
 
 ## Provider Client Args
 

@@ -1,5 +1,7 @@
 """Pricing initialization from configuration."""
 
+from datetime import UTC, datetime
+
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -13,7 +15,8 @@ def initialize_pricing_from_config(config: GatewayConfig, db: Session) -> None:
     """Initialize model pricing from configuration file.
 
     Loads pricing from config.pricing and stores it in the database.
-    Database pricing takes precedence - if pricing exists in DB, it is not overwritten.
+    Each entry is keyed by (model_key, effective_at). If an entry with the
+    same composite key already exists in the database, it is not overwritten.
 
     Args:
         config: Gateway configuration containing pricing definitions
@@ -40,27 +43,36 @@ def initialize_pricing_from_config(config: GatewayConfig, db: Session) -> None:
             )
             raise ValueError(msg)
 
+        effective_at = pricing_config.effective_at or datetime.now(UTC)
         input_price = pricing_config.input_price_per_million
         output_price = pricing_config.output_price_per_million
 
-        existing_pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key).first()
+        existing = (
+            db.query(ModelPricing)
+            .filter(
+                ModelPricing.model_key == model_key,
+                ModelPricing.effective_at == effective_at,
+            )
+            .first()
+        )
 
-        if existing_pricing:
-            logger.warning(
-                f"Pricing for model '{model_key}' already exists in database. "
-                f"Keeping database value (input: ${existing_pricing.input_price_per_million}/M, "
-                f"output: ${existing_pricing.output_price_per_million}/M). "
-                f"To update, use the pricing API or delete the existing entry."
+        if existing:
+            logger.debug(
+                f"Pricing for '{model_key}' effective {effective_at.isoformat()} already exists in database, skipping"
             )
             continue
 
         new_pricing = ModelPricing(
             model_key=model_key,
+            effective_at=effective_at,
             input_price_per_million=input_price,
             output_price_per_million=output_price,
         )
         db.add(new_pricing)
-        logger.info(f"Added pricing for '{model_key}': input=${input_price}/M, output=${output_price}/M")
+        logger.info(
+            f"Added pricing for '{model_key}' effective {effective_at.isoformat()}: "
+            f"input=${input_price}/M, output=${output_price}/M"
+        )
 
     try:
         db.commit()

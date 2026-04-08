@@ -1,5 +1,6 @@
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,10 +12,19 @@ API_KEY_HEADER = "X-AnyLLM-Key"
 
 
 class PricingConfig(BaseModel):
-    """Model pricing configuration."""
+    """Model pricing configuration.
+
+    When effective_at is provided, the price entry applies from that date
+    onward. Multiple entries for the same model with different effective_at
+    dates enable historical pricing. If omitted, defaults to now (immediate).
+    """
 
     input_price_per_million: float = Field(ge=0)
     output_price_per_million: float = Field(ge=0)
+    effective_at: datetime | None = Field(
+        default=None,
+        description="ISO 8601 datetime from which this price applies. Defaults to now if omitted.",
+    )
 
 
 class GatewayConfig(BaseSettings):
