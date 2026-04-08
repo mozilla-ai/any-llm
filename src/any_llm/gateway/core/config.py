@@ -55,6 +55,10 @@ class GatewayConfig(BaseSettings):
         default=False,
         description="Enable Prometheus metrics endpoint at /metrics",
     )
+    enable_docs: bool = Field(
+        default=True,
+        description="Enable FastAPI docs endpoints (/docs, /redoc, /openapi.json). Enabled by default.",
+    )
     bootstrap_api_key: bool = Field(
         default=True,
         description="Create a first-use API key on startup when no API keys exist",
