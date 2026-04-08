@@ -150,6 +150,7 @@ class CopilotsdkProvider(AnyLLM):
         msg_opts: dict[str, Any],
         model_id: str,
         temp_paths: list[str],
+        timeout_secs: float = _STREAM_TIMEOUT_SECONDS,
     ) -> AsyncIterator[ChatCompletionChunk]:
         """Async generator that streams chunks from a live Copilot session.
 
@@ -179,10 +180,10 @@ class CopilotsdkProvider(AnyLLM):
             await session.send(msg_opts)
             while True:
                 try:
-                    item = await asyncio.wait_for(queue.get(), timeout=_STREAM_TIMEOUT_SECONDS)
+                    item = await asyncio.wait_for(queue.get(), timeout=timeout_secs)
                 except TimeoutError:
                     msg = (
-                        f"Copilot streaming timed out after {_STREAM_TIMEOUT_SECONDS}s "
+                        f"Copilot streaming timed out after {timeout_secs}s "
                         "waiting for the next event (SESSION_IDLE or SESSION_ERROR never arrived)."
                     )
                     raise RuntimeError(msg) from None
@@ -241,9 +242,12 @@ class CopilotsdkProvider(AnyLLM):
         if attachments:
             msg_opts["attachments"] = attachments
 
+        timeout: float | None = kwargs.get("timeout")
+        effective_timeout = timeout if timeout is not None else _STREAM_TIMEOUT_SECONDS
+
         if params.stream:
             # Return the async generator directly; it owns the session lifecycle.
-            return self._stream_from_session(session, msg_opts, model_id, temp_paths)
+            return self._stream_from_session(session, msg_opts, model_id, temp_paths, timeout_secs=effective_timeout)
 
         # Non-streaming: capture reasoning alongside the final message event.
         try:
@@ -260,7 +264,7 @@ class CopilotsdkProvider(AnyLLM):
 
             unsubscribe = session.on(on_reasoning)
             try:
-                event = await session.send_and_wait(msg_opts)
+                event = await session.send_and_wait(msg_opts, timeout=timeout)
             finally:
                 unsubscribe()
 

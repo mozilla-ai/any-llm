@@ -765,3 +765,88 @@ async def test_close_stops_client() -> None:
 async def test_close_is_noop_when_no_client() -> None:
     provider = _make_provider(api_key="test-token")
     await provider.close()
+
+
+@pytest.mark.asyncio
+async def test_acompletion_passes_timeout_to_send_and_wait() -> None:
+    """Timeout kwarg must be forwarded to send_and_wait, not silently dropped."""
+    provider = _make_provider(api_key="test-token")
+
+    mock_event = MagicMock()
+    mock_event.data.content = "ok"
+    mock_session = _make_session(send_and_wait_result=mock_event)
+    mock_client = AsyncMock()
+    mock_client.create_session = AsyncMock(return_value=mock_session)
+
+    with patch.object(provider, "_ensure_client", AsyncMock(return_value=mock_client)):
+        params = CompletionParams(
+            model_id="gpt-4o",
+            messages=[{"role": "user", "content": "Hi"}],
+        )
+        await provider._acompletion(params, timeout=300.0)
+
+    mock_session.send_and_wait.assert_called_once()
+    _opts, actual_timeout = mock_session.send_and_wait.call_args[0][0], mock_session.send_and_wait.call_args[1].get("timeout")
+    assert actual_timeout == 300.0
+
+
+@pytest.mark.asyncio
+async def test_acompletion_passes_none_timeout_to_send_and_wait_when_not_provided() -> None:
+    """Without a timeout kwarg, None is passed to send_and_wait (SDK uses its own default)."""
+    provider = _make_provider(api_key="test-token")
+
+    mock_event = MagicMock()
+    mock_event.data.content = "ok"
+    mock_session = _make_session(send_and_wait_result=mock_event)
+    mock_client = AsyncMock()
+    mock_client.create_session = AsyncMock(return_value=mock_session)
+
+    with patch.object(provider, "_ensure_client", AsyncMock(return_value=mock_client)):
+        params = CompletionParams(
+            model_id="gpt-4o",
+            messages=[{"role": "user", "content": "Hi"}],
+        )
+        await provider._acompletion(params)
+
+    actual_timeout = mock_session.send_and_wait.call_args[1].get("timeout")
+    assert actual_timeout is None
+
+
+@pytest.mark.asyncio
+async def test_streaming_uses_custom_timeout_from_kwargs() -> None:
+    """A timeout kwarg must be used as the per-event wait in the streaming path."""
+    from copilot.generated.session_events import SessionEventType
+
+    provider = _make_provider(api_key="test-token")
+
+    registered_callback: list[Any] = []
+
+    def fake_on(callback: Any) -> Any:
+        registered_callback.append(callback)
+        return lambda: None
+
+    mock_session = MagicMock()
+    mock_session.on = MagicMock(side_effect=fake_on)
+    mock_session.disconnect = AsyncMock()
+
+    async def fake_send(opts: Any) -> str:
+        # Do not fire any events so the stream blocks until the custom 0.01s timeout fires.
+        return "msg-id"
+
+    mock_session.send = fake_send
+
+    mock_client = AsyncMock()
+    mock_client.create_session = AsyncMock(return_value=mock_session)
+
+    with patch.object(provider, "_ensure_client", AsyncMock(return_value=mock_client)):
+        params = CompletionParams(
+            model_id="gpt-4o",
+            messages=[{"role": "user", "content": "Hi"}],
+            stream=True,
+        )
+        stream = await provider._acompletion(params, timeout=0.01)
+        with pytest.raises(RuntimeError, match="timed out after 0.01s"):
+            async for _ in stream:
+                pass
+
+    mock_session.disconnect.assert_called_once()
