@@ -236,12 +236,12 @@ def test_convert_response_multiple_tool_calls() -> None:
     assert tool_calls is not None
     assert len(tool_calls) == 3
     assert tool_calls[0].id == "call_1"
-    assert tool_calls[0].function.name == "get_weather"
-    assert tool_calls[0].function.arguments == '{"city":"NYC"}'
+    assert tool_calls[0].function.name == "get_weather"  # type: ignore[union-attr]
+    assert tool_calls[0].function.arguments == '{"city":"NYC"}'  # type: ignore[union-attr]
     assert tool_calls[1].id == "call_2"
-    assert tool_calls[1].function.name == "get_time"
+    assert tool_calls[1].function.name == "get_time"  # type: ignore[union-attr]
     assert tool_calls[2].id == "call_3"
-    assert tool_calls[2].function.name == "get_news"
+    assert tool_calls[2].function.name == "get_news"  # type: ignore[union-attr]
 
 
 def test_convert_response_single_tool_call() -> None:
