@@ -5,7 +5,11 @@ import pytest
 from pydantic import BaseModel
 
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.providers.cohere.utils import _patch_messages
+from any_llm.providers.cohere.utils import (
+    _convert_response,
+    _create_openai_chunk_from_cohere_chunk,
+    _patch_messages,
+)
 from any_llm.types.completion import CompletionParams
 
 
@@ -190,3 +194,120 @@ async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
 
             call_kwargs = mock_client.chat.call_args[1]
             assert "reasoning_effort" not in call_kwargs
+
+
+def _mock_tool_call(tool_id: str, name: str, arguments: str) -> Mock:
+    """Create a mock Cohere ToolCallV2."""
+    tc = Mock()
+    tc.id = tool_id
+    tc.function = Mock()
+    tc.function.name = name
+    tc.function.arguments = arguments
+    return tc
+
+
+def _mock_v2chat_response(tool_calls: list[Mock], tool_plan: str = "I'll help.") -> Mock:
+    """Create a mock V2ChatResponse with multiple tool calls."""
+    response = Mock()
+    response.finish_reason = "TOOL_CALL"
+    response.id = "resp-123"
+    response.created = 0
+    response.message = Mock()
+    response.message.tool_calls = tool_calls
+    response.message.tool_plan = tool_plan
+    response.usage = Mock()
+    response.usage.tokens = Mock()
+    response.usage.tokens.input_tokens = 10
+    response.usage.tokens.output_tokens = 20
+    return response
+
+
+def test_convert_response_multiple_tool_calls() -> None:
+    """Non-streaming: all tool calls are converted, not just the first."""
+    tc1 = _mock_tool_call("call_1", "get_weather", '{"city":"NYC"}')
+    tc2 = _mock_tool_call("call_2", "get_time", '{"tz":"EST"}')
+    tc3 = _mock_tool_call("call_3", "get_news", '{"topic":"tech"}')
+
+    result = _convert_response(_mock_v2chat_response([tc1, tc2, tc3]), model="command-r-plus")
+
+    assert len(result.choices) == 1
+    assert result.choices[0].finish_reason == "tool_calls"
+    tool_calls = result.choices[0].message.tool_calls
+    assert tool_calls is not None
+    assert len(tool_calls) == 3
+    assert tool_calls[0].id == "call_1"
+    assert tool_calls[0].function.name == "get_weather"
+    assert tool_calls[0].function.arguments == '{"city":"NYC"}'
+    assert tool_calls[1].id == "call_2"
+    assert tool_calls[1].function.name == "get_time"
+    assert tool_calls[2].id == "call_3"
+    assert tool_calls[2].function.name == "get_news"
+
+
+def test_convert_response_single_tool_call() -> None:
+    """Non-streaming: single tool call still works correctly."""
+    tc = _mock_tool_call("call_1", "get_weather", '{"city":"NYC"}')
+
+    result = _convert_response(_mock_v2chat_response([tc]), model="command-r-plus")
+
+    assert len(result.choices[0].message.tool_calls) == 1  # type: ignore[arg-type]
+    assert result.choices[0].message.tool_calls[0].id == "call_1"  # type: ignore[index]
+
+
+def test_streaming_tool_call_start_uses_chunk_index() -> None:
+    """Streaming: tool-call-start uses chunk.index, not hardcoded 0."""
+    chunk = Mock()
+    chunk.type = "tool-call-start"
+    chunk.index = 2
+    chunk.delta = Mock()
+    chunk.delta.message = Mock()
+    chunk.delta.message.tool_calls = Mock()
+    chunk.delta.message.tool_calls.id = "call_abc"
+    chunk.delta.message.tool_calls.function = Mock()
+    chunk.delta.message.tool_calls.function.name = "get_weather"
+
+    result = _create_openai_chunk_from_cohere_chunk(chunk)
+
+    tool_calls = result.choices[0].delta.tool_calls
+    assert tool_calls is not None
+    assert len(tool_calls) == 1
+    assert tool_calls[0].index == 2
+    assert tool_calls[0].id == "call_abc"
+    assert tool_calls[0].function.name == "get_weather"  # type: ignore[union-attr]
+
+
+def test_streaming_tool_call_delta_uses_chunk_index() -> None:
+    """Streaming: tool-call-delta uses chunk.index, not hardcoded 0."""
+    chunk = Mock()
+    chunk.type = "tool-call-delta"
+    chunk.index = 3
+    chunk.delta = Mock()
+    chunk.delta.message = Mock()
+    chunk.delta.message.tool_calls = Mock()
+    chunk.delta.message.tool_calls.function = Mock()
+    chunk.delta.message.tool_calls.function.arguments = '{"partial'
+
+    result = _create_openai_chunk_from_cohere_chunk(chunk)
+
+    tool_calls = result.choices[0].delta.tool_calls
+    assert tool_calls is not None
+    assert len(tool_calls) == 1
+    assert tool_calls[0].index == 3
+    assert tool_calls[0].function.arguments == '{"partial'  # type: ignore[union-attr]
+
+
+def test_streaming_tool_call_index_defaults_to_zero_when_none() -> None:
+    """Streaming: falls back to index 0 when chunk.index is None."""
+    chunk = Mock()
+    chunk.type = "tool-call-start"
+    chunk.index = None
+    chunk.delta = Mock()
+    chunk.delta.message = Mock()
+    chunk.delta.message.tool_calls = Mock()
+    chunk.delta.message.tool_calls.id = "call_xyz"
+    chunk.delta.message.tool_calls.function = Mock()
+    chunk.delta.message.tool_calls.function.name = "search"
+
+    result = _create_openai_chunk_from_cohere_chunk(chunk)
+
+    assert result.choices[0].delta.tool_calls[0].index == 0  # type: ignore[index]
