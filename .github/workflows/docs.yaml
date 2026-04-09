@@ -76,7 +76,7 @@ jobs:
             git rm -rf .
           fi
 
-          rsync -a --delete /tmp/gitbook-site/ .
+          rsync -a --delete --exclude='.git' /tmp/gitbook-site/ .
           git add -A
           if ! git diff --cached --quiet; then
             git commit -m "docs: update GitBook documentation from ${{ github.sha }}"
