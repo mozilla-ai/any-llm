@@ -2,7 +2,7 @@
 """Generate API reference documentation from Python source code.
 
 Extracts docstrings and signatures from the any-llm source and generates
-Starlight-compatible markdown pages. Generated files are written to
+GitBook-compatible markdown pages. Generated files are written to
 docs/src/content/docs/api/ and should never be committed to git.
 
 Usage:
@@ -26,7 +26,7 @@ from any_llm.types import messages as messages_types
 from any_llm.types import provider as provider_types
 from any_llm.types import responses as responses_types
 
-DOCS_API_DIR = Path(__file__).parent.parent / "docs" / "src" / "content" / "docs" / "api"
+DOCS_API_DIR = Path(__file__).parent.parent / "docs" / "api"
 
 
 def _short_name(name: str) -> str:
@@ -435,7 +435,7 @@ provider, model_name = AnyLLM.split_model_provider("anthropic:claude-sonnet-4-20
     gapm = AnyLLM.get_all_provider_metadata
     parts.append(_get_signature_block(gapm, "get_all_provider_metadata"))
     parts.append("")
-    parts.append("**Returns:** A list of [`ProviderMetadata`](/any-llm/api/types/provider/) objects.")
+    parts.append("**Returns:** A list of [`ProviderMetadata`](types/provider.md) objects.")
     parts.append("")
     parts.append(
         """```python
@@ -466,7 +466,7 @@ for meta in AnyLLM.get_all_provider_metadata():
     parts.append("### `completion()` / `acompletion()`")
     parts.append("")
     parts.append(
-        "Create a chat completion. See the [Completion](/any-llm/api/completion/) reference for the full parameter list."
+        "Create a chat completion. See the [Completion](completion.md) reference for the full parameter list."
     )
     parts.append("")
     parts.append(
@@ -484,7 +484,7 @@ async def acompletion(self, model, messages, *, stream=None, response_format=Non
     parts.append("### `responses()` / `aresponses()`")
     parts.append("")
     parts.append(
-        "Create a response using the OpenResponses API. See the [Responses](/any-llm/api/responses/) reference."
+        "Create a response using the OpenResponses API. See the [Responses](responses.md) reference."
     )
     parts.append("")
     parts.append(
@@ -519,7 +519,7 @@ async def amessages(self, model, messages, max_tokens, **kwargs)
     parts.append("")
     parts.append("### `list_models()` / `alist_models()`")
     parts.append("")
-    parts.append("List available models for this provider. See the [List Models](/any-llm/api/list-models/) reference.")
+    parts.append("List available models for this provider. See the [List Models](list-models.md) reference.")
     parts.append("")
     parts.append(
         """```python
@@ -532,7 +532,7 @@ async def alist_models(self, **kwargs) -> Sequence[Model]
     parts.append("")
     parts.append("### `create_batch()` / `acreate_batch()`")
     parts.append("")
-    parts.append("Create a batch job. See the [Batch](/any-llm/api/batch/) reference.")
+    parts.append("Create a batch job. See the [Batch](batch.md) reference.")
     parts.append("")
     parts.append(
         """```python
@@ -551,7 +551,7 @@ async def acreate_batch(self, input_file_path, endpoint, completion_window="24h"
     parts.append(_get_signature_block(gpm, "get_provider_metadata"))
     parts.append("")
     parts.append(
-        "**Returns:** A [`ProviderMetadata`](/any-llm/api/types/provider/) object describing the provider's capabilities."
+        "**Returns:** A [`ProviderMetadata`](types/provider.md) object describing the provider's capabilities."
     )
     parts.append("")
     parts.append(
@@ -597,7 +597,7 @@ def generate_completion_page() -> str:
         "",
         "## Return Value",
         "",
-        "- **Non-streaming** (`stream=None` or `stream=False`): Returns a [`ChatCompletion`](/any-llm/api/types/completion/) object.",
+        "- **Non-streaming** (`stream=None` or `stream=False`): Returns a [`ChatCompletion`](types/completion.md) object.",
         "- **Streaming** (`stream=True`): Returns an `Iterator[ChatCompletionChunk]` (sync) or `AsyncIterator[ChatCompletionChunk]` (async).",
         "- **Structured output** (when `response_format` is a Pydantic model or dataclass): Returns a `ParsedChatCompletion[T]` with a `.choices[0].message.parsed` field containing the deserialized object.",
         "",
@@ -788,9 +788,9 @@ second = responses(
 )
 ```""",
         "",
-        ":::note",
-        "Not all providers support the Responses API. Check the [providers page](/any-llm/providers/) for support details, or query `ProviderMetadata.responses` programmatically.",
-        ":::",
+        "{% hint style=\"info\" %}",
+        "Not all providers support the Responses API. Check the [providers page](../providers.md) for support details, or query `ProviderMetadata.responses` programmatically.",
+        "{% endhint %}",
     ]
     return "\n".join(parts) + "\n"
 
@@ -825,7 +825,7 @@ def generate_embedding_page() -> str:
         "",
         "## Return Value",
         "",
-        "Returns a [`CreateEmbeddingResponse`](/any-llm/api/types/completion/) containing:",
+        "Returns a [`CreateEmbeddingResponse`](types/completion.md) containing:",
         "",
         "- `data` -- list of `Embedding` objects, each with an `embedding` vector (`list[float]`) and an `index`.",
         "- `model` -- the model used.",
@@ -879,9 +879,9 @@ async def main():
 asyncio.run(main())
 ```""",
         "",
-        ":::note",
-        "Not all providers support embeddings. Check the [providers page](/any-llm/providers/) for support details, or query `ProviderMetadata.embedding` programmatically.",
-        ":::",
+        "{% hint style=\"info\" %}",
+        "Not all providers support embeddings. Check the [providers page](../providers.md) for support details, or query `ProviderMetadata.embedding` programmatically.",
+        "{% endhint %}",
     ]
     return "\n".join(parts) + "\n"
 
@@ -916,7 +916,7 @@ def generate_list_models_page() -> str:
         "",
         "## Return Value",
         "",
-        "Returns a `Sequence` of [`Model`](/any-llm/api/types/model/) objects. Each `Model` has at minimum an `id` field containing the model identifier string.",
+        "Returns a `Sequence` of [`Model`](types/model.md) objects. Each `Model` has at minimum an `id` field containing the model identifier string.",
         "",
         "## Usage",
         "",
@@ -952,9 +952,9 @@ models = llm.list_models()
 print(f"Available models: {len(models)}")
 ```""",
         "",
-        ":::note",
-        "Not all providers support listing models. Check the [providers page](/any-llm/providers/) for support details, or query `ProviderMetadata.list_models` programmatically.",
-        ":::",
+        "{% hint style=\"info\" %}",
+        "Not all providers support listing models. Check the [providers page](../providers.md) for support details, or query `ProviderMetadata.list_models` programmatically.",
+        "{% endhint %}",
     ]
     return "\n".join(parts) + "\n"
 
@@ -967,9 +967,9 @@ def generate_batch_page() -> str:
         "description: Process multiple requests asynchronously at lower cost",
         "---",
         "",
-        ":::caution[Experimental API]",
-        "The Batch API is experimental and may change in future releases. Provider support is limited -- check the [providers page](/any-llm/providers/) for availability.",
-        ":::",
+        "{% hint style=\"warning\" %}",
+        "The Batch API is experimental and may change in future releases. Provider support is limited - check the [providers page](../providers.md) for availability.",
+        "{% endhint %}",
         "",
         "The Batch API lets you submit multiple requests as a single job for asynchronous processing, typically at lower cost than real-time requests.",
         "",
@@ -1006,7 +1006,7 @@ def generate_batch_page() -> str:
     parts.append("")
     parts.append(_param_table(cb.__wrapped__ if hasattr(cb, "__wrapped__") else cb, cb_parsed))
     parts.append("")
-    parts.append("**Returns:** A [`Batch`](/any-llm/api/types/batch/) object.")
+    parts.append("**Returns:** A [`Batch`](types/batch.md) object.")
 
     # retrieve_batch
     rb = api_module.retrieve_batch
@@ -1026,7 +1026,7 @@ def generate_batch_page() -> str:
     parts.append("")
     parts.append(_param_table(rb.__wrapped__ if hasattr(rb, "__wrapped__") else rb, rb_parsed))
     parts.append("")
-    parts.append("**Returns:** A [`Batch`](/any-llm/api/types/batch/) object.")
+    parts.append("**Returns:** A [`Batch`](types/batch.md) object.")
 
     # cancel_batch
     canb = api_module.cancel_batch
@@ -1041,7 +1041,7 @@ def generate_batch_page() -> str:
     parts.append("")
     parts.append("Async variant with the same parameters.")
     parts.append("")
-    parts.append("**Returns:** The cancelled [`Batch`](/any-llm/api/types/batch/) object.")
+    parts.append("**Returns:** The cancelled [`Batch`](types/batch.md) object.")
 
     # list_batches
     lb = api_module.list_batches
@@ -1061,7 +1061,7 @@ def generate_batch_page() -> str:
     parts.append("")
     parts.append(_param_table(lb.__wrapped__ if hasattr(lb, "__wrapped__") else lb, lb_parsed))
     parts.append("")
-    parts.append("**Returns:** A `Sequence` of [`Batch`](/any-llm/api/types/batch/) objects.")
+    parts.append("**Returns:** A `Sequence` of [`Batch`](types/batch.md) objects.")
 
     # Usage
     parts.append("")
@@ -1103,9 +1103,9 @@ def generate_exceptions_page() -> str:
         "",
         "any-llm provides a unified exception hierarchy so you can handle errors consistently regardless of which provider is being used. When unified exceptions are enabled, provider-specific SDK errors are automatically mapped to the appropriate any-llm exception type.",
         "",
-        ":::note[Opt-in Feature]",
-        "Unified exception handling is opt-in. Set the `ANY_LLM_UNIFIED_EXCEPTIONS=1` environment variable to enable automatic conversion from provider-specific exceptions.",
-        ":::",
+        "{% hint style=\"info\" %}",
+        "**Opt-in Feature:** Unified exception handling is opt-in. Set the `ANY_LLM_UNIFIED_EXCEPTIONS=1` environment variable to enable automatic conversion from provider-specific exceptions.",
+        "{% endhint %}",
         "",
         "## Exception Hierarchy",
         "",
@@ -1316,7 +1316,7 @@ def generate_messages_page() -> str:
         "",
         "## Return Value",
         "",
-        "- **Non-streaming**: Returns a [`MessageResponse`](/any-llm/api/types/messages/) object.",
+        "- **Non-streaming**: Returns a [`MessageResponse`](types/messages.md) object.",
         "- **Streaming** (`stream=True`): Returns an `Iterator[MessageStreamEvent]` (sync) or `AsyncIterator[MessageStreamEvent]` (async).",
         "",
         "## Usage",
@@ -1715,9 +1715,9 @@ for model in models:
     print(f"{model.id} (owned by {model.owned_by})")
 ```""",
         "",
-        ":::note",
+        "{% hint style=\"info\" %}",
         "The `Model` type is a direct re-export from the OpenAI SDK. any-llm normalizes all provider responses into this format so you get a consistent interface regardless of which provider you query.",
-        ":::",
+        "{% endhint %}",
     ]
     return "\n".join(parts) + "\n"
 
@@ -1814,7 +1814,7 @@ def generate_types_batch_page() -> str:
         "description: Data models for batch operations",
         "---",
         "",
-        "The `Batch` type represents a batch job returned by the [Batch API](/any-llm/api/batch/) functions.",
+        "The `Batch` type represents a batch job returned by the [Batch API](../batch.md) functions.",
         "",
         "## `Batch`",
         "",
@@ -1883,9 +1883,9 @@ if batch.status == "completed":
     print(f"Output file: {batch.output_file_id}")
 ```""",
         "",
-        ":::note",
+        "{% hint style=\"info\" %}",
         "The `Batch` and `BatchRequestCounts` types are direct re-exports from the OpenAI SDK. any-llm normalizes all provider batch responses into this format.",
-        ":::",
+        "{% endhint %}",
     ]
     return "\n".join(parts) + "\n"
 

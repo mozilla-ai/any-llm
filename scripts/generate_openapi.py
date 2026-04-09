@@ -105,7 +105,7 @@ def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path(__file__).parent.parent / "docs" / "public" / "openapi.json",
+        default=Path(__file__).parent.parent / "docs" / "openapi.json",
         help="Output path for OpenAPI spec (default: docs/public/openapi.json)",
     )
 

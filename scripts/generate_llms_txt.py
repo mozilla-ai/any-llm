@@ -13,8 +13,8 @@ import re
 import sys
 from pathlib import Path
 
-DOCS_CONTENT_DIR = Path(__file__).parent.parent / "docs" / "src" / "content" / "docs"
-BUILD_OUTPUT_DIR = Path(__file__).parent.parent / "docs" / "dist" / "any-llm"
+DOCS_CONTENT_DIR = Path(__file__).parent.parent / "docs"
+BUILD_OUTPUT_DIR = Path(__file__).parent.parent / "docs"
 BASE_URL = "https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/"
 MARKDOWN_EXTENSION = ".md"
 MDX_EXTENSION = ".mdx"

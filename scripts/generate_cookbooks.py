@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Convert Jupyter notebooks in docs/cookbooks/ to Starlight-compatible .mdx pages.
+"""Convert Jupyter notebooks in docs/cookbooks/ to GitBook-compatible .md pages.
 
 Reads each .ipynb file, converts cells to markdown/code blocks, and writes the
 result into docs/src/content/docs/cookbooks/. A Colab badge is injected at the
 top of each generated page.
 
 Usage:
-    python scripts/generate_cookbooks.py          # Generate .mdx files
-    python scripts/generate_cookbooks.py --check   # Verify .mdx files are up-to-date
+    python scripts/generate_cookbooks.py          # Generate .md files
+    python scripts/generate_cookbooks.py --check   # Verify .md files are up-to-date
 """
 
 import argparse
@@ -17,12 +17,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
 COOKBOOKS_SRC = REPO_ROOT / "docs" / "cookbooks"
-COOKBOOKS_DEST = REPO_ROOT / "docs" / "src" / "content" / "docs" / "cookbooks"
+COOKBOOKS_DEST = REPO_ROOT / "docs" / "cookbooks"
 GITHUB_BASE = "https://colab.research.google.com/github/mozilla-ai/any-llm/blob/main/docs/cookbooks"
 
 
 def notebook_to_mdx(notebook_path: Path) -> str:
-    """Convert a single .ipynb file to an .mdx string."""
+    """Convert a single .ipynb file to an .md string."""
     with open(notebook_path, encoding="utf-8") as f:
         nb = json.load(f)
 
@@ -73,12 +73,12 @@ def notebook_to_mdx(notebook_path: Path) -> str:
 
 
 def slug_for(notebook_path: Path) -> str:
-    """Return the output .mdx filename for a notebook."""
-    return notebook_path.stem.replace("_", "-") + ".mdx"
+    """Return the output .md filename for a notebook."""
+    return notebook_path.stem.replace("_", "-") + ".md"
 
 
 def generate_all() -> dict[Path, str]:
-    """Generate .mdx content for every notebook. Returns {dest_path: content}."""
+    """Generate .md content for every notebook. Returns {dest_path: content}."""
     results: dict[Path, str] = {}
     if not COOKBOOKS_SRC.exists():
         return results
@@ -91,8 +91,8 @@ def generate_all() -> dict[Path, str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Convert cookbook notebooks to .mdx")
-    parser.add_argument("--check", action="store_true", help="Check if .mdx files are up-to-date")
+    parser = argparse.ArgumentParser(description="Convert cookbook notebooks to .md")
+    parser.add_argument("--check", action="store_true", help="Check if .md files are up-to-date")
     args = parser.parse_args()
 
     pages = generate_all()

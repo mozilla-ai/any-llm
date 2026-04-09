@@ -141,7 +141,7 @@ Documentation to update:
 - **docs/providers.md** when adding providers
 
 ```bash
-cd docs && npm run dev
+uv run python scripts/convert_to_gitbook.py
 ```
 
 ### 5. Commit Your Changes

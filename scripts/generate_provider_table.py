@@ -17,7 +17,7 @@ from pathlib import Path
 from any_llm import AnyLLM
 from any_llm.types.provider import ProviderMetadata
 
-DOCS_DIR = Path(__file__).parent.parent / "docs" / "src" / "content" / "docs"
+DOCS_DIR = Path(__file__).parent.parent / "docs"
 PROVIDERS_FILE = DOCS_DIR / "providers.md"
 START_MARKER = "<!-- PROVIDER-TABLE-START -->"
 END_MARKER = "<!-- PROVIDER-TABLE-END -->"
