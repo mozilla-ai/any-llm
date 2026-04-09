@@ -11,7 +11,12 @@ from openresponses_types import ResponseResource
 from pydantic import BaseModel
 
 from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider
-from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
+from any_llm.exceptions import (
+    ContentFilterFinishReasonError,
+    LengthFinishReasonError,
+    MissingApiKeyError,
+    UnsupportedProviderError,
+)
 from any_llm.tools import prepare_tools
 from any_llm.types.completion import (
     ChatCompletion,
@@ -625,11 +630,11 @@ class AnyLLM(ABC):
             for choice in parsed_completion.choices:
                 if choice.message.parsed is not None:
                     continue
-                if choice.finish_reason in ("length", "content_filter"):
-                    # TODO: raise LengthFinishReasonError / ContentFilterFinishReasonError
-                    # to align with OpenAI SDK semantics (deferred to a future major version)
-                    pass
-                elif choice.message.content and not choice.message.refusal:
+                if choice.finish_reason == "length":
+                    raise LengthFinishReasonError(completion=parsed_completion)
+                if choice.finish_reason == "content_filter":
+                    raise ContentFilterFinishReasonError(completion=parsed_completion)
+                if choice.message.content and not choice.message.refusal:
                     choice.message.parsed = parse_json_content(response_format, choice.message.content)
             return parsed_completion
 
