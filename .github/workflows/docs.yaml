@@ -11,7 +11,9 @@ on:
       - 'scripts/generate_openapi.py'
       - 'scripts/generate_api_docs.py'
       - 'scripts/generate_cookbooks.py'
-      - '.github/workflows/**'
+      - 'scripts/convert_to_gitbook.py'
+      - '.gitbook.yaml'
+      - '.github/workflows/docs.yaml'
       - 'pyproject.toml'
   pull_request:
     paths:
@@ -22,7 +24,9 @@ on:
       - 'scripts/generate_openapi.py'
       - 'scripts/generate_api_docs.py'
       - 'scripts/generate_cookbooks.py'
-      - '.github/workflows/**'
+      - 'scripts/convert_to_gitbook.py'
+      - '.gitbook.yaml'
+      - '.github/workflows/docs.yaml'
       - 'pyproject.toml'
   workflow_dispatch:
 
@@ -30,8 +34,6 @@ jobs:
   docs:
     permissions:
       contents: write
-      pages: write
-      id-token: write
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
@@ -45,42 +47,35 @@ jobs:
           python-version: 3.13
           activate-environment: true
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-
       - name: Install Python dependencies
         run: uv sync --group docs --extra all
 
-      - name: Install docs dependencies
-        working-directory: docs
-        run: npm ci
+      - name: Build GitBook site
+        run: uv run python scripts/convert_to_gitbook.py
 
-      - name: Generate provider table
-        run: uv run python scripts/generate_provider_table.py
+      - name: Verify committed docs are up to date
+        if: github.event_name == 'pull_request'
+        run: git diff --exit-code -- docs
 
-      - name: Generate OpenAPI spec
-        run: uv run python scripts/generate_openapi.py
-
-      - name: Generate API docs
-        run: uv run python scripts/generate_api_docs.py
-
-      - name: Generate cookbook pages
-        run: uv run python scripts/generate_cookbooks.py
-
-      - name: Build docs
-        working-directory: docs
-        run: npm run build
-        env:
-          CI: true
-
-      - name: Generate llms.txt
-        run: uv run python scripts/generate_llms_txt.py
-
-      - name: Deploy to GitHub Pages
+      - name: Deploy to gitbook-docs branch
         if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: docs/dist
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          cp .gitbook-branch-readme.md site/README-BRANCH.md
+          cp .gitbook.yaml site/.gitbook.yaml
+
+          git fetch origin gitbook-docs || true
+          if git rev-parse --verify origin/gitbook-docs >/dev/null 2>&1; then
+            git checkout gitbook-docs
+          else
+            git checkout --orphan gitbook-docs
+            git rm -rf .
+          fi
+
+          rsync -a --delete site/ .
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "docs: update GitBook documentation from ${{ github.sha }}"
+            git push origin gitbook-docs
+          fi
