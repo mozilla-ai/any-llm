@@ -29,6 +29,12 @@ OPENAI_STREAM_FORMAT = StreamFormat(
     yield_done_on_error=True,
 )
 
+RESPONSES_STREAM_FORMAT = StreamFormat(
+    done_marker="data: [DONE]\n\n",
+    error_payload=f"event: error\ndata: {_OPENAI_ERROR}\n\n",
+    yield_done_on_error=False,
+)
+
 ANTHROPIC_STREAM_FORMAT = StreamFormat(
     done_marker="event: done\ndata: {}\n\n",
     error_payload=f"event: error\ndata: {_ANTHROPIC_ERROR}\n\n",
