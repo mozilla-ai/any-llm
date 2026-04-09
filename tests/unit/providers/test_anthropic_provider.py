@@ -15,7 +15,7 @@ from any_llm.providers.anthropic.utils import (
     REASONING_EFFORT_TO_ANTHROPIC_EFFORT,
     _convert_response_format,
 )
-from any_llm.types.completion import CompletionParams, ReasoningEffort
+from any_llm.types.completion import ChatCompletionMessageFunctionToolCall, CompletionParams, ReasoningEffort
 
 
 @contextmanager
@@ -863,8 +863,10 @@ def test_non_streaming_response_preserves_multiple_tool_calls() -> None:
     assert result.choices[0].message.tool_calls is not None
     assert len(result.choices[0].message.tool_calls) == 2
     assert result.choices[0].message.tool_calls[0].id == "toolu_1"
+    assert isinstance(result.choices[0].message.tool_calls[0], ChatCompletionMessageFunctionToolCall)
     assert result.choices[0].message.tool_calls[0].function is not None
     assert result.choices[0].message.tool_calls[0].function.name == "get_weather"
     assert result.choices[0].message.tool_calls[1].id == "toolu_2"
+    assert isinstance(result.choices[0].message.tool_calls[1], ChatCompletionMessageFunctionToolCall)
     assert result.choices[0].message.tool_calls[1].function is not None
     assert result.choices[0].message.tool_calls[1].function.name == "get_time"
