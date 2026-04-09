@@ -65,6 +65,9 @@ jobs:
           cp .gitbook-branch-readme.md site/README-BRANCH.md
           cp .gitbook.yaml site/.gitbook.yaml
 
+          # Move site/ outside the repo before switching branches
+          mv site/ /tmp/gitbook-site/
+
           git fetch origin gitbook-docs || true
           if git rev-parse --verify origin/gitbook-docs >/dev/null 2>&1; then
             git checkout gitbook-docs
@@ -73,7 +76,7 @@ jobs:
             git rm -rf .
           fi
 
-          rsync -a --delete site/ .
+          rsync -a --delete /tmp/gitbook-site/ .
           git add -A
           if ! git diff --cached --quiet; then
             git commit -m "docs: update GitBook documentation from ${{ github.sha }}"
