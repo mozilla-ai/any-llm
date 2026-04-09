@@ -52,6 +52,11 @@ This repo uses `uv` for local dev (Python 3.11+). For the full, up-to-date comma
 - Commits follow the project’s history: Conventional Commits such as `feat(scope): ...`, `fix: ...`, `chore(deps): ...`, `tests: ...`.
 - PRs should follow [.github/pull_request_template.md](.github/pull_request_template.md): clear description, linked issues (e.g., `Fixes #123`), completed checklist, and AI-usage disclosure when applicable.
 
+## Mypy and Provider SDKs
+
+- Provider SDKs are optional and may not be installed locally. When missing, mypy treats their types as `Any`, which makes `# type: ignore` comments appear "unused" even though they suppress real errors in CI.
+- Do not remove `# type: ignore` comments based on local mypy output. CI (`run-linter`) is the authoritative environment.
+
 ## Security & Configuration Tips
 
 - Never commit secrets. Use environment variables or a local `.env` (gitignored) for provider API keys.

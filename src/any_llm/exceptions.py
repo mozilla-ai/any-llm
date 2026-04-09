@@ -1,7 +1,12 @@
 # ruff: noqa: D107
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from typing_extensions import override
+
+if TYPE_CHECKING:
+    from any_llm.types.completion import ParsedChatCompletion
 
 
 class AnyLLMError(Exception):
@@ -117,3 +122,35 @@ class UnsupportedParameterError(AnyLLMError):
             message = f"{message}.\n{additional_message}"
 
         super().__init__(message, provider_name=provider_name)
+
+
+class _FinishReasonError(AnyLLMError):
+    """Base for errors raised when structured output parsing is stopped by a non-stop finish reason.
+
+    Attributes:
+        completion: The partial ``ParsedChatCompletion`` that was returned
+            before the finish reason interrupted parsing.
+
+    """
+
+    def __init__(self, *, completion: ParsedChatCompletion[Any], message: str | None = None) -> None:
+        self.completion = completion
+        super().__init__(message=message)
+
+
+class LengthFinishReasonError(_FinishReasonError):
+    """Raised when a structured output response is truncated (``finish_reason='length'``).
+
+    The partial completion is available via the ``completion`` attribute.
+    """
+
+    default_message = "Could not parse response content as the length limit was reached"
+
+
+class ContentFilterFinishReasonError(_FinishReasonError):
+    """Raised when a structured output response is blocked by a content filter.
+
+    The partial completion is available via the ``completion`` attribute.
+    """
+
+    default_message = "Could not parse response content as the request was rejected by the content filter"
