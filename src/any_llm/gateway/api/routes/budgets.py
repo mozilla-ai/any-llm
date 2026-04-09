@@ -2,8 +2,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from any_llm.gateway.api.deps import get_db, verify_master_key
 from any_llm.gateway.models.entities import Budget
@@ -51,7 +52,7 @@ class UpdateBudgetRequest(BaseModel):
 @router.post("", dependencies=[Depends(verify_master_key)])
 async def create_budget(
     request: CreateBudgetRequest,
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> BudgetResponse:
     """Create a new budget."""
     budget = Budget(
@@ -61,26 +62,26 @@ async def create_budget(
 
     db.add(budget)
     try:
-        db.commit()
+        await db.commit()
     except SQLAlchemyError:
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Database error",
         ) from None
-    db.refresh(budget)
+    await db.refresh(budget)
 
     return BudgetResponse.from_model(budget)
 
 
 @router.get("", dependencies=[Depends(verify_master_key)])
 async def list_budgets(
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> list[BudgetResponse]:
     """List all budgets with pagination."""
-    budgets = db.query(Budget).offset(skip).limit(limit).all()
+    budgets = (await db.execute(select(Budget).offset(skip).limit(limit))).scalars().all()
 
     return [BudgetResponse.from_model(budget) for budget in budgets]
 
@@ -88,10 +89,10 @@ async def list_budgets(
 @router.get("/{budget_id}", dependencies=[Depends(verify_master_key)])
 async def get_budget(
     budget_id: str,
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> BudgetResponse:
     """Get details of a specific budget."""
-    budget = db.query(Budget).filter(Budget.budget_id == budget_id).first()
+    budget = (await db.execute(select(Budget).where(Budget.budget_id == budget_id))).scalar_one_or_none()
 
     if not budget:
         raise HTTPException(
@@ -106,10 +107,10 @@ async def get_budget(
 async def update_budget(
     budget_id: str,
     request: UpdateBudgetRequest,
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> BudgetResponse:
     """Update a budget."""
-    budget = db.query(Budget).filter(Budget.budget_id == budget_id).first()
+    budget = (await db.execute(select(Budget).where(Budget.budget_id == budget_id))).scalar_one_or_none()
 
     if not budget:
         raise HTTPException(
@@ -123,14 +124,14 @@ async def update_budget(
         budget.budget_duration_sec = request.budget_duration_sec
 
     try:
-        db.commit()
+        await db.commit()
     except SQLAlchemyError:
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Database error",
         ) from None
-    db.refresh(budget)
+    await db.refresh(budget)
 
     return BudgetResponse.from_model(budget)
 
@@ -138,10 +139,10 @@ async def update_budget(
 @router.delete("/{budget_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(verify_master_key)])
 async def delete_budget(
     budget_id: str,
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     """Delete a budget."""
-    budget = db.query(Budget).filter(Budget.budget_id == budget_id).first()
+    budget = (await db.execute(select(Budget).where(Budget.budget_id == budget_id))).scalar_one_or_none()
 
     if not budget:
         raise HTTPException(
@@ -149,11 +150,11 @@ async def delete_budget(
             detail=f"Budget with id '{budget_id}' not found",
         )
 
-    db.delete(budget)
+    await db.delete(budget)
     try:
-        db.commit()
+        await db.commit()
     except SQLAlchemyError:
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Database error",

@@ -1,6 +1,6 @@
 """Tests for per-user rate limiting."""
 
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Generator
 from typing import Any
 from unittest.mock import patch
 
@@ -8,14 +8,15 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from any_llm.gateway.core.config import API_KEY_HEADER, GatewayConfig
-from any_llm.gateway.db import Base, get_db
+from any_llm.gateway.core.database import _make_async_engine
+from any_llm.gateway.db import get_db
+from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, Choice, CompletionUsage
 from any_llm.gateway.main import create_app
 from any_llm.gateway.rate_limit import RateLimiter, RateLimitInfo
-from tests.gateway.conftest import _run_alembic_migrations
+from tests.gateway.conftest import _drop_all_sync, _run_alembic_migrations
 
 
 def test_rate_limiter_allows_under_limit() -> None:
@@ -177,16 +178,13 @@ def _make_rate_limit_client(
         rate_limit_rpm=rate_limit_rpm,
     )
     _run_alembic_migrations(postgres_url)
-    engine = create_engine(postgres_url, pool_pre_ping=True)
+    engine = _make_async_engine(postgres_url)
+    session_factory = async_sessionmaker(engine, autocommit=False, autoflush=False, expire_on_commit=False)
     app = create_app(config)
 
-    def override_get_db() -> Generator[Session]:
-        testing_session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-        db = testing_session_local()
-        try:
+    async def override_get_db() -> AsyncGenerator[AsyncSession]:
+        async with session_factory() as db:
             yield db
-        finally:
-            db.close()
 
     app.dependency_overrides[get_db] = override_get_db
 
@@ -194,10 +192,7 @@ def _make_rate_limit_client(
         with TestClient(app) as test_client:
             yield test_client
     finally:
-        Base.metadata.drop_all(bind=engine)
-        with engine.connect() as conn:
-            conn.execute(text("DROP TABLE IF EXISTS alembic_version CASCADE"))
-            conn.commit()
+        _drop_all_sync(postgres_url)
 
 
 @pytest.fixture
@@ -237,8 +232,6 @@ def _chat_request(client: TestClient, user_id: str, master_key: str = "test-mast
 
 def test_rate_limit_headers_on_success(rate_limit_client: TestClient) -> None:
     """Test that successful responses include rate limit headers."""
-    from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, Choice, CompletionUsage
-
     user_id = _create_test_user(rate_limit_client)
 
     mock_response = ChatCompletion(

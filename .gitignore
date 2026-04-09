@@ -218,3 +218,8 @@ __marimo__/
 service_account.json
 config.yml
 gateway.db
+
+# Load test result artifacts (keep results.md only)
+tests/load/results/*.csv
+tests/load/results/*.json
+tests/load/results/*.txt

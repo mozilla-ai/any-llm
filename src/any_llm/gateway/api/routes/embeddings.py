@@ -6,16 +6,17 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from any_llm import AnyLLM, aembedding
-from any_llm.gateway.api.deps import get_config, get_db, verify_api_key_or_master_key
+from any_llm.gateway.api.deps import get_config, get_db, get_log_writer, verify_api_key_or_master_key
 from any_llm.gateway.api.routes.chat import get_provider_kwargs, rate_limit_headers
 from any_llm.gateway.core.config import GatewayConfig
 from any_llm.gateway.log_config import logger
-from any_llm.gateway.models.entities import APIKey, UsageLog, User
+from any_llm.gateway.models.entities import APIKey, UsageLog
 from any_llm.gateway.rate_limit import check_rate_limit
 from any_llm.gateway.services.budget_service import validate_user_budget
+from any_llm.gateway.services.log_writer import LogWriter
 from any_llm.gateway.services.pricing_service import find_model_pricing
 from any_llm.types.completion import CreateEmbeddingResponse
 
@@ -38,8 +39,9 @@ async def create_embedding(
     response: Response,
     request: EmbeddingRequest,
     auth_result: Annotated[tuple[APIKey | None, bool], Depends(verify_api_key_or_master_key)],
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     config: Annotated[GatewayConfig, Depends(get_config)],
+    log_writer: Annotated[LogWriter, Depends(get_log_writer)],
 ) -> CreateEmbeddingResponse:
     """OpenAI-compatible embeddings endpoint.
 
@@ -75,7 +77,7 @@ async def create_embedding(
 
     rate_limit_info = check_rate_limit(raw_request, user_id)
 
-    _ = await validate_user_budget(db, user_id, request.model)
+    _ = await validate_user_budget(db, user_id, request.model, strategy=config.budget_strategy)
 
     provider, model = AnyLLM.split_model_provider(request.model)
 
@@ -110,24 +112,15 @@ async def create_embedding(
         )
 
         if result.usage:
-            pricing = find_model_pricing(db, provider, model)
+            pricing = await find_model_pricing(db, provider, model)
             if pricing:
                 cost = (result.usage.prompt_tokens / 1_000_000) * pricing.input_price_per_million
                 usage_log.cost = cost
-
-                db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).update(
-                    {User.spend: User.spend + cost}
-                )
             else:
                 model_ref = f"{provider}:{model}" if provider else model
                 logger.warning(f"No pricing configured for '{model_ref}'. Usage will be tracked without cost.")
 
-        try:
-            db.add(usage_log)
-            db.commit()
-        except Exception as e:
-            logger.error(f"Failed to log usage to database: {e}")
-            db.rollback()
+        await log_writer.put(usage_log)
 
     except HTTPException:
         raise
@@ -143,12 +136,7 @@ async def create_embedding(
             status="error",
             error_message=str(e),
         )
-        try:
-            db.add(error_log)
-            db.commit()
-        except Exception as log_err:
-            logger.error(f"Failed to log usage to database: {log_err}")
-            db.rollback()
+        await log_writer.put(error_log)
 
         logger.error(f"Provider call failed for {provider}:{model}: {e}")
         raise HTTPException(

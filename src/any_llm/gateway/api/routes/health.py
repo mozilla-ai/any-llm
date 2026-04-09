@@ -1,6 +1,7 @@
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from any_llm.gateway import __version__
@@ -35,7 +36,7 @@ async def health_liveness() -> str:
 
 
 @router.get("/readiness")
-async def health_readiness() -> dict[str, Any]:
+async def health_readiness(db: Annotated[AsyncSession, Depends(get_db)]) -> dict[str, Any]:
     """Readiness probe endpoint.
 
     Checks if the gateway is ready to serve requests by validating:
@@ -53,19 +54,7 @@ async def health_readiness() -> dict[str, Any]:
 
     """
     try:
-        db_gen = get_db()
-        db = next(db_gen)
-        try:
-            db.execute(text("SELECT 1"))
-            db_status = "connected"
-        finally:
-            try:
-                next(db_gen)
-            except StopIteration:
-                pass
-
-    except HTTPException:
-        raise
+        await db.execute(text("SELECT 1"))
     except Exception as e:
         logger.error(f"Database connectivity check failed: {e}")
         raise HTTPException(
@@ -76,8 +65,9 @@ async def health_readiness() -> dict[str, Any]:
                 "version": __version__,
             },
         ) from e
+
     return {
         "status": "healthy",
-        "database": db_status,
+        "database": "connected",
         "version": __version__,
     }

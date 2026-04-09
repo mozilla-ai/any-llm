@@ -3,14 +3,16 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from any_llm.gateway.auth.models import hash_key
 from any_llm.gateway.core.config import API_KEY_HEADER, GatewayConfig
 from any_llm.gateway.core.database import get_db
 from any_llm.gateway.metrics import record_auth_failure
 from any_llm.gateway.models.entities import APIKey
+from any_llm.gateway.services.log_writer import LogWriter
 
 _config: GatewayConfig | None = None
 
@@ -33,6 +35,11 @@ def reset_config() -> None:
     """Reset config state. Intended for testing only."""
     global _config  # noqa: PLW0603
     _config = None
+
+
+def get_log_writer(request: Request) -> LogWriter:
+    """Return the app's LogWriter (set in main.py lifespan)."""
+    return request.app.state.log_writer  # type: ignore[no-any-return]
 
 
 def _extract_bearer_token(request: Request, config: GatewayConfig) -> str:
@@ -65,7 +72,7 @@ def _extract_bearer_token(request: Request, config: GatewayConfig) -> str:
     )
 
 
-def _verify_and_update_api_key(db: Session, token: str) -> APIKey:
+async def _verify_and_update_api_key(db: AsyncSession, token: str) -> APIKey:
     """Verify API key token and update last_used_at."""
     try:
         key_hash = hash_key(token)
@@ -76,7 +83,7 @@ def _verify_and_update_api_key(db: Session, token: str) -> APIKey:
             detail=f"Invalid API key format: {e}",
         ) from e
 
-    api_key = db.query(APIKey).filter(APIKey.key_hash == key_hash).first()
+    api_key = (await db.execute(select(APIKey).where(APIKey.key_hash == key_hash))).scalar_one_or_none()
 
     if not api_key:
         record_auth_failure("invalid_key")
@@ -101,9 +108,9 @@ def _verify_and_update_api_key(db: Session, token: str) -> APIKey:
 
     api_key.last_used_at = datetime.now(UTC)
     try:
-        db.commit()
+        await db.commit()
     except SQLAlchemyError:
-        db.rollback()
+        await db.rollback()
 
     return api_key
 
@@ -115,7 +122,7 @@ def _is_valid_master_key(token: str, config: GatewayConfig) -> bool:
 
 async def verify_api_key(
     request: Request,
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     config: Annotated[GatewayConfig, Depends(get_config)],
 ) -> APIKey:
     """Verify API key from X-AnyLLM-Key header.
@@ -133,7 +140,7 @@ async def verify_api_key(
 
     """
     token = _extract_bearer_token(request, config)
-    return _verify_and_update_api_key(db, token)
+    return await _verify_and_update_api_key(db, token)
 
 
 async def verify_master_key(
@@ -167,7 +174,7 @@ async def verify_master_key(
 
 async def verify_api_key_or_master_key(
     request: Request,
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     config: Annotated[GatewayConfig, Depends(get_config)],
 ) -> tuple[APIKey | None, bool]:
     """Verify either API key or master key from X-AnyLLM-Key header.
@@ -189,13 +196,14 @@ async def verify_api_key_or_master_key(
     if _is_valid_master_key(token, config):
         return None, True
 
-    api_key = _verify_and_update_api_key(db, token)
+    api_key = await _verify_and_update_api_key(db, token)
     return api_key, False
 
 
 __all__ = [
     "get_config",
     "get_db",
+    "get_log_writer",
     "reset_config",
     "set_config",
     "verify_api_key",

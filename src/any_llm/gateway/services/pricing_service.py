@@ -1,11 +1,12 @@
 """Shared pricing lookup utilities."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from any_llm.gateway.models.entities import ModelPricing
 
 
-def find_model_pricing(db: Session, provider: str | None, model: str) -> ModelPricing | None:
+async def find_model_pricing(db: AsyncSession, provider: str | None, model: str) -> ModelPricing | None:
     """Look up model pricing, falling back to legacy slash-separated key format.
 
     Args:
@@ -18,8 +19,10 @@ def find_model_pricing(db: Session, provider: str | None, model: str) -> ModelPr
 
     """
     model_key = f"{provider}:{model}" if provider else model
-    pricing = db.query(ModelPricing).filter(ModelPricing.model_key == model_key).first()
+    pricing = (await db.execute(select(ModelPricing).where(ModelPricing.model_key == model_key))).scalar_one_or_none()
     if not pricing and provider:
         legacy_key = f"{provider}/{model}"
-        pricing = db.query(ModelPricing).filter(ModelPricing.model_key == legacy_key).first()
+        pricing = (
+            await db.execute(select(ModelPricing).where(ModelPricing.model_key == legacy_key))
+        ).scalar_one_or_none()
     return pricing

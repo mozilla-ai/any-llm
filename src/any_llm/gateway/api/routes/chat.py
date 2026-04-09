@@ -6,17 +6,17 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from any_llm import AnyLLM, LLMProvider, acompletion
-from any_llm.gateway.api.deps import get_config, get_db, verify_api_key_or_master_key
+from any_llm.gateway.api.deps import get_config, get_db, get_log_writer, verify_api_key_or_master_key
 from any_llm.gateway.api.routes._helpers import resolve_user_id
 from any_llm.gateway.auth.vertex_auth import setup_vertex_environment
 from any_llm.gateway.core.config import GatewayConfig
 from any_llm.gateway.log_config import logger
 from any_llm.gateway.metrics import record_cost, record_tokens
-from any_llm.gateway.models.entities import APIKey, UsageLog, User
+from any_llm.gateway.models.entities import APIKey, UsageLog
+from any_llm.gateway.services.log_writer import LogWriter
 from any_llm.gateway.rate_limit import RateLimitInfo, check_rate_limit
 from any_llm.gateway.services.budget_service import validate_user_budget
 from any_llm.gateway.services.pricing_service import find_model_pricing
@@ -100,7 +100,8 @@ def get_provider_kwargs(
 
 
 async def log_usage(
-    db: Session,
+    db: AsyncSession,
+    log_writer: LogWriter,
     api_key_obj: APIKey | None,
     model: str,
     provider: str | None,
@@ -110,10 +111,20 @@ async def log_usage(
     usage_override: CompletionUsage | None = None,
     error: str | None = None,
 ) -> None:
-    """Log API usage to database and update user spend.
+    """Build a UsageLog entry and hand it to the log writer.
+
+    Pricing lookup happens synchronously here (single DB read). The actual
+    persistence (INSERT usage_log + UPDATE users.spend) is performed by the
+    LogWriter, which may be synchronous (SingleLogWriter) or batched
+    (BatchLogWriter). Either way this function never commits — it just
+    enqueues and returns.
+
+    Best-effort semantics: if log_writer persistence fails, the error is logged
+    but not raised to the caller, consistent with the historical behavior.
 
     Args:
-        db: Database session
+        db: Database session (used for the pricing lookup only)
+        log_writer: Writer implementation (see services.log_writer)
         api_key_obj: API key object (None if using master key)
         model: Model name
         provider: Provider name
@@ -122,7 +133,6 @@ async def log_usage(
         response: Response object (if successful)
         usage_override: Usage data for streaming requests
         error: Error message (if failed)
-
     """
     usage_log = UsageLog(
         id=str(uuid.uuid4()),
@@ -147,28 +157,18 @@ async def log_usage(
 
         record_tokens(str(provider or ""), model, usage_data.prompt_tokens, usage_data.completion_tokens)
 
-        pricing = find_model_pricing(db, provider, model)
+        pricing = await find_model_pricing(db, provider, model)
         if pricing:
             cost = (usage_data.prompt_tokens / 1_000_000) * pricing.input_price_per_million + (
                 usage_data.completion_tokens / 1_000_000
             ) * pricing.output_price_per_million
             usage_log.cost = cost
             record_cost(str(provider or ""), model, cost)
-
-            if user_id:
-                db.query(User).filter(User.user_id == user_id, User.deleted_at.is_(None)).update(
-                    {User.spend: User.spend + cost}
-                )
         else:
             model_ref = f"{provider}:{model}" if provider else model
             logger.warning(f"No pricing configured for '{model_ref}'. Usage will be tracked without cost.")
 
-    try:
-        db.add(usage_log)
-        db.commit()
-    except SQLAlchemyError as e:
-        logger.error("Failed to log usage to database: %s", e)
-        db.rollback()
+    await log_writer.put(usage_log)
 
 
 @router.post("/completions", response_model=None)
@@ -177,8 +177,9 @@ async def chat_completions(
     response: Response,
     request: ChatCompletionRequest,
     auth_result: Annotated[tuple[APIKey | None, bool], Depends(verify_api_key_or_master_key)],
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     config: Annotated[GatewayConfig, Depends(get_config)],
+    log_writer: Annotated[LogWriter, Depends(get_log_writer)],
 ) -> ChatCompletion | StreamingResponse:
     """OpenAI-compatible chat completions endpoint.
 
@@ -212,7 +213,7 @@ async def chat_completions(
 
     rate_limit_info = check_rate_limit(raw_request, user_id)
 
-    _ = await validate_user_budget(db, user_id, request.model)
+    _ = await validate_user_budget(db, user_id, request.model, strategy=config.budget_strategy)
 
     provider, model = AnyLLM.split_model_provider(request.model)
 
@@ -243,6 +244,7 @@ async def chat_completions(
             async def _on_complete(usage_data: CompletionUsage) -> None:
                 await log_usage(
                     db=db,
+                    log_writer=log_writer,
                     api_key_obj=api_key,
                     model=model,
                     provider=provider,
@@ -254,6 +256,7 @@ async def chat_completions(
             async def _on_error(error: str) -> None:
                 await log_usage(
                     db=db,
+                    log_writer=log_writer,
                     api_key_obj=api_key,
                     model=model,
                     provider=provider,
@@ -281,6 +284,7 @@ async def chat_completions(
         completion: ChatCompletion = await acompletion(**completion_kwargs)  # type: ignore[assignment]
         await log_usage(
             db=db,
+            log_writer=log_writer,
             api_key_obj=api_key,
             model=model,
             provider=provider,
@@ -292,6 +296,7 @@ async def chat_completions(
     except Exception as e:
         await log_usage(
             db=db,
+            log_writer=log_writer,
             api_key_obj=api_key,
             model=model,
             provider=provider,

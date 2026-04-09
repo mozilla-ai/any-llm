@@ -78,3 +78,25 @@ Budget resets happen automatically using a "lazy reset" approach:
 - If yes, the user's `spend` is reset to $0.00 and a new reset date is calculated
 - A log entry is created in `budget_reset_logs` for audit purposes
 - The request then proceeds normally
+
+## Budget validation strategy
+
+Budget enforcement is **enabled by default**. Every `/v1/chat/completions`, `/v1/messages`, and `/v1/embeddings` request checks the caller's budget limit and performs lazy resets on the way through.
+
+How that check is serialized against concurrent budget resets is configurable via `budget_strategy`:
+
+```bash
+# env var
+export GATEWAY_BUDGET_STRATEGY=cas
+
+# or in config.yml
+budget_strategy: cas
+```
+
+| Value | What it does | When to use |
+|---|---|---|
+| `for_update` (default) | `FOR UPDATE` acquired at the start and held across the entire request, including the LLM call. | Historical default — kept for backwards compatibility. Upgrade to `cas` when you can. |
+| `cas` | Lock-free. Hot-path reads unlocked. Reset is an atomic conditional UPDATE (`WHERE next_budget_reset_at < now`), no explicit `FOR UPDATE`. | **Recommended.** Concurrent requests for the same user never serialize. |
+| `disabled` | Skip `validate_user_budget` entirely — no user existence check, no blocked check, no budget check. | Usage-tracking-only deployments where budget/user enforcement happens out-of-band. Cost tracking via `log_usage` still runs. |
+
+If you need user-blocked enforcement **without** budget checks, use `cas` and simply don't assign a `budget_id` to users — the gateway will still 404 on deleted users and 403 on blocked users while skipping all lock-taking budget logic.

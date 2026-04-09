@@ -1,7 +1,8 @@
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from any_llm.gateway.auth import generate_api_key, hash_key
 from any_llm.gateway.core.config import GatewayConfig
@@ -9,7 +10,7 @@ from any_llm.gateway.log_config import logger
 from any_llm.gateway.models.entities import APIKey, User
 
 
-def bootstrap_first_api_key(config: GatewayConfig, db: Session) -> None:
+async def bootstrap_first_api_key(config: GatewayConfig, db: AsyncSession) -> None:
     """Create a first API key for new installations.
 
     If bootstrap is enabled and no API keys exist, this creates one API key
@@ -18,7 +19,7 @@ def bootstrap_first_api_key(config: GatewayConfig, db: Session) -> None:
     if not config.bootstrap_api_key:
         return
 
-    existing_key = db.query(APIKey.id).first()
+    existing_key = (await db.execute(select(APIKey.id).limit(1))).scalar_one_or_none()
     if existing_key:
         return
 
@@ -42,9 +43,9 @@ def bootstrap_first_api_key(config: GatewayConfig, db: Session) -> None:
     db.add(db_key)
 
     try:
-        db.commit()
+        await db.commit()
     except SQLAlchemyError:
-        db.rollback()
+        await db.rollback()
         raise
 
     logger.warning(

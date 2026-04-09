@@ -3,15 +3,16 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from any_llm import AnyLLM, amessages
-from any_llm.gateway.api.deps import get_config, get_db, verify_api_key_or_master_key
+from any_llm.gateway.api.deps import get_config, get_db, get_log_writer, verify_api_key_or_master_key
 from any_llm.gateway.api.routes._helpers import resolve_user_id
 from any_llm.gateway.api.routes.chat import get_provider_kwargs, log_usage, rate_limit_headers
 from any_llm.gateway.core.config import GatewayConfig
 from any_llm.gateway.log_config import logger
 from any_llm.gateway.models.entities import APIKey
+from any_llm.gateway.services.log_writer import LogWriter
 from any_llm.gateway.rate_limit import check_rate_limit
 from any_llm.gateway.services.budget_service import validate_user_budget
 from any_llm.gateway.streaming import ANTHROPIC_STREAM_FORMAT, streaming_generator
@@ -67,8 +68,9 @@ async def create_message(
     response: Response,
     request: MessagesRequest,
     auth_result: Annotated[tuple[APIKey | None, bool], Depends(verify_api_key_or_master_key)],
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     config: Annotated[GatewayConfig, Depends(get_config)],
+    log_writer: Annotated[LogWriter, Depends(get_log_writer)],
 ) -> dict[str, Any] | StreamingResponse:
     """Anthropic Messages API-compatible endpoint."""
     api_key, is_master_key = auth_result
@@ -96,7 +98,7 @@ async def create_message(
 
     rate_limit_info = check_rate_limit(raw_request, user_id)
 
-    _ = await validate_user_budget(db, user_id, request.model)
+    _ = await validate_user_budget(db, user_id, request.model, strategy=config.budget_strategy)
 
     provider, model = AnyLLM.split_model_provider(request.model)
 
@@ -135,6 +137,7 @@ async def create_message(
             async def _on_complete(usage_data: CompletionUsage) -> None:
                 await log_usage(
                     db=db,
+                    log_writer=log_writer,
                     api_key_obj=api_key,
                     model=model,
                     provider=provider,
@@ -146,6 +149,7 @@ async def create_message(
             async def _on_error(error: str) -> None:
                 await log_usage(
                     db=db,
+                    log_writer=log_writer,
                     api_key_obj=api_key,
                     model=model,
                     provider=provider,
@@ -180,6 +184,7 @@ async def create_message(
             )
             await log_usage(
                 db=db,
+                log_writer=log_writer,
                 api_key_obj=api_key,
                 model=model,
                 provider=provider,
@@ -193,6 +198,7 @@ async def create_message(
     except Exception as e:
         await log_usage(
             db=db,
+            log_writer=log_writer,
             api_key_obj=api_key,
             model=model,
             provider=provider,

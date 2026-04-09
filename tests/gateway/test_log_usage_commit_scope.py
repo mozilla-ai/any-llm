@@ -1,23 +1,26 @@
 """Tests for usage logging commit scope isolation."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from any_llm.gateway.api.routes.chat import log_usage
 from any_llm.gateway.models.entities import UsageLog
+from any_llm.gateway.services.log_writer import LogWriter
 from any_llm.types.completion import CompletionUsage
 
 
 @pytest.mark.asyncio
-async def test_log_usage_creates_usage_log(test_db: Session) -> None:
+async def test_log_usage_creates_usage_log(test_db: AsyncSession, log_writer: LogWriter) -> None:
     """Test that log_usage successfully creates a usage log entry."""
     usage = CompletionUsage(prompt_tokens=100, completion_tokens=50, total_tokens=150)
 
     await log_usage(
         db=test_db,
+        log_writer=log_writer,
         api_key_obj=None,
         model="gpt-4o",
         provider="openai",
@@ -25,7 +28,7 @@ async def test_log_usage_creates_usage_log(test_db: Session) -> None:
         usage_override=usage,
     )
 
-    log = test_db.query(UsageLog).first()
+    log = (await test_db.execute(select(UsageLog))).scalars().first()
     assert log is not None
     assert log.prompt_tokens == 100
     assert log.completion_tokens == 50
@@ -33,10 +36,11 @@ async def test_log_usage_creates_usage_log(test_db: Session) -> None:
 
 
 @pytest.mark.asyncio
-async def test_log_usage_records_error(test_db: Session) -> None:
+async def test_log_usage_records_error(test_db: AsyncSession, log_writer: LogWriter) -> None:
     """Test that log_usage records error status and message."""
     await log_usage(
         db=test_db,
+        log_writer=log_writer,
         api_key_obj=None,
         model="gpt-4o",
         provider="openai",
@@ -44,20 +48,21 @@ async def test_log_usage_records_error(test_db: Session) -> None:
         error="Provider timeout",
     )
 
-    log = test_db.query(UsageLog).first()
+    log = (await test_db.execute(select(UsageLog))).scalars().first()
     assert log is not None
     assert log.status == "error"
     assert log.error_message == "Provider timeout"
 
 
 @pytest.mark.asyncio
-async def test_log_usage_does_not_use_savepoint(test_db: Session) -> None:
+async def test_log_usage_does_not_use_savepoint(test_db: AsyncSession, log_writer: LogWriter) -> None:
     """Test that log_usage commits directly without a savepoint."""
     usage = CompletionUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15)
 
     with patch.object(test_db, "begin_nested", wraps=test_db.begin_nested) as mock_nested:
         await log_usage(
             db=test_db,
+            log_writer=log_writer,
             api_key_obj=None,
             model="gpt-4o",
             provider="openai",
@@ -66,29 +71,35 @@ async def test_log_usage_does_not_use_savepoint(test_db: Session) -> None:
         )
         mock_nested.assert_not_called()
 
-    log = test_db.query(UsageLog).first()
+    log = (await test_db.execute(select(UsageLog))).scalars().first()
     assert log is not None
     assert log.total_tokens == 15
 
 
 @pytest.mark.asyncio
-async def test_log_usage_rollback_on_commit_failure(test_db: Session) -> None:
-    """Test that log_usage rolls back cleanly when commit fails."""
+async def test_log_usage_rollback_on_commit_failure(test_db: AsyncSession, log_writer: LogWriter) -> None:
+    """Test that log_usage handles writer commit failures gracefully.
+
+    Persistence is now delegated to the LogWriter, which uses its own session.
+    When persistence fails, the writer catches the error and rolls back
+    internally — log_usage does not raise.
+    """
     usage = CompletionUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15)
 
-    with (
-        patch.object(test_db, "commit", side_effect=OperationalError("db", {}, Exception("db gone"))),
-        patch.object(test_db, "rollback", wraps=test_db.rollback) as mock_rollback,
+    with patch(
+        "any_llm.gateway.services.log_writer._persist_entries",
+        side_effect=OperationalError("db", {}, Exception("db gone")),
     ):
         await log_usage(
             db=test_db,
+            log_writer=log_writer,
             api_key_obj=None,
             model="gpt-4o",
             provider="openai",
             endpoint="/v1/chat/completions",
             usage_override=usage,
         )
-        mock_rollback.assert_called_once()
 
-    log = test_db.query(UsageLog).first()
+    # Entry should not be persisted since the writer's commit failed
+    log = (await test_db.execute(select(UsageLog))).scalars().first()
     assert log is None
