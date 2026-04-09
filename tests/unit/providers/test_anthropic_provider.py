@@ -15,7 +15,7 @@ from any_llm.providers.anthropic.utils import (
     REASONING_EFFORT_TO_ANTHROPIC_EFFORT,
     _convert_response_format,
 )
-from any_llm.types.completion import CompletionParams, ReasoningEffort
+from any_llm.types.completion import ChatCompletionMessageFunctionToolCall, CompletionParams, ReasoningEffort
 
 
 @contextmanager
@@ -806,3 +806,67 @@ def test_streaming_chunk_without_cache_tokens() -> None:
     assert result.usage.completion_tokens == 50
     assert result.usage.total_tokens == 150
     assert result.usage.prompt_tokens_details is None
+
+
+def test_streaming_tool_chunks_preserve_parallel_tool_index() -> None:
+    from anthropic.types import ContentBlockDeltaEvent, ContentBlockStartEvent, InputJSONDelta, ToolUseBlock
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    start_chunk = ContentBlockStartEvent(
+        type="content_block_start",
+        index=1,
+        content_block=ToolUseBlock(type="tool_use", id="toolu_456", name="get_weather", input={}),
+    )
+    start_result = _create_openai_chunk_from_anthropic_chunk(start_chunk, "claude-3-haiku")
+
+    assert start_result.choices[0].delta.tool_calls is not None
+    assert start_result.choices[0].delta.tool_calls[0].index == 1
+    assert start_result.choices[0].delta.tool_calls[0].id == "toolu_456"
+    assert start_result.choices[0].delta.tool_calls[0].function is not None
+    assert start_result.choices[0].delta.tool_calls[0].function.name == "get_weather"
+
+    delta_chunk = ContentBlockDeltaEvent(
+        type="content_block_delta",
+        index=1,
+        delta=InputJSONDelta(type="input_json_delta", partial_json='{"city":"Rome"}'),
+    )
+    delta_result = _create_openai_chunk_from_anthropic_chunk(delta_chunk, "claude-3-haiku")
+
+    assert delta_result.choices[0].delta.tool_calls is not None
+    assert delta_result.choices[0].delta.tool_calls[0].index == 1
+    assert delta_result.choices[0].delta.tool_calls[0].function is not None
+    assert delta_result.choices[0].delta.tool_calls[0].function.arguments == '{"city":"Rome"}'
+
+
+def test_non_streaming_response_preserves_multiple_tool_calls() -> None:
+    from anthropic.types import Message, ToolUseBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason="tool_use",
+        content=[
+            ToolUseBlock(type="tool_use", id="toolu_1", name="get_weather", input={"city": "Rome"}),
+            ToolUseBlock(type="tool_use", id="toolu_2", name="get_time", input={"timezone": "UTC"}),
+        ],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].finish_reason == "tool_calls"
+    assert result.choices[0].message.tool_calls is not None
+    assert len(result.choices[0].message.tool_calls) == 2
+    assert result.choices[0].message.tool_calls[0].id == "toolu_1"
+    assert isinstance(result.choices[0].message.tool_calls[0], ChatCompletionMessageFunctionToolCall)
+    assert result.choices[0].message.tool_calls[0].function is not None
+    assert result.choices[0].message.tool_calls[0].function.name == "get_weather"
+    assert result.choices[0].message.tool_calls[1].id == "toolu_2"
+    assert isinstance(result.choices[0].message.tool_calls[1], ChatCompletionMessageFunctionToolCall)
+    assert result.choices[0].message.tool_calls[1].function is not None
+    assert result.choices[0].message.tool_calls[1].function.name == "get_time"

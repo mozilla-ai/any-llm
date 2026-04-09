@@ -33,6 +33,7 @@ repos:
         name: mypy
         entry: "uv run mypy"
         args: []
+        require_serial: true
         language: system
         types: [python]
         verbose: true
