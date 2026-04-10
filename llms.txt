@@ -1,0 +1,31 @@
+# any-llm
+
+## Docs
+
+- [Quickstart](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/quickstart.md): pip install any-llm-sdk[mistral,ollama]
+- [Providers](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/providers.md)
+- [Api - Any Llm](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/api/any-llm.md): # model_name = "claude-sonnet-4-20250514"
+- [Api - Responses](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/api/responses.md)
+- [Api - Completion](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/api/completion.md)
+- [Api - Embedding](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/api/embedding.md)
+- [Api - Messages](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/api/messages.md)
+- [Api - Exceptions](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/api/exceptions.md): print(f"Original: {e.original_exception}")
+- [Api - List Models](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/api/list-models.md)
+- [Api - Batch](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/api/batch.md): batch = create_batch(
+- [Api - Types - Completion](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/api/types/completion.md)
+- [Api - Types - Responses](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/api/types/responses.md)
+- [Api - Types - Messages](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/api/types/messages.md)
+- [Api - Types - Model](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/api/types/model.md)
+- [Api - Types - Provider](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/api/types/provider.md)
+- [Api - Types - Batch](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/api/types/batch.md): while batch.status not in ("completed", "failed", "expired", "cancelled"):
+- [Platform - Overview](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/platform/overview.md)
+- [Gateway - Overview](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/gateway/overview.md)
+- [Gateway - Quickstart](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/gateway/quickstart.md): image: ghcr.io/mozilla-ai/any-llm/gateway:latest
+- [Gateway - Authentication](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/gateway/authentication.md)
+- [Gateway - Budget Management](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/gateway/budget-management.md): curl -X POST http://localhost:8000/v1/budgets \
+- [Gateway - Configuration](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/gateway/configuration.md): input_price_per_million: 0.15
+- [Gateway - Api Reference](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/gateway/api-reference.md)
+- [Gateway - Troubleshooting](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/gateway/troubleshooting.md)
+- [Gateway - Docker Deployment](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/gateway/docker-deployment.md): curl http://localhost:8000/health
+- [Introduction](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/index.md): any-llm is a Python library providing a single interface to different LLM providers.
+- [Cookbooks - Any Llm Getting Started](https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/cookbooks/any-llm-getting-started.md): # This is needed because any-llm uses async functions for API calls
