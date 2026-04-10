@@ -417,3 +417,148 @@ async def test_gateway_non_platform_acompletion_no_wrapping() -> None:
                 response_format=None,
             ),
         )
+
+
+# -- Platform mode: success paths and other method overrides ------------------
+
+
+def _completion_params_mock() -> MagicMock:
+    return MagicMock(
+        model_id="openai:gpt-4",
+        messages=[],
+        reasoning_effort=None,
+        stream=False,
+        response_format=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_gateway_platform_acompletion_success() -> None:
+    """Platform-mode _acompletion returns the result on success (no error wrapping interferes)."""
+    provider = _make_platform_provider()
+    sentinel = MagicMock(name="completion-result")
+
+    with patch.object(
+        type(provider).__bases__[0], "_acompletion", new_callable=AsyncMock, return_value=sentinel
+    ) as mock_super:
+        result = await provider._acompletion(_completion_params_mock())
+
+    mock_super.assert_awaited_once()
+    assert result is sentinel
+
+
+@pytest.mark.asyncio
+async def test_gateway_platform_aresponses_wraps_errors() -> None:
+    """_aresponses wraps APIStatusError in platform mode."""
+    provider = _make_platform_provider()
+    exc = _make_api_status_error(502, "Bad gateway")
+
+    with patch.object(type(provider).__bases__[0], "_aresponses", new_callable=AsyncMock, side_effect=exc):
+        with pytest.raises(UpstreamProviderError, match="Bad gateway"):
+            await provider._aresponses(MagicMock())
+
+
+@pytest.mark.asyncio
+async def test_gateway_platform_aresponses_success() -> None:
+    """Platform-mode _aresponses returns the result on success."""
+    provider = _make_platform_provider()
+    sentinel = MagicMock(name="responses-result")
+
+    with patch.object(
+        type(provider).__bases__[0], "_aresponses", new_callable=AsyncMock, return_value=sentinel
+    ) as mock_super:
+        result = await provider._aresponses(MagicMock())
+
+    mock_super.assert_awaited_once()
+    assert result is sentinel
+
+
+@pytest.mark.asyncio
+async def test_gateway_platform_aembedding_wraps_errors() -> None:
+    """_aembedding wraps APIStatusError in platform mode."""
+    provider = _make_platform_provider()
+    exc = _make_api_status_error(401, "Unauthorized")
+
+    with patch.object(type(provider).__bases__[0], "_aembedding", new_callable=AsyncMock, side_effect=exc):
+        with pytest.raises(AuthenticationError, match="Unauthorized"):
+            await provider._aembedding("text-embedding-3-small", "hello")
+
+
+@pytest.mark.asyncio
+async def test_gateway_platform_aembedding_success() -> None:
+    """Platform-mode _aembedding returns the result on success."""
+    provider = _make_platform_provider()
+    sentinel = MagicMock(name="embedding-result")
+
+    with patch.object(
+        type(provider).__bases__[0], "_aembedding", new_callable=AsyncMock, return_value=sentinel
+    ) as mock_super:
+        result = await provider._aembedding("text-embedding-3-small", "hello")
+
+    mock_super.assert_awaited_once()
+    assert result is sentinel
+
+
+@pytest.mark.asyncio
+async def test_gateway_platform_alist_models_wraps_errors() -> None:
+    """_alist_models wraps APIStatusError in platform mode."""
+    provider = _make_platform_provider()
+    exc = _make_api_status_error(504, "Timed out")
+
+    with patch.object(type(provider).__bases__[0], "_alist_models", new_callable=AsyncMock, side_effect=exc):
+        with pytest.raises(GatewayTimeoutError, match="Timed out"):
+            await provider._alist_models()
+
+
+@pytest.mark.asyncio
+async def test_gateway_platform_alist_models_success() -> None:
+    """Platform-mode _alist_models returns the result on success."""
+    provider = _make_platform_provider()
+    sentinel = MagicMock(name="models-result")
+
+    with patch.object(
+        type(provider).__bases__[0], "_alist_models", new_callable=AsyncMock, return_value=sentinel
+    ) as mock_super:
+        result = await provider._alist_models()
+
+    mock_super.assert_awaited_once()
+    assert result is sentinel
+
+
+@pytest.mark.asyncio
+async def test_gateway_non_platform_aresponses_no_wrapping() -> None:
+    """In non-platform mode, _aresponses errors pass through unchanged."""
+    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
+        provider = GatewayProvider(api_key="key", api_base="https://gateway.example.com")
+
+    exc = _make_api_status_error(502, "Bad gateway")
+
+    with patch.object(type(provider).__bases__[0], "_aresponses", new_callable=AsyncMock, side_effect=exc):
+        with pytest.raises(openai.APIStatusError):
+            await provider._aresponses(MagicMock())
+
+
+@pytest.mark.asyncio
+async def test_gateway_non_platform_aembedding_no_wrapping() -> None:
+    """In non-platform mode, _aembedding errors pass through unchanged."""
+    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
+        provider = GatewayProvider(api_key="key", api_base="https://gateway.example.com")
+
+    exc = _make_api_status_error(401, "Unauthorized")
+
+    with patch.object(type(provider).__bases__[0], "_aembedding", new_callable=AsyncMock, side_effect=exc):
+        with pytest.raises(openai.APIStatusError):
+            await provider._aembedding("text-embedding-3-small", "hello")
+
+
+@pytest.mark.asyncio
+async def test_gateway_non_platform_alist_models_no_wrapping() -> None:
+    """In non-platform mode, _alist_models errors pass through unchanged."""
+    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
+        provider = GatewayProvider(api_key="key", api_base="https://gateway.example.com")
+
+    exc = _make_api_status_error(504, "Timed out")
+
+    with patch.object(type(provider).__bases__[0], "_alist_models", new_callable=AsyncMock, side_effect=exc):
+        with pytest.raises(openai.APIStatusError):
+            await provider._alist_models()
