@@ -44,9 +44,25 @@ class AnyLLMError(Exception):
 
 
 class RateLimitError(AnyLLMError):
-    """Raised when the API rate limit is exceeded."""
+    """Raised when the API rate limit is exceeded.
+
+    Attributes:
+        retry_after: Value of the ``Retry-After`` header, when the server
+            provides one.  May be a number of seconds or an HTTP-date string.
+
+    """
 
     default_message = "Rate limit exceeded"
+
+    def __init__(
+        self,
+        message: str | None = None,
+        original_exception: Exception | None = None,
+        provider_name: str | None = None,
+        retry_after: str | None = None,
+    ) -> None:
+        super().__init__(message, original_exception, provider_name)
+        self.retry_after = retry_after
 
 
 class AuthenticationError(AnyLLMError):
@@ -122,6 +138,24 @@ class UnsupportedParameterError(AnyLLMError):
             message = f"{message}.\n{additional_message}"
 
         super().__init__(message, provider_name=provider_name)
+
+
+class InsufficientFundsError(AnyLLMError):
+    """Raised when the user's budget or credits are exhausted (HTTP 402)."""
+
+    default_message = "Insufficient funds or budget exceeded"
+
+
+class UpstreamProviderError(AnyLLMError):
+    """Raised when the upstream provider is unreachable or returns an error (HTTP 502)."""
+
+    default_message = "Upstream provider error"
+
+
+class GatewayTimeoutError(AnyLLMError):
+    """Raised when the gateway times out waiting for the upstream provider (HTTP 504)."""
+
+    default_message = "Gateway timeout waiting for upstream provider"
 
 
 class _FinishReasonError(AnyLLMError):
