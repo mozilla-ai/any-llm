@@ -19,10 +19,11 @@ master_key: YOUR_MASTER_KEY_HERE
 # Pre-configured provider credentials
 providers:
   vertexai:
+    client_args:
     # Vertex AI is a unique case in that it requires a service account JSON file, project ID, and location.
-    credentials: "/app/service_account.json" # Internal docker path as mapped in docker-compose.yml, OR service account json str
-    project: YOUR_GCP_PROJECT_ID_HERE
-    location: "us-central1"
+      credentials: "/app/service_account.json" # Internal docker path as mapped in docker-compose.yml, OR service account json str
+      project: YOUR_GCP_PROJECT_ID_HERE
+      location: "us-central1"
 
   openai:
     api_key: YOUR_OPENAI_API_KEY_HERE

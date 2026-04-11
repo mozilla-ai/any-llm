@@ -53,7 +53,7 @@ class VertexaiProvider(GoogleProvider):
 
         if self.client._api_client.project is None:
             msg = "vertexai"
-            raise MissingApiKeyError(msg, "GOOGLE_CLOUD_PROJECT")
+            raise MissingApiKeyError(msg, "env:GOOGLE_CLOUD_PROJECT or provider:config:client_args:project")
         if self.client._api_client.location is None:
             msg = "vertexai"
-            raise MissingApiKeyError(msg, "GOOGLE_CLOUD_LOCATION")
+            raise MissingApiKeyError(msg, "env:GOOGLE_CLOUD_LOCATION or provider:config:client_args:location")
