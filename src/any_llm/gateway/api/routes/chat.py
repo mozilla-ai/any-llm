@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 from any_llm import AnyLLM, LLMProvider, acompletion
 from any_llm.gateway.api.deps import get_config, get_db, verify_api_key_or_master_key
 from any_llm.gateway.api.routes._helpers import resolve_user_id
-from any_llm.gateway.auth.vertex_auth import setup_vertex_environment
 from any_llm.gateway.core.config import GatewayConfig
 from any_llm.gateway.log_config import logger
 from any_llm.gateway.metrics import record_cost, record_tokens
@@ -75,28 +74,7 @@ def get_provider_kwargs(
         Dictionary of provider kwargs (credentials, client_args, etc.)
 
     """
-    kwargs: dict[str, Any] = {}
-    if provider.value in config.providers:
-        provider_config = config.providers[provider.value]
-
-        if provider == LLMProvider.VERTEXAI:
-            vertex_creds = provider_config.get("credentials")
-            vertex_project = provider_config.get("project")
-            vertex_location = provider_config.get("location")
-
-            setup_vertex_environment(
-                credentials=vertex_creds,
-                project=vertex_project,
-                location=vertex_location,
-            )
-            if "client_args" in provider_config:
-                kwargs["client_args"] = provider_config["client_args"]
-        else:
-            kwargs = {k: v for k, v in provider_config.items() if k != "client_args"}
-            if "client_args" in provider_config:
-                kwargs["client_args"] = provider_config["client_args"]
-
-    return kwargs
+    return config.providers.get(provider.value, {}).copy()
 
 
 async def log_usage(

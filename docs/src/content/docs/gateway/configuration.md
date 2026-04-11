@@ -35,9 +35,11 @@ providers:
   gemini:
     api_key: "${GEMINI_API_KEY}"
   vertexai:
-    credentials: "/path/to/service_account.json"
-    project: "your-gcp-project-id"
-    location: "us-central1"
+    client_args:
+    # Vertex AI requires service account credentials, project ID, and location
+      credentials: "/path/to/service_account.json"  # File path, JSON string, or dict
+      project: "your-gcp-project-id"
+      location: "us-central1"  # Default GCP region
 
 # Model pricing for cost-tracking (optional)
 pricing:

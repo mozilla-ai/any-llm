@@ -27,13 +27,33 @@ class VertexaiProvider(GoogleProvider):
         if (timeout := kwargs.pop("timeout", None)) is not None:
             GoogleProvider._merge_timeout_into_http_options(timeout, kwargs)
 
-        self.client = genai.Client(
-            vertexai=True,
-            **kwargs,
-        )
+        if ('credentials' in kwargs
+                and 'project' in kwargs
+                and 'location' in kwargs):
+
+            credentials = self._build_credentials(kwargs['credentials'])
+            project = kwargs['project']
+            location = kwargs['location']
+
+            exclude = {"credentials", "project", "location"}
+            kwargs_copy = {k: v for k, v in kwargs.items() if k not in exclude}
+
+            self.client = genai.client.Client(
+                vertexai=True,
+                credentials=credentials,
+                project=project,
+                location=location,
+                **kwargs_copy,
+            )
+        else:
+            self.client = genai.client.Client(
+                vertexai=True,
+                **kwargs,
+            )
+
         if self.client._api_client.project is None:
             msg = "vertexai"
-            raise MissingApiKeyError(msg, "GOOGLE_CLOUD_PROJECT")
+            raise MissingApiKeyError(msg, "env:GOOGLE_CLOUD_PROJECT or provider:config:client_args:project")
         if self.client._api_client.location is None:
             msg = "vertexai"
-            raise MissingApiKeyError(msg, "GOOGLE_CLOUD_LOCATION")
+            raise MissingApiKeyError(msg, "env:GOOGLE_CLOUD_LOCATION or provider:config:client_args:location")
