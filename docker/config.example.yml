@@ -20,7 +20,7 @@ master_key: YOUR_MASTER_KEY_HERE
 providers:
   vertexai:
     # Vertex AI is a unique case in that it requires a service account JSON file, project ID, and location.
-    service_account: "/app/service_account.json" # Internal docker path as mapped in docker-compose.yml, OR service account json str
+    credentials: "/app/service_account.json" # Internal docker path as mapped in docker-compose.yml, OR service account json str
     project: YOUR_GCP_PROJECT_ID_HERE
     location: "us-central1"
 

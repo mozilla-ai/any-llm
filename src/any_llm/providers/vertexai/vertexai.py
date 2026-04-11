@@ -27,15 +27,15 @@ class VertexaiProvider(GoogleProvider):
         if (timeout := kwargs.pop("timeout", None)) is not None:
             GoogleProvider._merge_timeout_into_http_options(timeout, kwargs)
 
-        if ('service_account' in kwargs
+        if ('credentials' in kwargs
                 and 'project' in kwargs
                 and 'location' in kwargs):
 
-            credentials = self._build_credentials(kwargs['service_account'])
+            credentials = self._build_credentials(kwargs['credentials'])
             project = kwargs['project']
             location = kwargs['location']
 
-            exclude = {"service_account", "project", "location"}
+            exclude = {"credentials", "project", "location"}
             kwargs_copy = {k: v for k, v in kwargs.items() if k not in exclude}
 
             self.client = genai.client.Client(

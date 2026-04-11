@@ -311,25 +311,25 @@ class GoogleProvider(AnyLLM):
         models_list = await self.client.aio.models.list(**kwargs)
         return self._convert_list_models_response(models_list)
 
-    def _build_credentials(self, service_account: str) -> Credentials:
+    def _build_credentials(self, credentials: str | dict) -> Credentials:
         """
-        Build and return Google Cloud Credentials from the service_account parameter.
+        Build and return Google Cloud Credentials from the credentials parameter.
 
-        The 'service_account' parameter can be a path to a JSON key file,
+        The 'credentials' parameter can be a path to a JSON key file,
         a JSON string containing the key file contents, or a dictionary
         representing the service account key.
 
         Args:
-            service_account: json str or json file path
+            credentials: Service account JSON string, file path, or dictionary
 
         Returns:
             Credentials: A Google OAuth2 Service Account Credentials object with the required scopes.
 
         Raises:
-            ValueError: If 'service_account' is not provided or is in an invalid format.
+            ValueError: If 'credentials' is not provided or is in an invalid format.
         """
-        if not service_account:
-            raise ValueError("Missing 'service_account' in kwargs")
+        if not credentials:
+            raise ValueError("Missing 'credentials' file or string")
 
         scopes = [
             "https://www.googleapis.com/auth/generative-language",
@@ -338,19 +338,19 @@ class GoogleProvider(AnyLLM):
         ]
 
         # Check if it is a file path
-        if isinstance(service_account, str) and os.path.isfile(service_account):
-            return Credentials.from_service_account_file(service_account, scopes=scopes)
+        if isinstance(credentials, str) and os.path.isfile(credentials):
+            return Credentials.from_service_account_file(credentials, scopes=scopes)
 
         # Otherwise, attempt to parse as JSON string or dict
         service_account_info = None
-        if isinstance(service_account, dict):
-            service_account_info = service_account
-        elif isinstance(service_account, str):
+        if isinstance(credentials, dict):
+            service_account_info = credentials
+        elif isinstance(credentials, str):
             try:
-                service_account_info = json.loads(service_account)
+                service_account_info = json.loads(credentials)
             except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON format for service_account: {e}")
+                raise ValueError(f"Invalid JSON format for credentials: {e}")
         else:
-            raise ValueError("service_account must be a file path, JSON string, or dictionary")
+            raise ValueError("credentials must be a file path, JSON string, or dictionary")
 
         return Credentials.from_service_account_info(service_account_info, scopes=scopes)
