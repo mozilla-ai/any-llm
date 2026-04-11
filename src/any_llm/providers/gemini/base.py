@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
+from google.oauth2.service_account import Credentials
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
@@ -19,6 +20,9 @@ from any_llm.types.completion import (
     Function,
     Reasoning,
 )
+import json
+import os
+
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
@@ -51,7 +55,7 @@ if TYPE_CHECKING:
     from any_llm.types.model import Model
 
     ChatCompletionMessageToolCallType = (
-        OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
+            OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
     )
 
 REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 256, "low": 1024, "medium": 8192, "high": 24576, "xhigh": 32768}
@@ -265,10 +269,10 @@ class GoogleProvider(AnyLLM):
 
     @override
     async def _aembedding(
-        self,
-        model: str,
-        inputs: str | list[str],
-        **kwargs: Any,
+            self,
+            model: str,
+            inputs: str | list[str],
+            **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
         result = await self.client.aio.models.embed_content(
@@ -281,9 +285,9 @@ class GoogleProvider(AnyLLM):
 
     @override
     async def _acompletion(
-        self,
-        params: CompletionParams,
-        **kwargs: Any,
+            self,
+            params: CompletionParams,
+            **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         kwargs["provider_name"] = self.PROVIDER_NAME
         converted_kwargs = self._convert_completion_params(params, **kwargs)
@@ -306,3 +310,47 @@ class GoogleProvider(AnyLLM):
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.aio.models.list(**kwargs)
         return self._convert_list_models_response(models_list)
+
+    def _build_credentials(self, service_account: str) -> Credentials:
+        """
+        Build and return Google Cloud Credentials from the service_account parameter.
+
+        The 'service_account' parameter can be a path to a JSON key file,
+        a JSON string containing the key file contents, or a dictionary
+        representing the service account key.
+
+        Args:
+            service_account: json str or json file path
+
+        Returns:
+            Credentials: A Google OAuth2 Service Account Credentials object with the required scopes.
+
+        Raises:
+            ValueError: If 'service_account' is not provided or is in an invalid format.
+        """
+        if not service_account:
+            raise ValueError("Missing 'service_account' in kwargs")
+
+        scopes = [
+            "https://www.googleapis.com/auth/generative-language",
+            "https://www.googleapis.com/auth/cloud-platform",
+            "https://www.googleapis.com/auth/aiplatform",
+        ]
+
+        # Check if it is a file path
+        if isinstance(service_account, str) and os.path.isfile(service_account):
+            return Credentials.from_service_account_file(service_account, scopes=scopes)
+
+        # Otherwise, attempt to parse as JSON string or dict
+        service_account_info = None
+        if isinstance(service_account, dict):
+            service_account_info = service_account
+        elif isinstance(service_account, str):
+            try:
+                service_account_info = json.loads(service_account)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON format for service_account: {e}")
+        else:
+            raise ValueError("service_account must be a file path, JSON string, or dictionary")
+
+        return Credentials.from_service_account_info(service_account_info, scopes=scopes)
