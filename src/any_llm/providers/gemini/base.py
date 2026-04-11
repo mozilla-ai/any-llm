@@ -269,10 +269,10 @@ class GoogleProvider(AnyLLM):
 
     @override
     async def _aembedding(
-            self,
-            model: str,
-            inputs: str | list[str],
-            **kwargs: Any,
+        self,
+        model: str,
+        inputs: str | list[str],
+        **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
         result = await self.client.aio.models.embed_content(
@@ -285,9 +285,9 @@ class GoogleProvider(AnyLLM):
 
     @override
     async def _acompletion(
-            self,
-            params: CompletionParams,
-            **kwargs: Any,
+        self,
+        params: CompletionParams,
+        **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         kwargs["provider_name"] = self.PROVIDER_NAME
         converted_kwargs = self._convert_completion_params(params, **kwargs)

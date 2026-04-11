@@ -1,7 +1,7 @@
 # Configuration for any-llm-gateway
 
 # Database connection URL
-#database_url: "postgresql://gateway:gateway@postgres:5432/gateway"
+database_url: "postgresql://gateway:gateway@postgres:5432/gateway"
 
 # Server configuration - if you want to use a different port, change it here and in the docker-compose.yml file.
 host: "0.0.0.0"
@@ -19,7 +19,7 @@ master_key: YOUR_MASTER_KEY_HERE
 # Pre-configured provider credentials
 providers:
   vertexai:
-    # Vertex AI is a unique case in that it requires a service account JSON file, project ID, and location. See src/any_llm/gateway/auth/vertex_auth.py for more details.
+    # Vertex AI is a unique case in that it requires a service account JSON file, project ID, and location.
     service_account: "/app/service_account.json" # Internal docker path as mapped in docker-compose.yml, OR service account json str
     project: YOUR_GCP_PROJECT_ID_HERE
     location: "us-central1"

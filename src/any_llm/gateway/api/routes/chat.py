@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 from any_llm import AnyLLM, LLMProvider, acompletion
 from any_llm.gateway.api.deps import get_config, get_db, verify_api_key_or_master_key
 from any_llm.gateway.api.routes._helpers import resolve_user_id
-from any_llm.gateway.auth.vertex_auth import setup_vertex_environment
 from any_llm.gateway.core.config import GatewayConfig
 from any_llm.gateway.log_config import logger
 from any_llm.gateway.metrics import record_cost, record_tokens
