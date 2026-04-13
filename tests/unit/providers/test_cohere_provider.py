@@ -144,6 +144,41 @@ def test_patch_messages_with_invalid_tool_sequence_raises_error() -> None:
         _patch_messages(messages)
 
 
+def test_patch_messages_with_parallel_tool_messages() -> None:
+    """Test that multiple consecutive tool messages after an assistant message are valid."""
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Get weather for Paris and London."},
+        {
+            "role": "assistant",
+            "content": "I'll check both cities.",
+            "tool_calls": [
+                {"id": "call_1", "function": {"name": "get_weather", "arguments": '{"location":"Paris"}'}},
+                {"id": "call_2", "function": {"name": "get_weather", "arguments": '{"location":"London"}'}},
+            ],
+        },
+        {"role": "tool", "name": "get_weather", "content": "Sunny in Paris", "tool_call_id": "call_1"},
+        {"role": "tool", "name": "get_weather", "content": "Rainy in London", "tool_call_id": "call_2"},
+    ]
+
+    result = _patch_messages(messages)
+
+    tool_messages = [msg for msg in result if msg["role"] == "tool"]
+    assert len(tool_messages) == 2
+    for msg in tool_messages:
+        assert "name" not in msg
+
+
+def test_patch_messages_tool_after_tool_without_assistant_raises() -> None:
+    """Test that a tool message group not preceded by an assistant message raises."""
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Hello"},
+        {"role": "tool", "content": "result1", "tool_call_id": "call_1"},
+        {"role": "tool", "content": "result2", "tool_call_id": "call_2"},
+    ]
+    with pytest.raises(ValueError, match=r"A tool message must be preceded by an assistant message with tool_calls."):
+        _patch_messages(messages)
+
+
 def test_preprocess_response_format_dataclass() -> None:
     from dataclasses import dataclass
 

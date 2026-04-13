@@ -29,7 +29,11 @@ def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for i, message in enumerate(messages):
         patched_message = message.copy()
         if patched_message.get("role") == "tool":
-            if i > 0 and messages[i - 1].get("role") != "assistant":
+            # Walk backwards past sibling tool messages to find the assistant message
+            j = i - 1
+            while j >= 0 and messages[j].get("role") == "tool":
+                j -= 1
+            if j < 0 or messages[j].get("role") != "assistant":
                 msg = "A tool message must be preceded by an assistant message with tool_calls."
                 raise ValueError(msg)
             patched_message.pop("name", None)
