@@ -33,7 +33,7 @@ platform = [
 perplexity = []
 
 mistral = [
-  "mistralai>=1.9.3",
+  "mistralai>=2.0.0",
 ]
 
 anthropic = []

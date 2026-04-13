@@ -12,9 +12,9 @@ from any_llm.utils.structured_output import get_json_schema, is_structured_outpu
 
 MISSING_PACKAGES_ERROR = None
 try:
-    from mistralai import Mistral
+    from mistralai.client import Mistral
+    from mistralai.client.models.responseformat import ResponseFormat
     from mistralai.extra import response_format_from_pydantic_model
-    from mistralai.models.responseformat import ResponseFormat
 
     from .utils import (
         _convert_batch_job_to_openai,
@@ -33,9 +33,9 @@ except ImportError as e:
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
-    from mistralai import Mistral  # noqa: TC004
-    from mistralai.models import APIEndpoint
-    from mistralai.models.embeddingresponse import EmbeddingResponse
+    from mistralai.client import Mistral  # noqa: TC004
+    from mistralai.client.models import APIEndpoint
+    from mistralai.client.models.embeddingresponse import EmbeddingResponse
 
     from any_llm.types.batch import Batch
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
