@@ -26,8 +26,8 @@ all = [
 
 platform = [
   "any-llm-platform-client>=0.3.0",
-  "opentelemetry-sdk>=1.40.0",
-  "opentelemetry-exporter-otlp-proto-http>=1.40.0",
+  "opentelemetry-sdk>=1.30.0",
+  "opentelemetry-exporter-otlp-proto-http>=1.30.0",
 ]
 
 perplexity = []
