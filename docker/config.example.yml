@@ -39,6 +39,10 @@ providers:
   mistral:
     api_key: YOUR_MISTRAL_API_KEY_HERE
 
+  aliyunbailian:
+    api_key: YOUR_ALIYUNBAILIAN_API_KEY_HERE
+    api_base: "https://bailian.aliyun.com/v1/"  # optional
+
   # Add more providers as needed...
 
 # Model pricing configuration (optional but necessary for price tracking)
