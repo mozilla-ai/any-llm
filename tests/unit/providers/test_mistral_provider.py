@@ -153,8 +153,8 @@ async def test_response_format(response_format: Any) -> None:
         assert "response_format" in completion_call_kwargs
 
         response_format_arg = completion_call_kwargs["response_format"]
-        # In mistralai v2, response_format_from_pydantic_model returns a dict;
-        # in v1 and for dict inputs it returns a ResponseFormat model.
+        # response_format_from_pydantic_model returns a dict for Pydantic models;
+        # dict inputs go through ResponseFormat.model_validate and return a model.
         if isinstance(response_format_arg, dict):
             assert response_format_arg["type"] == "json_schema"
             assert response_format_arg["json_schema"]["name"] == "StructuredOutput"
