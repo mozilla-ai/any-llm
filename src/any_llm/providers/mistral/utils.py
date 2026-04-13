@@ -2,15 +2,15 @@ import json
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from mistralai.models import AssistantMessageContent as MistralAssistantMessageContent
-from mistralai.models import CompletionEvent
-from mistralai.models import ModelList as MistralModelList
-from mistralai.models import ReferenceChunk as MistralReferenceChunk
-from mistralai.models import TextChunk as MistralTextChunk
-from mistralai.models import ThinkChunk as MistralThinkChunk
-from mistralai.models.chatcompletionresponse import ChatCompletionResponse as MistralChatCompletionResponse
-from mistralai.models.toolcall import ToolCall as MistralToolCall
-from mistralai.types.basemodel import Unset
+from mistralai.client.models import AssistantMessageContent as MistralAssistantMessageContent
+from mistralai.client.models import CompletionEvent
+from mistralai.client.models import ModelList as MistralModelList
+from mistralai.client.models import ReferenceChunk as MistralReferenceChunk
+from mistralai.client.models import TextChunk as MistralTextChunk
+from mistralai.client.models import ThinkChunk as MistralThinkChunk
+from mistralai.client.models.chatcompletionresponse import ChatCompletionResponse as MistralChatCompletionResponse
+from mistralai.client.models.toolcall import ToolCall as MistralToolCall
+from mistralai.client.types.basemodel import Unset
 
 from any_llm.logging import logger
 from any_llm.types.batch import Batch, BatchRequestCounts
@@ -38,8 +38,8 @@ DEFAULT_TIMEOUT_HOURS = 24
 DEFAULT_COMPLETION_WINDOW = f"{DEFAULT_TIMEOUT_HOURS}h"
 
 if TYPE_CHECKING:
-    from mistralai.models import BatchJobOut, BatchJobsOut
-    from mistralai.models.embeddingresponse import EmbeddingResponse
+    from mistralai.client.models import BatchJob, ListBatchJobsResponse
+    from mistralai.client.models.embeddingresponse import EmbeddingResponse
     from openai.types.chat.chat_completion_message_custom_tool_call import (
         ChatCompletionMessageCustomToolCall,
     )
@@ -368,12 +368,15 @@ def _convert_models_list(response: MistralModelList) -> Sequence[Model]:
     models = []
     if response.data:
         for model_data in response.data:
+            model_id = getattr(model_data, "id", None)
+            if model_id is None:
+                continue
             models.append(
                 Model(
-                    id=model_data.id,
-                    created=model_data.created or 0,
+                    id=model_id,
+                    created=getattr(model_data, "created", None) or 0,
                     object="model",
-                    owned_by=model_data.owned_by or "mistral",
+                    owned_by=getattr(model_data, "owned_by", None) or "mistral",
                 )
             )
     return models
@@ -390,8 +393,8 @@ _MISTRAL_TO_OPENAI_STATUS_MAP: dict[str, str] = {
 }
 
 
-def _convert_batch_job_to_openai(batch_job: "BatchJobOut") -> Batch:
-    """Convert a Mistral BatchJobOut to OpenAI Batch format."""
+def _convert_batch_job_to_openai(batch_job: "BatchJob") -> Batch:
+    """Convert a Mistral BatchJob to OpenAI Batch format."""
     status = batch_job.status
     status_str = str(status.value if hasattr(status, "value") else status)  # type: ignore[union-attr]
     openai_status = _MISTRAL_TO_OPENAI_STATUS_MAP.get(status_str)
@@ -452,8 +455,8 @@ def _convert_batch_job_to_openai(batch_job: "BatchJobOut") -> Batch:
     )
 
 
-def _convert_batch_jobs_list(batch_jobs: "BatchJobsOut") -> Sequence[Batch]:
-    """Convert a Mistral BatchJobsOut to a sequence of OpenAI Batch objects."""
+def _convert_batch_jobs_list(batch_jobs: "ListBatchJobsResponse") -> Sequence[Batch]:
+    """Convert a Mistral ListBatchJobsResponse to a sequence of OpenAI Batch objects."""
     if batch_jobs.data is None:
         return []
     return [_convert_batch_job_to_openai(job) for job in batch_jobs.data]
