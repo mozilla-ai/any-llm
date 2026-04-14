@@ -14,7 +14,7 @@
 - `src/any_llm/`: Python SDK source (providers in `src/any_llm/providers/`, shared types in `src/any_llm/types/`).
 - `src/any_llm/gateway/`: Optional FastAPI gateway (OpenAI-compatible proxy + budgeting/keys/analytics).
 - `tests/`: `unit/`, `integration/`, `gateway/`, plus shared fixtures in `tests/conftest.py`.
-- `docs/`: GitBook documentation source (flat markdown, static assets under `docs/images/`). Generated files (`api/`, `cookbooks/`, `openapi.json`, `llms.txt`, `SUMMARY.md`) are gitignored and produced at build time.
+- `docs/`: GitBook documentation source (flat markdown, static assets under `docs/images/`). Generated files (`api/`, `cookbooks/`, `openapi.json`, `llms.txt`, `llms-full.txt`, `SUMMARY.md`) are produced during the docs build.
 - `docker/`: Gateway Dockerfile + Compose configs ([docker/docker-compose.yml](docker/docker-compose.yml), [docker/config.example.yml](docker/config.example.yml)).
 
 ## Build, Test, and Development Commands

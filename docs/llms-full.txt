@@ -1,0 +1,3647 @@
+# any-llm Documentation
+
+> Complete documentation for any-llm - A Python library providing a single interface to different LLM providers.
+
+This file contains all documentation pages concatenated for easy consumption by AI systems.
+
+---
+
+## quickstart.md
+
+<!-- Source: quickstart.md -->
+
+## Requirements
+
+- Python 3.11 or newer
+- API keys for your chosen LLM provider
+
+## Installation
+
+```bash
+pip install any-llm-sdk[all]  # Install with all provider support
+```
+
+### Installing Specific Providers
+
+If you want to install a specific provider from our [supported providers](#providers.md):
+
+```bash
+pip install any-llm-sdk[mistral]  # For Mistral provider
+pip install any-llm-sdk[ollama]   # For Ollama provider
+# install multiple providers
+pip install any-llm-sdk[mistral,ollama]
+```
+
+### Library Integration
+
+If you're building a library, install just the base package (`pip install any-llm-sdk`) and let your users install provider dependencies.
+
+> **API Keys:** Set your provider's API key as an environment variable (e.g., `export MISTRAL_API_KEY="your-key"`) or pass it directly using the `api_key` parameter.
+
+## APIs
+
+### Using the AnyLLM Class
+
+For applications making multiple requests with the same provider, use the `AnyLLM` class to avoid repeated provider instantiation:
+
+```python
+
+
+from any_llm import AnyLLM
+
+# Make sure you have the appropriate API key set
+api_key = os.environ.get('MISTRAL_API_KEY')
+if not api_key:
+    raise ValueError("Please set MISTRAL_API_KEY environment variable")
+
+llm = AnyLLM.create("mistral")
+
+response = llm.completion(
+    model="mistral-small-latest",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+print(response.choices[0].message.content)
+
+metadata = llm.get_provider_metadata()
+print(f"Supports streaming: {metadata.streaming}")
+print(f"Supports tools: {metadata.completion}")
+```
+
+### API Call
+
+```python
+
+
+from any_llm import completion
+
+# Make sure you have the appropriate API key set
+api_key = os.environ.get('MISTRAL_API_KEY')
+if not api_key:
+    raise ValueError("Please set MISTRAL_API_KEY environment variable")
+
+# Recommended: separate provider and model parameters
+response = completion(
+    model="mistral-small-latest",
+    provider="mistral",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+print(response.choices[0].message.content)
+```
+
+### When to Choose Which Approach
+
+**Use Direct API Functions (`completion`, `acompletion`) when:**
+
+- Making simple, one-off requests
+- Prototyping or writing quick scripts
+- You want the simplest possible interface
+
+**Use Provider Class (`AnyLLM.create`) when:**
+
+- Building applications that make multiple requests with the same provider
+- You want to avoid repeated provider instantiation overhead
+
+**Finding model names:** Check the [providers page](#providers.md) for provider IDs, or use the [`list_models`](#api/list-models.md) API to see available models for your provider.
+
+## Streaming
+
+For the [providers that support streaming](#providers.md), you can enable it by passing `stream=True`:
+
+```python
+output = ""
+for chunk in completion(
+    model="mistral-small-latest",
+    provider="mistral",
+    messages=[{"role": "user", "content": "Hello!"}],
+    stream=True
+):
+    chunk_content = chunk.choices[0].delta.content or ""
+    print(chunk_content)
+    output += chunk_content
+```
+
+## Reasoning
+
+For [providers that support reasoning](#providers.md), you can request thinking traces alongside the response using `reasoning_effort`:
+
+```python
+from any_llm import completion
+
+response = completion(
+    model="claude-sonnet-4-5-20250929",
+    provider="anthropic",
+    messages=[{"role": "user", "content": "How many r's are in strawberry?"}],
+    reasoning_effort="high",
+)
+
+# Access the model's thinking trace
+if response.choices[0].message.reasoning:
+    print(response.choices[0].message.reasoning.content)
+
+# The final answer
+print(response.choices[0].message.content)
+```
+
+Reasoning also works with streaming — each chunk may include `chunk.choices[0].delta.reasoning`.
+
+## Embeddings
+
+`embedding` and `aembedding` allow you to create vector embeddings from text using the same unified interface across providers.
+
+Not all providers support embeddings - check the [providers documentation](#providers.md) to see which ones do.
+
+```python
+from any_llm import embedding
+
+result = embedding(
+    model="text-embedding-3-small",
+    provider="openai",
+    inputs="Hello, world!" # can be either string or list of strings
+)
+
+# Access the embedding vector
+embedding_vector = result.data[0].embedding
+print(f"Embedding vector length: {len(embedding_vector)}")
+print(f"Tokens used: {result.usage.total_tokens}")
+```
+
+## Tools
+
+`any-llm` supports tool calling for providers that support it. You can pass a list of tools where each tool is either:
+
+1. **Python callable** - Functions with proper docstrings and type annotations
+2. **OpenAI Format tool dict** - Already in OpenAI tool format
+
+```python
+from any_llm import completion
+
+def get_weather(location: str, unit: str = "F") -> str:
+    """Get weather information for a location.
+
+    Args:
+        location: The city or location to get weather for
+        unit: Temperature unit, either 'C' or 'F'
+
+    Returns:
+        Current weather description
+    """
+    return f"Weather in {location} is sunny and 75{unit}!"
+
+response = completion(
+    model="mistral-small-latest",
+    provider="mistral",
+    messages=[{"role": "user", "content": "What's the weather in Pittsburgh PA?"}],
+    tools=[get_weather]
+)
+```
+
+any-llm automatically converts your Python functions to OpenAI tools format. Functions must have:
+- A docstring describing what the function does
+- Type annotations for all parameters
+- A return type annotation
+
+## Exception Handling
+
+The `any-llm` package provides a unified exception hierarchy that works consistently across all LLM providers.
+
+### Enabling Unified Exceptions
+
+{% hint style="info" %}
+**Opt-in Feature:** Unified exception handling is currently **opt-in**. Set the `ANY_LLM_UNIFIED_EXCEPTIONS` environment variable to enable it:
+{% endhint %}
+
+```bash
+export ANY_LLM_UNIFIED_EXCEPTIONS=1
+```
+
+When enabled, provider-specific exceptions are automatically converted to `any-llm` exception types. When disabled (default), the original provider exceptions are raised with a deprecation warning.
+
+### Basic Usage
+
+```python
+from any_llm import completion
+from any_llm.exceptions import (
+    RateLimitError,
+    AuthenticationError,
+    ProviderError,
+    AnyLLMError,
+)
+
+try:
+    response = completion(
+        model="gpt-4",
+        provider="openai",
+        messages=[{"role": "user", "content": "Hello!"}]
+    )
+except RateLimitError as e:
+    print(f"Rate limited: {e.message}")
+except AuthenticationError as e:
+    print(f"Auth failed: {e.message}")
+except ProviderError as e:
+    print(f"Provider error: {e.message}")
+except AnyLLMError as e:
+    print(f"Error: {e.message}")
+```
+
+### Accessing Original Exceptions
+
+All unified exceptions preserve the original provider exception for debugging:
+
+```python
+from any_llm.exceptions import RateLimitError
+
+messages = [{"role": "user", "content": "Hello!"}]
+
+try:
+    response = completion(model="gpt-4", provider="openai", messages=messages)
+except RateLimitError as e:
+    print(f"Provider: {e.provider_name}")
+    print(f"Original exception: {type(e.original_exception)}")
+```
+
+
+---
+
+## providers.md
+
+<!-- Source: providers.md -->
+
+`any-llm` supports multiple providers. Provider source code is in [`src/any_llm/providers/`](https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers).
+
+<!-- AUTO-GENERATED PROVIDER TABLE - Do not edit manually. CI runs scripts/generate_provider_table.py at build time. -->
+<!-- PROVIDER-TABLE-START -->
+| ID | Key | Base | Responses | Completion | Streaming<br>(Completions) | Reasoning<br>(Completions) | Image <br>(Completions) | Embedding | List Models | Batch |
+|----|-----|------|-----------|------------|--------------------------|--------------------------|-----------|-----------|-------------|-------|
+| [`anthropic`](https://docs.anthropic.com/en/home) | ANTHROPIC_API_KEY | ANTHROPIC_BASE_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| [`azure`](https://azure.microsoft.com/en-us/products/ai-services/openai-service) | AZURE_API_KEY | AZURE_AI_CHAT_ENDPOINT | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| [`azureanthropic`](https://learn.microsoft.com/en-us/azure/ai-foundry/model-inference/concepts/models) | AZURE_ANTHROPIC_API_KEY | AZURE_ANTHROPIC_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| [`azureopenai`](https://learn.microsoft.com/en-us/azure/ai-foundry/) | AZURE_OPENAI_API_KEY | AZURE_OPENAI_ENDPOINT | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ |
+| [`bedrock`](https://aws.amazon.com/bedrock/) | AWS_BEARER_TOKEN_BEDROCK | AWS_ENDPOINT_URL_BEDROCK_RUNTIME | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| [`cerebras`](https://docs.cerebras.ai/) | CEREBRAS_API_KEY | CEREBRAS_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| [`cohere`](https://cohere.com/api) | COHERE_API_KEY | COHERE_BASE_URL | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| [`databricks`](https://docs.databricks.com/) | DATABRICKS_TOKEN | DATABRICKS_HOST | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
+| [`deepseek`](https://platform.deepseek.com/) | DEEPSEEK_API_KEY | DEEPSEEK_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| [`fireworks`](https://fireworks.ai/api) | FIREWORKS_API_KEY | FIREWORKS_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| [`gateway`](https://github.com/mozilla-ai/any-llm) | GATEWAY_API_KEY | GATEWAY_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [`gemini`](https://ai.google.dev/gemini-api/docs) | GEMINI_API_KEY/GOOGLE_API_KEY | GOOGLE_GEMINI_BASE_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| [`groq`](https://groq.com/api) | GROQ_API_KEY | GROQ_BASE_URL | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| [`huggingface`](https://huggingface.co/docs/huggingface_hub/package_reference/inference_client) | HF_TOKEN | HUGGINGFACE_API_BASE | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| [`inception`](https://inceptionlabs.ai/) | INCEPTION_API_KEY | INCEPTION_API_BASE | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| [`llama`](https://www.llama.com/products/llama-api/) | LLAMA_API_KEY | LLAMA_API_BASE | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| [`llamacpp`](https://github.com/ggml-org/llama.cpp) | None | LLAMACPP_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| [`llamafile`](https://github.com/Mozilla-Ocho/llamafile) | None | LLAMAFILE_API_BASE | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| [`lmstudio`](https://lmstudio.ai/) | LM_STUDIO_API_KEY | LM_STUDIO_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| [`minimax`](https://www.minimax.io/platform_overview) | MINIMAX_API_KEY | MINIMAX_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| [`mistral`](https://docs.mistral.ai/) | MISTRAL_API_KEY | MISTRAL_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
+| [`moonshot`](https://platform.moonshot.ai/) | MOONSHOT_API_KEY | MOONSHOT_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| [`mzai`](https://any-llm.ai) | ANY_LLM_KEY | ANY_LLM_PLATFORM_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| [`nebius`](https://studio.nebius.ai/) | NEBIUS_API_KEY | NEBIUS_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| [`ollama`](https://github.com/ollama/ollama) | None | OLLAMA_HOST | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| [`openai`](https://platform.openai.com/docs/api-reference) | OPENAI_API_KEY | OPENAI_BASE_URL | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| [`openrouter`](https://openrouter.ai/docs) | OPENROUTER_API_KEY | OPENROUTER_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| [`perplexity`](https://docs.perplexity.ai/) | PERPLEXITY_API_KEY | PERPLEXITY_BASE_URL | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| [`portkey`](https://portkey.ai/docs) | PORTKEY_API_KEY | PORTKEY_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| [`sagemaker`](https://aws.amazon.com/sagemaker/) | AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY | SAGEMAKER_ENDPOINT_URL | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| [`sambanova`](https://sambanova.ai/) | SAMBANOVA_API_KEY | SAMBANOVA_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| [`together`](https://together.ai/) | TOGETHER_API_KEY | TOGETHER_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| [`vertexai`](https://cloud.google.com/vertex-ai/docs) |  | VERTEXAI_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| [`vertexaianthropic`](https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-claude) |  | VERTEXAI_ANTHROPIC_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| [`vllm`](https://docs.vllm.ai/) | VLLM_API_KEY | VLLM_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| [`voyage`](https://docs.voyageai.com/) | VOYAGE_API_KEY | VOYAGE_API_BASE | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| [`watsonx`](https://www.ibm.com/watsonx) | WATSONX_API_KEY | WATSONX_URL | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ❌ |
+| [`xai`](https://x.ai/) | XAI_API_KEY | XAI_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| [`zai`](https://docs.z.ai/guides/develop/python/introduction) | ZAI_API_KEY | ZAI_BASE_URL | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+<!-- PROVIDER-TABLE-END -->
+
+
+---
+
+## api/any-llm.md
+
+<!-- Source: api/any-llm.md -->
+
+The `AnyLLM` class is the provider interface at the core of any-llm. Use it when you need to make multiple requests against the same provider without re-instantiating on every call.
+
+## Creating an Instance
+
+### `AnyLLM.create()`
+
+Factory method that returns a configured `AnyLLM` instance for the given provider.
+
+```python
+def create(
+    provider: str | LLMProvider,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    **kwargs: Any,
+) -> AnyLLM
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `provider` | `str \| LLMProvider` | *required* | The provider name (e.g., 'openai', 'anthropic') |
+| `api_key` | `str \| None` | None | API key for the provider |
+| `api_base` | `str \| None` | None | Base URL for the provider API |
+| `**kwargs` | `Any` | *required* | Additional provider-specific arguments |
+
+**Returns:** An `AnyLLM` instance bound to the specified provider.
+
+```python
+from any_llm import AnyLLM
+
+llm = AnyLLM.create("openai", api_key="sk-...")
+
+response = llm.completion(
+    model="gpt-4.1-mini",
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(response.choices[0].message.content)
+```
+
+## Static Methods
+
+### `AnyLLM.split_model_provider()`
+
+Parses a combined `"provider:model"` string into its components.
+
+```python
+def split_model_provider(
+    model: str,
+) -> tuple[LLMProvider, str]
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `model` | `str` | Combined identifier in `"provider:model"` format (e.g., `"openai:gpt-4.1-mini"`). The legacy `"provider/model"` format is also accepted but deprecated. |
+
+**Returns:** A `(LLMProvider, model_name)` tuple.
+
+**Raises:** `ValueError` if the string does not contain a `:` or `/` delimiter.
+
+```python
+provider, model_name = AnyLLM.split_model_provider("anthropic:claude-sonnet-4-20250514")
+# provider = LLMProvider.ANTHROPIC
+# model_name = "claude-sonnet-4-20250514"
+```
+
+### `AnyLLM.get_all_provider_metadata()`
+
+Returns metadata for every supported provider, sorted alphabetically by name.
+
+```python
+def get_all_provider_metadata() -> list[ProviderMetadata]
+```
+
+**Returns:** A list of [`ProviderMetadata`](#types/provider.md) objects.
+
+```python
+for meta in AnyLLM.get_all_provider_metadata():
+    print(f"{meta.name}: streaming={meta.streaming}, embedding={meta.embedding}")
+```
+
+### `AnyLLM.get_supported_providers()`
+
+Returns a list of all supported provider key strings.
+
+```python
+def get_supported_providers() -> list[str]
+```
+
+**Returns:** `list[str]` of provider keys (e.g., `["anthropic", "openai", ...]`).
+
+## Instance Methods
+
+All instance methods below are called on an `AnyLLM` object returned by `AnyLLM.create()`.
+
+### `completion()` / `acompletion()`
+
+Create a chat completion. See the [Completion](#completion.md) reference for the full parameter list.
+
+```python
+def completion(self, model, messages, *, stream=None, response_format=None, **kwargs)
+    -> ChatCompletion | Iterator[ChatCompletionChunk] | ParsedChatCompletion
+
+async def acompletion(self, model, messages, *, stream=None, response_format=None, **kwargs)
+    -> ChatCompletion | AsyncIterator[ChatCompletionChunk] | ParsedChatCompletion
+```
+
+### `responses()` / `aresponses()`
+
+Create a response using the OpenResponses API. See the [Responses](#responses.md) reference.
+
+```python
+def responses(self, **kwargs)
+    -> ResponseResource | Response | Iterator[ResponseStreamEvent]
+
+async def aresponses(self, **kwargs)
+    -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]
+```
+
+### `messages()` / `amessages()`
+
+Create a message using the Anthropic Messages API format. All providers support this through automatic conversion.
+
+```python
+def messages(self, **kwargs)
+    -> MessageResponse | Iterator[MessageStreamEvent]
+
+async def amessages(self, model, messages, max_tokens, **kwargs)
+    -> MessageResponse | AsyncIterator[MessageStreamEvent]
+```
+
+### `list_models()` / `alist_models()`
+
+List available models for this provider. See the [List Models](#list-models.md) reference.
+
+```python
+def list_models(self, **kwargs) -> Sequence[Model]
+async def alist_models(self, **kwargs) -> Sequence[Model]
+```
+
+### `create_batch()` / `acreate_batch()`
+
+Create a batch job. See the [Batch](#batch.md) reference.
+
+```python
+def create_batch(self, **kwargs) -> Batch
+async def acreate_batch(self, input_file_path, endpoint, completion_window="24h", metadata=None, **kwargs) -> Batch
+```
+
+### `get_provider_metadata()`
+
+Returns metadata for this provider instance's class.
+
+```python
+def get_provider_metadata() -> ProviderMetadata
+```
+
+**Returns:** A [`ProviderMetadata`](#types/provider.md) object describing the provider's capabilities.
+
+```python
+llm = AnyLLM.create("mistral")
+meta = llm.get_provider_metadata()
+print(f"Supports streaming: {meta.streaming}")
+print(f"Supports embedding: {meta.embedding}")
+print(f"Supports responses: {meta.responses}")
+```
+
+
+---
+
+## api/responses.md
+
+<!-- Source: api/responses.md -->
+
+The `responses` and `aresponses` functions implement the [OpenResponses specification](https://github.com/openresponsesspec/openresponses), a vendor-neutral API for agentic AI systems. This API supports multi-turn conversations, tool use, and streaming events.
+
+## Return Types
+
+The return type depends on the provider and whether streaming is enabled:
+
+| Condition | Return Type |
+|-----------|-------------|
+| OpenResponses-compliant provider (non-streaming) | `openresponses_types.ResponseResource` |
+| OpenAI-native provider (non-streaming) | `openai.types.responses.Response` |
+| Streaming (`stream=True`) | `Iterator[ResponseStreamEvent]` (sync) or `AsyncIterator[ResponseStreamEvent]` (async) |
+
+## `any_llm.responses()`
+
+```python
+def responses(
+    model: str,
+    input_data: str | list[EasyInputMessageParam | Message | ResponseOutputMessageParam | ResponseFileSearchToolCallParam | ResponseComputerToolCallParam | ComputerCallOutput | ResponseFunctionWebSearchParam | ResponseFunctionToolCallParam | FunctionCallOutput | ToolSearchCall | ResponseToolSearchOutputItemParamParam | ResponseReasoningItemParam | ResponseCompactionItemParamParam | ImageGenerationCall | ResponseCodeInterpreterToolCallParam | LocalShellCall | LocalShellCallOutput | ShellCall | ShellCallOutput | ApplyPatchCall | ApplyPatchCallOutput | McpListTools | McpApprovalRequest | McpApprovalResponse | McpCall | ResponseCustomToolCallOutputParam | ResponseCustomToolCallParam | ItemReference],
+    *,
+    provider: str | LLMProvider | None = None,
+    tools: list[dict[str, Any] | Callable[Ellipsis, Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
+    max_output_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    stream: bool | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    instructions: str | None = None,
+    max_tool_calls: int | None = None,
+    parallel_tool_calls: bool | None = None,
+    reasoning: Any | None = None,
+    text: Any | None = None,
+    presence_penalty: float | None = None,
+    frequency_penalty: float | None = None,
+    truncation: str | None = None,
+    store: bool | None = None,
+    service_tier: str | None = None,
+    user: str | None = None,
+    metadata: dict[str, str] | None = None,
+    previous_response_id: str | None = None,
+    include: list[str] | None = None,
+    background: bool | None = None,
+    safety_identifier: str | None = None,
+    prompt_cache_key: str | None = None,
+    prompt_cache_retention: str | None = None,
+    conversation: str | dict[str, Any] | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> ResponseResource | Response | Iterator[ResponseAudioDeltaEvent | ResponseAudioDoneEvent | ResponseAudioTranscriptDeltaEvent | ResponseAudioTranscriptDoneEvent | ResponseCodeInterpreterCallCodeDeltaEvent | ResponseCodeInterpreterCallCodeDoneEvent | ResponseCodeInterpreterCallCompletedEvent | ResponseCodeInterpreterCallInProgressEvent | ResponseCodeInterpreterCallInterpretingEvent | ResponseCompletedEvent | ResponseContentPartAddedEvent | ResponseContentPartDoneEvent | ResponseCreatedEvent | ResponseErrorEvent | ResponseFileSearchCallCompletedEvent | ResponseFileSearchCallInProgressEvent | ResponseFileSearchCallSearchingEvent | ResponseFunctionCallArgumentsDeltaEvent | ResponseFunctionCallArgumentsDoneEvent | ResponseInProgressEvent | ResponseFailedEvent | ResponseIncompleteEvent | ResponseOutputItemAddedEvent | ResponseOutputItemDoneEvent | ResponseReasoningSummaryPartAddedEvent | ResponseReasoningSummaryPartDoneEvent | ResponseReasoningSummaryTextDeltaEvent | ResponseReasoningSummaryTextDoneEvent | ResponseReasoningTextDeltaEvent | ResponseReasoningTextDoneEvent | ResponseRefusalDeltaEvent | ResponseRefusalDoneEvent | ResponseTextDeltaEvent | ResponseTextDoneEvent | ResponseWebSearchCallCompletedEvent | ResponseWebSearchCallInProgressEvent | ResponseWebSearchCallSearchingEvent | ResponseImageGenCallCompletedEvent | ResponseImageGenCallGeneratingEvent | ResponseImageGenCallInProgressEvent | ResponseImageGenCallPartialImageEvent | ResponseMcpCallArgumentsDeltaEvent | ResponseMcpCallArgumentsDoneEvent | ResponseMcpCallCompletedEvent | ResponseMcpCallFailedEvent | ResponseMcpCallInProgressEvent | ResponseMcpListToolsCompletedEvent | ResponseMcpListToolsFailedEvent | ResponseMcpListToolsInProgressEvent | ResponseOutputTextAnnotationAddedEvent | ResponseQueuedEvent | ResponseCustomToolCallInputDeltaEvent | ResponseCustomToolCallInputDoneEvent]
+```
+
+## `any_llm.aresponses()`
+
+Async variant with the same parameters. Returns `ResponseResource | Response | AsyncIterator[ResponseStreamEvent]`.
+
+```python
+async def aresponses(
+    model: str,
+    input_data: str | list[EasyInputMessageParam | Message | ResponseOutputMessageParam | ResponseFileSearchToolCallParam | ResponseComputerToolCallParam | ComputerCallOutput | ResponseFunctionWebSearchParam | ResponseFunctionToolCallParam | FunctionCallOutput | ToolSearchCall | ResponseToolSearchOutputItemParamParam | ResponseReasoningItemParam | ResponseCompactionItemParamParam | ImageGenerationCall | ResponseCodeInterpreterToolCallParam | LocalShellCall | LocalShellCallOutput | ShellCall | ShellCallOutput | ApplyPatchCall | ApplyPatchCallOutput | McpListTools | McpApprovalRequest | McpApprovalResponse | McpCall | ResponseCustomToolCallOutputParam | ResponseCustomToolCallParam | ItemReference],
+    *,
+    provider: str | LLMProvider | None = None,
+    tools: list[dict[str, Any] | Callable[Ellipsis, Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
+    max_output_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    stream: bool | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    instructions: str | None = None,
+    max_tool_calls: int | None = None,
+    parallel_tool_calls: bool | None = None,
+    reasoning: Any | None = None,
+    text: Any | None = None,
+    presence_penalty: float | None = None,
+    frequency_penalty: float | None = None,
+    truncation: str | None = None,
+    store: bool | None = None,
+    service_tier: str | None = None,
+    user: str | None = None,
+    metadata: dict[str, str] | None = None,
+    previous_response_id: str | None = None,
+    include: list[str] | None = None,
+    background: bool | None = None,
+    safety_identifier: str | None = None,
+    prompt_cache_key: str | None = None,
+    prompt_cache_retention: str | None = None,
+    conversation: str | dict[str, Any] | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> ResponseResource | Response | AsyncIterator[ResponseAudioDeltaEvent | ResponseAudioDoneEvent | ResponseAudioTranscriptDeltaEvent | ResponseAudioTranscriptDoneEvent | ResponseCodeInterpreterCallCodeDeltaEvent | ResponseCodeInterpreterCallCodeDoneEvent | ResponseCodeInterpreterCallCompletedEvent | ResponseCodeInterpreterCallInProgressEvent | ResponseCodeInterpreterCallInterpretingEvent | ResponseCompletedEvent | ResponseContentPartAddedEvent | ResponseContentPartDoneEvent | ResponseCreatedEvent | ResponseErrorEvent | ResponseFileSearchCallCompletedEvent | ResponseFileSearchCallInProgressEvent | ResponseFileSearchCallSearchingEvent | ResponseFunctionCallArgumentsDeltaEvent | ResponseFunctionCallArgumentsDoneEvent | ResponseInProgressEvent | ResponseFailedEvent | ResponseIncompleteEvent | ResponseOutputItemAddedEvent | ResponseOutputItemDoneEvent | ResponseReasoningSummaryPartAddedEvent | ResponseReasoningSummaryPartDoneEvent | ResponseReasoningSummaryTextDeltaEvent | ResponseReasoningSummaryTextDoneEvent | ResponseReasoningTextDeltaEvent | ResponseReasoningTextDoneEvent | ResponseRefusalDeltaEvent | ResponseRefusalDoneEvent | ResponseTextDeltaEvent | ResponseTextDoneEvent | ResponseWebSearchCallCompletedEvent | ResponseWebSearchCallInProgressEvent | ResponseWebSearchCallSearchingEvent | ResponseImageGenCallCompletedEvent | ResponseImageGenCallGeneratingEvent | ResponseImageGenCallInProgressEvent | ResponseImageGenCallPartialImageEvent | ResponseMcpCallArgumentsDeltaEvent | ResponseMcpCallArgumentsDoneEvent | ResponseMcpCallCompletedEvent | ResponseMcpCallFailedEvent | ResponseMcpCallInProgressEvent | ResponseMcpListToolsCompletedEvent | ResponseMcpListToolsFailedEvent | ResponseMcpListToolsInProgressEvent | ResponseOutputTextAnnotationAddedEvent | ResponseQueuedEvent | ResponseCustomToolCallInputDeltaEvent | ResponseCustomToolCallInputDoneEvent]
+```
+
+## Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model` | `str` | *required* | Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='gpt-4o', provider='openai'). **Alternative**: Combined format 'provider:model' (e.g., 'openai:gpt-4o'). Legacy format 'provider/model' is also supported but deprecated. |
+| `input_data` | `str \| list[EasyInputMessageParam \| Message \| ResponseOutputMessageParam \| ResponseFileSearchToolCallParam \| ResponseComputerToolCallParam \| ComputerCallOutput \| ResponseFunctionWebSearchParam \| ResponseFunctionToolCallParam \| FunctionCallOutput \| ToolSearchCall \| ResponseToolSearchOutputItemParamParam \| ResponseReasoningItemParam \| ResponseCompactionItemParamParam \| ImageGenerationCall \| ResponseCodeInterpreterToolCallParam \| LocalShellCall \| LocalShellCallOutput \| ShellCall \| ShellCallOutput \| ApplyPatchCall \| ApplyPatchCallOutput \| McpListTools \| McpApprovalRequest \| McpApprovalResponse \| McpCall \| ResponseCustomToolCallOutputParam \| ResponseCustomToolCallParam \| ItemReference]` | *required* | The input payload accepted by provider's Responses API. For OpenAI-compatible providers, this is typically a list mixing text, images, and tool instructions, or a dict per OpenAI spec. |
+| `provider` | `str \| LLMProvider \| None` | None | **Recommended**: Provider name to use for the request (e.g., 'openai', 'mistral'). When provided, the model parameter should contain only the model name. |
+| `tools` | `list[dict[str, Any] \| Callable[Ellipsis, Any]] \| None` | None | Optional tools for tool calling (Python callables or OpenAI tool dicts) |
+| `tool_choice` | `str \| dict[str, Any] \| None` | None | Controls which tools the model can call |
+| `max_output_tokens` | `int \| None` | None | Maximum number of output tokens to generate |
+| `temperature` | `float \| None` | None | Controls randomness in the response (0.0 to 2.0) |
+| `top_p` | `float \| None` | None | Controls diversity via nucleus sampling (0.0 to 1.0) |
+| `stream` | `bool \| None` | None | Whether to stream response events |
+| `api_key` | `str \| None` | None | API key for the provider |
+| `api_base` | `str \| None` | None | Base URL for the provider API |
+| `instructions` | `str \| None` | None | A system (or developer) message inserted into the model's context. |
+| `max_tool_calls` | `int \| None` | None | The maximum number of total calls to built-in tools that can be processed in a response. This maximum number applies across all built-in tool calls, not per individual tool. Any further attempts to call a tool by the model will be ignored. |
+| `parallel_tool_calls` | `bool \| None` | None | Whether to allow the model to run tool calls in parallel. |
+| `reasoning` | `Any \| None` | None | Configuration options for reasoning models. |
+| `text` | `Any \| None` | None | Configuration options for a text response from the model. Can be plain text or structured JSON data. |
+| `presence_penalty` | `float \| None` | None | Penalizes new tokens based on whether they appear in the text so far. |
+| `frequency_penalty` | `float \| None` | None | Penalizes new tokens based on their frequency in the text so far. |
+| `truncation` | `str \| None` | None | Controls how the service truncates input when it exceeds the model context window. |
+| `store` | `bool \| None` | None | Whether to store the response so it can be retrieved later. |
+| `service_tier` | `str \| None` | None | The service tier to use for this request. |
+| `user` | `str \| None` | None | A unique identifier representing your end user. |
+| `metadata` | `dict[str, str] \| None` | None | Key-value pairs for custom metadata (up to 16 pairs). |
+| `previous_response_id` | `str \| None` | None | The ID of the response to use as the prior turn for this request. |
+| `include` | `list[str] \| None` | None | Items to include in the response (e.g., 'reasoning.encrypted_content'). |
+| `background` | `bool \| None` | None | Whether to run the request in the background and return immediately. |
+| `safety_identifier` | `str \| None` | None | A stable identifier used for safety monitoring and abuse detection. |
+| `prompt_cache_key` | `str \| None` | None | A key to use when reading from or writing to the prompt cache. |
+| `prompt_cache_retention` | `str \| None` | None | How long to retain a prompt cache entry created by this request. |
+| `conversation` | `str \| dict[str, Any] \| None` | None | The conversation to associate this response with (ID string or ConversationParam object). |
+| `client_args` | `dict[str, Any] \| None` | None | Additional provider-specific arguments that will be passed to the provider's client instantiation. |
+| `**kwargs` | `Any` | *required* | Additional provider-specific arguments that will be passed to the provider's API call. |
+
+## Usage
+
+### Basic response
+
+```python
+from any_llm import responses
+
+result = responses(
+    model="gpt-4.1-mini",
+    provider="openai",
+    input_data="What is the capital of France?",
+)
+print(result.output_text)
+```
+
+### With instructions
+
+```python
+result = responses(
+    model="gpt-4.1-mini",
+    provider="openai",
+    input_data="Translate to French: Hello, how are you?",
+    instructions="You are a professional translator. Always respond with only the translation.",
+)
+```
+
+### Streaming
+
+```python
+for event in responses(
+    model="gpt-4.1-mini",
+    provider="openai",
+    input_data="Tell me a short story.",
+    stream=True,
+):
+    print(event)
+```
+
+### Multi-turn with `previous_response_id`
+
+```python
+first = responses(
+    model="gpt-4.1-mini",
+    provider="openai",
+    input_data="My name is Alice.",
+    store=True,
+)
+
+second = responses(
+    model="gpt-4.1-mini",
+    provider="openai",
+    input_data="What is my name?",
+    previous_response_id=first.id,
+)
+```
+
+{% hint style="info" %}
+Not all providers support the Responses API. Check the [providers page](#../providers.md) for support details, or query `ProviderMetadata.responses` programmatically.
+{% endhint %}
+
+
+---
+
+## api/completion.md
+
+<!-- Source: api/completion.md -->
+
+The `completion` and `acompletion` functions are the primary way to generate chat completions across all supported providers. They accept an OpenAI-compatible parameter set and return OpenAI-compatible response types.
+
+## `any_llm.completion()`
+
+```python
+def completion(
+    model: str,
+    messages: list[dict[str, Any] | ChatCompletionMessage],
+    *,
+    provider: str | LLMProvider | None = None,
+    tools: list[dict[str, Any] | Callable[Ellipsis, Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    max_tokens: int | None = None,
+    response_format: dict[str, Any] | type | None = None,
+    stream: bool | None = None,
+    n: int | None = None,
+    stop: str | list[str] | None = None,
+    presence_penalty: float | None = None,
+    frequency_penalty: float | None = None,
+    seed: int | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    user: str | None = None,
+    session_label: str | None = None,
+    parallel_tool_calls: bool | None = None,
+    logprobs: bool | None = None,
+    top_logprobs: int | None = None,
+    logit_bias: dict[str, float] | None = None,
+    stream_options: dict[str, Any] | None = None,
+    max_completion_tokens: int | None = None,
+    reasoning_effort: Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'auto'] | None = "auto",
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> ChatCompletion | Iterator[ChatCompletionChunk]
+```
+
+## `any_llm.acompletion()`
+
+Async variant with the same parameters. Returns `ChatCompletion | AsyncIterator[ChatCompletionChunk]`.
+
+```python
+async def acompletion(
+    model: str,
+    messages: list[dict[str, Any] | ChatCompletionMessage],
+    *,
+    provider: str | LLMProvider | None = None,
+    tools: list[dict[str, Any] | Callable[Ellipsis, Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    max_tokens: int | None = None,
+    response_format: dict[str, Any] | type | None = None,
+    stream: bool | None = None,
+    n: int | None = None,
+    stop: str | list[str] | None = None,
+    presence_penalty: float | None = None,
+    frequency_penalty: float | None = None,
+    seed: int | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    user: str | None = None,
+    session_label: str | None = None,
+    parallel_tool_calls: bool | None = None,
+    logprobs: bool | None = None,
+    top_logprobs: int | None = None,
+    logit_bias: dict[str, float] | None = None,
+    stream_options: dict[str, Any] | None = None,
+    max_completion_tokens: int | None = None,
+    reasoning_effort: Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'auto'] | None = "auto",
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]
+```
+
+## Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model` | `str` | *required* | Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='gpt-4', provider='openai'). **Alternative**: Combined format 'provider:model' (e.g., 'openai:gpt-4'). Legacy format 'provider/model' is also supported but deprecated. |
+| `messages` | `list[dict[str, Any] \| ChatCompletionMessage]` | *required* | List of messages for the conversation |
+| `provider` | `str \| LLMProvider \| None` | None | **Recommended**: Provider name to use for the request (e.g., 'openai', 'mistral'). When provided, the model parameter should contain only the model name. |
+| `tools` | `list[dict[str, Any] \| Callable[Ellipsis, Any]] \| None` | None | List of tools for tool calling. Can be Python callables or OpenAI tool format dicts |
+| `tool_choice` | `str \| dict[str, Any] \| None` | None | Controls which tools the model can call |
+| `temperature` | `float \| None` | None | Controls randomness in the response (0.0 to 2.0) |
+| `top_p` | `float \| None` | None | Controls diversity via nucleus sampling (0.0 to 1.0) |
+| `max_tokens` | `int \| None` | None | Maximum number of tokens to generate |
+| `response_format` | `dict[str, Any] \| type \| None` | None | Format specification for the response |
+| `stream` | `bool \| None` | None | Whether to stream the response |
+| `n` | `int \| None` | None | Number of completions to generate |
+| `stop` | `str \| list[str] \| None` | None | Stop sequences for generation |
+| `presence_penalty` | `float \| None` | None | Penalize new tokens based on presence in text |
+| `frequency_penalty` | `float \| None` | None | Penalize new tokens based on frequency in text |
+| `seed` | `int \| None` | None | Random seed for reproducible results |
+| `api_key` | `str \| None` | None | API key for the provider |
+| `api_base` | `str \| None` | None | Base URL for the provider API |
+| `user` | `str \| None` | None | Unique identifier for the end user |
+| `session_label` | `str \| None` | None | Optional user session label metadata for platform traces; exported as anyllm.user_session_label |
+| `parallel_tool_calls` | `bool \| None` | None | Whether to allow parallel tool calls |
+| `logprobs` | `bool \| None` | None | Include token-level log probabilities in the response |
+| `top_logprobs` | `int \| None` | None | Number of alternatives to return when logprobs are requested |
+| `logit_bias` | `dict[str, float] \| None` | None | Bias the likelihood of specified tokens during generation |
+| `stream_options` | `dict[str, Any] \| None` | None | Additional options controlling streaming behavior |
+| `max_completion_tokens` | `int \| None` | None | Maximum number of tokens for the completion |
+| `reasoning_effort` | `Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'auto'] \| None` | "auto" | Reasoning effort level for models that support it. "auto" will map to each provider's default. |
+| `client_args` | `dict[str, Any] \| None` | None | Additional provider-specific arguments that will be passed to the provider's client instantiation. |
+| `**kwargs` | `Any` | *required* | Additional provider-specific arguments that will be passed to the provider's API call. |
+
+## Return Value
+
+- **Non-streaming** (`stream=None` or `stream=False`): Returns a [`ChatCompletion`](#types/completion.md) object.
+- **Streaming** (`stream=True`): Returns an `Iterator[ChatCompletionChunk]` (sync) or `AsyncIterator[ChatCompletionChunk]` (async).
+- **Structured output** (when `response_format` is a Pydantic model or dataclass): Returns a `ParsedChatCompletion[T]` with a `.choices[0].message.parsed` field containing the deserialized object.
+
+## Usage
+
+### Basic completion
+
+```python
+from any_llm import completion
+
+response = completion(
+    model="mistral-small-latest",
+    provider="mistral",
+    messages=[{"role": "user", "content": "What is the capital of France?"}],
+)
+print(response.choices[0].message.content)
+```
+
+### Streaming
+
+```python
+for chunk in completion(
+    model="gpt-4.1-mini",
+    provider="openai",
+    messages=[{"role": "user", "content": "Tell me a story."}],
+    stream=True,
+):
+    print(chunk.choices[0].delta.content or "", end="")
+```
+
+### Async
+
+```python
+
+from any_llm import acompletion
+
+async def main():
+    response = await acompletion(
+        model="claude-sonnet-4-20250514",
+        provider="anthropic",
+        messages=[{"role": "user", "content": "Hello!"}],
+    )
+    print(response.choices[0].message.content)
+
+asyncio.run(main())
+```
+
+### Structured output
+
+```python
+from pydantic import BaseModel
+from any_llm import completion
+
+class CityInfo(BaseModel):
+    name: str
+    country: str
+    population: int
+
+response = completion(
+    model="gpt-4.1-mini",
+    provider="openai",
+    messages=[{"role": "user", "content": "Tell me about Paris."}],
+    response_format=CityInfo,
+)
+city = response.choices[0].message.parsed
+print(f"{city.name}, {city.country} - pop. {city.population}")
+```
+
+### Tool calling
+
+```python
+from any_llm import completion
+
+def get_weather(location: str, unit: str = "F") -> str:
+    """Get weather information for a location.
+
+    Args:
+        location: The city or location to get weather for
+        unit: Temperature unit, either 'C' or 'F'
+
+    Returns:
+        Current weather description
+    """
+    return f"Weather in {location} is sunny and 75{unit}!"
+
+response = completion(
+    model="mistral-small-latest",
+    provider="mistral",
+    messages=[{"role": "user", "content": "What's the weather in Paris?"}],
+    tools=[get_weather],
+)
+```
+
+
+---
+
+## api/embedding.md
+
+<!-- Source: api/embedding.md -->
+
+The `embedding` and `aembedding` functions create vector embeddings from text using a unified interface across all providers that support embeddings.
+
+## `any_llm.embedding()`
+
+```python
+def embedding(
+    model: str,
+    inputs: str | list[str],
+    *,
+    provider: str | LLMProvider | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> CreateEmbeddingResponse
+```
+
+## `any_llm.aembedding()`
+
+Async variant with the same parameters.
+
+```python
+async def aembedding(
+    model: str,
+    inputs: str | list[str],
+    *,
+    provider: str | LLMProvider | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> CreateEmbeddingResponse
+```
+
+## Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model` | `str` | *required* | Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='gpt-4', provider='openai'). **Alternative**: Combined format 'provider:model' (e.g., 'openai:gpt-4'). Legacy format 'provider/model' is also supported but deprecated. |
+| `inputs` | `str \| list[str]` | *required* | The input text to embed |
+| `provider` | `str \| LLMProvider \| None` | None | **Recommended**: Provider name to use for the request (e.g., 'openai', 'mistral'). When provided, the model parameter should contain only the model name. |
+| `api_key` | `str \| None` | None | API key for the provider |
+| `api_base` | `str \| None` | None | Base URL for the provider API |
+| `client_args` | `dict[str, Any] \| None` | None | Additional provider-specific arguments that will be passed to the provider's client instantiation. |
+| `**kwargs` | `Any` | *required* | Additional provider-specific arguments that will be passed to the provider's API call. |
+
+## Return Value
+
+Returns a [`CreateEmbeddingResponse`](#types/completion.md) containing:
+
+- `data` -- list of `Embedding` objects, each with an `embedding` vector (`list[float]`) and an `index`.
+- `model` -- the model used.
+- `usage` -- token usage information with `prompt_tokens` and `total_tokens`.
+
+## Usage
+
+### Single text
+
+```python
+from any_llm import embedding
+
+result = embedding(
+    model="text-embedding-3-small",
+    provider="openai",
+    inputs="Hello, world!",
+)
+
+vector = result.data[0].embedding
+print(f"Dimensions: {len(vector)}")
+print(f"Tokens used: {result.usage.total_tokens}")
+```
+
+### Batch embedding
+
+```python
+result = embedding(
+    model="text-embedding-3-small",
+    provider="openai",
+    inputs=["First sentence", "Second sentence", "Third sentence"],
+)
+
+for item in result.data:
+    print(f"Index {item.index}: {len(item.embedding)} dimensions")
+```
+
+### Async
+
+```python
+
+from any_llm import aembedding
+
+async def main():
+    result = await aembedding(
+        model="text-embedding-3-small",
+        provider="openai",
+        inputs="Hello, world!",
+    )
+    print(f"Dimensions: {len(result.data[0].embedding)}")
+
+asyncio.run(main())
+```
+
+{% hint style="info" %}
+Not all providers support embeddings. Check the [providers page](#../providers.md) for support details, or query `ProviderMetadata.embedding` programmatically.
+{% endhint %}
+
+
+---
+
+## api/messages.md
+
+<!-- Source: api/messages.md -->
+
+The `messages` and `amessages` functions use the Anthropic Messages API format. All providers support this through automatic conversion, so you can use the same Anthropic-style message format regardless of backend.
+
+## `any_llm.messages()`
+
+```python
+def messages(
+    model: str,
+    messages: list[dict[str, Any]],
+    max_tokens: int,
+    *,
+    provider: str | LLMProvider | None = None,
+    system: str | list[dict[str, Any]] | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    stream: bool | None = None,
+    stop_sequences: list[str] | None = None,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    thinking: dict[str, Any] | None = None,
+    cache_control: dict[str, Any] | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> MessageResponse | Iterator[RawMessageStartEvent | RawMessageDeltaEvent | RawMessageStopEvent | RawContentBlockStartEvent | RawContentBlockDeltaEvent | RawContentBlockStopEvent]
+```
+
+## `any_llm.amessages()`
+
+Async variant with the same parameters. Returns `MessageResponse | AsyncIterator[MessageStreamEvent]`.
+
+```python
+async def amessages(
+    model: str,
+    messages: list[dict[str, Any]],
+    max_tokens: int,
+    *,
+    provider: str | LLMProvider | None = None,
+    system: str | list[dict[str, Any]] | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    stream: bool | None = None,
+    stop_sequences: list[str] | None = None,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    thinking: dict[str, Any] | None = None,
+    cache_control: dict[str, Any] | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> MessageResponse | AsyncIterator[RawMessageStartEvent | RawMessageDeltaEvent | RawMessageStopEvent | RawContentBlockStartEvent | RawContentBlockDeltaEvent | RawContentBlockStopEvent]
+```
+
+## Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model` | `str` | *required* | Model identifier. **Recommended**: Use with separate `provider` parameter. **Alternative**: Combined format 'provider:model'. |
+| `messages` | `list[dict[str, Any]]` | *required* | List of messages in Anthropic format. |
+| `max_tokens` | `int` | *required* | Maximum number of tokens to generate. |
+| `provider` | `str \| LLMProvider \| None` | None | Provider name to use for the request. |
+| `system` | `str \| list[dict[str, Any]] \| None` | None | System prompt (string or list of content blocks with optional cache_control). |
+| `temperature` | `float \| None` | None | Controls randomness (0.0 to 1.0). |
+| `top_p` | `float \| None` | None | Controls diversity via nucleus sampling. |
+| `top_k` | `int \| None` | None | Only sample from the top K options. |
+| `stream` | `bool \| None` | None | Whether to stream the response. |
+| `stop_sequences` | `list[str] \| None` | None | Custom stop sequences. |
+| `tools` | `list[dict[str, Any]] \| None` | None | List of tools in Anthropic format. |
+| `tool_choice` | `dict[str, Any] \| None` | None | Controls which tool the model uses. |
+| `metadata` | `dict[str, Any] \| None` | None | Request metadata. |
+| `thinking` | `dict[str, Any] \| None` | None | Thinking/reasoning configuration. |
+| `cache_control` | `dict[str, Any] \| None` | None | Cache control configuration for prompt caching. |
+| `api_key` | `str \| None` | None | API key for the provider. |
+| `api_base` | `str \| None` | None | Base URL for the provider API. |
+| `client_args` | `dict[str, Any] \| None` | None | Additional provider-specific arguments for client instantiation. |
+| `**kwargs` | `Any` | *required* | Additional provider-specific arguments. |
+
+## Return Value
+
+- **Non-streaming**: Returns a [`MessageResponse`](#types/messages.md) object.
+- **Streaming** (`stream=True`): Returns an `Iterator[MessageStreamEvent]` (sync) or `AsyncIterator[MessageStreamEvent]` (async).
+
+## Usage
+
+### Basic message
+
+```python
+from any_llm.api import messages
+
+response = messages(
+    model="claude-sonnet-4-20250514",
+    provider="anthropic",
+    messages=[{"role": "user", "content": "Hello!"}],
+    max_tokens=1024,
+)
+print(response.content[0].text)
+```
+
+### With system prompt
+
+```python
+response = messages(
+    model="claude-sonnet-4-20250514",
+    provider="anthropic",
+    messages=[{"role": "user", "content": "Translate to French: Hello"}],
+    max_tokens=1024,
+    system="You are a professional translator.",
+)
+```
+
+### Async
+
+```python
+
+from any_llm.api import amessages
+
+async def main():
+    response = await amessages(
+        model="claude-sonnet-4-20250514",
+        provider="anthropic",
+        messages=[{"role": "user", "content": "Hello!"}],
+        max_tokens=1024,
+    )
+    print(response.content[0].text)
+
+asyncio.run(main())
+```
+
+
+---
+
+## api/exceptions.md
+
+<!-- Source: api/exceptions.md -->
+
+any-llm provides a unified exception hierarchy so you can handle errors consistently regardless of which provider is being used. When unified exceptions are enabled, provider-specific SDK errors are automatically mapped to the appropriate any-llm exception type.
+
+{% hint style="info" %}
+**Opt-in Feature:** Unified exception handling is opt-in. Set the `ANY_LLM_UNIFIED_EXCEPTIONS=1` environment variable to enable automatic conversion from provider-specific exceptions.
+{% endhint %}
+
+## Exception Hierarchy
+
+All exceptions inherit from `AnyLLMError`:
+
+```
+AnyLLMError
+├── AuthenticationError
+├── ContentFilterError
+├── ContentFilterFinishReasonError
+├── ContextLengthExceededError
+├── InvalidRequestError
+├── LengthFinishReasonError
+├── MissingApiKeyError
+├── ModelNotFoundError
+├── ProviderError
+├── RateLimitError
+├── UnsupportedParameterError
+├── UnsupportedProviderError
+└── _FinishReasonError
+```
+
+## `AnyLLMError`
+
+Base exception for all any-llm errors.  All custom exceptions in any-llm inherit from this class. It preserves the original exception for debugging while providing a unified interface.
+
+```python
+def AnyLLMError(
+    self,
+    message: str | None = None,
+    original_exception: Exception | None = None,
+    provider_name: str | None = None,
+) -> None
+```
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `message` | `str` | Human-readable error message. |
+| `original_exception` | `Exception \| None` | The original SDK exception that triggered this error. |
+| `provider_name` | `str \| None` | Name of the provider that raised the error (if available). |
+
+The string representation includes the provider name when available: `"[openai] Rate limit exceeded"`.
+
+## Provider Errors
+
+### `RateLimitError`
+
+Raised when the API rate limit is exceeded.
+
+```python
+class RateLimitError(AnyLLMError): ...
+```
+
+Default message: `"Rate limit exceeded"`
+
+### `AuthenticationError`
+
+Raised when authentication with the provider fails (invalid or missing API key).
+
+```python
+class AuthenticationError(AnyLLMError): ...
+```
+
+Default message: `"Authentication failed"`
+
+### `InvalidRequestError`
+
+Raised when the request to the provider is malformed or contains invalid parameters.
+
+```python
+class InvalidRequestError(AnyLLMError): ...
+```
+
+Default message: `"Invalid request"`
+
+### `ProviderError`
+
+Raised when the provider encounters an internal error (5xx-class errors).
+
+```python
+class ProviderError(AnyLLMError): ...
+```
+
+Default message: `"Provider error"`
+
+### `ContentFilterError`
+
+Raised when content is blocked by the provider's safety filter.
+
+```python
+class ContentFilterError(AnyLLMError): ...
+```
+
+Default message: `"Content blocked by safety filter"`
+
+### `ModelNotFoundError`
+
+Raised when the requested model is not found or not available.
+
+```python
+class ModelNotFoundError(AnyLLMError): ...
+```
+
+Default message: `"Model not found"`
+
+### `ContextLengthExceededError`
+
+Raised when the input exceeds the model's maximum context length.
+
+```python
+class ContextLengthExceededError(AnyLLMError): ...
+```
+
+Default message: `"Context length exceeded"`
+
+## Configuration Errors
+
+### `MissingApiKeyError`
+
+Raised when a required API key is not provided via the parameter or environment variable.
+
+```python
+class MissingApiKeyError(AnyLLMError):
+    def __init__(self, provider_name: str, env_var_name: str) -> None: ...
+```
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `provider_name` | `str` | Name of the provider requiring the key. |
+| `env_var_name` | `str` | Environment variable name that was checked. |
+
+Example message: `"No openai API key provided. Please provide it in the config or set the OPENAI_API_KEY environment variable."`
+
+### `UnsupportedProviderError`
+
+Raised when an unsupported provider is specified.
+
+```python
+class UnsupportedProviderError(AnyLLMError):
+    def __init__(self, provider_key: str, supported_providers: list[str]) -> None: ...
+```
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `provider_key` | `str` | The unsupported provider key that was specified. |
+| `supported_providers` | `list[str]` | List of valid provider keys. |
+
+### `UnsupportedParameterError`
+
+Raised when a parameter is not supported by the provider.
+
+```python
+class UnsupportedParameterError(AnyLLMError):
+    def __init__(self, parameter_name: str, provider_name: str, additional_message: str | None = None) -> None: ...
+```
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `parameter_name` | `str` | The unsupported parameter name. |
+| `provider_name` | `str` | Name of the provider (also accessible via the inherited `provider_name` attribute). |
+
+## Usage
+
+```python
+from any_llm import completion
+from any_llm.exceptions import (
+    AnyLLMError,
+    AuthenticationError,
+    RateLimitError,
+    ContextLengthExceededError,
+)
+
+try:
+    response = completion(
+        model="gpt-4.1-mini",
+        provider="openai",
+        messages=[{"role": "user", "content": "Hello!"}],
+    )
+except RateLimitError as e:
+    print(f"Rate limited by {e.provider_name}: {e.message}")
+    # Access the original provider exception for details
+    print(f"Original: {e.original_exception}")
+except AuthenticationError as e:
+    print(f"Auth failed: {e.message}")
+except ContextLengthExceededError as e:
+    print(f"Input too long: {e.message}")
+except AnyLLMError as e:
+    # Catch-all for any other any-llm error
+    print(f"Error: {e}")
+```
+
+
+---
+
+## api/list-models.md
+
+<!-- Source: api/list-models.md -->
+
+The `list_models` and `alist_models` functions return the available models for a given provider.
+
+## `any_llm.list_models()`
+
+```python
+def list_models(
+    provider: str | LLMProvider,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> Sequence[Model]
+```
+
+## `any_llm.alist_models()`
+
+Async variant with the same parameters.
+
+```python
+async def alist_models(
+    provider: str | LLMProvider,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> Sequence[Model]
+```
+
+## Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `provider` | `str \| LLMProvider` | *required* |  |
+| `api_key` | `str \| None` | None |  |
+| `api_base` | `str \| None` | None |  |
+| `client_args` | `dict[str, Any] \| None` | None |  |
+| `**kwargs` | `Any` | *required* |  |
+
+## Return Value
+
+Returns a `Sequence` of [`Model`](#types/model.md) objects. Each `Model` has at minimum an `id` field containing the model identifier string.
+
+## Usage
+
+```python
+from any_llm import list_models
+
+models = list_models("openai")
+for model in models:
+    print(model.id)
+```
+
+### Async
+
+```python
+
+from any_llm import alist_models
+
+async def main():
+    models = await alist_models("mistral")
+    for model in models:
+        print(model.id)
+
+asyncio.run(main())
+```
+
+### Using the AnyLLM class
+
+```python
+from any_llm import AnyLLM
+
+llm = AnyLLM.create("openai")
+models = llm.list_models()
+print(f"Available models: {len(models)}")
+```
+
+{% hint style="info" %}
+Not all providers support listing models. Check the [providers page](#../providers.md) for support details, or query `ProviderMetadata.list_models` programmatically.
+{% endhint %}
+
+
+---
+
+## api/batch.md
+
+<!-- Source: api/batch.md -->
+
+{% hint style="warning" %}
+The Batch API is experimental and may change in future releases. Provider support is limited - check the [providers page](#../providers.md) for availability.
+{% endhint %}
+
+The Batch API lets you submit multiple requests as a single job for asynchronous processing, typically at lower cost than real-time requests.
+
+## How It Works
+
+1. Prepare a JSONL file where each line is a batch request object.
+2. Call `create_batch()` with the file path and target endpoint.
+3. any-llm uploads the file to the provider and creates the batch job.
+4. Poll with `retrieve_batch()` to check status.
+5. When complete, download results from the provider.
+
+### Input File Format
+
+The input file must be a JSONL file where each line follows this structure:
+
+```json
+{"custom_id": "request-1", "method": "POST", "url": "/v1/chat/completions", "body": {"model": "gpt-4.1-mini", "messages": [{"role": "user", "content": "Hello"}]}}
+{"custom_id": "request-2", "method": "POST", "url": "/v1/chat/completions", "body": {"model": "gpt-4.1-mini", "messages": [{"role": "user", "content": "World"}]}}
+```
+
+## `any_llm.create_batch()`
+
+Create a batch job by uploading a local JSONL file.
+
+```python
+def create_batch(
+    provider: str | LLMProvider,
+    input_file_path: str,
+    endpoint: str,
+    *,
+    completion_window: str = "24h",
+    metadata: dict[str, str] | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> Batch
+```
+
+### `any_llm.acreate_batch()`
+
+Async variant with the same parameters.
+
+## Parameters (create)
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `provider` | `str \| LLMProvider` | *required* | Provider name to use for the request (e.g., 'openai', 'mistral') |
+| `input_file_path` | `str` | *required* | Path to a local file containing batch requests in JSONL format. |
+| `endpoint` | `str` | *required* | The endpoint to be used for all requests (e.g., '/v1/chat/completions') |
+| `completion_window` | `str` | "24h" | The time frame within which the batch should be processed (default: '24h') |
+| `metadata` | `dict[str, str] \| None` | None | Optional custom metadata for the batch |
+| `api_key` | `str \| None` | None | API key for the provider |
+| `api_base` | `str \| None` | None | Base URL for the provider API |
+| `client_args` | `dict[str, Any] \| None` | None | Additional provider-specific arguments for client instantiation |
+| `**kwargs` | `Any` | *required* | Additional provider-specific arguments |
+
+**Returns:** A [`Batch`](#types/batch.md) object.
+
+## `any_llm.retrieve_batch()`
+
+Retrieve the current status and details of a batch job.
+
+```python
+def retrieve_batch(
+    provider: str | LLMProvider,
+    batch_id: str,
+    *,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> Batch
+```
+
+### `any_llm.aretrieve_batch()`
+
+Async variant with the same parameters.
+
+## Parameters (retrieve)
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `provider` | `str \| LLMProvider` | *required* | Provider name to use for the request (e.g., 'openai', 'mistral') |
+| `batch_id` | `str` | *required* | The ID of the batch to retrieve |
+| `api_key` | `str \| None` | None | API key for the provider |
+| `api_base` | `str \| None` | None | Base URL for the provider API |
+| `client_args` | `dict[str, Any] \| None` | None | Additional provider-specific arguments for client instantiation |
+| `**kwargs` | `Any` | *required* | Additional provider-specific arguments |
+
+**Returns:** A [`Batch`](#types/batch.md) object.
+
+## `any_llm.cancel_batch()`
+
+Cancel an in-progress batch job.
+
+```python
+def cancel_batch(
+    provider: str | LLMProvider,
+    batch_id: str,
+    *,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> Batch
+```
+
+### `any_llm.acancel_batch()`
+
+Async variant with the same parameters.
+
+**Returns:** The cancelled [`Batch`](#types/batch.md) object.
+
+## `any_llm.list_batches()`
+
+List batch jobs for a provider.
+
+```python
+def list_batches(
+    provider: str | LLMProvider,
+    *,
+    after: str | None = None,
+    limit: int | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> Sequence[Batch]
+```
+
+### `any_llm.alist_batches()`
+
+Async variant with the same parameters.
+
+## Parameters (list)
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `provider` | `str \| LLMProvider` | *required* | Provider name to use for the request (e.g., 'openai', 'mistral') |
+| `after` | `str \| None` | None | A cursor for pagination. Returns batches after this batch ID. |
+| `limit` | `int \| None` | None | Maximum number of batches to return (default: 20) |
+| `api_key` | `str \| None` | None | API key for the provider |
+| `api_base` | `str \| None` | None | Base URL for the provider API |
+| `client_args` | `dict[str, Any] \| None` | None | Additional provider-specific arguments for client instantiation |
+| `**kwargs` | `Any` | *required* | Additional provider-specific arguments |
+
+**Returns:** A `Sequence` of [`Batch`](#types/batch.md) objects.
+
+## Usage
+
+```python
+from any_llm import create_batch, retrieve_batch, list_batches
+
+# Create a batch job
+batch = create_batch(
+    provider="openai",
+    input_file_path="requests.jsonl",
+    endpoint="/v1/chat/completions",
+)
+print(f"Batch created: {batch.id}, status: {batch.status}")
+
+# Check status
+batch = retrieve_batch("openai", batch.id)
+print(f"Status: {batch.status}")
+
+# List all batches
+batches = list_batches("openai")
+for b in batches:
+    print(f"{b.id}: {b.status}")
+```
+
+
+---
+
+## api/types/completion.md
+
+<!-- Source: api/types/completion.md -->
+
+The completion types used by `any_llm.completion()` and `any_llm.acompletion()` are re-exports from the [OpenAI Python SDK](https://github.com/openai/openai-python), extended where needed to support additional fields like reasoning content.
+
+## Primary Types
+
+### `ChatCompletion`
+
+The response object for a non-streaming completion request. Extends `openai.types.chat.ChatCompletion` with support for reasoning content in the message choices.
+
+**Import:** `from any_llm.types.completion import ChatCompletion`
+
+Key fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `choices` | `list[Choice]` |  |
+
+### `ChatCompletionChunk`
+
+A single chunk in a streaming completion response. Extends `openai.types.chat.ChatCompletionChunk`.
+
+**Import:** `from any_llm.types.completion import ChatCompletionChunk`
+
+Key fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `str` | Completion identifier (same across all chunks). |
+| `choices` | `list[ChunkChoice]` | Each chunk choice has a `delta` with incremental `content`, `role`, and optionally `reasoning`. |
+| `model` | `str` | The model used. |
+
+### `ChatCompletionMessage`
+
+A message within a completion response. Extends `openai.types.chat.ChatCompletionMessage` with a `reasoning` field.
+
+**Import:** `from any_llm.types.completion import ChatCompletionMessage`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `role` | `str` | Message role (e.g., `"assistant"`). |
+| `content` | `str \| None` | Text content of the message. |
+| `reasoning` | `Reasoning \| None` | Reasoning/thinking content (when the model supports it). |
+| `tool_calls` | `list[ChatCompletionMessageToolCall] \| None` | Tool calls requested by the model. |
+| `annotations` | `list[dict] \| None` | Annotations attached to the message. |
+
+### `ParsedChatCompletion`
+
+Returned when `response_format` is a Pydantic `BaseModel` subclass or a dataclass type. Extends `ChatCompletion` with a generic type parameter.
+
+**Import:** `from any_llm import ParsedChatCompletion`
+
+Access the parsed object via `response.choices[0].message.parsed`, which will be an instance of the type passed as `response_format`.
+
+### `CreateEmbeddingResponse`
+
+Response object for embedding requests. Re-exported directly from `openai.types.CreateEmbeddingResponse`.
+
+**Import:** `from any_llm.types.completion import CreateEmbeddingResponse`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `data` | `list[Embedding]` | List of embedding objects, each with an `embedding` vector and `index`. |
+| `model` | `str` | The model used. |
+| `usage` | `Usage` | Token usage with `prompt_tokens` and `total_tokens`. |
+
+### `ReasoningEffort`
+
+A literal type controlling reasoning depth for models that support it.
+
+**Import:** `from any_llm.types.completion import ReasoningEffort`
+
+```python
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "auto"]
+```
+
+The value `"auto"` (the default) maps to each provider's own default reasoning level.
+
+## Internal Types
+
+### `CompletionParams`
+
+Normalized parameters for chat completions, used internally to pass structured parameters from the public API to provider implementations.
+
+**Import:** `from any_llm.types.completion import CompletionParams`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `model_id` | `str` | Model identifier (e.g., 'mistral-small-latest') |
+| `messages` | `list[dict[str, Any]]` | List of messages for the conversation |
+| `tools` | `list[dict[str, Any] \| Any] \| None` | List of tools for tool calling. Should be converted to OpenAI tool format dicts |
+| `tool_choice` | `str \| dict[str, Any] \| None` | Controls which tools the model can call |
+| `temperature` | `float \| None` | Controls randomness in the response (0.0 to 2.0) |
+| `top_p` | `float \| None` | Controls diversity via nucleus sampling (0.0 to 1.0) |
+| `max_tokens` | `int \| None` | Maximum number of tokens to generate |
+| `response_format` | `dict[str, Any] \| type \| None` | Format specification for the response. Accepts Pydantic BaseModel subclasses, dataclass types, or dicts. |
+| `stream` | `bool \| None` | Whether to stream the response |
+| `n` | `int \| None` | Number of completions to generate |
+| `stop` | `str \| list[str] \| None` | Stop sequences for generation |
+| `presence_penalty` | `float \| None` | Penalize new tokens based on presence in text |
+| `frequency_penalty` | `float \| None` | Penalize new tokens based on frequency in text |
+| `seed` | `int \| None` | Random seed for reproducible results |
+| `user` | `str \| None` | Unique identifier for the end user |
+| `parallel_tool_calls` | `bool \| None` | Whether to allow parallel tool calls |
+| `logprobs` | `bool \| None` | Include token-level log probabilities in the response |
+| `top_logprobs` | `int \| None` | Number of top alternatives to return when logprobs are requested |
+| `logit_bias` | `dict[str, float] \| None` | Bias the likelihood of specified tokens during generation |
+| `stream_options` | `dict[str, Any] \| None` | Additional options controlling streaming behavior |
+| `max_completion_tokens` | `int \| None` | Maximum number of tokens for the completion (provider-dependent) |
+| `reasoning_effort` | `Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'auto'] \| None` |  |
+
+## Additional Re-exports
+
+The following types are also available from `any_llm.types.completion`:
+
+| Type | Origin | Description |
+|------|--------|-------------|
+| `CompletionUsage` | `openai.types.CompletionUsage` | Token usage counts. |
+| `Function` | `openai.types.chat` | Function definition within a tool call. |
+| `Embedding` | `openai.types.Embedding` | Single embedding vector with index. |
+| `ChoiceDeltaToolCall` | `openai.types.chat` | Tool call delta in streaming chunks. |
+
+For full field-level documentation of the base OpenAI types, see the [OpenAI Python SDK reference](https://github.com/openai/openai-python).
+
+
+---
+
+## api/types/responses.md
+
+<!-- Source: api/types/responses.md -->
+
+The Responses API types come from two sources depending on the provider:
+
+- **OpenResponses-compliant providers** return `ResponseResource` from the [`openresponses-types`](https://pypi.org/project/openresponses-types/) package.
+- **OpenAI-native providers** return `Response` from the `openai` SDK.
+- **Streaming** always yields `ResponseStreamEvent` objects.
+
+## Primary Types
+
+### `ResponseResource`
+
+The response object from providers implementing the [OpenResponses specification](https://github.com/openresponsesspec/openresponses).
+
+**Import:** `from openresponses_types import ResponseResource`
+
+**Package:** [`openresponses-types`](https://pypi.org/project/openresponses-types/)
+
+This is the primary return type for OpenResponses-compliant providers. It provides a standardized interface for accessing response content, tool calls, and metadata.
+
+### `Response`
+
+The response object from OpenAI's native Responses API. Re-exported from `openai.types.responses.Response`.
+
+**Import:** `from any_llm.types.responses import Response`
+
+This is returned by providers that use OpenAI's API directly (e.g., the `openai` provider).
+
+### `ResponseStreamEvent`
+
+A single event in a streaming response. Re-exported from `openai.types.responses.ResponseStreamEvent`.
+
+**Import:** `from any_llm.types.responses import ResponseStreamEvent`
+
+Stream events represent incremental updates during response generation, including content deltas, tool call events, and completion signals.
+
+### `ResponseInputParam`
+
+The input type accepted by the `input_data` parameter of `responses()` and `aresponses()`. Re-exported from `openai.types.responses.ResponseInputParam`.
+
+**Import:** `from any_llm.types.responses import ResponseInputParam`
+
+This is typically a list of message items that can include text, images, and tool-related content.
+
+### `ResponseOutputMessage`
+
+An output message within a response. Re-exported from `openai.types.responses.ResponseOutputMessage`.
+
+**Import:** `from any_llm.types.responses import ResponseOutputMessage`
+
+## Internal Types
+
+### `ResponsesParams`
+
+Normalized parameters for the Responses API, used internally to pass structured parameters from the public API to provider implementations.
+
+**Import:** `from any_llm.types.responses import ResponsesParams`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `model` | `str` | Model identifier (e.g., 'mistral-small-latest') |
+| `input` | `str \| list[EasyInputMessageParam \| Message \| ResponseOutputMessageParam \| ResponseFileSearchToolCallParam \| ResponseComputerToolCallParam \| ComputerCallOutput \| ResponseFunctionWebSearchParam \| ResponseFunctionToolCallParam \| FunctionCallOutput \| ToolSearchCall \| ResponseToolSearchOutputItemParamParam \| ResponseReasoningItemParam \| ResponseCompactionItemParamParam \| ImageGenerationCall \| ResponseCodeInterpreterToolCallParam \| LocalShellCall \| LocalShellCallOutput \| ShellCall \| ShellCallOutput \| ApplyPatchCall \| ApplyPatchCallOutput \| McpListTools \| McpApprovalRequest \| McpApprovalResponse \| McpCall \| ResponseCustomToolCallOutputParam \| ResponseCustomToolCallParam \| ItemReference]` | The input payload accepted by provider's Responses API. For OpenAI-compatible providers, this is typically a list mixing text, images, and tool instructions, or a dict per OpenAI spec. |
+| `instructions` | `str \| None` |  |
+| `max_tool_calls` | `int \| None` |  |
+| `text` | `Any \| None` |  |
+| `tools` | `list[dict[str, Any]] \| None` | List of tools for tool calling. Should be converted to OpenAI tool format dicts |
+| `tool_choice` | `str \| dict[str, Any] \| None` | Controls which tools the model can call |
+| `temperature` | `float \| None` | Controls randomness in the response (0.0 to 2.0) |
+| `top_p` | `float \| None` | Controls diversity via nucleus sampling (0.0 to 1.0) |
+| `max_output_tokens` | `int \| None` | Maximum number of tokens to generate |
+| `response_format` | `dict[str, Any] \| type[BaseModel] \| None` | Format specification for the response |
+| `stream` | `bool \| None` | Whether to stream the response |
+| `parallel_tool_calls` | `bool \| None` | Whether to allow parallel tool calls |
+| `top_logprobs` | `int \| None` | Number of top alternatives to return when logprobs are requested |
+| `stream_options` | `dict[str, Any] \| None` | Additional options controlling streaming behavior |
+| `reasoning` | `dict[str, Any] \| None` | Configuration options for reasoning models. |
+| `presence_penalty` | `float \| None` | Penalizes new tokens based on whether they appear in the text so far. |
+| `frequency_penalty` | `float \| None` | Penalizes new tokens based on their frequency in the text so far. |
+| `truncation` | `str \| None` | Controls how the service truncates the input when it exceeds the model context window. |
+| `store` | `bool \| None` | Whether to store the response so it can be retrieved later. |
+| `service_tier` | `str \| None` | The service tier to use for this request. |
+| `user` | `str \| None` | A unique identifier representing your end user. |
+| `metadata` | `dict[str, str] \| None` | Key-value pairs for custom metadata (up to 16 pairs). |
+| `previous_response_id` | `str \| None` | The ID of the response to use as the prior turn for this request. |
+| `include` | `list[str] \| None` | Items to include in the response (e.g., 'reasoning.encrypted_content'). |
+| `background` | `bool \| None` | Whether to run the request in the background and return immediately. |
+| `safety_identifier` | `str \| None` | A stable identifier used for safety monitoring and abuse detection. |
+| `prompt_cache_key` | `str \| None` | A key to use when reading from or writing to the prompt cache. |
+| `prompt_cache_retention` | `str \| None` | How long to retain a prompt cache entry created by this request. |
+| `conversation` | `str \| dict[str, Any] \| None` | The conversation to associate this response with (ID string or ConversationParam object). |
+
+## Type Mapping Summary
+
+| Type | Source | Used When |
+|------|--------|-----------|
+| `ResponseResource` | `openresponses-types` | OpenResponses-compliant providers, non-streaming |
+| `Response` | `openai.types.responses` | OpenAI-native providers, non-streaming |
+| `ResponseStreamEvent` | `openai.types.responses` | All providers, streaming (`stream=True`) |
+| `ResponseInputParam` | `openai.types.responses` | Input parameter type |
+
+For full details on the OpenResponses specification, see the [OpenResponses GitHub repository](https://github.com/openresponsesspec/openresponses). For OpenAI response types, see the [OpenAI Python SDK](https://github.com/openai/openai-python).
+
+
+---
+
+## api/types/messages.md
+
+<!-- Source: api/types/messages.md -->
+
+The Messages API types are Pydantic models used by `any_llm.api.messages()` and `any_llm.api.amessages()`.
+
+## Primary Types
+
+### `MessageResponse`
+
+Full response from the Messages API.
+
+**Import:** `from any_llm.types.messages import MessageResponse`
+
+
+### `MessageContentBlock`
+
+Content block in a Messages API response.
+
+**Import:** `from any_llm.types.messages import MessageContentBlock`
+
+
+### `MessageUsage`
+
+Token usage information for Messages API.
+
+**Import:** `from any_llm.types.messages import MessageUsage`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cache_creation` | `CacheCreation \| None` | Breakdown of cached tokens by TTL |
+| `cache_creation_input_tokens` | `int \| None` | The number of input tokens used to create the cache entry. |
+| `cache_read_input_tokens` | `int \| None` | The number of input tokens read from the cache. |
+| `inference_geo` | `str \| None` | The geographic region where inference was performed for this request. |
+| `input_tokens` | `int` | The number of input tokens which were used. |
+| `output_tokens` | `int` | The number of output tokens which were used. |
+| `server_tool_use` | `ServerToolUsage \| None` | The number of server tool requests. |
+| `service_tier` | `Literal['standard', 'priority', 'batch'] \| None` | If the request used the priority, standard, or batch tier. |
+
+### `MessageStreamEvent`
+
+Union of Anthropic SDK stream event types, re-exported from the `anthropic` package:
+
+- `MessageStartEvent` — `type: 'message_start'`, `message: Message`
+- `MessageDeltaEvent` — `type: 'message_delta'`, `delta: Delta`, `usage: MessageDeltaUsage`
+- `MessageStopEvent` — `type: 'message_stop'`
+- `ContentBlockStartEvent` — `type: 'content_block_start'`, `index: int`, `content_block: ContentBlock`
+- `ContentBlockDeltaEvent` — `type: 'content_block_delta'`, `index: int`, `delta: RawContentBlockDelta`
+- `ContentBlockStopEvent` — `type: 'content_block_stop'`, `index: int`
+
+**Import:** `from any_llm.types.messages import MessageStreamEvent`
+
+
+## Internal Types
+
+### `MessagesParams`
+
+Normalized parameters for the Anthropic Messages API, used internally to pass structured parameters from the public API to provider implementations.
+
+**Import:** `from any_llm.types.messages import MessagesParams`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `model` | `str` | Model identifier |
+| `messages` | `list[dict[str, Any]]` | List of messages for the conversation |
+| `max_tokens` | `int` | Maximum number of tokens to generate (required by Anthropic API) |
+| `system` | `str \| list[dict[str, Any]] \| None` | System prompt (string or list of content blocks with optional cache_control) |
+| `temperature` | `float \| None` | Controls randomness in the response (0.0 to 1.0) |
+| `top_p` | `float \| None` | Controls diversity via nucleus sampling |
+| `top_k` | `int \| None` | Only sample from the top K options for each subsequent token |
+| `stream` | `bool \| None` | Whether to stream the response |
+| `stop_sequences` | `list[str] \| None` | Custom text sequences that will cause the model to stop generating |
+| `tools` | `list[dict[str, Any]] \| None` | List of tools in Anthropic format ({name, description, input_schema}) |
+| `tool_choice` | `dict[str, Any] \| None` | Controls which tool the model uses |
+| `metadata` | `dict[str, Any] \| None` | Request metadata |
+| `thinking` | `dict[str, Any] \| None` | Thinking/reasoning configuration |
+| `cache_control` | `dict[str, Any] \| None` | Cache control configuration for prompt caching |
+
+
+---
+
+## api/types/model.md
+
+<!-- Source: api/types/model.md -->
+
+The `Model` type represents a single model returned by `any_llm.list_models()` and `any_llm.alist_models()`.
+
+## `Model`
+
+Re-exported from `openai.types.model.Model`.
+
+**Import:** `from any_llm.types.model import Model`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `str` | The model identifier (e.g., `"gpt-4.1-mini"`, `"mistral-small-latest"`). |
+| `created` | `int` | Unix timestamp (seconds) of when the model was created. |
+| `object` | `str` | Always `"model"`. |
+| `owned_by` | `str` | The organization that owns the model. |
+
+## Usage
+
+```python
+from any_llm import list_models
+
+models = list_models("openai")
+for model in models:
+    print(f"{model.id} (owned by {model.owned_by})")
+```
+
+{% hint style="info" %}
+The `Model` type is a direct re-export from the OpenAI SDK. any-llm normalizes all provider responses into this format so you get a consistent interface regardless of which provider you query.
+{% endhint %}
+
+
+---
+
+## api/types/provider.md
+
+<!-- Source: api/types/provider.md -->
+
+The `ProviderMetadata` type describes a provider's capabilities and configuration. It is returned by `AnyLLM.get_provider_metadata()` and `AnyLLM.get_all_provider_metadata()`.
+
+## `ProviderMetadata`
+
+A Pydantic `BaseModel` containing provider information and feature flags.
+
+**Import:** `from any_llm.types.provider import ProviderMetadata`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` |  |
+| `env_key` | `str` |  |
+| `env_api_base` | `str \| None` |  |
+| `doc_url` | `str` |  |
+| `streaming` | `bool` |  |
+| `reasoning` | `bool` |  |
+| `completion` | `bool` |  |
+| `embedding` | `bool` |  |
+| `responses` | `bool` |  |
+| `image` | `bool` |  |
+| `pdf` | `bool` |  |
+| `class_name` | `str` |  |
+| `list_models` | `bool` |  |
+| `messages` | `bool` |  |
+| `batch_completion` | `bool` |  |
+
+## Usage
+
+### Single provider
+
+```python
+from any_llm import AnyLLM
+
+llm = AnyLLM.create("openai")
+meta = llm.get_provider_metadata()
+
+print(f"Provider: {meta.name}")
+print(f"API key env var: {meta.env_key}")
+print(f"Supports streaming: {meta.streaming}")
+print(f"Supports embedding: {meta.embedding}")
+print(f"Supports responses: {meta.responses}")
+```
+
+### All providers
+
+```python
+from any_llm import AnyLLM
+
+for meta in AnyLLM.get_all_provider_metadata():
+    features = []
+    if meta.streaming:
+        features.append("streaming")
+    if meta.embedding:
+        features.append("embedding")
+    if meta.reasoning:
+        features.append("reasoning")
+    if meta.responses:
+        features.append("responses")
+    print(f"{meta.name}: {', '.join(features) or 'completion only'}")
+```
+
+
+---
+
+## api/types/batch.md
+
+<!-- Source: api/types/batch.md -->
+
+The `Batch` type represents a batch job returned by the [Batch API](#../batch.md) functions.
+
+## `Batch`
+
+Re-exported from `openai.types.Batch`.
+
+**Import:** `from any_llm.types.batch import Batch`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `str` | Unique batch identifier. |
+| `object` | `str` | Always `"batch"`. |
+| `endpoint` | `str` | The API endpoint used for all requests in the batch. |
+| `input_file_id` | `str` | ID of the uploaded input file. |
+| `completion_window` | `str` | Time frame for batch processing (e.g., `"24h"`). |
+| `status` | `str` | Current status: `"validating"`, `"in_progress"`, `"finalizing"`, `"completed"`, `"failed"`, `"expired"`, `"cancelling"`, or `"cancelled"`. |
+| `output_file_id` | `str \| None` | ID of the output file (available when status is `"completed"`). |
+| `error_file_id` | `str \| None` | ID of the error file (if any requests failed). |
+| `created_at` | `int` | Unix timestamp of batch creation. |
+| `in_progress_at` | `int \| None` | Unix timestamp of when processing started. |
+| `expires_at` | `int \| None` | Unix timestamp of when the batch expires. |
+| `finalizing_at` | `int \| None` | Unix timestamp of when finalization started. |
+| `completed_at` | `int \| None` | Unix timestamp of completion. |
+| `failed_at` | `int \| None` | Unix timestamp of failure. |
+| `expired_at` | `int \| None` | Unix timestamp of expiration. |
+| `cancelling_at` | `int \| None` | Unix timestamp of cancellation request. |
+| `cancelled_at` | `int \| None` | Unix timestamp of cancellation completion. |
+| `request_counts` | `BatchRequestCounts \| None` | Counts of total, completed, and failed requests. |
+| `metadata` | `dict[str, str] \| None` | Custom metadata attached to the batch. |
+
+## `BatchRequestCounts`
+
+Re-exported from `openai.types.batch_request_counts.BatchRequestCounts`.
+
+**Import:** `from any_llm.types.batch import BatchRequestCounts`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `total` | `int` | Total number of requests in the batch. |
+| `completed` | `int` | Number of completed requests. |
+| `failed` | `int` | Number of failed requests. |
+
+## Usage
+
+```python
+from any_llm import create_batch, retrieve_batch
+
+batch = create_batch(
+    provider="openai",
+    input_file_path="requests.jsonl",
+    endpoint="/v1/chat/completions",
+)
+
+print(f"Batch ID: {batch.id}")
+print(f"Status: {batch.status}")
+
+# Poll for completion
+
+while batch.status not in ("completed", "failed", "expired", "cancelled"):
+    time.sleep(30)
+    batch = retrieve_batch("openai", batch.id)
+    print(f"Status: {batch.status}")
+    if batch.request_counts:
+        print(f"  Completed: {batch.request_counts.completed}/{batch.request_counts.total}")
+
+if batch.status == "completed":
+    print(f"Output file: {batch.output_file_id}")
+```
+
+{% hint style="info" %}
+The `Batch` and `BatchRequestCounts` types are direct re-exports from the OpenAI SDK. any-llm normalizes all provider batch responses into this format.
+{% endhint %}
+
+
+---
+
+## platform/overview.md
+
+<!-- Source: platform/overview.md -->
+
+## What is the any-llm Managed Platform?
+
+The any-llm managed platform is a cloud-hosted service that provides secure API key vaulting and usage tracking for all your LLM providers. Instead of managing multiple provider API keys across your codebase, you get a single virtual key that works with any supported provider while keeping your credentials encrypted and your usage tracked.
+
+The managed platform is available at [any-llm.ai](https://any-llm.ai).
+
+## Why use the Managed Platform?
+
+Managing LLM API keys and tracking costs across multiple providers is challenging:
+
+- **Security risks**: API keys scattered across `.env` files, CI/CD pipelines, and developer machines
+- **No visibility**: Difficult to track spending across OpenAI, Anthropic, Google, and other providers
+- **Key rotation pain**: Updating keys means touching multiple systems and codebases
+- **No performance insights**: No easy way to measure latency, throughput, or reliability
+
+The managed platform solves these problems:
+
+- **Secure Key Vault**: Your provider API keys are encrypted client-side before storage—we never see your raw keys
+- **Single Virtual Key**: One `ANY_LLM_KEY` works across all providers
+- **Trace Analytics**: Track tokens, costs, and performance metrics without logging prompts or responses
+- **Zero Infrastructure**: No servers to deploy, no databases to manage
+
+## How it works
+
+The managed platform acts as a secure credential manager and trace-based usage tracker. Here's the flow:
+
+1. **You add provider keys** to the platform dashboard (keys are encrypted in your browser before upload)
+2. **You get a virtual key** (`ANY_LLM_KEY`) that represents your project
+3. **Your application** uses the `PlatformProvider` with your virtual key
+4. **The SDK** authenticates with the platform, retrieves and decrypts your provider key client-side
+5. **Your request** goes directly to the LLM provider (OpenAI, Anthropic, etc.)
+6. **OpenTelemetry spans produced during each platform-provider call** are reported back for analytics, with prompt/response content attributes redacted before export
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          Your Application                               │
+│                                                                         │
+│   from any_llm import completion                                        │
+│   completion(provider="platform", model="openai:gpt-4", ...)            │
+└──────────────────────────────┬──────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        any-llm SDK (PlatformProvider)                   │
+│                                                                         │
+│  1. Authenticate with platform using ANY_LLM_KEY                        │
+│  2. Receive encrypted provider key                                      │
+│  3. Decrypt provider key locally (client-side)                          │
+│  4. Make request directly to provider                                   │
+│  5. Report in-scope OTel spans (with content redaction) to platform     │
+└────────────────┬─────────────────────────────────────┬──────────────────┘
+                 │                                     │
+                 ▼                                     ▼
+┌─────────────────────────────┐       ┌────────────────────────────────────┐
+│   any-llm Managed Platform  │       │        LLM Provider                │
+│                             │       │   (OpenAI, Anthropic, etc.)        │
+│  • Encrypted key storage    │       │                                    │
+│  • Trace tracking           │       │   Your prompts/responses go        │
+│  • Cost analytics           │       │   directly here—never through      │
+│  • Performance metrics      │       │   our platform                     │
+└─────────────────────────────┘       └────────────────────────────────────┘
+```
+
+## Key Features
+
+### Client-Side Encryption
+
+Your provider API keys are encrypted in your browser using XChaCha20-Poly1305 before being sent to our servers. The encryption key is derived from your account credentials and never leaves your device. This means:
+
+- We cannot read your provider API keys
+- Even if our database were compromised, your keys remain encrypted
+- You maintain full control over your credentials
+
+
+### Privacy-First Trace Tracking
+
+The platform tracks OpenTelemetry span data generated during each platform-provider request to provide cost and performance insights:
+
+**What we track for you:**
+
+- Token counts (input and output)
+- Model name and provider
+- Request timestamps
+- Performance metrics (latency, throughput)
+- Additional OpenTelemetry span attributes/events emitted in the same request scope
+
+**What we never track:**
+
+- Your prompts
+- Model responses
+- Any content from your conversations
+
+Prompt/response payload attributes are removed from traces before export.
+
+### Project Organization
+
+Organize your usage by project, team, or environment:
+
+- Create separate projects for development, staging, and production
+- Track costs per project
+- Set up different provider keys per project
+
+## Platform vs. Gateway
+
+any-llm offers two solutions for managing LLM access. Choose the one that fits your needs:
+
+| Feature | Managed Platform | Self-Hosted Gateway |
+|---------|-----------------|---------------------|
+| **Deployment** | Cloud-hosted (no infrastructure) | Self-hosted (Docker + Postgres) |
+| **Key Storage** | Client-side encrypted vault | Your own configuration |
+| **Budget Enforcement** | Coming soon | Built-in |
+| **User Management** | Per-project | Full user/key management |
+| **Request Routing** | Direct to provider, no proxy | Through your gateway |
+| **Best For** | Teams wanting zero-ops key management and usage tracking| Organizations needing full control |
+
+You can also use both together—store your provider keys in the managed platform and use them in a self-hosted gateway deployment.
+
+## Current Status
+
+The any-llm managed platform is in **open beta**. During the beta:
+
+- **Free access** to all features
+- Core encryption and key management are **production-ready**
+- Dashboard UX and advanced features are being refined
+- Feedback is welcome at [any-llm.ai](https://any-llm.ai)
+
+## Getting Started
+
+Ready to try the managed platform?
+
+1. Create an account at [any-llm.ai](https://any-llm.ai)
+2. Add your provider API keys
+3. Get your virtual key
+4. Make your first request
+
+
+---
+
+## gateway/overview.md
+
+<!-- Source: gateway/overview.md -->
+
+## What is any-llm-gateway?
+
+any-llm-gateway is a FastAPI-based proxy server that adds production-grade budget enforcement, API key management, and usage analytics on top of any-llm's multi-provider foundation. It sits between your applications and LLM providers, giving you complete control over costs, access, and observability.
+
+## Why use the gateway?
+
+Managing LLM costs and access at scale is challenging. Give users unrestricted access and you risk runaway costs. Lock it down too much and you slow down innovation. any-llm-gateway solves this by providing:
+
+- **Cost Control**: Set budgets that automatically enforce or track spending limits
+- **Access Management**: Issue, revoke, and monitor API keys generated for user access without exposing provider credentials
+- **Complete Visibility**: Track every request with full token counts, costs, and metadata
+- **Production-Ready**: Deploy with Docker and Postgres, Kubernetes-ready
+
+## How it works
+
+The gateway acts as a transparent proxy between your applications and LLM providers. Here's the request flow:
+
+1. **Your application** sends a request to the gateway (instead of directly to OpenAI, Anthropic, etc.)
+2. **The gateway** authenticates the request, checks budget limits, and tracks usage
+3. **The gateway** routes to the appropriate provider based on the model format
+4. **The provider** processes the request and returns the response
+5. **The gateway** logs the usage and returns the response to your application
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai:gpt-5",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+> Learn how to set up your secure master key [here](#authentication.md)
+
+![Gateway architecture diagram showing application connecting to gateway, which routes to multiple LLM providers](../images/gateway.png)
+
+## Key Features
+
+### Smart Budget Management
+
+Create shared budget tiers with automatic daily, weekly, or monthly resets. Budgets can be:
+
+- **Shared across multiple users** - Perfect for team or organization-wide limits
+- **Automatically enforced** - Requests are rejected when budgets are exceeded
+- **Tracking-only mode** - Monitor spending without blocking requests
+- **Auto-resetting** - No manual intervention required for recurring budgets
+
+[Set up your first budget →](#budget-management.md)
+
+### Flexible API Key System
+
+Choose between two authentication patterns:
+
+**Master Key Authentication**
+- Ideal for trusted services and internal tools
+- Full access to all gateway features
+
+**Virtual API Keys**
+- Create scoped keys with fine-grained control
+- Set expiration dates for time-limited access
+- Associate with users for spend tracking
+- Add custom metadata for tracking
+- Activate, deactivate, or revoke on demand
+
+[Set up your keys →](#authentication.md)
+
+### Complete Usage Analytics
+
+Every request is logged with comprehensive details:
+
+- Full token counts (prompt, completion, total)
+- Per-request costs based on admin-configured per-token pricing
+- Request metadata and timestamps
+- User and API key attribution
+
+Track spending per user, view detailed usage history, and get the observability you need for cost attribution and chargebacks.
+
+### Production-Ready Deployment
+
+- **Quick Start**: Deploy with Docker in minutes
+- **Flexible Configuration**: Configure via YAML or environment variables
+- **Database**: Designed for PostgreSQL
+- **Kubernetes Ready**: Built-in liveness and readiness probes
+
+### Performance Impact
+The gateway adds minimal latency (<50ms) to requests while providing complete observability.
+
+## Getting Started
+
+For comprehensive setup instructions, see the [Quick Start Guide](#quickstart.md).
+
+## Next Steps
+
+- **[Quick Start](#quickstart.md)** - Deploy and configure your first gateway
+- **[Authentication](#authentication.md)** - Set up master keys and virtual API keys
+- **[Budget Management](#budget-management.md)** - Configure spending limits and tracking
+- **[Configuration](#configuration.md)** - Learn about all configuration options
+- **[API Reference](#api-reference.md)** - Explore the complete API
+
+
+---
+
+## gateway/quickstart.md
+
+<!-- Source: gateway/quickstart.md -->
+
+This guide will help you set up any-llm-gateway and make your first LLM completion request. The gateway acts as a proxy between your applications and LLM providers, providing cost control, usage tracking, and API key management.
+
+By the end of this guide, you will:
+
+1. Configure provider credentials and model pricing (e.g., OpenAI API key)
+1. Run the gateway
+1. Authenticate requests using a master key
+1. Make completion requests through the gateway
+
+> **Note:** for the purposes of this quickstart we will utilize the docker-compose and config.yml file, but alternative configuration designs are available and detailed [here](#configuration.md)
+
+## Pre-Requisites
+
+1. Docker
+1. Access to at least one LLM provider
+
+## Configure and run the Gateway
+
+When running any-llm-gateway, it must have a few things configured:
+
+1. `GATEWAY_MASTER_KEY`. This master key has admin access to manage budgets, users, virtual keys, etc.
+1. `DATABASE_URL`. The gateway relies upon a postgres database for storage.
+1. Provider Keys. The gateway connects to providers (Mistral, AWS, Vertex, Azure, etc) using credentials that must be set.
+
+### Create a project directory
+```bash
+mkdir any-llm-gateway
+cd any-llm-gateway
+```
+
+### Generate master key
+
+First, generate a secure master key:
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Save the output of this command, you'll need it in the next steps.
+
+### Configure providers
+
+Create a file name `config.yml` and paste the below content:
+
+> **Action** : At a minimum you'll need to fill out the master_key, and also enter credential information for at least one provider. You can browse supported providers [here](#../providers.md). If you would like to track usage cost, you'll also need to configure model pricing, as explained in the [config template file](https://raw.githubusercontent.com/mozilla-ai/any-llm/main/docker/config.example.yml).
+
+```yaml
+database_url: "postgresql://gateway:gateway@postgres:5432/gateway"
+
+master_key: 09kS0xTiz6JqO....
+
+providers:
+  openai:
+    api_key: YOUR_OPENAI_API_KEY_HERE
+    api_base: "https://api.openai.com/v1"  # optional, useful when you want to use a specific version of the API
+
+models:
+  openai:gpt-4:
+    input_price_per_million: 0.15
+    output_price_per_million: 0.60
+```
+
+### Set up Docker Configuration
+
+Create a file named `docker-compose.yml` with the following content.
+
+<details>
+<summary>Click to view docker-compose.yml content</summary>
+
+```yaml
+services:
+  gateway:
+    # Use the official production image
+    image: ghcr.io/mozilla-ai/any-llm/gateway:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config.yml:/app/config.yml
+      # UNCOMMENT the next line ONLY if using Google Vertex AI (requires service_account.json)
+      # - ./service_account.json:/app/service_account.json
+    command: ["any-llm-gateway", "serve", "--config", "/app/config.yml"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=gateway
+      - POSTGRES_PASSWORD=gateway
+      - POSTGRES_DB=gateway
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+```
+</details>
+
+**Alternatively**, you can download the file directly from the repository:
+
+```bash
+curl -o docker-compose.yml https://raw.githubusercontent.com/mozilla-ai/any-llm/main/docker/docker-compose.yml
+```
+
+### Start the gateway
+
+```bash
+# From project root directory
+docker compose up -d
+```
+
+```bash
+# Verify the gateway is running
+curl http://localhost:8000/health
+
+# Expected response:
+# {"status": "healthy"}
+```
+
+### View Logs
+
+```bash
+docker compose logs -f
+```
+
+
+## Create a user and make your first request
+
+Now that it's running, clients can make requests! The gateway supports two authentication patterns: use of the master key, or virtual keys. See the [authentication doc](#authentication.md) for more information. For this guide we will use the master key for both administration and client requests.
+
+To make the below commands easier to run, you can set the key as an env var in your terminal:
+
+```bash
+export GATEWAY_MASTER_KEY=YOUR_MASTER_KEY
+```
+
+> **tip**: for the below `curl` commands, append `| jq` in order for it be pretty-printed in the console.
+
+### Create a user
+
+To track usage, we must first create a user so that to associate our completion request.
+
+```bash
+curl -s -X POST http://localhost:8000/v1/users \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "user-123", "alias": "Bob"}'
+```
+
+<details>
+<summary>Sample Response</summary>
+
+```bash
+{
+    "user_id": "user-123",
+    "alias": "Bob",
+    "spend": 0,
+    "budget_id": null,
+    "budget_started_at": null,
+    "next_budget_reset_at": null,
+    "blocked": false,
+    "created_at": "2025-11-07T16:41:44.429258+00:00",
+    "updated_at": "2025-11-07T16:41:44.429261+00:00",
+    "metadata": {}
+}
+```
+</details>
+
+### Make a request
+
+Make a completion request using the master key and specify that the completion should be attached to the user you just created. This is only required when authenticating using the master key, if a user has a virtual key they do not need to specify a user id. You may also need to adjust the model to match one of the providers that you configured when running the gateway.
+
+```bash
+curl -s -X POST http://localhost:8000/v1/chat/completions \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai:gpt-4",
+    "messages": [{"role": "user", "content": "Write a haiku on Uranus!"}],
+    "user": "user-123"
+  }'
+```
+
+<details>
+<summary>Sample Response</summary>
+
+```json
+{
+    "id": "chatcmpl-CZJvdiwHSdCZ2TfIPhutgPY4WYP46",
+    "choices": [
+        {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+                "content": "Gleaming ice-blue sphere,\nCircling in celestial dance,\nUranus, so clear.",
+                "refusal": null,
+                "role": "assistant",
+                "annotations": [],
+                "audio": null,
+                "function_call": null,
+                "tool_calls": null,
+                "reasoning": null
+            }
+        }
+    ],
+    "created": 1762534121,
+    "model": "gpt-4-0613",
+    "object": "chat.completion",
+    "service_tier": "default",
+    "system_fingerprint": null,
+    "usage": {
+        "completion_tokens": 21,
+        "prompt_tokens": 15,
+        "total_tokens": 36,
+        "completion_tokens_details": {
+            "accepted_prediction_tokens": 0,
+            "audio_tokens": 0,
+            "reasoning_tokens": 0,
+            "rejected_prediction_tokens": 0
+        },
+        "prompt_tokens_details": {
+            "audio_tokens": 0,
+            "cached_tokens": 0
+        }
+    }
+}
+```
+
+</details>
+
+Alternatively, if you are using the any-llm python sdk, you can access using the gateway client.
+
+```python
+
+from any_llm import completion
+
+completion(
+  provider="gateway",
+  model="openai:gpt-4",
+  api_base="http://localhost:8000/v1",
+  api_key=os.environ['GATEWAY_MASTER_KEY'],
+  messages=[{"role": "user", "content": "Write a haiku on Uranus!"}],
+  user="user-123",
+)
+```
+
+### View metrics
+
+Now using the master key, we can access the usage information for the user.
+
+```bash
+curl -s http://localhost:8000/v1/users/user-123 \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json"
+```
+
+<details>
+<summary>Sample Response</summary>
+
+```json
+{
+    "user_id": "user-123",
+    "alias": "Bob",
+    "spend": 0.0000216,
+    "budget_id": null,
+    "budget_started_at": null,
+    "next_budget_reset_at": null,
+    "blocked": false,
+    "created_at": "2025-11-07T16:41:44.429258+00:00",
+    "updated_at": "2025-11-07T16:48:42.972327+00:00",
+    "metadata": {}
+}
+```
+</details>
+
+You'll notice that the user does not have a budget attached, which means that we track their usage but do not limit them! For more information on creating and managing budgets and budget reset cycles, see the [Budget Management docs](#budget-management.md)
+
+## Next Steps
+
+- **[Configuration](#configuration.md)** - Configure providers, pricing, and other settings
+- **[Authentication](#authentication.md)** - Learn about master keys and virtual API keys
+- **[Budget Management](#budget-management.md)** - Set spending limits and track costs
+- **[API Reference](#api-reference.md)** - Explore the complete API
+
+
+---
+
+## gateway/authentication.md
+
+<!-- Source: gateway/authentication.md -->
+
+any-llm-gateway offers two authentication methods, each designed for different use cases. Understanding when to use each approach will help you secure your gateway effectively.
+
+## Authentication Methods Overview
+
+| Method | Best For | Key Management | Usage Tracking |
+|--------|----------|----------------|----------------|
+| **Master Key** | Internal services, admin operations, trusted environments | Single key with full access | Requires manual user specification |
+| **Virtual API Keys** | External apps, per-user access, customer-facing services | Multiple scoped keys | Automatic per-key tracking |
+
+### Supported Headers
+
+The gateway accepts authentication via two headers:
+
+- **`X-AnyLLM-Key`** (preferred): The gateway's native authentication header
+- **`Authorization`**: Standard HTTP authorization header for OpenAI client compatibility
+
+Both headers use the `Bearer <token>` format. When both headers are present, `X-AnyLLM-Key` takes precedence.
+
+Using the `Authorization` header allows you to use the gateway with OpenAI-compatible clients without modification:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="your-master-key-or-virtual-key",  # Sent as Authorization: Bearer ...
+)
+```
+
+## Master Key
+The master key is the root credential for your gateway installation. It has unrestricted access to all gateway operations and should be treated with the same security as your production database credentials.
+
+### Generating a Master Key
+
+Generate a cryptographically secure master key (minimum 32 characters recommended):
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+**Example output:**
+```
+Zx8Q_vKm3nR7wP2sT9yU5iO1eA6hD4fG0bN8cL3jM5k
+```
+
+Set the generated key in your configuration:
+
+**Using environment variables:**
+```bash
+export GATEWAY_MASTER_KEY="Zx8Q_vKm3nR7wP2sT9yU5iO1eA6hD4fG0bN8cL3jM5k"
+```
+
+**Using config.yml:**
+```yaml
+master_key: "Zx8Q_vKm3nR7wP2sT9yU5iO1eA6hD4fG0bN8cL3jM5k"
+```
+
+### Creating a User
+
+```bash
+curl -X POST http://localhost:8000/v1/users \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "user-123", "alias": "Alice"}'
+```
+<details>
+<summary>With optional metadata</summary>
+
+```bash
+curl -X POST http://localhost:8000/v1/users \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d ' {
+    "user_id": "user-123",
+    "alias": "Alice",
+    "metadata": {
+      "department": "Engineering",
+      "team": "ML",
+      "email": "alice@example.com"
+    }
+  }'
+```
+</details>
+
+### Making Requests with Master Key
+When using the master key, you **must** specify which user is making the request using the `user` field:
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai:gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Write a haiku on Jupiter"}],
+    "user": "user-123"
+  }'
+```
+The `user` field tells the gateway which user's budget and spend tracking to update. Without this field, the request will be rejected.
+
+## Virtual API Keys
+
+Virtual API keys provide scoped access for making completion requests without exposing the master key. Each virtual key can have expiration dates, metadata, and associated users for automatic usage tracking.
+
+### Creating a Virtual API Key
+Create a virtual key with a descriptive name:
+
+```bash
+curl -X POST http://localhost:8000/v1/keys \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"key_name": "mobile-app"}'
+```
+> **Important:** Save the `key` value immediately—it's only shown once and cannot be retrieved later.
+
+<details>
+<summary>Example Response</summary>
+
+```json
+{
+  "id": "abc-123",
+  "key": "gw-...",
+  "key_name": "mobile-app",
+  "created_at": "2025-10-20T10:00:00",
+  "expires_at": null,
+  "is_active": true,
+  "metadata": {}
+}
+```
+</details>
+
+#### Key with Expiration
+
+Create a key that automatically expires on a specific date:
+
+```bash
+curl -X POST http://localhost:8000/v1/keys \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "key_name": "trial-access",
+    "expires_at": "2025-12-31T23:59:59Z"
+  }'
+```
+
+### Using Virtual API Keys
+Making requests with a virtual key is simpler than using the master key—no `user` field is required:
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "X-AnyLLM-Key: Bearer gw-..." \
+  -H "Content-Type: application/json" \
+  -d '{"model": "openai:gpt-5-mini", "messages": [{"role": "user", "content": "Write a haiku on Saturn"}]}'
+```
+
+The gateway automatically tracks usage based on the virtual key used.
+
+### Managing Virtual Keys
+
+#### List All Keys
+**List all keys:**
+```bash
+curl http://localhost:8000/v1/keys \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}"
+```
+
+**Deactivate a key:**
+```bash
+curl -X PATCH http://localhost:8000/v1/keys/<virtual_key_id>\
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"is_active": false}'
+```
+
+**Delete a key:**
+```bash
+curl -X DELETE http://localhost:8000/v1/keys/<virtual_key_id> \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}"
+```
+
+> See [API Reference](#api-reference.md) for complete key management operations.
+
+Note: The actual key values are never returned in list or get operations for security reasons.
+
+## Next Steps
+
+Now that you understand authentication, explore these related topics:
+
+- **[Budget Management](#budget-management.md)** - Set spending limits for users and enforce budgets
+- **[Configuration](#configuration.md)** - Learn about provider setup and pricing configuration
+- **[API Reference](#api-reference.md)** - Explore all available endpoints for managing keys and users
+- **[Quick Start](#quickstart.md)** - Complete walkthrough of setting up your first gateway
+
+For questions or issues, refer to the [troubleshooting guide](#troubleshooting.md) or check the project's issue tracker.
+
+
+---
+
+## gateway/budget-management.md
+
+<!-- Source: gateway/budget-management.md -->
+
+Budgets provide shared spending limits that can be assigned to multiple users. This allows you to create budget tiers (like "Free", "Pro", "Enterprise") and enforce spending limits across groups of users.
+
+## Creating a Budget
+
+```bash
+# Create a budget with a $10.00 spending limit and monthly resets (30 days = 2592000 seconds)
+curl -X POST http://localhost:8000/v1/budgets \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "max_budget": 10.0,
+    "budget_duration_sec": 2592000
+  }'
+```
+
+<details>
+<summary>Sample Response</summary>
+
+```json
+{
+  "budget_id": "abc-123",
+  "max_budget": 10.0,
+  "budget_duration_sec": 2592000,
+  "created_at": "2025-10-22T10:00:00Z",
+  "updated_at": "2025-10-22T10:00:00Z"
+}
+```
+</details>
+
+## Assigning Budgets to Users
+
+When creating or updating a user, specify the `budget_id`:
+
+{% hint style="warning" %}
+If you don't create and set a budget, budget is unlimited.
+{% endhint %}
+
+```bash
+# Create a user with a budget
+curl -X POST http://localhost:8000/v1/users \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "user-456",
+    "alias": "Bob",
+    "budget_id": "abc-123"
+  }'
+
+# Update an existing user's budget
+curl -X PATCH http://localhost:8000/v1/users/user-123 \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"budget_id": "abc-123"}'
+```
+
+## Per-User Budget Resets
+
+Budget resets are **per-user**, not global. Each user tracks their own budget period based on when they were assigned the budget.
+
+**Example:**
+1. Create a budget with `budget_duration_sec: 604800` (1 week)
+2. Assign User A to the budget on Monday
+3. Assign User B to the budget on Tuesday
+4. User A's budget resets every Monday
+5. User B's budget resets every Tuesday
+
+This allows you to create budget tiers (like "Free", "Pro", "Enterprise") without worrying about all users resetting at the same time.
+
+## Automatic Reset Behavior
+
+Budget resets happen automatically using a "lazy reset" approach:
+- When a user makes a request, the system checks if their `next_budget_reset_at` has passed
+- If yes, the user's `spend` is reset to $0.00 and a new reset date is calculated
+- A log entry is created in `budget_reset_logs` for audit purposes
+- The request then proceeds normally
+
+
+---
+
+## gateway/configuration.md
+
+<!-- Source: gateway/configuration.md -->
+
+The any-llm-gateway requires configuration to connect to your database, authenticate requests, and route to LLM providers. This guide covers the two main configuration approaches and how to set up model pricing for cost tracking.
+
+You can configure the gateway using either a YAML configuration file or environment variables:
+
+- **Config File (Recommended)**: Best for development and when managing multiple providers with complex settings. Easier to version control and share across teams.
+- **Environment Variables**: Best for production deployments, containerized environments, or when following 12-factor app principles.
+
+Both methods can also be combined—environment variables will override config file values.
+
+## Option 1: Config File
+
+Create a `config.yml` file with your database connection, master key, and provider credentials:
+
+> **Generating a secure master key:**
+> ```bash
+>  python -c "import secrets; print(secrets.token_urlsafe(32))"
+> ```
+
+```yaml
+#Database connection
+database_url: "postgresql://gateway:gateway@localhost:5432/gateway_db"
+
+#Master key for admin access
+master_key: "your-secure-master-key"
+
+## LLM Provider Credentials
+providers:
+  openai:
+    api_key: "${OPENAI_API_KEY}"
+  gemini:
+    api_key: "${GEMINI_API_KEY}"
+  vertexai:
+    credentials: "/path/to/service_account.json"
+    project: "your-gcp-project-id"
+    location: "us-central1"
+
+# Model pricing for cost-tracking (optional)
+pricing:
+  openai:gpt-4:
+    input_price_per_million: 0.15
+    output_price_per_million: 0.6
+```
+
+Start the gateway with your config file:
+
+```bash
+any-llm-gateway serve --config config.yml
+```
+
+## Option 2: Environment Variables
+Configure the gateway entirely through environment variables—useful for containerized deployments:
+
+```bash
+#Required settings
+export DATABASE_URL="postgresql://gateway:gateway@localhost:5432/gateway_db"
+export GATEWAY_MASTER_KEY="your-secure-master-key"
+export GATEWAY_HOST="0.0.0.0"
+export GATEWAY_PORT=8000
+
+any-llm-gateway serve
+```
+> **Note**: Model pricing cannot be set via environment variables. Use the config file or the [Pricing API](#dynamic-pricing-via-api) instead.
+
+
+## Model Pricing Configuration
+
+Configure model pricing in your config file to automatically track costs. Pricing can be set via config file or dynamically via the API.
+
+### Config File Pricing
+
+Add pricing for models in your config file using the format `provider:model-name`:
+
+```yaml
+pricing:
+  openai:gpt-3.5-turbo:
+    input_price_per_million: 0.5
+    output_price_per_million: 1.5
+```
+
+### Dynamic Pricing via API
+
+You can also set or update pricing dynamically using the API:
+```bash
+curl -X POST http://localhost:8000/v1/pricing \
+  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai:gpt-4",
+    "input_price_per_million": 30.0,
+    "output_price_per_million": 60.0
+  }'
+```
+
+This is useful for:
+- Updating pricing without restarting the gateway
+- Managing pricing in production environments
+- Adjusting rates as provider pricing changes
+
+**Important notes:**
+- Database pricing takes precedence - config only sets initial values
+- If pricing for the model already exists in the database, config values are ignored (with a warning logged)
+
+## Provider Client Args
+
+You can set additional arguments to provider clients via the `client_args` configuration. These arguments are passed directly to the provider's client initialization, enabling custom headers, timeouts, and other provider-specific options.
+
+```yaml
+providers:
+  openai:
+    api_key: "${OPENAI_API_KEY}"
+    client_args:
+      custom_headers:
+        X-Custom-Header: "custom-value"
+      timeout: 60
+```
+
+Common use cases:
+- **Custom headers**: Pass additional headers to the provider (e.g., for proxy authentication or request tracing)
+- **Timeouts**: Configure connection and request timeouts
+- **Provider-specific options**: Pass any additional arguments supported by the provider's client
+
+The available `client_args` options depend on the provider. See the [any-llm provider documentation](#../providers.md) for provider-specific options.
+
+## Next Steps
+
+- See [supported providers](#../providers.md) for provider-specific configuration
+- Learn about [authentication methods](#authentication.md) for managing access
+- Set up [budget management](#budget-management.md) to enforce spending limits
+
+
+---
+
+## gateway/api-reference.md
+
+<!-- Source: gateway/api-reference.md -->
+
+The gateway API follows the OpenAI-compatible format. You can view and download the full OpenAPI specification below.
+
+[View OpenAPI Specification (JSON)](../openapi.json)
+
+{% hint style="info" %}
+The OpenAPI spec is auto-generated from the gateway source code. To regenerate it, run:
+```bash
+python scripts/generate_openapi.py
+```
+{% endhint %}
+
+
+---
+
+## gateway/troubleshooting.md
+
+<!-- Source: gateway/troubleshooting.md -->
+
+## Database connection errors
+
+Make sure the database URL is correct and the database is accessible:
+
+```bash
+python -c "from sqlalchemy import create_engine; engine = create_engine('postgresql://user:pass@host/db'); print('OK')"
+```
+
+## Common Issues
+
+### Authentication Errors
+
+- Ensure you're using the correct master key format: `Bearer your-secure-master-key`
+- Check that the `X-AnyLLM-Key` header is properly set
+- Verify that virtual API keys are active and not expired
+
+### Configuration Issues
+
+- Verify your `config.yml` file is properly formatted
+- Check that environment variables are set correctly
+- Ensure provider API keys are valid and have proper permissions
+
+### Budget Enforcement
+
+- Check that budgets are properly assigned to users
+- Verify budget limits are set correctly
+- Monitor user spending to ensure limits are being enforced
+
+## Getting Help
+
+- Check the logs for detailed error messages
+- Verify your configuration matches the examples in the documentation
+- Ensure all required environment variables are set
+
+
+---
+
+## gateway/docker-deployment.md
+
+<!-- Source: gateway/docker-deployment.md -->
+
+This guide walks you through deploying `any-llm-gateway` using Docker and Docker Compose. Whether you're setting up a local development environment or deploying to production, this guide covers the essential steps and best practices for a secure, reliable deployment.
+
+## Quick Start with Docker Compose
+
+Docker Compose is the recommended deployment method for most users. It automatically sets up both the gateway application and a PostgreSQL database with proper networking and dependencies.
+
+**Prerequisites:**
+- Docker Engine 20.10 or newer
+- Docker Compose 2.0 or newer
+- At least one LLM provider API key (OpenAI, Anthropic, Mistral, etc.)
+
+### Configure the Gateway
+
+First, prepare your configuration file with credentials and settings:
+
+Copy the example configuration file:
+
+```bash
+cp docker/config.example.yml docker/config.yml
+```
+
+Generate a secure master key (minimum 32 characters recommended):
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Save the output of this command for the next step. [Learn more about keys here](#authentication.md).
+
+Edit `docker/config.yml` with your master key and provider credentials. See the [Configuration Guide](#configuration.md) for detailed options.
+
+### Start the Services
+
+Launch the gateway and database with a single command:
+
+```bash
+docker-compose -f docker/docker-compose.yml up -d
+```
+
+This command will:
+- Pull the PostgreSQL 16 Alpine image
+- Build the gateway Docker image from source (or pull from GHCR if configured)
+- Create a dedicated network for service communication
+- Start PostgreSQL with automatic health checks
+- Wait for the database to be healthy before starting the gateway
+- Initialize database tables and schema automatically
+
+The `-d` flag runs services in detached mode (background).
+
+### Verify Deployment
+
+Confirm everything is running correctly:
+
+```bash
+# Test the health endpoint
+curl http://localhost:8000/health
+# Expected: {"status": "healthy"}
+
+# Check service status
+docker-compose -f docker/docker-compose.yml ps
+
+# View real-time logs
+docker-compose -f docker/docker-compose.yml logs -f gateway
+```
+
+If the health check returns successfully, your gateway is ready to accept requests!
+
+## Standalone Docker Deployment
+
+For scenarios where you have an existing PostgreSQL database or prefer more control over your deployment architecture, you can run the gateway as a standalone container.
+
+### Using Pre-built Image
+
+Pull and run the official image from GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/mozilla-ai/any-llm/gateway:latest
+
+docker run -d \
+  --name any-llm-gateway \
+  -p 8000:8000 \
+  -v $(pwd)/config.yml:/app/config.yml \
+  -e DATABASE_URL="postgresql://user:pass@host:5432/dbname" \
+  ghcr.io/mozilla-ai/any-llm/gateway:latest \
+  any-llm-gateway serve --config /app/config.yml
+```
+
+Replace the `DATABASE_URL` with your actual PostgreSQL connection string. The format is: `postgresql://username:password@hostname:port/database_name`
+
+### Building from Source
+
+If you need to customize the image or test local changes:
+
+```bash
+docker build -t any-llm-gateway:local -f docker/Dockerfile .
+
+docker run -d \
+  --name any-llm-gateway \
+  -p 8000:8000 \
+  -v $(pwd)/config.yml:/app/config.yml \
+  -e DATABASE_URL="postgresql://user:pass@host:5432/dbname" \
+  any-llm-gateway:local
+```
+
+## Production Deployment
+
+Production deployments require additional considerations for reliability, security, and performance.
+
+### Production Configuration
+
+Enhance your docker-compose.yml with production-grade settings:
+
+```yaml
+services:
+  gateway:
+    image: ghcr.io/mozilla-ai/any-llm/gateway:latest
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+```
+
+### Nginx Reverse Proxy
+
+For production, always use a reverse proxy with HTTPS:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name gateway.yourdomain.com;
+
+    ssl_certificate /etc/ssl/certs/gateway.crt;
+    ssl_certificate_key /etc/ssl/private/gateway.key;
+
+    # Security headers
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    location / {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Timeouts for LLM streaming
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 75s;
+    }
+}
+```
+
+## Environment Variables
+
+The gateway can be configured using environment variables instead of or in addition to a config file. This is useful for Docker deployments and follows 12-factor app principles.
+
+For a complete list of environment variables and configuration options, see the [Configuration Guide](#configuration.md).
+
+**Docker Compose example with .env file:**
+
+```yaml
+services:
+  gateway:
+    env_file:
+      - .env
+```
+
+## Database Backups
+
+```bash
+# Backup
+docker-compose -f docker/docker-compose.yml exec postgres \
+  pg_dump -U gateway gateway > backup.sql
+
+# Restore
+docker-compose -f docker/docker-compose.yml exec -T postgres \
+  psql -U gateway gateway < backup.sql
+```
+
+## Security Best Practices
+
+1. **Never commit secrets** - Use `.env` files (gitignored) or Docker secrets
+2. **Use read-only volumes** - Mount configs with `:ro` flag
+3. **Enable HTTPS** - Use a reverse proxy with SSL certificates
+4. **Isolate networks** - Keep database on internal network only
+5. **Update regularly** - Use tagged versions and update containers periodically
+
+## Monitoring and Logging
+
+### Health Checks
+
+```bash
+# Test health endpoint
+curl http://localhost:8000/health
+
+# Check container health status
+docker inspect --format='{{.State.Health.Status}}' container-name
+```
+
+### Logging
+
+```bash
+# View logs
+docker-compose logs -f gateway
+
+# Last 100 lines
+docker-compose logs --tail=100 gateway
+```
+
+Configure log rotation:
+
+```yaml
+services:
+  gateway:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+```
+
+## Troubleshooting
+
+**Container won't start:**
+```bash
+docker-compose logs gateway
+```
+Common issues: Database connection failed, port in use, missing config
+
+**Database connection issues:**
+```bash
+docker-compose exec postgres psql -U gateway -c "SELECT version();"
+```
+
+**Permission errors:**
+```bash
+chmod 644 docker/config.yml
+chmod 600 docker/service_account.json
+```
+
+**Rebuild after changes:**
+```bash
+docker-compose -f docker/docker-compose.yml up -d --build
+```
+
+## Next Steps
+
+- [Configuration Guide](#configuration.md) - Advanced configuration options
+- [Authentication](#authentication.md) - Set up API keys and user management
+- [Budget Management](#budget-management.md) - Configure spending limits
+- [API Reference](#api-reference.md) - Explore the complete API
+- [Troubleshooting](#troubleshooting.md) - Common issues and solutions
+
+
+---
+
+## index.md
+
+<!-- Source: index.md -->
+
+# One interface. Every LLM.
+
+any-llm is a Python library providing a single interface to different LLM providers.
+
+```python
+from any_llm import completion
+
+# Using the messages format
+response = completion(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "What is Python?"}],
+    provider="openai"
+)
+print(response)
+
+# Switch providers without changing your code
+response = completion(
+    model="claude-sonnet-4-5-20250929",
+    messages=[{"role": "user", "content": "What is Python?"}],
+    provider="anthropic"
+)
+print(response)
+```
+
+[**Get Started**](#quickstart.md) | [**View on GitHub**](https://github.com/mozilla-ai/any-llm)
+
+## Why any-llm
+
+<table data-view="cards">
+  <thead>
+    <tr>
+      <th></th>
+      <th></th>
+      <th data-hidden data-card-target data-type="content-ref"></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Switch providers in one line</strong></td>
+      <td>Change from OpenAI to Anthropic, Mistral, or any other provider with a single parameter change.</td>
+      <td><a href="providers.md">Providers</a></td>
+    </tr>
+    <tr>
+      <td><strong>Unified exception handling</strong></td>
+      <td>Consistent error handling across all providers with a unified exception hierarchy.</td>
+      <td><a href="quickstart.md">Quickstart</a></td>
+    </tr>
+    <tr>
+      <td><strong>Simple API, powerful features</strong></td>
+      <td>Streaming, tool calling, embeddings, reasoning, and more, all through one interface.</td>
+      <td><a href="api/any-llm.md">API Reference</a></td>
+    </tr>
+  </tbody>
+</table>
+
+## API Documentation
+
+`any-llm` provides two main interfaces:
+
+**Direct API Functions** (recommended for simple use cases):
+- [completion](#api/completion.md) - Chat completions with any provider
+- [embedding](#api/embedding.md) - Text embeddings
+- [responses](#api/responses.md) - [OpenResponses](https://www.openresponses.org/) API for agentic AI systems
+
+**AnyLLM Class** (recommended for advanced use cases):
+- [Provider API](#api/any-llm.md) - Lower-level provider interface with metadata access and reusability
+
+## For AI Systems
+
+This documentation is available in two AI-friendly formats:
+
+- **[llms.txt](https://mozilla-ai.github.io/any-llm/llms.txt)** - A structured overview with curated links to key documentation sections
+- **[llms-full.txt](https://mozilla-ai.github.io/any-llm/llms-full.txt)** - Complete documentation content concatenated into a single file
+
+
+---
+
+## cookbooks/any-llm-getting-started.md
+
+<!-- Source: cookbooks/any-llm-getting-started.md -->
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/mozilla-ai/any-llm/blob/main/docs/cookbooks/any_llm_getting_started.ipynb)
+
+Any-LLM is a unified interface that lets you work with language models from any provider using a consistent API. Whether you're using OpenAI, Anthropic, Google, local models, or open-source alternatives, any-llm makes it easy to switch between them without changing your code.
+
+## Why Any-LLM?
+- Provider Agnostic: One API for all LLM providers
+- Easy Switching: Change models with a single line
+- Cost Comparison: Compare costs across providers
+- Streaming Support: Real-time responses from any model
+- Type Safe: Full TypeScript/Python type support
+
+## Installation
+
+```python
+%pip install any-llm-sdk[all] nest-asyncio -q
+
+# nest_asyncio allows us to use 'await' directly in Jupyter notebooks
+# This is needed because any-llm uses async functions for API calls
+
+
+nest_asyncio.apply()
+```
+
+## Setting Up API Keys
+Different providers require different API keys. Let's set them up properly:
+
+```python
+
+from getpass import getpass
+
+
+def setup_api_key(key_name: str, provider: str) -> None:
+    """Set up API key for the specified provider."""
+    if key_name not in os.environ:
+        print(f"🔑 {key_name} not found in environment")
+        api_key = getpass(f"Enter your {provider} API key (or press Enter to skip): ")
+        if api_key:
+            os.environ[key_name] = api_key
+            print(f"✅ {key_name} set for this session")
+        else:
+            print(f"⏭️  Skipping {provider}")
+    else:
+        print(f"✅ {key_name} found in environment")
+
+
+# Set up keys for different providers
+print("Setting up API keys...\n")
+setup_api_key("OPENAI_API_KEY", "OpenAI")
+setup_api_key("ANTHROPIC_API_KEY", "Anthropic")
+
+#  You could add more using :
+# setup_api_key("GOOGLE_API_KEY", "Google")
+# setup_api_key("MISTRAL_API_KEY", "Mistral")
+```
+
+## List Models Across Providers 
+`any_llm` can list all available models for an LLM provider - in this case, we are listing out models supported by OpenAI and Anthropic. 
+
+```python
+from any_llm import AnyLLM, LLMProvider
+
+for provider in [LLMProvider.OPENAI, LLMProvider.ANTHROPIC]:
+    client = AnyLLM.create(provider=provider)
+    models = client.list_models()
+    print(f"Provider: {provider}")
+    print(", ".join([model.id for model in models]))
+    print()
+```
+
+### Expected output
+Provider: openai
+gpt-4o-mini, gpt-4-0613, gpt-4, gpt-3.5-turbo, gpt-5-search-api-2025-10-14, gpt-realtime-mini, gpt-realtime-mini-2025-10-06, sora-2, sora-2-pro, davinci-002, babbage-002, gpt-3.5-turbo-instruct, gpt-3.5-turbo-instruct-0914...
+
+Provider: anthropic
+claude-haiku-4-5-20251001, claude-sonnet-4-5-20250929, claude-opus-4-1-20250805, claude-opus-4-20250514, claude-sonnet-4-20250514, claude-3-7-sonnet-20250219, claude-3-5-haiku-20241022, claude-3-haiku-20240307
+
+
+## Generate Text
+Let's use one model from each provider to generate text for the same prompt. 
+
+```python
+from any_llm import acompletion
+from any_llm.types.completion import ChatCompletion
+
+prompt = "Write a Haiku on the solar system."
+
+# OpenAI
+model = "openai:gpt-4o-mini"
+result = await acompletion(
+    model=model,
+    messages=[
+        {"role": "user", "content": prompt},
+    ],
+)
+assert isinstance(result, ChatCompletion)
+
+print(f"Model: {result.model}")
+print(f"Response:\n{result.choices[0].message.content}\n")
+
+# Anthropic
+model = "anthropic:claude-haiku-4-5-20251001"
+result = await acompletion(
+    model=model,
+    messages=[
+        {"role": "user", "content": prompt},
+    ],
+)
+
+assert isinstance(result, ChatCompletion)
+
+print(f"Model: {result.model}")
+print(f"Response:\n{result.choices[0].message.content}")
+```
+
+### Expected Output 
+
+*Note: The haiku content will be different each time since it's generated by the LLM. This example shows the output format.*
+
+Model: gpt-4o-mini-2024-07-18
+Response:
+
+Planets spin and dance,  
+In the vast cosmic embrace,  
+Stars whisper their tales.
+
+Model: claude-haiku-4-5-20251001
+Response:
+
+Eight worlds circle round,  
+Sun's gravity holds them close—  
+Dance through endless void.
+
+
+---
