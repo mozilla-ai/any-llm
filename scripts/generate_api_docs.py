@@ -470,9 +470,7 @@ for meta in AnyLLM.get_all_provider_metadata():
     parts.append("")
     parts.append("### `completion()` / `acompletion()`")
     parts.append("")
-    parts.append(
-        "Create a chat completion. See the [Completion](completion.md) reference for the full parameter list."
-    )
+    parts.append("Create a chat completion. See the [Completion](completion.md) reference for the full parameter list.")
     parts.append("")
     parts.append(
         """```python
@@ -488,9 +486,7 @@ async def acompletion(self, model, messages, *, stream=None, response_format=Non
     parts.append("")
     parts.append("### `responses()` / `aresponses()`")
     parts.append("")
-    parts.append(
-        "Create a response using the OpenResponses API. See the [Responses](responses.md) reference."
-    )
+    parts.append("Create a response using the OpenResponses API. See the [Responses](responses.md) reference.")
     parts.append("")
     parts.append(
         """```python
@@ -793,7 +789,7 @@ second = responses(
 )
 ```""",
         "",
-        "{% hint style=\"info\" %}",
+        '{% hint style="info" %}',
         "Not all providers support the Responses API. Check the [providers page](../providers.md) for support details, or query `ProviderMetadata.responses` programmatically.",
         "{% endhint %}",
     ]
@@ -884,7 +880,7 @@ async def main():
 asyncio.run(main())
 ```""",
         "",
-        "{% hint style=\"info\" %}",
+        '{% hint style="info" %}',
         "Not all providers support embeddings. Check the [providers page](../providers.md) for support details, or query `ProviderMetadata.embedding` programmatically.",
         "{% endhint %}",
     ]
@@ -957,7 +953,7 @@ models = llm.list_models()
 print(f"Available models: {len(models)}")
 ```""",
         "",
-        "{% hint style=\"info\" %}",
+        '{% hint style="info" %}',
         "Not all providers support listing models. Check the [providers page](../providers.md) for support details, or query `ProviderMetadata.list_models` programmatically.",
         "{% endhint %}",
     ]
@@ -972,7 +968,7 @@ def generate_batch_page() -> str:
         "description: Process multiple requests asynchronously at lower cost",
         "---",
         "",
-        "{% hint style=\"warning\" %}",
+        '{% hint style="warning" %}',
         "The Batch API is experimental and may change in future releases. Provider support is limited - check the [providers page](../providers.md) for availability.",
         "{% endhint %}",
         "",
@@ -1108,7 +1104,7 @@ def generate_exceptions_page() -> str:
         "",
         "any-llm provides a unified exception hierarchy so you can handle errors consistently regardless of which provider is being used. When unified exceptions are enabled, provider-specific SDK errors are automatically mapped to the appropriate any-llm exception type.",
         "",
-        "{% hint style=\"info\" %}",
+        '{% hint style="info" %}',
         "**Opt-in Feature:** Unified exception handling is opt-in. Set the `ANY_LLM_UNIFIED_EXCEPTIONS=1` environment variable to enable automatic conversion from provider-specific exceptions.",
         "{% endhint %}",
         "",
@@ -1720,7 +1716,7 @@ for model in models:
     print(f"{model.id} (owned by {model.owned_by})")
 ```""",
         "",
-        "{% hint style=\"info\" %}",
+        '{% hint style="info" %}',
         "The `Model` type is a direct re-export from the OpenAI SDK. any-llm normalizes all provider responses into this format so you get a consistent interface regardless of which provider you query.",
         "{% endhint %}",
     ]
@@ -1888,7 +1884,7 @@ if batch.status == "completed":
     print(f"Output file: {batch.output_file_id}")
 ```""",
         "",
-        "{% hint style=\"info\" %}",
+        '{% hint style="info" %}',
         "The `Batch` and `BatchRequestCounts` types are direct re-exports from the OpenAI SDK. any-llm normalizes all provider batch responses into this format.",
         "{% endhint %}",
     ]
