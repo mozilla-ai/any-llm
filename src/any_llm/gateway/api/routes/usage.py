@@ -57,15 +57,17 @@ class UsageEntry(BaseModel):
 @router.get("", dependencies=[Depends(verify_master_key)])
 async def list_usage(
     db: Annotated[Session, Depends(get_db)],
-    start_date: datetime | None = Query(
-        default=None,
-        description="Return logs with timestamp >= start_date (ISO 8601 string or Unix epoch seconds as a number)",
-    ),
-    end_date: datetime | None = Query(
-        default=None,
-        description="Return logs with timestamp < end_date (ISO 8601 string or Unix epoch seconds as a number)",
-    ),
-    user_id: str | None = Query(default=None, description="Filter to a single user"),
+    start_date: Annotated[
+        datetime | None,
+        Query(
+            description="Return logs with timestamp >= start_date (ISO 8601 string or Unix epoch seconds as a number)"
+        ),
+    ] = None,
+    end_date: Annotated[
+        datetime | None,
+        Query(description="Return logs with timestamp < end_date (ISO 8601 string or Unix epoch seconds as a number)"),
+    ] = None,
+    user_id: Annotated[str | None, Query(description="Filter to a single user")] = None,
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> list[UsageEntry]:

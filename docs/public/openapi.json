@@ -958,6 +958,136 @@
         "title": "UpdateUserRequest",
         "type": "object"
       },
+      "UsageEntry": {
+        "description": "A single usage log entry.",
+        "properties": {
+          "api_key_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key Id"
+          },
+          "completion_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Tokens"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          },
+          "endpoint": {
+            "title": "Endpoint",
+            "type": "string"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "prompt_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Tokens"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "timestamp": {
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "total_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Tokens"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "api_key_id",
+          "timestamp",
+          "model",
+          "provider",
+          "endpoint",
+          "prompt_tokens",
+          "completion_tokens",
+          "total_tokens",
+          "cost",
+          "status",
+          "error_message"
+        ],
+        "title": "UsageEntry",
+        "type": "object"
+      },
       "UsageLogResponse": {
         "description": "Response model for usage log.",
         "properties": {
@@ -2116,6 +2246,123 @@
         "summary": "Get Pricing",
         "tags": [
           "pricing"
+        ]
+      }
+    },
+    "/v1/usage": {
+      "get": {
+        "description": "List usage logs ordered by timestamp (most recent first).\n\nSupports optional filters for time range and user. Paginated via skip/limit.\nTimestamps accept either ISO 8601 strings or Unix epoch seconds (numeric).",
+        "operationId": "list_usage_v1_usage_get",
+        "parameters": [
+          {
+            "description": "Return logs with timestamp >= start_date (ISO 8601 string or Unix epoch seconds as a number)",
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Return logs with timestamp >= start_date (ISO 8601 string or Unix epoch seconds as a number)",
+              "title": "Start Date"
+            }
+          },
+          {
+            "description": "Return logs with timestamp < end_date (ISO 8601 string or Unix epoch seconds as a number)",
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Return logs with timestamp < end_date (ISO 8601 string or Unix epoch seconds as a number)",
+              "title": "End Date"
+            }
+          },
+          {
+            "description": "Filter to a single user",
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to a single user",
+              "title": "User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UsageEntry"
+                  },
+                  "title": "Response List Usage V1 Usage Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Usage",
+        "tags": [
+          "usage"
         ]
       }
     },
