@@ -3,8 +3,8 @@ from importlib.metadata import PackageNotFoundError, version
 from any_llm.any_llm import AnyLLM
 from any_llm.api import (
     acancel_batch,
-    acreate_batch,
     acompletion,
+    acreate_batch,
     aembedding,
     alist_batches,
     alist_models,
@@ -12,14 +12,14 @@ from any_llm.api import (
     aresponses,
     aretrieve_batch,
     cancel_batch,
-    create_batch,
     completion,
+    create_batch,
     embedding,
     list_batches,
     list_models,
     messages,
-    retrieve_batch,
     responses,
+    retrieve_batch,
 )
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import (
@@ -64,8 +64,8 @@ __all__ = [
     "RateLimitError",
     "UnsupportedParameterError",
     "UnsupportedProviderError",
-    "acompletion",
     "acancel_batch",
+    "acompletion",
     "acreate_batch",
     "aembedding",
     "alist_batches",
@@ -80,6 +80,6 @@ __all__ = [
     "list_batches",
     "list_models",
     "messages",
-    "retrieve_batch",
     "responses",
+    "retrieve_batch",
 ]

@@ -1,5 +1,5 @@
-from contextlib import ExitStack
 import pathlib
+from contextlib import ExitStack
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
