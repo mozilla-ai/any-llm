@@ -194,6 +194,52 @@ def test_messages_endpoint_provider_error_format(
     assert detail["error"]["type"] == "api_error"
 
 
+def test_messages_endpoint_dict_user_id_in_metadata(
+    client: TestClient,
+    master_key_header: dict[str, str],
+    test_user: dict[str, Any],
+    messages_request_body: dict[str, Any],
+) -> None:
+    """Test that dict-typed user_id in metadata is handled gracefully."""
+    mock_response = _make_message_response()
+    messages_request_body["metadata"] = {
+        "user_id": {
+            "device_id": "c7a9f910a6b876ceca80e42de13bb085f05a81bfa4d77ede4104459e7776a3de",
+            "account_uuid": "",
+            "session_id": "2f614ef6-0f8d-413d-ba56-3dfe4b02fa88",
+        }
+    }
+
+    with patch("any_llm.gateway.api.routes.messages.amessages", new_callable=AsyncMock, return_value=mock_response):
+        response = client.post(
+            "/v1/messages",
+            json=messages_request_body,
+            headers=master_key_header,
+        )
+
+    assert response.status_code == 200
+
+
+def test_messages_endpoint_dict_user_id_extracts_known_field(
+    client: TestClient,
+    master_key_header: dict[str, str],
+    test_user: dict[str, Any],
+    messages_request_body: dict[str, Any],
+) -> None:
+    """Test that dict user_id with a 'user_id' key extracts that value."""
+    mock_response = _make_message_response()
+    messages_request_body["metadata"] = {"user_id": {"user_id": "test-user", "extra": "data"}}
+
+    with patch("any_llm.gateway.api.routes.messages.amessages", new_callable=AsyncMock, return_value=mock_response):
+        response = client.post(
+            "/v1/messages",
+            json=messages_request_body,
+            headers=master_key_header,
+        )
+
+    assert response.status_code == 200
+
+
 def test_messages_endpoint_bearer_auth(
     client: TestClient,
     api_key_obj: dict[str, Any],

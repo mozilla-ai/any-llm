@@ -1,3 +1,4 @@
+import json
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -45,6 +46,22 @@ class MessagesRequest(BaseModel):
     cache_control: dict[str, Any] | None = None
 
 
+def _normalize_user_id(value: Any) -> str | None:
+    """Extract a user_id string from metadata, handling dict and string types.
+
+    The Anthropic API spec defines metadata.user_id as a string, but some clients
+    may send a dict. This function handles both cases gracefully.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        for key in ("user_id", "id", "account_uuid", "device_id"):
+            if key in value and isinstance(value[key], str) and value[key]:
+                return value[key]
+        return json.dumps(value, sort_keys=True)
+    return str(value) if value is not None else None
+
+
 def _anthropic_error(error_type: str, message: str, status_code: int) -> HTTPException:
     """Create an HTTPException with Anthropic-style error body."""
     return HTTPException(
@@ -74,7 +91,7 @@ async def create_message(
     api_key, is_master_key = auth_result
     user_from_metadata = request.metadata.get("user_id") if request.metadata else None
     user_id = resolve_user_id(
-        user_id_from_request=str(user_from_metadata) if user_from_metadata else None,
+        user_id_from_request=_normalize_user_id(user_from_metadata),
         api_key=api_key,
         is_master_key=is_master_key,
         master_key_error=_anthropic_error(
