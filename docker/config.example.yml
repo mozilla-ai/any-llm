@@ -39,10 +39,6 @@ providers:
   mistral:
     api_key: YOUR_MISTRAL_API_KEY_HERE
 
-  aliyun:
-    api_key: 'xxxx'
-    api_base: "https://dashscope.aliyuncs.com/compatible-mode/v1"  # optional
-
   # Add more providers as needed...
 
 # Model pricing configuration (optional but necessary for price tracking)
