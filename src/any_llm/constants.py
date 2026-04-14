@@ -53,7 +53,7 @@ class LLMProvider(StrEnum):
     XAI = "xai"
     PERPLEXITY = "perplexity"
     MINIMAX = "minimax"
-    ALIYUNBAILIAN = "aliyunbailian"
+    ALIYUN = "aliyun"
     ZAI = "zai"
     GATEWAY = "gateway"
 
