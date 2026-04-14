@@ -1,7 +1,12 @@
 ---
-title: Authentication
+title: Authentication (Deprecated)
 description: Master key and virtual API key authentication for the gateway
 ---
+
+:::caution[Deprecation Notice]
+The gateway bundled with any-llm is deprecated and will be removed on May 18, 2026.
+Please migrate to the standalone gateway at [github.com/mozilla-ai/gateway](https://github.com/mozilla-ai/gateway).
+:::
 
 any-llm-gateway offers two authentication methods, each designed for different use cases. Understanding when to use each approach will help you secure your gateway effectively.
 

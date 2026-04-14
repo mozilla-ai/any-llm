@@ -152,9 +152,11 @@ def migrate(config: str | None, database_url: str | None, revision: str) -> None
 
 def main() -> None:
     """Entry point for the CLI."""
-    invoked_as = os.path.basename(sys.argv[0])
-    if invoked_as == "any-llm-gateway":
-        click.echo("'any-llm-gateway' is deprecated. Use 'gateway' instead.", err=True)
+    click.echo(
+        "WARNING: The gateway bundled in any-llm is deprecated and will be removed "
+        "on May 18, 2026. Migrate to https://github.com/mozilla-ai/gateway",
+        err=True,
+    )
     cli()
 
 
