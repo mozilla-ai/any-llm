@@ -1,18 +1,12 @@
-from collections.abc import AsyncIterator
-from typing import Any
-
-from typing_extensions import override
-
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 
 
 class AliyunbailianProvider(BaseOpenAIProvider):
-    API_BASE = "https://bailian.aliyun.com/v1/"
+    API_BASE = "https://dashscope.aliyuncs.com/compatible-mode"
     ENV_API_KEY_NAME = "ALIYUNBAILIAN_API_KEY"
     ENV_API_BASE_NAME = "ALIYUNBAILIAN_API_BASE"
     PROVIDER_NAME = "aliyunbailian"
-    PROVIDER_DOCUMENTATION_URL = "https://help.aliyun.com/zh/bailian/"
+    PROVIDER_DOCUMENTATION_URL = "https://bailian.console.aliyun.com/cn-beijing/?tab=api#/api"
 
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
