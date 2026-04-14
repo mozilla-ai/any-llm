@@ -170,6 +170,12 @@ def _create_mistral_completion_from_response(
 
     for i, choice_data in enumerate(response_data.choices):
         message_data = choice_data.message
+        # mistralai v2 types choice.message as Optional, but every chat-completion choice
+        # carries a message in practice. Fail loudly if the SDK ever hands us None so we
+        # do not silently emit a truncated ChatCompletion.
+        if message_data is None:
+            msg = "Mistral chat completion returned a choice without a message"
+            raise ValueError(msg)
 
         if message_data.content:
             content, reasoning_content = _extract_mistral_content_and_reasoning(message_data.content)
