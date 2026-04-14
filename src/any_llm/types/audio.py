@@ -39,7 +39,7 @@ class AudioSpeechParams(BaseModel):
 
     def to_api_kwargs(self) -> dict[str, Any]:
         """Convert to kwargs for the provider API call, excluding None values and internal fields."""
-        return {k: v for k, v in self.model_dump(exclude={"model_id"}).items() if v is not None}
+        return {k: v for k, v in self.model_dump(exclude={"model_id", "input", "voice"}).items() if v is not None}
 
 
 # Re-export OpenAI types for convenience

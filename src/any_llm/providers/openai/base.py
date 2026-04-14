@@ -21,8 +21,8 @@ from any_llm.providers.openai.utils import (
     _convert_parsed_chat_completion,
     _normalize_openai_dict_response,
 )
-from any_llm.types.batch import Batch
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
+from any_llm.types.batch import Batch
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -273,6 +273,8 @@ class BaseOpenAIProvider(AnyLLM):
 
         response = await self.client.audio.speech.create(
             model=params.model_id,
+            input=params.input,
+            voice=params.voice,
             **api_kwargs,
         )
         return response.content
