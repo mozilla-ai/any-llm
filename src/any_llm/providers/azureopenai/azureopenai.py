@@ -18,6 +18,7 @@ class AzureopenaiProvider(BaseOpenAIProvider):
     SUPPORTS_RESPONSES = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_COMPLETION_PDF = False
+    SUPPORTS_IMAGE_GENERATION = True
 
     DEFAULT_API_VERSION = "preview"
 
