@@ -75,6 +75,9 @@ def _clean_qualified_names(text: str) -> str:
     ]
     for old, new in replacements:
         text = text.replace(old, new)
+    # Strip any remaining "lowercase.module.path.ClassName" → "ClassName" patterns
+    # that arise from SDK version differences in how types are qualified.
+    text = re.sub(r"\b[a-z][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)+\.([A-Z]\w*)", r"\1", text)
     return text
 
 
@@ -82,6 +85,8 @@ def _format_annotation(annotation: Any) -> str:
     """Format a type annotation as a readable string."""
     if annotation is inspect.Parameter.empty:
         return ""
+    if annotation is ...:
+        return "..."
     origin = getattr(annotation, "__origin__", None)
     args = getattr(annotation, "__args__", None)
 

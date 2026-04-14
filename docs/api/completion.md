@@ -13,7 +13,7 @@ def completion(
     messages: list[dict[str, Any] | ChatCompletionMessage],
     *,
     provider: str | LLMProvider | None = None,
-    tools: list[dict[str, Any] | Callable[Ellipsis, Any]] | None = None,
+    tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     temperature: float | None = None,
     top_p: float | None = None,
@@ -51,7 +51,7 @@ async def acompletion(
     messages: list[dict[str, Any] | ChatCompletionMessage],
     *,
     provider: str | LLMProvider | None = None,
-    tools: list[dict[str, Any] | Callable[Ellipsis, Any]] | None = None,
+    tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     temperature: float | None = None,
     top_p: float | None = None,
@@ -86,7 +86,7 @@ async def acompletion(
 | `model` | `str` | *required* | Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='gpt-4', provider='openai'). **Alternative**: Combined format 'provider:model' (e.g., 'openai:gpt-4'). Legacy format 'provider/model' is also supported but deprecated. |
 | `messages` | `list[dict[str, Any] \| ChatCompletionMessage]` | *required* | List of messages for the conversation |
 | `provider` | `str \| LLMProvider \| None` | None | **Recommended**: Provider name to use for the request (e.g., 'openai', 'mistral'). When provided, the model parameter should contain only the model name. |
-| `tools` | `list[dict[str, Any] \| Callable[Ellipsis, Any]] \| None` | None | List of tools for tool calling. Can be Python callables or OpenAI tool format dicts |
+| `tools` | `list[dict[str, Any] \| Callable[..., Any]] \| None` | None | List of tools for tool calling. Can be Python callables or OpenAI tool format dicts |
 | `tool_choice` | `str \| dict[str, Any] \| None` | None | Controls which tools the model can call |
 | `temperature` | `float \| None` | None | Controls randomness in the response (0.0 to 2.0) |
 | `top_p` | `float \| None` | None | Controls diversity via nucleus sampling (0.0 to 1.0) |

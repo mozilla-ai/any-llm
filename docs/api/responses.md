@@ -23,7 +23,7 @@ def responses(
     input_data: str | list[EasyInputMessageParam | Message | ResponseOutputMessageParam | ResponseFileSearchToolCallParam | ResponseComputerToolCallParam | ComputerCallOutput | ResponseFunctionWebSearchParam | ResponseFunctionToolCallParam | FunctionCallOutput | ToolSearchCall | ResponseToolSearchOutputItemParamParam | ResponseReasoningItemParam | ResponseCompactionItemParamParam | ImageGenerationCall | ResponseCodeInterpreterToolCallParam | LocalShellCall | LocalShellCallOutput | ShellCall | ShellCallOutput | ApplyPatchCall | ApplyPatchCallOutput | McpListTools | McpApprovalRequest | McpApprovalResponse | McpCall | ResponseCustomToolCallOutputParam | ResponseCustomToolCallParam | ItemReference],
     *,
     provider: str | LLMProvider | None = None,
-    tools: list[dict[str, Any] | Callable[Ellipsis, Any]] | None = None,
+    tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     max_output_tokens: int | None = None,
     temperature: float | None = None,
@@ -65,7 +65,7 @@ async def aresponses(
     input_data: str | list[EasyInputMessageParam | Message | ResponseOutputMessageParam | ResponseFileSearchToolCallParam | ResponseComputerToolCallParam | ComputerCallOutput | ResponseFunctionWebSearchParam | ResponseFunctionToolCallParam | FunctionCallOutput | ToolSearchCall | ResponseToolSearchOutputItemParamParam | ResponseReasoningItemParam | ResponseCompactionItemParamParam | ImageGenerationCall | ResponseCodeInterpreterToolCallParam | LocalShellCall | LocalShellCallOutput | ShellCall | ShellCallOutput | ApplyPatchCall | ApplyPatchCallOutput | McpListTools | McpApprovalRequest | McpApprovalResponse | McpCall | ResponseCustomToolCallOutputParam | ResponseCustomToolCallParam | ItemReference],
     *,
     provider: str | LLMProvider | None = None,
-    tools: list[dict[str, Any] | Callable[Ellipsis, Any]] | None = None,
+    tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     max_output_tokens: int | None = None,
     temperature: float | None = None,
@@ -104,7 +104,7 @@ async def aresponses(
 | `model` | `str` | *required* | Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='gpt-4o', provider='openai'). **Alternative**: Combined format 'provider:model' (e.g., 'openai:gpt-4o'). Legacy format 'provider/model' is also supported but deprecated. |
 | `input_data` | `str \| list[EasyInputMessageParam \| Message \| ResponseOutputMessageParam \| ResponseFileSearchToolCallParam \| ResponseComputerToolCallParam \| ComputerCallOutput \| ResponseFunctionWebSearchParam \| ResponseFunctionToolCallParam \| FunctionCallOutput \| ToolSearchCall \| ResponseToolSearchOutputItemParamParam \| ResponseReasoningItemParam \| ResponseCompactionItemParamParam \| ImageGenerationCall \| ResponseCodeInterpreterToolCallParam \| LocalShellCall \| LocalShellCallOutput \| ShellCall \| ShellCallOutput \| ApplyPatchCall \| ApplyPatchCallOutput \| McpListTools \| McpApprovalRequest \| McpApprovalResponse \| McpCall \| ResponseCustomToolCallOutputParam \| ResponseCustomToolCallParam \| ItemReference]` | *required* | The input payload accepted by provider's Responses API. For OpenAI-compatible providers, this is typically a list mixing text, images, and tool instructions, or a dict per OpenAI spec. |
 | `provider` | `str \| LLMProvider \| None` | None | **Recommended**: Provider name to use for the request (e.g., 'openai', 'mistral'). When provided, the model parameter should contain only the model name. |
-| `tools` | `list[dict[str, Any] \| Callable[Ellipsis, Any]] \| None` | None | Optional tools for tool calling (Python callables or OpenAI tool dicts) |
+| `tools` | `list[dict[str, Any] \| Callable[..., Any]] \| None` | None | Optional tools for tool calling (Python callables or OpenAI tool dicts) |
 | `tool_choice` | `str \| dict[str, Any] \| None` | None | Controls which tools the model can call |
 | `max_output_tokens` | `int \| None` | None | Maximum number of output tokens to generate |
 | `temperature` | `float \| None` | None | Controls randomness in the response (0.0 to 2.0) |
