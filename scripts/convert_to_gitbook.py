@@ -65,7 +65,7 @@ SUMMARY = """\
 
 
 def run_generator(script_name: str) -> None:
-    subprocess.run([sys.executable, str(SCRIPT_DIR / script_name)], check=True)
+    subprocess.run([sys.executable, str(SCRIPT_DIR / script_name)], check=True)  # noqa: S603
 
 
 def main() -> None:
