@@ -88,6 +88,7 @@ class GatewayProvider(BaseOpenAIProvider):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
+    SUPPORTS_IMAGE_GENERATION = True
 
     def __init__(
         self,
