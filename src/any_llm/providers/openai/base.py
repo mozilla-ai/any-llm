@@ -22,6 +22,7 @@ from any_llm.providers.openai.utils import (
     _normalize_openai_dict_response,
 )
 from any_llm.types.batch import Batch
+from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -253,6 +254,28 @@ class BaseOpenAIProvider(AnyLLM):
                 **embedding_kwargs,
             )
         )
+
+    @override
+    async def _atranscription(self, params: AudioTranscriptionParams, **kwargs: Any) -> Transcription:
+        api_kwargs = params.to_api_kwargs()
+        api_kwargs.update(kwargs)
+
+        return await self.client.audio.transcriptions.create(  # type: ignore[no-any-return]
+            model=params.model_id,
+            file=params.file,
+            **api_kwargs,
+        )
+
+    @override
+    async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
+        api_kwargs = params.to_api_kwargs()
+        api_kwargs.update(kwargs)
+
+        response = await self.client.audio.speech.create(
+            model=params.model_id,
+            **api_kwargs,
+        )
+        return response.content
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:

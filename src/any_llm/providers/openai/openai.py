@@ -11,3 +11,5 @@ class OpenaiProvider(BaseOpenAIProvider):
     SUPPORTS_RESPONSES = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
+    SUPPORTS_AUDIO_TRANSCRIPTION = True
+    SUPPORTS_AUDIO_SPEECH = True

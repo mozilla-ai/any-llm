@@ -18,6 +18,8 @@ class AzureopenaiProvider(BaseOpenAIProvider):
     SUPPORTS_RESPONSES = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_COMPLETION_PDF = False
+    SUPPORTS_AUDIO_TRANSCRIPTION = True
+    SUPPORTS_AUDIO_SPEECH = True
 
     DEFAULT_API_VERSION = "preview"
 

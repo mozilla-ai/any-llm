@@ -7,11 +7,15 @@ from any_llm.api import (
     alist_models,
     amessages,
     aresponses,
+    aspeech,
+    atranscription,
     completion,
     embedding,
     list_models,
     messages,
     responses,
+    speech,
+    transcription,
 )
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import (
@@ -61,9 +65,13 @@ __all__ = [
     "alist_models",
     "amessages",
     "aresponses",
+    "aspeech",
+    "atranscription",
     "completion",
     "embedding",
     "list_models",
     "messages",
     "responses",
+    "speech",
+    "transcription",
 ]
