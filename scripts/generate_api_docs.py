@@ -78,7 +78,17 @@ def _clean_qualified_names(text: str) -> str:
         text = text.replace(old, new)
     # Strip any remaining "lowercase.module.path.ClassName" → "ClassName" patterns
     # that arise from SDK version differences in how types are qualified.
-    return re.sub(r"\b[a-z][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*\.([A-Z]\w*)", r"\1", text)
+    text = re.sub(r"\b[a-z][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*\.([A-Z]\w*)", r"\1", text)
+    # Strip Annotated[X, PropertyInfo(...)] → X at text level as a fallback
+    # for cases where the type-level __metadata__ check above didn't fire.
+    text = re.sub(r"Annotated\[(.+),\s*PropertyInfo\([^)]*\)\]", r"\1", text)
+
+    # Normalize Union[X, Y, Z] → X | Y | Z to match Python 3.10+ union syntax.
+    def _union_to_pipe(m: re.Match[str]) -> str:
+        return m.group(1).replace(", ", " | ")
+
+    text = re.sub(r"Union\[([^\[\]]+)\]", _union_to_pipe, text)
+    return text
 
 
 def _format_annotation(annotation: Any) -> str:
@@ -87,8 +97,10 @@ def _format_annotation(annotation: Any) -> str:
         return ""
     if annotation is ...:
         return "..."
-    # Annotated[X, metadata] - strip metadata, keep only the type
-    if typing.get_origin(annotation) is typing.Annotated:
+    # Annotated[X, metadata] - strip metadata, keep only the type.
+    # Use __metadata__ which is always present on Annotated types regardless
+    # of whether they come from typing or typing_extensions.
+    if hasattr(annotation, "__metadata__"):
         return _format_annotation(typing.get_args(annotation)[0])
     origin = getattr(annotation, "__origin__", None)
     args = getattr(annotation, "__args__", None)
