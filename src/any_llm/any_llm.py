@@ -5,7 +5,7 @@ import importlib
 import os
 import warnings
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, overload
+from typing import IO, TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, overload
 
 from openresponses_types import ResponseResource
 from pydantic import BaseModel
@@ -981,7 +981,7 @@ class AnyLLM(ABC):
         msg = "Subclasses must implement _aimage_generation method"
         raise NotImplementedError(msg)
 
-    def transcription(self, model: str, file: bytes, **kwargs: Any) -> Transcription:
+    def _transcription(self, model: str, file: bytes | IO[bytes], **kwargs: Any) -> Transcription:
         """Transcribe audio synchronously.
 
         See [AnyLLM.atranscription][any_llm.any_llm.AnyLLM.atranscription]
@@ -990,12 +990,13 @@ class AnyLLM(ABC):
         return run_async_in_sync(self.atranscription(model, file, **kwargs), allow_running_loop=allow_running_loop)
 
     @handle_exceptions()
-    async def atranscription(self, model: str, file: bytes, **kwargs: Any) -> Transcription:
+    async def atranscription(self, model: str, file: bytes | IO[bytes], **kwargs: Any) -> Transcription:
         """Transcribe audio asynchronously.
 
         Args:
             model: Model identifier for the chosen provider (e.g., model='whisper-1' for LLMProvider.OPENAI).
-            file: Audio file content as bytes. Supported formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm.
+            file: Audio file content as bytes or file-like object.
+                Supported formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm.
             **kwargs: Additional parameters (language, prompt, response_format, temperature, timestamp_granularities).
 
         Returns:
@@ -1012,7 +1013,13 @@ class AnyLLM(ABC):
         msg = "Subclasses must implement _atranscription method"
         raise NotImplementedError(msg)
 
-    def speech(self, model: str, input: str, voice: str, **kwargs: Any) -> bytes:
+    def _speech(
+        self,
+        model: str,
+        input: str,  # noqa: A002
+        voice: str,
+        **kwargs: Any,
+    ) -> bytes:
         """Generate speech from text synchronously.
 
         See [AnyLLM.aspeech][any_llm.any_llm.AnyLLM.aspeech]
@@ -1021,7 +1028,7 @@ class AnyLLM(ABC):
         return run_async_in_sync(self.aspeech(model, input, voice, **kwargs), allow_running_loop=allow_running_loop)
 
     @handle_exceptions()
-    async def aspeech(self, model: str, input: str, voice: str, **kwargs: Any) -> bytes:
+    async def aspeech(self, model: str, input: str, voice: str, **kwargs: Any) -> bytes:  # noqa: A002
         """Generate speech from text asynchronously.
 
         Args:

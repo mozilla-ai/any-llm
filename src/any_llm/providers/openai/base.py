@@ -287,6 +287,8 @@ class BaseOpenAIProvider(AnyLLM):
 
         response = await self.client.audio.speech.create(
             model=params.model_id,
+            input=params.input,
+            voice=params.voice,
             **api_kwargs,
         )
         return response.content

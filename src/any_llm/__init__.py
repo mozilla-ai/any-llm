@@ -46,6 +46,7 @@ from any_llm.exceptions import (
     UnsupportedParameterError,
     UnsupportedProviderError,
 )
+from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription, TranscriptionVerbose
 from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.completion import ParsedChatCompletion, ParsedChatCompletionMessage, ParsedChoice
 
@@ -58,6 +59,8 @@ except PackageNotFoundError:
 __all__ = [
     "AnyLLM",
     "AnyLLMError",
+    "AudioSpeechParams",
+    "AudioTranscriptionParams",
     "AuthenticationError",
     "Batch",
     "BatchNotCompleteError",
@@ -78,6 +81,8 @@ __all__ = [
     "ParsedChoice",
     "ProviderError",
     "RateLimitError",
+    "Transcription",
+    "TranscriptionVerbose",
     "UnsupportedParameterError",
     "UnsupportedProviderError",
     "acancel_batch",
