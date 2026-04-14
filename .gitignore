@@ -213,8 +213,3 @@ marimo/_lsp/
 __marimo__/
 
 .vscode/launch.json
-
-# Gateway-specific files
-service_account.json
-config.yml
-gateway.db

@@ -4,7 +4,7 @@
 
 ## Where to Look First
 
-- [README.md](README.md): high-level usage and gateway overview.
+- [README.md](README.md): high-level usage overview.
 - [CONTRIBUTING.md](CONTRIBUTING.md): canonical dev setup, test matrix, and contribution workflow.
 - [pyproject.toml](pyproject.toml) and [.pre-commit-config.yaml](.pre-commit-config.yaml): formatting/lint/typecheck configuration.
 - [docs/](docs/): MkDocs site sources (configured by [mkdocs.yml](mkdocs.yml)).
@@ -12,10 +12,8 @@
 ## Project Structure & Module Organization
 
 - `src/any_llm/`: Python SDK source (providers in `src/any_llm/providers/`, shared types in `src/any_llm/types/`).
-- `src/any_llm/gateway/`: Optional FastAPI gateway (OpenAI-compatible proxy + budgeting/keys/analytics).
-- `tests/`: `unit/`, `integration/`, `gateway/`, plus shared fixtures in `tests/conftest.py`.
+- `tests/`: `unit/`, `integration/`, plus shared fixtures in `tests/conftest.py`.
 - `docs/`: MkDocs documentation site (config in `mkdocs.yml`).
-- `docker/`: Gateway Dockerfile + Compose configs ([docker/docker-compose.yml](docker/docker-compose.yml), [docker/config.example.yml](docker/config.example.yml)).
 
 ## Build, Test, and Development Commands
 
@@ -26,7 +24,6 @@ This repo uses `uv` for local dev (Python 3.11+). For the full, up-to-date comma
 - Unit tests: `uv run pytest -v tests/unit`
 - Integration tests (often require API keys): `uv run pytest -v tests/integration -n auto`
 - Docs preview: `uv run mkdocs serve`
-- Run gateway via Docker (from `docker/`): `cp config.example.yml config.yml && docker compose up --build`
 
 ## Coding Style & Naming Conventions
 

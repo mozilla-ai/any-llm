@@ -65,25 +65,6 @@ export default defineConfig({
           ],
         },
         { label: "Managed Platform", slug: "platform/overview" },
-        {
-          label: "Gateway",
-          items: [
-            { label: "Overview", slug: "gateway/overview" },
-            { label: "Quick Start", slug: "gateway/quickstart" },
-            { label: "Authentication", slug: "gateway/authentication" },
-            {
-              label: "Budget Management",
-              slug: "gateway/budget-management",
-            },
-            { label: "Configuration", slug: "gateway/configuration" },
-            { label: "API Reference", slug: "gateway/api-reference" },
-            { label: "Troubleshooting", slug: "gateway/troubleshooting" },
-            {
-              label: "Docker Deployment",
-              slug: "gateway/docker-deployment",
-            },
-          ],
-        },
       ],
       head: [
         {
