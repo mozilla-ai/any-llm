@@ -5,7 +5,7 @@ import importlib
 import os
 import warnings
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, overload
+from typing import IO, TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, overload
 
 from openresponses_types import ResponseResource
 from pydantic import BaseModel
@@ -18,6 +18,7 @@ from any_llm.exceptions import (
     UnsupportedProviderError,
 )
 from any_llm.tools import prepare_tools
+from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionMessage,
@@ -95,6 +96,12 @@ class AnyLLM(ABC):
 
     SUPPORTS_BATCH: bool
     """OpenAI Batch Completion API"""
+
+    SUPPORTS_AUDIO_TRANSCRIPTION: bool = False
+    """Audio Transcription API (e.g., OpenAI Whisper)"""
+
+    SUPPORTS_AUDIO_SPEECH: bool = False
+    """Audio Speech / TTS API (e.g., OpenAI TTS)"""
 
     SUPPORTS_MESSAGES: bool = True
     """Anthropic Messages API (all providers support it via conversion)"""
@@ -380,6 +387,8 @@ class AnyLLM(ABC):
             responses=cls.SUPPORTS_RESPONSES,
             list_models=cls.SUPPORTS_LIST_MODELS,
             batch_completion=cls.SUPPORTS_BATCH,
+            audio_transcription=cls.SUPPORTS_AUDIO_TRANSCRIPTION,
+            audio_speech=cls.SUPPORTS_AUDIO_SPEECH,
             messages=cls.SUPPORTS_MESSAGES,
             class_name=cls.__name__,
         )
@@ -939,6 +948,76 @@ class AnyLLM(ABC):
             msg = "Provider doesn't support embedding."
             raise NotImplementedError(msg)
         msg = "Subclasses must implement _aembedding method"
+        raise NotImplementedError(msg)
+
+    def _transcription(self, model: str, file: bytes | IO[bytes], **kwargs: Any) -> Transcription:
+        """Transcribe audio synchronously.
+
+        See [AnyLLM.atranscription][any_llm.any_llm.AnyLLM.atranscription]
+        """
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(self.atranscription(model, file, **kwargs), allow_running_loop=allow_running_loop)
+
+    @handle_exceptions()
+    async def atranscription(self, model: str, file: bytes | IO[bytes], **kwargs: Any) -> Transcription:
+        """Transcribe audio asynchronously.
+
+        Args:
+            model: Model identifier for the chosen provider (e.g., model='whisper-1' for LLMProvider.OPENAI).
+            file: Audio file content as bytes or file-like object.
+                Supported formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm.
+            **kwargs: Additional parameters (language, prompt, response_format, temperature, timestamp_granularities).
+
+        Returns:
+            The transcription response from the provider.
+
+        """
+        params = AudioTranscriptionParams(model_id=model, file=file, **kwargs)
+        return await self._atranscription(params)
+
+    async def _atranscription(self, params: AudioTranscriptionParams, **kwargs: Any) -> Transcription:
+        if not self.SUPPORTS_AUDIO_TRANSCRIPTION:
+            msg = "Provider doesn't support audio transcription."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _atranscription method"
+        raise NotImplementedError(msg)
+
+    def _speech(
+        self,
+        model: str,
+        input: str,  # noqa: A002
+        voice: str,
+        **kwargs: Any,
+    ) -> bytes:
+        """Generate speech from text synchronously.
+
+        See [AnyLLM.aspeech][any_llm.any_llm.AnyLLM.aspeech]
+        """
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(self.aspeech(model, input, voice, **kwargs), allow_running_loop=allow_running_loop)
+
+    @handle_exceptions()
+    async def aspeech(self, model: str, input: str, voice: str, **kwargs: Any) -> bytes:  # noqa: A002
+        """Generate speech from text asynchronously.
+
+        Args:
+            model: Model identifier for the chosen provider (e.g., model='tts-1' for LLMProvider.OPENAI).
+            input: The text to generate audio for. Maximum 4096 characters.
+            voice: The voice to use for generation (e.g., 'alloy', 'echo', 'shimmer').
+            **kwargs: Additional parameters (instructions, response_format, speed).
+
+        Returns:
+            The generated audio content as bytes.
+
+        """
+        params = AudioSpeechParams(model_id=model, input=input, voice=voice, **kwargs)
+        return await self._aspeech(params)
+
+    async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
+        if not self.SUPPORTS_AUDIO_SPEECH:
+            msg = "Provider doesn't support audio speech."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _aspeech method"
         raise NotImplementedError(msg)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:

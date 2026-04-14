@@ -21,6 +21,8 @@ class ProviderMetadata(BaseModel):
     list_models: bool
     messages: bool
     batch_completion: bool
+    audio_transcription: bool = False
+    audio_speech: bool = False
 
 
 class PlatformKey(BaseModel):

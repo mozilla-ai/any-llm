@@ -7,11 +7,15 @@ from any_llm.api import (
     alist_models,
     amessages,
     aresponses,
+    aspeech,
+    atranscription,
     completion,
     embedding,
     list_models,
     messages,
     responses,
+    speech,
+    transcription,
 )
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import (
@@ -29,6 +33,7 @@ from any_llm.exceptions import (
     UnsupportedParameterError,
     UnsupportedProviderError,
 )
+from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription, TranscriptionVerbose
 from any_llm.types.completion import ParsedChatCompletion, ParsedChatCompletionMessage, ParsedChoice
 
 try:
@@ -40,6 +45,8 @@ except PackageNotFoundError:
 __all__ = [
     "AnyLLM",
     "AnyLLMError",
+    "AudioSpeechParams",
+    "AudioTranscriptionParams",
     "AuthenticationError",
     "ContentFilterError",
     "ContentFilterFinishReasonError",
@@ -54,6 +61,8 @@ __all__ = [
     "ParsedChoice",
     "ProviderError",
     "RateLimitError",
+    "Transcription",
+    "TranscriptionVerbose",
     "UnsupportedParameterError",
     "UnsupportedProviderError",
     "acompletion",
@@ -61,9 +70,13 @@ __all__ = [
     "alist_models",
     "amessages",
     "aresponses",
+    "aspeech",
+    "atranscription",
     "completion",
     "embedding",
     "list_models",
     "messages",
     "responses",
+    "speech",
+    "transcription",
 ]
