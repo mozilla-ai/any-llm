@@ -8,7 +8,6 @@ on:
       - 'src/**'
       - 'scripts/generate_provider_table.py'
       - 'scripts/generate_llms_txt.py'
-      - 'scripts/generate_openapi.py'
       - 'scripts/generate_api_docs.py'
       - 'scripts/generate_cookbooks.py'
       - '.github/workflows/**'
@@ -19,7 +18,6 @@ on:
       - 'src/**'
       - 'scripts/generate_provider_table.py'
       - 'scripts/generate_llms_txt.py'
-      - 'scripts/generate_openapi.py'
       - 'scripts/generate_api_docs.py'
       - 'scripts/generate_cookbooks.py'
       - '.github/workflows/**'
@@ -59,9 +57,6 @@ jobs:
 
       - name: Generate provider table
         run: uv run python scripts/generate_provider_table.py
-
-      - name: Generate OpenAPI spec
-        run: uv run python scripts/generate_openapi.py
 
       - name: Generate API docs
         run: uv run python scripts/generate_api_docs.py
