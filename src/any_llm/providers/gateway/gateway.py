@@ -25,6 +25,7 @@ class GatewayProvider(BaseOpenAIProvider):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
+    SUPPORTS_IMAGE_GENERATION = True
 
     def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         resolved_api_base = api_base or os.getenv(self.ENV_API_BASE_NAME)

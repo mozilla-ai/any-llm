@@ -1,5 +1,5 @@
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
-from typing import Any
+from typing import Any, Literal
 
 from openresponses_types import ResponseResource
 
@@ -13,6 +13,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     ReasoningEffort,
 )
+from any_llm.types.image import ImageGenerationParams, ImagesResponse
 from any_llm.types.messages import MessageResponse, MessageStreamEvent
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
@@ -733,6 +734,124 @@ async def aembedding(
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
     return await llm._aembedding(model_name, inputs, **kwargs)
+
+
+def image_generation(
+    model: str,
+    prompt: str,
+    *,
+    provider: str | LLMProvider | None = None,
+    n: int | None = None,
+    size: str | None = None,
+    quality: str | None = None,
+    style: str | None = None,
+    response_format: Literal["url", "b64_json"] | None = None,
+    user: str | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> ImagesResponse:
+    """Generate an image from a text prompt.
+
+    Args:
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='dall-e-3', provider='openai').
+            **Alternative**: Combined format 'provider:model' (e.g., 'openai:dall-e-3').
+        provider: Provider name to use for the request (e.g., 'openai').
+        prompt: A text description of the desired image(s).
+        n: Number of images to generate.
+        size: Size of the generated images (e.g., '1024x1024', '1792x1024').
+        quality: Quality of the generated images ('standard' or 'hd').
+        style: Style of the generated images ('vivid' or 'natural').
+        response_format: Format of the generated images ('url' or 'b64_json').
+        user: Unique identifier for the end user.
+        api_key: API key for the provider.
+        api_base: Base URL for the provider API.
+        client_args: Additional provider-specific arguments for client instantiation.
+        **kwargs: Additional provider-specific arguments.
+
+    Returns:
+        The image generation response from the provider.
+
+    """
+    if provider is None:
+        provider_key, model_name = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = LLMProvider.from_string(provider)
+        model_name = model
+
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    return llm._image_generation(
+        model_name,
+        prompt,
+        n=n,
+        size=size,
+        quality=quality,
+        style=style,
+        response_format=response_format,
+        user=user,
+        **kwargs,
+    )
+
+
+async def aimage_generation(
+    model: str,
+    prompt: str,
+    *,
+    provider: str | LLMProvider | None = None,
+    n: int | None = None,
+    size: str | None = None,
+    quality: str | None = None,
+    style: str | None = None,
+    response_format: Literal["url", "b64_json"] | None = None,
+    user: str | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> ImagesResponse:
+    """Generate an image from a text prompt asynchronously.
+
+    Args:
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='dall-e-3', provider='openai').
+            **Alternative**: Combined format 'provider:model' (e.g., 'openai:dall-e-3').
+        provider: Provider name to use for the request (e.g., 'openai').
+        prompt: A text description of the desired image(s).
+        n: Number of images to generate.
+        size: Size of the generated images (e.g., '1024x1024', '1792x1024').
+        quality: Quality of the generated images ('standard' or 'hd').
+        style: Style of the generated images ('vivid' or 'natural').
+        response_format: Format of the generated images ('url' or 'b64_json').
+        user: Unique identifier for the end user.
+        api_key: API key for the provider.
+        api_base: Base URL for the provider API.
+        client_args: Additional provider-specific arguments for client instantiation.
+        **kwargs: Additional provider-specific arguments.
+
+    Returns:
+        The image generation response from the provider.
+
+    """
+    if provider is None:
+        provider_key, model_name = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = LLMProvider.from_string(provider)
+        model_name = model
+
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    return await llm._aimage_generation(
+        ImageGenerationParams(
+            model_id=model_name,
+            prompt=prompt,
+            n=n,
+            size=size,
+            quality=quality,
+            style=style,
+            response_format=response_format,
+            user=user,
+        ),
+        **kwargs,
+    )
 
 
 def list_models(
