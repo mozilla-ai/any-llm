@@ -87,8 +87,7 @@ def _clean_qualified_names(text: str) -> str:
     def _union_to_pipe(m: re.Match[str]) -> str:
         return m.group(1).replace(", ", " | ")
 
-    text = re.sub(r"Union\[([^\[\]]+)\]", _union_to_pipe, text)
-    return text
+    return re.sub(r"Union\[([^\[\]]+)\]", _union_to_pipe, text)
 
 
 def _format_annotation(annotation: Any) -> str:
@@ -139,7 +138,7 @@ def _format_default(default: Any) -> str:
 
 
 def _get_signature_block(func: Any, func_name: str | None = None) -> str:
-    """Render a function signature as a Python code block."""
+    """Render a function signature as a non-executable code block."""
     name = func_name or func.__name__
     is_async = inspect.iscoroutinefunction(func)
     prefix = "async " if is_async else ""
@@ -147,7 +146,7 @@ def _get_signature_block(func: Any, func_name: str | None = None) -> str:
     try:
         sig = inspect.signature(func)
     except (ValueError, TypeError):
-        return f"```python\n{prefix}def {name}(...)\n```"
+        return f"```\n{prefix}def {name}(...)\n```"
 
     params = list(sig.parameters.values())
     # Build signature lines
@@ -182,10 +181,10 @@ def _get_signature_block(func: Any, func_name: str | None = None) -> str:
         ret = f" -> {_format_annotation(sig.return_annotation)}"
 
     if not lines:
-        result = f"```python\n{prefix}def {name}(){ret}\n```"
+        result = f"```\n{prefix}def {name}(){ret}\n```"
     else:
         body = "\n".join(lines)
-        result = f"```python\n{prefix}def {name}(\n{body}\n){ret}\n```"
+        result = f"```\n{prefix}def {name}(\n{body}\n){ret}\n```"
 
     # Clean up any remaining fully-qualified module paths in the block
     return _clean_qualified_names(result)
@@ -488,7 +487,7 @@ for meta in AnyLLM.get_all_provider_metadata():
     parts.append("Create a chat completion. See the [Completion](completion.md) reference for the full parameter list.")
     parts.append("")
     parts.append(
-        """```python
+        """```
 def completion(self, model, messages, *, stream=None, response_format=None, **kwargs)
     -> ChatCompletion | Iterator[ChatCompletionChunk] | ParsedChatCompletion
 
@@ -504,7 +503,7 @@ async def acompletion(self, model, messages, *, stream=None, response_format=Non
     parts.append("Create a response using the OpenResponses API. See the [Responses](responses.md) reference.")
     parts.append("")
     parts.append(
-        """```python
+        """```
 def responses(self, **kwargs)
     -> ResponseResource | Response | Iterator[ResponseStreamEvent]
 
@@ -522,7 +521,7 @@ async def aresponses(self, **kwargs)
     )
     parts.append("")
     parts.append(
-        """```python
+        """```
 def messages(self, **kwargs)
     -> MessageResponse | Iterator[MessageStreamEvent]
 
@@ -538,7 +537,7 @@ async def amessages(self, model, messages, max_tokens, **kwargs)
     parts.append("List available models for this provider. See the [List Models](list-models.md) reference.")
     parts.append("")
     parts.append(
-        """```python
+        """```
 def list_models(self, **kwargs) -> Sequence[Model]
 async def alist_models(self, **kwargs) -> Sequence[Model]
 ```"""
@@ -551,7 +550,7 @@ async def alist_models(self, **kwargs) -> Sequence[Model]
     parts.append("Create a batch job. See the [Batch](batch.md) reference.")
     parts.append("")
     parts.append(
-        """```python
+        """```
 def create_batch(self, **kwargs) -> Batch
 async def acreate_batch(self, input_file_path, endpoint, completion_window="24h", metadata=None, **kwargs) -> Batch
 ```"""
@@ -1193,7 +1192,7 @@ def generate_exceptions_page() -> str:
         parts.append("")
         parts.append(desc)
         parts.append("")
-        parts.append(f"```python\nclass {name}(AnyLLMError): ...\n```")
+        parts.append(f"```\nclass {name}(AnyLLMError): ...\n```")
         parts.append("")
         parts.append(f'Default message: `"{cls.default_message}"`')
 
@@ -1208,7 +1207,7 @@ def generate_exceptions_page() -> str:
     parts.append("Raised when a required API key is not provided via the parameter or environment variable.")
     parts.append("")
     parts.append(
-        """```python
+        """```
 class MissingApiKeyError(AnyLLMError):
     def __init__(self, provider_name: str, env_var_name: str) -> None: ...
 ```"""
@@ -1232,7 +1231,7 @@ class MissingApiKeyError(AnyLLMError):
     parts.append("Raised when an unsupported provider is specified.")
     parts.append("")
     parts.append(
-        """```python
+        """```
 class UnsupportedProviderError(AnyLLMError):
     def __init__(self, provider_key: str, supported_providers: list[str]) -> None: ...
 ```"""
@@ -1252,7 +1251,7 @@ class UnsupportedProviderError(AnyLLMError):
     parts.append("Raised when a parameter is not supported by the provider.")
     parts.append("")
     parts.append(
-        """```python
+        """```
 class UnsupportedParameterError(AnyLLMError):
     def __init__(self, parameter_name: str, provider_name: str, additional_message: str | None = None) -> None: ...
 ```"""
@@ -1473,7 +1472,7 @@ def generate_types_completion_page() -> str:
             "",
             "**Import:** `from any_llm.types.completion import ReasoningEffort`",
             "",
-            """```python
+            """```
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "auto"]
 ```""",
             "",

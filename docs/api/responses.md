@@ -17,7 +17,7 @@ The return type depends on the provider and whether streaming is enabled:
 
 ## `any_llm.responses()`
 
-```python
+```
 def responses(
     model: str,
     input_data: str | list[EasyInputMessageParam | Message | ResponseOutputMessageParam | ResponseFileSearchToolCallParam | ResponseComputerToolCallParam | ComputerCallOutput | ResponseFunctionWebSearchParam | ResponseFunctionToolCallParam | FunctionCallOutput | ToolSearchCall | ResponseToolSearchOutputItemParamParam | ResponseReasoningItemParam | ResponseCompactionItemParamParam | ImageGenerationCall | ResponseCodeInterpreterToolCallParam | LocalShellCall | LocalShellCallOutput | ShellCall | ShellCallOutput | ApplyPatchCall | ApplyPatchCallOutput | McpListTools | McpApprovalRequest | McpApprovalResponse | McpCall | ResponseCustomToolCallOutputParam | ResponseCustomToolCallParam | ItemReference],
@@ -59,7 +59,7 @@ def responses(
 
 Async variant with the same parameters. Returns `ResponseResource | Response | AsyncIterator[ResponseStreamEvent]`.
 
-```python
+```
 async def aresponses(
     model: str,
     input_data: str | list[EasyInputMessageParam | Message | ResponseOutputMessageParam | ResponseFileSearchToolCallParam | ResponseComputerToolCallParam | ComputerCallOutput | ResponseFunctionWebSearchParam | ResponseFunctionToolCallParam | FunctionCallOutput | ToolSearchCall | ResponseToolSearchOutputItemParamParam | ResponseReasoningItemParam | ResponseCompactionItemParamParam | ImageGenerationCall | ResponseCodeInterpreterToolCallParam | LocalShellCall | LocalShellCallOutput | ShellCall | ShellCallOutput | ApplyPatchCall | ApplyPatchCallOutput | McpListTools | McpApprovalRequest | McpApprovalResponse | McpCall | ResponseCustomToolCallOutputParam | ResponseCustomToolCallParam | ItemReference],

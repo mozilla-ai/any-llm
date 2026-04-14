@@ -21,6 +21,18 @@ COOKBOOKS_DEST = REPO_ROOT / "docs" / "cookbooks"
 GITHUB_BASE = "https://colab.research.google.com/github/mozilla-ai/any-llm/blob/main/docs/cookbooks"
 
 
+def _is_notebook_only_code(source: str) -> bool:
+    """Return True for notebook cells that are not valid executable Python docs snippets."""
+    stripped = source.lstrip()
+    if stripped.startswith(("%", "!")):
+        return True
+    if "nest_asyncio" in source:
+        return True
+    if "await " in source:
+        return True
+    return False
+
+
 def notebook_to_mdx(notebook_path: Path) -> str:
     """Convert a single .ipynb file to an .md string."""
     with open(notebook_path, encoding="utf-8") as f:
@@ -64,7 +76,10 @@ def notebook_to_mdx(notebook_path: Path) -> str:
             lines.append(source)
             lines.append("")
         elif cell_type == "code":
-            lines.append("```python")
+            if _is_notebook_only_code(source):
+                lines.append("```")
+            else:
+                lines.append("```python")
             lines.append(source)
             lines.append("```")
             lines.append("")

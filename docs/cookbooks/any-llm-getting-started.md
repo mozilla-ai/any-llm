@@ -15,7 +15,7 @@ Any-LLM is a unified interface that lets you work with language models from any 
 
 ## Installation
 
-```python
+```
 %pip install any-llm-sdk[all] nest-asyncio -q
 
 # nest_asyncio allows us to use 'await' directly in Jupyter notebooks
@@ -82,7 +82,7 @@ claude-haiku-4-5-20251001, claude-sonnet-4-5-20250929, claude-opus-4-1-20250805,
 ## Generate Text
 Let's use one model from each provider to generate text for the same prompt. 
 
-```python
+```
 from any_llm import acompletion
 from any_llm.types.completion import ChatCompletion
 

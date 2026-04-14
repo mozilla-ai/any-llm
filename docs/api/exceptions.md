@@ -34,7 +34,7 @@ AnyLLMError
 
 Base exception for all any-llm errors.  All custom exceptions in any-llm inherit from this class. It preserves the original exception for debugging while providing a unified interface.
 
-```python
+```
 def AnyLLMError(
     self,
     message: str | None = None,
@@ -57,7 +57,7 @@ The string representation includes the provider name when available: `"[openai] 
 
 Raised when the API rate limit is exceeded.
 
-```python
+```
 class RateLimitError(AnyLLMError): ...
 ```
 
@@ -67,7 +67,7 @@ Default message: `"Rate limit exceeded"`
 
 Raised when authentication with the provider fails (invalid or missing API key).
 
-```python
+```
 class AuthenticationError(AnyLLMError): ...
 ```
 
@@ -77,7 +77,7 @@ Default message: `"Authentication failed"`
 
 Raised when the request to the provider is malformed or contains invalid parameters.
 
-```python
+```
 class InvalidRequestError(AnyLLMError): ...
 ```
 
@@ -87,7 +87,7 @@ Default message: `"Invalid request"`
 
 Raised when the provider encounters an internal error (5xx-class errors).
 
-```python
+```
 class ProviderError(AnyLLMError): ...
 ```
 
@@ -97,7 +97,7 @@ Default message: `"Provider error"`
 
 Raised when content is blocked by the provider's safety filter.
 
-```python
+```
 class ContentFilterError(AnyLLMError): ...
 ```
 
@@ -107,7 +107,7 @@ Default message: `"Content blocked by safety filter"`
 
 Raised when the requested model is not found or not available.
 
-```python
+```
 class ModelNotFoundError(AnyLLMError): ...
 ```
 
@@ -117,7 +117,7 @@ Default message: `"Model not found"`
 
 Raised when the input exceeds the model's maximum context length.
 
-```python
+```
 class ContextLengthExceededError(AnyLLMError): ...
 ```
 
@@ -129,7 +129,7 @@ Default message: `"Context length exceeded"`
 
 Raised when a required API key is not provided via the parameter or environment variable.
 
-```python
+```
 class MissingApiKeyError(AnyLLMError):
     def __init__(self, provider_name: str, env_var_name: str) -> None: ...
 ```
@@ -145,7 +145,7 @@ Example message: `"No openai API key provided. Please provide it in the config o
 
 Raised when an unsupported provider is specified.
 
-```python
+```
 class UnsupportedProviderError(AnyLLMError):
     def __init__(self, provider_key: str, supported_providers: list[str]) -> None: ...
 ```
@@ -159,7 +159,7 @@ class UnsupportedProviderError(AnyLLMError):
 
 Raised when a parameter is not supported by the provider.
 
-```python
+```
 class UnsupportedParameterError(AnyLLMError):
     def __init__(self, parameter_name: str, provider_name: str, additional_message: str | None = None) -> None: ...
 ```

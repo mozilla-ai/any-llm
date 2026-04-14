@@ -7,7 +7,7 @@ The `completion` and `acompletion` functions are the primary way to generate cha
 
 ## `any_llm.completion()`
 
-```python
+```
 def completion(
     model: str,
     messages: list[dict[str, Any] | ChatCompletionMessage],
@@ -45,7 +45,7 @@ def completion(
 
 Async variant with the same parameters. Returns `ChatCompletion | AsyncIterator[ChatCompletionChunk]`.
 
-```python
+```
 async def acompletion(
     model: str,
     messages: list[dict[str, Any] | ChatCompletionMessage],

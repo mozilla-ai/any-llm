@@ -30,7 +30,7 @@ The input file must be a JSONL file where each line follows this structure:
 
 Create a batch job by uploading a local JSONL file.
 
-```python
+```
 def create_batch(
     provider: str | LLMProvider,
     input_file_path: str,
@@ -69,7 +69,7 @@ Async variant with the same parameters.
 
 Retrieve the current status and details of a batch job.
 
-```python
+```
 def retrieve_batch(
     provider: str | LLMProvider,
     batch_id: str,
@@ -102,7 +102,7 @@ Async variant with the same parameters.
 
 Cancel an in-progress batch job.
 
-```python
+```
 def cancel_batch(
     provider: str | LLMProvider,
     batch_id: str,
@@ -124,7 +124,7 @@ Async variant with the same parameters.
 
 List batch jobs for a provider.
 
-```python
+```
 def list_batches(
     provider: str | LLMProvider,
     *,
