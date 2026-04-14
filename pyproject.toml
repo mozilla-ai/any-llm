@@ -122,6 +122,8 @@ sambanova = []
 minimax = []
 mzai = []
 vllm = []
+# Deprecated: the gateway is moving to a standalone package.
+# See https://github.com/mozilla-ai/gateway
 gateway = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.30.0",
