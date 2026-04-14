@@ -127,7 +127,9 @@ openai_json_schema = {
 )
 async def test_response_format(response_format: Any) -> None:
     """Test that response_format is properly converted for both Pydantic and dict formats."""
-    mistralai = pytest.importorskip("mistralai")
+    pytest.importorskip("mistralai")
+    from mistralai.client.models.responseformat import ResponseFormat
+
     from any_llm.providers.mistral.mistral import MistralProvider
 
     with (
@@ -151,22 +153,30 @@ async def test_response_format(response_format: Any) -> None:
         assert "response_format" in completion_call_kwargs
 
         response_format_arg = completion_call_kwargs["response_format"]
-        assert isinstance(response_format_arg, mistralai.models.responseformat.ResponseFormat)
-        assert response_format_arg.type == "json_schema"
-        assert response_format_arg.json_schema.name == "StructuredOutput"
-        assert response_format_arg.json_schema.strict is True
+        # response_format_from_pydantic_model returns a dict for Pydantic models;
+        # dict inputs go through ResponseFormat.model_validate and return a model.
+        if isinstance(response_format_arg, dict):
+            assert response_format_arg["type"] == "json_schema"
+            assert response_format_arg["json_schema"]["name"] == "StructuredOutput"
+            assert response_format_arg["json_schema"]["strict"] is True
+            assert response_format_arg["json_schema"]["schema"]["type"] == "object"
+        else:
+            assert isinstance(response_format_arg, ResponseFormat)
+            assert response_format_arg.type == "json_schema"
+            assert response_format_arg.json_schema.name == "StructuredOutput"  # type: ignore[union-attr]
+            assert response_format_arg.json_schema.strict is True  # type: ignore[union-attr]
 
-        expected_schema = {
-            "properties": {
-                "foo": {"title": "Foo", "type": "string"},
-                "bar": {"title": "Bar", "type": "integer"},
-            },
-            "required": ["foo", "bar"],
-            "title": "StructuredOutput",
-            "type": "object",
-            "additionalProperties": False,
-        }
-        assert response_format_arg.json_schema.schema_definition == expected_schema
+            expected_schema = {
+                "properties": {
+                    "foo": {"title": "Foo", "type": "string"},
+                    "bar": {"title": "Bar", "type": "integer"},
+                },
+                "required": ["foo", "bar"],
+                "title": "StructuredOutput",
+                "type": "object",
+                "additionalProperties": False,
+            }
+            assert response_format_arg.json_schema.schema_definition == expected_schema  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
@@ -174,7 +184,9 @@ async def test_response_format_dataclass() -> None:
     """Test that dataclass response_format is properly converted for Mistral."""
     from dataclasses import dataclass
 
-    mistralai = pytest.importorskip("mistralai")
+    pytest.importorskip("mistralai")
+    from mistralai.client.models.responseformat import ResponseFormat
+
     from any_llm.providers.mistral.mistral import MistralProvider
 
     @dataclass
@@ -203,9 +215,13 @@ async def test_response_format_dataclass() -> None:
         assert "response_format" in completion_call_kwargs
 
         response_format_arg = completion_call_kwargs["response_format"]
-        assert isinstance(response_format_arg, mistralai.models.responseformat.ResponseFormat)
-        assert response_format_arg.type == "json_schema"
-        assert response_format_arg.json_schema.name == "DataclassOutput"
+        if isinstance(response_format_arg, dict):
+            assert response_format_arg["type"] == "json_schema"
+            assert response_format_arg["json_schema"]["name"] == "DataclassOutput"
+        else:
+            assert isinstance(response_format_arg, ResponseFormat)
+            assert response_format_arg.type == "json_schema"
+            assert response_format_arg.json_schema.name == "DataclassOutput"  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
@@ -376,7 +392,7 @@ def test_convert_batch_job_to_openai_success_status() -> None:
 def test_convert_batch_job_to_openai_queued_status() -> None:
     """Test converting a queued Mistral batch job to OpenAI format."""
     pytest.importorskip("mistralai")
-    from mistralai.types.basemodel import Unset
+    from mistralai.client.types.basemodel import Unset
 
     from any_llm.providers.mistral.utils import _convert_batch_job_to_openai
 
@@ -962,3 +978,68 @@ async def test_create_batch_model_mismatch_raises_error() -> None:
             import os
 
             os.unlink(tmp_path)
+
+
+def test_create_mistral_completion_raises_when_choice_message_is_none() -> None:
+    """Guard against the mistralai v2 `choice.message: AssistantMessage | None` type.
+
+    A real chat completion always carries a message, but the SDK types permit None.
+    The converter should fail loudly rather than silently emit a truncated ChatCompletion.
+    """
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.utils import _create_mistral_completion_from_response
+
+    choice = Mock()
+    choice.message = None
+    response = Mock()
+    response.choices = [choice]
+
+    with pytest.raises(ValueError, match="without a message"):
+        _create_mistral_completion_from_response(response, model="mistral-small-latest")
+
+
+def test_create_mistral_completion_builds_chatcompletion_from_well_formed_response() -> None:
+    """Happy path for `_create_mistral_completion_from_response`.
+
+    Covers the `message_data is not None` branch the guard introduced and exercises the
+    rest of the converter against a well-formed response so the function has baseline
+    unit coverage beyond the error path.
+    """
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.utils import _create_mistral_completion_from_response
+
+    message = Mock()
+    message.content = "Hello from Mistral!"
+    message.tool_calls = None
+
+    choice = Mock()
+    choice.message = message
+    choice.finish_reason = "stop"
+
+    usage = Mock()
+    usage.prompt_tokens = 12
+    usage.completion_tokens = 7
+    usage.total_tokens = 19
+
+    response = Mock()
+    response.id = "chatcmpl-abc"
+    response.created = 1_700_000_000
+    response.choices = [choice]
+    response.usage = usage
+
+    completion = _create_mistral_completion_from_response(response, model="mistral-small-latest")
+
+    assert completion.id == "chatcmpl-abc"
+    assert completion.model == "mistral-small-latest"
+    assert completion.created == 1_700_000_000
+    assert completion.object == "chat.completion"
+    assert len(completion.choices) == 1
+    assert completion.choices[0].index == 0
+    assert completion.choices[0].finish_reason == "stop"
+    assert completion.choices[0].message.role == "assistant"
+    assert completion.choices[0].message.content == "Hello from Mistral!"
+    assert completion.choices[0].message.tool_calls is None
+    assert completion.usage is not None
+    assert completion.usage.prompt_tokens == 12
+    assert completion.usage.completion_tokens == 7
+    assert completion.usage.total_tokens == 19

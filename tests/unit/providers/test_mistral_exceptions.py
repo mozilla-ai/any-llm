@@ -6,7 +6,7 @@ import pytest
 
 mistralai = pytest.importorskip("mistralai")
 
-from mistralai.models import HTTPValidationError, SDKError
+from mistralai.client.errors import HTTPValidationError, HTTPValidationErrorData, SDKError
 
 from any_llm.exceptions import (
     InvalidRequestError,
@@ -38,8 +38,6 @@ def test_sdk_error_with_server_error() -> None:
 
 
 def test_http_validation_error_conversion() -> None:
-    from mistralai.models.httpvalidationerror import HTTPValidationErrorData
-
     mock_response = httpx.Response(status_code=422, content=b"Validation error")
     data = HTTPValidationErrorData()
     original = HTTPValidationError(data=data, raw_response=mock_response, body="Validation error")
