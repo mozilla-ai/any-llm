@@ -978,3 +978,68 @@ async def test_create_batch_model_mismatch_raises_error() -> None:
             import os
 
             os.unlink(tmp_path)
+
+
+def test_create_mistral_completion_raises_when_choice_message_is_none() -> None:
+    """Guard against the mistralai v2 `choice.message: AssistantMessage | None` type.
+
+    A real chat completion always carries a message, but the SDK types permit None.
+    The converter should fail loudly rather than silently emit a truncated ChatCompletion.
+    """
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.utils import _create_mistral_completion_from_response
+
+    choice = Mock()
+    choice.message = None
+    response = Mock()
+    response.choices = [choice]
+
+    with pytest.raises(ValueError, match="without a message"):
+        _create_mistral_completion_from_response(response, model="mistral-small-latest")
+
+
+def test_create_mistral_completion_builds_chatcompletion_from_well_formed_response() -> None:
+    """Happy path for `_create_mistral_completion_from_response`.
+
+    Covers the `message_data is not None` branch the guard introduced and exercises the
+    rest of the converter against a well-formed response so the function has baseline
+    unit coverage beyond the error path.
+    """
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.utils import _create_mistral_completion_from_response
+
+    message = Mock()
+    message.content = "Hello from Mistral!"
+    message.tool_calls = None
+
+    choice = Mock()
+    choice.message = message
+    choice.finish_reason = "stop"
+
+    usage = Mock()
+    usage.prompt_tokens = 12
+    usage.completion_tokens = 7
+    usage.total_tokens = 19
+
+    response = Mock()
+    response.id = "chatcmpl-abc"
+    response.created = 1_700_000_000
+    response.choices = [choice]
+    response.usage = usage
+
+    completion = _create_mistral_completion_from_response(response, model="mistral-small-latest")
+
+    assert completion.id == "chatcmpl-abc"
+    assert completion.model == "mistral-small-latest"
+    assert completion.created == 1_700_000_000
+    assert completion.object == "chat.completion"
+    assert len(completion.choices) == 1
+    assert completion.choices[0].index == 0
+    assert completion.choices[0].finish_reason == "stop"
+    assert completion.choices[0].message.role == "assistant"
+    assert completion.choices[0].message.content == "Hello from Mistral!"
+    assert completion.choices[0].message.tool_calls is None
+    assert completion.usage is not None
+    assert completion.usage.prompt_tokens == 12
+    assert completion.usage.completion_tokens == 7
+    assert completion.usage.total_tokens == 19
