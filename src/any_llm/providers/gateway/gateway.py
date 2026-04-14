@@ -89,6 +89,8 @@ class GatewayProvider(BaseOpenAIProvider):
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
     SUPPORTS_IMAGE_GENERATION = True
+    SUPPORTS_AUDIO_TRANSCRIPTION = True
+    SUPPORTS_AUDIO_SPEECH = True
 
     def __init__(
         self,

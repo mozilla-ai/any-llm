@@ -13,6 +13,8 @@ from any_llm.api import (
     aresponses,
     aretrieve_batch,
     aretrieve_batch_results,
+    aspeech,
+    atranscription,
     cancel_batch,
     completion,
     create_batch,
@@ -24,6 +26,8 @@ from any_llm.api import (
     responses,
     retrieve_batch,
     retrieve_batch_results,
+    speech,
+    transcription,
 )
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import (
@@ -87,6 +91,8 @@ __all__ = [
     "aresponses",
     "aretrieve_batch",
     "aretrieve_batch_results",
+    "aspeech",
+    "atranscription",
     "cancel_batch",
     "completion",
     "create_batch",
@@ -98,4 +104,6 @@ __all__ = [
     "responses",
     "retrieve_batch",
     "retrieve_batch_results",
+    "speech",
+    "transcription",
 ]

@@ -5,6 +5,7 @@ from openresponses_types import ResponseResource
 
 from any_llm import AnyLLM
 from any_llm.constants import LLMProvider
+from any_llm.types.audio import Transcription
 from any_llm.types.batch import Batch, BatchResult
 from any_llm.types.completion import (
     ChatCompletion,
@@ -849,6 +850,220 @@ async def aimage_generation(
             response_format=response_format,
             user=user,
         ),
+        **kwargs,
+    )
+
+
+def transcription(
+    model: str,
+    file: bytes,
+    *,
+    provider: str | LLMProvider | None = None,
+    language: str | None = None,
+    prompt: str | None = None,
+    response_format: str | None = None,
+    temperature: float | None = None,
+    timestamp_granularities: list[str] | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> Transcription:
+    """Transcribe audio from a file.
+
+    Args:
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='whisper-1', provider='openai').
+            **Alternative**: Combined format 'provider:model' (e.g., 'openai:whisper-1').
+        file: Audio file content as bytes. Supported formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm.
+        provider: Provider name to use for the request (e.g., 'openai').
+        language: The language of the input audio in ISO-639-1 format.
+        prompt: Optional text to guide the model's style or continue a previous segment.
+        response_format: Output format: 'json', 'text', 'srt', 'verbose_json', or 'vtt'.
+        temperature: Sampling temperature, between 0 and 1.
+        timestamp_granularities: Timestamp granularities ('word' and/or 'segment'). Requires response_format='verbose_json'.
+        api_key: API key for the provider.
+        api_base: Base URL for the provider API.
+        client_args: Additional provider-specific arguments for client instantiation.
+        **kwargs: Additional provider-specific arguments.
+
+    Returns:
+        The transcription response from the provider.
+
+    """
+    if provider is None:
+        provider_key, model_name = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = LLMProvider.from_string(provider)
+        model_name = model
+
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    return llm.transcription(
+        model=model_name,
+        file=file,
+        language=language,
+        prompt=prompt,
+        response_format=response_format,
+        temperature=temperature,
+        timestamp_granularities=timestamp_granularities,
+        **kwargs,
+    )
+
+
+async def atranscription(
+    model: str,
+    file: bytes,
+    *,
+    provider: str | LLMProvider | None = None,
+    language: str | None = None,
+    prompt: str | None = None,
+    response_format: str | None = None,
+    temperature: float | None = None,
+    timestamp_granularities: list[str] | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> Transcription:
+    """Transcribe audio from a file asynchronously.
+
+    Args:
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='whisper-1', provider='openai').
+            **Alternative**: Combined format 'provider:model' (e.g., 'openai:whisper-1').
+        file: Audio file content as bytes. Supported formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm.
+        provider: Provider name to use for the request (e.g., 'openai').
+        language: The language of the input audio in ISO-639-1 format.
+        prompt: Optional text to guide the model's style or continue a previous segment.
+        response_format: Output format: 'json', 'text', 'srt', 'verbose_json', or 'vtt'.
+        temperature: Sampling temperature, between 0 and 1.
+        timestamp_granularities: Timestamp granularities ('word' and/or 'segment'). Requires response_format='verbose_json'.
+        api_key: API key for the provider.
+        api_base: Base URL for the provider API.
+        client_args: Additional provider-specific arguments for client instantiation.
+        **kwargs: Additional provider-specific arguments.
+
+    Returns:
+        The transcription response from the provider.
+
+    """
+    if provider is None:
+        provider_key, model_name = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = LLMProvider.from_string(provider)
+        model_name = model
+
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    return await llm.atranscription(
+        model=model_name,
+        file=file,
+        language=language,
+        prompt=prompt,
+        response_format=response_format,
+        temperature=temperature,
+        timestamp_granularities=timestamp_granularities,
+        **kwargs,
+    )
+
+
+def speech(
+    model: str,
+    input: str,
+    voice: str,
+    *,
+    provider: str | LLMProvider | None = None,
+    instructions: str | None = None,
+    response_format: str | None = None,
+    speed: float | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> bytes:
+    """Generate speech from text.
+
+    Args:
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='tts-1', provider='openai').
+            **Alternative**: Combined format 'provider:model' (e.g., 'openai:tts-1').
+        input: The text to generate audio for. Maximum 4096 characters.
+        voice: The voice to use for generation (e.g., 'alloy', 'echo', 'shimmer').
+        provider: Provider name to use for the request (e.g., 'openai').
+        instructions: Additional voice instructions (not supported by all models).
+        response_format: Output audio format: 'mp3', 'opus', 'aac', 'flac', 'wav', or 'pcm'.
+        speed: Speed of the generated audio (0.25 to 4.0). Default 1.0.
+        api_key: API key for the provider.
+        api_base: Base URL for the provider API.
+        client_args: Additional provider-specific arguments for client instantiation.
+        **kwargs: Additional provider-specific arguments.
+
+    Returns:
+        The generated audio content as bytes.
+
+    """
+    if provider is None:
+        provider_key, model_name = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = LLMProvider.from_string(provider)
+        model_name = model
+
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    return llm.speech(
+        model=model_name,
+        input=input,
+        voice=voice,
+        instructions=instructions,
+        response_format=response_format,
+        speed=speed,
+        **kwargs,
+    )
+
+
+async def aspeech(
+    model: str,
+    input: str,
+    voice: str,
+    *,
+    provider: str | LLMProvider | None = None,
+    instructions: str | None = None,
+    response_format: str | None = None,
+    speed: float | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> bytes:
+    """Generate speech from text asynchronously.
+
+    Args:
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='tts-1', provider='openai').
+            **Alternative**: Combined format 'provider:model' (e.g., 'openai:tts-1').
+        input: The text to generate audio for. Maximum 4096 characters.
+        voice: The voice to use for generation (e.g., 'alloy', 'echo', 'shimmer').
+        provider: Provider name to use for the request (e.g., 'openai').
+        instructions: Additional voice instructions (not supported by all models).
+        response_format: Output audio format: 'mp3', 'opus', 'aac', 'flac', 'wav', or 'pcm'.
+        speed: Speed of the generated audio (0.25 to 4.0). Default 1.0.
+        api_key: API key for the provider.
+        api_base: Base URL for the provider API.
+        client_args: Additional provider-specific arguments for client instantiation.
+        **kwargs: Additional provider-specific arguments.
+
+    Returns:
+        The generated audio content as bytes.
+
+    """
+    if provider is None:
+        provider_key, model_name = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = LLMProvider.from_string(provider)
+        model_name = model
+
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    return await llm.aspeech(
+        model=model_name,
+        input=input,
+        voice=voice,
+        instructions=instructions,
+        response_format=response_format,
+        speed=speed,
         **kwargs,
     )
 
