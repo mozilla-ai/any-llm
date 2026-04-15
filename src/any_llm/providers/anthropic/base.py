@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -37,7 +38,7 @@ if TYPE_CHECKING:
 
     from anthropic import AsyncAnthropic, AsyncAnthropicVertex
     from anthropic.types import Message
-    from anthropic.types.message_batch import MessageBatch
+    from anthropic.types.messages.message_batch import MessageBatch
     from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
@@ -55,13 +56,16 @@ _ANTHROPIC_TO_OPENAI_STATUS_MAP: dict[str, str] = {
 def _convert_anthropic_batch_to_openai(batch: MessageBatch) -> Batch:
     """Convert an Anthropic MessageBatch to OpenAI Batch format."""
     status_str = batch.processing_status
+    openai_status: str
     if status_str == "ended":
         openai_status = "completed"
     else:
-        openai_status = _ANTHROPIC_TO_OPENAI_STATUS_MAP.get(status_str)
-        if openai_status is None:
+        mapped_status = _ANTHROPIC_TO_OPENAI_STATUS_MAP.get(status_str)
+        if mapped_status is None:
             logger.warning("Unknown Anthropic batch status: %s, defaulting to 'in_progress'", status_str)
             openai_status = "in_progress"
+        else:
+            openai_status = mapped_status
 
     request_counts = BatchRequestCounts(
         total=(
@@ -254,7 +258,7 @@ class BaseAnthropicProvider(AnyLLM, ABC):
     ) -> Batch:
         """Create a batch job using the Anthropic Messages Batches API."""
         file_path = Path(input_file_path)
-        file_content = file_path.read_text()
+        file_content = await asyncio.to_thread(file_path.read_text)
 
         requests = []
         for line in file_content.strip().split("\n"):
@@ -329,9 +333,10 @@ class BaseAnthropicProvider(AnyLLM, ABC):
             if entry.result.type == "succeeded":
                 item.result = _convert_response(entry.result.message)
             elif entry.result.type == "errored":
+                err = entry.result.error
                 item.error = BatchResultError(
-                    code=entry.result.error.type if entry.result.error else "unknown",
-                    message=entry.result.error.message if entry.result.error else "Unknown error",
+                    code=err.error.type if err and err.error else "unknown",
+                    message=err.error.message if err and err.error else "Unknown error",
                 )
             else:
                 item.error = BatchResultError(code=entry.result.type, message=f"Request {entry.result.type}")

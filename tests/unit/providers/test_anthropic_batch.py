@@ -154,7 +154,7 @@ async def test_acreate_batch() -> None:
         provider = AnthropicProvider(api_key="test-key")
 
         mock_result = _make_mock_message_batch()
-        provider.client.messages.batches.create = AsyncMock(return_value=mock_result)
+        provider.client.messages.batches.create = AsyncMock(return_value=mock_result)  # type: ignore[method-assign]
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             f.write(
@@ -202,7 +202,7 @@ async def test_aretrieve_batch_results_completed_mixed() -> None:
         provider = AnthropicProvider(api_key="test-key")
 
         mock_batch = _make_mock_message_batch(processing_status="ended", succeeded=1, errored=1)
-        provider.client.messages.batches.retrieve = AsyncMock(return_value=mock_batch)
+        provider.client.messages.batches.retrieve = AsyncMock(return_value=mock_batch)  # type: ignore[method-assign]
 
         success_entry = Mock()
         success_entry.custom_id = "req-1"
@@ -228,8 +228,9 @@ async def test_aretrieve_batch_results_completed_mixed() -> None:
         error_entry.result = Mock()
         error_entry.result.type = "errored"
         error_entry.result.error = Mock()
-        error_entry.result.error.type = "invalid_request"
-        error_entry.result.error.message = "Bad request"
+        error_entry.result.error.error = Mock()
+        error_entry.result.error.error.type = "invalid_request"
+        error_entry.result.error.error.message = "Bad request"
 
         class MockAsyncIter:
             def __init__(self, entries: list[Mock]) -> None:
@@ -246,7 +247,7 @@ async def test_aretrieve_batch_results_completed_mixed() -> None:
                 self._index += 1
                 return entry
 
-        provider.client.messages.batches.results = AsyncMock(return_value=MockAsyncIter([success_entry, error_entry]))
+        provider.client.messages.batches.results = AsyncMock(return_value=MockAsyncIter([success_entry, error_entry]))  # type: ignore[method-assign]
 
         result = await provider._aretrieve_batch_results("msgbatch_123")
 
@@ -271,7 +272,7 @@ async def test_aretrieve_batch_results_not_completed() -> None:
         provider = AnthropicProvider(api_key="test-key")
 
         mock_batch = _make_mock_message_batch(processing_status="in_progress", processing=5, succeeded=0)
-        provider.client.messages.batches.retrieve = AsyncMock(return_value=mock_batch)
+        provider.client.messages.batches.retrieve = AsyncMock(return_value=mock_batch)  # type: ignore[method-assign]
 
         with pytest.raises(BatchNotCompleteError) as exc_info:
             await provider._aretrieve_batch_results("msgbatch_not_done")

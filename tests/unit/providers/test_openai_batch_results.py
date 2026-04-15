@@ -18,7 +18,7 @@ async def test_aretrieve_batch_results_success() -> None:
         mock_batch = MagicMock()
         mock_batch.status = "completed"
         mock_batch.output_file_id = "file-output-123"
-        provider.client.batches.retrieve = AsyncMock(return_value=mock_batch)
+        provider.client.batches.retrieve = AsyncMock(return_value=mock_batch)  # type: ignore[method-assign]
 
         success_line = json.dumps(
             {
@@ -54,7 +54,7 @@ async def test_aretrieve_batch_results_success() -> None:
 
         mock_content = MagicMock()
         mock_content.text = f"{success_line}\n{error_line}"
-        provider.client.files.content = AsyncMock(return_value=mock_content)
+        provider.client.files.content = AsyncMock(return_value=mock_content)  # type: ignore[method-assign]
 
         result = await provider._aretrieve_batch_results("batch-123")
 
@@ -83,7 +83,7 @@ async def test_aretrieve_batch_results_not_completed() -> None:
 
         mock_batch = MagicMock()
         mock_batch.status = "in_progress"
-        provider.client.batches.retrieve = AsyncMock(return_value=mock_batch)
+        provider.client.batches.retrieve = AsyncMock(return_value=mock_batch)  # type: ignore[method-assign]
 
         with pytest.raises(BatchNotCompleteError) as exc_info:
             await provider._aretrieve_batch_results("batch-456")
@@ -103,7 +103,7 @@ async def test_aretrieve_batch_results_empty_output_file() -> None:
         mock_batch = MagicMock()
         mock_batch.status = "completed"
         mock_batch.output_file_id = None
-        provider.client.batches.retrieve = AsyncMock(return_value=mock_batch)
+        provider.client.batches.retrieve = AsyncMock(return_value=mock_batch)  # type: ignore[method-assign]
 
         result = await provider._aretrieve_batch_results("batch-789")
 
@@ -122,7 +122,7 @@ async def test_aretrieve_batch_results_unexpected_format() -> None:
         mock_batch = MagicMock()
         mock_batch.status = "completed"
         mock_batch.output_file_id = "file-output-unexpected"
-        provider.client.batches.retrieve = AsyncMock(return_value=mock_batch)
+        provider.client.batches.retrieve = AsyncMock(return_value=mock_batch)  # type: ignore[method-assign]
 
         unexpected_line = json.dumps(
             {
@@ -131,7 +131,7 @@ async def test_aretrieve_batch_results_unexpected_format() -> None:
         )
         mock_content = MagicMock()
         mock_content.text = unexpected_line
-        provider.client.files.content = AsyncMock(return_value=mock_content)
+        provider.client.files.content = AsyncMock(return_value=mock_content)  # type: ignore[method-assign]
 
         result = await provider._aretrieve_batch_results("batch-unexpected")
 

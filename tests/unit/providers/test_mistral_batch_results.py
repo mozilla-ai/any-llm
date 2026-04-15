@@ -62,8 +62,9 @@ async def test_aretrieve_batch_results_success() -> None:
             }
         )
 
-        file_content = f"{success_line}\n{error_line}".encode()
-        mocked_mistral.return_value.files.download_async = AsyncMock(return_value=file_content)
+        mock_response = Mock()
+        mock_response.text = f"{success_line}\n{error_line}"
+        mocked_mistral.return_value.files.download_async = AsyncMock(return_value=mock_response)
 
         result = await provider._aretrieve_batch_results("batch-results-123")
 

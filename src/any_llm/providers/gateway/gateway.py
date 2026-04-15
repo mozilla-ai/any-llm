@@ -66,7 +66,8 @@ def _parse_jsonl_to_requests(file_path: str) -> list[dict[str, Any]]:
 def _extract_model_from_requests(requests: list[dict[str, Any]]) -> str | None:
     """Extract the model from the first request's body."""
     if requests and requests[0].get("body"):
-        return requests[0]["body"].get("model")
+        model: Any = requests[0]["body"].get("model")
+        return str(model) if model is not None else None
     return None
 
 

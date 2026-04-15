@@ -313,9 +313,9 @@ class MistralProvider(AnyLLM):
         if not batch_job.output_file:
             return BatchResult(results=[])
 
-        content = await self.client.files.download_async(file_id=batch_job.output_file)
+        response = await self.client.files.download_async(file_id=batch_job.output_file)
         results: list[BatchResultItem] = []
-        for line in content.decode().strip().split("\n"):
+        for line in response.text.strip().split("\n"):
             if not line.strip():
                 continue
             entry = json.loads(line)
