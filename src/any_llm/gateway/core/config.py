@@ -7,7 +7,9 @@ import yaml
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-API_KEY_HEADER = "X-AnyLLM-Key"
+# HTTP request header name for gateway Bearer authentication. Follows RFC 6648 (no `X-`
+# prefix).
+API_KEY_HEADER = "AnyLLM-Key"
 
 
 class PricingConfig(BaseModel):

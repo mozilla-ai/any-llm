@@ -7,7 +7,7 @@ from typing_extensions import override
 from any_llm.gateway import __version__
 from any_llm.gateway.api.deps import set_config
 from any_llm.gateway.api.main import register_routers
-from any_llm.gateway.core.config import GatewayConfig
+from any_llm.gateway.core.config import API_KEY_HEADER, GatewayConfig
 from any_llm.gateway.core.database import get_db, init_db
 from any_llm.gateway.rate_limit import RateLimiter
 from any_llm.gateway.services.bootstrap_service import bootstrap_first_api_key
@@ -120,7 +120,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         if not request.url.path.startswith(_PUBLIC_PREFIXES):
             response.headers["Cache-Control"] = "private, no-store, no-cache"
-            response.headers["Vary"] = "Authorization"
+            response.headers["Vary"] = f"Authorization, {API_KEY_HEADER}"
         return response
 
 
@@ -163,7 +163,7 @@ def create_app(config: GatewayConfig) -> FastAPI:
             allow_origins=config.cors_allow_origins,
             allow_credentials=allow_credentials,
             allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-            allow_headers=["Content-Type", "Authorization", "X-AnyLLM-Key", "x-api-key"],
+            allow_headers=["Content-Type", "Authorization", API_KEY_HEADER, "x-api-key"],
         )
 
     if config.enable_metrics:

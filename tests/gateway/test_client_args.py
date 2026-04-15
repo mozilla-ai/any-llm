@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from any_llm.gateway.core.config import GatewayConfig
+from any_llm.gateway.core.config import API_KEY_HEADER, GatewayConfig
 from any_llm.gateway.db import get_db
 from any_llm.gateway.main import create_app
 from tests.gateway.conftest import _run_alembic_migrations
@@ -81,7 +81,7 @@ async def test_client_args_passed_to_acompletion(
         captured_kwargs.update(kwargs)
         raise MockCompletionError
 
-    master_key_header = {"X-AnyLLM-Key": "Bearer test-master-key"}
+    master_key_header = {API_KEY_HEADER: "Bearer test-master-key"}
 
     response = client_with_client_args.post(
         "/v1/users",

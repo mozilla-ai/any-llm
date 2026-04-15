@@ -154,7 +154,7 @@ To track usage, we must first create a user so that to associate our completion 
 
 ```bash
 curl -s -X POST http://localhost:8000/v1/users \
-  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"user_id": "user-123", "alias": "Bob"}'
 ```
@@ -184,7 +184,7 @@ Make a completion request using the master key and specify that the completion s
 
 ```bash
 curl -s -X POST http://localhost:8000/v1/chat/completions \
-  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "openai:gpt-4",
@@ -263,7 +263,7 @@ Now using the master key, we can access the usage information for the user.
 
 ```bash
 curl -s http://localhost:8000/v1/users/user-123 \
-  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
   -H "Content-Type: application/json"
 ```
 

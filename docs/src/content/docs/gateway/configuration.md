@@ -87,7 +87,7 @@ pricing:
 You can also set or update pricing dynamically using the API:
 ```bash
 curl -X POST http://localhost:8000/v1/pricing \
-  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "openai:gpt-4",

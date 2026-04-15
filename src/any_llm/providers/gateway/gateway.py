@@ -6,7 +6,7 @@ from typing_extensions import override
 from any_llm.logging import logger
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
-GATEWAY_HEADER_NAME = "X-AnyLLM-Key"
+GATEWAY_HEADER_NAME = "AnyLLM-Key"
 
 
 class GatewayProvider(BaseOpenAIProvider):

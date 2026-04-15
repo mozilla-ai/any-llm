@@ -14,6 +14,16 @@ from any_llm.gateway.models.entities import APIKey
 
 _config: GatewayConfig | None = None
 
+# RFC 6750 Bearer scheme prefix, including the mandatory trailing space.
+_BEARER_PREFIX = "Bearer "
+
+# Headers we accept for bearer-format credentials, in order of precedence. Authentication
+# uses the first header present in the request; any later entries are ignored.
+_BEARER_HEADERS: tuple[str, ...] = (
+    API_KEY_HEADER,
+    "Authorization",
+)
+
 
 def set_config(config: GatewayConfig) -> None:
     """Set the global config instance."""
@@ -36,26 +46,25 @@ def reset_config() -> None:
 
 
 def _extract_bearer_token(request: Request, config: GatewayConfig) -> str:
-    """Extract and validate Bearer token from request header.
+    """Extract and validate the gateway credential from request headers.
 
-    Checks X-AnyLLM-Key first, then falls back to standard Authorization header
-    for OpenAI client compatibility, then falls back to x-api-key header
-    for Anthropic client compatibility.
+    Headers are consulted in the order defined by ``_BEARER_HEADERS`` (``AnyLLM-Key``
+    first, ``Authorization`` second), followed by ``x-api-key`` as an Anthropic-compatible
+    fallback that carries the raw key without a ``Bearer`` prefix.
     """
-    auth_header = request.headers.get(API_KEY_HEADER) or request.headers.get("Authorization")
-
-    if auth_header:
-        if not auth_header.startswith("Bearer "):
+    for header_name in _BEARER_HEADERS:
+        value = request.headers.get(header_name)
+        if not value:
+            continue
+        if not value.startswith(_BEARER_PREFIX):
             record_auth_failure("invalid_format")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid header format. Expected 'Bearer <token>'",
+                detail=f"Invalid header format. Expected '{_BEARER_PREFIX}<token>'",
             )
-        return auth_header[7:]
+        return value[len(_BEARER_PREFIX) :]
 
-    # Fallback: x-api-key header (Anthropic client compatibility, no Bearer prefix)
-    api_key = request.headers.get("x-api-key")
-    if api_key:
+    if api_key := request.headers.get("x-api-key"):
         return api_key
 
     record_auth_failure("missing_credentials")
@@ -118,7 +127,7 @@ async def verify_api_key(
     db: Annotated[Session, Depends(get_db)],
     config: Annotated[GatewayConfig, Depends(get_config)],
 ) -> APIKey:
-    """Verify API key from X-AnyLLM-Key header.
+    """Verify API key from the gateway's authentication headers.
 
     Args:
         request: FastAPI request object
@@ -140,7 +149,7 @@ async def verify_master_key(
     request: Request,
     config: Annotated[GatewayConfig, Depends(get_config)],
 ) -> None:
-    """Verify master key from X-AnyLLM-Key header.
+    """Verify master key from the gateway's authentication headers.
 
     Args:
         request: FastAPI request object
@@ -170,7 +179,7 @@ async def verify_api_key_or_master_key(
     db: Annotated[Session, Depends(get_db)],
     config: Annotated[GatewayConfig, Depends(get_config)],
 ) -> tuple[APIKey | None, bool]:
-    """Verify either API key or master key from X-AnyLLM-Key header.
+    """Verify either API key or master key from the gateway's authentication headers.
 
     Args:
         request: FastAPI request object

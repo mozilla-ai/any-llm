@@ -14,12 +14,13 @@ any-llm-gateway offers two authentication methods, each designed for different u
 
 ### Supported Headers
 
-The gateway accepts authentication via two headers:
+The gateway accepts authentication via the following headers, in order of precedence:
 
-- **`X-AnyLLM-Key`** (preferred): The gateway's native authentication header
-- **`Authorization`**: Standard HTTP authorization header for OpenAI client compatibility
+1. **`AnyLLM-Key`**: The gateway's native authentication header. Follows [RFC 6648](https://datatracker.ietf.org/doc/html/rfc6648), which deprecated the `X-` prefix convention in 2012.
+2. **`Authorization`**: Standard HTTP authorization header for OpenAI client compatibility.
+3. **`x-api-key`**: Raw key (no `Bearer` prefix) for Anthropic client compatibility.
 
-Both headers use the `Bearer <token>` format. When both headers are present, `X-AnyLLM-Key` takes precedence.
+Headers 1 and 2 use the `Bearer <token>` format. When multiple credential headers are present, the gateway uses the highest-precedence one.
 
 Using the `Authorization` header allows you to use the gateway with OpenAI-compatible clients without modification:
 
@@ -64,7 +65,7 @@ master_key: "Zx8Q_vKm3nR7wP2sT9yU5iO1eA6hD4fG0bN8cL3jM5k"
 
 ```bash
 curl -X POST http://localhost:8000/v1/users \
-  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"user_id": "user-123", "alias": "Alice"}'
 ```
@@ -73,7 +74,7 @@ curl -X POST http://localhost:8000/v1/users \
 
 ```bash
 curl -X POST http://localhost:8000/v1/users \
-  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
   -H "Content-Type: application/json" \
   -d ' {
     "user_id": "user-123",
@@ -92,7 +93,7 @@ When using the master key, you **must** specify which user is making the request
 
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "openai:gpt-4o-mini",
@@ -111,7 +112,7 @@ Create a virtual key with a descriptive name:
 
 ```bash
 curl -X POST http://localhost:8000/v1/keys \
-  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"key_name": "mobile-app"}'
 ```
@@ -139,7 +140,7 @@ Create a key that automatically expires on a specific date:
 
 ```bash
 curl -X POST http://localhost:8000/v1/keys \
-  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "key_name": "trial-access",
@@ -152,7 +153,7 @@ Making requests with a virtual key is simpler than using the master key—no `us
 
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "X-AnyLLM-Key: Bearer gw-..." \
+  -H "AnyLLM-Key: Bearer gw-..." \
   -H "Content-Type: application/json" \
   -d '{"model": "openai:gpt-5-mini", "messages": [{"role": "user", "content": "Write a haiku on Saturn"}]}'
 ```
@@ -165,13 +166,13 @@ The gateway automatically tracks usage based on the virtual key used.
 **List all keys:**
 ```bash
 curl http://localhost:8000/v1/keys \
-  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}"
+  -H "AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}"
 ```
 
 **Deactivate a key:**
 ```bash
 curl -X PATCH http://localhost:8000/v1/keys/<virtual_key_id>\
-  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
+  -H "AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"is_active": false}'
 ```
@@ -179,7 +180,7 @@ curl -X PATCH http://localhost:8000/v1/keys/<virtual_key_id>\
 **Delete a key:**
 ```bash
 curl -X DELETE http://localhost:8000/v1/keys/<virtual_key_id> \
-  -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}"
+  -H "AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}"
 ```
 
 > See [API Reference](/any-llm/gateway/api-reference/) for complete key management operations.

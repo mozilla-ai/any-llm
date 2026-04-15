@@ -28,7 +28,7 @@ The gateway acts as a transparent proxy between your applications and LLM provid
 
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "X-AnyLLM-Key: Bearer your-secure-master-key" \
+  -H "AnyLLM-Key: Bearer your-secure-master-key" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "openai:gpt-5",

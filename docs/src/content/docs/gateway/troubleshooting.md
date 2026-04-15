@@ -16,7 +16,7 @@ python -c "from sqlalchemy import create_engine; engine = create_engine('postgre
 ### Authentication Errors
 
 - Ensure you're using the correct master key format: `Bearer your-secure-master-key`
-- Check that the `X-AnyLLM-Key` header is properly set
+- Check that the `AnyLLM-Key` header is properly set
 - Verify that virtual API keys are active and not expired
 
 ### Configuration Issues
