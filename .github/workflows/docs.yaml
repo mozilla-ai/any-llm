@@ -7,7 +7,6 @@ on:
       - 'docs/**'
       - 'src/**'
       - 'scripts/generate_provider_table.py'
-      - 'scripts/generate_llms_txt.py'
       - 'scripts/generate_openapi.py'
       - 'scripts/generate_api_docs.py'
       - 'scripts/generate_cookbooks.py'
@@ -20,7 +19,6 @@ on:
       - 'docs/**'
       - 'src/**'
       - 'scripts/generate_provider_table.py'
-      - 'scripts/generate_llms_txt.py'
       - 'scripts/generate_openapi.py'
       - 'scripts/generate_api_docs.py'
       - 'scripts/generate_cookbooks.py'
@@ -53,9 +51,12 @@ jobs:
       - name: Build GitBook site
         run: uv run python scripts/convert_to_gitbook.py
 
-      - name: Verify committed docs are up to date
+      - name: Upload generated site as PR artifact
         if: github.event_name == 'pull_request'
-        run: git diff --exit-code -- docs
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitbook-site-preview
+          path: site/
 
       - name: Deploy to gitbook-docs branch
         if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}

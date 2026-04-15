@@ -74,7 +74,6 @@ def main() -> None:
         "generate_api_docs.py",
         "generate_provider_table.py",
         "generate_cookbooks.py",
-        "generate_llms_txt.py",
     ):
         run_generator(script_name)
 

@@ -38,6 +38,9 @@ jobs:
         run: |
           uv sync --group tests --extra anthropic --extra mistral
 
+      - name: Generate documentation
+        run: uv run python scripts/convert_to_gitbook.py
+
       - name: Run Documentation tests
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
