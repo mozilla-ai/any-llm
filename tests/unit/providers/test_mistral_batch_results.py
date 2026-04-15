@@ -149,6 +149,91 @@ async def test_aretrieve_batch_results_empty_output() -> None:
 
 
 @pytest.mark.asyncio
+async def test_aretrieve_batch_results_skips_empty_lines() -> None:
+    """Test that empty lines in the JSONL output are skipped."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+    from any_llm.types.batch import BatchResult
+
+    with patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral:
+        provider = MistralProvider(api_key="test-api-key")
+
+        mock_batch_job = Mock()
+        mock_batch_job.id = "batch-empty-lines"
+        mock_batch_job.input_files = ["file-abc"]
+        mock_batch_job.endpoint = "/v1/chat/completions"
+        mock_batch_job.status = Mock(value="SUCCESS")
+        mock_batch_job.created_at = 1700000000
+        mock_batch_job.total_requests = 1
+        mock_batch_job.completed_requests = 1
+        mock_batch_job.succeeded_requests = 1
+        mock_batch_job.failed_requests = 0
+        mock_batch_job.errors = []
+        mock_batch_job.metadata = None
+        mock_batch_job.output_file = "output-file-123"
+        mock_batch_job.error_file = None
+        mock_batch_job.started_at = 1700000100
+        mock_batch_job.completed_at = 1700000200
+
+        mocked_mistral.return_value.batch.jobs.get_async = AsyncMock(return_value=mock_batch_job)
+
+        line1 = json.dumps(
+            {
+                "custom_id": "req-1",
+                "response": {
+                    "status_code": 200,
+                    "body": {
+                        "id": "chatcmpl-1",
+                        "object": "chat.completion",
+                        "created": 1700000000,
+                        "model": "mistral-small-latest",
+                        "choices": [
+                            {
+                                "index": 0,
+                                "message": {"role": "assistant", "content": "ok"},
+                                "finish_reason": "stop",
+                            }
+                        ],
+                        "usage": {"prompt_tokens": 5, "completion_tokens": 1, "total_tokens": 6},
+                    },
+                },
+            }
+        )
+        line2 = json.dumps(
+            {
+                "custom_id": "req-2",
+                "response": {
+                    "status_code": 200,
+                    "body": {
+                        "id": "chatcmpl-2",
+                        "object": "chat.completion",
+                        "created": 1700000000,
+                        "model": "mistral-small-latest",
+                        "choices": [
+                            {
+                                "index": 0,
+                                "message": {"role": "assistant", "content": "ok"},
+                                "finish_reason": "stop",
+                            }
+                        ],
+                        "usage": {"prompt_tokens": 5, "completion_tokens": 1, "total_tokens": 6},
+                    },
+                },
+            }
+        )
+        mock_response = Mock()
+        mock_response.text = f"{line1}\n  \n{line2}"
+        mocked_mistral.return_value.files.download_async = AsyncMock(return_value=mock_response)
+
+        result = await provider._aretrieve_batch_results("batch-empty-lines")
+
+        assert isinstance(result, BatchResult)
+        assert len(result.results) == 2
+        assert result.results[0].custom_id == "req-1"
+        assert result.results[1].custom_id == "req-2"
+
+
+@pytest.mark.asyncio
 async def test_aretrieve_batch_results_unexpected_format() -> None:
     """Test that unexpected response format produces an error item."""
     pytest.importorskip("mistralai")

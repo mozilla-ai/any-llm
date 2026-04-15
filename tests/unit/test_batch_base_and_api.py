@@ -4,20 +4,28 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from any_llm.any_llm import AnyLLM
 from any_llm.types.batch import BatchResult, BatchResultItem
 
 
 @pytest.mark.asyncio
 async def test_base_aretrieve_batch_results_not_supported() -> None:
     """Test that _aretrieve_batch_results raises NotImplementedError when SUPPORTS_BATCH is False."""
-    from any_llm.providers.openai.openai import OpenaiProvider
+    mock_provider = MagicMock(spec=AnyLLM)
+    mock_provider.SUPPORTS_BATCH = False
 
-    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
-        provider = OpenaiProvider(api_key="test-key")
-        provider.SUPPORTS_BATCH = False  # type: ignore[misc]
+    with pytest.raises(NotImplementedError, match="doesn't support batch"):
+        await AnyLLM._aretrieve_batch_results(mock_provider, "batch-123")
 
-        with pytest.raises(NotImplementedError, match="does not support batch"):
-            await provider._aretrieve_batch_results("batch-123")
+
+@pytest.mark.asyncio
+async def test_base_aretrieve_batch_results_not_implemented() -> None:
+    """Test that _aretrieve_batch_results raises NotImplementedError when subclass does not override."""
+    mock_provider = MagicMock(spec=AnyLLM)
+    mock_provider.SUPPORTS_BATCH = True
+
+    with pytest.raises(NotImplementedError, match="Subclasses must implement"):
+        await AnyLLM._aretrieve_batch_results(mock_provider, "batch-123")
 
 
 @pytest.mark.asyncio
@@ -70,6 +78,37 @@ async def test_base_alist_batches_not_supported() -> None:
 
         with pytest.raises(NotImplementedError, match="does not support batch"):
             await provider._alist_batches()
+
+
+@pytest.mark.asyncio
+async def test_aretrieve_batch_results_delegates_to_private() -> None:
+    """Test that aretrieve_batch_results calls _aretrieve_batch_results on the provider."""
+    from any_llm.providers.openai.openai import OpenaiProvider
+
+    expected = BatchResult(results=[BatchResultItem(custom_id="req-1")])
+    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
+        provider = OpenaiProvider(api_key="test-key")
+        provider._aretrieve_batch_results = AsyncMock(return_value=expected)  # type: ignore[method-assign]
+
+        result = await provider.aretrieve_batch_results("batch-123")
+
+    assert result is expected
+    provider._aretrieve_batch_results.assert_called_once_with("batch-123")
+
+
+def test_retrieve_batch_results_sync_delegates() -> None:
+    """Test that retrieve_batch_results (sync) delegates to aretrieve_batch_results."""
+    from any_llm.providers.openai.openai import OpenaiProvider
+
+    expected = BatchResult(results=[BatchResultItem(custom_id="req-1")])
+    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
+        provider = OpenaiProvider(api_key="test-key")
+        provider.aretrieve_batch_results = AsyncMock(return_value=expected)  # type: ignore[method-assign]
+
+        result = provider.retrieve_batch_results("batch-123")
+
+    assert result is expected
+    provider.aretrieve_batch_results.assert_called_once_with("batch-123")
 
 
 @pytest.mark.asyncio

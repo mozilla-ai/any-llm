@@ -371,6 +371,63 @@ async def test_alist_batches_no_params() -> None:
 
 
 @pytest.mark.asyncio
+async def test_acreate_batch_skips_empty_lines() -> None:
+    """Test _acreate_batch skips empty lines in the JSONL input file."""
+    pytest.importorskip("anthropic")
+    from any_llm.providers.anthropic.anthropic import AnthropicProvider
+
+    with patch("any_llm.providers.anthropic.anthropic.AsyncAnthropic"):
+        provider = AnthropicProvider(api_key="test-key")
+
+        mock_result = _make_mock_message_batch()
+        provider.client.messages.batches.create = AsyncMock(return_value=mock_result)  # type: ignore[method-assign]
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+            f.write(
+                json.dumps(
+                    {
+                        "custom_id": "req-1",
+                        "body": {
+                            "model": "claude-sonnet-4-20250514",
+                            "max_tokens": 100,
+                            "messages": [{"role": "user", "content": "Hello"}],
+                        },
+                    }
+                )
+                + "\n"
+            )
+            f.write("  \n")
+            f.write(
+                json.dumps(
+                    {
+                        "custom_id": "req-2",
+                        "body": {
+                            "model": "claude-sonnet-4-20250514",
+                            "max_tokens": 100,
+                            "messages": [{"role": "user", "content": "World"}],
+                        },
+                    }
+                )
+                + "\n"
+            )
+            tmp_path = f.name
+
+        try:
+            result = await provider._acreate_batch(
+                input_file_path=tmp_path,
+                endpoint="/v1/chat/completions",
+            )
+
+            assert result.id == "msgbatch_123"
+            call_kwargs = provider.client.messages.batches.create.call_args[1]
+            assert len(call_kwargs["requests"]) == 2
+        finally:
+            import os
+
+            os.unlink(tmp_path)
+
+
+@pytest.mark.asyncio
 async def test_acreate_batch_with_optional_params() -> None:
     """Test _acreate_batch passes temperature, top_p, and system when present."""
     pytest.importorskip("anthropic")
