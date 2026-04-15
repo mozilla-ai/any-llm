@@ -1,4 +1,5 @@
 import asyncio
+import json
 from collections.abc import AsyncIterator, Sequence
 from io import BytesIO
 from pathlib import Path
@@ -15,13 +16,14 @@ from pydantic import BaseModel, ValidationError
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.exceptions import BatchNotCompleteError
 from any_llm.logging import logger
 from any_llm.providers.openai.utils import (
     _convert_chat_completion,
     _convert_parsed_chat_completion,
     _normalize_openai_dict_response,
 )
-from any_llm.types.batch import Batch
+from any_llm.types.batch import Batch, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -340,3 +342,40 @@ class BaseOpenAIProvider(AnyLLM):
             **kwargs,
         )
         return response.data
+
+    @override
+    async def _aretrieve_batch_results(self, batch_id: str, **kwargs: Any) -> BatchResult:
+        """Retrieve the results of a completed batch job using the OpenAI Batch API."""
+        if not self.SUPPORTS_BATCH:
+            message = f"{self.PROVIDER_NAME} does not support batch completions."
+            raise NotImplementedError(message)
+
+        batch = await self.client.batches.retrieve(batch_id)
+        if batch.status != "completed":
+            raise BatchNotCompleteError(
+                batch_id=batch_id,
+                status=batch.status or "unknown",
+                provider_name=self.PROVIDER_NAME,
+            )
+
+        if not batch.output_file_id:
+            return BatchResult(results=[])
+
+        content = await self.client.files.content(batch.output_file_id)
+        results: list[BatchResultItem] = []
+        for line in content.text.strip().split("\n"):
+            if not line.strip():
+                continue
+            entry = json.loads(line)
+            item = BatchResultItem(custom_id=entry["custom_id"])
+            if entry.get("response") and entry["response"].get("status_code") == 200:
+                item.result = ChatCompletion(**entry["response"]["body"])
+            elif entry.get("error"):
+                item.error = BatchResultError(
+                    code=entry["error"].get("code", "unknown"),
+                    message=entry["error"].get("message", "Unknown error"),
+                )
+            else:
+                item.error = BatchResultError(code="unknown", message="Unexpected response format")
+            results.append(item)
+        return BatchResult(results=results)

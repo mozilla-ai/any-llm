@@ -38,7 +38,6 @@ from any_llm.types.messages import (
 from any_llm.types.provider import PlatformKey, ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import async_coro_to_sync_iter, async_iter_to_sync_iter, run_async_in_sync
-from any_llm.utils.decorators import BATCH_API_EXPERIMENTAL_MESSAGE, experimental
 from any_llm.utils.exception_handler import handle_exceptions
 from any_llm.utils.structured_output import is_structured_output_type, parse_json_content
 
@@ -47,7 +46,7 @@ ResponseFormatT = TypeVar("ResponseFormatT", bound=BaseModel)
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Coroutine, Iterator, Sequence
 
-    from any_llm.types.batch import Batch
+    from any_llm.types.batch import Batch, BatchResult
     from any_llm.types.completion import ChatCompletionChunk, CreateEmbeddingResponse
     from any_llm.types.model import Model
 
@@ -956,7 +955,6 @@ class AnyLLM(ABC):
         msg = "Subclasses must implement _alist_models method"
         raise NotImplementedError(msg)
 
-    @experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
     def create_batch(self, **kwargs: Any) -> Batch:
         """Create a batch synchronously.
 
@@ -966,7 +964,6 @@ class AnyLLM(ABC):
         return run_async_in_sync(self.acreate_batch(**kwargs), allow_running_loop=allow_running_loop)
 
     @handle_exceptions()
-    @experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
     async def acreate_batch(
         self,
         input_file_path: str,
@@ -1010,7 +1007,6 @@ class AnyLLM(ABC):
         msg = "Subclasses must implement _acreate_batch method"
         raise NotImplementedError(msg)
 
-    @experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
     def retrieve_batch(self, batch_id: str, **kwargs: Any) -> Batch:
         """Retrieve a batch synchronously.
 
@@ -1020,7 +1016,6 @@ class AnyLLM(ABC):
         return run_async_in_sync(self.aretrieve_batch(batch_id, **kwargs), allow_running_loop=allow_running_loop)
 
     @handle_exceptions()
-    @experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
     async def aretrieve_batch(self, batch_id: str, **kwargs: Any) -> Batch:
         """Retrieve a batch job asynchronously.
 
@@ -1041,7 +1036,6 @@ class AnyLLM(ABC):
         msg = "Subclasses must implement _aretrieve_batch method"
         raise NotImplementedError(msg)
 
-    @experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
     def cancel_batch(self, batch_id: str, **kwargs: Any) -> Batch:
         """Cancel a batch synchronously.
 
@@ -1051,7 +1045,6 @@ class AnyLLM(ABC):
         return run_async_in_sync(self.acancel_batch(batch_id, **kwargs), allow_running_loop=allow_running_loop)
 
     @handle_exceptions()
-    @experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
     async def acancel_batch(self, batch_id: str, **kwargs: Any) -> Batch:
         """Cancel a batch job asynchronously.
 
@@ -1072,7 +1065,6 @@ class AnyLLM(ABC):
         msg = "Subclasses must implement _acancel_batch method"
         raise NotImplementedError(msg)
 
-    @experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
     def list_batches(
         self,
         after: str | None = None,
@@ -1089,7 +1081,6 @@ class AnyLLM(ABC):
         )
 
     @handle_exceptions()
-    @experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
     async def alist_batches(
         self,
         after: str | None = None,
@@ -1119,4 +1110,39 @@ class AnyLLM(ABC):
             msg = "Provider doesn't support batch completions."
             raise NotImplementedError(msg)
         msg = "Subclasses must implement _alist_batches method"
+        raise NotImplementedError(msg)
+
+    def retrieve_batch_results(self, batch_id: str, **kwargs: Any) -> BatchResult:
+        """Retrieve batch results synchronously.
+
+        See [AnyLLM.aretrieve_batch_results][any_llm.any_llm.AnyLLM.aretrieve_batch_results]
+        """
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(
+            self.aretrieve_batch_results(batch_id, **kwargs),
+            allow_running_loop=allow_running_loop,
+        )
+
+    @handle_exceptions()
+    async def aretrieve_batch_results(self, batch_id: str, **kwargs: Any) -> BatchResult:
+        """Retrieve the results of a completed batch job asynchronously.
+
+        Args:
+            batch_id: The ID of the batch to retrieve results for.
+            **kwargs: Additional provider-specific arguments.
+
+        Returns:
+            The batch results containing per-request outcomes.
+
+        Raises:
+            BatchNotCompleteError: If the batch status is not 'completed'.
+
+        """
+        return await self._aretrieve_batch_results(batch_id, **kwargs)
+
+    async def _aretrieve_batch_results(self, batch_id: str, **kwargs: Any) -> BatchResult:
+        if not self.SUPPORTS_BATCH:
+            msg = "Provider doesn't support batch completions."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _aretrieve_batch_results method"
         raise NotImplementedError(msg)

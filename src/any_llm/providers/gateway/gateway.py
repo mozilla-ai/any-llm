@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from typing import TYPE_CHECKING, Any
 
@@ -7,14 +8,19 @@ from typing_extensions import override
 
 from any_llm.exceptions import (
     AuthenticationError,
+    BatchNotCompleteError,
     GatewayTimeoutError,
     InsufficientFundsError,
+    InvalidRequestError,
     ModelNotFoundError,
+    ProviderError,
     RateLimitError,
     UpstreamProviderError,
 )
 from any_llm.logging import logger
 from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.types.batch import Batch, BatchResult, BatchResultError, BatchResultItem
+from any_llm.types.completion import ChatCompletion
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
@@ -22,7 +28,6 @@ if TYPE_CHECKING:
     from openresponses_types import ResponseResource
 
     from any_llm.types.completion import (
-        ChatCompletion,
         ChatCompletionChunk,
         CompletionParams,
         CreateEmbeddingResponse,
@@ -38,6 +43,31 @@ _STATUS_TO_EXCEPTION: dict[int, type[AuthenticationError | ModelNotFoundError]] 
     403: AuthenticationError,
     404: ModelNotFoundError,
 }
+
+
+def _parse_jsonl_to_requests(file_path: str) -> list[dict[str, Any]]:
+    """Parse a JSONL file into a list of batch request objects."""
+    requests: list[dict[str, Any]] = []
+    with open(file_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            entry = json.loads(line)
+            requests.append(
+                {
+                    "custom_id": entry["custom_id"],
+                    "body": entry.get("body", {}),
+                }
+            )
+    return requests
+
+
+def _extract_model_from_requests(requests: list[dict[str, Any]]) -> str | None:
+    """Extract the model from the first request's body."""
+    if requests and requests[0].get("body"):
+        return requests[0]["body"].get("model")
+    return None
 
 
 class GatewayProvider(BaseOpenAIProvider):
@@ -215,3 +245,142 @@ class GatewayProvider(BaseOpenAIProvider):
         except Exception as exc:
             self._handle_platform_error(exc)
             raise
+
+    # -- Batch API overrides --------------------------------------------------
+
+    def _handle_batch_http_error(self, response: Any) -> None:
+        """Handle HTTP errors from gateway batch endpoints."""
+        if response.status_code == 404:
+            detail = ""
+            try:
+                detail = response.json().get("detail", "")
+            except Exception:  # noqa: S110
+                pass
+            if "batches" in str(response.url):
+                msg = (
+                    "This gateway does not support batch operations. "
+                    "Upgrade your gateway to a version that supports /v1/batches endpoints."
+                )
+                raise ProviderError(message=msg, provider_name=self.PROVIDER_NAME)
+            raise ProviderError(message=detail or "Not found", provider_name=self.PROVIDER_NAME)
+        response.raise_for_status()
+
+    @override
+    async def _acreate_batch(
+        self,
+        input_file_path: str,
+        endpoint: str,
+        completion_window: str = "24h",
+        metadata: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> Batch:
+        """Create a batch job via the gateway's JSON batch endpoint."""
+        requests = _parse_jsonl_to_requests(input_file_path)
+        model = kwargs.pop("model", None)
+        if not model:
+            model = _extract_model_from_requests(requests)
+
+        body: dict[str, Any] = {
+            "model": model,
+            "requests": requests,
+            "completion_window": completion_window,
+        }
+        if metadata:
+            body["metadata"] = metadata
+
+        response = await self.client._client.post(
+            f"{self.client.base_url}batches",
+            json=body,
+        )
+        if response.status_code == 404:
+            msg = (
+                "This gateway does not support batch operations. "
+                "Upgrade your gateway to a version that supports /v1/batches endpoints."
+            )
+            raise ProviderError(message=msg, provider_name=self.PROVIDER_NAME)
+        response.raise_for_status()
+        data = response.json()
+        return Batch(**{k: v for k, v in data.items() if k != "provider"})
+
+    @override
+    async def _aretrieve_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Retrieve a batch job via the gateway."""
+        provider_name = kwargs.pop("provider_name", None)
+        if not provider_name:
+            msg = "provider_name is required for Gateway batch operations"
+            raise InvalidRequestError(message=msg, provider_name=self.PROVIDER_NAME)
+        response = await self.client._client.get(
+            f"{self.client.base_url}batches/{batch_id}",
+            params={"provider": provider_name},
+        )
+        self._handle_batch_http_error(response)
+        return Batch(**response.json())
+
+    @override
+    async def _acancel_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Cancel a batch job via the gateway."""
+        provider_name = kwargs.pop("provider_name", None)
+        if not provider_name:
+            msg = "provider_name is required for Gateway batch operations"
+            raise InvalidRequestError(message=msg, provider_name=self.PROVIDER_NAME)
+        response = await self.client._client.post(
+            f"{self.client.base_url}batches/{batch_id}/cancel",
+            params={"provider": provider_name},
+        )
+        self._handle_batch_http_error(response)
+        return Batch(**response.json())
+
+    @override
+    async def _alist_batches(
+        self,
+        after: str | None = None,
+        limit: int | None = None,
+        **kwargs: Any,
+    ) -> Sequence[Batch]:
+        """List batch jobs via the gateway."""
+        provider_name = kwargs.pop("provider_name", None)
+        if not provider_name:
+            msg = "provider_name is required for Gateway batch operations"
+            raise InvalidRequestError(message=msg, provider_name=self.PROVIDER_NAME)
+        params: dict[str, Any] = {"provider": provider_name}
+        if after:
+            params["after"] = after
+        if limit is not None:
+            params["limit"] = limit
+        response = await self.client._client.get(
+            f"{self.client.base_url}batches",
+            params=params,
+        )
+        self._handle_batch_http_error(response)
+        data = response.json()
+        return [Batch(**b) for b in data.get("data", [])]
+
+    @override
+    async def _aretrieve_batch_results(self, batch_id: str, **kwargs: Any) -> BatchResult:
+        """Retrieve the results of a completed batch job via the gateway."""
+        provider_name = kwargs.pop("provider_name", None)
+        if not provider_name:
+            msg = "provider_name is required for Gateway batch operations"
+            raise InvalidRequestError(message=msg, provider_name=self.PROVIDER_NAME)
+        response = await self.client._client.get(
+            f"{self.client.base_url}batches/{batch_id}/results",
+            params={"provider": provider_name},
+        )
+        if response.status_code == 409:
+            raise BatchNotCompleteError(
+                batch_id=batch_id,
+                status="unknown",
+                provider_name=self.PROVIDER_NAME,
+            )
+        self._handle_batch_http_error(response)
+        data = response.json()
+        return BatchResult(
+            results=[
+                BatchResultItem(
+                    custom_id=item["custom_id"],
+                    result=ChatCompletion(**item["result"]) if item.get("result") else None,
+                    error=BatchResultError(**item["error"]) if item.get("error") else None,
+                )
+                for item in data.get("results", [])
+            ]
+        )

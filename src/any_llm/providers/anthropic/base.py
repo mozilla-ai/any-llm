@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.exceptions import BatchNotCompleteError
+from any_llm.logging import logger
+from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.messages import (
     ContentBlockStartEvent,
     MessageResponse,
@@ -32,10 +37,59 @@ if TYPE_CHECKING:
 
     from anthropic import AsyncAnthropic, AsyncAnthropicVertex
     from anthropic.types import Message
+    from anthropic.types.message_batch import MessageBatch
     from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
+
+
+_ANTHROPIC_TO_OPENAI_STATUS_MAP: dict[str, str] = {
+    "in_progress": "in_progress",
+    "canceling": "cancelling",
+    "canceled": "cancelled",
+    "expired": "expired",
+}
+
+
+def _convert_anthropic_batch_to_openai(batch: MessageBatch) -> Batch:
+    """Convert an Anthropic MessageBatch to OpenAI Batch format."""
+    status_str = batch.processing_status
+    if status_str == "ended":
+        openai_status = "completed"
+    else:
+        openai_status = _ANTHROPIC_TO_OPENAI_STATUS_MAP.get(status_str)
+        if openai_status is None:
+            logger.warning("Unknown Anthropic batch status: %s, defaulting to 'in_progress'", status_str)
+            openai_status = "in_progress"
+
+    request_counts = BatchRequestCounts(
+        total=(
+            batch.request_counts.processing
+            + batch.request_counts.succeeded
+            + batch.request_counts.errored
+            + batch.request_counts.canceled
+            + batch.request_counts.expired
+        ),
+        completed=batch.request_counts.succeeded,
+        failed=batch.request_counts.errored + batch.request_counts.canceled + batch.request_counts.expired,
+    )
+
+    created_at = int(batch.created_at.timestamp()) if batch.created_at else 0
+
+    return Batch(
+        id=batch.id,
+        object="batch",
+        endpoint="/v1/chat/completions",
+        status=cast("Any", openai_status),
+        created_at=created_at,
+        completion_window="24h",
+        request_counts=request_counts,
+        input_file_id="",
+        output_file_id=None,
+        error_file_id=None,
+        metadata=None,
+    )
 
 
 class BaseAnthropicProvider(AnyLLM, ABC):
@@ -54,7 +108,7 @@ class BaseAnthropicProvider(AnyLLM, ABC):
     SUPPORTS_COMPLETION_PDF = True
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = False
-    SUPPORTS_BATCH = False
+    SUPPORTS_BATCH = True
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -188,3 +242,98 @@ class BaseAnthropicProvider(AnyLLM, ABC):
     def _convert_native_message_to_response(message: Message) -> MessageResponse:
         """Convert an Anthropic SDK Message to our MessageResponse."""
         return MessageResponse.model_validate(message, from_attributes=True)
+
+    @override
+    async def _acreate_batch(
+        self,
+        input_file_path: str,
+        endpoint: str,
+        completion_window: str = "24h",
+        metadata: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> Batch:
+        """Create a batch job using the Anthropic Messages Batches API."""
+        file_path = Path(input_file_path)
+        file_content = file_path.read_text()
+
+        requests = []
+        for line in file_content.strip().split("\n"):
+            if not line.strip():
+                continue
+            entry = json.loads(line)
+            body = entry.get("body", {})
+            params: dict[str, Any] = {
+                "model": body.get("model", ""),
+                "max_tokens": body.get("max_tokens", 1024),
+                "messages": body.get("messages", []),
+            }
+            if "temperature" in body:
+                params["temperature"] = body["temperature"]
+            if "top_p" in body:
+                params["top_p"] = body["top_p"]
+            if "system" in body:
+                params["system"] = body["system"]
+            requests.append(
+                {
+                    "custom_id": entry["custom_id"],
+                    "params": params,
+                }
+            )
+
+        result = await self.client.messages.batches.create(requests=requests)  # type: ignore[arg-type]
+        return _convert_anthropic_batch_to_openai(result)
+
+    @override
+    async def _aretrieve_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Retrieve a batch job using the Anthropic Messages Batches API."""
+        result = await self.client.messages.batches.retrieve(batch_id)
+        return _convert_anthropic_batch_to_openai(result)
+
+    @override
+    async def _acancel_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Cancel a batch job using the Anthropic Messages Batches API."""
+        result = await self.client.messages.batches.cancel(batch_id)
+        return _convert_anthropic_batch_to_openai(result)
+
+    @override
+    async def _alist_batches(
+        self,
+        after: str | None = None,
+        limit: int | None = None,
+        **kwargs: Any,
+    ) -> Sequence[Batch]:
+        """List batch jobs using the Anthropic Messages Batches API."""
+        list_kwargs: dict[str, Any] = {}
+        if after:
+            list_kwargs["after_id"] = after
+        if limit:
+            list_kwargs["limit"] = limit
+        result = await self.client.messages.batches.list(**list_kwargs)
+        return [_convert_anthropic_batch_to_openai(b) for b in result.data]
+
+    @override
+    async def _aretrieve_batch_results(self, batch_id: str, **kwargs: Any) -> BatchResult:
+        """Retrieve the results of a completed batch job using the Anthropic Messages Batches API."""
+        batch = await self.client.messages.batches.retrieve(batch_id)
+        if batch.processing_status != "ended":
+            openai_batch = _convert_anthropic_batch_to_openai(batch)
+            raise BatchNotCompleteError(
+                batch_id=batch_id,
+                status=openai_batch.status or "unknown",
+                provider_name=self.PROVIDER_NAME,
+            )
+
+        results: list[BatchResultItem] = []
+        async for entry in await self.client.messages.batches.results(batch_id):
+            item = BatchResultItem(custom_id=entry.custom_id)
+            if entry.result.type == "succeeded":
+                item.result = _convert_response(entry.result.message)
+            elif entry.result.type == "errored":
+                item.error = BatchResultError(
+                    code=entry.result.error.type if entry.result.error else "unknown",
+                    message=entry.result.error.message if entry.result.error else "Unknown error",
+                )
+            else:
+                item.error = BatchResultError(code=entry.result.type, message=f"Request {entry.result.type}")
+            results.append(item)
+        return BatchResult(results=results)

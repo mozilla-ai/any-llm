@@ -25,6 +25,7 @@ from any_llm.constants import LLMProvider
 from any_llm.exceptions import (
     AnyLLMError,
     AuthenticationError,
+    BatchNotCompleteError,
     ContentFilterError,
     ContentFilterFinishReasonError,
     ContextLengthExceededError,
@@ -49,6 +50,7 @@ __all__ = [
     "AnyLLM",
     "AnyLLMError",
     "AuthenticationError",
+    "BatchNotCompleteError",
     "ContentFilterError",
     "ContentFilterFinishReasonError",
     "ContextLengthExceededError",
