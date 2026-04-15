@@ -292,3 +292,231 @@ async def test_handle_batch_http_error_404_with_batches_url() -> None:
 
     with pytest.raises(ProviderError, match="does not support batch operations"):
         provider._handle_batch_http_error(mock_response)
+
+
+def test_handle_batch_http_error_404_non_batches_url() -> None:
+    """Test _handle_batch_http_error on 404 for a non-batches URL raises with detail."""
+    provider = _create_gateway_provider()
+
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_response.url = "https://gateway.example.com/v1/other/resource"
+    mock_response.json.return_value = {"detail": "Resource not found"}
+
+    with pytest.raises(ProviderError, match="Resource not found"):
+        provider._handle_batch_http_error(mock_response)
+
+
+def test_handle_batch_http_error_404_json_parse_failure() -> None:
+    """Test _handle_batch_http_error on 404 when JSON parsing fails."""
+    provider = _create_gateway_provider()
+
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_response.url = "https://gateway.example.com/v1/other/endpoint"
+    mock_response.json.side_effect = ValueError("Invalid JSON")
+
+    with pytest.raises(ProviderError, match="Not found"):
+        provider._handle_batch_http_error(mock_response)
+
+
+def test_handle_batch_http_error_non_404_raises() -> None:
+    """Test _handle_batch_http_error calls raise_for_status on non-404 errors."""
+    import httpx
+
+    provider = _create_gateway_provider()
+
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "Internal Server Error", request=MagicMock(), response=mock_response
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        provider._handle_batch_http_error(mock_response)
+
+
+@pytest.mark.asyncio
+async def test_aretrieve_batch_results_with_error_items() -> None:
+    """Test _aretrieve_batch_results correctly deserializes error items."""
+    provider = _create_gateway_provider()
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "results": [
+            {
+                "custom_id": "req-1",
+                "result": None,
+                "error": {"code": "rate_limit", "message": "Rate limit exceeded"},
+            }
+        ]
+    }
+    provider.client._client.get = AsyncMock(return_value=mock_response)
+
+    result = await provider._aretrieve_batch_results("batch-123", provider_name="openai")
+
+    assert len(result.results) == 1
+    assert result.results[0].custom_id == "req-1"
+    assert result.results[0].result is None
+    assert result.results[0].error is not None
+    assert result.results[0].error.code == "rate_limit"
+    assert result.results[0].error.message == "Rate limit exceeded"
+
+
+@pytest.mark.asyncio
+async def test_acreate_batch_with_explicit_model() -> None:
+    """Test _acreate_batch when model is passed via kwargs."""
+    provider = _create_gateway_provider()
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "id": "batch-gw-456",
+        "object": "batch",
+        "endpoint": "/v1/chat/completions",
+        "status": "validating",
+        "created_at": 1700000000,
+        "completion_window": "24h",
+        "request_counts": {"total": 1, "completed": 0, "failed": 0},
+        "input_file_id": "",
+        "output_file_id": None,
+        "error_file_id": None,
+        "metadata": None,
+    }
+    provider.client._client.post = AsyncMock(return_value=mock_response)
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+        f.write(
+            json.dumps(
+                {
+                    "custom_id": "req-1",
+                    "body": {"messages": [{"role": "user", "content": "Hello"}]},
+                }
+            )
+            + "\n"
+        )
+        tmp_path = f.name
+
+    try:
+        result = await provider._acreate_batch(
+            input_file_path=tmp_path,
+            endpoint="/v1/chat/completions",
+            model="gpt-4o",
+        )
+
+        assert result.id == "batch-gw-456"
+        body = provider.client._client.post.call_args[1]["json"]
+        assert body["model"] == "gpt-4o"
+    finally:
+        import os
+
+        os.unlink(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_acreate_batch_with_metadata() -> None:
+    """Test _acreate_batch passes metadata in the request body."""
+    provider = _create_gateway_provider()
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "id": "batch-gw-meta",
+        "object": "batch",
+        "endpoint": "/v1/chat/completions",
+        "status": "validating",
+        "created_at": 1700000000,
+        "completion_window": "24h",
+        "request_counts": {"total": 1, "completed": 0, "failed": 0},
+        "input_file_id": "",
+        "output_file_id": None,
+        "error_file_id": None,
+        "metadata": {"env": "test"},
+    }
+    provider.client._client.post = AsyncMock(return_value=mock_response)
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+        f.write(
+            json.dumps(
+                {
+                    "custom_id": "req-1",
+                    "body": {"model": "gpt-4", "messages": [{"role": "user", "content": "Hello"}]},
+                }
+            )
+            + "\n"
+        )
+        tmp_path = f.name
+
+    try:
+        await provider._acreate_batch(
+            input_file_path=tmp_path,
+            endpoint="/v1/chat/completions",
+            metadata={"env": "test"},
+        )
+
+        body = provider.client._client.post.call_args[1]["json"]
+        assert body["metadata"] == {"env": "test"}
+    finally:
+        import os
+
+        os.unlink(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_alist_batches_minimal_params() -> None:
+    """Test _alist_batches with only provider_name (no after or limit)."""
+    provider = _create_gateway_provider()
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"data": []}
+    provider.client._client.get = AsyncMock(return_value=mock_response)
+
+    await provider._alist_batches(provider_name="openai")
+
+    call_kwargs = provider.client._client.get.call_args[1]
+    assert call_kwargs["params"] == {"provider": "openai"}
+
+
+def test_parse_jsonl_to_requests() -> None:
+    """Test _parse_jsonl_to_requests helper function."""
+    from any_llm.providers.gateway.gateway import _parse_jsonl_to_requests
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+        f.write(json.dumps({"custom_id": "r1", "body": {"model": "gpt-4"}}) + "\n")
+        f.write("\n")
+        f.write(json.dumps({"custom_id": "r2", "body": {"model": "gpt-4"}}) + "\n")
+        tmp_path = f.name
+
+    try:
+        result = _parse_jsonl_to_requests(tmp_path)
+        assert len(result) == 2
+        assert result[0]["custom_id"] == "r1"
+        assert result[1]["custom_id"] == "r2"
+    finally:
+        import os
+
+        os.unlink(tmp_path)
+
+
+def test_extract_model_from_requests_empty() -> None:
+    """Test _extract_model_from_requests with empty list."""
+    from any_llm.providers.gateway.gateway import _extract_model_from_requests
+
+    assert _extract_model_from_requests([]) is None
+
+
+def test_extract_model_from_requests_no_model() -> None:
+    """Test _extract_model_from_requests when body has no model."""
+    from any_llm.providers.gateway.gateway import _extract_model_from_requests
+
+    assert _extract_model_from_requests([{"body": {"messages": []}}]) is None
+
+
+def test_extract_model_from_requests_with_model() -> None:
+    """Test _extract_model_from_requests returns model from first request."""
+    from any_llm.providers.gateway.gateway import _extract_model_from_requests
+
+    result = _extract_model_from_requests([{"body": {"model": "gpt-4"}}])
+    assert result == "gpt-4"

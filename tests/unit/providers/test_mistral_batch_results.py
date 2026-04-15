@@ -146,3 +146,47 @@ async def test_aretrieve_batch_results_empty_output() -> None:
 
         assert isinstance(result, BatchResult)
         assert len(result.results) == 0
+
+
+@pytest.mark.asyncio
+async def test_aretrieve_batch_results_unexpected_format() -> None:
+    """Test that unexpected response format produces an error item."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+    from any_llm.types.batch import BatchResult
+
+    with patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral:
+        provider = MistralProvider(api_key="test-api-key")
+
+        mock_batch_job = Mock()
+        mock_batch_job.id = "batch-unexpected"
+        mock_batch_job.input_files = ["file-abc"]
+        mock_batch_job.endpoint = "/v1/chat/completions"
+        mock_batch_job.status = Mock(value="SUCCESS")
+        mock_batch_job.created_at = 1700000000
+        mock_batch_job.total_requests = 1
+        mock_batch_job.completed_requests = 1
+        mock_batch_job.succeeded_requests = 0
+        mock_batch_job.failed_requests = 0
+        mock_batch_job.errors = []
+        mock_batch_job.metadata = None
+        mock_batch_job.output_file = "output-file-unexpected"
+        mock_batch_job.error_file = None
+        mock_batch_job.started_at = 1700000100
+        mock_batch_job.completed_at = 1700000200
+
+        mocked_mistral.return_value.batch.jobs.get_async = AsyncMock(return_value=mock_batch_job)
+
+        unexpected_line = json.dumps({"custom_id": "req-3"})
+        mock_response = Mock()
+        mock_response.text = unexpected_line
+        mocked_mistral.return_value.files.download_async = AsyncMock(return_value=mock_response)
+
+        result = await provider._aretrieve_batch_results("batch-unexpected")
+
+        assert isinstance(result, BatchResult)
+        assert len(result.results) == 1
+        assert result.results[0].custom_id == "req-3"
+        assert result.results[0].error is not None
+        assert result.results[0].error.code == "unknown"
+        assert result.results[0].error.message == "Unexpected response format"
