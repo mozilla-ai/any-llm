@@ -9,3 +9,4 @@ class DeepinfraProvider(BaseOpenAIProvider):
     PROVIDER_DOCUMENTATION_URL = "https://deepinfra.com/docs/openai_api"
 
     SUPPORTS_COMPLETION_REASONING = True
+    SUPPORTS_COMPLETION_PDF = False
