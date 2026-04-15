@@ -16,7 +16,7 @@ pip install any-llm-sdk[all]  # Install with all provider support
 
 ### Installing Specific Providers
 
-If you want to install a specific provider from our [supported providers](/any-llm/providers/):
+If you want to install a specific provider from our [supported providers](providers.md):
 
 ```bash
 pip install any-llm-sdk[mistral]  # For Mistral provider
@@ -94,11 +94,11 @@ print(response.choices[0].message.content)
 - Building applications that make multiple requests with the same provider
 - You want to avoid repeated provider instantiation overhead
 
-**Finding model names:** Check the [providers page](/any-llm/providers/) for provider IDs, or use the [`list_models`](/any-llm/api/list-models/) API to see available models for your provider.
+**Finding model names:** Check the [providers page](providers.md) for provider IDs, or use the [`list_models`](api/list-models.md) API to see available models for your provider.
 
 ## Streaming
 
-For the [providers that support streaming](/any-llm/providers/), you can enable it by passing `stream=True`:
+For the [providers that support streaming](providers.md), you can enable it by passing `stream=True`:
 
 ```python
 output = ""
@@ -115,7 +115,7 @@ for chunk in completion(
 
 ## Reasoning
 
-For [providers that support reasoning](/any-llm/providers/), you can request thinking traces alongside the response using `reasoning_effort`:
+For [providers that support reasoning](providers.md), you can request thinking traces alongside the response using `reasoning_effort`:
 
 ```python
 from any_llm import completion
@@ -141,7 +141,7 @@ Reasoning also works with streaming — each chunk may include `chunk.choices[0]
 
 `embedding` and `aembedding` allow you to create vector embeddings from text using the same unified interface across providers.
 
-Not all providers support embeddings - check the [providers documentation](/any-llm/providers/) to see which ones do.
+Not all providers support embeddings - check the [providers documentation](providers.md) to see which ones do.
 
 ```python
 from any_llm import embedding
@@ -199,9 +199,9 @@ The `any-llm` package provides a unified exception hierarchy that works consiste
 
 ### Enabling Unified Exceptions
 
-:::note[Opt-in Feature]
-Unified exception handling is currently **opt-in**. Set the `ANY_LLM_UNIFIED_EXCEPTIONS` environment variable to enable it:
-:::
+{% hint style="info" %}
+**Opt-in Feature:** Unified exception handling is currently **opt-in**. Set the `ANY_LLM_UNIFIED_EXCEPTIONS` environment variable to enable it:
+{% endhint %}
 
 ```bash
 export ANY_LLM_UNIFIED_EXCEPTIONS=1

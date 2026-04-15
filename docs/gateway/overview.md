@@ -36,9 +36,9 @@ curl -X POST http://localhost:8000/v1/chat/completions \
   }'
 ```
 
-> Learn how to set up your secure master key [here](/any-llm/gateway/authentication/)
+> Learn how to set up your secure master key [here](authentication.md)
 
-![Gateway architecture diagram showing application connecting to gateway, which routes to multiple LLM providers](/any-llm/images/gateway.png)
+![Gateway architecture diagram showing application connecting to gateway, which routes to multiple LLM providers](../images/gateway.png)
 
 ## Key Features
 
@@ -51,7 +51,7 @@ Create shared budget tiers with automatic daily, weekly, or monthly resets. Budg
 - **Tracking-only mode** - Monitor spending without blocking requests
 - **Auto-resetting** - No manual intervention required for recurring budgets
 
-[Set up your first budget →](/any-llm/gateway/budget-management/)
+[Set up your first budget →](budget-management.md)
 
 ### Flexible API Key System
 
@@ -68,7 +68,7 @@ Choose between two authentication patterns:
 - Add custom metadata for tracking
 - Activate, deactivate, or revoke on demand
 
-[Set up your keys →](/any-llm/gateway/authentication/)
+[Set up your keys →](authentication.md)
 
 ### Complete Usage Analytics
 
@@ -93,12 +93,12 @@ The gateway adds minimal latency (<50ms) to requests while providing complete ob
 
 ## Getting Started
 
-For comprehensive setup instructions, see the [Quick Start Guide](/any-llm/gateway/quickstart/).
+For comprehensive setup instructions, see the [Quick Start Guide](quickstart.md).
 
 ## Next Steps
 
-- **[Quick Start](/any-llm/gateway/quickstart/)** - Deploy and configure your first gateway
-- **[Authentication](/any-llm/gateway/authentication/)** - Set up master keys and virtual API keys
-- **[Budget Management](/any-llm/gateway/budget-management/)** - Configure spending limits and tracking
-- **[Configuration](/any-llm/gateway/configuration/)** - Learn about all configuration options
-- **[API Reference](/any-llm/gateway/api-reference/)** - Explore the complete API
+- **[Quick Start](quickstart.md)** - Deploy and configure your first gateway
+- **[Authentication](authentication.md)** - Set up master keys and virtual API keys
+- **[Budget Management](budget-management.md)** - Configure spending limits and tracking
+- **[Configuration](configuration.md)** - Learn about all configuration options
+- **[API Reference](api-reference.md)** - Explore the complete API

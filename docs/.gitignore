@@ -1,5 +1,6 @@
-node_modules/
-dist/
-.astro/
-src/content/docs/api/
-src/content/docs/cookbooks/
+api/
+providers.md
+openapi.json
+cookbooks/any-llm-getting-started.md
+llms.txt
+llms-full.txt

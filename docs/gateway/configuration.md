@@ -124,10 +124,10 @@ Common use cases:
 - **Timeouts**: Configure connection and request timeouts
 - **Provider-specific options**: Pass any additional arguments supported by the provider's client
 
-The available `client_args` options depend on the provider. See the [any-llm provider documentation](https://mozilla-ai.github.io/any-llm/providers/) for provider-specific options.
+The available `client_args` options depend on the provider. See the [any-llm provider documentation](../providers.md) for provider-specific options.
 
 ## Next Steps
 
-- See [supported providers](https://mozilla-ai.github.io/any-llm/providers/) for provider-specific configuration
-- Learn about [authentication methods](/any-llm/gateway/authentication/) for managing access
-- Set up [budget management](/any-llm/gateway/budget-management/) to enforce spending limits
+- See [supported providers](../providers.md) for provider-specific configuration
+- Learn about [authentication methods](authentication.md) for managing access
+- Set up [budget management](budget-management.md) to enforce spending limits
