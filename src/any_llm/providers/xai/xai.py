@@ -153,6 +153,21 @@ class XaiProvider(AnyLLM):
                 format_type=chat_pb2.FORMAT_TYPE_JSON_SCHEMA,
                 schema=json.dumps(get_json_schema(params.response_format)),
             )
+        elif params.response_format is not None and isinstance(params.response_format, dict):
+            from xai_sdk.proto import chat_pb2
+
+            rf = params.response_format
+            if rf.get("type") == "json_schema":
+                json_schema = rf.get("json_schema", {})
+                schema = json_schema.get("schema", {})
+                response_format_pb = chat_pb2.ResponseFormat(
+                    format_type=chat_pb2.FORMAT_TYPE_JSON_SCHEMA,
+                    schema=json.dumps(schema),
+                )
+            elif rf.get("type") == "json_object":
+                response_format_pb = chat_pb2.ResponseFormat(
+                    format_type=chat_pb2.FORMAT_TYPE_JSON_OBJECT,
+                )
 
         chat = self.client.chat.create(
             model=params.model_id,

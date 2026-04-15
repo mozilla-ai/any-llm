@@ -154,6 +154,8 @@ class GoogleProvider(AnyLLM):
                 kwargs["response_schema"] = response_format["json_schema"]["schema"]
             elif response_type == "json_object":
                 kwargs["response_mime_type"] = "application/json"
+            elif response_type == "text":
+                pass
             else:
                 msg = f"Unsupported response_format type: {response_type}"
                 raise ValueError(msg)

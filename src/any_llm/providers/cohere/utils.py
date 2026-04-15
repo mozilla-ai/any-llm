@@ -29,7 +29,11 @@ def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for i, message in enumerate(messages):
         patched_message = message.copy()
         if patched_message.get("role") == "tool":
-            if i > 0 and messages[i - 1].get("role") != "assistant":
+            # Walk backwards past sibling tool messages to find the assistant message
+            j = i - 1
+            while j >= 0 and messages[j].get("role") == "tool":
+                j -= 1
+            if j < 0 or messages[j].get("role") != "assistant":
                 msg = "A tool message must be preceded by an assistant message with tool_calls."
                 raise ValueError(msg)
             patched_message.pop("name", None)
@@ -82,7 +86,7 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
             tool_call = chunk.delta.message.tool_calls
             delta["tool_calls"] = [
                 {
-                    "index": getattr(chunk, "index", None) or 0,
+                    "index": chunk.index or 0,
                     "id": getattr(tool_call, "id", ""),
                     "type": "function",
                     "function": {
@@ -107,7 +111,7 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
         ):
             delta["tool_calls"] = [
                 {
-                    "index": getattr(chunk, "index", None) or 0,
+                    "index": chunk.index or 0,
                     "function": {
                         "arguments": getattr(chunk.delta.message.tool_calls.function, "arguments", ""),
                     },
@@ -165,21 +169,19 @@ def _convert_response(response: V2ChatResponse, model: str) -> ChatCompletion:
     )
 
     if response.finish_reason == "TOOL_CALL" and response.message.tool_calls:
-        tool_call = response.message.tool_calls[0]
         message = ChatCompletionMessage(
             role="assistant",
             content=response.message.tool_plan,
             tool_calls=[
                 ChatCompletionMessageFunctionToolCall(
-                    id=tool_call.id or "",
+                    id=tc.id or "",
                     type="function",
                     function=Function(
-                        name=tool_call.function.name if tool_call.function and tool_call.function.name else "",
-                        arguments=tool_call.function.arguments
-                        if tool_call.function and tool_call.function.arguments
-                        else "",
+                        name=tc.function.name if tc.function and tc.function.name else "",
+                        arguments=tc.function.arguments if tc.function and tc.function.arguments else "",
                     ),
                 )
+                for tc in response.message.tool_calls
             ],
         )
         choice = Choice(index=0, finish_reason="tool_calls", message=message)

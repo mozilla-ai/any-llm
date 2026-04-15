@@ -21,19 +21,19 @@ dependencies = [
 [project.optional-dependencies]
 
 all = [
-  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,vertexaianthropic,cohere,cerebras,fireworks,groq,bedrock,azure,azureanthropic,azureopenai,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,perplexity,platform,llamafile,llamacpp,sagemaker,gateway,zai,minimax,mzai,vllm]"
+  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,vertexaianthropic,cohere,cerebras,fireworks,groq,bedrock,azure,azureanthropic,azureopenai,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,perplexity,platform,llamafile,llamacpp,sagemaker,gateway,zai,minimax,mzai,vllm,dashscope]"
 ]
 
 platform = [
   "any-llm-platform-client>=0.3.0",
-  "opentelemetry-sdk>=1.40.0",
-  "opentelemetry-exporter-otlp-proto-http>=1.40.0",
+  "opentelemetry-sdk>=1.30.0",
+  "opentelemetry-exporter-otlp-proto-http>=1.30.0",
 ]
 
 perplexity = []
 
 mistral = [
-  "mistralai>=1.9.3",
+  "mistralai>=2.0.0",
 ]
 
 anthropic = []
@@ -135,6 +135,7 @@ gateway = [
   "prometheus-client>=0.20.0",
 ]
 zai = []
+dashscope = []
 
 [project.scripts]
 any-llm-gateway = "any_llm.gateway.cli:main"
@@ -269,7 +270,7 @@ lint = [
 
 tests = [
   "pytest>=8,<10",
-  "pytest-cov>=6.2.1,<7",
+  "pytest-cov>=6.2.1,<8",
   "pytest-asyncio>=0.26.0",
   "pytest-rerunfailures>=16.0",
   "mktestdocs>=0.2.4",
