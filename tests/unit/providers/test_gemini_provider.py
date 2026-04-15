@@ -688,6 +688,26 @@ def test_convert_tool_spec_basic_mapping() -> None:
     assert "additionalProperties" not in tools[0].function_declarations[0].parameters.properties["config"]  # type: ignore[union-attr, index]
 
 
+def test_convert_tool_spec_none_parameters() -> None:
+    """Regression: parameters=None must not raise 'NoneType' object is not subscriptable."""
+    tools = _convert_tool_spec([{"type": "function", "function": {"name": "ping", "parameters": None}}])
+    assert len(tools) == 1
+    decl = tools[0].function_declarations[0]  # type: ignore[index]
+    assert decl.name == "ping"
+    assert decl.parameters.properties == {}  # type: ignore[union-attr]
+    assert decl.parameters.required == []  # type: ignore[union-attr]
+
+
+def test_convert_tool_spec_parameters_missing_properties() -> None:
+    """Regression: parameters without a 'properties' key must not raise KeyError."""
+    tools = _convert_tool_spec([
+        {"type": "function", "function": {"name": "ping", "parameters": {"type": "object"}}}
+    ])
+    assert len(tools) == 1
+    decl = tools[0].function_declarations[0]  # type: ignore[index]
+    assert decl.parameters.properties == {}  # type: ignore[union-attr]
+
+
 @pytest.mark.asyncio
 async def test_gemini_with_built_in_tools() -> None:
     """Test that built-in tools are added correctly when specified."""
