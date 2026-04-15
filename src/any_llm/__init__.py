@@ -11,6 +11,7 @@ from any_llm.api import (
     amessages,
     aresponses,
     aretrieve_batch,
+    aretrieve_batch_results,
     cancel_batch,
     completion,
     create_batch,
@@ -20,6 +21,7 @@ from any_llm.api import (
     messages,
     responses,
     retrieve_batch,
+    retrieve_batch_results,
 )
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import (
@@ -38,6 +40,7 @@ from any_llm.exceptions import (
     UnsupportedParameterError,
     UnsupportedProviderError,
 )
+from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.completion import ParsedChatCompletion, ParsedChatCompletionMessage, ParsedChoice
 
 try:
@@ -50,7 +53,12 @@ __all__ = [
     "AnyLLM",
     "AnyLLMError",
     "AuthenticationError",
+    "Batch",
     "BatchNotCompleteError",
+    "BatchRequestCounts",
+    "BatchResult",
+    "BatchResultError",
+    "BatchResultItem",
     "ContentFilterError",
     "ContentFilterFinishReasonError",
     "ContextLengthExceededError",
@@ -75,6 +83,7 @@ __all__ = [
     "amessages",
     "aresponses",
     "aretrieve_batch",
+    "aretrieve_batch_results",
     "cancel_batch",
     "completion",
     "create_batch",
@@ -84,4 +93,5 @@ __all__ = [
     "messages",
     "responses",
     "retrieve_batch",
+    "retrieve_batch_results",
 ]
