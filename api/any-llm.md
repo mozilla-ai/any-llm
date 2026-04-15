@@ -11,7 +11,7 @@ The `AnyLLM` class is the provider interface at the core of any-llm. Use it when
 
 Factory method that returns a configured `AnyLLM` instance for the given provider.
 
-```python
+```
 def create(
     provider: str | LLMProvider,
     api_key: str | None = None,
@@ -47,7 +47,7 @@ print(response.choices[0].message.content)
 
 Parses a combined `"provider:model"` string into its components.
 
-```python
+```
 def split_model_provider(
     model: str,
 ) -> tuple[LLMProvider, str]
@@ -71,7 +71,7 @@ provider, model_name = AnyLLM.split_model_provider("anthropic:claude-sonnet-4-20
 
 Returns metadata for every supported provider, sorted alphabetically by name.
 
-```python
+```
 def get_all_provider_metadata() -> list[ProviderMetadata]
 ```
 
@@ -86,7 +86,7 @@ for meta in AnyLLM.get_all_provider_metadata():
 
 Returns a list of all supported provider key strings.
 
-```python
+```
 def get_supported_providers() -> list[str]
 ```
 
@@ -100,7 +100,7 @@ All instance methods below are called on an `AnyLLM` object returned by `AnyLLM.
 
 Create a chat completion. See the [Completion](completion.md) reference for the full parameter list.
 
-```python
+```
 def completion(self, model, messages, *, stream=None, response_format=None, **kwargs)
     -> ChatCompletion | Iterator[ChatCompletionChunk] | ParsedChatCompletion
 
@@ -112,7 +112,7 @@ async def acompletion(self, model, messages, *, stream=None, response_format=Non
 
 Create a response using the OpenResponses API. See the [Responses](responses.md) reference.
 
-```python
+```
 def responses(self, **kwargs)
     -> ResponseResource | Response | Iterator[ResponseStreamEvent]
 
@@ -124,7 +124,7 @@ async def aresponses(self, **kwargs)
 
 Create a message using the Anthropic Messages API format. All providers support this through automatic conversion.
 
-```python
+```
 def messages(self, **kwargs)
     -> MessageResponse | Iterator[MessageStreamEvent]
 
@@ -136,7 +136,7 @@ async def amessages(self, model, messages, max_tokens, **kwargs)
 
 List available models for this provider. See the [List Models](list-models.md) reference.
 
-```python
+```
 def list_models(self, **kwargs) -> Sequence[Model]
 async def alist_models(self, **kwargs) -> Sequence[Model]
 ```
@@ -145,7 +145,7 @@ async def alist_models(self, **kwargs) -> Sequence[Model]
 
 Create a batch job. See the [Batch](batch.md) reference.
 
-```python
+```
 def create_batch(self, **kwargs) -> Batch
 async def acreate_batch(self, input_file_path, endpoint, completion_window="24h", metadata=None, **kwargs) -> Batch
 ```
@@ -154,7 +154,7 @@ async def acreate_batch(self, input_file_path, endpoint, completion_window="24h"
 
 Returns metadata for this provider instance's class.
 
-```python
+```
 def get_provider_metadata() -> ProviderMetadata
 ```
 

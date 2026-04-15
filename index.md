@@ -26,9 +26,32 @@ print(response)
 
 ## Why any-llm
 
-- **Switch providers in one line**: Change from OpenAI to Anthropic, Mistral, or any other provider with a single parameter change.
-- **Unified exception handling**: Consistent error handling across all providers with a unified exception hierarchy.
-- **Simple API, powerful features**: Streaming, tool calling, embeddings, reasoning, and more, all through one interface.
+<table data-view="cards">
+  <thead>
+    <tr>
+      <th></th>
+      <th></th>
+      <th data-hidden data-card-target data-type="content-ref"></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Switch providers in one line</strong></td>
+      <td>Change from OpenAI to Anthropic, Mistral, or any other provider with a single parameter change.</td>
+      <td><a href="providers.md">Providers</a></td>
+    </tr>
+    <tr>
+      <td><strong>Unified exception handling</strong></td>
+      <td>Consistent error handling across all providers with a unified exception hierarchy.</td>
+      <td><a href="quickstart.md">Quickstart</a></td>
+    </tr>
+    <tr>
+      <td><strong>Simple API, powerful features</strong></td>
+      <td>Streaming, tool calling, embeddings, reasoning, and more, all through one interface.</td>
+      <td><a href="api/any-llm.md">API Reference</a></td>
+    </tr>
+  </tbody>
+</table>
 
 ## API Documentation
 

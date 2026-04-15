@@ -7,7 +7,7 @@ The `list_models` and `alist_models` functions return the available models for a
 
 ## `any_llm.list_models()`
 
-```python
+```
 def list_models(
     provider: str | LLMProvider,
     api_key: str | None = None,
@@ -21,7 +21,7 @@ def list_models(
 
 Async variant with the same parameters.
 
-```python
+```
 async def alist_models(
     provider: str | LLMProvider,
     api_key: str | None = None,

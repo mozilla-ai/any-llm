@@ -7,7 +7,7 @@ The `messages` and `amessages` functions use the Anthropic Messages API format. 
 
 ## `any_llm.messages()`
 
-```python
+```
 def messages(
     model: str,
     messages: list[dict[str, Any]],
@@ -36,7 +36,7 @@ def messages(
 
 Async variant with the same parameters. Returns `MessageResponse | AsyncIterator[MessageStreamEvent]`.
 
-```python
+```
 async def amessages(
     model: str,
     messages: list[dict[str, Any]],

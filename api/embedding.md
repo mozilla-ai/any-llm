@@ -7,7 +7,7 @@ The `embedding` and `aembedding` functions create vector embeddings from text us
 
 ## `any_llm.embedding()`
 
-```python
+```
 def embedding(
     model: str,
     inputs: str | list[str],
@@ -24,7 +24,7 @@ def embedding(
 
 Async variant with the same parameters.
 
-```python
+```
 async def aembedding(
     model: str,
     inputs: str | list[str],

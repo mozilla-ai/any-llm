@@ -73,7 +73,7 @@ A literal type controlling reasoning depth for models that support it.
 
 **Import:** `from any_llm.types.completion import ReasoningEffort`
 
-```python
+```
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "auto"]
 ```
 
