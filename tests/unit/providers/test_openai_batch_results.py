@@ -14,7 +14,7 @@ async def test_aretrieve_batch_results_not_supported() -> None:
 
     with patch("any_llm.providers.openai.base.AsyncOpenAI"):
         provider = OpenaiProvider(api_key="test-key")
-        provider.SUPPORTS_BATCH = False  # type: ignore[misc]
+        provider.SUPPORTS_BATCH = False
 
         with pytest.raises(NotImplementedError, match="does not support batch"):
             await provider._aretrieve_batch_results("batch-123")
