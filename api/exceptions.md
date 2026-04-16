@@ -19,6 +19,8 @@ AnyLLMError
 ├── ContentFilterError
 ├── ContentFilterFinishReasonError
 ├── ContextLengthExceededError
+├── GatewayTimeoutError
+├── InsufficientFundsError
 ├── InvalidRequestError
 ├── LengthFinishReasonError
 ├── MissingApiKeyError
@@ -27,6 +29,7 @@ AnyLLMError
 ├── RateLimitError
 ├── UnsupportedParameterError
 ├── UnsupportedProviderError
+├── UpstreamProviderError
 └── _FinishReasonError
 ```
 
