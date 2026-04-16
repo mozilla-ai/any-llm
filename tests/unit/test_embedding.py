@@ -1,3 +1,4 @@
+import sys
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -39,6 +40,8 @@ async def test_embedding_with_api_config() -> None:
 @pytest.mark.asyncio
 async def test_embedding_unsupported_provider_raises_not_implemented(provider: LLMProvider) -> None:
     """Test that calling embedding on a provider that doesn't support it raises NotImplementedError."""
+    if sys.version_info >= (3, 14) and provider.value in ("voyage", "watsonx"):
+        pytest.skip(f"{provider.value} is not compatible with Python 3.14+")
     cls = AnyLLM.get_provider_class(provider)
     if not cls.SUPPORTS_EMBEDDING:
         with pytest.raises(NotImplementedError, match=None):
