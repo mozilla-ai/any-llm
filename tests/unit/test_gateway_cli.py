@@ -6,9 +6,7 @@ import any_llm.gateway.cli as gateway_cli
 from any_llm.gateway.core.config import GatewayConfig
 
 
-def test_main_warns_for_deprecated_binary_name(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_main_emits_deprecation_warning(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
     called = False
 
     def fake_cli() -> None:
@@ -21,26 +19,9 @@ def test_main_warns_for_deprecated_binary_name(
     gateway_cli.main()
 
     captured = capsys.readouterr()
-    assert "'any-llm-gateway' is deprecated. Use 'gateway' instead." in captured.err
-    assert called
-
-
-def test_main_does_not_warn_for_gateway_binary_name(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    called = False
-
-    def fake_cli() -> None:
-        nonlocal called
-        called = True
-
-    monkeypatch.setattr(gateway_cli, "cli", fake_cli)
-    monkeypatch.setattr(sys, "argv", ["gateway", "serve"])
-
-    gateway_cli.main()
-
-    captured = capsys.readouterr()
-    assert captured.err == ""
+    assert "deprecated" in captured.err
+    assert "May 18, 2026" in captured.err
+    assert "https://github.com/mozilla-ai/gateway" in captured.err
     assert called
 
 
