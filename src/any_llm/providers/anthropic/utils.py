@@ -334,13 +334,14 @@ def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[dict[str, Any
 
     anthropic_tools = []
     for tool in generic_tools:
+        params: dict[str, Any] = tool["parameters"] or {}
         anthropic_tool = {
             "name": tool["name"],
             "description": tool["description"],
             "input_schema": {
                 "type": "object",
-                "properties": tool["parameters"]["properties"],
-                "required": tool["parameters"].get("required", []),
+                "properties": params.get("properties") or {},
+                "required": params.get("required", []),
             },
         }
         anthropic_tools.append(anthropic_tool)

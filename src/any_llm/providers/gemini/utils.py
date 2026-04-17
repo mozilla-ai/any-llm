@@ -41,8 +41,9 @@ def _convert_tool_spec(tools: list[dict[str, Any] | Any]) -> list[types.Tool]:
             continue
 
         function = tool["function"]
+        params: dict[str, Any] = function.get("parameters") or {}
         properties: dict[str, dict[str, Any]] = {}
-        for param_name, param_info in function["parameters"]["properties"].items():
+        for param_name, param_info in (params.get("properties") or {}).items():
             prop: dict[str, Any] = {
                 "type": param_info.get("type", "string"),
                 "description": param_info.get("description", ""),
@@ -58,7 +59,7 @@ def _convert_tool_spec(tools: list[dict[str, Any] | Any]) -> list[types.Tool]:
         parameters_dict = {
             "type": "object",
             "properties": properties,
-            "required": function["parameters"].get("required", []),
+            "required": params.get("required", []),
         }
 
         function_declarations.append(

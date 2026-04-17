@@ -13,6 +13,7 @@ from any_llm.providers.bedrock.utils import (
     _convert_images_for_bedrock,
     _convert_messages,
     _convert_response,
+    _convert_tool_spec,
     _create_openai_chunk_from_aws_chunk,
 )
 from any_llm.types.completion import CompletionParams, ReasoningEffort
@@ -745,3 +746,25 @@ def test_streaming_metadata_chunk_without_cached_tokens() -> None:
     assert result.usage.prompt_tokens == 100
     assert result.usage.completion_tokens == 50
     assert result.usage.prompt_tokens_details is None
+
+
+def test_convert_tool_spec_none_parameters() -> None:
+    """Regression: parameters=None must not pass None to Bedrock's inputSchema."""
+    tool_config = _convert_tool_spec(
+        [{"type": "function", "function": {"name": "ping", "parameters": None}}],
+        tool_choice=None,
+    )
+    spec = tool_config["tools"][0]["toolSpec"]
+    assert spec["name"] == "ping"
+    assert spec["inputSchema"]["json"] is not None
+    assert spec["inputSchema"]["json"]["properties"] == {}
+
+
+def test_convert_tool_spec_with_parameters() -> None:
+    """Parameters present must be forwarded as-is to inputSchema."""
+    params = {"type": "object", "properties": {"q": {"type": "string"}}, "required": ["q"]}
+    tool_config = _convert_tool_spec(
+        [{"type": "function", "function": {"name": "search", "parameters": params}}],
+        tool_choice=None,
+    )
+    assert tool_config["tools"][0]["toolSpec"]["inputSchema"]["json"] == params
