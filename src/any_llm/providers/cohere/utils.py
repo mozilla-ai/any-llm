@@ -220,6 +220,46 @@ def _convert_response(response: V2ChatResponse, model: str) -> ChatCompletion:
     )
 
 
+def _convert_cohere_rerank_response(response: Any) -> "RerankResponse":
+    """Convert a Cohere V2 rerank response to a normalized RerankResponse."""
+    from any_llm.types.rerank import RerankMeta, RerankResponse, RerankResult, RerankUsage
+
+    results = [
+        RerankResult(
+            index=r.index,
+            relevance_score=r.relevance_score,
+        )
+        for r in response.results
+    ]
+    results.sort(key=lambda r: r.relevance_score, reverse=True)
+
+    meta = None
+    if hasattr(response, "meta") and response.meta is not None:
+        billed_units = None
+        tokens = None
+        if hasattr(response.meta, "billed_units") and response.meta.billed_units is not None:
+            billed_units = {}
+            if hasattr(response.meta.billed_units, "search_units") and response.meta.billed_units.search_units is not None:
+                billed_units["search_units"] = float(response.meta.billed_units.search_units)
+        if hasattr(response.meta, "tokens") and response.meta.tokens is not None:
+            tokens = {}
+            if hasattr(response.meta.tokens, "input_tokens") and response.meta.tokens.input_tokens is not None:
+                tokens["input_tokens"] = int(response.meta.tokens.input_tokens)
+        if billed_units or tokens:
+            meta = RerankMeta(billed_units=billed_units or None, tokens=tokens or None)
+
+    usage = None
+    if meta and meta.tokens and "input_tokens" in meta.tokens:
+        usage = RerankUsage(total_tokens=meta.tokens["input_tokens"])
+
+    return RerankResponse(
+        id=response.id,
+        results=results,
+        meta=meta,
+        usage=usage,
+    )
+
+
 def _convert_models_list(response: CohereListModelsResponse) -> Sequence[Model]:
     """Converts a Cohere ListModelsResponse to a list of Model objects."""
     models = []
