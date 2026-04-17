@@ -427,8 +427,7 @@ class GatewayProvider(BaseOpenAIProvider):
             body["max_tokens_per_doc"] = kwargs["max_tokens_per_doc"]
 
         base_url = str(self.client.base_url).rstrip("/")
-        if base_url.endswith("/v1"):
-            base_url = base_url[:-3]
+        base_url = base_url.removesuffix("/v1")
 
         headers: dict[str, str] = {"Content-Type": "application/json"}
         for key in ("Authorization", "X-AnyLLM-Key"):
