@@ -9,7 +9,13 @@ from any_llm.providers.openai.base import BaseOpenAIProvider
 
 
 class AzureopenaiProvider(BaseOpenAIProvider):
-    """Azure OpenAI AnyLLM."""
+    """Azure OpenAI AnyLLM.
+
+    Moderation support is disabled by default because Azure OpenAI deployments
+    do not typically expose the moderation endpoint. Set
+    ``SUPPORTS_MODERATION = True`` on a subclass only if you have verified the
+    deployment supports it.
+    """
 
     ENV_API_KEY_NAME = "AZURE_OPENAI_API_KEY"
     ENV_API_BASE_NAME = "AZURE_OPENAI_ENDPOINT"
@@ -18,6 +24,7 @@ class AzureopenaiProvider(BaseOpenAIProvider):
     SUPPORTS_RESPONSES = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_COMPLETION_PDF = False
+    SUPPORTS_MODERATION = False
 
     DEFAULT_API_VERSION = "preview"
 
