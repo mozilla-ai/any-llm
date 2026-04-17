@@ -1,7 +1,9 @@
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from openai import OpenAIError
 
 from any_llm import AnyLLM, amoderation, moderation
 from any_llm.constants import LLMProvider
@@ -85,8 +87,6 @@ async def test_amoderation_multi_input() -> None:
 @pytest.mark.asyncio
 async def test_amoderation_multimodal_input_passthrough() -> None:
     """List-of-dict (multimodal) input is forwarded unchanged."""
-    from typing import Any
-
     parts: list[dict[str, Any]] = [
         {"type": "text", "text": "hi"},
         {"type": "image_url", "image_url": {"url": "http://x"}},
@@ -144,17 +144,33 @@ async def test_amoderation_unsupported_provider_raises_not_implemented(provider:
     if cls.SUPPORTS_MODERATION:
         pytest.skip(f"{provider.value} supports moderation, skipping")
 
+    # Instantiate the provider separately so we can cleanly distinguish
+    # "provider refused to construct due to config" (skip) from the
+    # NotImplementedError path we actually want to assert.
     try:
-        with pytest.raises(NotImplementedError, match="does not support moderation"):
-            await amoderation(
-                f"{provider.value}:does-not-matter",
-                input="hello",
-                api_key="test_key",
-            )
+        llm = AnyLLM.create(provider, api_key="test_key")
     except ImportError:
         pytest.skip(f"{provider.value} optional dependency missing, skipping")
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} requires additional config to instantiate, skipping")
+    except OpenAIError as exc:
+        pytest.skip(f"{provider.value} client init failed: {exc}")
+    except (ValueError, TypeError) as exc:
+        pytest.skip(f"{provider.value} requires additional config to instantiate: {exc}")
+    except Exception as exc:
+        # Catch provider-specific config errors raised during client
+        # instantiation (e.g. botocore NoRegionError for bedrock).
+        if type(exc).__name__ in {
+            "NoRegionError",
+            "NoCredentialsError",
+            "ProfileNotFound",
+            "DefaultCredentialsError",
+        }:
+            pytest.skip(f"{provider.value} requires additional config to instantiate: {exc}")
+        raise
+
+    with pytest.raises(NotImplementedError, match="does not support moderation"):
+        await llm._amoderation("does-not-matter", "hello")
 
 
 @pytest.mark.asyncio
