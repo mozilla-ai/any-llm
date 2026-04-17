@@ -60,6 +60,7 @@ print(response)
 **Direct API Functions** (recommended for simple use cases):
 - [completion](api/completion.md) - Chat completions with any provider
 - [embedding](api/embedding.md) - Text embeddings
+- [moderation](api/moderation.md) - Content moderation
 - [responses](api/responses.md) - [OpenResponses](https://www.openresponses.org/) API for agentic AI systems
 
 **AnyLLM Class** (recommended for advanced use cases):
