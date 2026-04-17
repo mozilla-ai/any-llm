@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
+    from any_llm.types.rerank import RerankResponse
 
 
 class CerebrasProvider(AnyLLM):
@@ -46,6 +47,7 @@ class CerebrasProvider(AnyLLM):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
+    SUPPORTS_RERANK = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -92,6 +94,20 @@ class CerebrasProvider(AnyLLM):
     @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         return _convert_models_list(response)
+
+    @staticmethod
+    @override
+    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
+        """Cerebras does not support rerank."""
+        msg = "Cerebras does not support rerank"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @override
+    def _convert_rerank_response(response: Any) -> RerankResponse:
+        """Cerebras does not support rerank."""
+        msg = "Cerebras does not support rerank"
+        raise NotImplementedError(msg)
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:

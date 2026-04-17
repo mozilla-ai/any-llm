@@ -1,10 +1,11 @@
 # mypy: disable-error-code="no-untyped-call"
+from __future__ import annotations
+
 import asyncio
 import functools
 import json
 import os
-from collections.abc import AsyncIterator, Callable, Iterator, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from typing_extensions import override
 
@@ -27,6 +28,11 @@ try:
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+
+    from any_llm.types.rerank import RerankResponse
+
 
 class BedrockProvider(AnyLLM):
     """AWS Bedrock Provider using boto3."""
@@ -45,6 +51,7 @@ class BedrockProvider(AnyLLM):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
+    SUPPORTS_RERANK = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -100,6 +107,20 @@ class BedrockProvider(AnyLLM):
         # AWS doesn't provide typing, but per https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/bedrock/client/list_foundation_models.html
         # the modelId is a string and will not be None
         return [Model(id=model["modelId"], object="model", created=0, owned_by="aws") for model in models_list]
+
+    @staticmethod
+    @override
+    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
+        """Bedrock does not support rerank."""
+        msg = "Bedrock does not support rerank"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @override
+    def _convert_rerank_response(response: Any) -> RerankResponse:
+        """Bedrock does not support rerank."""
+        msg = "Bedrock does not support rerank"
+        raise NotImplementedError(msg)
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
