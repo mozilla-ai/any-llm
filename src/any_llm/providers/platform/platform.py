@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
     from openresponses_types import ResponseResource
 
-    from any_llm.types.batch import Batch
+    from any_llm.types.batch import Batch, BatchResult
     from any_llm.types.model import Model
     from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
@@ -433,6 +433,11 @@ class PlatformProvider(AnyLLM):
     ) -> Sequence[Batch]:
         await self._ensure_provider_initialized()
         return await self.provider._alist_batches(after=after, limit=limit, **kwargs)
+
+    @override
+    async def _aretrieve_batch_results(self, batch_id: str, **kwargs: Any) -> BatchResult:
+        await self._ensure_provider_initialized()
+        return await self.provider._aretrieve_batch_results(batch_id, **kwargs)
 
     async def _stream_with_usage_tracking(
         self,

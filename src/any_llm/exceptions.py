@@ -188,3 +188,16 @@ class ContentFilterFinishReasonError(_FinishReasonError):
     """
 
     default_message = "Could not parse response content as the request was rejected by the content filter"
+
+
+class BatchNotCompleteError(AnyLLMError):
+    """Raised when retrieve_batch_results is called on a non-completed batch."""
+
+    def __init__(self, batch_id: str, status: str, provider_name: str | None = None):
+        self.batch_id = batch_id
+        self.batch_status = status
+        message = (
+            f"Batch '{batch_id}' is not yet complete (status: {status}). "
+            f"Call retrieve_batch() to check the current status."
+        )
+        super().__init__(message=message, provider_name=provider_name)

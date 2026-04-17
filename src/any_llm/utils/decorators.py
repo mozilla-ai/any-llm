@@ -7,7 +7,6 @@ from typing import Any, TypeVar
 
 F = TypeVar("F", bound=Callable[..., Any])
 
-BATCH_API_EXPERIMENTAL_MESSAGE = "The Batch API is experimental and may have breaking changes in future versions."
 DEFAULT_EXPERIMENTAL_MESSAGE = "This API is experimental and subject to breaking changes."
 
 
