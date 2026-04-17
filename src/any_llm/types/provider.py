@@ -14,6 +14,7 @@ class ProviderMetadata(BaseModel):
     reasoning: bool
     completion: bool
     embedding: bool
+    moderation: bool
     responses: bool
     image: bool
     pdf: bool
