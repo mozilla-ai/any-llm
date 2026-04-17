@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import functools
 import json
-from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any
 
 from typing_extensions import override
@@ -13,7 +12,6 @@ from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.logging import logger
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
-from any_llm.types.model import Model
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -29,6 +27,9 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+
+    from any_llm.types.model import Model
     from any_llm.types.rerank import RerankResponse
 
 

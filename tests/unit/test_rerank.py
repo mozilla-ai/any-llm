@@ -64,6 +64,7 @@ def test_rerank_usage_optional() -> None:
 
 
 def test_cohere_supports_rerank() -> None:
+    pytest.importorskip("cohere")
     from any_llm.providers.cohere import CohereProvider
 
     assert CohereProvider.SUPPORTS_RERANK is True
@@ -88,6 +89,7 @@ def test_anthropic_base_does_not_support_rerank() -> None:
 
 
 def test_cohere_convert_rerank_params_basic() -> None:
+    pytest.importorskip("cohere")
     from any_llm.providers.cohere import CohereProvider
 
     params = CohereProvider._convert_rerank_params(
@@ -102,6 +104,7 @@ def test_cohere_convert_rerank_params_basic() -> None:
 
 
 def test_cohere_convert_rerank_params_with_options() -> None:
+    pytest.importorskip("cohere")
     from any_llm.providers.cohere import CohereProvider
 
     params = CohereProvider._convert_rerank_params(
@@ -120,6 +123,7 @@ def test_cohere_convert_rerank_params_with_options() -> None:
 
 
 def test_cohere_convert_rerank_params_ignores_none_top_n() -> None:
+    pytest.importorskip("cohere")
     from any_llm.providers.cohere import CohereProvider
 
     params = CohereProvider._convert_rerank_params(
@@ -132,6 +136,7 @@ def test_cohere_convert_rerank_params_ignores_none_top_n() -> None:
 
 
 def test_convert_cohere_rerank_response_basic() -> None:
+    pytest.importorskip("cohere")
     from any_llm.providers.cohere.utils import _convert_cohere_rerank_response
 
     mock_result = MagicMock()
@@ -153,6 +158,7 @@ def test_convert_cohere_rerank_response_basic() -> None:
 
 
 def test_convert_cohere_rerank_response_sorts_descending() -> None:
+    pytest.importorskip("cohere")
     from any_llm.providers.cohere.utils import _convert_cohere_rerank_response
 
     mock_r1 = MagicMock()
@@ -174,6 +180,7 @@ def test_convert_cohere_rerank_response_sorts_descending() -> None:
 
 
 def test_convert_cohere_rerank_response_with_meta() -> None:
+    pytest.importorskip("cohere")
     from any_llm.providers.cohere.utils import _convert_cohere_rerank_response
 
     mock_result = MagicMock()
@@ -202,6 +209,7 @@ def test_convert_cohere_rerank_response_with_meta() -> None:
 
 
 def test_convert_cohere_rerank_response_with_no_billing() -> None:
+    pytest.importorskip("cohere")
     from any_llm.providers.cohere.utils import _convert_cohere_rerank_response
 
     mock_result = MagicMock()
@@ -232,6 +240,7 @@ async def test_unsupported_provider_raises() -> None:
 
 
 def test_cohere_metadata_includes_rerank() -> None:
+    pytest.importorskip("cohere")
     from any_llm.providers.cohere import CohereProvider
 
     meta = CohereProvider.get_provider_metadata()
@@ -440,6 +449,7 @@ def test_openai_base_rerank_response_raises() -> None:
 @pytest.mark.asyncio
 async def test_cohere_arerank_calls_client() -> None:
     """Test that CohereProvider._arerank calls client.rerank with converted params."""
+    pytest.importorskip("cohere")
     from any_llm.providers.cohere import CohereProvider
 
     mock_result = MagicMock()

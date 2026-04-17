@@ -14,6 +14,7 @@ try:
     from cohere import V2ChatResponse
 
     from .utils import (
+        _convert_cohere_rerank_response,
         _convert_models_list,
         _convert_response,
         _create_openai_chunk_from_cohere_chunk,
@@ -121,8 +122,6 @@ class CohereProvider(AnyLLM):
     @override
     def _convert_rerank_response(response: Any) -> RerankResponse:
         """Convert Cohere rerank response to normalized RerankResponse."""
-        from any_llm.providers.cohere.utils import _convert_cohere_rerank_response
-
         return _convert_cohere_rerank_response(response)
 
     @override
