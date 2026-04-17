@@ -1059,7 +1059,7 @@ class AnyLLM(ABC):
     def _moderation(
         self,
         model: str,
-        input: str | list[str] | list[dict[str, Any]],
+        input: str | list[str] | list[dict[str, Any]],  # noqa: A002
         **kwargs: Any,
     ) -> ModerationResponse:
         """Run a moderation check synchronously.
@@ -1076,7 +1076,7 @@ class AnyLLM(ABC):
     async def amoderation(
         self,
         model: str,
-        input: str | list[str] | list[dict[str, Any]],
+        input: str | list[str] | list[dict[str, Any]],  # noqa: A002
         **kwargs: Any,
     ) -> ModerationResponse:
         """Run a moderation check asynchronously.
@@ -1099,7 +1099,7 @@ class AnyLLM(ABC):
     async def _amoderation(
         self,
         model: str,
-        input: str | list[str] | list[dict[str, Any]],
+        input: str | list[str] | list[dict[str, Any]],  # noqa: A002
         **kwargs: Any,
     ) -> ModerationResponse:
         if not self.SUPPORTS_MODERATION:

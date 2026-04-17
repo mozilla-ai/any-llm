@@ -357,7 +357,8 @@ def _as_plain_dict(obj: Any) -> dict[str, Any]:
     if obj is None:
         return {}
     if hasattr(obj, "model_dump"):
-        return obj.model_dump()
+        dumped = obj.model_dump()
+        return dumped if isinstance(dumped, dict) else {}
     if isinstance(obj, dict):
         return dict(obj)
     try:
