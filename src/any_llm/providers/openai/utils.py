@@ -113,6 +113,8 @@ def _convert_moderation_response_from_openai(raw: Any, *, include_raw: bool) -> 
         types_raw = getattr(item, "category_applied_input_types", None)
 
         categories = {key: value for key, value in categories_raw.items() if isinstance(value, bool)}
+        # ``bool`` is a subclass of ``int`` in Python; explicitly exclude it
+        # so boolean flags from ``categories`` do not leak into ``scores``.
         scores = {
             key: float(value)
             for key, value in scores_raw.items()
