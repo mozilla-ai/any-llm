@@ -3,7 +3,7 @@ import json
 from collections.abc import AsyncIterator, Sequence
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from openai import AsyncOpenAI
 from openai._streaming import AsyncStream
@@ -39,6 +39,9 @@ from any_llm.types.moderation import ModerationResponse
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
+if TYPE_CHECKING:
+    from any_llm.types.rerank import RerankResponse
+
 
 class BaseOpenAIProvider(AnyLLM):
     """
@@ -60,6 +63,7 @@ class BaseOpenAIProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
     SUPPORTS_IMAGE_GENERATION = False
+    SUPPORTS_RERANK = False
 
     _DEFAULT_REASONING_EFFORT: ReasoningEffort | None = None
 
@@ -163,6 +167,20 @@ class BaseOpenAIProvider(AnyLLM):
             return response
         # Otherwise, validate each item
         return [Model.model_validate(item) if not isinstance(item, Model) else item for item in response]
+
+    @staticmethod
+    @override
+    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
+        """OpenAI does not support rerank."""
+        msg = "OpenAI does not support rerank"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @override
+    def _convert_rerank_response(response: Any) -> "RerankResponse":
+        """OpenAI does not support rerank."""
+        msg = "OpenAI does not support rerank"
+        raise NotImplementedError(msg)
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
