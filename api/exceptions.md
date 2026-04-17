@@ -16,6 +16,7 @@ All exceptions inherit from `AnyLLMError`:
 ```
 AnyLLMError
 ├── AuthenticationError
+├── BatchNotCompleteError
 ├── ContentFilterError
 ├── ContentFilterFinishReasonError
 ├── ContextLengthExceededError

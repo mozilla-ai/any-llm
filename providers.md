@@ -7,9 +7,9 @@ description: Complete list of LLM providers supported by any-llm including OpenA
 
 | ID | Key | Base | Responses | Completion | Streaming<br>(Completions) | Reasoning<br>(Completions) | Image <br>(Completions) | Embedding | List Models | Batch |
 |----|-----|------|-----------|------------|--------------------------|--------------------------|-----------|-----------|-------------|-------|
-| [`anthropic`](https://docs.anthropic.com/en/home) | ANTHROPIC_API_KEY | ANTHROPIC_BASE_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| [`anthropic`](https://docs.anthropic.com/en/home) | ANTHROPIC_API_KEY | ANTHROPIC_BASE_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
 | [`azure`](https://azure.microsoft.com/en-us/products/ai-services/openai-service) | AZURE_API_KEY | AZURE_AI_CHAT_ENDPOINT | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ |
-| [`azureanthropic`](https://learn.microsoft.com/en-us/azure/ai-foundry/model-inference/concepts/models) | AZURE_ANTHROPIC_API_KEY | AZURE_ANTHROPIC_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| [`azureanthropic`](https://learn.microsoft.com/en-us/azure/ai-foundry/model-inference/concepts/models) | AZURE_ANTHROPIC_API_KEY | AZURE_ANTHROPIC_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
 | [`azureopenai`](https://learn.microsoft.com/en-us/azure/ai-foundry/) | AZURE_OPENAI_API_KEY | AZURE_OPENAI_ENDPOINT | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ |
 | [`bedrock`](https://aws.amazon.com/bedrock/) | AWS_BEARER_TOKEN_BEDROCK | AWS_ENDPOINT_URL_BEDROCK_RUNTIME | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`cerebras`](https://docs.cerebras.ai/) | CEREBRAS_API_KEY | CEREBRAS_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
@@ -41,7 +41,7 @@ description: Complete list of LLM providers supported by any-llm including OpenA
 | [`sambanova`](https://sambanova.ai/) | SAMBANOVA_API_KEY | SAMBANOVA_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`together`](https://together.ai/) | TOGETHER_API_KEY | TOGETHER_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | [`vertexai`](https://cloud.google.com/vertex-ai/docs) |  | VERTEXAI_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| [`vertexaianthropic`](https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-claude) |  | VERTEXAI_ANTHROPIC_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| [`vertexaianthropic`](https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-claude) |  | VERTEXAI_ANTHROPIC_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
 | [`vllm`](https://docs.vllm.ai/) | VLLM_API_KEY | VLLM_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`voyage`](https://docs.voyageai.com/) | VOYAGE_API_KEY | VOYAGE_API_BASE | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
 | [`watsonx`](https://www.ibm.com/watsonx) | WATSONX_API_KEY | WATSONX_URL | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ❌ |
