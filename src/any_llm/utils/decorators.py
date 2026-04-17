@@ -8,6 +8,7 @@ from typing import Any, TypeVar
 F = TypeVar("F", bound=Callable[..., Any])
 
 DEFAULT_EXPERIMENTAL_MESSAGE = "This API is experimental and subject to breaking changes."
+BATCH_API_EXPERIMENTAL_MESSAGE = "The Batch API is experimental and subject to breaking changes."
 
 
 def experimental(message: str = DEFAULT_EXPERIMENTAL_MESSAGE) -> Callable[[F], F]:
