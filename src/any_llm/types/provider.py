@@ -25,6 +25,7 @@ class ProviderMetadata(BaseModel):
     image_generation: bool = False
     audio_transcription: bool = False
     audio_speech: bool = False
+    rerank: bool
 
 
 class PlatformKey(BaseModel):
