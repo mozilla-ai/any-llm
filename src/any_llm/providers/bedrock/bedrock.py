@@ -5,7 +5,6 @@ import asyncio
 import functools
 import json
 import os
-from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any
 
 from typing_extensions import override
@@ -30,6 +29,8 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+
     from any_llm.types.rerank import RerankResponse
 
 

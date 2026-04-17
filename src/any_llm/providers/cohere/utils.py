@@ -15,6 +15,7 @@ from any_llm.types.completion import (
     Reasoning,
 )
 from any_llm.types.model import Model
+from any_llm.types.rerank import RerankMeta, RerankResponse, RerankResult, RerankUsage
 
 
 def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -220,10 +221,8 @@ def _convert_response(response: V2ChatResponse, model: str) -> ChatCompletion:
     )
 
 
-def _convert_cohere_rerank_response(response: Any) -> "RerankResponse":
+def _convert_cohere_rerank_response(response: Any) -> RerankResponse:
     """Convert a Cohere V2 rerank response to a normalized RerankResponse."""
-    from any_llm.types.rerank import RerankMeta, RerankResponse, RerankResult, RerankUsage
-
     results = [
         RerankResult(
             index=r.index,
