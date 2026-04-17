@@ -32,6 +32,17 @@ async def test_moderation_providers_async(
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except OpenAIError as exc:
         pytest.skip(f"{provider.value} client init failed: {exc}")
+    except (ValueError, TypeError) as exc:
+        pytest.skip(f"{provider.value} requires additional config to instantiate: {exc}")
+    except Exception as exc:
+        if type(exc).__name__ in {
+            "NoRegionError",
+            "NoCredentialsError",
+            "ProfileNotFound",
+            "DefaultCredentialsError",
+        }:
+            pytest.skip(f"{provider.value} requires additional config to instantiate: {exc}")
+        raise
 
     if not llm.SUPPORTS_MODERATION:
         pytest.skip(f"{provider.value} does not support moderation, skipping")
