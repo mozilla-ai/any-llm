@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
+    from any_llm.types.rerank import RerankResponse
 
 
 class CohereProvider(AnyLLM):
@@ -46,6 +47,7 @@ class CohereProvider(AnyLLM):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
+    SUPPORTS_RERANK = True
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -97,6 +99,31 @@ class CohereProvider(AnyLLM):
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Cohere list models response to OpenAI format."""
         return _convert_models_list(response)
+
+    @staticmethod
+    @override
+    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
+        """Convert rerank parameters for Cohere API."""
+        params: dict[str, Any] = {
+            "query": query,
+            "documents": documents,
+        }
+        if "top_n" in kwargs and kwargs["top_n"] is not None:
+            params["top_n"] = kwargs["top_n"]
+        if "max_tokens_per_doc" in kwargs and kwargs["max_tokens_per_doc"] is not None:
+            params["max_tokens_per_doc"] = kwargs["max_tokens_per_doc"]
+        for key in ("return_documents",):
+            if key in kwargs:
+                params[key] = kwargs[key]
+        return params
+
+    @staticmethod
+    @override
+    def _convert_rerank_response(response: Any) -> RerankResponse:
+        """Convert Cohere rerank response to normalized RerankResponse."""
+        from any_llm.providers.cohere.utils import _convert_cohere_rerank_response
+
+        return _convert_cohere_rerank_response(response)
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
@@ -161,3 +188,18 @@ class CohereProvider(AnyLLM):
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         model_list = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(model_list)
+
+    @override
+    async def _arerank(
+        self,
+        model: str,
+        query: str,
+        documents: list[str],
+        **kwargs: Any,
+    ) -> RerankResponse:
+        rerank_kwargs = self._convert_rerank_params(model, query, documents, **kwargs)
+        response = await self.client.rerank(
+            model=model,
+            **rerank_kwargs,
+        )
+        return self._convert_rerank_response(response)
