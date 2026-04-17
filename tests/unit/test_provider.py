@@ -125,6 +125,8 @@ async def test_all_providers_have_required_attributes(provider: LLMProvider) -> 
         kwargs["location"] = "test-location"
     if provider == "sagemaker":
         pytest.skip("sagemaker requires AWS credentials on instantiation")
+    if sys.version_info >= (3, 14) and provider.value in ("voyage", "watsonx"):
+        pytest.skip(f"{provider.value} is not compatible with Python 3.14+")
 
     provider_instance = AnyLLM.create(provider.value, **kwargs)
 
@@ -139,6 +141,8 @@ async def test_all_providers_have_required_attributes(provider: LLMProvider) -> 
 
 
 def test_providers_raise_MissingApiKeyError(provider: LLMProvider) -> None:
+    if sys.version_info >= (3, 14) and provider.value in ("voyage", "watsonx"):
+        pytest.skip(f"{provider.value} is not compatible with Python 3.14+")
     if provider in (
         LLMProvider.BEDROCK,
         LLMProvider.LLAMACPP,
@@ -176,6 +180,8 @@ def test_providers_raise_MissingApiKeyError(provider: LLMProvider) -> None:
     ],
 )
 def test_providers_raise_ImportError_from_original(provider_name: str, module_name: str) -> None:
+    if sys.version_info >= (3, 14) and provider_name in ("voyage", "watsonx"):
+        pytest.skip(f"{provider_name} is not compatible with Python 3.14+")
     with patch.dict(sys.modules, {module_name: None}):
         for mod in list(sys.modules):
             if mod.startswith((f"any_llm.providers.{provider_name}", f"{module_name}.")):
