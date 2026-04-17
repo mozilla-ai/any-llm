@@ -52,6 +52,7 @@ if TYPE_CHECKING:
     from any_llm.types.completion import ChatCompletionChunk, CreateEmbeddingResponse
     from any_llm.types.model import Model
     from any_llm.types.moderation import ModerationResponse
+    from any_llm.types.rerank import RerankResponse
 
 
 class AnyLLM(ABC):
@@ -109,6 +110,9 @@ class AnyLLM(ABC):
 
     SUPPORTS_AUDIO_SPEECH: bool = False
     """Audio Speech / TTS API (e.g., OpenAI TTS)"""
+
+    SUPPORTS_RERANK: bool
+    """Rerank API - reorder documents by relevance to a query."""
 
     SUPPORTS_MESSAGES: bool = True
     """Anthropic Messages API (all providers support it via conversion)"""
@@ -371,6 +375,18 @@ class AnyLLM(ABC):
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
 
+    @staticmethod
+    @abstractmethod
+    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @abstractmethod
+    def _convert_rerank_response(response: Any) -> RerankResponse:
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
+
     @classmethod
     def get_provider_metadata(cls) -> ProviderMetadata:
         """Get provider metadata without requiring instantiation.
@@ -398,6 +414,7 @@ class AnyLLM(ABC):
             image_generation=cls.SUPPORTS_IMAGE_GENERATION,
             audio_transcription=cls.SUPPORTS_AUDIO_TRANSCRIPTION,
             audio_speech=cls.SUPPORTS_AUDIO_SPEECH,
+            rerank=cls.SUPPORTS_RERANK,
             messages=cls.SUPPORTS_MESSAGES,
             class_name=cls.__name__,
         )
@@ -1106,6 +1123,36 @@ class AnyLLM(ABC):
             msg = f"Provider {self.PROVIDER_NAME} does not support moderation"
             raise NotImplementedError(msg)
         msg = "Subclasses must implement _amoderation method"
+        raise NotImplementedError(msg)
+
+    def _rerank(self, model: str, query: str, documents: list[str], **kwargs: Any) -> RerankResponse:
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(self.arerank(model, query, documents, **kwargs), allow_running_loop=allow_running_loop)
+
+    @handle_exceptions()
+    async def arerank(self, model: str, query: str, documents: list[str], **kwargs: Any) -> RerankResponse:
+        """Rerank documents by relevance to a query.
+
+        Args:
+            model: Model identifier for the rerank model.
+            query: The search query string.
+            documents: List of document strings to rerank.
+            **kwargs: Additional provider-specific arguments.
+
+        Returns:
+            RerankResponse with results sorted by relevance_score descending.
+
+        Raises:
+            NotImplementedError: If the provider does not support reranking.
+
+        """
+        return await self._arerank(model, query, documents, **kwargs)
+
+    async def _arerank(self, model: str, query: str, documents: list[str], **kwargs: Any) -> RerankResponse:
+        if not self.SUPPORTS_RERANK:
+            msg = "Provider doesn't support rerank."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _arerank method"
         raise NotImplementedError(msg)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:
