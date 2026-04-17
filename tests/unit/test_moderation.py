@@ -85,7 +85,12 @@ async def test_amoderation_multi_input() -> None:
 @pytest.mark.asyncio
 async def test_amoderation_multimodal_input_passthrough() -> None:
     """List-of-dict (multimodal) input is forwarded unchanged."""
-    parts = [{"type": "text", "text": "hi"}, {"type": "image_url", "image_url": {"url": "http://x"}}]
+    from typing import Any
+
+    parts: list[dict[str, Any]] = [
+        {"type": "text", "text": "hi"},
+        {"type": "image_url", "image_url": {"url": "http://x"}},
+    ]
     mock_provider = Mock()
     mock_provider._amoderation = AsyncMock(return_value=_sample_response())
 
@@ -157,7 +162,7 @@ async def test_mistral_rejects_multimodal_input() -> None:
     """Mistral must raise NotImplementedError with the locked multimodal phrase."""
     mistral_cls = AnyLLM.get_provider_class(LLMProvider.MISTRAL)
     inst = mistral_cls.__new__(mistral_cls)
-    inst.client = Mock()  # unused on the raise path
+    inst.client = Mock()  # type: ignore[attr-defined]
 
     with pytest.raises(NotImplementedError, match="does not support multimodal moderation input"):
         await inst._amoderation(
@@ -289,7 +294,7 @@ async def test_openai_provider_amoderation_defaults_and_converts() -> None:
         ],
     )
     moderations_api.create = AsyncMock(return_value=raw_response)
-    inst.client = SimpleNamespace(moderations=moderations_api)
+    inst.client = SimpleNamespace(moderations=moderations_api)  # type: ignore[assignment]
 
     # Empty model should default to omni-moderation-latest.
     response = await inst._amoderation("", "hurt me")
@@ -321,7 +326,7 @@ async def test_openai_provider_amoderation_include_raw() -> None:
             ],
         )
     )
-    inst.client = SimpleNamespace(moderations=moderations_api)
+    inst.client = SimpleNamespace(moderations=moderations_api)  # type: ignore[assignment]
 
     response = await inst._amoderation("omni-moderation-latest", "hi", include_raw=True)
     assert response.results[0].provider_raw == {"full": "payload"}
@@ -335,7 +340,7 @@ async def test_openai_provider_amoderation_raises_when_unsupported() -> None:
     from any_llm.providers.openai.openai import OpenaiProvider
 
     inst = OpenaiProvider.__new__(OpenaiProvider)
-    inst.SUPPORTS_MODERATION = False  # type: ignore[misc]
+    inst.SUPPORTS_MODERATION = False
     inst.client = Mock()
 
     with pytest.raises(NotImplementedError, match="does not support moderation"):
