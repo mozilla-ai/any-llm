@@ -9,6 +9,7 @@ from any_llm.constants import REASONING_FIELD_NAMES
 from any_llm.exceptions import ProviderError
 from any_llm.logging import logger
 from any_llm.types.completion import ChatCompletion, ParsedChatCompletion
+from any_llm.types.moderation import ModerationResponse, ModerationResult
 
 
 def _normalize_reasoning_on_message(message_dict: dict[str, Any]) -> None:
@@ -89,3 +90,57 @@ def _convert_parsed_chat_completion(response: OpenAIParsedChatCompletion[Any]) -
     for base_choice, parsed_choice in zip(response.choices, parsed_completion.choices, strict=True):
         parsed_choice.message.parsed = base_choice.message.parsed
     return parsed_completion
+
+
+def _dump_if_model(obj: Any) -> Any:
+    """Return ``model_dump()`` when the value is a pydantic model, else the value itself."""
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    return obj
+
+
+def _convert_moderation_response_from_openai(raw: Any, *, include_raw: bool) -> ModerationResponse:
+    """Convert an OpenAI ``ModerationCreateResponse`` to our ``ModerationResponse``.
+
+    Drops categories/category_scores keys whose values are ``None`` (i.e. not
+    returned for the requested input). Preserves the full provider response
+    in ``ModerationResult.provider_raw`` only when ``include_raw`` is True.
+    """
+    results: list[ModerationResult] = []
+    for item in raw.results:
+        categories_raw = _dump_if_model(item.categories)
+        scores_raw = _dump_if_model(item.category_scores)
+        types_raw = getattr(item, "category_applied_input_types", None)
+
+        categories = {key: value for key, value in categories_raw.items() if isinstance(value, bool)}
+        scores = {
+            key: float(value)
+            for key, value in scores_raw.items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
+
+        applied_types: dict[str, list[str]] | None
+        if types_raw is None:
+            applied_types = None
+        else:
+            types_dump = _dump_if_model(types_raw)
+            if isinstance(types_dump, dict):
+                applied_types = {key: list(value) for key, value in types_dump.items() if value is not None}
+            else:
+                applied_types = None
+
+        results.append(
+            ModerationResult(
+                flagged=bool(item.flagged),
+                categories=categories,
+                category_scores=scores,
+                category_applied_input_types=applied_types,
+                provider_raw=_dump_if_model(item) if include_raw else None,
+            )
+        )
+
+    return ModerationResponse(
+        id=raw.id,
+        model=raw.model,
+        results=results,
+    )
