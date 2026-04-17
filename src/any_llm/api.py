@@ -15,6 +15,7 @@ from any_llm.types.completion import (
 )
 from any_llm.types.messages import MessageResponse, MessageStreamEvent
 from any_llm.types.model import Model
+from any_llm.types.moderation import ModerationResponse
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
 
 
@@ -732,6 +733,71 @@ async def aembedding(
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
     return await llm._aembedding(model_name, inputs, **kwargs)
+
+
+def moderation(
+    model: str,
+    input: str | list[str] | list[dict[str, Any]],  # noqa: A002
+    *,
+    provider: str | LLMProvider | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> ModerationResponse:
+    """Run a content-moderation check.
+
+    Args:
+        model: Model identifier. **Recommended**: Use with separate `provider`
+            parameter (e.g., ``model='omni-moderation-latest', provider='openai'``).
+            **Alternative**: Combined format 'provider:model'.
+            Legacy format 'provider/model' is also supported but deprecated.
+        input: A string, a list of strings, or a list of OpenAI-style content-part
+            dicts (for OpenAI ``omni-moderation-*`` multimodal input).
+        provider: Provider name to use for the request (e.g., 'openai', 'mistral').
+            When provided, ``model`` should contain only the model name.
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments passed to the provider's client.
+        **kwargs: Additional provider-specific arguments for the API call. Pass
+            ``include_raw=True`` to populate ``ModerationResult.provider_raw``.
+
+    Returns:
+        A ModerationResponse with one ``ModerationResult`` per input item.
+
+    Raises:
+        NotImplementedError: If the chosen provider does not support moderation.
+
+    """
+    if provider is None:
+        provider_key, model_name = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = LLMProvider.from_string(provider)
+        model_name = model
+
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    return llm._moderation(model_name, input, **kwargs)
+
+
+async def amoderation(
+    model: str,
+    input: str | list[str] | list[dict[str, Any]],  # noqa: A002
+    *,
+    provider: str | LLMProvider | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> ModerationResponse:
+    """Async version of :func:`moderation`."""
+    if provider is None:
+        provider_key, model_name = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = LLMProvider.from_string(provider)
+        model_name = model
+
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    return await llm._amoderation(model_name, input, **kwargs)
 
 
 def list_models(
