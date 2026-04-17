@@ -33,6 +33,7 @@ from any_llm.types.completion import (
     Usage,
 )
 from any_llm.types.model import Model
+from any_llm.types.moderation import ModerationResponse, ModerationResult
 
 DEFAULT_TIMEOUT_HOURS = 24
 DEFAULT_COMPLETION_WINDOW = f"{DEFAULT_TIMEOUT_HOURS}h"
@@ -348,6 +349,63 @@ def _create_openai_embedding_response_from_mistral(
         model=mistral_response.model,
         object="list",
         usage=usage,
+    )
+
+
+def _as_plain_dict(obj: Any) -> dict[str, Any]:
+    """Return a dict for pydantic models / mappings / ``None``."""
+    if obj is None:
+        return {}
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    if isinstance(obj, dict):
+        return dict(obj)
+    try:
+        return dict(obj)
+    except (TypeError, ValueError):
+        return {}
+
+
+def _create_openai_moderation_response_from_mistral(
+    mistral_response: Any,
+    *,
+    include_raw: bool,
+) -> ModerationResponse:
+    """Convert a Mistral ``ModerationResponse`` to our OpenAI-compatible shape.
+
+    Mistral returns ``categories`` and ``category_scores`` per item but has no
+    ``flagged`` field. We synthesize ``flagged`` as ``any(categories.values())``
+    to match the OpenAI contract. Mistral does not return
+    ``category_applied_input_types``.
+    """
+    results: list[ModerationResult] = []
+    for item in mistral_response.results:
+        categories_raw = _as_plain_dict(item.categories)
+        scores_raw = _as_plain_dict(item.category_scores)
+
+        categories = {key: value for key, value in categories_raw.items() if isinstance(value, bool)}
+        scores = {
+            key: float(value)
+            for key, value in scores_raw.items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
+
+        flagged = any(categories.values())
+
+        results.append(
+            ModerationResult(
+                flagged=flagged,
+                categories=categories,
+                category_scores=scores,
+                category_applied_input_types=None,
+                provider_raw=_as_plain_dict(item) if include_raw else None,
+            )
+        )
+
+    return ModerationResponse(
+        id=getattr(mistral_response, "id", "") or "",
+        model=getattr(mistral_response, "model", "mistral-moderation-latest") or "mistral-moderation-latest",
+        results=results,
     )
 
 
