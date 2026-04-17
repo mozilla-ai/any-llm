@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
+    from any_llm.types.rerank import RerankResponse
 
 
 class VoyageProvider(AnyLLM):
@@ -52,6 +53,7 @@ class VoyageProvider(AnyLLM):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = False
     SUPPORTS_BATCH = False
+    SUPPORTS_RERANK = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -101,6 +103,20 @@ class VoyageProvider(AnyLLM):
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Voyage list models response to OpenAI format."""
         msg = "Voyage does not support listing models"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @override
+    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
+        """Voyage does not support rerank."""
+        msg = "Voyage does not support rerank"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @override
+    def _convert_rerank_response(response: Any) -> RerankResponse:
+        """Voyage does not support rerank."""
+        msg = "Voyage does not support rerank"
         raise NotImplementedError(msg)
 
     @override

@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
+    from any_llm.types.rerank import RerankResponse
 
 
 class OllamaProvider(AnyLLM):
@@ -53,6 +54,7 @@ class OllamaProvider(AnyLLM):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
+    SUPPORTS_RERANK = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -103,6 +105,20 @@ class OllamaProvider(AnyLLM):
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Ollama list models response to OpenAI format."""
         return _convert_models_list(response)
+
+    @staticmethod
+    @override
+    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
+        """Ollama does not support rerank."""
+        msg = "Ollama does not support rerank"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @override
+    def _convert_rerank_response(response: Any) -> RerankResponse:
+        """Ollama does not support rerank."""
+        msg = "Ollama does not support rerank"
+        raise NotImplementedError(msg)
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
