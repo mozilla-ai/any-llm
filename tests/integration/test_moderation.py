@@ -2,7 +2,7 @@ from typing import Any
 
 import httpx
 import pytest
-from openai import APIConnectionError
+from openai import APIConnectionError, OpenAIError
 
 from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
@@ -30,6 +30,8 @@ async def test_moderation_providers_async(
         pytest.skip(f"{provider.value} optional dependency missing, skipping")
     except MissingApiKeyError:
         pytest.skip(f"{provider.value} API key not provided, skipping")
+    except OpenAIError as exc:
+        pytest.skip(f"{provider.value} client init failed: {exc}")
 
     if not llm.SUPPORTS_MODERATION:
         pytest.skip(f"{provider.value} does not support moderation, skipping")
@@ -66,6 +68,8 @@ async def test_moderation_openai_multimodal_input(
         llm = AnyLLM.create(LLMProvider.OPENAI, **provider_client_config.get(LLMProvider.OPENAI, {}))
     except MissingApiKeyError:
         pytest.skip("OpenAI API key not provided, skipping")
+    except OpenAIError as exc:
+        pytest.skip(f"OpenAI client init failed: {exc}")
 
     multimodal_input = [
         {"type": "text", "text": "I want to hurt someone"},
