@@ -449,7 +449,7 @@ class GatewayProvider(BaseOpenAIProvider):
 
                 raise openai.APIStatusError(
                     message=str(exc),
-                    response=exc.response,  # type: ignore[arg-type]
+                    response=exc.response,
                     body=None,
                 ) from exc
             raise
