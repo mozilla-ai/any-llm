@@ -20,6 +20,7 @@ from any_llm.exceptions import BatchNotCompleteError
 from any_llm.logging import logger
 from any_llm.providers.openai.utils import (
     _convert_chat_completion,
+    _convert_moderation_response_from_openai,
     _convert_parsed_chat_completion,
     _normalize_openai_dict_response,
 )
@@ -32,6 +33,7 @@ from any_llm.types.completion import (
     ReasoningEffort,
 )
 from any_llm.types.model import Model
+from any_llm.types.moderation import ModerationResponse
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
@@ -52,6 +54,7 @@ class BaseOpenAIProvider(AnyLLM):
     SUPPORTS_COMPLETION_IMAGE = True
     SUPPORTS_COMPLETION_PDF = True
     SUPPORTS_EMBEDDING = True
+    SUPPORTS_MODERATION = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
 
@@ -255,6 +258,27 @@ class BaseOpenAIProvider(AnyLLM):
                 **embedding_kwargs,
             )
         )
+
+    @override
+    async def _amoderation(
+        self,
+        model: str,
+        input: str | list[str] | list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> ModerationResponse:
+        if not self.SUPPORTS_MODERATION:
+            msg = f"Provider {self.PROVIDER_NAME} does not support moderation"
+            raise NotImplementedError(msg)
+
+        include_raw = kwargs.pop("include_raw", False)
+        model_name = model or "omni-moderation-latest"
+
+        raw = await self.client.moderations.create(
+            model=model_name,
+            input=cast("Any", input),
+            **kwargs,
+        )
+        return _convert_moderation_response_from_openai(raw, include_raw=include_raw)
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
