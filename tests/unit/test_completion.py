@@ -1,3 +1,4 @@
+import sys
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -6,6 +7,8 @@ import pytest
 from any_llm import AnyLLM
 from any_llm.api import acompletion, aresponses
 from any_llm.constants import LLMProvider
+
+_PYTHON_314_INCOMPATIBLE_PROVIDERS = {"voyage", "watsonx"}
 
 
 @pytest.mark.asyncio
@@ -151,6 +154,8 @@ async def test_all_providers_can_be_loaded(provider: str) -> None:
         kwargs["region_name"] = "us-east-1"
     if provider == "sagemaker":
         pytest.skip("sagemaker requires AWS credentials on instantiation")
+    if sys.version_info >= (3, 14) and provider in _PYTHON_314_INCOMPATIBLE_PROVIDERS:
+        pytest.skip(f"{provider} is not compatible with Python 3.14+")
     if provider == "vertexai":
         kwargs["project"] = "test-project"
         kwargs["location"] = "test-location"
@@ -180,6 +185,8 @@ async def test_all_providers_can_be_loaded_with_config(provider: str) -> None:
         kwargs["location"] = "test-location"
     if provider == "sagemaker":
         pytest.skip("sagemaker requires AWS credentials on instantiation")
+    if sys.version_info >= (3, 14) and provider in _PYTHON_314_INCOMPATIBLE_PROVIDERS:
+        pytest.skip(f"{provider} is not compatible with Python 3.14+")
 
     provider_instance = AnyLLM.create(provider, **kwargs)
 
@@ -207,6 +214,8 @@ async def test_provider_factory_can_create_all_supported_providers() -> None:
         if provider_name == "vertexaianthropic":
             kwargs["project_id"] = "test-project"
         if provider_name == "sagemaker":
+            continue
+        if sys.version_info >= (3, 14) and provider_name in _PYTHON_314_INCOMPATIBLE_PROVIDERS:
             continue
         if provider_name == "gateway":
             kwargs["api_base"] = "http://127.0.0.1:8080/v1"
