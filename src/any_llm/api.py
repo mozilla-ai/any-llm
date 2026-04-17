@@ -20,7 +20,6 @@ from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
 from any_llm.types.rerank import RerankResponse
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
-from any_llm.utils.decorators import BATCH_API_EXPERIMENTAL_MESSAGE, experimental
 
 
 def completion(

@@ -238,7 +238,10 @@ def _convert_cohere_rerank_response(response: Any) -> RerankResponse:
         tokens = None
         if hasattr(response.meta, "billed_units") and response.meta.billed_units is not None:
             billed_units = {}
-            if hasattr(response.meta.billed_units, "search_units") and response.meta.billed_units.search_units is not None:
+            if (
+                hasattr(response.meta.billed_units, "search_units")
+                and response.meta.billed_units.search_units is not None
+            ):
                 billed_units["search_units"] = float(response.meta.billed_units.search_units)
         if hasattr(response.meta, "tokens") and response.meta.tokens is not None:
             tokens = {}
