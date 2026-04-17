@@ -1,9 +1,11 @@
 # mypy: disable-error-code="no-untyped-call"
+from __future__ import annotations
+
 import asyncio
 import functools
 import json
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from typing_extensions import override
 
@@ -26,6 +28,9 @@ try:
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
+if TYPE_CHECKING:
+    from any_llm.types.rerank import RerankResponse
+
 
 class SagemakerProvider(AnyLLM):
     """AWS SageMaker Provider using boto3 for inference endpoints."""
@@ -44,6 +49,7 @@ class SagemakerProvider(AnyLLM):
     SUPPORTS_COMPLETION_PDF = True
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = False
+    SUPPORTS_RERANK = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -90,6 +96,20 @@ class SagemakerProvider(AnyLLM):
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert SageMaker list models response to OpenAI format."""
         return []
+
+    @staticmethod
+    @override
+    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
+        """Sagemaker does not support rerank."""
+        msg = "Sagemaker does not support rerank"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @override
+    def _convert_rerank_response(response: Any) -> RerankResponse:
+        """Sagemaker does not support rerank."""
+        msg = "Sagemaker does not support rerank"
+        raise NotImplementedError(msg)
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
