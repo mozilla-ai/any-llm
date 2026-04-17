@@ -263,7 +263,7 @@ class BaseOpenAIProvider(AnyLLM):
     async def _amoderation(
         self,
         model: str,
-        input: str | list[str] | list[dict[str, Any]],  # noqa: A002
+        input: str | list[str] | list[dict[str, Any]],
         **kwargs: Any,
     ) -> ModerationResponse:
         if not self.SUPPORTS_MODERATION:
