@@ -33,6 +33,7 @@ if TYPE_CHECKING:
         CreateEmbeddingResponse,
     )
     from any_llm.types.model import Model
+    from any_llm.types.moderation import ModerationResponse
     from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
 GATEWAY_HEADER_NAME = "X-AnyLLM-Key"
@@ -86,6 +87,7 @@ class GatewayProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_IMAGE = True
     SUPPORTS_COMPLETION_PDF = True
     SUPPORTS_EMBEDDING = True
+    SUPPORTS_MODERATION = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
 
@@ -233,6 +235,21 @@ class GatewayProvider(BaseOpenAIProvider):
             return await super()._aembedding(model, inputs, **kwargs)
         try:
             return await super()._aembedding(model, inputs, **kwargs)
+        except Exception as exc:
+            self._handle_platform_error(exc)
+            raise
+
+    @override
+    async def _amoderation(
+        self,
+        model: str,
+        input: str | list[str] | list[dict[str, Any]],  # noqa: A002
+        **kwargs: Any,
+    ) -> ModerationResponse:
+        if not self.platform_mode:
+            return await super()._amoderation(model, input, **kwargs)
+        try:
+            return await super()._amoderation(model, input, **kwargs)
         except Exception as exc:
             self._handle_platform_error(exc)
             raise
