@@ -1,4 +1,5 @@
 import json
+import uuid
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -385,6 +386,8 @@ def _create_openai_moderation_response_from_mistral(
         scores_raw = _as_plain_dict(item.category_scores)
 
         categories = {key: value for key, value in categories_raw.items() if isinstance(value, bool)}
+        # ``bool`` is a subclass of ``int`` in Python; guard against bools
+        # slipping into the numeric-scores dict.
         scores = {
             key: float(value)
             for key, value in scores_raw.items()
@@ -403,8 +406,12 @@ def _create_openai_moderation_response_from_mistral(
             )
         )
 
+    # Mistral's classifier response does not include an ``id`` field, so we
+    # synthesize a stable OpenAI-compatible identifier per spec §8.3. Fall
+    # back to a provider-supplied id if one is ever added upstream.
+    response_id = getattr(mistral_response, "id", None) or f"modr-{uuid.uuid4().hex[:24]}"
     return ModerationResponse(
-        id=getattr(mistral_response, "id", "") or "",
+        id=response_id,
         model=getattr(mistral_response, "model", "mistral-moderation-latest") or "mistral-moderation-latest",
         results=results,
     )
