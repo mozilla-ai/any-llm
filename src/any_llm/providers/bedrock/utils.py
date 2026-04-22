@@ -87,7 +87,7 @@ def _convert_tool_spec(tools: list[dict[str, Any]], tool_choice: str | dict[str,
                 "toolSpec": {
                     "name": tool["function"]["name"],
                     "description": tool["function"].get("description", " "),
-                    "inputSchema": {"json": tool["function"]["parameters"]},
+                    "inputSchema": {"json": tool["function"].get("parameters") or {"type": "object", "properties": {}}},
                 }
             }
             for tool in tools
