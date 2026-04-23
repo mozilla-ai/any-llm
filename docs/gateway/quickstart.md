@@ -1,7 +1,12 @@
 ---
-title: Quick Start
+title: Quick Start (Deprecated)
 description: Set up any-llm-gateway and make your first LLM completion request
 ---
+
+:::caution[Deprecation Notice]
+The gateway bundled with any-llm is deprecated and will be removed on May 18, 2026.
+Please migrate to the standalone gateway at [github.com/mozilla-ai/gateway](https://github.com/mozilla-ai/gateway).
+:::
 
 This guide will help you set up any-llm-gateway and make your first LLM completion request. The gateway acts as a proxy between your applications and LLM providers, providing cost control, usage tracking, and API key management.
 
