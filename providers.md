@@ -16,6 +16,7 @@ description: Complete list of LLM providers supported by any-llm including OpenA
 | [`cohere`](https://cohere.com/api) | COHERE_API_KEY | COHERE_BASE_URL | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`dashscope`](https://bailian.console.aliyun.com/cn-beijing/?tab=api#/api) | DASHSCOPE_API_KEY | DASHSCOPE_API_BASE | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ |
 | [`databricks`](https://docs.databricks.com/) | DATABRICKS_TOKEN | DATABRICKS_HOST | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
+| [`deepinfra`](https://deepinfra.com/docs/openai_api) | DEEPINFRA_API_KEY | DEEPINFRA_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`deepseek`](https://platform.deepseek.com/) | DEEPSEEK_API_KEY | DEEPSEEK_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`fireworks`](https://fireworks.ai/api) | FIREWORKS_API_KEY | FIREWORKS_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
 | [`gateway`](https://github.com/mozilla-ai/any-llm) | GATEWAY_API_KEY | GATEWAY_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
