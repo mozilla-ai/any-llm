@@ -70,3 +70,4 @@ print(response)
 This documentation is available in an AI-friendly format via the unified Mozilla.ai llms.txt:
 
 - **[llms.txt](https://docs.mozilla.ai/llms.txt)** - Structured overview of all Mozilla.ai documentation for AI systems
+- **[llms-full.txt](https://docs.mozilla.ai/llms-full.txt)** - Complete Mozilla.ai documentation concatenated into a single file
