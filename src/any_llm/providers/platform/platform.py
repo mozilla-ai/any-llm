@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 
     from any_llm.types.batch import Batch, BatchResult
     from any_llm.types.model import Model
+    from any_llm.types.rerank import RerankResponse
     from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
 
@@ -56,6 +57,7 @@ class PlatformProvider(AnyLLM):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
+    SUPPORTS_RERANK = True
 
     def __init__(
         self,
@@ -123,6 +125,20 @@ class PlatformProvider(AnyLLM):
     @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         raise NotImplementedError
+
+    @staticmethod
+    @override
+    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
+        """Platform does not support rerank."""
+        msg = "Platform does not support rerank"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    @override
+    def _convert_rerank_response(response: Any) -> RerankResponse:
+        """Platform does not support rerank."""
+        msg = "Platform does not support rerank"
+        raise NotImplementedError(msg)
 
     async def _ensure_provider_initialized(self) -> None:
         """Lazily initialize the wrapped provider using async HTTP on first use."""
@@ -660,3 +676,4 @@ class PlatformProvider(AnyLLM):
         self.SUPPORTS_EMBEDDING = provider_class.SUPPORTS_EMBEDDING
         self.SUPPORTS_LIST_MODELS = provider_class.SUPPORTS_LIST_MODELS
         self.SUPPORTS_BATCH = provider_class.SUPPORTS_BATCH
+        self.SUPPORTS_RERANK = provider_class.SUPPORTS_RERANK
