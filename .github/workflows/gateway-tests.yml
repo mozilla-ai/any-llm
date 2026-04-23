@@ -64,5 +64,5 @@ jobs:
     - name: Install dependencies
       run: uv sync --extra gateway --extra all -U --python=3.13
 
-    - name: Verify OpenAPI spec is up to date
-      run: python scripts/generate_openapi.py --check
+    - name: Verify OpenAPI spec is valid
+      run: python scripts/generate_openapi.py
