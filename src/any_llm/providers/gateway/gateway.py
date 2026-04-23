@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from any_llm.types.model import Model
     from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
-GATEWAY_HEADER_NAME = "X-AnyLLM-Key"
+GATEWAY_HEADER_NAME = "AnyLLM-Key"
 GATEWAY_PLATFORM_TOKEN_ENV = "GATEWAY_PLATFORM_TOKEN"  # noqa: S105
 
 _STATUS_TO_EXCEPTION: dict[int, type[AuthenticationError | ModelNotFoundError]] = {

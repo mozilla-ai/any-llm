@@ -1,3 +1,4 @@
+import sys
 from typing import Any
 from unittest.mock import patch
 
@@ -11,6 +12,8 @@ def test_default_headers_passed_to_init_client(provider: LLMProvider) -> None:
     """Verify default_headers kwarg flows through to _init_client for all providers."""
     if provider == LLMProvider.SAGEMAKER:
         pytest.skip("sagemaker requires AWS credentials on instantiation")
+    if sys.version_info >= (3, 14) and provider.value in ("voyage", "watsonx"):
+        pytest.skip(f"{provider.value} is not compatible with Python 3.14+")
 
     provider_class = AnyLLM.get_provider_class(provider)
 

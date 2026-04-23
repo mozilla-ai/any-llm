@@ -158,7 +158,7 @@ def test_gateway_passes_kwargs_to_parent(mock_openai_class: MagicMock) -> None:
 
 @patch("any_llm.providers.openai.base.AsyncOpenAI")
 def test_gateway_platform_mode_explicit(mock_openai_class: MagicMock) -> None:
-    """Explicit platform_mode=True sends only Authorization header, not X-AnyLLM-Key."""
+    """Explicit platform_mode=True sends only Authorization header, not AnyLLM-Key."""
     mock_openai_class.return_value = AsyncMock()
 
     provider = GatewayProvider(
