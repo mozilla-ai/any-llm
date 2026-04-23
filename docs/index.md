@@ -67,7 +67,6 @@ print(response)
 
 ## For AI Systems
 
-This documentation is available in two AI-friendly formats:
+This documentation is available in an AI-friendly format via the unified Mozilla.ai llms.txt:
 
-- **[llms.txt](https://mozilla-ai.github.io/any-llm/llms.txt)** - A structured overview with curated links to key documentation sections
-- **[llms-full.txt](https://mozilla-ai.github.io/any-llm/llms-full.txt)** - Complete documentation content concatenated into a single file
+- **[llms.txt](https://docs.mozilla.ai/llms.txt)** - Structured overview of all Mozilla.ai documentation for AI systems

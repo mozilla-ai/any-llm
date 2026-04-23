@@ -21,4 +21,4 @@ def test_root_tutorial_page_is_available(tmp_path: Path) -> None:
     assert "bootstrap API key" in response.text
     assert "from openai import OpenAI" in response.text
     assert "YOUR_GATEWAY_KEY" in response.text
-    assert "mozilla-ai.github.io/any-llm/gateway/quickstart" in response.text
+    assert "docs.mozilla.ai/any-llm/gateway/quickstart" in response.text
