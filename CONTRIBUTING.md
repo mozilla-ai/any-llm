@@ -138,10 +138,14 @@ Update when you:
 Documentation to update:
 - **Docstrings** in code (required)
 - **README.md** if changing core functionality
-- **docs/providers.md** when adding providers
+- Authored docs in `docs/` (e.g. `docs/quickstart.md`, `docs/gateway/*`, `docs/platform/*`) when adding or changing features
+
+Authored docs live in `docs/`. Generated files (`docs/api/`, `docs/providers.md`, `docs/openapi.json`, `docs/cookbooks/any-llm-getting-started.md`) are built by CI and not committed to the repository. The final publish artifact is `site/`, which CI builds and pushes to the `gitbook-docs` branch.
+
+To preview the rendered output locally:
 
 ```bash
-cd docs && npm run dev
+uv run python scripts/convert_to_gitbook.py
 ```
 
 ### 5. Commit Your Changes
@@ -262,7 +266,7 @@ Add your test config to the following in `tests/conftest.py`:
 
 **Documentation Requirements**:
 
-- [ ] Add to `docs/providers.md` with available capabilities.
+- [ ] Add provider metadata to the source code so it appears in the generated `providers.md` table.
 - [ ] Update installation instructions.
 
 

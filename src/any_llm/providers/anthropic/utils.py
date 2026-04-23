@@ -328,7 +328,7 @@ def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[dict[str, Any
         generic_tool = {
             "name": function["name"],
             "description": function.get("description", ""),
-            "parameters": function.get("parameters", {}),
+            "parameters": function.get("parameters") or {},
         }
         generic_tools.append(generic_tool)
 
@@ -339,7 +339,7 @@ def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[dict[str, Any
             "description": tool["description"],
             "input_schema": {
                 "type": "object",
-                "properties": tool["parameters"]["properties"],
+                "properties": tool["parameters"].get("properties") or {},
                 "required": tool["parameters"].get("required", []),
             },
         }

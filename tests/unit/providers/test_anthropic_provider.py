@@ -14,6 +14,7 @@ from any_llm.providers.anthropic.utils import (
     DEFAULT_MAX_TOKENS,
     REASONING_EFFORT_TO_ANTHROPIC_EFFORT,
     _convert_response_format,
+    _convert_tool_spec,
 )
 from any_llm.types.completion import ChatCompletionMessageFunctionToolCall, CompletionParams, ReasoningEffort
 
@@ -870,3 +871,19 @@ def test_non_streaming_response_preserves_multiple_tool_calls() -> None:
     assert isinstance(result.choices[0].message.tool_calls[1], ChatCompletionMessageFunctionToolCall)
     assert result.choices[0].message.tool_calls[1].function is not None
     assert result.choices[0].message.tool_calls[1].function.name == "get_time"
+
+
+def test_convert_tool_spec_none_parameters() -> None:
+    """Regression: parameters=None must not raise 'NoneType' object is not subscriptable."""
+    tools = _convert_tool_spec([{"type": "function", "function": {"name": "ping", "parameters": None}}])
+    assert len(tools) == 1
+    assert tools[0]["name"] == "ping"
+    assert tools[0]["input_schema"]["properties"] == {}
+    assert tools[0]["input_schema"]["required"] == []
+
+
+def test_convert_tool_spec_parameters_missing_properties() -> None:
+    """Regression: parameters without a 'properties' key must not raise KeyError."""
+    tools = _convert_tool_spec([{"type": "function", "function": {"name": "ping", "parameters": {"type": "object"}}}])
+    assert len(tools) == 1
+    assert tools[0]["input_schema"]["properties"] == {}

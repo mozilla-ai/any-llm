@@ -44,9 +44,25 @@ class AnyLLMError(Exception):
 
 
 class RateLimitError(AnyLLMError):
-    """Raised when the API rate limit is exceeded."""
+    """Raised when the API rate limit is exceeded.
+
+    Attributes:
+        retry_after: Value of the ``Retry-After`` header, when the server
+            provides one.  May be a number of seconds or an HTTP-date string.
+
+    """
 
     default_message = "Rate limit exceeded"
+
+    def __init__(
+        self,
+        message: str | None = None,
+        original_exception: Exception | None = None,
+        provider_name: str | None = None,
+        retry_after: str | None = None,
+    ) -> None:
+        super().__init__(message, original_exception, provider_name)
+        self.retry_after = retry_after
 
 
 class AuthenticationError(AnyLLMError):
@@ -124,6 +140,24 @@ class UnsupportedParameterError(AnyLLMError):
         super().__init__(message, provider_name=provider_name)
 
 
+class InsufficientFundsError(AnyLLMError):
+    """Raised when the user's budget or credits are exhausted (HTTP 402)."""
+
+    default_message = "Insufficient funds or budget exceeded"
+
+
+class UpstreamProviderError(AnyLLMError):
+    """Raised when the upstream provider is unreachable or returns an error (HTTP 502)."""
+
+    default_message = "Upstream provider error"
+
+
+class GatewayTimeoutError(AnyLLMError):
+    """Raised when the gateway times out waiting for the upstream provider (HTTP 504)."""
+
+    default_message = "Gateway timeout waiting for upstream provider"
+
+
 class _FinishReasonError(AnyLLMError):
     """Base for errors raised when structured output parsing is stopped by a non-stop finish reason.
 
@@ -154,3 +188,16 @@ class ContentFilterFinishReasonError(_FinishReasonError):
     """
 
     default_message = "Could not parse response content as the request was rejected by the content filter"
+
+
+class BatchNotCompleteError(AnyLLMError):
+    """Raised when retrieve_batch_results is called on a non-completed batch."""
+
+    def __init__(self, batch_id: str, status: str, provider_name: str | None = None):
+        self.batch_id = batch_id
+        self.batch_status = status
+        message = (
+            f"Batch '{batch_id}' is not yet complete (status: {status}). "
+            f"Call retrieve_batch() to check the current status."
+        )
+        super().__init__(message=message, provider_name=provider_name)

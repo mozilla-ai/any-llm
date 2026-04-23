@@ -375,7 +375,7 @@ def test_supports_flags_reflect_wrapped_provider_capabilities(
     provider_instance.provider = BaseAnthropicProvider
 
     assert provider_instance.SUPPORTS_EMBEDDING is False
-    assert provider_instance.SUPPORTS_BATCH is False
+    assert provider_instance.SUPPORTS_BATCH is True
     assert provider_instance.SUPPORTS_LIST_MODELS is False
 
 
@@ -1084,6 +1084,27 @@ async def test_alist_batches_delegates_to_provider(
 
     assert result == mock_batches
     provider_instance.provider._alist_batches.assert_called_once_with(after="batch-100", limit=10)
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.platform.platform.export_completion_trace")
+async def test_aretrieve_batch_results_delegates_to_provider(
+    mock_post_usage: AsyncMock,
+    any_llm_key: str,
+    mock_decrypted_provider_key: DecryptedProviderKey,
+) -> None:
+    """Test that _aretrieve_batch_results delegates to the wrapped provider."""
+    provider_instance = PlatformProvider(api_key=any_llm_key)
+    provider_instance.provider = OpenaiProvider
+    await _init_provider(provider_instance, mock_decrypted_provider_key)
+
+    mock_result = Mock()
+    provider_instance.provider._aretrieve_batch_results = AsyncMock(return_value=mock_result)  # type: ignore[method-assign]
+
+    result = await provider_instance._aretrieve_batch_results("batch-123")
+
+    assert result == mock_result
+    provider_instance.provider._aretrieve_batch_results.assert_called_once_with("batch-123")
 
 
 @pytest.mark.asyncio

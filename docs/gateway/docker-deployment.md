@@ -30,9 +30,9 @@ Generate a secure master key (minimum 32 characters recommended):
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Save the output of this command for the next step. [Learn more about keys here](/any-llm/gateway/authentication/).
+Save the output of this command for the next step. [Learn more about keys here](authentication.md).
 
-Edit `docker/config.yml` with your master key and provider credentials. See the [Configuration Guide](/any-llm/gateway/configuration/) for detailed options.
+Edit `docker/config.yml` with your master key and provider credentials. See the [Configuration Guide](configuration.md) for detailed options.
 
 ### Start the Services
 
@@ -174,7 +174,7 @@ server {
 
 The gateway can be configured using environment variables instead of or in addition to a config file. This is useful for Docker deployments and follows 12-factor app principles.
 
-For a complete list of environment variables and configuration options, see the [Configuration Guide](/any-llm/gateway/configuration/).
+For a complete list of environment variables and configuration options, see the [Configuration Guide](configuration.md).
 
 **Docker Compose example with .env file:**
 
@@ -265,8 +265,8 @@ docker-compose -f docker/docker-compose.yml up -d --build
 
 ## Next Steps
 
-- [Configuration Guide](/any-llm/gateway/configuration/) - Advanced configuration options
-- [Authentication](/any-llm/gateway/authentication/) - Set up API keys and user management
-- [Budget Management](/any-llm/gateway/budget-management/) - Configure spending limits
-- [API Reference](/any-llm/gateway/api-reference/) - Explore the complete API
-- [Troubleshooting](/any-llm/gateway/troubleshooting/) - Common issues and solutions
+- [Configuration Guide](configuration.md) - Advanced configuration options
+- [Authentication](authentication.md) - Set up API keys and user management
+- [Budget Management](budget-management.md) - Configure spending limits
+- [API Reference](api-reference.md) - Explore the complete API
+- [Troubleshooting](troubleshooting.md) - Common issues and solutions

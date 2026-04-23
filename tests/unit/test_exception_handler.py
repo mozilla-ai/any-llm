@@ -1,7 +1,8 @@
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from any_llm.utils.exception_handler import _handle_exception
+from any_llm.exceptions import GatewayTimeoutError, InsufficientFundsError, UpstreamProviderError
+from any_llm.utils.exception_handler import _handle_exception, convert_exception
 
 
 def test_validation_error_bubbles_up_unchanged() -> None:
@@ -25,3 +26,45 @@ def test_validation_error_bubbles_up_unchanged() -> None:
         _handle_exception(original, "openai")
 
     assert raised.value is original
+
+
+def test_convert_exception_insufficient_funds() -> None:
+    original = Exception("Insufficient funds for this request")
+    result = convert_exception(original, "gateway")
+    assert isinstance(result, InsufficientFundsError)
+    assert result.provider_name == "gateway"
+    assert result.original_exception is original
+
+
+def test_convert_exception_payment_required() -> None:
+    original = Exception("Payment required")
+    result = convert_exception(original, "gateway")
+    assert isinstance(result, InsufficientFundsError)
+
+
+def test_convert_exception_budget_exceeded() -> None:
+    original = Exception("Budget exceeded for project")
+    result = convert_exception(original, "gateway")
+    assert isinstance(result, InsufficientFundsError)
+
+
+def test_convert_exception_bad_gateway() -> None:
+    original = Exception("Bad gateway")
+    result = convert_exception(original, "gateway")
+    assert isinstance(result, UpstreamProviderError)
+    assert result.provider_name == "gateway"
+    assert result.original_exception is original
+
+
+def test_convert_exception_upstream_provider_error() -> None:
+    original = Exception("Upstream provider error")
+    result = convert_exception(original, "gateway")
+    assert isinstance(result, UpstreamProviderError)
+
+
+def test_convert_exception_gateway_timeout() -> None:
+    original = Exception("Gateway timeout")
+    result = convert_exception(original, "gateway")
+    assert isinstance(result, GatewayTimeoutError)
+    assert result.provider_name == "gateway"
+    assert result.original_exception is original
