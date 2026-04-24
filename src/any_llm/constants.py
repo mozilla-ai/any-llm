@@ -54,6 +54,7 @@ class LLMProvider(StrEnum):
     PERPLEXITY = "perplexity"
     MINIMAX = "minimax"
     DASHSCOPE = "dashscope"
+    DEEPINFRA = "deepinfra"
     ZAI = "zai"
     GATEWAY = "gateway"
 

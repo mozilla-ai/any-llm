@@ -25,7 +25,7 @@
 **Communicate with any LLM provider using a single, unified interface.**
 Switch between OpenAI, Anthropic, Mistral, Ollama, and more without changing your code.
 
-[Documentation](https://mozilla-ai.github.io/any-llm/) | [Platform (Beta)](https://any-llm.ai/) | [Try the Demos](#-try-it) | [Contributing](#-contributing)
+[Documentation](https://docs.mozilla.ai/any-llm/) | [Platform (Beta)](https://any-llm.ai/) | [Try the Demos](#-try-it) | [Contributing](#-contributing)
 
 </div>
 
@@ -66,7 +66,7 @@ print(response.choices[0].message.content)
 > response = completion(model="openai:gpt-4o", messages=[...])
 > ```
 >
-> See [Supported Providers](https://mozilla-ai.github.io/any-llm/providers/) to map your existing model strings.
+> See [Supported Providers](https://docs.mozilla.ai/any-llm/providers/) to map your existing model strings.
 
 That's the full migration — no proxy, no extra config.
 
@@ -87,7 +87,7 @@ pip install 'any-llm-sdk[mistral,ollama]'   # Multiple providers
 pip install 'any-llm-sdk[all]'              # All supported providers
 ```
 
-See our [list of supported providers](https://mozilla-ai.github.io/any-llm/providers/) to choose which ones you need.
+See our [list of supported providers](https://docs.mozilla.ai/any-llm/providers/) to choose which ones you need.
 
 ### Setting Up API Keys
 
@@ -147,7 +147,7 @@ docker run \
 |Learning and testing |Virtual API key management |
 | |Production deployments with governance |
 
-See the [Gateway Documentation](https://mozilla-ai.github.io/any-llm/gateway/overview/) for complete setup and deployment instructions.
+See the [Gateway Documentation](https://docs.mozilla.ai/any-llm/gateway/overview/) for complete setup and deployment instructions.
 
 ## Why choose `any-llm`?
 
@@ -217,7 +217,7 @@ Both approaches support identical features: streaming, tools, responses API, etc
 
 ### Responses API
 
-For providers that implement the OpenAI-style Responses API, use [`responses`](https://mozilla-ai.github.io/any-llm/api/responses/) or `aresponses`:
+For providers that implement the OpenAI-style Responses API, use [`responses`](https://docs.mozilla.ai/any-llm/api/responses/) or `aresponses`:
 
 ```python
 from any_llm import responses
@@ -238,7 +238,7 @@ print(result.output_text)
 
 ### Finding the Right Model
 
-The `provider_id` should match our [supported provider names](https://mozilla-ai.github.io/any-llm/providers/).
+The `provider_id` should match our [supported provider names](https://docs.mozilla.ai/any-llm/providers/).
 
 The `model_id` is passed directly to the provider. To find available models:
 - Check the provider's documentation
@@ -259,9 +259,9 @@ The landscape of LLM provider interfaces is fragmented. While OpenAI's API has b
 `any-llm` addresses these challenges by leveraging official SDKs when available, maintaining framework-agnostic design, and requiring no proxy servers.
 
 ## Documentation
-- **[Full Documentation](https://mozilla-ai.github.io/any-llm/)** - Complete guides and API reference
-- **[Supported Providers](https://mozilla-ai.github.io/any-llm/providers/)** - List of all supported LLM providers
-- **[Cookbook Examples](https://mozilla-ai.github.io/any-llm/cookbook/)** - In-depth usage examples
+- **[Full Documentation](https://docs.mozilla.ai/any-llm/)** - Complete guides and API reference
+- **[Supported Providers](https://docs.mozilla.ai/any-llm/providers/)** - List of all supported LLM providers
+- **[Cookbook Examples](https://docs.mozilla.ai/any-llm/cookbooks/any-llm-getting-started)** - In-depth usage examples
 - **[any-llm Platform (Beta)](https://any-llm.ai/)** - Hosted control plane for key management, usage tracking, and cost visibility
 
 
