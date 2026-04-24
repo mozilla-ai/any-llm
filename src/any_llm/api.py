@@ -5,7 +5,7 @@ from openresponses_types import ResponseResource
 
 from any_llm import AnyLLM
 from any_llm.constants import LLMProvider
-from any_llm.types.batch import Batch
+from any_llm.types.batch import Batch, BatchResult
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -16,7 +16,6 @@ from any_llm.types.completion import (
 from any_llm.types.messages import MessageResponse, MessageStreamEvent
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
-from any_llm.utils.decorators import BATCH_API_EXPERIMENTAL_MESSAGE, experimental
 
 
 def completion(
@@ -759,7 +758,6 @@ async def alist_models(
     return await llm.alist_models(**kwargs)
 
 
-@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
 def create_batch(
     provider: str | LLMProvider,
     input_file_path: str,
@@ -799,7 +797,6 @@ def create_batch(
     )
 
 
-@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
 async def acreate_batch(
     provider: str | LLMProvider,
     input_file_path: str,
@@ -839,7 +836,6 @@ async def acreate_batch(
     )
 
 
-@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
 def retrieve_batch(
     provider: str | LLMProvider,
     batch_id: str,
@@ -867,7 +863,6 @@ def retrieve_batch(
     return llm.retrieve_batch(batch_id, **kwargs)
 
 
-@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
 async def aretrieve_batch(
     provider: str | LLMProvider,
     batch_id: str,
@@ -895,7 +890,6 @@ async def aretrieve_batch(
     return await llm.aretrieve_batch(batch_id, **kwargs)
 
 
-@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
 def cancel_batch(
     provider: str | LLMProvider,
     batch_id: str,
@@ -923,7 +917,6 @@ def cancel_batch(
     return llm.cancel_batch(batch_id, **kwargs)
 
 
-@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
 async def acancel_batch(
     provider: str | LLMProvider,
     batch_id: str,
@@ -951,7 +944,6 @@ async def acancel_batch(
     return await llm.acancel_batch(batch_id, **kwargs)
 
 
-@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
 def list_batches(
     provider: str | LLMProvider,
     *,
@@ -981,7 +973,6 @@ def list_batches(
     return llm.list_batches(after=after, limit=limit, **kwargs)
 
 
-@experimental(BATCH_API_EXPERIMENTAL_MESSAGE)
 async def alist_batches(
     provider: str | LLMProvider,
     *,
@@ -1009,3 +1000,57 @@ async def alist_batches(
     """
     llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return await llm.alist_batches(after=after, limit=limit, **kwargs)
+
+
+def retrieve_batch_results(
+    provider: str | LLMProvider,
+    batch_id: str,
+    *,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> BatchResult:
+    """Retrieve the results of a completed batch job.
+
+    Args:
+        provider: Provider name (e.g., 'openai', 'mistral', 'anthropic', 'gateway')
+        batch_id: The ID of the batch to retrieve results for.
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+        **kwargs: Additional provider-specific arguments
+
+    Returns:
+        The batch results containing per-request outcomes.
+
+    """
+    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return llm.retrieve_batch_results(batch_id, **kwargs)
+
+
+async def aretrieve_batch_results(
+    provider: str | LLMProvider,
+    batch_id: str,
+    *,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> BatchResult:
+    """Retrieve the results of a completed batch job asynchronously.
+
+    Args:
+        provider: Provider name (e.g., 'openai', 'mistral', 'anthropic', 'gateway')
+        batch_id: The ID of the batch to retrieve results for.
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+        **kwargs: Additional provider-specific arguments
+
+    Returns:
+        The batch results containing per-request outcomes.
+
+    """
+    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return await llm.aretrieve_batch_results(batch_id, **kwargs)

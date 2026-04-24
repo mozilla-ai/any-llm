@@ -2,21 +2,32 @@ from importlib.metadata import PackageNotFoundError, version
 
 from any_llm.any_llm import AnyLLM
 from any_llm.api import (
+    acancel_batch,
     acompletion,
+    acreate_batch,
     aembedding,
+    alist_batches,
     alist_models,
     amessages,
     aresponses,
+    aretrieve_batch,
+    aretrieve_batch_results,
+    cancel_batch,
     completion,
+    create_batch,
     embedding,
+    list_batches,
     list_models,
     messages,
     responses,
+    retrieve_batch,
+    retrieve_batch_results,
 )
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import (
     AnyLLMError,
     AuthenticationError,
+    BatchNotCompleteError,
     ContentFilterError,
     ContentFilterFinishReasonError,
     ContextLengthExceededError,
@@ -29,6 +40,7 @@ from any_llm.exceptions import (
     UnsupportedParameterError,
     UnsupportedProviderError,
 )
+from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.completion import ParsedChatCompletion, ParsedChatCompletionMessage, ParsedChoice
 
 try:
@@ -41,6 +53,12 @@ __all__ = [
     "AnyLLM",
     "AnyLLMError",
     "AuthenticationError",
+    "Batch",
+    "BatchNotCompleteError",
+    "BatchRequestCounts",
+    "BatchResult",
+    "BatchResultError",
+    "BatchResultItem",
     "ContentFilterError",
     "ContentFilterFinishReasonError",
     "ContextLengthExceededError",
@@ -56,14 +74,24 @@ __all__ = [
     "RateLimitError",
     "UnsupportedParameterError",
     "UnsupportedProviderError",
+    "acancel_batch",
     "acompletion",
+    "acreate_batch",
     "aembedding",
+    "alist_batches",
     "alist_models",
     "amessages",
     "aresponses",
+    "aretrieve_batch",
+    "aretrieve_batch_results",
+    "cancel_batch",
     "completion",
+    "create_batch",
     "embedding",
+    "list_batches",
     "list_models",
     "messages",
     "responses",
+    "retrieve_batch",
+    "retrieve_batch_results",
 ]

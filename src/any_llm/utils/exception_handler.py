@@ -13,10 +13,13 @@ from any_llm.exceptions import (
     AuthenticationError,
     ContentFilterError,
     ContextLengthExceededError,
+    GatewayTimeoutError,
+    InsufficientFundsError,
     InvalidRequestError,
     ModelNotFoundError,
     ProviderError,
     RateLimitError,
+    UpstreamProviderError,
 )
 
 if TYPE_CHECKING:
@@ -103,6 +106,27 @@ def convert_exception(
 
     if re.search(r"invalid|badrequest|validation", exc_text):
         return InvalidRequestError(
+            message=original_message,
+            original_exception=exception,
+            provider_name=provider_name,
+        )
+
+    if re.search(r"insufficient.*funds|payment.*required|budget.*exceeded", exc_text):
+        return InsufficientFundsError(
+            message=original_message,
+            original_exception=exception,
+            provider_name=provider_name,
+        )
+
+    if re.search(r"bad.*gateway|upstream.*error|upstream.*provider", exc_text):
+        return UpstreamProviderError(
+            message=original_message,
+            original_exception=exception,
+            provider_name=provider_name,
+        )
+
+    if re.search(r"gateway.*timeout", exc_text):
+        return GatewayTimeoutError(
             message=original_message,
             original_exception=exception,
             provider_name=provider_name,

@@ -873,7 +873,6 @@ def test_non_streaming_response_preserves_multiple_tool_calls() -> None:
     assert result.choices[0].message.tool_calls[1].function.name == "get_time"
 
 
-
 def test_convert_tool_spec_none_parameters() -> None:
     """Regression: parameters=None must not raise 'NoneType' object is not subscriptable."""
     tools = _convert_tool_spec([{"type": "function", "function": {"name": "ping", "parameters": None}}])
@@ -885,8 +884,6 @@ def test_convert_tool_spec_none_parameters() -> None:
 
 def test_convert_tool_spec_parameters_missing_properties() -> None:
     """Regression: parameters without a 'properties' key must not raise KeyError."""
-    tools = _convert_tool_spec([
-        {"type": "function", "function": {"name": "ping", "parameters": {"type": "object"}}}
-    ])
+    tools = _convert_tool_spec([{"type": "function", "function": {"name": "ping", "parameters": {"type": "object"}}}])
     assert len(tools) == 1
     assert tools[0]["input_schema"]["properties"] == {}

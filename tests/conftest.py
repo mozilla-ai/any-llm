@@ -40,6 +40,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.PORTKEY: "@nebius-any-llm/Qwen/Qwen3-32B",
         LLMProvider.MINIMAX: "MiniMax-M2",
         LLMProvider.ZAI: "glm-4.5-flash",
+        LLMProvider.DEEPINFRA: "deepseek-ai/DeepSeek-R1",
     }
 
 
@@ -81,6 +82,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.LLAMACPP: "N/A",
         LLMProvider.MINIMAX: "MiniMax-M2",
         LLMProvider.ZAI: "glm-4-32b-0414-128k",
+        LLMProvider.DEEPINFRA: "meta-llama/Meta-Llama-3.1-8B-Instruct",
     }
 
 
@@ -120,6 +122,7 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.GATEWAY: "text-embedding-ada-002",
         LLMProvider.AZUREOPENAI: "gpt-4.1-nano",  # Not an embedding model but it's the only one we have deployed in Azure OpenAI
         LLMProvider.OPENROUTER: "qwen/qwen3-embedding-8b",
+        LLMProvider.DEEPINFRA: "BAAI/bge-base-en-v1.5",
     }
 
 

@@ -72,7 +72,7 @@ _ROOT_TUTORIAL_HTML = """<!doctype html>
     <main>
       <h1>AI Gateway (Proxy Server)</h1>
       <div class="sub">
-        <a class="link" href="https://mozilla-ai.github.io/any-llm/gateway/quickstart/">Gateway Quickstart</a>
+        <a class="link" href="https://docs.mozilla.ai/any-llm/gateway/quickstart/">Gateway Quickstart</a>
       </div>
 
       <p class="note">On first startup, the gateway prints a bootstrap API key in logs. Use that value as <code>YOUR_GATEWAY_KEY</code>.</p>

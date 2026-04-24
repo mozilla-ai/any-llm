@@ -36,7 +36,13 @@ jobs:
 
       - name: Install
         run: |
-          uv sync --group tests --extra anthropic --extra mistral
+          uv sync --group tests --extra all
+
+      - name: Generate documentation
+        run: uv run python scripts/convert_to_gitbook.py
+
+      - name: Generate documentation
+        run: uv run python scripts/convert_to_gitbook.py
 
       - name: Run Documentation tests
         env:

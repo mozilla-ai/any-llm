@@ -13,9 +13,9 @@ import re
 import sys
 from pathlib import Path
 
-DOCS_CONTENT_DIR = Path(__file__).parent.parent / "docs" / "src" / "content" / "docs"
-BUILD_OUTPUT_DIR = Path(__file__).parent.parent / "docs" / "dist" / "any-llm"
-BASE_URL = "https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/main/docs/src/content/docs/"
+DOCS_CONTENT_DIR = Path(__file__).parent.parent / "docs"
+BUILD_OUTPUT_DIR = Path(__file__).parent.parent / "docs"
+BASE_URL = "https://raw.githubusercontent.com/mozilla-ai/any-llm/refs/heads/gitbook-docs/"
 MARKDOWN_EXTENSION = ".md"
 MDX_EXTENSION = ".mdx"
 ENCODING = "utf-8"
@@ -199,6 +199,8 @@ def main() -> int:
     print(f"✓ Generated {llms_txt_path}")
 
     llms_full_txt = generate_llms_full_txt(ordered_files)
+    # Normalize trailing whitespace so output is stable across environments
+    llms_full_txt = "\n".join(line.rstrip() for line in llms_full_txt.splitlines()) + "\n"
     llms_full_path = BUILD_OUTPUT_DIR / "llms-full.txt"
     llms_full_path.write_text(llms_full_txt, encoding=ENCODING)
     print(f"✓ Generated {llms_full_path}")

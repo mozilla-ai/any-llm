@@ -700,9 +700,7 @@ def test_convert_tool_spec_none_parameters() -> None:
 
 def test_convert_tool_spec_parameters_missing_properties() -> None:
     """Regression: parameters without a 'properties' key must not raise KeyError."""
-    tools = _convert_tool_spec([
-        {"type": "function", "function": {"name": "ping", "parameters": {"type": "object"}}}
-    ])
+    tools = _convert_tool_spec([{"type": "function", "function": {"name": "ping", "parameters": {"type": "object"}}}])
     assert len(tools) == 1
     decl = tools[0].function_declarations[0]  # type: ignore[index]
     assert decl.parameters.properties == {}  # type: ignore[union-attr]

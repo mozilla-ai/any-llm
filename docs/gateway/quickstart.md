@@ -12,7 +12,7 @@ By the end of this guide, you will:
 1. Authenticate requests using a master key
 1. Make completion requests through the gateway
 
-> **Note:** for the purposes of this quickstart we will utilize the docker-compose and config.yml file, but alternative configuration designs are available and detailed [here](/any-llm/gateway/configuration/)
+> **Note:** for the purposes of this quickstart we will utilize the docker-compose and config.yml file, but alternative configuration designs are available and detailed [here](configuration.md)
 
 ## Pre-Requisites
 
@@ -46,7 +46,7 @@ Save the output of this command, you'll need it in the next steps.
 
 Create a file name `config.yml` and paste the below content:
 
-> **Action** : At a minimum you'll need to fill out the master_key, and also enter credential information for at least one provider. You can browse supported providers [here](https://mozilla-ai.github.io/any-llm/providers/). If you would like to track usage cost, you'll also need to configure model pricing, as explained in the [config template file](https://raw.githubusercontent.com/mozilla-ai/any-llm/main/docker/config.example.yml).
+> **Action** : At a minimum you'll need to fill out the master_key, and also enter credential information for at least one provider. You can browse supported providers [here](../providers.md). If you would like to track usage cost, you'll also need to configure model pricing, as explained in the [config template file](https://raw.githubusercontent.com/mozilla-ai/any-llm/main/docker/config.example.yml).
 
 ```yaml
 database_url: "postgresql://gateway:gateway@postgres:5432/gateway"
@@ -138,7 +138,7 @@ docker compose logs -f
 
 ## Create a user and make your first request
 
-Now that it's running, clients can make requests! The gateway supports two authentication patterns: use of the master key, or virtual keys. See the [authentication doc](/any-llm/gateway/authentication/) for more information. For this guide we will use the master key for both administration and client requests.
+Now that it's running, clients can make requests! The gateway supports two authentication patterns: use of the master key, or virtual keys. See the [authentication doc](authentication.md) for more information. For this guide we will use the master key for both administration and client requests.
 
 To make the below commands easier to run, you can set the key as an env var in your terminal:
 
@@ -286,11 +286,11 @@ curl -s http://localhost:8000/v1/users/user-123 \
 ```
 </details>
 
-You'll notice that the user does not have a budget attached, which means that we track their usage but do not limit them! For more information on creating and managing budgets and budget reset cycles, see the [Budget Management docs](/any-llm/gateway/budget-management/)
+You'll notice that the user does not have a budget attached, which means that we track their usage but do not limit them! For more information on creating and managing budgets and budget reset cycles, see the [Budget Management docs](budget-management.md)
 
 ## Next Steps
 
-- **[Configuration](/any-llm/gateway/configuration/)** - Configure providers, pricing, and other settings
-- **[Authentication](/any-llm/gateway/authentication/)** - Learn about master keys and virtual API keys
-- **[Budget Management](/any-llm/gateway/budget-management/)** - Set spending limits and track costs
-- **[API Reference](/any-llm/gateway/api-reference/)** - Explore the complete API
+- **[Configuration](configuration.md)** - Configure providers, pricing, and other settings
+- **[Authentication](authentication.md)** - Learn about master keys and virtual API keys
+- **[Budget Management](budget-management.md)** - Set spending limits and track costs
+- **[API Reference](api-reference.md)** - Explore the complete API

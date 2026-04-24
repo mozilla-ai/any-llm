@@ -182,7 +182,7 @@ curl -X DELETE http://localhost:8000/v1/keys/<virtual_key_id> \
   -H "X-AnyLLM-Key: Bearer ${GATEWAY_MASTER_KEY}"
 ```
 
-> See [API Reference](/any-llm/gateway/api-reference/) for complete key management operations.
+> See [API Reference](api-reference.md) for complete key management operations.
 
 Note: The actual key values are never returned in list or get operations for security reasons.
 
@@ -190,9 +190,9 @@ Note: The actual key values are never returned in list or get operations for sec
 
 Now that you understand authentication, explore these related topics:
 
-- **[Budget Management](/any-llm/gateway/budget-management/)** - Set spending limits for users and enforce budgets
-- **[Configuration](/any-llm/gateway/configuration/)** - Learn about provider setup and pricing configuration
-- **[API Reference](/any-llm/gateway/api-reference/)** - Explore all available endpoints for managing keys and users
-- **[Quick Start](/any-llm/gateway/quickstart/)** - Complete walkthrough of setting up your first gateway
+- **[Budget Management](budget-management.md)** - Set spending limits for users and enforce budgets
+- **[Configuration](configuration.md)** - Learn about provider setup and pricing configuration
+- **[API Reference](api-reference.md)** - Explore all available endpoints for managing keys and users
+- **[Quick Start](quickstart.md)** - Complete walkthrough of setting up your first gateway
 
-For questions or issues, refer to the [troubleshooting guide](/any-llm/gateway/troubleshooting/) or check the project's issue tracker.
+For questions or issues, refer to the [troubleshooting guide](troubleshooting.md) or check the project's issue tracker.

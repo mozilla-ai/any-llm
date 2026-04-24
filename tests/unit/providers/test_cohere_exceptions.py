@@ -23,6 +23,9 @@ from any_llm.exceptions import (
     ProviderError,
     RateLimitError,
 )
+from any_llm.exceptions import (
+    GatewayTimeoutError as AnyLLMGatewayTimeoutError,
+)
 from any_llm.utils.exception_handler import convert_exception
 
 
@@ -101,6 +104,6 @@ def test_gateway_timeout_error_conversion() -> None:
 
     result = convert_exception(original, "cohere")
 
-    assert isinstance(result, ProviderError)
+    assert isinstance(result, AnyLLMGatewayTimeoutError)
     assert result.provider_name == "cohere"
     assert result.original_exception is original

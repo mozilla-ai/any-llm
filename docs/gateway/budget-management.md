@@ -36,9 +36,9 @@ curl -X POST http://localhost:8000/v1/budgets \
 
 When creating or updating a user, specify the `budget_id`:
 
-:::caution
+{% hint style="warning" %}
 If you don't create and set a budget, budget is unlimited.
-:::
+{% endhint %}
 
 ```bash
 # Create a user with a budget
