@@ -7,6 +7,7 @@ import pytest
 from anthropic.types import Message, TextBlock, ThinkingBlock, ToolUseBlock, Usage
 
 from any_llm.providers.anthropic.base import BaseAnthropicProvider
+from any_llm.providers.anthropic.utils import _convert_request_input, _convert_request_response
 from any_llm.types.messages import (
     ContentBlockDeltaEvent,
     ContentBlockStartEvent,
@@ -17,6 +18,8 @@ from any_llm.types.messages import (
     MessageStartEvent,
     MessageStopEvent,
 )
+from any_llm.types.request import RequestParams
+from any_llm.utils.request_state import encode_request_state
 
 
 def _make_usage(**overrides: Any) -> Usage:
@@ -400,3 +403,100 @@ async def test_amessages_system_list_form() -> None:
 
     call_kwargs = mock_client.messages.create.call_args.kwargs
     assert call_kwargs["system"] == system_blocks
+
+
+def test_convert_request_input_restores_thinking_signature() -> None:
+    system, messages = _convert_request_input(
+        [
+            {
+                "type": "reasoning",
+                "summary": [],
+                "content": [{"type": "reasoning_text", "text": "Let me think"}],
+                "encrypted_content": encode_request_state("anthropic", {"signature": "sig_123"}),
+            },
+            {
+                "type": "function_call",
+                "call_id": "toolu_123",
+                "name": "lookup_weather",
+                "arguments": '{"city":"Paris"}',
+            },
+        ],
+        "System",
+    )
+
+    assert system == "System"
+    assert messages[0]["role"] == "assistant"
+    blocks = messages[0]["content"]
+    assert blocks[0]["type"] == "thinking"
+    assert blocks[0]["signature"] == "sig_123"
+    assert blocks[1]["type"] == "tool_use"
+    assert blocks[1]["id"] == "toolu_123"
+
+
+def test_convert_request_input_ignores_foreign_state() -> None:
+    _, messages = _convert_request_input(
+        [
+            {
+                "type": "reasoning",
+                "summary": [],
+                "content": [{"type": "reasoning_text", "text": "Foreign"}],
+                "encrypted_content": encode_request_state("gemini", {"thought_signatures": ["abc"]}),
+            }
+        ],
+        None,
+    )
+    assert messages[0]["content"][0]["type"] == "text"
+
+
+def test_convert_request_response_preserves_signature() -> None:
+    params = RequestParams(model="claude-sonnet-4-6", input="Hello", reasoning={"effort": "medium"})
+    message = _make_message(
+        content=[
+            ThinkingBlock(type="thinking", thinking="Let me reason...", signature="sig"),
+            ToolUseBlock(type="tool_use", id="toolu_123", name="get_weather", input={"city": "Paris"}),
+            TextBlock(type="text", text="Done."),
+        ]
+    )
+
+    response = _convert_request_response(message, params=params)
+
+    assert response.output[0].type == "reasoning"
+    assert response.output[0].encrypted_content is not None
+    assert response.output[1].type == "function_call"
+    assert response.output[1].call_id == "toolu_123"
+    assert response.output[2].type == "message"
+
+
+@pytest.mark.asyncio
+async def test_arequest_non_streaming() -> None:
+    mock_message = _make_message(content=[ThinkingBlock(type="thinking", thinking="Let me reason...", signature="sig")])
+    mock_client = Mock()
+    mock_client.messages.create = AsyncMock(return_value=mock_message)
+
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = mock_client
+
+    params = RequestParams(
+        model="claude-sonnet-4-6",
+        input="Hello",
+        stream=False,
+    )
+    result = await BaseAnthropicProvider._arequest(provider, params)
+    assert result.output[0].type == "reasoning"
+
+
+@pytest.mark.asyncio
+async def test_arequest_streaming_returns_events() -> None:
+    mock_message = _make_message(content=[TextBlock(type="text", text="Hi!")])
+    mock_client = Mock()
+    mock_client.messages.create = AsyncMock(return_value=mock_message)
+
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = mock_client
+    provider._stream_request_async = BaseAnthropicProvider._stream_request_async.__get__(provider, BaseAnthropicProvider)
+
+    params = RequestParams(model="claude-sonnet-4-6", input="Hello", stream=True)
+    stream = await BaseAnthropicProvider._arequest(provider, params)
+    events = [event async for event in stream]
+    assert events[0].type == "response.created"
+    assert events[-1].type == "response.completed"

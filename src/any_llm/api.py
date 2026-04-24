@@ -15,6 +15,7 @@ from any_llm.types.completion import (
 )
 from any_llm.types.messages import MessageResponse, MessageStreamEvent
 from any_llm.types.model import Model
+from any_llm.types.request import RequestInput, RequestResponse, RequestStreamEvent
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
 
 
@@ -372,6 +373,54 @@ def responses(
     )
 
 
+def request(
+    model: str,
+    input_data: RequestInput,
+    *,
+    provider: str | LLMProvider | None = None,
+    tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
+    max_output_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    stream: bool | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    instructions: str | None = None,
+    reasoning: dict[str, Any] | None = None,
+    metadata: dict[str, str] | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> RequestResponse | Iterator[RequestStreamEvent]:
+    """Create a response using the experimental stateful request API."""
+    if provider is None:
+        provider_key, model_id = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = LLMProvider.from_string(provider)
+        model_id = model
+
+    llm = AnyLLM.create(
+        provider_key,
+        api_key=api_key,
+        api_base=api_base,
+        **client_args or {},
+    )
+    return llm.request(
+        model=model_id,
+        input_data=input_data,
+        tools=tools,
+        tool_choice=tool_choice,
+        max_output_tokens=max_output_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        stream=stream,
+        instructions=instructions,
+        reasoning=reasoning,
+        metadata=metadata,
+        **kwargs,
+    )
+
+
 async def aresponses(
     model: str,
     input_data: str | ResponseInputParam,
@@ -502,6 +551,54 @@ async def aresponses(
         prompt_cache_key=prompt_cache_key,
         prompt_cache_retention=prompt_cache_retention,
         conversation=conversation,
+        **kwargs,
+    )
+
+
+async def arequest(
+    model: str,
+    input_data: RequestInput,
+    *,
+    provider: str | LLMProvider | None = None,
+    tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
+    max_output_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    stream: bool | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    instructions: str | None = None,
+    reasoning: dict[str, Any] | None = None,
+    metadata: dict[str, str] | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> RequestResponse | AsyncIterator[RequestStreamEvent]:
+    """Create a response using the experimental stateful request API asynchronously."""
+    if provider is None:
+        provider_key, model_id = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = LLMProvider.from_string(provider)
+        model_id = model
+
+    llm = AnyLLM.create(
+        provider_key,
+        api_key=api_key,
+        api_base=api_base,
+        **client_args or {},
+    )
+    return await llm.arequest(
+        model=model_id,
+        input_data=input_data,
+        tools=tools,
+        tool_choice=tool_choice,
+        max_output_tokens=max_output_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        stream=stream,
+        instructions=instructions,
+        reasoning=reasoning,
+        metadata=metadata,
         **kwargs,
     )
 

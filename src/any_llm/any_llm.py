@@ -36,6 +36,7 @@ from any_llm.types.messages import (
     MessageStreamEvent,
 )
 from any_llm.types.provider import PlatformKey, ProviderMetadata
+from any_llm.types.request import RequestInput, RequestParams, RequestResponse, RequestStreamEvent
 from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import async_coro_to_sync_iter, async_iter_to_sync_iter, run_async_in_sync
 from any_llm.utils.exception_handler import handle_exceptions
@@ -97,6 +98,9 @@ class AnyLLM(ABC):
 
     SUPPORTS_MESSAGES: bool = True
     """Anthropic Messages API (all providers support it via conversion)"""
+
+    SUPPORTS_REQUESTS: bool = False
+    """Experimental stateful multi-turn request API."""
 
     API_BASE: str | None = None
     """This is used to set the API base for the provider.
@@ -797,6 +801,66 @@ class AnyLLM(ABC):
         if isinstance(response, (ResponseResource, Response)):
             return response
         return async_iter_to_sync_iter(response, allow_running_loop=allow_running_loop)
+
+    def request(self, **kwargs: Any) -> RequestResponse | Iterator[RequestStreamEvent]:
+        """Create a response using the experimental request API synchronously."""
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        if kwargs.get("stream"):
+            return async_coro_to_sync_iter(
+                cast("Coroutine[Any, Any, AsyncIterator[RequestStreamEvent]]", self.arequest(**kwargs)),
+                allow_running_loop=allow_running_loop,
+            )
+
+        response = run_async_in_sync(self.arequest(**kwargs), allow_running_loop=allow_running_loop)
+        if isinstance(response, ResponseResource):
+            return response
+        return async_iter_to_sync_iter(response, allow_running_loop=allow_running_loop)
+
+    @handle_exceptions(wrap_streaming=True)
+    async def arequest(
+        self,
+        model: str,
+        input_data: RequestInput,
+        *,
+        tools: list[dict[str, Any] | Callable[..., Any]] | Any | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        max_output_tokens: int | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        stream: bool | None = None,
+        instructions: str | None = None,
+        reasoning: dict[str, Any] | None = None,
+        metadata: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> RequestResponse | AsyncIterator[RequestStreamEvent]:
+        """Create a response using the experimental stateful request API."""
+        prepared_tools = None
+        if tools:
+            prepared_tools = prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
+
+        params = RequestParams(
+            model=model,
+            input=input_data,
+            tools=cast("list[dict[str, Any]] | None", prepared_tools),
+            tool_choice=tool_choice,
+            max_output_tokens=max_output_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            stream=stream,
+            instructions=instructions,
+            reasoning=reasoning,
+            metadata=metadata,
+        )
+        return await self._arequest(params, **kwargs)
+
+    async def _arequest(
+        self, params: RequestParams, **kwargs: Any
+    ) -> RequestResponse | AsyncIterator[RequestStreamEvent]:
+        if not self.SUPPORTS_REQUESTS:
+            msg = "Provider doesn't support requests."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _arequest method"
+        raise NotImplementedError(msg)
 
     @handle_exceptions(wrap_streaming=True)
     async def aresponses(

@@ -233,6 +233,47 @@ result = responses(
 print(result.output_text)
 ```
 
+### Experimental Request API
+
+For stateful multi-turn tool-calling where provider-specific hidden reasoning state matters, use the experimental `request` / `arequest` API:
+
+```python
+from any_llm import arequest
+
+first = await arequest(
+    model="claude-sonnet-4-6",
+    provider="anthropic",
+    input_data=[
+        {"type": "message", "role": "user", "content": "Use the tool to add 7 and 5."}
+    ],
+    tools=[
+        {
+            "type": "function",
+            "function": {
+                "name": "add_numbers",
+                "description": "Add two integers.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}},
+                    "required": ["a", "b"],
+                },
+            },
+        }
+    ],
+    tool_choice="required",
+    reasoning={"effort": "medium"},
+)
+```
+
+`arequest` is intentionally separate from `aresponses`:
+
+- `completion` / `acompletion`: chat-completions compatibility
+- `messages` / `amessages`: Anthropic Messages compatibility
+- `responses` / `aresponses`: OpenResponses / native Responses compatibility
+- `request` / `arequest`: experimental multi-turn tool loop transport with provider-native hidden-state continuity
+
+Today the experimental path is implemented for OpenAI, Anthropic-compatible providers, and Gemini-compatible providers. It may change if a cleaner protocol shape emerges.
+
 ### Finding the Right Model
 
 The `provider_id` should match our [supported provider names](https://docs.mozilla.ai/any-llm/providers/).

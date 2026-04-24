@@ -19,12 +19,18 @@ from any_llm.types.messages import (
     MessageStreamEvent,
     ThinkingBlock,
 )
+from any_llm.types.request import RequestParams, RequestResponse, RequestStreamEvent
+from any_llm.utils.request_output import RequestEventStream
 
 MISSING_PACKAGES_ERROR = None
 try:
     from anthropic import AsyncAnthropic
 
     from .utils import (
+        _convert_request_input,
+        _convert_request_response,
+        _convert_request_tool_choice,
+        _convert_request_tools,
         _convert_models_list,
         _convert_params,
         _convert_response,
@@ -107,6 +113,7 @@ class BaseAnthropicProvider(AnyLLM, ABC):
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
+    SUPPORTS_REQUESTS = True
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_COMPLETION_IMAGE = True
     SUPPORTS_COMPLETION_PDF = True
@@ -169,6 +176,20 @@ class BaseAnthropicProvider(AnyLLM, ABC):
             async for event in anthropic_stream:
                 yield self._convert_completion_chunk_response(event, model_id=kwargs.get("model", "unknown"))
 
+    async def _stream_request_async(
+        self, api_kwargs: dict[str, Any], params: RequestParams
+    ) -> AsyncIterator[RequestStreamEvent]:
+        response = await self.client.messages.create(**api_kwargs)
+        resource = _convert_request_response(response, params=params)
+        event_stream = RequestEventStream(resource)
+        for event in event_stream.iter_preamble():
+            yield event
+        for output_index, item in enumerate(resource.output):
+            for event in event_stream.iter_item(output_index, item):
+                yield event
+        for event in event_stream.iter_complete():
+            yield event
+
     @override
     async def _acompletion(
         self,
@@ -199,6 +220,44 @@ class BaseAnthropicProvider(AnyLLM, ABC):
 
         response: Message = await self.client.messages.create(**api_kwargs)
         return self._convert_native_message_to_response(response)
+
+    @override
+    async def _arequest(
+        self, params: RequestParams, **kwargs: Any
+    ) -> RequestResponse | AsyncIterator[RequestStreamEvent]:
+        api_kwargs = params.model_dump(exclude_none=True)
+        api_kwargs["messages"] = []
+        system, messages = _convert_request_input(params.input, params.instructions)
+        api_kwargs["messages"] = messages
+        if system is not None:
+            api_kwargs["system"] = system
+        else:
+            api_kwargs.pop("instructions", None)
+        api_kwargs.pop("input", None)
+        api_kwargs.pop("instructions", None)
+        if api_kwargs.get("max_output_tokens") is not None:
+            api_kwargs["max_tokens"] = api_kwargs.pop("max_output_tokens")
+        elif "max_tokens" not in api_kwargs:
+            api_kwargs["max_tokens"] = 1024
+        if api_kwargs.get("tools") is not None:
+            api_kwargs["tools"] = _convert_request_tools(api_kwargs["tools"])
+        if api_kwargs.get("tool_choice") is not None:
+            api_kwargs["tool_choice"] = _convert_request_tool_choice(api_kwargs["tool_choice"])
+        if params.reasoning is not None:
+            effort = params.reasoning.get("effort")
+            budget_tokens = params.reasoning.get("budget_tokens")
+            if budget_tokens is None:
+                budget_tokens = 8192
+                if effort == "high":
+                    budget_tokens = 16384
+                elif effort == "low":
+                    budget_tokens = 4096
+            api_kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget_tokens}
+        api_kwargs.pop("stream", None)
+        if params.stream:
+            return self._stream_request_async({**api_kwargs, **kwargs}, params)
+        response = await self.client.messages.create(**api_kwargs, **kwargs)
+        return _convert_request_response(response, params=params)
 
     async def _stream_messages_async(self, **kwargs: Any) -> AsyncIterator[MessageStreamEvent]:
         """Stream Anthropic Messages API and yield SDK event types directly."""

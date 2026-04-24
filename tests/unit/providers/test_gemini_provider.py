@@ -10,12 +10,16 @@ from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.providers.gemini import GeminiProvider
 from any_llm.providers.gemini.base import REASONING_EFFORT_TO_THINKING_BUDGETS, GoogleProvider
 from any_llm.providers.gemini.utils import (
+    _convert_request_input,
+    _convert_request_response,
     _convert_messages,
     _convert_response_to_response_dict,
     _convert_tool_spec,
     _create_openai_chunk_from_google_chunk,
 )
 from any_llm.types.completion import CompletionParams, PromptTokensDetails, ReasoningEffort
+from any_llm.types.request import RequestParams
+from any_llm.utils.request_state import encode_request_state
 
 TEST_IMAGE_BYTES = b"test-image-bytes"
 TEST_PDF_BYTES = b"%PDF-1.4\ntest"
@@ -1528,3 +1532,116 @@ def test_timeout_in_client_args_does_not_override_explicit_http_options() -> Non
         mock_client.assert_called_once()
         call_kwargs = mock_client.call_args[1]
         assert call_kwargs["http_options"].timeout == 10_000
+
+
+def test_convert_request_input_restores_thought_signature() -> None:
+    contents, system_instruction = _convert_request_input(
+        [
+            {
+                "type": "reasoning",
+                "summary": [],
+                "content": [{"type": "reasoning_text", "text": "Thinking"}],
+                "encrypted_content": encode_request_state(
+                    "gemini",
+                    {"thought_signatures": [base64.b64encode(b"sig").decode("ascii")]},
+                ),
+            },
+            {
+                "type": "function_call",
+                "call_id": "call_123",
+                "name": "lookup_weather",
+                "arguments": '{"city":"Paris"}',
+            },
+        ]
+    )
+
+    assert system_instruction is None
+    function_call_part = contents[0].parts[0]
+    assert function_call_part.function_call is not None
+    assert function_call_part.thought_signature == b"sig"
+
+
+def test_convert_request_input_ignores_foreign_state() -> None:
+    contents, _ = _convert_request_input(
+        [
+            {
+                "type": "reasoning",
+                "summary": [],
+                "content": [{"type": "reasoning_text", "text": "Foreign"}],
+                "encrypted_content": encode_request_state("anthropic", {"signature": "sig"}),
+            },
+            {
+                "type": "function_call",
+                "call_id": "call_123",
+                "name": "lookup_weather",
+                "arguments": '{"city":"Paris"}',
+            },
+        ]
+    )
+
+    assert contents[0].parts[0].thought_signature is not None
+    assert contents[0].parts[0].thought_signature != b"sig"
+
+
+def test_convert_request_response_preserves_signature() -> None:
+    part_reasoning = types.Part(text="Thinking")
+    part_reasoning.thought = True
+    part_call = types.Part(function_call=types.FunctionCall(name="lookup_weather", args={"city": "Paris"}))
+    part_call.thought_signature = b"sig"
+    response = Mock()
+    response.candidates = [Mock(content=types.Content(role="model", parts=[part_reasoning, part_call]))]
+    response.usage_metadata = Mock(
+        cached_content_token_count=0,
+        prompt_token_count=10,
+        candidates_token_count=5,
+        thoughts_token_count=2,
+    )
+    response.model_version = "gemini-2.5-flash"
+
+    resource = _convert_request_response(response, params=RequestParams(model="gemini-2.5-flash", input="Hello"))
+
+    assert resource.output[0].type == "reasoning"
+    assert resource.output[0].encrypted_content is not None
+    assert resource.output[1].type == "function_call"
+
+
+@pytest.mark.asyncio
+async def test_arequest_non_streaming() -> None:
+    part_reasoning = types.Part(text="Thinking")
+    part_reasoning.thought = True
+    response = Mock()
+    response.candidates = [Mock(content=types.Content(role="model", parts=[part_reasoning]))]
+    response.usage_metadata = Mock(
+        cached_content_token_count=0,
+        prompt_token_count=10,
+        candidates_token_count=5,
+        thoughts_token_count=2,
+    )
+    response.model_version = "gemini-2.5-flash"
+
+    with mock_gemini_provider() as mock_genai:
+        mock_genai.return_value.aio.models.generate_content = AsyncMock(return_value=response)
+        provider = GeminiProvider(api_key="test-key")
+        result = await provider._arequest(RequestParams(model="gemini-2.5-flash", input="Hello"))
+        assert result.output[0].type == "reasoning"
+
+
+@pytest.mark.asyncio
+async def test_arequest_streaming_returns_events() -> None:
+    response = Mock()
+    response.candidates = [Mock(content=types.Content(role="model", parts=[types.Part.from_text(text="Hi!")]))]
+    response.usage_metadata = Mock(
+        cached_content_token_count=0,
+        prompt_token_count=10,
+        candidates_token_count=5,
+        thoughts_token_count=0,
+    )
+    response.model_version = "gemini-2.5-flash"
+
+    with mock_gemini_provider() as mock_genai:
+        mock_genai.return_value.aio.models.generate_content = AsyncMock(return_value=response)
+        provider = GeminiProvider(api_key="test-key")
+        stream = await provider._arequest(RequestParams(model="gemini-2.5-flash", input="Hello", stream=True))
+        events = [event async for event in stream]
+        assert events[0].type == "response.created"
+        assert events[-1].type == "response.completed"

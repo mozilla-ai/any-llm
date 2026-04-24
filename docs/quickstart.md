@@ -96,6 +96,8 @@ print(response.choices[0].message.content)
 
 **Finding model names:** Check the [providers page](providers.md) for provider IDs, or use the [`list_models`](api/list-models.md) API to see available models for your provider.
 
+If you are building a stateful multi-turn tool loop and need provider-native reasoning continuity, see the experimental [`request`](/any-llm/request/) API.
+
 ## Streaming
 
 For the [providers that support streaming](providers.md), you can enable it by passing `stream=True`:

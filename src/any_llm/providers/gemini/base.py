@@ -6,6 +6,8 @@ from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.types.request import RequestParams, RequestResponse, RequestStreamEvent
+from any_llm.utils.request_output import RequestEventStream
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -26,6 +28,8 @@ try:
     from google.genai import types
 
     from .utils import (
+        _convert_request_input,
+        _convert_request_response,
         _convert_messages,
         _convert_models_list,
         _convert_response_to_response_dict,
@@ -63,6 +67,7 @@ class GoogleProvider(AnyLLM):
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
+    SUPPORTS_REQUESTS = True
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_COMPLETION_IMAGE = True
     SUPPORTS_COMPLETION_PDF = True
@@ -301,6 +306,68 @@ class GoogleProvider(AnyLLM):
 
         response_dict = _convert_response_to_response_dict(response)
         return self._convert_completion_response((response_dict, params.model_id))
+
+    async def _stream_request_async(
+        self, request_kwargs: dict[str, Any], params: RequestParams
+    ) -> AsyncIterator[RequestStreamEvent]:
+        response: types.GenerateContentResponse = await self.client.aio.models.generate_content(**request_kwargs)
+        resource = _convert_request_response(response, params=params)
+        event_stream = RequestEventStream(resource)
+        for event in event_stream.iter_preamble():
+            yield event
+        for output_index, item in enumerate(resource.output):
+            for event in event_stream.iter_item(output_index, item):
+                yield event
+        for event in event_stream.iter_complete():
+            yield event
+
+    @override
+    async def _arequest(
+        self,
+        params: RequestParams,
+        **kwargs: Any,
+    ) -> RequestResponse | AsyncIterator[RequestStreamEvent]:
+        if (timeout := kwargs.pop("timeout", None)) is not None:
+            GoogleProvider._merge_timeout_into_http_options(timeout, kwargs)
+
+        formatted_messages, system_instruction = _convert_request_input(params.input)
+        config_kwargs: dict[str, Any] = {}
+        if params.temperature is not None:
+            config_kwargs["temperature"] = params.temperature
+        if params.top_p is not None:
+            config_kwargs["top_p"] = params.top_p
+        if params.max_output_tokens is not None:
+            config_kwargs["max_output_tokens"] = params.max_output_tokens
+        if params.tools is not None:
+            config_kwargs["tools"] = _convert_tool_spec(params.tools)
+        if isinstance(params.tool_choice, str):
+            config_kwargs["tool_config"] = _convert_tool_choice(params.tool_choice)
+        if params.reasoning is not None:
+            include_thoughts = bool(params.reasoning.get("include_thoughts", True))
+            thinking_budget = params.reasoning.get("thinking_budget")
+            config_kwargs["thinking_config"] = types.ThinkingConfig(
+                include_thoughts=include_thoughts,
+                thinking_budget=thinking_budget,
+            )
+        if system_instruction and params.instructions:
+            config_kwargs["system_instruction"] = f"{params.instructions}\n{system_instruction}"
+        elif system_instruction:
+            config_kwargs["system_instruction"] = system_instruction
+        elif params.instructions:
+            config_kwargs["system_instruction"] = params.instructions
+
+        request_kwargs: dict[str, Any] = {
+            "model": params.model,
+            "contents": formatted_messages,
+            "config": types.GenerateContentConfig(**config_kwargs),
+        }
+        request_kwargs.update(kwargs)
+
+        if params.stream:
+            return self._stream_request_async(request_kwargs, params)
+
+        response: types.GenerateContentResponse = await self.client.aio.models.generate_content(**request_kwargs)
+        return _convert_request_response(response, params=params)
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:

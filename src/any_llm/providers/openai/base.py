@@ -32,6 +32,7 @@ from any_llm.types.completion import (
     ReasoningEffort,
 )
 from any_llm.types.model import Model
+from any_llm.types.request import RequestParams, RequestResponse, RequestStreamEvent
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
@@ -48,6 +49,7 @@ class BaseOpenAIProvider(AnyLLM):
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
+    SUPPORTS_REQUESTS = True
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_COMPLETION_IMAGE = True
     SUPPORTS_COMPLETION_PDF = True
@@ -233,6 +235,37 @@ class BaseOpenAIProvider(AnyLLM):
                 # but if OpenResponses becomes the standard, this will need to become a warning or error
                 logger.info(msg)
                 return response
+        return response
+
+    @override
+    async def _arequest(
+        self, params: RequestParams, **kwargs: Any
+    ) -> RequestResponse | AsyncIterator[RequestStreamEvent]:
+        response = await self._aresponses(
+            ResponsesParams(
+                model=params.model,
+                input=params.input,
+                tools=params.tools,
+                tool_choice=params.tool_choice,
+                max_output_tokens=params.max_output_tokens,
+                temperature=params.temperature,
+                top_p=params.top_p,
+                stream=params.stream,
+                instructions=params.instructions,
+                reasoning=params.reasoning,
+                metadata=params.metadata,
+            ),
+            **kwargs,
+        )
+        if isinstance(response, AsyncStream):
+            return cast("AsyncIterator[RequestStreamEvent]", response)
+        if isinstance(response, Response):
+            try:
+                return ResponseResource.model_validate(response.model_dump(warnings=False))
+            except ValidationError as e:
+                msg = f"Failed to convert Response to OpenResponse ResponseResource: {e}"
+                logger.info(msg)
+                raise ValueError(msg) from e
         return response
 
     @override

@@ -3,10 +3,21 @@ import binascii
 import json
 import mimetypes
 from time import time
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from google.genai import types
 from google.genai.pagers import Pager
+from openresponses_types import ResponseResource
+from openresponses_types.types import (
+    AssistantMessageItemParam,
+    DeveloperMessageItemParam,
+    FunctionCallItemParam,
+    FunctionCallOutputItemParam,
+    ItemReferenceParam,
+    Reasoning as ResponseReasoningConfig,
+    SystemMessageItemParam,
+    UserMessageItemParam,
+)
 
 from any_llm.exceptions import InvalidRequestError
 from any_llm.logging import logger
@@ -24,6 +35,15 @@ from any_llm.types.completion import (
     Usage,
 )
 from any_llm.types.model import Model
+from any_llm.types.request import RequestInput, RequestParams, RequestReasoningItemParam, normalize_request_input
+from any_llm.utils.request_output import (
+    make_function_call_item,
+    make_response_resource,
+    make_text_message,
+    make_usage,
+    make_reasoning_item,
+)
+from any_llm.utils.request_state import decode_request_state, encode_request_state
 
 _INLINE_SIZE_LIMIT = 20 * 1024 * 1024
 
@@ -433,3 +453,204 @@ def _create_openai_chunk_from_google_chunk(
 
 def _convert_models_list(models_list: Pager[types.Model]) -> list[Model]:
     return [Model(id=model.name or "Unknown", object="model", created=0, owned_by="google") for model in models_list]
+
+
+def _request_message_text(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, dict):
+                part_type = part.get("type")
+                if part_type in ("input_text", "output_text", "text", "reasoning_text", "summary_text"):
+                    text = part.get("text")
+                    if isinstance(text, str):
+                        parts.append(text)
+                elif part_type == "refusal":
+                    refusal = part.get("refusal")
+                    if isinstance(refusal, str):
+                        parts.append(refusal)
+        return "".join(parts)
+    return ""
+
+
+def _decode_gemini_signatures(item: RequestReasoningItemParam) -> list[bytes]:
+    state = decode_request_state(item.encrypted_content, "gemini")
+    if not isinstance(state, dict):
+        return []
+    raw_signatures = state.get("thought_signatures")
+    if not isinstance(raw_signatures, list):
+        return []
+    decoded: list[bytes] = []
+    for raw_signature in raw_signatures:
+        if not isinstance(raw_signature, str):
+            continue
+        try:
+            decoded.append(base64.b64decode(raw_signature.encode("ascii"), validate=True))
+        except (binascii.Error, ValueError):
+            continue
+    return decoded
+
+
+def _convert_request_input(
+    input_data: RequestInput,
+) -> tuple[list[types.Content], str | None]:
+    if isinstance(input_data, str):
+        return [types.Content(role="user", parts=[types.Part.from_text(text=input_data)])], None
+
+    formatted_messages: list[types.Content] = []
+    system_parts: list[str] = []
+    function_names: dict[str, str] = {}
+    pending_signatures: list[bytes] = []
+    missing_signature_applied = False
+
+    for item in normalize_request_input(input_data):
+        if isinstance(item, ItemReferenceParam):
+            msg = "item_reference is not supported for gemini arequest"
+            raise InvalidRequestError(msg, provider_name="gemini")
+        if isinstance(item, (SystemMessageItemParam, DeveloperMessageItemParam)):
+            text = _request_message_text(item.content)
+            if text:
+                system_parts.append(text)
+            continue
+        if isinstance(item, UserMessageItemParam):
+            formatted_messages.append(
+                types.Content(role="user", parts=[types.Part.from_text(text=_request_message_text(item.content))])
+            )
+            continue
+        if isinstance(item, AssistantMessageItemParam):
+            formatted_messages.append(
+                types.Content(role="model", parts=[types.Part.from_text(text=_request_message_text(item.content))])
+            )
+            continue
+        if isinstance(item, RequestReasoningItemParam):
+            pending_signatures = _decode_gemini_signatures(item)
+            continue
+        if isinstance(item, FunctionCallItemParam):
+            signature: bytes | str | None = None
+            if pending_signatures:
+                signature = pending_signatures.pop(0)
+            elif not missing_signature_applied:
+                signature = "skip_thought_signature_validator"
+                missing_signature_applied = True
+
+            function_names[item.call_id] = item.name
+            formatted_messages.append(
+                types.Content(
+                    role="model",
+                    parts=[
+                        types.Part(
+                            function_call=types.FunctionCall(name=item.name, args=json.loads(item.arguments)),
+                            thought_signature=signature,
+                        )
+                    ],
+                )
+            )
+            continue
+        if isinstance(item, FunctionCallOutputItemParam):
+            output = item.output
+            if isinstance(output, str):
+                try:
+                    normalized = json.loads(output)
+                except json.JSONDecodeError:
+                    normalized = {"result": output}
+            else:
+                normalized = {"result": _request_message_text(output)}
+            formatted_messages.append(
+                types.Content(
+                    role="function",
+                    parts=[
+                        types.Part.from_function_response(
+                            name=function_names.get(item.call_id, "unknown"),
+                            response=_normalize_tool_response(normalized),
+                        )
+                    ],
+                )
+            )
+            continue
+
+    system_instruction = "\n".join(part for part in system_parts if part) or None
+    return formatted_messages, system_instruction
+
+
+def _convert_request_response(
+    response: types.GenerateContentResponse,
+    *,
+    params: RequestParams,
+) -> ResponseResource:
+    output_items: list[object] = []
+    if response.candidates:
+        candidate = response.candidates[0]
+        if candidate.content and candidate.content.parts:
+            pending_reasoning_text: list[str] = []
+
+            def flush_reasoning(signature: bytes | None = None) -> None:
+                if not pending_reasoning_text and signature is None:
+                    return
+                encrypted_content = None
+                if signature is not None:
+                    encrypted_content = encode_request_state(
+                        "gemini",
+                        {"thought_signatures": [base64.b64encode(signature).decode("ascii")]},
+                    )
+                output_items.append(
+                    make_reasoning_item("".join(pending_reasoning_text) or None, encrypted_content=encrypted_content)
+                )
+                pending_reasoning_text.clear()
+
+            for part in candidate.content.parts:
+                if part.thought:
+                    pending_reasoning_text.append(part.text or "")
+                    continue
+                if function_call := part.function_call:
+                    flush_reasoning(part.thought_signature if isinstance(part.thought_signature, bytes) else None)
+                    output_items.append(
+                        make_function_call_item(
+                            call_id=f"call_{hash(function_call.name)}_{len(output_items)}",
+                            name=function_call.name or "",
+                            arguments=json.dumps(function_call.args or {}),
+                        )
+                    )
+                    continue
+                if part.text:
+                    flush_reasoning()
+                    output_items.append(make_text_message(part.text))
+
+            flush_reasoning()
+
+    cached_tokens = 0
+    input_tokens = 0
+    output_tokens = 0
+    reasoning_tokens = 0
+    if response.usage_metadata is not None:
+        cached_tokens = response.usage_metadata.cached_content_token_count or 0
+        input_tokens = response.usage_metadata.prompt_token_count or 0
+        output_tokens = response.usage_metadata.candidates_token_count or 0
+        reasoning_tokens = getattr(response.usage_metadata, "thoughts_token_count", 0) or 0
+
+    reasoning_cfg = None
+    if params.reasoning is not None:
+        reasoning_cfg = ResponseReasoningConfig(
+            effort=cast("Any", params.reasoning.get("effort")),
+            summary=cast("Any", params.reasoning.get("summary")),
+        )
+
+    return make_response_resource(
+        model=str(response.model_version or params.model),
+        output=cast("list[Any]", output_items),
+        tools=params.tools,
+        tool_choice=params.tool_choice,
+        temperature=params.temperature,
+        top_p=params.top_p,
+        max_output_tokens=params.max_output_tokens,
+        reasoning=reasoning_cfg,
+        usage=make_usage(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cached_tokens=cached_tokens,
+            reasoning_tokens=reasoning_tokens,
+        ),
+        instructions=params.instructions,
+        metadata=params.metadata,
+    )

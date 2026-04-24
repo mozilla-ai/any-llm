@@ -2,9 +2,11 @@ import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from openresponses_types import ResponseResource
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.completion import CompletionParams
+from any_llm.types.request import RequestParams
 from any_llm.types.model import Model
 
 
@@ -204,3 +206,62 @@ async def test_acompletion_with_dataclass_uses_create_not_parse() -> None:
 
         mock_client.chat.completions.create.assert_called_once()
         mock_client.chat.completions.parse.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_arequest_delegates_to_aresponses() -> None:
+    class TestProvider(BaseOpenAIProvider):
+        PROVIDER_NAME = "TestProvider"
+        ENV_API_KEY_NAME = "TEST_API_KEY"
+        PROVIDER_DOCUMENTATION_URL = "https://example.com"
+
+    response = ResponseResource.model_validate(
+        {
+            "id": "resp_test",
+            "object": "response",
+            "created_at": 0,
+            "completed_at": 0,
+            "status": "completed",
+            "incomplete_details": None,
+            "model": "gpt-test",
+            "previous_response_id": None,
+            "instructions": None,
+            "output": [],
+            "error": None,
+            "tools": [],
+            "tool_choice": "auto",
+            "truncation": "disabled",
+            "parallel_tool_calls": False,
+            "text": {"format": {"type": "text"}},
+            "top_p": 1.0,
+            "presence_penalty": 0.0,
+            "frequency_penalty": 0.0,
+            "top_logprobs": 0,
+            "temperature": 1.0,
+            "reasoning": None,
+            "usage": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "input_tokens_details": {"cached_tokens": 0},
+                "output_tokens_details": {"reasoning_tokens": 0},
+            },
+            "max_output_tokens": None,
+            "max_tool_calls": None,
+            "store": False,
+            "background": False,
+            "service_tier": "default",
+            "metadata": {},
+            "safety_identifier": None,
+            "prompt_cache_key": None,
+        }
+    )
+
+    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
+        provider = TestProvider(api_key="test-key")
+        provider._aresponses = AsyncMock(return_value=response)  # type: ignore[method-assign]
+
+        result = await provider._arequest(RequestParams(model="gpt-test", input="Hello"))
+
+        assert result == response
+        provider._aresponses.assert_called_once()
