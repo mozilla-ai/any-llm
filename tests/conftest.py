@@ -41,6 +41,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.MINIMAX: "MiniMax-M2",
         LLMProvider.ZAI: "glm-4.5-flash",
         LLMProvider.DEEPINFRA: "deepseek-ai/DeepSeek-R1",
+        LLMProvider.ZYPHRA: "deepseek-ai/DeepSeek-R1-0528",
     }
 
 
@@ -83,6 +84,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.MINIMAX: "MiniMax-M2",
         LLMProvider.ZAI: "glm-4-32b-0414-128k",
         LLMProvider.DEEPINFRA: "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        LLMProvider.ZYPHRA: "deepseek-ai/DeepSeek-R1-0528",
     }
 
 

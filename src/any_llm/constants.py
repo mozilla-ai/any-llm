@@ -56,6 +56,7 @@ class LLMProvider(StrEnum):
     DASHSCOPE = "dashscope"
     DEEPINFRA = "deepinfra"
     ZAI = "zai"
+    ZYPHRA = "zyphra"
     GATEWAY = "gateway"
 
     @classmethod
