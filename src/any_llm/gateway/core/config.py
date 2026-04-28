@@ -6,6 +6,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing_extensions import deprecated
 
 API_KEY_HEADER = "X-AnyLLM-Key"
 
@@ -17,6 +18,9 @@ class PricingConfig(BaseModel):
     output_price_per_million: float = Field(ge=0)
 
 
+@deprecated(
+    "any_llm.gateway is deprecated and will be removed on May 18, 2026. Migrate to https://github.com/mozilla-ai/gateway"
+)
 class GatewayConfig(BaseSettings):
     """Gateway configuration with support for YAML files and environment variables."""
 
@@ -61,6 +65,9 @@ class GatewayConfig(BaseSettings):
     )
 
 
+@deprecated(
+    "any_llm.gateway is deprecated and will be removed on May 18, 2026. Migrate to https://github.com/mozilla-ai/gateway"
+)
 def load_config(config_path: str | None = None) -> GatewayConfig:
     """Load configuration from file and environment variables.
 

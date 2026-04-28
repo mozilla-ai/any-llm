@@ -15,7 +15,7 @@ dependencies = [
   "anthropic>=0.83.0",
   "rich",
   "httpx",
-  "typing_extensions>=4.4.0",
+  "typing_extensions>=4.5.0",
 ]
 
 [project.optional-dependencies]

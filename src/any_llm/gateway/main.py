@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from typing_extensions import override
+from typing_extensions import deprecated, override
 
 from any_llm.gateway import __version__
 from any_llm.gateway.api.deps import set_config
@@ -124,6 +124,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+@deprecated(
+    "any_llm.gateway is deprecated and will be removed on May 18, 2026. Migrate to https://github.com/mozilla-ai/gateway"
+)
 def create_app(config: GatewayConfig) -> FastAPI:
     """Create and configure FastAPI application.
 
