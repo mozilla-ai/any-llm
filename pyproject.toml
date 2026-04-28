@@ -15,7 +15,7 @@ dependencies = [
   "anthropic>=0.83.0",
   "rich",
   "httpx",
-  "typing_extensions>=4.4.0",
+  "typing_extensions>=4.5.0",
 ]
 
 [project.optional-dependencies]
@@ -122,6 +122,8 @@ sambanova = []
 minimax = []
 mzai = []
 vllm = []
+# Deprecated: the gateway is moving to a standalone package.
+# See https://github.com/mozilla-ai/gateway
 gateway = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.30.0",

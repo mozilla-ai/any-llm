@@ -107,6 +107,9 @@ Alternatively, pass API keys directly in your code (see [Usage](#usage) examples
 
 ## any-llm-gateway
 
+> **Deprecation Notice:** The gateway bundled with any-llm is deprecated and will be removed on May 18, 2026.
+> Please migrate to the standalone gateway at [github.com/mozilla-ai/gateway](https://github.com/mozilla-ai/gateway).
+
 any-llm-gateway is an **optional** FastAPI-based proxy server that adds enterprise-grade features on top of the core library:
 
 - **Budget Management** - Enforce spending limits with automatic daily, weekly, or monthly resets
