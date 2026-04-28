@@ -1,7 +1,12 @@
 ---
-title: Budget Management
+title: Budget Management (Deprecated)
 description: Configure spending limits, budget tiers, and automatic resets
 ---
+
+:::caution[Deprecation Notice]
+The gateway bundled with any-llm is deprecated and will be removed on May 18, 2026.
+Please migrate to the standalone gateway at [github.com/mozilla-ai/gateway](https://github.com/mozilla-ai/gateway).
+:::
 
 Budgets provide shared spending limits that can be assigned to multiple users. This allows you to create budget tiers (like "Free", "Pro", "Enterprise") and enforce spending limits across groups of users.
 
