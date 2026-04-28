@@ -25,7 +25,7 @@
 **Communicate with any LLM provider using a single, unified interface.**
 Switch between OpenAI, Anthropic, Mistral, Ollama, and more without changing your code.
 
-[Documentation](https://docs.mozilla.ai/any-llm/) | [Platform (Beta)](https://any-llm.ai/) | [Try the Demos](#-try-it) | [Contributing](#-contributing)
+[Documentation](https://docs.mozilla.ai/any-llm/) | [Platform](https://otari.ai/) | [Try the Demos](#-try-it) | [Contributing](#-contributing)
 
 </div>
 
@@ -102,52 +102,9 @@ export MISTRAL_API_KEY="your-key-here"
 
 Alternatively, pass API keys directly in your code (see [Usage](#usage) examples).
 
-> **Note:** For production deployments requiring budget management and usage tracking, see [any-llm-gateway](#any-llm-gateway) section below.
+## Gateway
 
-
-## any-llm-gateway
-
-> **Deprecation Notice:** The gateway bundled with any-llm is deprecated and will be removed on May 18, 2026.
-> Please migrate to the standalone gateway at [github.com/mozilla-ai/gateway](https://github.com/mozilla-ai/gateway).
-
-any-llm-gateway is an **optional** FastAPI-based proxy server that adds enterprise-grade features on top of the core library:
-
-- **Budget Management** - Enforce spending limits with automatic daily, weekly, or monthly resets
-- **API Key Management** - Issue, revoke, and monitor virtual API keys without exposing provider credentials
-- **Usage Analytics** - Track every request with full token counts, costs, and metadata
-- **Multi-tenant Support** - Manage access and budgets across users and teams
-
-The gateway sits between your applications and LLM providers, exposing an OpenAI-compatible API that works with any supported provider.
-
-### Managed Platform (Beta)
-
-Prefer a hosted experience? The [any-llm platform](https://any-llm.ai/) provides a managed control plane for keys, usage tracking, and cost visibility across providers, while still building on the same `any-llm` interfaces.
-
-### Quick Start
-```bash
-docker run \
-  -e GATEWAY_MASTER_KEY="your-secure-master-key" \
-  -e OPENAI_API_KEY="your-api-key" \
-  -p 8000:8000 \
-  ghcr.io/mozilla-ai/any-llm/gateway:latest
-```
-
-> **Note:** You can use a specific release version instead of `latest` (e.g., `1.2.0`). See [available versions](https://github.com/orgs/mozilla-ai/packages/container/package/any-llm%2Fgateway).
-
-### Do You Need the Gateway?
-
-| Use the Core Library Directly | Deploy the Gateway |
-|-------------------------------|-------------------|
-|Prototyping and experimentation |Multi-user or team environments |
-|Single developer usage |Need to enforce spending limits |
-|Scripts, notebooks, or automation |SaaS applications with tiered pricing |
-|Direct control over provider API keys |Hide provider credentials from end users |
-|Simple, low-latency integration |Centralized usage tracking and analytics |
-|No budget enforcement needed |Cost attribution and chargebacks |
-|Learning and testing |Virtual API key management |
-| |Production deployments with governance |
-
-See the [Gateway Documentation](https://docs.mozilla.ai/any-llm/gateway/overview/) for complete setup and deployment instructions.
+The gateway that was previously bundled with any-llm has moved to its own repository. For budget management, API key management, usage analytics, and multi-tenant support, see [mozilla-ai/gateway](https://github.com/mozilla-ai/gateway).
 
 ## Why choose `any-llm`?
 
@@ -156,7 +113,6 @@ See the [Gateway Documentation](https://docs.mozilla.ai/any-llm/gateway/overview
 - **Leverages official provider SDKs** - Ensures maximum compatibility
 - **Stays framework-agnostic** so it can be used across different projects and use cases
 - **Battle-tested** - Powers our own production tools ([any-agent](https://github.com/mozilla-ai/any-agent))
-- **Flexible deployment** - Direct connections for simplicity, or optional any-llm-gateway for production budget and access control
 
 ## Usage
 
@@ -262,7 +218,7 @@ The landscape of LLM provider interfaces is fragmented. While OpenAI's API has b
 - **[Full Documentation](https://docs.mozilla.ai/any-llm/)** - Complete guides and API reference
 - **[Supported Providers](https://docs.mozilla.ai/any-llm/providers/)** - List of all supported LLM providers
 - **[Cookbook Examples](https://docs.mozilla.ai/any-llm/cookbooks/any-llm-getting-started)** - In-depth usage examples
-- **[any-llm Platform (Beta)](https://any-llm.ai/)** - Hosted control plane for key management, usage tracking, and cost visibility
+- **[Platform](https://otari.ai/)** - Managed control plane for key management, usage tracking, and cost visibility
 
 
 ## Contributing
