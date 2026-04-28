@@ -3,10 +3,10 @@ title: Gateway Overview (Deprecated)
 description: FastAPI-based proxy server for budget enforcement, API key management, and usage analytics
 ---
 
-:::caution[Deprecation Notice]
+{% hint style="warning" %}
 The gateway bundled with any-llm is deprecated and will be removed on May 18, 2026.
 Please migrate to the standalone gateway at [github.com/mozilla-ai/gateway](https://github.com/mozilla-ai/gateway).
-:::
+{% endhint %}
 
 ## What is any-llm-gateway?
 

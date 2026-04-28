@@ -3,10 +3,10 @@ title: Docker Deployment Guide (Deprecated)
 description: Deploy any-llm-gateway using Docker and Docker Compose
 ---
 
-:::caution[Deprecation Notice]
+{% hint style="warning" %}
 The gateway bundled with any-llm is deprecated and will be removed on May 18, 2026.
 Please migrate to the standalone gateway at [github.com/mozilla-ai/gateway](https://github.com/mozilla-ai/gateway).
-:::
+{% endhint %}
 
 This guide walks you through deploying `any-llm-gateway` using Docker and Docker Compose. Whether you're setting up a local development environment or deploying to production, this guide covers the essential steps and best practices for a secure, reliable deployment.
 
