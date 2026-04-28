@@ -25,7 +25,7 @@
 **Communicate with any LLM provider using a single, unified interface.**
 Switch between OpenAI, Anthropic, Mistral, Ollama, and more without changing your code.
 
-[Documentation](https://docs.mozilla.ai/any-llm/) | [Platform](https://otari.ai/) | [Try the Demos](#-try-it) | [Contributing](#-contributing)
+[Documentation](https://docs.mozilla.ai/any-llm/) | [otari.ai](https://otari.ai/) | [Try the Demos](#-try-it) | [Contributing](#-contributing)
 
 </div>
 
@@ -104,7 +104,7 @@ Alternatively, pass API keys directly in your code (see [Usage](#usage) examples
 
 ## Gateway
 
-The gateway that was previously bundled with any-llm has moved to its own repository. For budget management, API key management, usage analytics, and multi-tenant support, see [mozilla-ai/gateway](https://github.com/mozilla-ai/gateway).
+The gateway that was previously bundled with any-llm has moved to its own repository. For budget management, API key management, usage analytics, and multi-tenant support, see [mozilla-ai/otari](https://github.com/mozilla-ai/otari).
 
 ## Why choose `any-llm`?
 
