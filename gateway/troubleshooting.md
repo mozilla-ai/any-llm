@@ -3,10 +3,10 @@ title: Troubleshooting (Deprecated)
 description: Common issues and solutions for the any-llm gateway
 ---
 
-:::caution[Deprecation Notice]
+{% hint style="warning" %}
 The gateway bundled with any-llm is deprecated and will be removed on May 18, 2026.
 Please migrate to the standalone gateway at [github.com/mozilla-ai/gateway](https://github.com/mozilla-ai/gateway).
-:::
+{% endhint %}
 
 ## Database connection errors
 

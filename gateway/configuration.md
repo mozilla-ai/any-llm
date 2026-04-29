@@ -3,10 +3,10 @@ title: Configuration (Deprecated)
 description: Configure the gateway using YAML files or environment variables
 ---
 
-:::caution[Deprecation Notice]
+{% hint style="warning" %}
 The gateway bundled with any-llm is deprecated and will be removed on May 18, 2026.
 Please migrate to the standalone gateway at [github.com/mozilla-ai/gateway](https://github.com/mozilla-ai/gateway).
-:::
+{% endhint %}
 
 The any-llm-gateway requires configuration to connect to your database, authenticate requests, and route to LLM providers. This guide covers the two main configuration approaches and how to set up model pricing for cost tracking.
 
