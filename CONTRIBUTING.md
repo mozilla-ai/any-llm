@@ -58,7 +58,12 @@ source .venv/bin/activate
 uv sync --all-extras -U --python=3.13
 
 # 5. Ensure all checks pass
-uv run pre-commit run --all-files --verbose
+UV_SYSTEM_PYTHON=0 uv run pre-commit run --all-files --verbose
+
+> **Note:** mypy errors about missing modules (e.g. `fastapi`, `sqlalchemy`,
+> `groq`, `mistralai`) are expected when running locally without gateway or
+> provider extras installed. These are optional dependencies and CI is the
+> authoritative environment for mypy checks.
 
 # 7. Verify your setup
 pytest -v tests/unit
