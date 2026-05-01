@@ -38,6 +38,7 @@ description: Complete list of LLM providers supported by any-llm including OpenA
 | [`openrouter`](https://openrouter.ai/docs) | OPENROUTER_API_KEY | OPENROUTER_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`perplexity`](https://docs.perplexity.ai/) | PERPLEXITY_API_KEY | PERPLEXITY_BASE_URL | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | [`portkey`](https://portkey.ai/docs) | PORTKEY_API_KEY | PORTKEY_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| [`qiniu`](https://developer.qiniu.com/aitokenapi) | QINIU_API_KEY | QINIU_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`sagemaker`](https://aws.amazon.com/sagemaker/) | AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY | SAGEMAKER_ENDPOINT_URL | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | [`sambanova`](https://sambanova.ai/) | SAMBANOVA_API_KEY | SAMBANOVA_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`together`](https://together.ai/) | TOGETHER_API_KEY | TOGETHER_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
