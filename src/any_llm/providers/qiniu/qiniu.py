@@ -6,7 +6,7 @@ class QiniuProvider(BaseOpenAIProvider):
     ENV_API_KEY_NAME = "QINIU_API_KEY"
     ENV_API_BASE_NAME = "QINIU_API_BASE"
     PROVIDER_NAME = "qiniu"
-    PROVIDER_DOCUMENTATION_URL = "https://www.qiniu.com/"
+    PROVIDER_DOCUMENTATION_URL = "https://developer.qiniu.com/aitokenapi"
 
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_COMPLETION_REASONING = True
