@@ -34,7 +34,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.MOONSHOT: "kimi-k2-thinking",
         LLMProvider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         LLMProvider.HUGGINGFACE: "Qwen/Qwen2.5-72B-Instruct",
-        LLMProvider.NEBIUS: "openai/gpt-oss-20b",
+        LLMProvider.NEBIUS: "openai/gpt-oss-120b",
         LLMProvider.SAMBANOVA: "DeepSeek-R1-0528",
         LLMProvider.TOGETHER: "openai/gpt-oss-20b",
         LLMProvider.PORTKEY: "@nebius-any-llm/Qwen/Qwen3-32B",
@@ -60,7 +60,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.TOGETHER: "openai/gpt-oss-20b",
         LLMProvider.XAI: "grok-3-mini-latest",
         LLMProvider.INCEPTION: "mercury",
-        LLMProvider.NEBIUS: "openai/gpt-oss-20b",
+        LLMProvider.NEBIUS: "openai/gpt-oss-120b",
         LLMProvider.OLLAMA: "llama3.2:1b",
         LLMProvider.LLAMAFILE: "N/A",
         LLMProvider.LMSTUDIO: "google/gemma-3-4b",  # You must have LM Studio running and the server enabled
@@ -93,7 +93,6 @@ def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict
         LLMProvider.OPENAI: "gpt-5-mini",  # Slightly more powerful so that it doesn't get caught in a loop of logic
         LLMProvider.WATSONX: "meta-llama/llama-guard-3-11b-vision",
         LLMProvider.SAMBANOVA: "Llama-4-Maverick-17B-128E-Instruct",
-        LLMProvider.NEBIUS: "openai/gpt-oss-20b",
         LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
         LLMProvider.OLLAMA: "llava-phi3",  # Fast vision model compatible with OpenAI format
         LLMProvider.FIREWORKS: "accounts/fireworks/models/kimi-k2p5",
