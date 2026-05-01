@@ -45,7 +45,7 @@ jobs:
         pytest tests/gateway/ -v --cov --cov-report=xml --cov-append -n auto
 
     - name: Upload coverage
-      uses: codecov/codecov-action@v5
+      uses: codecov/codecov-action@v6
       with:
         file: ./coverage.xml
         fail_ci_if_error: false
