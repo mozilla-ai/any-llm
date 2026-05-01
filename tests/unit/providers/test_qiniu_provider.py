@@ -9,8 +9,6 @@ def _env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("QINIU_API_KEY", "sk-qiniu-test-123")
 
 
-
-
 def test_factory_integration() -> None:
     """Test that the provider factory can create and discover the provider."""
     p = AnyLLM.create("qiniu", api_key="sk-1")
