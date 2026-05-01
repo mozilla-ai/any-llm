@@ -59,16 +59,17 @@ uv sync --all-extras -U --python=3.13
 
 # 5. Ensure all checks pass
 UV_SYSTEM_PYTHON=0 uv run pre-commit run --all-files --verbose
+```
 
 > **Note:** mypy errors about missing modules (e.g. `fastapi`, `sqlalchemy`,
 > `groq`, `mistralai`) are expected when running locally without gateway or
 > provider extras installed. These are optional dependencies and CI is the
 > authoritative environment for mypy checks.
 
+```bash
 # 7. Verify your setup
 pytest -v tests/unit
 pytest -v tests/integration -n auto
-
 ```
 
 ### Setting Up API Keys
