@@ -21,6 +21,7 @@ class ProviderMetadata(BaseModel):
     list_models: bool
     messages: bool
     batch_completion: bool
+    rerank: bool
 
 
 class PlatformKey(BaseModel):

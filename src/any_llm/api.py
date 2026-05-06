@@ -15,6 +15,7 @@ from any_llm.types.completion import (
 )
 from any_llm.types.messages import MessageResponse, MessageStreamEvent
 from any_llm.types.model import Model
+from any_llm.types.rerank import RerankResponse
 from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
 
 
@@ -732,6 +733,87 @@ async def aembedding(
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
     return await llm._aembedding(model_name, inputs, **kwargs)
+
+
+def rerank(
+    model: str,
+    query: str,
+    documents: list[str],
+    *,
+    top_n: int | None = None,
+    max_tokens_per_doc: int | None = None,
+    provider: str | LLMProvider | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> RerankResponse:
+    """Rerank documents by relevance to a query.
+
+    Args:
+        model: Provider-prefixed model ID (e.g., "cohere:rerank-v3.5").
+        query: The search query string.
+        documents: List of document strings to rerank.
+        top_n: Maximum number of results to return. Defaults to all documents.
+        max_tokens_per_doc: Per-document token truncation limit.
+        provider: Provider name or enum. Inferred from model string if omitted.
+        api_key: Provider API key. Falls back to environment variable.
+        api_base: Provider API base URL. Falls back to environment variable.
+        client_args: Additional arguments passed to the provider client constructor.
+        **kwargs: Additional provider-specific parameters.
+
+    Returns:
+        RerankResponse with results sorted by relevance_score descending.
+
+    Raises:
+        NotImplementedError: If the provider does not support reranking.
+
+    """
+    if provider is None:
+        provider_key, model_name = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = LLMProvider.from_string(provider)
+        model_name = model
+
+    if top_n is not None:
+        kwargs["top_n"] = top_n
+    if max_tokens_per_doc is not None:
+        kwargs["max_tokens_per_doc"] = max_tokens_per_doc
+
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    return llm._rerank(model_name, query, documents, **kwargs)
+
+
+async def arerank(
+    model: str,
+    query: str,
+    documents: list[str],
+    *,
+    top_n: int | None = None,
+    max_tokens_per_doc: int | None = None,
+    provider: str | LLMProvider | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> RerankResponse:
+    """Rerank documents by relevance to a query (async).
+
+    See rerank() for full documentation.
+    """
+    if provider is None:
+        provider_key, model_name = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = LLMProvider.from_string(provider)
+        model_name = model
+
+    if top_n is not None:
+        kwargs["top_n"] = top_n
+    if max_tokens_per_doc is not None:
+        kwargs["max_tokens_per_doc"] = max_tokens_per_doc
+
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    return await llm._arerank(model_name, query, documents, **kwargs)
 
 
 def list_models(
