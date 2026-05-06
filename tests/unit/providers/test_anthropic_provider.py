@@ -126,9 +126,7 @@ async def test_completion_renames_stop_to_stop_sequences_list() -> None:
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(api_key=api_key)
-        await provider._acompletion(
-            CompletionParams(model_id=model, messages=messages, stop=["END", "STOP"])
-        )
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages, stop=["END", "STOP"]))
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
@@ -146,9 +144,7 @@ async def test_completion_renames_stop_to_stop_sequences_string() -> None:
 
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(api_key=api_key)
-        await provider._acompletion(
-            CompletionParams(model_id=model, messages=messages, stop="END")
-        )
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages, stop="END"))
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
