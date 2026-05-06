@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from any_llm.types.batch import Batch, BatchResult
     from any_llm.types.completion import ChatCompletionChunk, CreateEmbeddingResponse
     from any_llm.types.model import Model
+    from any_llm.types.moderation import ModerationResponse
 
 
 class AnyLLM(ABC):
@@ -85,6 +86,9 @@ class AnyLLM(ABC):
 
     SUPPORTS_EMBEDDING: bool
     """OpenAI Embedding API"""
+
+    SUPPORTS_MODERATION: bool = False
+    """OpenAI-compatible moderation API."""
 
     SUPPORTS_RESPONSES: bool
     """OpenAI Responses API"""
@@ -376,6 +380,7 @@ class AnyLLM(ABC):
             image=cls.SUPPORTS_COMPLETION_IMAGE,
             pdf=cls.SUPPORTS_COMPLETION_PDF,
             embedding=cls.SUPPORTS_EMBEDDING,
+            moderation=cls.SUPPORTS_MODERATION,
             responses=cls.SUPPORTS_RESPONSES,
             list_models=cls.SUPPORTS_LIST_MODELS,
             batch_completion=cls.SUPPORTS_BATCH,
@@ -938,6 +943,58 @@ class AnyLLM(ABC):
             msg = "Provider doesn't support embedding."
             raise NotImplementedError(msg)
         msg = "Subclasses must implement _aembedding method"
+        raise NotImplementedError(msg)
+
+    def _moderation(
+        self,
+        model: str,
+        input: str | list[str] | list[dict[str, Any]],  # noqa: A002
+        **kwargs: Any,
+    ) -> ModerationResponse:
+        """Run a moderation check synchronously.
+
+        See [AnyLLM.amoderation][any_llm.any_llm.AnyLLM.amoderation]
+        """
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(
+            self.amoderation(model, input, **kwargs),
+            allow_running_loop=allow_running_loop,
+        )
+
+    @handle_exceptions()
+    async def amoderation(
+        self,
+        model: str,
+        input: str | list[str] | list[dict[str, Any]],  # noqa: A002
+        **kwargs: Any,
+    ) -> ModerationResponse:
+        """Run a moderation check asynchronously.
+
+        Args:
+            model: Provider-specific moderation model identifier.
+            input: A string, list of strings, or list of OpenAI-style content-part
+                dicts (for multimodal moderation).
+            **kwargs: Additional provider-specific arguments. Pass
+                ``include_raw=True`` to populate ``ModerationResult.provider_raw``.
+
+        Returns:
+            A ModerationResponse with one ``ModerationResult`` per input item.
+
+        Raises:
+            NotImplementedError: If the provider does not support moderation.
+        """
+        return await self._amoderation(model, input, **kwargs)
+
+    async def _amoderation(
+        self,
+        model: str,
+        input: str | list[str] | list[dict[str, Any]],  # noqa: A002
+        **kwargs: Any,
+    ) -> ModerationResponse:
+        if not self.SUPPORTS_MODERATION:
+            msg = f"Provider {self.PROVIDER_NAME} does not support moderation"
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _amoderation method"
         raise NotImplementedError(msg)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:

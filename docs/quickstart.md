@@ -158,6 +158,31 @@ print(f"Embedding vector length: {len(embedding_vector)}")
 print(f"Tokens used: {result.usage.total_tokens}")
 ```
 
+## Moderation
+
+`moderation` and `amoderation` run a content-safety classifier against input
+(or output) text and return a normalized, OpenAI-compatible result.
+
+Not all providers support moderation; calling an unsupported provider raises
+`NotImplementedError`. Today, **OpenAI** and **Mistral** implement the API.
+
+```python
+from any_llm import moderation
+
+result = moderation(
+    model="omni-moderation-latest",
+    provider="openai",
+    input="I want to hurt someone",
+)
+
+print(result.results[0].flagged)       # True
+print(result.results[0].categories)    # {"violence": True, ...}
+```
+
+Pass `include_raw=True` to populate `ModerationResult.provider_raw` with the
+untouched provider response (useful for debugging or provider-specific
+fields).
+
 ## Tools
 
 `any-llm` supports tool calling for providers that support it. You can pass a list of tools where each tool is either:
