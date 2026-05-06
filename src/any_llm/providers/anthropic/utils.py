@@ -432,6 +432,10 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
     )
     result_kwargs["model"] = params.model_id
 
+    if "stop" in result_kwargs:
+        stop = result_kwargs.pop("stop")
+        result_kwargs["stop_sequences"] = [stop] if isinstance(stop, str) else stop
+
     system_message, filtered_messages = _convert_messages_for_anthropic(params.messages)
     if system_message:
         result_kwargs["system"] = system_message
