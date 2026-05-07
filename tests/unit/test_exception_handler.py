@@ -68,3 +68,36 @@ def test_convert_exception_gateway_timeout() -> None:
     assert isinstance(result, GatewayTimeoutError)
     assert result.provider_name == "gateway"
     assert result.original_exception is original
+
+
+def test_convert_exception_api_key_is_invalid() -> None:
+    """Test that 'Your API key is invalid' is classified as AuthenticationError.
+
+    When a provider returns a message like 'Your API key is invalid', the word
+    'invalid' appears after 'api key' with intervening words. The auth regex must
+    catch this before the broad 'invalid' pattern misclassifies it as InvalidRequestError.
+    """
+    from any_llm.exceptions import AuthenticationError, InvalidRequestError
+
+    original = Exception("Your API key is invalid")
+    result = convert_exception(original, "openai")
+    assert isinstance(result, AuthenticationError)
+    assert not isinstance(result, InvalidRequestError)
+
+
+def test_convert_exception_api_key_not_valid_with_intervening_words() -> None:
+    """Test that variations with words between 'api key' and 'invalid' are caught."""
+    from any_llm.exceptions import AuthenticationError
+
+    original = Exception("The provided api key seems invalid for this request")
+    result = convert_exception(original, "openai")
+    assert isinstance(result, AuthenticationError)
+
+
+def test_convert_exception_invalid_api_key_word_boundary() -> None:
+    """Test that 'invalid' near 'api key' is treated as auth error, not invalid request."""
+    from any_llm.exceptions import AuthenticationError
+
+    original = Exception("Invalid API key provided")
+    result = convert_exception(original, "openai")
+    assert isinstance(result, AuthenticationError)
