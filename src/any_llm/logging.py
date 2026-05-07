@@ -38,4 +38,4 @@ def setup_logger(
     logger.addHandler(handler)
 
 
-setup_logger()
+logger.addHandler(logging.NullHandler())
