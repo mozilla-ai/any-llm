@@ -85,3 +85,25 @@ def test_zyphra_item_to_model_defaults_owned_by_when_missing() -> None:
     item = {"modelId": "x/y", "releaseDate": "2026-01-01"}
     model = ZyphraProvider._zyphra_item_to_model(item)
     assert model.owned_by == "zyphra"
+
+
+def test_zyphra_convert_completion_params_drops_reasoning_effort_none() -> None:
+    """reasoning_effort='none' should be stripped before sending to Zyphra."""
+    params = CompletionParams(
+        model_id="deepseek-ai/DeepSeek-V3.2",
+        messages=[{"role": "user", "content": "Hi"}],
+        reasoning_effort="none",
+    )
+    result = ZyphraProvider._convert_completion_params(params)
+    assert "reasoning_effort" not in result
+
+
+def test_zyphra_convert_completion_params_preserves_non_none_reasoning_effort() -> None:
+    """Other reasoning_effort values should pass through unchanged."""
+    params = CompletionParams(
+        model_id="moonshotai/Kimi-K2.6",
+        messages=[{"role": "user", "content": "Hi"}],
+        reasoning_effort="medium",
+    )
+    result = ZyphraProvider._convert_completion_params(params)
+    assert result["reasoning_effort"] == "medium"
