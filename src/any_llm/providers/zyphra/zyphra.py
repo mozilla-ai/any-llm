@@ -6,6 +6,7 @@ import httpx
 from typing_extensions import override
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.types.completion import CompletionParams
 from any_llm.types.model import Model
 
 
@@ -20,6 +21,16 @@ class ZyphraProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_LIST_MODELS = True
+
+    @staticmethod
+    @override
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        converted = BaseOpenAIProvider._convert_completion_params(params, **kwargs)
+        # Zyphra's backend does not accept reasoning_effort="none"; drop it so the
+        # request omits the field entirely. "auto" is already normalized upstream.
+        if converted.get("reasoning_effort") == "none":
+            converted.pop("reasoning_effort", None)
+        return converted
 
     @staticmethod
     def _zyphra_item_to_model(item: dict[str, Any]) -> Model:
