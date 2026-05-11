@@ -25,6 +25,7 @@ from any_llm.types.completion import (
     ParsedChatCompletion,
     ReasoningEffort,
 )
+from any_llm.types.image import ImageGenerationParams, ImagesResponse
 from any_llm.types.messages import (
     ContentBlockStopEvent,
     MessageDelta,
@@ -94,6 +95,9 @@ class AnyLLM(ABC):
 
     SUPPORTS_BATCH: bool
     """OpenAI Batch Completion API"""
+
+    SUPPORTS_IMAGE_GENERATION: bool = False
+    """Image Generation API (e.g., OpenAI DALL-E)"""
 
     SUPPORTS_MESSAGES: bool = True
     """Anthropic Messages API (all providers support it via conversion)"""
@@ -379,6 +383,7 @@ class AnyLLM(ABC):
             responses=cls.SUPPORTS_RESPONSES,
             list_models=cls.SUPPORTS_LIST_MODELS,
             batch_completion=cls.SUPPORTS_BATCH,
+            image_generation=cls.SUPPORTS_IMAGE_GENERATION,
             messages=cls.SUPPORTS_MESSAGES,
             class_name=cls.__name__,
         )
@@ -938,6 +943,33 @@ class AnyLLM(ABC):
             msg = "Provider doesn't support embedding."
             raise NotImplementedError(msg)
         msg = "Subclasses must implement _aembedding method"
+        raise NotImplementedError(msg)
+
+    def _image_generation(self, model: str, prompt: str, **kwargs: Any) -> ImagesResponse:
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(self.aimage_generation(model, prompt, **kwargs), allow_running_loop=allow_running_loop)
+
+    @handle_exceptions()
+    async def aimage_generation(self, model: str, prompt: str, **kwargs: Any) -> ImagesResponse:
+        """Create an image asynchronously.
+
+        Args:
+            model: Model identifier for the chosen provider (e.g., model='dall-e-3' for LLMProvider.OPENAI).
+            prompt: A text description of the desired image(s).
+            **kwargs: Additional parameters (n, size, quality, style, response_format, user).
+
+        Returns:
+            The image generation response from the provider.
+
+        """
+        params = ImageGenerationParams(model_id=model, prompt=prompt, **kwargs)
+        return await self._aimage_generation(params)
+
+    async def _aimage_generation(self, params: ImageGenerationParams, **kwargs: Any) -> ImagesResponse:
+        if not self.SUPPORTS_IMAGE_GENERATION:
+            msg = "Provider doesn't support image generation."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _aimage_generation method"
         raise NotImplementedError(msg)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:

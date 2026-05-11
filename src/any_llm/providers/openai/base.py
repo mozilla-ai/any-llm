@@ -31,6 +31,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     ReasoningEffort,
 )
+from any_llm.types.image import ImageGenerationParams, ImagesResponse
 from any_llm.types.model import Model
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
@@ -54,6 +55,7 @@ class BaseOpenAIProvider(AnyLLM):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
+    SUPPORTS_IMAGE_GENERATION = False
 
     _DEFAULT_REASONING_EFFORT: ReasoningEffort | None = None
 
@@ -254,6 +256,16 @@ class BaseOpenAIProvider(AnyLLM):
                 dimensions=kwargs.get("dimensions", NOT_GIVEN),
                 **embedding_kwargs,
             )
+        )
+
+    @override
+    async def _aimage_generation(self, params: ImageGenerationParams, **kwargs: Any) -> ImagesResponse:
+        api_kwargs = params.to_api_kwargs()
+        api_kwargs.update(kwargs)
+
+        return await self.client.images.generate(  # type: ignore[no-any-return]
+            model=params.model_id,
+            **api_kwargs,
         )
 
     @override
