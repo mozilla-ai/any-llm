@@ -43,6 +43,7 @@ class Choice(OpenAIChoice):
 
 class ChatCompletion(OpenAIChatCompletion):
     choices: list[Choice]  # type: ignore[assignment]
+    service_tier: str | None = None  # type: ignore[assignment]
 
 
 ContentType = TypeVar("ContentType")
@@ -70,6 +71,7 @@ class ChunkChoice(OpenAIChunkChoice):
 
 class ChatCompletionChunk(OpenAIChatCompletionChunk):
     choices: list[ChunkChoice]  # type: ignore[assignment]
+    service_tier: str | None = None  # type: ignore[assignment]
 
 
 class ChatCompletionMessageFunctionToolCall(OpenAIChatCompletionMessageFunctionToolCall):

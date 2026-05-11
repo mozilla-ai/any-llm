@@ -1,8 +1,11 @@
 import pytest
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
+from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 
 from any_llm.exceptions import ProviderError
+from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.openai.utils import _convert_chat_completion
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 
 
 def test_convert_chat_completion_with_empty_response() -> None:
@@ -46,3 +49,85 @@ def test_convert_chat_completion_with_partial_none_response() -> None:
 
     with pytest.raises(ValidationError):
         _convert_chat_completion(openai_response)
+
+
+def test_chat_completion_accepts_nonstandard_service_tier() -> None:
+    """Providers like OpenRouter may return service_tier values outside the OpenAI literal set."""
+    completion = ChatCompletion.model_validate(
+        {
+            "id": "test-id",
+            "object": "chat.completion",
+            "created": 1234567890,
+            "model": "test-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "Hello"},
+                }
+            ],
+            "service_tier": "standard",
+        }
+    )
+    assert completion.service_tier == "standard"
+
+
+def test_chat_completion_chunk_accepts_nonstandard_service_tier() -> None:
+    """Providers like OpenRouter may return service_tier values outside the OpenAI literal set."""
+    chunk = ChatCompletionChunk.model_validate(
+        {
+            "id": "test-id",
+            "object": "chat.completion.chunk",
+            "created": 1234567890,
+            "model": "test-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": "Hi"},
+                    "finish_reason": None,
+                }
+            ],
+            "service_tier": "standard",
+        }
+    )
+    assert chunk.service_tier == "standard"
+
+
+def test_convert_completion_response_with_nonstandard_service_tier() -> None:
+    """The full conversion pipeline should handle non-standard service_tier values."""
+    openai_response = OpenAIChatCompletion.model_construct(
+        id="test-id",
+        choices=[
+            {
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {"role": "assistant", "content": "Hello"},
+            }
+        ],
+        created=1234567890,
+        model="test-model",
+        object="chat.completion",
+        service_tier="standard",
+    )
+    result = _convert_chat_completion(openai_response)
+    assert result.service_tier == "standard"
+
+
+def test_convert_chunk_response_with_nonstandard_service_tier() -> None:
+    """The chunk conversion pipeline should handle non-standard service_tier values."""
+    openai_chunk = OpenAIChatCompletionChunk.model_construct(
+        id="test-id",
+        choices=[
+            {
+                "index": 0,
+                "delta": {"role": "assistant", "content": "Hi"},
+                "finish_reason": None,
+            }
+        ],
+        created=1234567890,
+        model="test-model",
+        object="chat.completion.chunk",
+        service_tier="standard",
+    )
+    result = BaseOpenAIProvider._convert_completion_chunk_response(openai_chunk)
+    assert result.service_tier == "standard"
