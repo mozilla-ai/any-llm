@@ -71,7 +71,8 @@ def convert_exception(
     if re.search(
         r"auth|permission|invalid api key|invalid key|unauthorized|authentication|"
         r"permission denied|access denied|forbidden|invalid_api_key|api key not found|api key invalid|"
-        r"api key not valid|incorrect api key|not valid.*api key",
+        r"api key not valid|incorrect api key|not valid.*api key|"
+        r"api.key.*invalid|invalid.*api.key",
         exc_text,
     ):
         return AuthenticationError(
