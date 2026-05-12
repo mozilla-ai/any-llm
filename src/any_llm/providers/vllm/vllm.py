@@ -19,4 +19,4 @@ class VllmProvider(BaseOpenAIProvider):
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         # vLLM server by default doesn't require an API key
         # but can be configured to use one via --api-key flag
-        return api_key or ""
+        return api_key or "no-key-required"
