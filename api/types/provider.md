@@ -29,6 +29,8 @@ A Pydantic `BaseModel` containing provider information and feature flags.
 | `messages` | `bool` |  |
 | `batch_completion` | `bool` |  |
 | `image_generation` | `bool` |  |
+| `audio_transcription` | `bool` |  |
+| `audio_speech` | `bool` |  |
 
 ## Usage
 
