@@ -13,7 +13,6 @@ dependencies = [
   "openai>=1.99.3",
   "openresponses-types>=2.3.0.post1",
   "anthropic>=0.83.0",
-  "rich",
   "httpx",
   "typing_extensions>=4.5.0",
 ]
@@ -28,6 +27,10 @@ platform = [
   "any-llm-platform-client>=0.3.0",
   "opentelemetry-sdk>=1.30.0",
   "opentelemetry-exporter-otlp-proto-http>=1.30.0",
+]
+
+rich = [
+  "rich",
 ]
 
 perplexity = []
@@ -126,6 +129,7 @@ vllm = []
 # Deprecated: the gateway is moving to a standalone package.
 # See https://github.com/mozilla-ai/gateway
 gateway = [
+  "rich",
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.30.0",
   "sqlalchemy>=2.0.0",
