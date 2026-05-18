@@ -165,7 +165,6 @@ class BaseOpenAIProvider(AnyLLM):
         # Otherwise, validate each item
         return [Model.model_validate(item) if not isinstance(item, Model) else item for item in response]
 
-
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = AsyncOpenAI(

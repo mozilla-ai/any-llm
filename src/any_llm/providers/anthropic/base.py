@@ -164,7 +164,6 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         """Convert Anthropic models list to OpenAI format."""
         return _convert_models_list(response)
 
-
     async def _stream_completion_async(self, **kwargs: Any) -> AsyncIterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
         async with self.client.messages.stream(**kwargs) as anthropic_stream:

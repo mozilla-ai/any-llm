@@ -32,7 +32,6 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 
 
-
 class BedrockProvider(AnyLLM):
     """AWS Bedrock Provider using boto3."""
 
@@ -106,7 +105,6 @@ class BedrockProvider(AnyLLM):
         # AWS doesn't provide typing, but per https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/bedrock/client/list_foundation_models.html
         # the modelId is a string and will not be None
         return [Model(id=model["modelId"], object="model", created=0, owned_by="aws") for model in models_list]
-
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:

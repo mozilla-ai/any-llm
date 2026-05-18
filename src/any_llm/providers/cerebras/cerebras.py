@@ -94,7 +94,6 @@ class CerebrasProvider(AnyLLM):
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         return _convert_models_list(response)
 
-
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = cerebras.AsyncCerebras(api_key=api_key, **kwargs)

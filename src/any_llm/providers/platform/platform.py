@@ -125,7 +125,6 @@ class PlatformProvider(AnyLLM):
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         raise NotImplementedError
 
-
     async def _ensure_provider_initialized(self) -> None:
         """Lazily initialize the wrapped provider using async HTTP on first use."""
         if self._provider_initialized:

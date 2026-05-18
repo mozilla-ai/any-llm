@@ -105,7 +105,6 @@ class GroqProvider(AnyLLM):
         """Convert Groq list models response to OpenAI format."""
         return _convert_models_list(response)
 
-
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.api_key = api_key

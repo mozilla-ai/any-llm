@@ -97,7 +97,6 @@ class SagemakerProvider(AnyLLM):
         """Convert SageMaker list models response to OpenAI format."""
         return []
 
-
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         logger.warning(

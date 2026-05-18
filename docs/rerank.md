@@ -46,18 +46,7 @@ for result in response.results:
     print(f"  index={result.index}  score={result.relevance_score:.4f}")
 ```
 
-### Asynchronous
-
-```python
-from any_llm import arerank
-
-response = await arerank(
-    "cohere:rerank-v3.5",
-    query="What is machine learning?",
-    documents=["Doc A", "Doc B", "Doc C"],
-    top_n=2,
-)
-```
+An async variant `arerank()` is also available with the same signature.
 
 ## API Reference
 

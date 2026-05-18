@@ -107,7 +107,6 @@ class WatsonxProvider(AnyLLM):
         """Convert Watsonx list models response to OpenAI format."""
         return _convert_models_list(response)
 
-
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         # watsonx requires params.model_id to instantiate the client

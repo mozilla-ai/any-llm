@@ -26,6 +26,12 @@ def _build_docs_patches() -> ExitStack:
     fake_embedding.data = [Mock(embedding=[0.1, 0.2, 0.3], index=0)]
     fake_embedding.usage = Mock(total_tokens=10)
 
+    fake_rerank = Mock()
+    fake_rerank.id = "rerank-123"
+    fake_rerank.results = [Mock(index=0, relevance_score=0.95), Mock(index=2, relevance_score=0.80)]
+    fake_rerank.meta = None
+    fake_rerank.usage = Mock(total_tokens=50)
+
     fake_response = Mock(output_text="Paris", id="resp_123")
     fake_message_response = Mock(content=[Mock(text="Hello!")])
     fake_models = [
@@ -92,6 +98,8 @@ def _build_docs_patches() -> ExitStack:
     stack.enter_context(patch("any_llm.api.amessages", new=AsyncMock(return_value=fake_message_response)))
     stack.enter_context(patch("any_llm.list_models", return_value=fake_models))
     stack.enter_context(patch("any_llm.alist_models", new=AsyncMock(return_value=fake_models)))
+    stack.enter_context(patch("any_llm.rerank", return_value=fake_rerank))
+    stack.enter_context(patch("any_llm.arerank", new=AsyncMock(return_value=fake_rerank)))
     stack.enter_context(patch("any_llm.create_batch", return_value=fake_batch))
     stack.enter_context(patch("any_llm.retrieve_batch", return_value=fake_batch))
     stack.enter_context(patch("any_llm.list_batches", return_value=[fake_batch]))

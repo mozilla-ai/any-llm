@@ -189,5 +189,3 @@ class AzureProvider(AnyLLM):
         """Convert Azure list models response to OpenAI format. Not supported by Azure."""
         msg = "Azure provider does not support listing models"
         raise NotImplementedError(msg)
-
-
