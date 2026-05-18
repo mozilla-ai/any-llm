@@ -19,6 +19,8 @@ class OpenrouterProvider(BaseOpenAIProvider):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = True
+    # OpenRouter does not expose a moderation endpoint.
+    SUPPORTS_MODERATION = False
 
     @staticmethod
     @override

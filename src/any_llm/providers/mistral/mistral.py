@@ -24,6 +24,7 @@ try:
         _create_mistral_completion_from_response,
         _create_openai_chunk_from_mistral_chunk,
         _create_openai_embedding_response_from_mistral,
+        _create_openai_moderation_response_from_mistral,
         _parse_completion_window_to_hours,
         _patch_messages,
         _validate_batch_file_models,
@@ -41,6 +42,7 @@ if TYPE_CHECKING:
     from any_llm.types.batch import Batch, BatchResult
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
+    from any_llm.types.moderation import ModerationResponse
 
 
 class MistralProvider(AnyLLM):
@@ -58,6 +60,7 @@ class MistralProvider(AnyLLM):
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = True
+    SUPPORTS_MODERATION = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
 
@@ -180,6 +183,28 @@ class MistralProvider(AnyLLM):
             **embedding_kwargs,
         )
         return self._convert_embedding_response(result)
+
+    @override
+    async def _amoderation(
+        self,
+        model: str,
+        input: str | list[str] | list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> ModerationResponse:
+        if isinstance(input, list) and input and isinstance(input[0], dict):
+            msg = f"Provider {self.PROVIDER_NAME} does not support multimodal moderation input"
+            raise NotImplementedError(msg)
+
+        include_raw = kwargs.pop("include_raw", False)
+        model_name = model or "mistral-moderation-latest"
+        inputs = [input] if isinstance(input, str) else list(input)
+
+        raw = await self.client.classifiers.moderate_async(
+            model=model_name,
+            inputs=cast("Any", inputs),
+            **kwargs,
+        )
+        return _create_openai_moderation_response_from_mistral(raw, include_raw=include_raw)
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
