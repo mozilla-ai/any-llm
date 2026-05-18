@@ -506,7 +506,7 @@ def test_convert_batch_jobs_list_empty() -> None:
     assert result == []
 
 
-def test_convert_batch_job_unknown_status_logs_warning(capsys: pytest.CaptureFixture[str]) -> None:
+def test_convert_batch_job_unknown_status_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
     """Test that unknown Mistral status logs a warning."""
     pytest.importorskip("mistralai")
     from any_llm.providers.mistral.utils import _convert_batch_job_to_openai
@@ -531,9 +531,8 @@ def test_convert_batch_job_unknown_status_logs_warning(capsys: pytest.CaptureFix
     result = _convert_batch_job_to_openai(mock_batch_job)
 
     assert result.status == "in_progress"  # Falls back to in_progress
-    captured = capsys.readouterr()
-    assert "Unknown Mistral batch status" in captured.out
-    assert "UNKNOWN_STATUS" in captured.out
+    assert "Unknown Mistral batch status" in caplog.text
+    assert "UNKNOWN_STATUS" in caplog.text
 
 
 def test_convert_batch_job_with_timeout_hours() -> None:
