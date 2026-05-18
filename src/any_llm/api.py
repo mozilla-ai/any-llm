@@ -1147,6 +1147,31 @@ async def amoderation(
     return await llm._amoderation(model_name, input, **kwargs)
 
 
+def _resolve_rerank_target(
+    model: str,
+    provider: str | LLMProvider | None,
+    top_n: int | None,
+    max_tokens_per_doc: int | None,
+    api_key: str | None,
+    api_base: str | None,
+    client_args: dict[str, Any] | None,
+    kwargs: dict[str, Any],
+) -> tuple[AnyLLM, str, dict[str, Any]]:
+    if provider is None:
+        provider_key, model_name = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = LLMProvider.from_string(provider)
+        model_name = model
+
+    if top_n is not None:
+        kwargs["top_n"] = top_n
+    if max_tokens_per_doc is not None:
+        kwargs["max_tokens_per_doc"] = max_tokens_per_doc
+
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    return llm, model_name, kwargs
+
+
 def rerank(
     model: str,
     query: str,
@@ -1181,18 +1206,9 @@ def rerank(
         NotImplementedError: If the provider does not support reranking.
 
     """
-    if provider is None:
-        provider_key, model_name = AnyLLM.split_model_provider(model)
-    else:
-        provider_key = LLMProvider.from_string(provider)
-        model_name = model
-
-    if top_n is not None:
-        kwargs["top_n"] = top_n
-    if max_tokens_per_doc is not None:
-        kwargs["max_tokens_per_doc"] = max_tokens_per_doc
-
-    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    llm, model_name, kwargs = _resolve_rerank_target(
+        model, provider, top_n, max_tokens_per_doc, api_key, api_base, client_args, kwargs
+    )
     return llm._rerank(model_name, query, documents, **kwargs)
 
 
@@ -1213,18 +1229,9 @@ async def arerank(
 
     See rerank() for full documentation.
     """
-    if provider is None:
-        provider_key, model_name = AnyLLM.split_model_provider(model)
-    else:
-        provider_key = LLMProvider.from_string(provider)
-        model_name = model
-
-    if top_n is not None:
-        kwargs["top_n"] = top_n
-    if max_tokens_per_doc is not None:
-        kwargs["max_tokens_per_doc"] = max_tokens_per_doc
-
-    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    llm, model_name, kwargs = _resolve_rerank_target(
+        model, provider, top_n, max_tokens_per_doc, api_key, api_base, client_args, kwargs
+    )
     return await llm._arerank(model_name, query, documents, **kwargs)
 
 

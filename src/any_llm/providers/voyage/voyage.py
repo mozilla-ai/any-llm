@@ -31,7 +31,6 @@ if TYPE_CHECKING:
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
-    from any_llm.types.rerank import RerankResponse
 
 
 class VoyageProvider(AnyLLM):
@@ -105,19 +104,6 @@ class VoyageProvider(AnyLLM):
         msg = "Voyage does not support listing models"
         raise NotImplementedError(msg)
 
-    @staticmethod
-    @override
-    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
-        """Voyage does not support rerank."""
-        msg = "Voyage does not support rerank"
-        raise NotImplementedError(msg)
-
-    @staticmethod
-    @override
-    def _convert_rerank_response(response: Any) -> RerankResponse:
-        """Voyage does not support rerank."""
-        msg = "Voyage does not support rerank"
-        raise NotImplementedError(msg)
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:

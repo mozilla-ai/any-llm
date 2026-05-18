@@ -49,7 +49,6 @@ if TYPE_CHECKING:
     )
 
     from any_llm.types.model import Model
-    from any_llm.types.rerank import RerankResponse
 
     ChatCompletionMessageToolCallType = (
         OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
@@ -265,19 +264,6 @@ class GoogleProvider(AnyLLM):
         """Convert Google list models response to OpenAI format."""
         return _convert_models_list(response)
 
-    @staticmethod
-    @override
-    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
-        """Google does not support rerank."""
-        msg = "Google does not support rerank"
-        raise NotImplementedError(msg)
-
-    @staticmethod
-    @override
-    def _convert_rerank_response(response: Any) -> RerankResponse:
-        """Google does not support rerank."""
-        msg = "Google does not support rerank"
-        raise NotImplementedError(msg)
 
     @override
     async def _aembedding(

@@ -44,7 +44,6 @@ if TYPE_CHECKING:
     )
 
     from any_llm.types.model import Model
-    from any_llm.types.rerank import RerankResponse
     from any_llm.types.responses import Response, ResponsesParams
 
 
@@ -117,19 +116,6 @@ class HuggingfaceProvider(AnyLLM):
         """Convert HuggingFace list models response to OpenAI format."""
         return _convert_models_list(response)
 
-    @staticmethod
-    @override
-    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
-        """HuggingFace does not support rerank."""
-        msg = "HuggingFace does not support rerank"
-        raise NotImplementedError(msg)
-
-    @staticmethod
-    @override
-    def _convert_rerank_response(response: Any) -> RerankResponse:
-        """HuggingFace does not support rerank."""
-        msg = "HuggingFace does not support rerank"
-        raise NotImplementedError(msg)
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:

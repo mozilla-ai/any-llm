@@ -230,6 +230,7 @@ def _convert_cohere_rerank_response(response: Any) -> RerankResponse:
         )
         for r in response.results
     ]
+    # Defensive: Cohere returns sorted but re-sort to guarantee the docstring contract
     results.sort(key=lambda r: r.relevance_score, reverse=True)
 
     meta = None

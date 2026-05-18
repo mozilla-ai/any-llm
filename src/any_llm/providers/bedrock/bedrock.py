@@ -31,7 +31,6 @@ except ImportError as e:
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 
-    from any_llm.types.rerank import RerankResponse
 
 
 class BedrockProvider(AnyLLM):
@@ -108,19 +107,6 @@ class BedrockProvider(AnyLLM):
         # the modelId is a string and will not be None
         return [Model(id=model["modelId"], object="model", created=0, owned_by="aws") for model in models_list]
 
-    @staticmethod
-    @override
-    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
-        """Bedrock does not support rerank."""
-        msg = "Bedrock does not support rerank"
-        raise NotImplementedError(msg)
-
-    @staticmethod
-    @override
-    def _convert_rerank_response(response: Any) -> RerankResponse:
-        """Bedrock does not support rerank."""
-        msg = "Bedrock does not support rerank"
-        raise NotImplementedError(msg)
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:

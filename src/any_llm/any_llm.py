@@ -111,7 +111,7 @@ class AnyLLM(ABC):
     SUPPORTS_AUDIO_SPEECH: bool = False
     """Audio Speech / TTS API (e.g., OpenAI TTS)"""
 
-    SUPPORTS_RERANK: bool
+    SUPPORTS_RERANK: bool = False
     """Rerank API - reorder documents by relevance to a query."""
 
     SUPPORTS_MESSAGES: bool = True
@@ -376,13 +376,11 @@ class AnyLLM(ABC):
         raise NotImplementedError(msg)
 
     @staticmethod
-    @abstractmethod
     def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
 
     @staticmethod
-    @abstractmethod
     def _convert_rerank_response(response: Any) -> RerankResponse:
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)

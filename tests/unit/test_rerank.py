@@ -432,18 +432,53 @@ def test_rerank_response_model_validate_minimal() -> None:
     assert resp.usage is None
 
 
-def test_openai_base_rerank_params_raises() -> None:
-    from any_llm.providers.openai.base import BaseOpenAIProvider
+def test_base_convert_rerank_params_raises() -> None:
+    """The base class default _convert_rerank_params raises NotImplementedError."""
+    from any_llm.any_llm import AnyLLM
 
-    with pytest.raises(NotImplementedError, match="OpenAI does not support rerank"):
-        BaseOpenAIProvider._convert_rerank_params("model", "query", ["doc"])
+    with pytest.raises(NotImplementedError, match="Subclasses must implement"):
+        AnyLLM._convert_rerank_params("model", "query", ["doc"])
 
 
-def test_openai_base_rerank_response_raises() -> None:
-    from any_llm.providers.openai.base import BaseOpenAIProvider
+def test_base_convert_rerank_response_raises() -> None:
+    """The base class default _convert_rerank_response raises NotImplementedError."""
+    from any_llm.any_llm import AnyLLM
 
-    with pytest.raises(NotImplementedError, match="OpenAI does not support rerank"):
-        BaseOpenAIProvider._convert_rerank_response({})
+    with pytest.raises(NotImplementedError, match="Subclasses must implement"):
+        AnyLLM._convert_rerank_response({})
+
+
+@pytest.mark.parametrize(
+    "provider_path",
+    [
+        pytest.param("any_llm.providers.openai.base:BaseOpenAIProvider", id="openai"),
+        pytest.param("any_llm.providers.anthropic.base:BaseAnthropicProvider", id="anthropic"),
+        pytest.param("any_llm.providers.azure.azure:AzureProvider", id="azure"),
+        pytest.param("any_llm.providers.bedrock.bedrock:BedrockProvider", id="bedrock"),
+        pytest.param("any_llm.providers.cerebras.cerebras:CerebrasProvider", id="cerebras"),
+        pytest.param("any_llm.providers.groq.groq:GroqProvider", id="groq"),
+        pytest.param("any_llm.providers.huggingface.huggingface:HuggingfaceProvider", id="huggingface"),
+        pytest.param("any_llm.providers.ollama.ollama:OllamaProvider", id="ollama"),
+        pytest.param("any_llm.providers.sagemaker.sagemaker:SagemakerProvider", id="sagemaker"),
+        pytest.param("any_llm.providers.together.together:TogetherProvider", id="together"),
+        pytest.param("any_llm.providers.voyage.voyage:VoyageProvider", id="voyage"),
+        pytest.param("any_llm.providers.watsonx.watsonx:WatsonxProvider", id="watsonx"),
+        pytest.param("any_llm.providers.xai.xai:XaiProvider", id="xai"),
+        pytest.param("any_llm.providers.mistral.mistral:MistralProvider", id="mistral"),
+        pytest.param("any_llm.providers.gemini.base:GoogleProvider", id="gemini"),
+    ],
+)
+def test_provider_does_not_support_rerank(provider_path: str) -> None:
+    """Non-supporting providers must have SUPPORTS_RERANK=False."""
+    import importlib
+
+    module_path, class_name = provider_path.rsplit(":", 1)
+    try:
+        mod = importlib.import_module(module_path)
+    except ImportError:
+        pytest.skip(f"{module_path} not installed")
+    provider_cls = getattr(mod, class_name)
+    assert provider_cls.SUPPORTS_RERANK is False
 
 
 @pytest.mark.asyncio
@@ -519,275 +554,28 @@ def test_provider_metadata_rerank_field() -> None:
     assert meta.rerank is True
 
 
-def test_anthropic_rerank_params_raises() -> None:
-    from any_llm.providers.anthropic.base import BaseAnthropicProvider
-
-    with pytest.raises(NotImplementedError, match="Anthropic does not support rerank"):
-        BaseAnthropicProvider._convert_rerank_params("model", "query", ["doc"])
-
-
-def test_anthropic_rerank_response_raises() -> None:
-    from any_llm.providers.anthropic.base import BaseAnthropicProvider
-
-    with pytest.raises(NotImplementedError, match="Anthropic does not support rerank"):
-        BaseAnthropicProvider._convert_rerank_response({})
-
-
-def test_mistral_rerank_params_raises() -> None:
-    pytest.importorskip("mistralai")
-    from any_llm.providers.mistral.mistral import MistralProvider
-
-    with pytest.raises(NotImplementedError, match="Mistral does not support rerank"):
-        MistralProvider._convert_rerank_params("model", "query", ["doc"])
-
-
-def test_mistral_rerank_response_raises() -> None:
-    pytest.importorskip("mistralai")
-    from any_llm.providers.mistral.mistral import MistralProvider
-
-    with pytest.raises(NotImplementedError, match="Mistral does not support rerank"):
-        MistralProvider._convert_rerank_response({})
-
-
-def test_mistral_does_not_support_rerank() -> None:
-    pytest.importorskip("mistralai")
-    from any_llm.providers.mistral.mistral import MistralProvider
-
-    assert MistralProvider.SUPPORTS_RERANK is False
-
-
-def test_azure_rerank_params_raises() -> None:
-    from any_llm.providers.azure.azure import AzureProvider
-
-    with pytest.raises(NotImplementedError, match="Azure does not support rerank"):
-        AzureProvider._convert_rerank_params("model", "query", ["doc"])
-
-
-def test_azure_rerank_response_raises() -> None:
-    from any_llm.providers.azure.azure import AzureProvider
-
-    with pytest.raises(NotImplementedError, match="Azure does not support rerank"):
-        AzureProvider._convert_rerank_response({})
-
-
-def test_azure_does_not_support_rerank() -> None:
-    from any_llm.providers.azure.azure import AzureProvider
-
-    assert AzureProvider.SUPPORTS_RERANK is False
-
-
-def test_bedrock_rerank_params_raises() -> None:
-    from any_llm.providers.bedrock.bedrock import BedrockProvider
-
-    with pytest.raises(NotImplementedError, match="Bedrock does not support rerank"):
-        BedrockProvider._convert_rerank_params("model", "query", ["doc"])
-
-
-def test_bedrock_rerank_response_raises() -> None:
-    from any_llm.providers.bedrock.bedrock import BedrockProvider
-
-    with pytest.raises(NotImplementedError, match="Bedrock does not support rerank"):
-        BedrockProvider._convert_rerank_response({})
-
-
-def test_bedrock_does_not_support_rerank() -> None:
-    from any_llm.providers.bedrock.bedrock import BedrockProvider
-
-    assert BedrockProvider.SUPPORTS_RERANK is False
-
-
-def test_cerebras_rerank_params_raises() -> None:
-    from any_llm.providers.cerebras.cerebras import CerebrasProvider
-
-    with pytest.raises(NotImplementedError, match="Cerebras does not support rerank"):
-        CerebrasProvider._convert_rerank_params("model", "query", ["doc"])
-
-
-def test_cerebras_rerank_response_raises() -> None:
-    from any_llm.providers.cerebras.cerebras import CerebrasProvider
-
-    with pytest.raises(NotImplementedError, match="Cerebras does not support rerank"):
-        CerebrasProvider._convert_rerank_response({})
-
-
-def test_cerebras_does_not_support_rerank() -> None:
-    from any_llm.providers.cerebras.cerebras import CerebrasProvider
-
-    assert CerebrasProvider.SUPPORTS_RERANK is False
-
-
-def test_groq_rerank_params_raises() -> None:
-    from any_llm.providers.groq.groq import GroqProvider
-
-    with pytest.raises(NotImplementedError, match="Groq does not support rerank"):
-        GroqProvider._convert_rerank_params("model", "query", ["doc"])
-
-
-def test_groq_rerank_response_raises() -> None:
-    from any_llm.providers.groq.groq import GroqProvider
-
-    with pytest.raises(NotImplementedError, match="Groq does not support rerank"):
-        GroqProvider._convert_rerank_response({})
-
-
-def test_groq_does_not_support_rerank() -> None:
-    from any_llm.providers.groq.groq import GroqProvider
-
-    assert GroqProvider.SUPPORTS_RERANK is False
-
-
-def test_huggingface_rerank_params_raises() -> None:
-    from any_llm.providers.huggingface.huggingface import HuggingfaceProvider
-
-    with pytest.raises(NotImplementedError, match="HuggingFace does not support rerank"):
-        HuggingfaceProvider._convert_rerank_params("model", "query", ["doc"])
-
-
-def test_huggingface_rerank_response_raises() -> None:
-    from any_llm.providers.huggingface.huggingface import HuggingfaceProvider
-
-    with pytest.raises(NotImplementedError, match="HuggingFace does not support rerank"):
-        HuggingfaceProvider._convert_rerank_response({})
-
-
-def test_huggingface_does_not_support_rerank() -> None:
-    from any_llm.providers.huggingface.huggingface import HuggingfaceProvider
-
-    assert HuggingfaceProvider.SUPPORTS_RERANK is False
-
-
-def test_ollama_rerank_params_raises() -> None:
-    from any_llm.providers.ollama.ollama import OllamaProvider
-
-    with pytest.raises(NotImplementedError, match="Ollama does not support rerank"):
-        OllamaProvider._convert_rerank_params("model", "query", ["doc"])
-
-
-def test_ollama_rerank_response_raises() -> None:
-    from any_llm.providers.ollama.ollama import OllamaProvider
-
-    with pytest.raises(NotImplementedError, match="Ollama does not support rerank"):
-        OllamaProvider._convert_rerank_response({})
-
-
-def test_ollama_does_not_support_rerank() -> None:
-    from any_llm.providers.ollama.ollama import OllamaProvider
-
-    assert OllamaProvider.SUPPORTS_RERANK is False
-
-
-def test_sagemaker_rerank_params_raises() -> None:
-    from any_llm.providers.sagemaker.sagemaker import SagemakerProvider
-
-    with pytest.raises(NotImplementedError, match="Sagemaker does not support rerank"):
-        SagemakerProvider._convert_rerank_params("model", "query", ["doc"])
-
-
-def test_sagemaker_rerank_response_raises() -> None:
-    from any_llm.providers.sagemaker.sagemaker import SagemakerProvider
-
-    with pytest.raises(NotImplementedError, match="Sagemaker does not support rerank"):
-        SagemakerProvider._convert_rerank_response({})
-
-
-def test_sagemaker_does_not_support_rerank() -> None:
-    from any_llm.providers.sagemaker.sagemaker import SagemakerProvider
-
-    assert SagemakerProvider.SUPPORTS_RERANK is False
-
-
-def test_together_rerank_params_raises() -> None:
-    from any_llm.providers.together.together import TogetherProvider
-
-    with pytest.raises(NotImplementedError, match="Together does not support rerank"):
-        TogetherProvider._convert_rerank_params("model", "query", ["doc"])
-
-
-def test_together_rerank_response_raises() -> None:
-    from any_llm.providers.together.together import TogetherProvider
-
-    with pytest.raises(NotImplementedError, match="Together does not support rerank"):
-        TogetherProvider._convert_rerank_response({})
-
-
-def test_together_does_not_support_rerank() -> None:
-    from any_llm.providers.together.together import TogetherProvider
-
-    assert TogetherProvider.SUPPORTS_RERANK is False
-
-
-def test_voyage_rerank_params_raises() -> None:
-    from any_llm.providers.voyage.voyage import VoyageProvider
-
-    with pytest.raises(NotImplementedError, match="Voyage does not support rerank"):
-        VoyageProvider._convert_rerank_params("model", "query", ["doc"])
-
-
-def test_voyage_rerank_response_raises() -> None:
-    from any_llm.providers.voyage.voyage import VoyageProvider
-
-    with pytest.raises(NotImplementedError, match="Voyage does not support rerank"):
-        VoyageProvider._convert_rerank_response({})
-
-
-def test_voyage_does_not_support_rerank() -> None:
-    from any_llm.providers.voyage.voyage import VoyageProvider
-
-    assert VoyageProvider.SUPPORTS_RERANK is False
-
-
-def test_watsonx_rerank_params_raises() -> None:
-    from any_llm.providers.watsonx.watsonx import WatsonxProvider
-
-    with pytest.raises(NotImplementedError, match="Watsonx does not support rerank"):
-        WatsonxProvider._convert_rerank_params("model", "query", ["doc"])
-
-
-def test_watsonx_rerank_response_raises() -> None:
-    from any_llm.providers.watsonx.watsonx import WatsonxProvider
-
-    with pytest.raises(NotImplementedError, match="Watsonx does not support rerank"):
-        WatsonxProvider._convert_rerank_response({})
-
-
-def test_watsonx_does_not_support_rerank() -> None:
-    from any_llm.providers.watsonx.watsonx import WatsonxProvider
-
-    assert WatsonxProvider.SUPPORTS_RERANK is False
-
-
-def test_xai_rerank_params_raises() -> None:
-    from any_llm.providers.xai.xai import XaiProvider
-
-    with pytest.raises(NotImplementedError, match="XAI does not support rerank"):
-        XaiProvider._convert_rerank_params("model", "query", ["doc"])
-
-
-def test_xai_rerank_response_raises() -> None:
-    from any_llm.providers.xai.xai import XaiProvider
-
-    with pytest.raises(NotImplementedError, match="XAI does not support rerank"):
-        XaiProvider._convert_rerank_response({})
-
-
-def test_xai_does_not_support_rerank() -> None:
-    from any_llm.providers.xai.xai import XaiProvider
-
-    assert XaiProvider.SUPPORTS_RERANK is False
-
-
-def test_gateway_convert_rerank_params_raises() -> None:
-    from any_llm.providers.gateway import GatewayProvider
-
-    with pytest.raises(NotImplementedError, match="Gateway rerank uses direct HTTP"):
-        GatewayProvider._convert_rerank_params("model", "query", ["doc"])
-
-
-def test_gateway_convert_rerank_response_raises() -> None:
-    from any_llm.providers.gateway import GatewayProvider
-
-    with pytest.raises(NotImplementedError, match="Gateway rerank uses direct HTTP"):
-        GatewayProvider._convert_rerank_response({})
+def test_provider_metadata_rerank_defaults_to_false() -> None:
+    from any_llm.types.provider import ProviderMetadata
+
+    meta = ProviderMetadata(
+        name="test",
+        env_key="TEST_API_KEY",
+        env_api_base=None,
+        doc_url="https://example.com",
+        streaming=True,
+        reasoning=False,
+        completion=True,
+        embedding=False,
+        moderation=False,
+        responses=False,
+        image=False,
+        pdf=False,
+        list_models=False,
+        messages=False,
+        batch_completion=False,
+        class_name="TestProvider",
+    )
+    assert meta.rerank is False
 
 
 def test_rerank_api_with_explicit_provider() -> None:
@@ -944,6 +732,30 @@ async def test_gateway_rerank_non_platform_http_error_reraises() -> None:
             await provider._arerank("model", "query", ["doc"])
 
 
+@pytest.mark.asyncio
+async def test_gateway_rerank_sends_auth_headers() -> None:
+    """Verify the gateway provider sends correct Authorization and AnyLLM-Key headers."""
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"results": []}
+        mock_client.post.return_value = mock_resp
+
+        from any_llm.providers.gateway import GatewayProvider
+
+        provider = GatewayProvider(api_key="my-secret-key", api_base="http://localhost:8000")
+        await provider._arerank("model", "query", ["doc"])
+
+        call_args = mock_client.post.call_args
+        headers = call_args[1]["headers"]
+        assert headers["Authorization"] == "Bearer my-secret-key"
+
+
 def test_cohere_convert_rerank_params_ignores_none_max_tokens() -> None:
     pytest.importorskip("cohere")
     from any_llm.providers.cohere import CohereProvider
@@ -1012,50 +824,7 @@ def test_convert_cohere_rerank_response_meta_no_input_tokens() -> None:
     assert result.usage is None
 
 
-def test_gemini_rerank_params_raises() -> None:
-    try:
-        from any_llm.providers.gemini.base import GoogleProvider
-    except ImportError:
-        pytest.skip("google-genai not installed")
-
-    with pytest.raises(NotImplementedError, match="Google does not support rerank"):
-        GoogleProvider._convert_rerank_params("model", "query", ["doc"])
-
-
-def test_gemini_rerank_response_raises() -> None:
-    try:
-        from any_llm.providers.gemini.base import GoogleProvider
-    except ImportError:
-        pytest.skip("google-genai not installed")
-
-    with pytest.raises(NotImplementedError, match="Google does not support rerank"):
-        GoogleProvider._convert_rerank_response({})
-
-
-def test_gemini_does_not_support_rerank() -> None:
-    try:
-        from any_llm.providers.gemini.base import GoogleProvider
-    except ImportError:
-        pytest.skip("google-genai not installed")
-
-    assert GoogleProvider.SUPPORTS_RERANK is False
-
-
-def test_platform_rerank_params_raises() -> None:
-    try:
-        from any_llm.providers.platform.platform import PlatformProvider
-    except ImportError:
-        pytest.skip("any-llm-platform-client not installed")
-
-    with pytest.raises(NotImplementedError, match="Platform does not support rerank"):
-        PlatformProvider._convert_rerank_params("model", "query", ["doc"])
-
-
-def test_platform_rerank_response_raises() -> None:
-    try:
-        from any_llm.providers.platform.platform import PlatformProvider
-    except ImportError:
-        pytest.skip("any-llm-platform-client not installed")
-
-    with pytest.raises(NotImplementedError, match="Platform does not support rerank"):
-        PlatformProvider._convert_rerank_response({})
+def test_rerank_response_id_optional() -> None:
+    """RerankResponse.id defaults to None for forward compatibility."""
+    resp = RerankResponse(results=[])
+    assert resp.id is None

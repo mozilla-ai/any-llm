@@ -35,7 +35,6 @@ if TYPE_CHECKING:
         CreateEmbeddingResponse,
     )
     from any_llm.types.model import Model
-    from any_llm.types.rerank import RerankResponse
 
 
 class TogetherProvider(AnyLLM):
@@ -126,19 +125,6 @@ class TogetherProvider(AnyLLM):
         msg = "Together does not support listing models"
         raise NotImplementedError(msg)
 
-    @staticmethod
-    @override
-    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
-        """Together does not support rerank."""
-        msg = "Together does not support rerank"
-        raise NotImplementedError(msg)
-
-    @staticmethod
-    @override
-    def _convert_rerank_response(response: Any) -> RerankResponse:
-        """Together does not support rerank."""
-        msg = "Together does not support rerank"
-        raise NotImplementedError(msg)
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:

@@ -28,7 +28,6 @@ if TYPE_CHECKING:
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
-    from any_llm.types.rerank import RerankResponse
 
 
 class AzureProvider(AnyLLM):
@@ -191,16 +190,4 @@ class AzureProvider(AnyLLM):
         msg = "Azure provider does not support listing models"
         raise NotImplementedError(msg)
 
-    @staticmethod
-    @override
-    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
-        """Azure does not support rerank."""
-        msg = "Azure does not support rerank"
-        raise NotImplementedError(msg)
 
-    @staticmethod
-    @override
-    def _convert_rerank_response(response: Any) -> RerankResponse:
-        """Azure does not support rerank."""
-        msg = "Azure does not support rerank"
-        raise NotImplementedError(msg)

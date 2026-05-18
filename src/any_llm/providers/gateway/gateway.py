@@ -4,6 +4,7 @@ import json
 import os
 from typing import TYPE_CHECKING, Any
 
+import httpx
 from typing_extensions import override
 
 from any_llm.exceptions import (
@@ -408,22 +409,6 @@ class GatewayProvider(BaseOpenAIProvider):
             ]
         )
 
-    # -- Rerank API overrides --------------------------------------------------
-
-    @staticmethod
-    @override
-    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
-        """Gateway does not use param conversion for rerank."""
-        msg = "Gateway rerank uses direct HTTP, not param conversion"
-        raise NotImplementedError(msg)
-
-    @staticmethod
-    @override
-    def _convert_rerank_response(response: Any) -> RerankResponse:
-        """Gateway does not use response conversion for rerank."""
-        msg = "Gateway rerank uses direct HTTP, not response conversion"
-        raise NotImplementedError(msg)
-
     @override
     async def _arerank(
         self,
@@ -432,8 +417,6 @@ class GatewayProvider(BaseOpenAIProvider):
         documents: list[str],
         **kwargs: Any,
     ) -> RerankResponse:
-        import httpx
-
         from any_llm.types.rerank import RerankResponse
 
         body: dict[str, Any] = {
@@ -450,10 +433,11 @@ class GatewayProvider(BaseOpenAIProvider):
         base_url = base_url.removesuffix("/v1")
 
         headers: dict[str, str] = {"Content-Type": "application/json"}
-        for key in ("Authorization", "X-AnyLLM-Key"):
-            value = self.client.default_headers.get(key)
-            if value:
-                headers[key] = value
+        if self.client.api_key:
+            headers["Authorization"] = f"Bearer {self.client.api_key}"
+        gateway_key = self.client.default_headers.get(GATEWAY_HEADER_NAME)
+        if gateway_key:
+            headers[GATEWAY_HEADER_NAME] = gateway_key
 
         url = f"{base_url}/v1/rerank"
 
