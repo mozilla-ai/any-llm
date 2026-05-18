@@ -506,6 +506,7 @@ def test_provider_metadata_rerank_field() -> None:
         reasoning=False,
         completion=True,
         embedding=False,
+        moderation=False,
         responses=False,
         image=False,
         pdf=False,
