@@ -21,6 +21,7 @@ A Pydantic `BaseModel` containing provider information and feature flags.
 | `reasoning` | `bool` |  |
 | `completion` | `bool` |  |
 | `embedding` | `bool` |  |
+| `moderation` | `bool` |  |
 | `responses` | `bool` |  |
 | `image` | `bool` |  |
 | `pdf` | `bool` |  |
