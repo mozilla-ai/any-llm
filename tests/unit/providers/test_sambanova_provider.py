@@ -202,3 +202,34 @@ async def test_sambanova_embedding_with_list_input(mock_openai_class: MagicMock)
 
     body = mock_client.post.call_args.kwargs["body"]
     assert body["input"] == ["Hello", "world"]
+
+
+@patch("any_llm.providers.openai.base.AsyncOpenAI")
+@pytest.mark.asyncio
+async def test_sambanova_embedding_raises_when_unsupported(mock_openai_class: MagicMock) -> None:
+    """_aembedding should raise NotImplementedError when SUPPORTS_EMBEDDING is False."""
+    mock_client = AsyncMock()
+    mock_openai_class.return_value = mock_client
+
+    provider = SambanovaProvider(api_key="test-key")
+    provider.SUPPORTS_EMBEDDING = False
+
+    with pytest.raises(NotImplementedError, match="does not support embeddings"):
+        await provider._aembedding("test-model", "Hello world")
+
+
+@patch("any_llm.providers.openai.base.AsyncOpenAI")
+@pytest.mark.asyncio
+async def test_sambanova_embedding_without_dimensions(mock_openai_class: MagicMock) -> None:
+    """When dimensions is not passed, the body should not include it."""
+    mock_client = AsyncMock()
+    mock_openai_class.return_value = mock_client
+    mock_client.post = AsyncMock(return_value=_make_embedding_response())
+
+    provider = SambanovaProvider(api_key="test-key")
+    await provider._aembedding("test-model", "Hello world")
+
+    body = mock_client.post.call_args.kwargs["body"]
+    assert "dimensions" not in body
+    assert body["input"] == "Hello world"
+    assert body["model"] == "test-model"
