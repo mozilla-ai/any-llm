@@ -51,7 +51,8 @@ def test_gateway_init_without_api_key(mock_openai_class: MagicMock) -> None:
     mock_openai_class.assert_called_once()
     call_kwargs = mock_openai_class.call_args[1]
     assert call_kwargs["base_url"] == "https://gateway.example.com"
-    assert call_kwargs["api_key"] == ""
+    # When no key is provided, a placeholder is used to satisfy the OpenAI SDK (>= 2.34.0)
+    assert call_kwargs["api_key"] == "no-key-required"
 
 
 @patch("any_llm.providers.openai.base.AsyncOpenAI")
@@ -94,7 +95,8 @@ def test_gateway_init_without_any_api_key(mock_openai_class: MagicMock) -> None:
     GatewayProvider(api_base="https://gateway.example.com")
 
     call_kwargs = mock_openai_class.call_args[1]
-    assert call_kwargs["api_key"] == ""
+    # When no key is provided, a placeholder is used to satisfy the OpenAI SDK (>= 2.34.0)
+    assert call_kwargs["api_key"] == "no-key-required"
     assert "default_headers" not in call_kwargs or GATEWAY_HEADER_NAME not in call_kwargs.get("default_headers", {})
 
 
@@ -114,11 +116,11 @@ def test_verify_api_key_with_env_variable() -> None:
 
 
 @patch.dict(os.environ, {}, clear=True)
-def test_verify_api_key_none_returns_empty() -> None:
+def test_verify_api_key_none_returns_placeholder() -> None:
     with patch("any_llm.providers.openai.base.AsyncOpenAI"):
         provider = GatewayProvider(api_base="https://gateway.example.com")
         result = provider._verify_and_set_api_key(None)
-        assert result == ""
+        assert result == "no-key-required"
 
 
 @patch("any_llm.providers.openai.base.AsyncOpenAI")

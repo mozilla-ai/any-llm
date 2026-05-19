@@ -1,5 +1,6 @@
 from typing import Any
 
+from openai.types import CreateEmbeddingResponse
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from typing_extensions import override
@@ -22,6 +23,36 @@ class SambanovaProvider(XMLReasoningOpenAIProvider):
 
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_COMPLETION_REASONING = True
+
+    @override
+    async def _aembedding(
+        self,
+        model: str,
+        inputs: str | list[str],
+        **kwargs: Any,
+    ) -> CreateEmbeddingResponse:
+        """SambaNova does not support the ``encoding_format`` parameter.
+
+        The OpenAI SDK injects ``encoding_format`` into every
+        ``embeddings.create()`` call automatically.  We bypass that by
+        calling the client-level ``post()`` directly so only the
+        parameters SambaNova accepts are included in the request body.
+        """
+        if not self.SUPPORTS_EMBEDDING:
+            msg = "This provider does not support embeddings."
+            raise NotImplementedError(msg)
+
+        body: dict[str, Any] = {"input": inputs, "model": model}
+        if "dimensions" in kwargs:
+            body["dimensions"] = kwargs["dimensions"]
+
+        return self._convert_embedding_response(
+            await self.client.post(
+                "/embeddings",
+                body=body,
+                cast_to=CreateEmbeddingResponse,
+            )
+        )
 
     @staticmethod
     @override

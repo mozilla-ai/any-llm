@@ -128,20 +128,24 @@ class GatewayProvider(BaseOpenAIProvider):
 
         # Non-platform mode (existing behavior)
         self.platform_mode = False
-        api_key = self._verify_and_set_api_key(api_key)
-        if api_key:
+        real_key = api_key or os.getenv(self.ENV_API_KEY_NAME, "")
+        if real_key:
             if "default_headers" not in kwargs:
                 kwargs["default_headers"] = {}
             elif kwargs["default_headers"].get(GATEWAY_HEADER_NAME):
                 msg = f"{GATEWAY_HEADER_NAME} header is already set, overriding with new API key"
                 logger.info(msg)
-            kwargs["default_headers"][GATEWAY_HEADER_NAME] = f"Bearer {api_key}"
-        super().__init__(api_key=api_key, api_base=resolved_api_base, **kwargs)
+            kwargs["default_headers"][GATEWAY_HEADER_NAME] = f"Bearer {real_key}"
+        super().__init__(api_key=real_key or None, api_base=resolved_api_base, **kwargs)
 
     @override
-    def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
-        """Unlike other providers, the gateway provider does not require an API key."""
-        return api_key or os.getenv(self.ENV_API_KEY_NAME, "")
+    def _verify_and_set_api_key(self, api_key: str | None = None) -> str:
+        """Unlike other providers, the gateway provider does not require an API key.
+
+        Returns a non-empty placeholder when no key is available so the
+        OpenAI SDK client-side validation (>= 2.34.0) is satisfied.
+        """
+        return api_key or os.getenv(self.ENV_API_KEY_NAME) or "no-key-required"
 
     # -- Platform-mode error handling -----------------------------------------
 
