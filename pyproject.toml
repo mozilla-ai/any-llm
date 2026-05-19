@@ -108,6 +108,7 @@ azureopenai = []
 databricks = []
 deepseek = []
 fireworks = []
+gateway = []
 inception = []
 llama = []
 llamacpp = []
@@ -123,26 +124,9 @@ sambanova = []
 minimax = []
 mzai = []
 vllm = []
-# Deprecated: the gateway is moving to a standalone package.
-# See https://github.com/mozilla-ai/gateway
-gateway = [
-  "fastapi>=0.115.0",
-  "uvicorn[standard]>=0.30.0",
-  "sqlalchemy>=2.0.0",
-  "alembic>=1.13.0",
-  "pydantic-settings>=2.0.0",
-  "pyyaml>=6.0",
-  "click>=8.1.0",
-  "python-dotenv>=1.0.0",
-  "psycopg2-binary>=2.9.9",
-  "prometheus-client>=0.20.0",
-]
 zai = []
 dashscope = []
 deepinfra = []
-
-[project.scripts]
-any-llm-gateway = "any_llm.gateway.cli:main"
 
 [project.urls]
 Documentation = "https://docs.mozilla.ai/any-llm/"
@@ -154,7 +138,6 @@ exclude-newer = "7 days"
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
-"any_llm.gateway" = ["alembic.ini", "alembic/**/*"]
 
 [tool.setuptools.packages.find]
 exclude = ["tests", "tests.*"]
@@ -210,7 +193,6 @@ extend-select = ["ALL"]
 "src/any_llm/providers/**" = ["D"]
 "src/any_llm/any_llm.py" = ["D"]
 "src/any_llm/types/**" = ["A005", "D"]
-"src/any_llm/gateway/**" = ["D"]
 "scripts/**" = ["D", "T201"]
 "docs/cookbooks/**" = ["D", "T201"]
 
@@ -282,7 +264,7 @@ tests = [
   "pytest-timeout",
   "debugpy",
   "aiofiles",
-  "testcontainers[postgres]>=4.0.0",
+
 ]
 
 # For completeness, but 'uv sync --group dev' currently installs the others too.

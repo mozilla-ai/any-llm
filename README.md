@@ -102,9 +102,9 @@ export MISTRAL_API_KEY="your-key-here"
 
 Alternatively, pass API keys directly in your code (see [Usage](#usage) examples).
 
-## Gateway
+## Otari Gateway
 
-The gateway that was previously bundled with any-llm has moved to its own repository. For budget management, API key management, usage analytics, and multi-tenant support, see [mozilla-ai/otari](https://github.com/mozilla-ai/otari).
+For budget management, API key management, usage analytics, and multi-tenant support, see [mozilla-ai/otari](https://github.com/mozilla-ai/otari).
 
 ## Why choose `any-llm`?
 

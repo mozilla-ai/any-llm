@@ -42,14 +42,6 @@ ORDERED_FILES = [
     "api/types/provider.md",
     "api/types/batch.md",
     "platform/overview.md",
-    "gateway/overview.md",
-    "gateway/quickstart.md",
-    "gateway/authentication.md",
-    "gateway/budget-management.md",
-    "gateway/configuration.md",
-    "gateway/api-reference.md",
-    "gateway/troubleshooting.md",
-    "gateway/docker-deployment.md",
 ]
 
 
