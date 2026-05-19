@@ -244,7 +244,7 @@ class BedrockProvider(AnyLLM):
 
     def _get_bedrock_control_client(self) -> Any:
         """Return a ``bedrock`` control-plane client for batch and model management operations."""
-        return boto3.client("bedrock", endpoint_url=self.api_base, **self.kwargs)
+        return boto3.client("bedrock", **self.kwargs)
 
     def _get_s3_client(self) -> Any:
         """Return an ``s3`` client for reading batch output files."""
@@ -286,6 +286,9 @@ class BedrockProvider(AnyLLM):
         if not model_id:
             msg = "Bedrock batch requires 'model_id' to be passed as a keyword argument."
             raise InvalidRequestError(msg, provider_name=self.PROVIDER_NAME)
+
+        _parse_s3_uri(input_file_path)
+        _parse_s3_uri(output_s3_uri)
 
         if job_name is None:
             import uuid
@@ -390,6 +393,8 @@ class BedrockProvider(AnyLLM):
         _, input_key = _parse_s3_uri(input_s3_uri)
         input_filename = input_key.rsplit("/", maxsplit=1)[-1]
         output_bucket, output_key_prefix = _parse_s3_uri(output_s3_uri)
+        if not output_key_prefix.endswith("/"):
+            output_key_prefix += "/"
 
         job_arn = job.get("jobArn", "")
         job_id = job_arn.rsplit("/", maxsplit=1)[-1] if "/" in job_arn else job_arn

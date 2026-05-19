@@ -729,3 +729,99 @@ async def test_aretrieve_batch_results_partially_completed() -> None:
     assert result.results[0].result is not None
     assert result.results[1].error is not None
     assert result.results[1].error.code == "ModelError"
+
+
+@pytest.mark.asyncio
+async def test_acreate_batch_invalid_input_s3_uri() -> None:
+    """Test that an invalid input_file_path S3 URI raises InvalidRequestError early."""
+    pytest.importorskip("boto3")
+
+    provider, _, _ = _create_provider_with_mock_clients()
+
+    with pytest.raises(InvalidRequestError, match="s3://"):
+        await provider._acreate_batch(
+            input_file_path="not-an-s3-uri/input.jsonl",
+            endpoint="/v1/chat/completions",
+            role_arn="arn:aws:iam::123456789012:role/BatchRole",
+            output_s3_uri="s3://bucket/output/",
+            model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        )
+
+
+@pytest.mark.asyncio
+async def test_acreate_batch_invalid_output_s3_uri() -> None:
+    """Test that an invalid output_s3_uri raises InvalidRequestError early."""
+    pytest.importorskip("boto3")
+
+    provider, _, _ = _create_provider_with_mock_clients()
+
+    with pytest.raises(InvalidRequestError, match="s3://"):
+        await provider._acreate_batch(
+            input_file_path="s3://bucket/input.jsonl",
+            endpoint="/v1/chat/completions",
+            role_arn="arn:aws:iam::123456789012:role/BatchRole",
+            output_s3_uri="https://bucket/output/",
+            model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        )
+
+
+@pytest.mark.asyncio
+async def test_aretrieve_batch_results_output_uri_without_trailing_slash() -> None:
+    """Test that output S3 URIs without trailing slashes produce correct keys."""
+    pytest.importorskip("boto3")
+
+    provider, mock_control, mock_s3 = _create_provider_with_mock_clients()
+
+    job_arn = "arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/slash123"
+    mock_control.get_model_invocation_job.return_value = _make_mock_job(
+        job_arn=job_arn,
+        status="Completed",
+        input_s3_uri="s3://input-bucket/batch-input.jsonl",
+        output_s3_uri="s3://output-bucket/results",
+    )
+
+    output_record = json.dumps(
+        {
+            "recordId": "req-1",
+            "modelOutput": {
+                "output": {
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"text": "Hello!"}],
+                    }
+                },
+                "stopReason": "end_turn",
+                "usage": {"inputTokens": 10, "outputTokens": 5},
+            },
+        }
+    )
+
+    mock_body = MagicMock()
+    mock_body.read.return_value = output_record.encode("utf-8")
+    mock_s3.get_object.return_value = {"Body": mock_body}
+
+    result = await provider._aretrieve_batch_results(job_arn)
+
+    assert len(result.results) == 1
+    s3_call_kwargs = mock_s3.get_object.call_args[1]
+    assert s3_call_kwargs["Bucket"] == "output-bucket"
+    assert s3_call_kwargs["Key"] == "results/slash123/batch-input.jsonl.out"
+
+
+@pytest.mark.asyncio
+async def test_control_client_does_not_use_runtime_endpoint() -> None:
+    """Test that the control-plane client does not receive the runtime endpoint_url."""
+    pytest.importorskip("boto3")
+    from any_llm.providers.bedrock.bedrock import BedrockProvider
+
+    with patch("any_llm.providers.bedrock.bedrock.boto3") as mock_boto3:
+        mock_runtime = MagicMock()
+        mock_boto3.client.return_value = mock_runtime
+        mock_boto3.Session.return_value.get_credentials.return_value = MagicMock()
+
+        provider = BedrockProvider(api_base="https://bedrock-runtime.us-east-1.amazonaws.com")
+
+        mock_boto3.client.reset_mock()
+        provider._get_bedrock_control_client()
+
+        mock_boto3.client.assert_called_once_with("bedrock")
