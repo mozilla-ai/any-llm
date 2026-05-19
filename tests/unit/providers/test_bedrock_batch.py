@@ -1,8 +1,7 @@
 import json
 from datetime import UTC, datetime
-from io import BytesIO
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -272,19 +271,21 @@ def test_convert_batch_output_success() -> None:
     pytest.importorskip("boto3")
     from any_llm.providers.bedrock.utils import _convert_bedrock_batch_output_to_result
 
-    output_line = json.dumps({
-        "recordId": "req-1",
-        "modelOutput": {
-            "output": {
-                "message": {
-                    "role": "assistant",
-                    "content": [{"text": "Hello world!"}],
-                }
+    output_line = json.dumps(
+        {
+            "recordId": "req-1",
+            "modelOutput": {
+                "output": {
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"text": "Hello world!"}],
+                    }
+                },
+                "stopReason": "end_turn",
+                "usage": {"inputTokens": 10, "outputTokens": 5},
             },
-            "stopReason": "end_turn",
-            "usage": {"inputTokens": 10, "outputTokens": 5},
-        },
-    })
+        }
+    )
 
     result = _convert_bedrock_batch_output_to_result([output_line])
     assert len(result.results) == 1
@@ -298,13 +299,15 @@ def test_convert_batch_output_error() -> None:
     pytest.importorskip("boto3")
     from any_llm.providers.bedrock.utils import _convert_bedrock_batch_output_to_result
 
-    output_line = json.dumps({
-        "recordId": "req-2",
-        "error": {
-            "errorCode": "ThrottlingException",
-            "errorMessage": "Rate exceeded",
-        },
-    })
+    output_line = json.dumps(
+        {
+            "recordId": "req-2",
+            "error": {
+                "errorCode": "ThrottlingException",
+                "errorMessage": "Rate exceeded",
+            },
+        }
+    )
 
     result = _convert_bedrock_batch_output_to_result([output_line])
     assert len(result.results) == 1
@@ -320,23 +323,27 @@ def test_convert_batch_output_mixed() -> None:
     pytest.importorskip("boto3")
     from any_llm.providers.bedrock.utils import _convert_bedrock_batch_output_to_result
 
-    success_line = json.dumps({
-        "recordId": "req-1",
-        "modelOutput": {
-            "output": {
-                "message": {
-                    "role": "assistant",
-                    "content": [{"text": "Response 1"}],
-                }
+    success_line = json.dumps(
+        {
+            "recordId": "req-1",
+            "modelOutput": {
+                "output": {
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"text": "Response 1"}],
+                    }
+                },
+                "stopReason": "end_turn",
+                "usage": {"inputTokens": 10, "outputTokens": 5},
             },
-            "stopReason": "end_turn",
-            "usage": {"inputTokens": 10, "outputTokens": 5},
-        },
-    })
-    error_line = json.dumps({
-        "recordId": "req-2",
-        "error": {"errorCode": "ValidationException", "errorMessage": "Invalid input"},
-    })
+        }
+    )
+    error_line = json.dumps(
+        {
+            "recordId": "req-2",
+            "error": {"errorCode": "ValidationException", "errorMessage": "Invalid input"},
+        }
+    )
 
     result = _convert_bedrock_batch_output_to_result([success_line, error_line])
     assert len(result.results) == 2
@@ -349,19 +356,21 @@ def test_convert_batch_output_empty_lines_skipped() -> None:
     pytest.importorskip("boto3")
     from any_llm.providers.bedrock.utils import _convert_bedrock_batch_output_to_result
 
-    output_line = json.dumps({
-        "recordId": "req-1",
-        "modelOutput": {
-            "output": {
-                "message": {
-                    "role": "assistant",
-                    "content": [{"text": "Hello"}],
-                }
+    output_line = json.dumps(
+        {
+            "recordId": "req-1",
+            "modelOutput": {
+                "output": {
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"text": "Hello"}],
+                    }
+                },
+                "stopReason": "end_turn",
+                "usage": {"inputTokens": 5, "outputTokens": 3},
             },
-            "stopReason": "end_turn",
-            "usage": {"inputTokens": 5, "outputTokens": 3},
-        },
-    })
+        }
+    )
 
     result = _convert_bedrock_batch_output_to_result(["", output_line, "", "  "])
     assert len(result.results) == 1
@@ -623,19 +632,21 @@ async def test_aretrieve_batch_results_completed() -> None:
         output_s3_uri="s3://output-bucket/results/",
     )
 
-    output_record = json.dumps({
-        "recordId": "req-1",
-        "modelOutput": {
-            "output": {
-                "message": {
-                    "role": "assistant",
-                    "content": [{"text": "Hello from Bedrock!"}],
-                }
+    output_record = json.dumps(
+        {
+            "recordId": "req-1",
+            "modelOutput": {
+                "output": {
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"text": "Hello from Bedrock!"}],
+                    }
+                },
+                "stopReason": "end_turn",
+                "usage": {"inputTokens": 10, "outputTokens": 5},
             },
-            "stopReason": "end_turn",
-            "usage": {"inputTokens": 10, "outputTokens": 5},
-        },
-    })
+        }
+    )
 
     mock_body = MagicMock()
     mock_body.read.return_value = output_record.encode("utf-8")
@@ -661,9 +672,7 @@ async def test_aretrieve_batch_results_not_completed() -> None:
     provider, mock_control, _ = _create_provider_with_mock_clients()
 
     job_arn = "arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/pending123"
-    mock_control.get_model_invocation_job.return_value = _make_mock_job(
-        job_arn=job_arn, status="InProgress"
-    )
+    mock_control.get_model_invocation_job.return_value = _make_mock_job(job_arn=job_arn, status="InProgress")
 
     with pytest.raises(BatchNotCompleteError) as exc_info:
         await provider._aretrieve_batch_results(job_arn)
@@ -689,20 +698,26 @@ async def test_aretrieve_batch_results_partially_completed() -> None:
         error_records=2,
     )
 
-    output_lines = "\n".join([
-        json.dumps({
-            "recordId": "req-1",
-            "modelOutput": {
-                "output": {"message": {"role": "assistant", "content": [{"text": "OK"}]}},
-                "stopReason": "end_turn",
-                "usage": {"inputTokens": 5, "outputTokens": 2},
-            },
-        }),
-        json.dumps({
-            "recordId": "req-2",
-            "error": {"errorCode": "ModelError", "errorMessage": "Model failed"},
-        }),
-    ])
+    output_lines = "\n".join(
+        [
+            json.dumps(
+                {
+                    "recordId": "req-1",
+                    "modelOutput": {
+                        "output": {"message": {"role": "assistant", "content": [{"text": "OK"}]}},
+                        "stopReason": "end_turn",
+                        "usage": {"inputTokens": 5, "outputTokens": 2},
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "recordId": "req-2",
+                    "error": {"errorCode": "ModelError", "errorMessage": "Model failed"},
+                }
+            ),
+        ]
+    )
 
     mock_body = MagicMock()
     mock_body.read.return_value = output_lines.encode("utf-8")
