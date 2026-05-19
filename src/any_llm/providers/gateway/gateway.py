@@ -4,6 +4,7 @@ import json
 import os
 from typing import TYPE_CHECKING, Any
 
+import httpx
 from typing_extensions import override
 
 from any_llm.exceptions import (
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
     )
     from any_llm.types.model import Model
     from any_llm.types.moderation import ModerationResponse
+    from any_llm.types.rerank import RerankResponse
     from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
 GATEWAY_HEADER_NAME = "AnyLLM-Key"
@@ -93,6 +95,7 @@ class GatewayProvider(BaseOpenAIProvider):
     SUPPORTS_IMAGE_GENERATION = True
     SUPPORTS_AUDIO_TRANSCRIPTION = True
     SUPPORTS_AUDIO_SPEECH = True
+    SUPPORTS_RERANK = True
 
     def __init__(
         self,
@@ -405,3 +408,56 @@ class GatewayProvider(BaseOpenAIProvider):
                 for item in data.get("results", [])
             ]
         )
+
+    @override
+    async def _arerank(
+        self,
+        model: str,
+        query: str,
+        documents: list[str],
+        **kwargs: Any,
+    ) -> RerankResponse:
+        from any_llm.types.rerank import RerankResponse
+
+        body: dict[str, Any] = {
+            "model": model,
+            "query": query,
+            "documents": documents,
+        }
+        if "top_n" in kwargs and kwargs["top_n"] is not None:
+            body["top_n"] = kwargs["top_n"]
+        if "max_tokens_per_doc" in kwargs and kwargs["max_tokens_per_doc"] is not None:
+            body["max_tokens_per_doc"] = kwargs["max_tokens_per_doc"]
+
+        base_url = str(self.client.base_url).rstrip("/")
+        base_url = base_url.removesuffix("/v1")
+
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if self.client.api_key:
+            headers["Authorization"] = f"Bearer {self.client.api_key}"
+        gateway_key = self.client.default_headers.get(GATEWAY_HEADER_NAME)
+        if gateway_key:
+            headers[GATEWAY_HEADER_NAME] = gateway_key
+
+        url = f"{base_url}/v1/rerank"
+
+        try:
+            async with httpx.AsyncClient() as http_client:
+                resp = await http_client.post(url, json=body, headers=headers, timeout=60.0)
+                resp.raise_for_status()
+                data = resp.json()
+                return RerankResponse.model_validate(data)
+        except httpx.HTTPStatusError as exc:
+            if self.platform_mode:
+                import openai
+
+                raise openai.APIStatusError(
+                    message=str(exc),
+                    response=exc.response,
+                    body=None,
+                ) from exc
+            raise
+        except Exception as exc:
+            if self.platform_mode:
+                self._handle_platform_error(exc)
+            raise

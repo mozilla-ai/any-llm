@@ -1,9 +1,10 @@
 # mypy: disable-error-code="no-untyped-call"
+from __future__ import annotations
+
 import asyncio
 import functools
 import json
-from collections.abc import AsyncIterator, Callable, Iterator, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from typing_extensions import override
 
@@ -11,7 +12,6 @@ from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.logging import logger
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
-from any_llm.types.model import Model
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -25,6 +25,11 @@ try:
     )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+
+    from any_llm.types.model import Model
 
 
 class SagemakerProvider(AnyLLM):
@@ -44,6 +49,7 @@ class SagemakerProvider(AnyLLM):
     SUPPORTS_COMPLETION_PDF = True
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = False
+    SUPPORTS_RERANK = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 

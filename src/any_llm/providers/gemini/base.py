@@ -69,6 +69,7 @@ class GoogleProvider(AnyLLM):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
+    SUPPORTS_RERANK = False
 
     BUILT_IN_TOOLS: ClassVar[list[Any] | None] = [types.Tool]
 

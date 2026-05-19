@@ -1,10 +1,11 @@
 # mypy: disable-error-code="no-untyped-call"
+from __future__ import annotations
+
 import asyncio
 import functools
 import json
 import os
-from collections.abc import AsyncIterator, Callable, Iterator, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from typing_extensions import override
 
@@ -27,6 +28,9 @@ try:
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+
 
 class BedrockProvider(AnyLLM):
     """AWS Bedrock Provider using boto3."""
@@ -45,6 +49,7 @@ class BedrockProvider(AnyLLM):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
+    SUPPORTS_RERANK = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 

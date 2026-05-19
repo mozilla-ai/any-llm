@@ -56,6 +56,7 @@ class PlatformProvider(AnyLLM):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
+    SUPPORTS_RERANK = True
 
     def __init__(
         self,
@@ -660,3 +661,4 @@ class PlatformProvider(AnyLLM):
         self.SUPPORTS_EMBEDDING = provider_class.SUPPORTS_EMBEDDING
         self.SUPPORTS_LIST_MODELS = provider_class.SUPPORTS_LIST_MODELS
         self.SUPPORTS_BATCH = provider_class.SUPPORTS_BATCH
+        self.SUPPORTS_RERANK = provider_class.SUPPORTS_RERANK

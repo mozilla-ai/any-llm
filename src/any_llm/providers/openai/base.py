@@ -60,6 +60,7 @@ class BaseOpenAIProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
     SUPPORTS_IMAGE_GENERATION = False
+    SUPPORTS_RERANK = False
 
     _DEFAULT_REASONING_EFFORT: ReasoningEffort | None = None
 
