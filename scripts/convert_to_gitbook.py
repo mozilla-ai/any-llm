@@ -50,17 +50,6 @@ SUMMARY = """\
 ## Managed Platform
 
 * [Overview](platform/overview.md)
-
-## Gateway
-
-* [Overview](gateway/overview.md)
-* [Quick Start](gateway/quickstart.md)
-* [Authentication](gateway/authentication.md)
-* [Budget Management](gateway/budget-management.md)
-* [Configuration](gateway/configuration.md)
-* [API Reference](gateway/api-reference.md)
-* [Troubleshooting](gateway/troubleshooting.md)
-* [Docker Deployment](gateway/docker-deployment.md)
 """
 
 
@@ -70,7 +59,6 @@ def run_generator(script_name: str) -> None:
 
 def main() -> None:
     for script_name in (
-        "generate_openapi.py",
         "generate_api_docs.py",
         "generate_provider_table.py",
         "generate_cookbooks.py",

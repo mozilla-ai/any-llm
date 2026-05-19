@@ -82,4 +82,4 @@ An async variant `arerank()` is also available with the same signature.
 
 ## Gateway Provider
 
-The gateway provider (`provider="gateway"`) can proxy rerank requests to an upstream server that exposes a `/v1/rerank` endpoint. The gateway provider sends the request via HTTP with correct authentication headers. Note that the any-llm gateway server does not yet expose a `/v1/rerank` route itself.
+The gateway provider (`provider="gateway"`) can proxy rerank requests to an upstream server that exposes a `/v1/rerank` endpoint. The gateway provider sends the request via HTTP with correct authentication headers.
