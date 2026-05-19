@@ -40,10 +40,12 @@ anthropic = []
 
 gemini = [
   "google-genai",
+  "google-cloud-storage",
 ]
 
 vertexai = [
   "google-genai",
+  "google-cloud-storage",
 ]
 
 vertexaianthropic = [
