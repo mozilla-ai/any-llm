@@ -96,7 +96,9 @@ def test_build_redirect_site_replaces_existing_output_and_skips_missing_passthro
     assert not (output_dir / "images").exists()
 
 
-def test_parse_args_and_main_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_parse_args_and_main_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     source_dir = tmp_path / "site"
     output_dir = tmp_path / "custom-output"
     redirect_generator = _load_redirect_generator_module()
