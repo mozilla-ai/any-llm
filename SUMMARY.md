@@ -29,14 +29,3 @@
 ## Managed Platform
 
 * [Overview](platform/overview.md)
-
-## Gateway
-
-* [Overview](gateway/overview.md)
-* [Quick Start](gateway/quickstart.md)
-* [Authentication](gateway/authentication.md)
-* [Budget Management](gateway/budget-management.md)
-* [Configuration](gateway/configuration.md)
-* [API Reference](gateway/api-reference.md)
-* [Troubleshooting](gateway/troubleshooting.md)
-* [Docker Deployment](gateway/docker-deployment.md)
