@@ -11,8 +11,11 @@ from any_llm.types.completion import (
     ChatCompletionMessageFunctionToolCall,
     Choice,
     CompletionUsage,
+    CreateEmbeddingResponse,
+    Embedding,
     Function,
     Reasoning,
+    Usage,
 )
 from any_llm.types.model import Model
 from any_llm.types.rerank import RerankMeta, RerankResponse, RerankResult, RerankUsage
@@ -260,6 +263,27 @@ def _convert_cohere_rerank_response(response: Any) -> RerankResponse:
         results=results,
         meta=meta,
         usage=usage,
+    )
+
+
+def _convert_cohere_embedding_response(response: Any) -> CreateEmbeddingResponse:
+    """Convert a Cohere EmbedByTypeResponse to an OpenAI CreateEmbeddingResponse."""
+    embeddings_data = response.embeddings
+    vectors: list[list[float]] = getattr(embeddings_data, "float_", None) or []
+
+    openai_embeddings = [Embedding(embedding=vector, index=i, object="embedding") for i, vector in enumerate(vectors)]
+
+    prompt_tokens = 0
+    total_tokens = 0
+    if response.meta and response.meta.tokens:
+        prompt_tokens = int(response.meta.tokens.input_tokens or 0)
+        total_tokens = prompt_tokens
+
+    return CreateEmbeddingResponse(
+        data=openai_embeddings,
+        model=response.id or "cohere",
+        object="list",
+        usage=Usage(prompt_tokens=prompt_tokens, total_tokens=total_tokens),
     )
 
 
