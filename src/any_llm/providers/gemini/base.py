@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.exceptions import BatchNotCompleteError, UnsupportedParameterError
+from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError, UnsupportedParameterError
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -60,6 +60,7 @@ if TYPE_CHECKING:
     )
 
 REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 256, "low": 1024, "medium": 8192, "high": 24576, "xhigh": 32768}
+_SUPPORTED_BATCH_ENDPOINTS = frozenset({"/v1/chat/completions"})
 
 
 class GoogleProvider(AnyLLM):
@@ -334,6 +335,10 @@ class GoogleProvider(AnyLLM):
         """
         import asyncio
 
+        if endpoint not in _SUPPORTED_BATCH_ENDPOINTS:
+            msg = f"Google batch API only supports endpoints: {sorted(_SUPPORTED_BATCH_ENDPOINTS)}, got: '{endpoint}'"
+            raise InvalidRequestError(msg, provider_name=self.PROVIDER_NAME)
+
         dest: str | None = kwargs.pop("dest", None)
         display_name: str | None = kwargs.pop("display_name", None)
         model_override: str | None = kwargs.pop("model", None)
@@ -347,9 +352,20 @@ class GoogleProvider(AnyLLM):
                 continue
             entry = json.loads(line)
             req = _convert_openai_request_to_inlined_request(entry, provider_name=self.PROVIDER_NAME)
+            if model_override:
+                req = types.InlinedRequest(
+                    model=model_override,
+                    contents=req.contents,
+                    config=req.config,
+                    metadata=req.metadata,
+                )
             inlined_requests.append(req)
             if not first_model and req.model:
                 first_model = req.model
+
+        if not first_model:
+            msg = "No model specified: provide a 'model' kwarg or include 'model' in the JSONL request bodies."
+            raise ValueError(msg)
 
         config_kwargs: dict[str, Any] = {}
         if display_name:
@@ -469,7 +485,7 @@ class GoogleProvider(AnyLLM):
 
         client = storage.Client()  # type: ignore[no-untyped-call]
         bucket = client.bucket(bucket_name)  # type: ignore[no-untyped-call]
-        blobs = bucket.list_blobs(prefix=prefix)
+        blobs = sorted(bucket.list_blobs(prefix=prefix), key=lambda b: b.name)
 
         all_lines: list[str] = []
         for blob in blobs:

@@ -554,6 +554,8 @@ def _convert_google_batch_output_to_result(output_lines: list[str]) -> BatchResu
     Each output line is a JSON object containing the prediction result from the
     Gemini/Vertex AI batch inference job.
     """
+    from any_llm.providers.gemini.base import GoogleProvider
+
     results: list[BatchResultItem] = []
     for line in output_lines:
         stripped = line.strip()
@@ -587,8 +589,6 @@ def _convert_google_batch_output_to_result(output_lines: list[str]) -> BatchResu
             try:
                 response = types.GenerateContentResponse.model_validate(response_data)
                 response_dict = _convert_response_to_response_dict(response)
-                from any_llm.providers.gemini.base import GoogleProvider
-
                 item.result = GoogleProvider._convert_completion_response((response_dict, record.get("model", "")))
             except Exception as exc:
                 item.error = BatchResultError(

@@ -813,7 +813,8 @@ def test_read_gcs_output_reads_jsonl_blobs() -> None:
     mock_non_jsonl.name = "results/metadata.txt"
 
     mock_bucket = MagicMock()
-    mock_bucket.list_blobs.return_value = [mock_blob1, mock_non_jsonl, mock_blob2]
+    # Return blobs in non-sorted order to verify sorting is applied
+    mock_bucket.list_blobs.return_value = [mock_blob2, mock_non_jsonl, mock_blob1]
 
     mock_storage_client = MagicMock()
     mock_storage_client.bucket.return_value = mock_bucket
@@ -848,3 +849,117 @@ def test_read_gcs_output_bucket_only_uri() -> None:
     assert lines == []
     mock_storage_client.bucket.assert_called_once_with("my-bucket")
     mock_bucket.list_blobs.assert_called_once_with(prefix="")
+
+
+@pytest.mark.asyncio
+async def test_acreate_batch_unsupported_endpoint() -> None:
+    """Test that an unsupported endpoint raises InvalidRequestError."""
+    pytest.importorskip("google.genai")
+    from any_llm.exceptions import InvalidRequestError
+
+    provider, _mock_client = _create_provider_with_mock_client()
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+        f.write(
+            json.dumps(
+                {
+                    "custom_id": "req-1",
+                    "body": {"model": "gemini-2.5-flash", "messages": [{"role": "user", "content": "Hi"}]},
+                }
+            )
+            + "\n"
+        )
+        tmp_path = f.name
+
+    try:
+        with pytest.raises(InvalidRequestError, match="only supports endpoints"):
+            await provider._acreate_batch(
+                input_file_path=tmp_path,
+                endpoint="/v1/embeddings",
+            )
+    finally:
+        import os
+
+        os.unlink(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_acreate_batch_model_override_applies_to_requests() -> None:
+    """Test that a model override kwarg is applied to all per-request InlinedRequest objects."""
+    pytest.importorskip("google.genai")
+
+    provider, mock_client = _create_provider_with_mock_client()
+
+    mock_result = _make_mock_batch_job(state_value="JOB_STATE_QUEUED")
+    mock_client.aio.batches.create = AsyncMock(return_value=mock_result)
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+        f.write(
+            json.dumps(
+                {
+                    "custom_id": "req-1",
+                    "body": {"model": "gemini-2.5-flash", "messages": [{"role": "user", "content": "Hi"}]},
+                }
+            )
+            + "\n"
+        )
+        f.write(
+            json.dumps(
+                {
+                    "custom_id": "req-2",
+                    "body": {"model": "gemini-2.5-flash", "messages": [{"role": "user", "content": "Hello"}]},
+                }
+            )
+            + "\n"
+        )
+        tmp_path = f.name
+
+    try:
+        await provider._acreate_batch(
+            input_file_path=tmp_path,
+            endpoint="/v1/chat/completions",
+            model="gemini-2.5-pro",
+        )
+
+        call_kwargs = mock_client.aio.batches.create.call_args[1]
+        assert call_kwargs["model"] == "gemini-2.5-pro"
+        for req in call_kwargs["src"]:
+            assert req.model == "gemini-2.5-pro"
+    finally:
+        import os
+
+        os.unlink(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_acreate_batch_no_model_raises() -> None:
+    """Test that a batch with no model in kwargs or JSONL raises ValueError."""
+    pytest.importorskip("google.genai")
+
+    provider, mock_client = _create_provider_with_mock_client()
+
+    mock_result = _make_mock_batch_job(state_value="JOB_STATE_QUEUED")
+    mock_client.aio.batches.create = AsyncMock(return_value=mock_result)
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+        f.write(
+            json.dumps(
+                {
+                    "custom_id": "req-1",
+                    "body": {"messages": [{"role": "user", "content": "Hi"}]},
+                }
+            )
+            + "\n"
+        )
+        tmp_path = f.name
+
+    try:
+        with pytest.raises(ValueError, match="No model specified"):
+            await provider._acreate_batch(
+                input_file_path=tmp_path,
+                endpoint="/v1/chat/completions",
+            )
+    finally:
+        import os
+
+        os.unlink(tmp_path)
