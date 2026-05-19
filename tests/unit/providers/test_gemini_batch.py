@@ -338,26 +338,28 @@ def test_convert_batch_output_success() -> None:
     pytest.importorskip("google.genai")
     from any_llm.providers.gemini.utils import _convert_google_batch_output_to_result
 
-    output_line = json.dumps({
-        "request": {"metadata": {"custom_id": "req-1"}},
-        "response": {
-            "candidates": [
-                {
-                    "content": {
-                        "parts": [{"text": "Hello world!"}],
-                        "role": "model",
-                    },
-                    "finish_reason": "STOP",
-                }
-            ],
-            "usage_metadata": {
-                "prompt_token_count": 10,
-                "candidates_token_count": 5,
-                "total_token_count": 15,
+    output_line = json.dumps(
+        {
+            "request": {"metadata": {"custom_id": "req-1"}},
+            "response": {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [{"text": "Hello world!"}],
+                            "role": "model",
+                        },
+                        "finish_reason": "STOP",
+                    }
+                ],
+                "usage_metadata": {
+                    "prompt_token_count": 10,
+                    "candidates_token_count": 5,
+                    "total_token_count": 15,
+                },
             },
-        },
-        "model": "gemini-2.5-flash",
-    })
+            "model": "gemini-2.5-flash",
+        }
+    )
 
     result = _convert_google_batch_output_to_result([output_line])
     assert len(result.results) == 1
@@ -371,13 +373,15 @@ def test_convert_batch_output_error() -> None:
     pytest.importorskip("google.genai")
     from any_llm.providers.gemini.utils import _convert_google_batch_output_to_result
 
-    output_line = json.dumps({
-        "request": {"metadata": {"custom_id": "req-2"}},
-        "error": {
-            "code": 400,
-            "message": "Invalid request",
-        },
-    })
+    output_line = json.dumps(
+        {
+            "request": {"metadata": {"custom_id": "req-2"}},
+            "error": {
+                "code": 400,
+                "message": "Invalid request",
+            },
+        }
+    )
 
     result = _convert_google_batch_output_to_result([output_line])
     assert len(result.results) == 1
@@ -393,14 +397,16 @@ def test_convert_batch_output_empty_lines_skipped() -> None:
     pytest.importorskip("google.genai")
     from any_llm.providers.gemini.utils import _convert_google_batch_output_to_result
 
-    output_line = json.dumps({
-        "request": {"metadata": {"custom_id": "req-1"}},
-        "response": {
-            "candidates": [{"content": {"parts": [{"text": "Hi"}], "role": "model"}, "finish_reason": "STOP"}],
-            "usage_metadata": {"prompt_token_count": 5, "candidates_token_count": 2, "total_token_count": 7},
-        },
-        "model": "gemini-2.5-flash",
-    })
+    output_line = json.dumps(
+        {
+            "request": {"metadata": {"custom_id": "req-1"}},
+            "response": {
+                "candidates": [{"content": {"parts": [{"text": "Hi"}], "role": "model"}, "finish_reason": "STOP"}],
+                "usage_metadata": {"prompt_token_count": 5, "candidates_token_count": 2, "total_token_count": 7},
+            },
+            "model": "gemini-2.5-flash",
+        }
+    )
 
     result = _convert_google_batch_output_to_result(["", output_line, "", "  "])
     assert len(result.results) == 1
@@ -474,14 +480,16 @@ async def test_acreate_batch() -> None:
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
         f.write(
-            json.dumps({
-                "custom_id": "req-1",
-                "body": {
-                    "model": "gemini-2.5-flash",
-                    "max_tokens": 100,
-                    "messages": [{"role": "user", "content": "Hello"}],
-                },
-            })
+            json.dumps(
+                {
+                    "custom_id": "req-1",
+                    "body": {
+                        "model": "gemini-2.5-flash",
+                        "max_tokens": 100,
+                        "messages": [{"role": "user", "content": "Hello"}],
+                    },
+                }
+            )
             + "\n"
         )
         tmp_path = f.name
@@ -518,13 +526,15 @@ async def test_acreate_batch_with_display_name_and_dest() -> None:
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
         f.write(
-            json.dumps({
-                "custom_id": "req-1",
-                "body": {
-                    "model": "gemini-2.5-flash",
-                    "messages": [{"role": "user", "content": "Hi"}],
-                },
-            })
+            json.dumps(
+                {
+                    "custom_id": "req-1",
+                    "body": {
+                        "model": "gemini-2.5-flash",
+                        "messages": [{"role": "user", "content": "Hi"}],
+                    },
+                }
+            )
             + "\n"
         )
         tmp_path = f.name
@@ -561,10 +571,12 @@ async def test_acreate_batch_empty_lines_skipped() -> None:
     with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
         f.write("\n")
         f.write(
-            json.dumps({
-                "custom_id": "req-1",
-                "body": {"model": "gemini-2.5-flash", "messages": [{"role": "user", "content": "Hi"}]},
-            })
+            json.dumps(
+                {
+                    "custom_id": "req-1",
+                    "body": {"model": "gemini-2.5-flash", "messages": [{"role": "user", "content": "Hi"}]},
+                }
+            )
             + "\n"
         )
         f.write("\n")
@@ -648,13 +660,14 @@ async def test_alist_batches_with_pagination() -> None:
 
     mock_client.aio.batches.list = AsyncMock(return_value=_MockAsyncPager([]))
 
-    await provider._alist_batches(limit=5, after="next-page-token")
+    cursor = "cursor-abc123"
+    await provider._alist_batches(limit=5, after=cursor)
 
     call_kwargs = mock_client.aio.batches.list.call_args[1]
     config = call_kwargs["config"]
     assert isinstance(config, types.ListBatchJobsConfig)
     assert config.page_size == 5
-    assert config.page_token == "next-page-token"
+    assert config.page_token == cursor
 
 
 @pytest.mark.asyncio
@@ -701,16 +714,16 @@ async def test_aretrieve_batch_results_completed() -> None:
     )
     mock_client.aio.batches.get = AsyncMock(return_value=mock_job)
 
-    output_line = json.dumps({
-        "request": {"metadata": {"custom_id": "req-1"}},
-        "response": {
-            "candidates": [
-                {"content": {"parts": [{"text": "Hello!"}], "role": "model"}, "finish_reason": "STOP"}
-            ],
-            "usage_metadata": {"prompt_token_count": 10, "candidates_token_count": 5, "total_token_count": 15},
-        },
-        "model": "gemini-2.5-flash",
-    })
+    output_line = json.dumps(
+        {
+            "request": {"metadata": {"custom_id": "req-1"}},
+            "response": {
+                "candidates": [{"content": {"parts": [{"text": "Hello!"}], "role": "model"}, "finish_reason": "STOP"}],
+                "usage_metadata": {"prompt_token_count": 10, "candidates_token_count": 5, "total_token_count": 15},
+            },
+            "model": "gemini-2.5-flash",
+        }
+    )
 
     with patch.object(provider, "_read_gcs_output", return_value=[output_line]):
         result = await provider._aretrieve_batch_results("batches/done-123")
@@ -734,18 +747,22 @@ async def test_aretrieve_batch_results_partially_succeeded() -> None:
     )
     mock_client.aio.batches.get = AsyncMock(return_value=mock_job)
 
-    success_line = json.dumps({
-        "request": {"metadata": {"custom_id": "req-1"}},
-        "response": {
-            "candidates": [{"content": {"parts": [{"text": "OK"}], "role": "model"}, "finish_reason": "STOP"}],
-            "usage_metadata": {"prompt_token_count": 5, "candidates_token_count": 2, "total_token_count": 7},
-        },
-        "model": "gemini-2.5-flash",
-    })
-    error_line = json.dumps({
-        "request": {"metadata": {"custom_id": "req-2"}},
-        "error": {"code": 500, "message": "Internal error"},
-    })
+    success_line = json.dumps(
+        {
+            "request": {"metadata": {"custom_id": "req-1"}},
+            "response": {
+                "candidates": [{"content": {"parts": [{"text": "OK"}], "role": "model"}, "finish_reason": "STOP"}],
+                "usage_metadata": {"prompt_token_count": 5, "candidates_token_count": 2, "total_token_count": 7},
+            },
+            "model": "gemini-2.5-flash",
+        }
+    )
+    error_line = json.dumps(
+        {
+            "request": {"metadata": {"custom_id": "req-2"}},
+            "error": {"code": 500, "message": "Internal error"},
+        }
+    )
 
     with patch.object(provider, "_read_gcs_output", return_value=[success_line, error_line]):
         result = await provider._aretrieve_batch_results("batches/partial-123")
@@ -774,3 +791,60 @@ def test_read_gcs_output_invalid_uri() -> None:
 
     with pytest.raises(ValueError, match="Expected a GCS URI"):
         GoogleProvider._read_gcs_output("s3://wrong-scheme/output/")
+
+
+def test_read_gcs_output_reads_jsonl_blobs() -> None:
+    """Test that _read_gcs_output reads and concatenates JSONL blobs from GCS."""
+    pytest.importorskip("google.genai")
+    pytest.importorskip("google.cloud.storage")
+    from google.cloud import storage
+
+    from any_llm.providers.gemini.base import GoogleProvider
+
+    mock_blob1 = MagicMock()
+    mock_blob1.name = "results/output-001.jsonl"
+    mock_blob1.download_as_text.return_value = '{"id": 1}\n{"id": 2}'
+
+    mock_blob2 = MagicMock()
+    mock_blob2.name = "results/output-002.jsonl"
+    mock_blob2.download_as_text.return_value = '{"id": 3}'
+
+    mock_non_jsonl = MagicMock()
+    mock_non_jsonl.name = "results/metadata.txt"
+
+    mock_bucket = MagicMock()
+    mock_bucket.list_blobs.return_value = [mock_blob1, mock_non_jsonl, mock_blob2]
+
+    mock_storage_client = MagicMock()
+    mock_storage_client.bucket.return_value = mock_bucket
+
+    with patch.object(storage, "Client", return_value=mock_storage_client):
+        lines = GoogleProvider._read_gcs_output("gs://my-bucket/results/")
+
+    assert len(lines) == 3
+    assert lines[0] == '{"id": 1}'
+    assert lines[1] == '{"id": 2}'
+    assert lines[2] == '{"id": 3}'
+    mock_bucket.list_blobs.assert_called_once_with(prefix="results/")
+
+
+def test_read_gcs_output_bucket_only_uri() -> None:
+    """Test _read_gcs_output with a bucket-only GCS URI (no prefix)."""
+    pytest.importorskip("google.genai")
+    pytest.importorskip("google.cloud.storage")
+    from google.cloud import storage
+
+    from any_llm.providers.gemini.base import GoogleProvider
+
+    mock_bucket = MagicMock()
+    mock_bucket.list_blobs.return_value = []
+
+    mock_storage_client = MagicMock()
+    mock_storage_client.bucket.return_value = mock_bucket
+
+    with patch.object(storage, "Client", return_value=mock_storage_client):
+        lines = GoogleProvider._read_gcs_output("gs://my-bucket")
+
+    assert lines == []
+    mock_storage_client.bucket.assert_called_once_with("my-bucket")
+    mock_bucket.list_blobs.assert_called_once_with(prefix="")
