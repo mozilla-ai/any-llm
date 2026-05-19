@@ -1,15 +1,25 @@
-import subprocess
-import sys
+import importlib.util
 from pathlib import Path
-
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "generate_github_pages_redirects.py"
 
 
+def _load_redirect_generator_module() -> Any:
+    spec = importlib.util.spec_from_file_location("generate_github_pages_redirects", SCRIPT_PATH)
+    assert spec is not None
+    assert spec.loader is not None
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_generate_github_pages_redirects(tmp_path: Path) -> None:
     source_dir = tmp_path / "site"
     output_dir = tmp_path / "gh-pages-redirect"
+    redirect_generator = _load_redirect_generator_module()
 
     (source_dir / "api").mkdir(parents=True)
     (source_dir / "gateway").mkdir(parents=True)
@@ -24,19 +34,11 @@ def test_generate_github_pages_redirects(tmp_path: Path) -> None:
     (source_dir / "llms.txt").write_text("llms\n", encoding="utf-8")
     (source_dir / "images" / "logo.png").write_bytes(b"png")
 
-    subprocess.run(
-        [
-            sys.executable,
-            str(SCRIPT_PATH),
-            "--source-dir",
-            str(source_dir),
-            "--output-dir",
-            str(output_dir),
-        ],
-        check=True,
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
+    redirect_count = redirect_generator.build_redirect_site(
+        source_dir=source_dir,
+        output_dir=output_dir,
+        base_url=redirect_generator.DEFAULT_BASE_URL,
+        pages_base_path=redirect_generator.DEFAULT_PAGES_BASE_PATH,
     )
 
     root_redirect = (output_dir / "index.html").read_text(encoding="utf-8")
@@ -44,9 +46,10 @@ def test_generate_github_pages_redirects(tmp_path: Path) -> None:
     alias_redirect = (output_dir / "api" / "any_llm" / "index.html").read_text(encoding="utf-8")
     not_found_redirect = (output_dir / "404.html").read_text(encoding="utf-8")
 
-    assert 'https://docs.mozilla.ai/any-llm/' in root_redirect
-    assert 'https://docs.mozilla.ai/any-llm/quickstart/' in quickstart_redirect
-    assert 'https://docs.mozilla.ai/any-llm/api/any-llm/' in alias_redirect
+    assert redirect_count > 0
+    assert "https://docs.mozilla.ai/any-llm/" in root_redirect
+    assert "https://docs.mozilla.ai/any-llm/quickstart/" in quickstart_redirect
+    assert "https://docs.mozilla.ai/any-llm/api/any-llm/" in alias_redirect
     assert (output_dir / "quickstart.html").exists()
     assert not (output_dir / "SUMMARY.html").exists()
     assert (output_dir / ".nojekyll").exists()

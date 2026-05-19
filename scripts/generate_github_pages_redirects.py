@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Build a redirect-only GitHub Pages site for legacy any-llm docs URLs.
 
 Usage:
