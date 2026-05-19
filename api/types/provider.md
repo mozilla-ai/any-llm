@@ -32,6 +32,7 @@ A Pydantic `BaseModel` containing provider information and feature flags.
 | `image_generation` | `bool` |  |
 | `audio_transcription` | `bool` |  |
 | `audio_speech` | `bool` |  |
+| `rerank` | `bool` |  |
 
 ## Usage
 
