@@ -103,7 +103,8 @@ class CohereProvider(AnyLLM):
     @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Convert Cohere EmbedByTypeResponse to OpenAI CreateEmbeddingResponse."""
-        return _convert_cohere_embedding_response(response)
+        model = response.get("model", "cohere")
+        return _convert_cohere_embedding_response(model, response["result"])
 
     @override
     async def _aembedding(
@@ -113,8 +114,9 @@ class CohereProvider(AnyLLM):
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
-        response = await self.client.embed(model=model, **embedding_kwargs)
-        return self._convert_embedding_response(response)
+        result = await self.client.embed(model=model, **embedding_kwargs)
+        response_data = {"model": model, "result": result}
+        return self._convert_embedding_response(response_data)
 
     @staticmethod
     @override

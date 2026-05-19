@@ -266,10 +266,21 @@ def _convert_cohere_rerank_response(response: Any) -> RerankResponse:
     )
 
 
-def _convert_cohere_embedding_response(response: Any) -> CreateEmbeddingResponse:
+_EMBEDDING_TYPE_FIELDS = ("float_", "int8", "uint8", "binary", "ubinary")
+
+
+def _extract_vectors(embeddings_data: Any) -> list[list[float]]:
+    """Return the first non-empty embedding vectors from a Cohere EmbedByTypeResponseEmbeddings."""
+    for field in _EMBEDDING_TYPE_FIELDS:
+        vectors = getattr(embeddings_data, field, None)
+        if vectors:
+            return [[float(v) for v in vec] for vec in vectors]
+    return []
+
+
+def _convert_cohere_embedding_response(model: str, response: Any) -> CreateEmbeddingResponse:
     """Convert a Cohere EmbedByTypeResponse to an OpenAI CreateEmbeddingResponse."""
-    embeddings_data = response.embeddings
-    vectors: list[list[float]] = getattr(embeddings_data, "float_", None) or []
+    vectors = _extract_vectors(response.embeddings)
 
     openai_embeddings = [Embedding(embedding=vector, index=i, object="embedding") for i, vector in enumerate(vectors)]
 
@@ -281,7 +292,7 @@ def _convert_cohere_embedding_response(response: Any) -> CreateEmbeddingResponse
 
     return CreateEmbeddingResponse(
         data=openai_embeddings,
-        model=response.id or "cohere",
+        model=model,
         object="list",
         usage=Usage(prompt_tokens=prompt_tokens, total_tokens=total_tokens),
     )

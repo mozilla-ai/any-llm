@@ -350,15 +350,21 @@ def test_streaming_tool_call_index_defaults_to_zero_when_none() -> None:
 
 
 def _mock_embed_by_type_response(
-    vectors: list[list[float]],
+    vectors: list[list[float]] | None = None,
+    *,
+    int8_vectors: list[list[int]] | None = None,
     input_tokens: int = 10,
     response_id: str = "emb-123",
 ) -> Mock:
     """Create a mock Cohere EmbedByTypeResponse."""
     response = Mock()
     response.id = response_id
-    response.embeddings = Mock()
+    response.embeddings = Mock(spec=[])
     response.embeddings.float_ = vectors
+    response.embeddings.int8 = int8_vectors
+    response.embeddings.uint8 = None
+    response.embeddings.binary = None
+    response.embeddings.ubinary = None
     response.meta = Mock()
     response.meta.tokens = Mock()
     response.meta.tokens.input_tokens = input_tokens
@@ -369,9 +375,10 @@ def test_convert_cohere_embedding_response_single_vector() -> None:
     vectors = [[0.1, 0.2, 0.3]]
     mock_response = _mock_embed_by_type_response(vectors, input_tokens=5)
 
-    result = _convert_cohere_embedding_response(mock_response)
+    result = _convert_cohere_embedding_response("embed-v4.0", mock_response)
 
     assert isinstance(result, CreateEmbeddingResponse)
+    assert result.model == "embed-v4.0"
     assert len(result.data) == 1
     assert result.data[0].embedding == [0.1, 0.2, 0.3]
     assert result.data[0].index == 0
@@ -385,8 +392,9 @@ def test_convert_cohere_embedding_response_multiple_vectors() -> None:
     vectors = [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]]
     mock_response = _mock_embed_by_type_response(vectors, input_tokens=15)
 
-    result = _convert_cohere_embedding_response(mock_response)
+    result = _convert_cohere_embedding_response("embed-v4.0", mock_response)
 
+    assert result.model == "embed-v4.0"
     assert len(result.data) == 3
     for i, embedding in enumerate(result.data):
         assert embedding.index == i
@@ -399,8 +407,9 @@ def test_convert_cohere_embedding_response_no_meta() -> None:
     mock_response = _mock_embed_by_type_response(vectors)
     mock_response.meta = None
 
-    result = _convert_cohere_embedding_response(mock_response)
+    result = _convert_cohere_embedding_response("embed-v4.0", mock_response)
 
+    assert result.model == "embed-v4.0"
     assert result.usage.prompt_tokens == 0
     assert result.usage.total_tokens == 0
     assert len(result.data) == 1
@@ -409,10 +418,21 @@ def test_convert_cohere_embedding_response_no_meta() -> None:
 def test_convert_cohere_embedding_response_empty_vectors() -> None:
     mock_response = _mock_embed_by_type_response(vectors=[])
 
-    result = _convert_cohere_embedding_response(mock_response)
+    result = _convert_cohere_embedding_response("embed-v4.0", mock_response)
 
     assert len(result.data) == 0
     assert result.object == "list"
+
+
+def test_convert_cohere_embedding_response_falls_back_to_int8() -> None:
+    """When float_ is empty but int8 has data, int8 vectors are returned as floats."""
+    mock_response = _mock_embed_by_type_response(vectors=None, int8_vectors=[[1, 2, 3], [4, 5, 6]])
+
+    result = _convert_cohere_embedding_response("embed-v4.0", mock_response)
+
+    assert len(result.data) == 2
+    assert result.data[0].embedding == [1.0, 2.0, 3.0]
+    assert result.data[1].embedding == [4.0, 5.0, 6.0]
 
 
 def test_convert_embedding_params_single_string() -> None:
@@ -481,6 +501,7 @@ async def test_aembedding_calls_client() -> None:
         result = await provider._aembedding("embed-v4.0", "hello world")
 
         assert isinstance(result, CreateEmbeddingResponse)
+        assert result.model == "embed-v4.0"
         assert len(result.data) == 1
         mock_client.embed.assert_called_once()
         call_kwargs = mock_client.embed.call_args[1]
