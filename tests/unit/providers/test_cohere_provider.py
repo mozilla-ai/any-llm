@@ -363,8 +363,6 @@ def _mock_embed_by_type_response(
     response.embeddings.float_ = vectors
     response.embeddings.int8 = int8_vectors
     response.embeddings.uint8 = None
-    response.embeddings.binary = None
-    response.embeddings.ubinary = None
     response.meta = Mock()
     response.meta.tokens = Mock()
     response.meta.tokens.input_tokens = input_tokens
