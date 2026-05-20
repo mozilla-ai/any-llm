@@ -11,8 +11,11 @@ from any_llm.types.completion import (
     ChatCompletionMessageFunctionToolCall,
     Choice,
     CompletionUsage,
+    CreateEmbeddingResponse,
+    Embedding,
     Function,
     Reasoning,
+    Usage,
 )
 from any_llm.types.model import Model
 from any_llm.types.rerank import RerankMeta, RerankResponse, RerankResult, RerankUsage
@@ -260,6 +263,41 @@ def _convert_cohere_rerank_response(response: Any) -> RerankResponse:
         results=results,
         meta=meta,
         usage=usage,
+    )
+
+
+_EMBEDDING_TYPE_FIELDS = ("float_", "int8", "uint8", "binary", "ubinary")
+
+
+def _extract_vectors(embeddings_data: Any) -> list[list[float]]:
+    """Return the first non-empty embedding vectors from a Cohere EmbedByTypeResponseEmbeddings.
+
+    Integer-typed fields (int8, uint8, binary, ubinary) are cast to float.
+    """
+    for field in _EMBEDDING_TYPE_FIELDS:
+        vectors = getattr(embeddings_data, field, None)
+        if vectors:
+            return [[float(v) for v in vec] for vec in vectors]
+    return []
+
+
+def _convert_cohere_embedding_response(model: str, response: Any) -> CreateEmbeddingResponse:
+    """Convert a Cohere EmbedByTypeResponse to an OpenAI CreateEmbeddingResponse."""
+    vectors = _extract_vectors(response.embeddings)
+
+    openai_embeddings = [Embedding(embedding=vector, index=i, object="embedding") for i, vector in enumerate(vectors)]
+
+    prompt_tokens = 0
+    total_tokens = 0
+    if response.meta and response.meta.tokens:
+        prompt_tokens = int(response.meta.tokens.input_tokens or 0)
+        total_tokens = prompt_tokens
+
+    return CreateEmbeddingResponse(
+        data=openai_embeddings,
+        model=model,
+        object="list",
+        usage=Usage(prompt_tokens=prompt_tokens, total_tokens=total_tokens),
     )
 
 

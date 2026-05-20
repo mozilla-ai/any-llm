@@ -110,6 +110,7 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.SAMBANOVA: "Meta-Llama-3.1-8B-Instruct",
         LLMProvider.MISTRAL: "mistral-embed",
         LLMProvider.BEDROCK: "amazon.titan-embed-text-v2:0",
+        LLMProvider.COHERE: "embed-v4.0",
         LLMProvider.SAGEMAKER: "<sagemaker_endpoint_name>",
         LLMProvider.OLLAMA: "gpt-oss:20b",
         LLMProvider.LLAMAFILE: "N/A",

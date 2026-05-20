@@ -14,6 +14,7 @@ try:
     from cohere import V2ChatResponse
 
     from .utils import (
+        _convert_cohere_embedding_response,
         _convert_cohere_rerank_response,
         _convert_models_list,
         _convert_response,
@@ -43,9 +44,9 @@ class CohereProvider(AnyLLM):
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
-    SUPPORTS_COMPLETION_IMAGE = False
+    SUPPORTS_COMPLETION_IMAGE = True
     SUPPORTS_COMPLETION_PDF = False
-    SUPPORTS_EMBEDDING = False
+    SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
     SUPPORTS_RERANK = True
@@ -84,16 +85,38 @@ class CohereProvider(AnyLLM):
     @staticmethod
     @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
-        """Convert embedding parameters for Cohere."""
-        msg = "Cohere does not support embeddings"
-        raise NotImplementedError(msg)
+        """Convert embedding parameters for Cohere.
+
+        Cohere requires ``input_type`` (one of ``search_document``,
+        ``search_query``, ``classification``, ``clustering``, ``image``).
+        Callers may pass it via **kwargs; the default is ``search_document``.
+        """
+        if isinstance(params, str):
+            params = [params]
+        converted: dict[str, Any] = {"texts": params}
+        converted["input_type"] = kwargs.pop("input_type", "search_document")
+        converted["embedding_types"] = kwargs.pop("embedding_types", ["float"])
+        converted.update(kwargs)
+        return converted
 
     @staticmethod
     @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
-        """Convert Cohere embedding response to OpenAI format."""
-        msg = "Cohere does not support embeddings"
-        raise NotImplementedError(msg)
+        """Convert Cohere EmbedByTypeResponse to OpenAI CreateEmbeddingResponse."""
+        model = response.get("model", "cohere")
+        return _convert_cohere_embedding_response(model, response["result"])
+
+    @override
+    async def _aembedding(
+        self,
+        model: str,
+        inputs: str | list[str],
+        **kwargs: Any,
+    ) -> CreateEmbeddingResponse:
+        embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
+        result = await self.client.embed(model=model, **embedding_kwargs)
+        response_data = {"model": model, "result": result}
+        return self._convert_embedding_response(response_data)
 
     @staticmethod
     @override
