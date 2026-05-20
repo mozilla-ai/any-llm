@@ -266,17 +266,15 @@ def _convert_cohere_rerank_response(response: Any) -> RerankResponse:
     )
 
 
-_NUMERIC_EMBEDDING_FIELDS = ("float_", "int8", "uint8")
+_EMBEDDING_TYPE_FIELDS = ("float_", "int8", "uint8", "binary", "ubinary")
 
 
 def _extract_vectors(embeddings_data: Any) -> list[list[float]]:
-    """Return the first non-empty numeric embedding vectors from a Cohere EmbedByTypeResponseEmbeddings.
+    """Return the first non-empty embedding vectors from a Cohere EmbedByTypeResponseEmbeddings.
 
-    Only ``float_``, ``int8``, and ``uint8`` are considered. The ``binary``
-    and ``ubinary`` fields are packed bit arrays and cannot be meaningfully
-    converted to float vectors.
+    Integer-typed fields (int8, uint8, binary, ubinary) are cast to float.
     """
-    for field in _NUMERIC_EMBEDDING_FIELDS:
+    for field in _EMBEDDING_TYPE_FIELDS:
         vectors = getattr(embeddings_data, field, None)
         if vectors:
             return [[float(v) for v in vec] for vec in vectors]
