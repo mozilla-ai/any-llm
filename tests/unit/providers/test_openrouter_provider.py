@@ -264,8 +264,12 @@ def test_openrouter_remaps_max_tokens_to_max_completion_tokens() -> None:
     assert result["max_completion_tokens"] == 8192
 
 
-def _make_openrouter_model(**overrides: object) -> SimpleNamespace:
-    """Build a fake model object resembling what the OpenAI SDK constructs from an OpenRouter response."""
+def _make_openrouter_model(**overrides: object) -> Model:
+    """Build a fake model object resembling what the OpenAI SDK constructs from an OpenRouter response.
+
+    Uses ``Model.model_construct`` to match how the OpenAI SDK actually builds
+    model objects from raw API responses, including extra OpenRouter fields.
+    """
     defaults: dict[str, object] = {
         "id": "qwen/qwen3.7-max",
         "created": 1779376861,
@@ -273,7 +277,7 @@ def _make_openrouter_model(**overrides: object) -> SimpleNamespace:
         "owned_by": None,
     }
     defaults.update(overrides)
-    return SimpleNamespace(**defaults)
+    return Model.model_construct(**defaults)  # type: ignore[arg-type]
 
 
 def test_convert_models_list_fills_missing_object_and_owned_by() -> None:
@@ -349,3 +353,22 @@ def test_list_models_returns_valid_model_objects(mock_openai_class: MagicMock) -
     assert result[0].owned_by == "openrouter"
     assert result[1].id == "anthropic/claude-3.5-sonnet"
     assert result[1].owned_by == "anthropic"
+
+
+def test_convert_models_list_preserves_extra_openrouter_fields() -> None:
+    """Extra OpenRouter attributes (name, pricing, etc.) survive conversion."""
+    model = _make_openrouter_model(
+        name="Qwen3.7 Max",
+        pricing={"prompt": "0.001", "completion": "0.002"},
+    )
+    response = SimpleNamespace(data=[model])
+    result = _convert_models_list(response)
+
+    assert len(result) == 1
+    converted = result[0]
+    assert converted.id == "qwen/qwen3.7-max"
+    assert converted.object == "model"
+    assert converted.owned_by == "openrouter"
+    assert converted.model_extra is not None
+    assert converted.model_extra["name"] == "Qwen3.7 Max"
+    assert converted.model_extra["pricing"] == {"prompt": "0.001", "completion": "0.002"}

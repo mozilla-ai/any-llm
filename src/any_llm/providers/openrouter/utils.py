@@ -48,20 +48,22 @@ def _convert_models_list(response: Any) -> Sequence[Model]:
     OpenRouter's ``/api/v1/models`` endpoint omits the ``object`` and
     ``owned_by`` fields that the OpenAI ``Model`` schema requires. The OpenAI
     SDK silently accepts those missing fields via ``model_construct()``, but the
-    resulting objects fail round-trip serialization. This function rebuilds each
-    model with proper defaults so downstream consumers always receive
-    spec-compliant ``Model`` instances.
+    resulting objects fail round-trip serialization. This function fills the
+    missing required fields while preserving any extra OpenRouter attributes
+    (e.g. ``name``, ``pricing``) that may already be present on the SDK objects.
     """
     raw_models = response.data if hasattr(response, "data") else response
-    return [
-        Model(
-            id=model.id,
-            created=model.created if model.created is not None else 0,
-            object="model",
-            owned_by=model.owned_by if model.owned_by is not None else "openrouter",
-        )
-        for model in raw_models
-    ]
+    result: list[Model] = []
+    for model in raw_models:
+        data: dict[str, Any] = model.model_dump() if hasattr(model, "model_dump") else dict(vars(model))
+        if data.get("object") is None:
+            data["object"] = "model"
+        if data.get("owned_by") is None:
+            data["owned_by"] = "openrouter"
+        if data.get("created") is None:
+            data["created"] = 0
+        result.append(Model.model_validate(data))
+    return result
 
 
 def _normalize_reasoning_obj(obj: Any) -> dict[str, Any]:
