@@ -78,13 +78,6 @@ class AzureProvider(AnyLLM):
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
-        if not api_base:
-            msg = (
-                "For Azure, api_base is required. Check your deployment page for a URL like this - "
-                "https://<model-deployment-name>.<region>.models.ai.azure.com"
-            )
-            raise ValueError(msg)
-
         token_credential: AsyncTokenCredential | None = kwargs.pop("credential", None)
 
         if token_credential is not None:
@@ -93,6 +86,13 @@ class AzureProvider(AnyLLM):
             credential = AzureKeyCredential(api_key)
         else:
             raise MissingApiKeyError(self.PROVIDER_NAME, self.ENV_API_KEY_NAME)
+
+        if not api_base:
+            msg = (
+                "For Azure, api_base is required. Check your deployment page for a URL like this - "
+                "https://<model-deployment-name>.<region>.models.ai.azure.com"
+            )
+            raise ValueError(msg)
 
         self.chat_client = aio.ChatCompletionsClient(
             endpoint=api_base,
