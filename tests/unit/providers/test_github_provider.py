@@ -27,7 +27,13 @@ def test_github_provider_attributes() -> None:
     assert provider.SUPPORTS_BATCH is False
 
 
-def test_github_remaps_max_completion_tokens_to_max_tokens() -> None:
+def test_github_max_tokens_stays_as_max_tokens_in_payload() -> None:
+    """max_tokens in CompletionParams flows through as max_tokens in the final payload.
+
+    BaseOpenAIProvider first remaps max_tokens to max_completion_tokens, then
+    GithubProvider remaps it back to max_tokens because the GitHub API only
+    accepts max_tokens.
+    """
     params = CompletionParams(
         model_id="openai/gpt-4.1-nano",
         messages=[{"role": "user", "content": "Hello"}],
@@ -38,7 +44,8 @@ def test_github_remaps_max_completion_tokens_to_max_tokens() -> None:
     assert result["max_tokens"] == 1024
 
 
-def test_github_preserves_max_tokens_when_no_max_completion_tokens() -> None:
+def test_github_no_max_tokens_produces_no_max_token_fields() -> None:
+    """When no max_tokens is provided, neither max_tokens nor max_completion_tokens appear."""
     params = CompletionParams(
         model_id="openai/gpt-4.1-nano",
         messages=[{"role": "user", "content": "Hello"}],
@@ -101,6 +108,40 @@ def test_github_convert_list_models_response_non_list() -> None:
     assert models == []
 
 
+def test_github_convert_list_models_response_skips_non_dict_entries() -> None:
+    catalog_data = [
+        {"id": "openai/gpt-4.1", "publisher": "OpenAI"},
+        "not-a-dict",
+        42,
+        {"id": "meta/llama-3-70b", "publisher": "Meta"},
+    ]
+    models = GithubProvider._convert_list_models_response(catalog_data)
+    assert len(models) == 2
+    assert models[0].id == "openai/gpt-4.1"
+    assert models[1].id == "meta/llama-3-70b"
+
+
+def test_github_convert_list_models_response_skips_entries_missing_id() -> None:
+    catalog_data = [
+        {"id": "openai/gpt-4.1", "publisher": "OpenAI"},
+        {"name": "No ID model", "publisher": "Unknown"},
+        {"id": "", "publisher": "Empty"},
+    ]
+    models = GithubProvider._convert_list_models_response(catalog_data)
+    assert len(models) == 1
+    assert models[0].id == "openai/gpt-4.1"
+
+
+def test_github_catalog_url_derived_from_default_base() -> None:
+    provider = GithubProvider(api_key="test-key")
+    assert provider._get_catalog_url() == "https://models.github.ai/catalog/models"
+
+
+def test_github_catalog_url_derived_from_custom_base() -> None:
+    provider = GithubProvider(api_key="test-key", api_base="https://custom.host/inference")
+    assert provider._get_catalog_url() == "https://custom.host/catalog/models"
+
+
 def test_github_model_id_split() -> None:
     provider_enum, model_name = AnyLLM.split_model_provider("github:openai/gpt-4.1")
     assert provider_enum == LLMProvider.GITHUB
@@ -137,6 +178,7 @@ async def test_github_alist_models() -> None:
         headers = call_args[1]["headers"]
         assert headers["Authorization"] == "Bearer test-token"
         assert headers["Accept"] == "application/vnd.github+json"
+        assert call_args[1]["timeout"] == 60.0
 
         assert len(models) == 1
         assert models[0].id == "openai/gpt-4.1-nano"

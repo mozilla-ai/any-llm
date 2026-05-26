@@ -1,5 +1,7 @@
+import logging
 from collections.abc import Sequence
 from typing import Any
+from urllib.parse import urljoin
 
 import httpx
 from typing_extensions import override
@@ -7,6 +9,11 @@ from typing_extensions import override
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.completion import CompletionParams
 from any_llm.types.model import Model
+
+logger = logging.getLogger(__name__)
+
+CATALOG_PATH = "/catalog/models"
+DEFAULT_TIMEOUT = 60.0
 
 
 class GithubProvider(BaseOpenAIProvider):
@@ -18,7 +25,6 @@ class GithubProvider(BaseOpenAIProvider):
     """
 
     API_BASE = "https://models.github.ai/inference"
-    CATALOG_URL = "https://models.github.ai/catalog/models"
     ENV_API_KEY_NAME = "GITHUB_TOKEN"
     ENV_API_BASE_NAME = "GITHUB_MODELS_API_BASE"
     PROVIDER_NAME = "github"
@@ -44,6 +50,17 @@ class GithubProvider(BaseOpenAIProvider):
             converted_params["max_tokens"] = converted_params.pop("max_completion_tokens")
         return converted_params
 
+    def _get_catalog_url(self) -> str:
+        """Derive the catalog URL from the configured base URL.
+
+        The catalog endpoint lives at ``/catalog/models`` on the same origin
+        as the inference base URL, so we strip the path from ``base_url``
+        and append the catalog path.
+        """
+        base = str(self.client.base_url).rstrip("/")
+        origin = base.split("/inference")[0] if "/inference" in base else base
+        return urljoin(origin + "/", CATALOG_PATH.lstrip("/"))
+
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         """Fetch available models from the GitHub Models catalog.
@@ -52,14 +69,14 @@ class GithubProvider(BaseOpenAIProvider):
         the inference base URL, so we call it directly with ``httpx``
         instead of going through the OpenAI client.
         """
-        catalog_url = self.CATALOG_URL
+        catalog_url = self._get_catalog_url()
         headers = {
             "Authorization": f"Bearer {self.client.api_key}",
             "Accept": "application/vnd.github+json",
         }
 
         async with httpx.AsyncClient() as http_client:
-            response = await http_client.get(catalog_url, headers=headers)
+            response = await http_client.get(catalog_url, headers=headers, timeout=DEFAULT_TIMEOUT)
             response.raise_for_status()
             data = response.json()
 
@@ -72,13 +89,21 @@ class GithubProvider(BaseOpenAIProvider):
 
         The catalog returns objects with ``id``, ``name``, ``publisher``, etc.
         We map ``id`` to ``Model.id`` and ``publisher`` to ``Model.owned_by``.
+        Malformed entries (non-dict or missing ``id``) are skipped with a warning.
         """
         models: list[Model] = []
         items = response if isinstance(response, list) else []
         for item in items:
+            if not isinstance(item, dict):
+                logger.warning("Skipping non-dict catalog entry: %s", type(item).__name__)
+                continue
+            model_id = item.get("id")
+            if not model_id:
+                logger.warning("Skipping catalog entry with missing 'id': %s", item)
+                continue
             models.append(
                 Model(
-                    id=item["id"],
+                    id=model_id,
                     created=0,
                     object="model",
                     owned_by=item.get("publisher", "unknown"),
