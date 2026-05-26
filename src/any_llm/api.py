@@ -1513,7 +1513,7 @@ def retrieve_batch_results(
     """Retrieve the results of a completed batch job.
 
     Args:
-        provider: Provider name (e.g., 'openai', 'mistral', 'anthropic', 'gateway')
+        provider: Provider name (e.g., 'openai', 'mistral', 'anthropic', 'otari')
         batch_id: The ID of the batch to retrieve results for.
         api_key: API key for the provider
         api_base: Base URL for the provider API
@@ -1540,7 +1540,7 @@ async def aretrieve_batch_results(
     """Retrieve the results of a completed batch job asynchronously.
 
     Args:
-        provider: Provider name (e.g., 'openai', 'mistral', 'anthropic', 'gateway')
+        provider: Provider name (e.g., 'openai', 'mistral', 'anthropic', 'otari')
         batch_id: The ID of the batch to retrieve results for.
         api_key: API key for the provider
         api_base: Base URL for the provider API

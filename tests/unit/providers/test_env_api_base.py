@@ -5,9 +5,11 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from any_llm.providers.gateway.gateway import GatewayProvider
 from any_llm.providers.llamafile.llamafile import LlamafileProvider
 from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.providers.otari.otari import OtariProvider
+
+pytest.importorskip("otari")
 
 
 def test_resolve_api_base_returns_parameter_when_provided() -> None:
@@ -112,33 +114,42 @@ def test_llamafile_parameter_overrides_env_var() -> None:
             assert call_kwargs["base_url"] == "http://param-llamafile:8000/v1"
 
 
-@patch.dict(os.environ, {"GATEWAY_API_BASE": "https://env-gateway.example.com"}, clear=False)
-def test_gateway_uses_env_var_for_api_base() -> None:
-    """GatewayProvider should use GATEWAY_API_BASE env var."""
-    with patch("any_llm.providers.openai.base.AsyncOpenAI") as mock_openai:
-        mock_openai.return_value = AsyncMock()
-        GatewayProvider()
-        mock_openai.assert_called_once()
-        call_kwargs = mock_openai.call_args[1]
-        assert call_kwargs["base_url"] == "https://env-gateway.example.com"
+@patch.dict(os.environ, {"OTARI_API_BASE": "https://env-otari.example.com"}, clear=False)
+def test_otari_uses_env_var_for_api_base() -> None:
+    """OtariProvider should use OTARI_API_BASE env var."""
+    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+        mock_otari_client.return_value = type("Client", (), {"openai": AsyncMock(), "platform_mode": False})()
+        OtariProvider()
+        call_kwargs = mock_otari_client.call_args.kwargs
+        assert call_kwargs["api_base"] == "https://env-otari.example.com"
 
 
 @patch.dict(os.environ, {}, clear=True)
-def test_gateway_requires_api_base_without_env_var() -> None:
-    """GatewayProvider should raise error when neither api_base nor env var is set."""
+def test_otari_requires_api_base_without_env_var() -> None:
+    """OtariProvider should raise error when neither api_base nor env vars are set."""
     with pytest.raises(ValueError, match="api_base is required"):
-        GatewayProvider()
+        OtariProvider()
 
 
-def test_gateway_parameter_overrides_env_var() -> None:
-    """Direct api_base parameter should override GATEWAY_API_BASE env var."""
-    with patch.dict(os.environ, {"GATEWAY_API_BASE": "https://env-gateway.example.com"}, clear=False):
-        with patch("any_llm.providers.openai.base.AsyncOpenAI") as mock_openai:
-            mock_openai.return_value = AsyncMock()
-            GatewayProvider(api_base="https://param-gateway.example.com")
-            mock_openai.assert_called_once()
-            call_kwargs = mock_openai.call_args[1]
-            assert call_kwargs["base_url"] == "https://param-gateway.example.com"
+def test_otari_parameter_overrides_env_var() -> None:
+    """Direct api_base parameter should override OTARI_API_BASE env var."""
+    with patch.dict(os.environ, {"OTARI_API_BASE": "https://env-otari.example.com"}, clear=False):
+        with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+            mock_otari_client.return_value = type("Client", (), {"openai": AsyncMock(), "platform_mode": False})()
+            OtariProvider(api_base="https://param-otari.example.com")
+            call_kwargs = mock_otari_client.call_args.kwargs
+            assert call_kwargs["api_base"] == "https://param-otari.example.com"
+
+
+@patch.dict(os.environ, {"GATEWAY_API_BASE": "https://legacy-gateway.example.com"}, clear=False)
+def test_otari_uses_legacy_gateway_api_base_as_fallback() -> None:
+    """OtariProvider should fallback to GATEWAY_API_BASE when OTARI_API_BASE is unset."""
+    with patch.dict(os.environ, {"OTARI_API_BASE": ""}, clear=False):
+        with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+            mock_otari_client.return_value = type("Client", (), {"openai": AsyncMock(), "platform_mode": False})()
+            OtariProvider()
+            call_kwargs = mock_otari_client.call_args.kwargs
+            assert call_kwargs["api_base"] == "https://legacy-gateway.example.com"
 
 
 def test_provider_metadata_includes_env_api_base() -> None:
