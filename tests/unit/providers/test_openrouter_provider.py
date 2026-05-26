@@ -1,8 +1,10 @@
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from any_llm.providers.openrouter import OpenrouterProvider
+from any_llm.providers.openrouter.utils import _convert_models_list
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionMessage,
@@ -10,6 +12,7 @@ from any_llm.types.completion import (
     CompletionParams,
     Reasoning,
 )
+from any_llm.types.model import Model
 
 
 @pytest.mark.asyncio
@@ -259,3 +262,90 @@ def test_openrouter_remaps_max_tokens_to_max_completion_tokens() -> None:
     result = OpenrouterProvider._convert_completion_params(params)
     assert "max_tokens" not in result
     assert result["max_completion_tokens"] == 8192
+
+
+def _make_openrouter_model(**overrides: object) -> SimpleNamespace:
+    """Build a fake model object resembling what the OpenAI SDK constructs from an OpenRouter response."""
+    defaults: dict[str, object] = {
+        "id": "qwen/qwen3.7-max",
+        "created": 1779376861,
+        "object": None,
+        "owned_by": None,
+    }
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+def test_convert_models_list_fills_missing_object_and_owned_by() -> None:
+    """Models with None object/owned_by are rebuilt with valid defaults."""
+    response = SimpleNamespace(data=[_make_openrouter_model()])
+    result = _convert_models_list(response)
+
+    assert len(result) == 1
+    model = result[0]
+    assert model.id == "qwen/qwen3.7-max"
+    assert model.object == "model"
+    assert model.owned_by == "openrouter"
+    assert model.created == 1779376861
+
+
+def test_convert_models_list_preserves_existing_owned_by() -> None:
+    """When the API does provide owned_by, it should be kept."""
+    response = SimpleNamespace(data=[_make_openrouter_model(owned_by="qwen")])
+    result = _convert_models_list(response)
+
+    assert result[0].owned_by == "qwen"
+
+
+def test_convert_models_list_defaults_created_to_zero_when_none() -> None:
+    """A None created timestamp falls back to 0."""
+    response = SimpleNamespace(data=[_make_openrouter_model(created=None)])
+    result = _convert_models_list(response)
+
+    assert result[0].created == 0
+
+
+def test_convert_models_list_handles_empty_response() -> None:
+    response = SimpleNamespace(data=[])
+    result = _convert_models_list(response)
+
+    assert result == []
+
+
+def test_convert_models_list_round_trip_serialization() -> None:
+    """Converted models must survive model_dump_json -> model_validate_json."""
+    response = SimpleNamespace(data=[_make_openrouter_model()])
+    models = _convert_models_list(response)
+
+    for model in models:
+        json_data = model.model_dump_json()
+        restored = Model.model_validate_json(json_data)
+        assert restored.id == model.id
+        assert restored.object == "model"
+        assert restored.owned_by == "openrouter"
+
+
+@patch("any_llm.providers.openai.base.AsyncOpenAI")
+def test_list_models_returns_valid_model_objects(mock_openai_class: MagicMock) -> None:
+    """End-to-end: OpenrouterProvider.list_models() returns spec-compliant Model objects."""
+    raw_models = [
+        _make_openrouter_model(id="openai/gpt-4o"),
+        _make_openrouter_model(id="anthropic/claude-3.5-sonnet", owned_by="anthropic"),
+    ]
+    mock_client = AsyncMock()
+    mock_client.models.list.return_value = SimpleNamespace(data=raw_models)
+    mock_openai_class.return_value = mock_client
+
+    provider = OpenrouterProvider(api_key="sk-test")
+    result = provider.list_models()
+
+    assert len(result) == 2
+    for model in result:
+        assert isinstance(model, Model)
+        assert model.object == "model"
+        assert model.owned_by is not None
+
+    assert result[0].id == "openai/gpt-4o"
+    assert result[0].owned_by == "openrouter"
+    assert result[1].id == "anthropic/claude-3.5-sonnet"
+    assert result[1].owned_by == "anthropic"
