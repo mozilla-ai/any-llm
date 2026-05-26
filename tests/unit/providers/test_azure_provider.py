@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from azure.ai.inference.models import JsonSchemaFormat
 
+from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.azure.azure import AzureProvider
 from any_llm.providers.azure.utils import _convert_response_format
 from any_llm.types.completion import CompletionParams
@@ -219,13 +220,10 @@ async def test_azure_token_credential_ignores_api_key() -> None:
         )
 
 
-def test_azure_no_api_key_no_credential_allowed() -> None:
-    """Test that the provider can be created without an API key (for Entra ID use cases)."""
+def test_azure_no_api_key_no_credential_raises() -> None:
+    """Test that omitting both api_key and credential raises MissingApiKeyError."""
     custom_endpoint = "https://test.eu.models.ai.azure.com"
 
-    with mock_azure_provider() as (_, _, mock_chat_client):
-        with patch("any_llm.providers.azure.azure.AzureKeyCredential") as mock_azure_key_credential:
+    with mock_azure_provider():
+        with pytest.raises(MissingApiKeyError):
             AzureProvider(api_base=custom_endpoint)
-
-            mock_azure_key_credential.assert_called_once_with("")
-            mock_chat_client.assert_called_once()

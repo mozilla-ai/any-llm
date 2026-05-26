@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, cast
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.exceptions import MissingApiKeyError
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -88,8 +89,10 @@ class AzureProvider(AnyLLM):
 
         if token_credential is not None:
             credential: AzureKeyCredential | AsyncTokenCredential = token_credential
+        elif api_key:
+            credential = AzureKeyCredential(api_key)
         else:
-            credential = AzureKeyCredential(api_key or "")
+            raise MissingApiKeyError(self.PROVIDER_NAME, self.ENV_API_KEY_NAME)
 
         self.chat_client = aio.ChatCompletionsClient(
             endpoint=api_base,
