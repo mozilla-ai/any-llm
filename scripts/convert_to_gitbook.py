@@ -19,6 +19,7 @@ SCRIPT_DIR = Path(__file__).parent
 DOCS_SRC = Path("docs")
 SITE_DIR = Path("site")
 
+
 def run_generator(script_name: str) -> None:
     subprocess.run([sys.executable, str(SCRIPT_DIR / script_name)], check=True)  # noqa: S603
 
