@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, Any, cast
 
 from typing_extensions import override
@@ -25,18 +26,31 @@ if TYPE_CHECKING:
 
     from azure.ai.inference import aio  # noqa: TC004
     from azure.ai.inference.models import ChatCompletions, EmbeddingsResult, StreamingChatCompletionsUpdate
+    from azure.core.credentials_async import AsyncTokenCredential
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
 
 
 class AzureProvider(AnyLLM):
-    """Azure Provider using the official Azure AI Inference SDK."""
+    """Azure Provider using the official Azure AI Inference SDK.
+
+    Supports two authentication modes:
+
+    * **API key** (default): Set ``AZURE_API_KEY`` or pass ``api_key``.
+    * **Microsoft Entra ID**: Pass a ``credential`` that implements the
+      ``azure.core.credentials_async.AsyncTokenCredential`` protocol
+      (e.g. ``DefaultAzureCredential``). When a ``credential`` is
+      provided the ``api_key`` parameter is ignored. This is the
+      recommended authentication method for Microsoft Foundry deployments.
+    """
 
     PROVIDER_NAME = "azure"
     ENV_API_KEY_NAME = "AZURE_API_KEY"
     ENV_API_BASE_NAME = "AZURE_AI_CHAT_ENDPOINT"
-    PROVIDER_DOCUMENTATION_URL = "https://azure.microsoft.com/en-us/products/ai-services/openai-service"
+    PROVIDER_DOCUMENTATION_URL = (
+        "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure"
+    )
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
@@ -54,6 +68,14 @@ class AzureProvider(AnyLLM):
     embeddings_client: aio.EmbeddingsClient
 
     @override
+    def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
+        # Allow api_key to be None when a TokenCredential is used for
+        # Microsoft Entra ID authentication.
+        if not api_key:
+            api_key = os.getenv(self.ENV_API_KEY_NAME)
+        return api_key
+
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         if not api_base:
             msg = (
@@ -62,14 +84,21 @@ class AzureProvider(AnyLLM):
             )
             raise ValueError(msg)
 
+        token_credential: AsyncTokenCredential | None = kwargs.pop("credential", None)
+
+        if token_credential is not None:
+            credential: AzureKeyCredential | AsyncTokenCredential = token_credential
+        else:
+            credential = AzureKeyCredential(api_key or "")
+
         self.chat_client = aio.ChatCompletionsClient(
             endpoint=api_base,
-            credential=AzureKeyCredential(api_key or ""),
+            credential=credential,
             **kwargs,
         )
         self.embeddings_client = aio.EmbeddingsClient(
             endpoint=api_base,
-            credential=AzureKeyCredential(api_key or ""),
+            credential=credential,
             **kwargs,
         )
 

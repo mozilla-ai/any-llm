@@ -178,3 +178,54 @@ def test_convert_response_format_from_dict_invalid() -> None:
 
     with pytest.raises(ValueError, match="Response format must be a structured type or a dict with a json_schema key"):
         _convert_response_format(invalid_dict)
+
+
+@pytest.mark.asyncio
+async def test_azure_with_token_credential() -> None:
+    """Test that AzureProvider accepts a TokenCredential for Entra ID auth."""
+    custom_endpoint = "https://test.eu.models.ai.azure.com"
+    mock_credential = MagicMock()
+
+    messages = [{"role": "user", "content": "Hello"}]
+    with mock_azure_provider() as (mock_client, mock_convert_response, mock_chat_client):
+        provider = AzureProvider(api_base=custom_endpoint, credential=mock_credential)
+        await provider._acompletion(CompletionParams(model_id="model-id", messages=messages))
+
+        mock_chat_client.assert_called_once_with(
+            endpoint=custom_endpoint,
+            credential=mock_credential,
+        )
+
+        mock_client.complete.assert_called_once_with(
+            model="model-id",
+            messages=messages,
+        )
+
+        mock_convert_response.assert_called_once_with(mock_client.complete.return_value)
+
+
+@pytest.mark.asyncio
+async def test_azure_token_credential_ignores_api_key() -> None:
+    """Test that when a credential is provided, api_key is ignored."""
+    custom_endpoint = "https://test.eu.models.ai.azure.com"
+    mock_credential = MagicMock()
+
+    with mock_azure_provider() as (_, _, mock_chat_client):
+        AzureProvider(api_key="should-be-ignored", api_base=custom_endpoint, credential=mock_credential)
+
+        mock_chat_client.assert_called_once_with(
+            endpoint=custom_endpoint,
+            credential=mock_credential,
+        )
+
+
+def test_azure_no_api_key_no_credential_allowed() -> None:
+    """Test that the provider can be created without an API key (for Entra ID use cases)."""
+    custom_endpoint = "https://test.eu.models.ai.azure.com"
+
+    with mock_azure_provider() as (_, _, mock_chat_client):
+        with patch("any_llm.providers.azure.azure.AzureKeyCredential") as mock_azure_key_credential:
+            AzureProvider(api_base=custom_endpoint)
+
+            mock_azure_key_credential.assert_called_once_with("")
+            mock_chat_client.assert_called_once()

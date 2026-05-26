@@ -23,7 +23,7 @@
 </a>
 
 **Communicate with any LLM provider using a single, unified interface.**
-Switch between OpenAI, Anthropic, Mistral, Ollama, and more without changing your code.
+Switch between OpenAI, Anthropic, Azure / Microsoft Foundry, Mistral, Ollama, and more without changing your code.
 
 [Documentation](https://docs.mozilla.ai/any-llm/) | [otari.ai](https://otari.ai/) | [Try the Demos](#-try-it) | [Contributing](#-contributing)
 
