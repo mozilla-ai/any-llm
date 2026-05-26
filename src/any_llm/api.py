@@ -77,7 +77,7 @@ def completion(
         api_key: API key for the provider
         api_base: Base URL for the provider API
         user: Unique identifier for the end user
-        session_label: Optional user session label metadata for platform traces; exported as anyllm.user_session_label
+        session_label: Deprecated, no longer used. Previously used for platform traces.
         parallel_tool_calls: Whether to allow parallel tool calls
         logprobs: Include token-level log probabilities in the response
         top_logprobs: Number of alternatives to return when logprobs are requested
@@ -120,7 +120,6 @@ def completion(
         frequency_penalty=frequency_penalty,
         seed=seed,
         user=user,
-        session_label=session_label,
         parallel_tool_calls=parallel_tool_calls,
         logprobs=logprobs,
         top_logprobs=top_logprobs,
@@ -187,7 +186,7 @@ async def acompletion(
         api_key: API key for the provider
         api_base: Base URL for the provider API
         user: Unique identifier for the end user
-        session_label: Optional user session label metadata for platform traces; exported as anyllm.user_session_label
+        session_label: Deprecated, no longer used. Previously used for platform traces.
         parallel_tool_calls: Whether to allow parallel tool calls
         logprobs: Include token-level log probabilities in the response
         top_logprobs: Number of alternatives to return when logprobs are requested
@@ -230,7 +229,6 @@ async def acompletion(
         frequency_penalty=frequency_penalty,
         seed=seed,
         user=user,
-        session_label=session_label,
         parallel_tool_calls=parallel_tool_calls,
         logprobs=logprobs,
         top_logprobs=top_logprobs,

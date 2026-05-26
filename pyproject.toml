@@ -21,13 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 
 all = [
-  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,vertexaianthropic,cohere,cerebras,fireworks,groq,bedrock,azure,azureanthropic,azureopenai,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,qiniu,lmstudio,llama,voyage,perplexity,platform,llamafile,llamacpp,sagemaker,gateway,zai,minimax,mzai,vllm,dashscope,deepinfra]"
-]
-
-platform = [
-  "any-llm-platform-client>=0.3.0",
-  "opentelemetry-sdk>=1.30.0",
-  "opentelemetry-exporter-otlp-proto-http>=1.30.0",
+  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,vertexaianthropic,cohere,cerebras,fireworks,groq,bedrock,azure,azureanthropic,azureopenai,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,qiniu,lmstudio,llama,voyage,perplexity,llamafile,llamacpp,sagemaker,gateway,zai,minimax,mzai,vllm,dashscope,deepinfra]"
 ]
 
 perplexity = []

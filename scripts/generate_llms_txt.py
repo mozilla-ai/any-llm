@@ -41,7 +41,6 @@ ORDERED_FILES = [
     "api/types/model.md",
     "api/types/provider.md",
     "api/types/batch.md",
-    "platform/overview.md",
 ]
 
 

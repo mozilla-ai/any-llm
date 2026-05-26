@@ -1,8 +1,4 @@
-import re
-
-from pydantic import BaseModel, field_validator
-
-ANY_API_KEY_REGEX = r"^ANY\.v\d+\.([^.]+)\.([^-]+)-(.+)$"
+from pydantic import BaseModel
 
 
 class ProviderMetadata(BaseModel):
@@ -26,16 +22,3 @@ class ProviderMetadata(BaseModel):
     audio_transcription: bool = False
     audio_speech: bool = False
     rerank: bool = False
-
-
-class PlatformKey(BaseModel):
-    api_key: str
-
-    @field_validator("api_key")
-    @classmethod
-    def validate_api_key_format(cls, value: str) -> str:
-        """Validates the API key against the required format."""
-        if not re.fullmatch(ANY_API_KEY_REGEX, value):
-            msg = "Invalid API key format. Must match the pattern: ANY.<version>.<kid>.<fingerprint>-<base64_key>."
-            raise ValueError(msg)
-        return value

@@ -47,9 +47,6 @@ SUMMARY = """\
   * [Provider](api/types/provider.md)
   * [Batch](api/types/batch.md)
 
-## Managed Platform
-
-* [Overview](platform/overview.md)
 """
 
 
