@@ -262,11 +262,13 @@ async def test_otari_rerank_http_call() -> None:
         client = MagicMock()
         client.platform_mode = False
         client.openai = AsyncMock()
-        client.rerank = AsyncMock(return_value={
-            "id": "rerank-123",
-            "results": [{"index": 0, "relevance_score": 0.9}],
-            "usage": {"total_tokens": 50},
-        })
+        client.rerank = AsyncMock(
+            return_value={
+                "id": "rerank-123",
+                "results": [{"index": 0, "relevance_score": 0.9}],
+                "usage": {"total_tokens": 50},
+            }
+        )
         mock_otari_client.return_value = client
 
         from any_llm.providers.otari import OtariProvider
@@ -306,7 +308,7 @@ async def test_otari_rerank_passes_top_n() -> None:
 
 
 @pytest.mark.asyncio
-async def test_otari_rerank_strips_v1_suffix() -> None:
+async def test_otari_rerank_raises_when_sdk_lacks_rerank() -> None:
     pytest.importorskip("otari")
     from types import SimpleNamespace
 

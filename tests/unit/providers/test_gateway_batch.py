@@ -36,6 +36,7 @@ async def test_otari_create_batch_uses_sdk_client() -> None:
         "id": "batch-123",
         "object": "batch",
         "endpoint": "/v1/chat/completions",
+        "input_file_id": "input-file-123",
         "status": "validating",
         "created_at": 1700000000,
         "completion_window": "24h",
@@ -59,6 +60,23 @@ async def test_otari_create_batch_uses_sdk_client() -> None:
 
 
 @pytest.mark.asyncio
+async def test_otari_create_batch_rejects_unsupported_endpoint() -> None:
+    provider = _build_provider(_mock_otari_client())
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+        f.write(json.dumps({"custom_id": "req-1", "body": {"model": "gpt-4", "messages": []}}) + "\n")
+        tmp_path = f.name
+
+    try:
+        with pytest.raises(InvalidRequestError, match="supports only /v1/chat/completions"):
+            await provider._acreate_batch(input_file_path=tmp_path, endpoint="/v1/responses")
+    finally:
+        import os
+
+        os.unlink(tmp_path)
+
+
+@pytest.mark.asyncio
 async def test_otari_retrieve_batch_requires_provider_name() -> None:
     provider = _build_provider(_mock_otari_client())
 
@@ -74,6 +92,7 @@ async def test_otari_list_batches_uses_sdk_client() -> None:
             "id": "batch-1",
             "object": "batch",
             "endpoint": "/v1/chat/completions",
+            "input_file_id": "input-file-1",
             "status": "completed",
             "created_at": 1700000000,
             "completion_window": "24h",
@@ -101,7 +120,9 @@ async def test_otari_retrieve_batch_results_maps_response() -> None:
                     "object": "chat.completion",
                     "created": 1700000000,
                     "model": "gpt-4",
-                    "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello"}, "finish_reason": "stop"}],
+                    "choices": [
+                        {"index": 0, "message": {"role": "assistant", "content": "Hello"}, "finish_reason": "stop"}
+                    ],
                     "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3},
                 },
                 "error": None,

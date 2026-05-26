@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import importlib
 import json
 import os
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from typing_extensions import override
 
@@ -18,20 +19,32 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
     from openresponses_types import ResponseResource
-    from otari import OtariClient
 
     from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
     from any_llm.types.image import ImageGenerationParams, ImagesResponse
     from any_llm.types.moderation import ModerationResponse
     from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
+
+class CreateBatchParams(TypedDict, total=False):
+    model: str
+    requests: list[dict[str, Any]]
+    completion_window: str
+    metadata: dict[str, str]
+
+
+class ListBatchesOptions(TypedDict, total=False):
+    after: str
+    limit: int
+
+
+_MISSING_PACKAGES_ERROR: ImportError | None = None
+_OTARI_BATCH_NOT_COMPLETE_ERROR: Any = None
 try:
-    from otari import OtariClient
+    OtariClient = importlib.import_module("otari").OtariClient
+    _OTARI_BATCH_NOT_COMPLETE_ERROR = importlib.import_module("otari.errors").BatchNotCompleteError
 except ImportError as e:  # pragma: no cover - exercised through MISSING_PACKAGES_ERROR checks
-    OtariClient = cast("Any", None)
     _MISSING_PACKAGES_ERROR = e
-else:
-    _MISSING_PACKAGES_ERROR = None
 
 
 OTARI_PLATFORM_TOKEN_ENV = "OTARI_PLATFORM_TOKEN"  # noqa: S105
@@ -89,7 +102,7 @@ class OtariProvider(BaseOpenAIProvider):
     SUPPORTS_AUDIO_SPEECH = True
     SUPPORTS_RERANK = True
 
-    otari_client: OtariClient
+    otari_client: Any
 
     @classmethod
     def _resolve_env_api_base(cls) -> str | None:
@@ -113,6 +126,10 @@ class OtariProvider(BaseOpenAIProvider):
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str:
         return api_key or self._resolve_env_api_key() or "no-key-required"
 
+    @staticmethod
+    def _normalize_placeholder_api_key(api_key: str | None) -> str | None:
+        return None if api_key == "no-key-required" else api_key
+
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         resolved_api_base = self._resolve_api_base(api_base)
@@ -126,7 +143,8 @@ class OtariProvider(BaseOpenAIProvider):
         platform_mode = kwargs.pop("platform_mode", None)
         default_headers = kwargs.pop("default_headers", None)
 
-        resolved_api_key = api_key or self._resolve_env_api_key()
+        normalized_api_key = self._normalize_placeholder_api_key(api_key)
+        resolved_api_key = normalized_api_key or self._resolve_env_api_key()
         resolved_platform_token = self._resolve_platform_token()
 
         client_kwargs: dict[str, Any] = {
@@ -136,7 +154,7 @@ class OtariProvider(BaseOpenAIProvider):
         }
 
         if platform_mode is True:
-            token = api_key or resolved_platform_token
+            token = normalized_api_key or resolved_platform_token
             if not token:
                 msg = (
                     "Platform mode requires a user token "
@@ -147,8 +165,8 @@ class OtariProvider(BaseOpenAIProvider):
         elif platform_mode is False:
             client_kwargs["api_key"] = resolved_api_key
         else:
-            if api_key:
-                client_kwargs["api_key"] = api_key
+            if normalized_api_key:
+                client_kwargs["api_key"] = normalized_api_key
             elif resolved_platform_token:
                 client_kwargs["platform_token"] = resolved_platform_token
             elif resolved_api_key:
@@ -162,11 +180,10 @@ class OtariProvider(BaseOpenAIProvider):
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        completion_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
-        completion_kwargs.update(kwargs)
+        completion_kwargs = self._convert_completion_params(params, **kwargs)
         response = await self.otari_client.completion(
             model=params.model_id,
-            messages=cast("list[dict[str, Any]]", params.messages),
+            messages=params.messages,
             **completion_kwargs,
         )
         return self._convert_completion_response_async(response)
@@ -177,7 +194,8 @@ class OtariProvider(BaseOpenAIProvider):
     ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
         response_kwargs = params.model_dump(exclude_none=True, exclude={"model", "input"})
         response_kwargs.update(kwargs)
-        return await self.otari_client.response(model=params.model, input=params.input, **response_kwargs)
+        result = await self.otari_client.response(model=params.model, input=params.input, **response_kwargs)
+        return cast("ResponseResource | Response | AsyncIterator[ResponseStreamEvent]", result)
 
     @override
     async def _aembedding(
@@ -215,7 +233,7 @@ class OtariProvider(BaseOpenAIProvider):
             voice=params.voice,
             **api_kwargs,
         )
-        return response.content
+        return cast("bytes", response.content)
 
     @override
     async def _amoderation(
@@ -247,13 +265,18 @@ class OtariProvider(BaseOpenAIProvider):
         metadata: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> Batch:
+        if endpoint != "/v1/chat/completions":
+            msg = "otari batch currently supports only /v1/chat/completions endpoint"
+            raise InvalidRequestError(message=msg, provider_name=self.PROVIDER_NAME)
+
         requests = _parse_jsonl_to_requests(input_file_path)
         model = kwargs.pop("model", None) or _extract_model_from_requests(requests)
-        payload: dict[str, Any] = {
-            "model": model,
+        payload: CreateBatchParams = {
             "requests": requests,
             "completion_window": completion_window,
         }
+        if model is not None:
+            payload["model"] = model
         if metadata:
             payload["metadata"] = metadata
         data = await self.otari_client.create_batch(payload)
@@ -288,12 +311,15 @@ class OtariProvider(BaseOpenAIProvider):
         if not provider_name:
             msg = "provider_name is required for Otari batch operations"
             raise InvalidRequestError(message=msg, provider_name=self.PROVIDER_NAME)
-        options: dict[str, Any] = {}
-        if after:
-            options["after"] = after
-        if limit is not None:
-            options["limit"] = limit
-        data = await self.otari_client.list_batches(provider=provider_name, options=options or None)
+        options: ListBatchesOptions | None = None
+        if after or limit is not None:
+            options = {}
+            if after:
+                options["after"] = after
+            if limit is not None:
+                options["limit"] = limit
+
+        data = await self.otari_client.list_batches(provider=provider_name, options=options)
         return [Batch(**batch) for batch in data]
 
     @override
@@ -304,23 +330,51 @@ class OtariProvider(BaseOpenAIProvider):
             raise InvalidRequestError(message=msg, provider_name=self.PROVIDER_NAME)
 
         try:
-            payload = await self.otari_client.retrieve_batch_results(batch_id=batch_id, provider=provider_name)
+            payload = cast(
+                "Any", await self.otari_client.retrieve_batch_results(batch_id=batch_id, provider=provider_name)
+            )
         except Exception as exc:
-            if exc.__class__.__name__ == "BatchNotCompleteError":
-                raise BatchNotCompleteError(batch_id=batch_id, status="unknown", provider_name=self.PROVIDER_NAME) from exc
+            if _OTARI_BATCH_NOT_COMPLETE_ERROR is not None and isinstance(exc, _OTARI_BATCH_NOT_COMPLETE_ERROR):
+                raise BatchNotCompleteError(
+                    batch_id=batch_id, status="unknown", provider_name=self.PROVIDER_NAME
+                ) from exc
             raise
 
-        raw_results = payload.results if hasattr(payload, "results") else payload.get("results", [])
+        raw_results: list[Any]
+        if isinstance(payload, dict):
+            raw_results = cast("list[Any]", payload.get("results", []))
+        else:
+            raw_results = cast("list[Any]", payload.results)
+
         results: list[BatchResultItem] = []
         for item in raw_results:
-            custom_id = item.custom_id if hasattr(item, "custom_id") else item.get("custom_id")
-            raw_result = item.result if hasattr(item, "result") else item.get("result")
-            raw_error = item.error if hasattr(item, "error") else item.get("error")
+            if isinstance(item, dict):
+                custom_id = str(item.get("custom_id", ""))
+                raw_result = item.get("result")
+                raw_error = item.get("error")
+            else:
+                custom_id = str(item.custom_id)
+                raw_result = item.result
+                raw_error = item.error
+
+            parsed_error: BatchResultError | None = None
+            if raw_error:
+                if isinstance(raw_error, dict):
+                    parsed_error = BatchResultError(
+                        code=str(raw_error.get("code", "unknown")),
+                        message=str(raw_error.get("message", "Unknown batch error")),
+                    )
+                else:
+                    parsed_error = BatchResultError(
+                        code=str(getattr(raw_error, "code", "unknown")),
+                        message=str(getattr(raw_error, "message", "Unknown batch error")),
+                    )
+
             results.append(
                 BatchResultItem(
                     custom_id=custom_id,
                     result=ChatCompletion.model_validate(raw_result) if raw_result else None,
-                    error=BatchResultError.model_validate(raw_error) if raw_error else None,
+                    error=parsed_error,
                 )
             )
         return BatchResult(results=results)
