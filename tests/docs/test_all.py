@@ -18,15 +18,16 @@ class FakeChatCompletion:
 
 def _build_fake_browser_use_modules() -> dict[str, ModuleType]:
     browser_use_module = ModuleType("browser_use")
-    browser_use_module.__path__ = []  # type: ignore[attr-defined]
     llm_module = ModuleType("browser_use.llm")
-    llm_module.__path__ = []  # type: ignore[attr-defined]
     messages_module = ModuleType("browser_use.llm.messages")
     views_module = ModuleType("browser_use.llm.views")
     browser_module = ModuleType("browser_use.browser")
-    browser_module.__path__ = []  # type: ignore[attr-defined]
     profile_module = ModuleType("browser_use.browser.profile")
     session_module = ModuleType("browser_use.browser.session")
+
+    setattr(browser_use_module, "__path__", [])
+    setattr(llm_module, "__path__", [])
+    setattr(browser_module, "__path__", [])
 
     class BaseMessage:
         def __init__(self, content: object = None, tool_calls: list[object] | None = None) -> None:
@@ -90,21 +91,21 @@ def _build_fake_browser_use_modules() -> dict[str, ModuleType]:
         async def run(self, max_steps: int) -> SimpleNamespace:
             return SimpleNamespace(final_result=lambda: "Browser-use demo result")
 
-    messages_module.BaseMessage = BaseMessage
-    messages_module.SystemMessage = SystemMessage
-    messages_module.UserMessage = UserMessage
-    messages_module.AssistantMessage = AssistantMessage
-    views_module.ChatInvokeUsage = ChatInvokeUsage
-    views_module.ChatInvokeCompletion = ChatInvokeCompletion
-    profile_module.BrowserProfile = BrowserProfile
-    session_module.BrowserSession = BrowserSession
-    browser_use_module.Agent = Agent
-    browser_use_module.llm = llm_module
-    browser_use_module.browser = browser_module
-    llm_module.messages = messages_module
-    llm_module.views = views_module
-    browser_module.profile = profile_module
-    browser_module.session = session_module
+    setattr(messages_module, "BaseMessage", BaseMessage)
+    setattr(messages_module, "SystemMessage", SystemMessage)
+    setattr(messages_module, "UserMessage", UserMessage)
+    setattr(messages_module, "AssistantMessage", AssistantMessage)
+    setattr(views_module, "ChatInvokeUsage", ChatInvokeUsage)
+    setattr(views_module, "ChatInvokeCompletion", ChatInvokeCompletion)
+    setattr(profile_module, "BrowserProfile", BrowserProfile)
+    setattr(session_module, "BrowserSession", BrowserSession)
+    setattr(browser_use_module, "Agent", Agent)
+    setattr(browser_use_module, "llm", llm_module)
+    setattr(browser_use_module, "browser", browser_module)
+    setattr(llm_module, "messages", messages_module)
+    setattr(llm_module, "views", views_module)
+    setattr(browser_module, "profile", profile_module)
+    setattr(browser_module, "session", session_module)
 
     return {
         "browser_use": browser_use_module,

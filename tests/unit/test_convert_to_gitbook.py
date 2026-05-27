@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -27,6 +29,10 @@ def test_cookbook_summary_entries_use_notebook_titles(monkeypatch: pytest.Monkey
         [{"cell_type": "markdown", "metadata": {}, "source": ["# Browser-Use with Any-LLM\n"]}],
     )
     _write_notebook(
+        cookbooks_dir / "empty_notebook.ipynb",
+        [],
+    )
+    _write_notebook(
         cookbooks_dir / "fallback_title.ipynb",
         [{"cell_type": "markdown", "metadata": {}, "source": ["This is not a heading.\n"]}],
     )
@@ -35,6 +41,7 @@ def test_cookbook_summary_entries_use_notebook_titles(monkeypatch: pytest.Monkey
 
     assert convert_to_gitbook.cookbook_summary_entries() == [
         "* [Browser-Use with Any-LLM](cookbooks/browser-use-with-any-llm.md)",
+        "* [Empty Notebook](cookbooks/empty-notebook.md)",
         "* [Fallback Title](cookbooks/fallback-title.md)",
     ]
 
@@ -80,11 +87,11 @@ def test_run_generator_invokes_subprocess(monkeypatch: pytest.MonkeyPatch, tmp_p
     mock_run = Mock()
 
     monkeypatch.setattr(convert_to_gitbook, "SCRIPT_DIR", tmp_path)
-    monkeypatch.setattr(convert_to_gitbook.subprocess, "run", mock_run)
+    monkeypatch.setattr(subprocess, "run", mock_run)
 
     convert_to_gitbook.run_generator("generate_docs.py")
 
     mock_run.assert_called_once_with(
-        [convert_to_gitbook.sys.executable, str(tmp_path / "generate_docs.py")],
+        [sys.executable, str(tmp_path / "generate_docs.py")],
         check=True,
     )
