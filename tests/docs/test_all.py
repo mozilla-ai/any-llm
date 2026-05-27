@@ -1,5 +1,7 @@
 import pathlib
+import sys
 from contextlib import ExitStack
+from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -12,6 +14,107 @@ class FakeChatCompletion:
     def __init__(self, content: str = "Hello!") -> None:
         self.model = "gpt-4.1-mini"
         self.choices = [Mock(message=Mock(content=content), delta=Mock(content=content))]
+
+
+def _build_fake_browser_use_modules() -> dict[str, ModuleType]:
+    browser_use_module = ModuleType("browser_use")
+    browser_use_module.__path__ = []  # type: ignore[attr-defined]
+    llm_module = ModuleType("browser_use.llm")
+    llm_module.__path__ = []  # type: ignore[attr-defined]
+    messages_module = ModuleType("browser_use.llm.messages")
+    views_module = ModuleType("browser_use.llm.views")
+    browser_module = ModuleType("browser_use.browser")
+    browser_module.__path__ = []  # type: ignore[attr-defined]
+    profile_module = ModuleType("browser_use.browser.profile")
+    session_module = ModuleType("browser_use.browser.session")
+
+    class BaseMessage:
+        def __init__(self, content: object = None, tool_calls: list[object] | None = None) -> None:
+            self.content = content
+            self.tool_calls = tool_calls or []
+
+    class SystemMessage(BaseMessage):
+        pass
+
+    class UserMessage(BaseMessage):
+        pass
+
+    class AssistantMessage(BaseMessage):
+        pass
+
+    class ChatInvokeUsage:
+        def __init__(
+            self,
+            *,
+            prompt_tokens: int,
+            prompt_cached_tokens: int | None,
+            prompt_cache_creation_tokens: int | None,
+            prompt_image_tokens: int | None,
+            completion_tokens: int,
+            total_tokens: int,
+        ) -> None:
+            self.prompt_tokens = prompt_tokens
+            self.prompt_cached_tokens = prompt_cached_tokens
+            self.prompt_cache_creation_tokens = prompt_cache_creation_tokens
+            self.prompt_image_tokens = prompt_image_tokens
+            self.completion_tokens = completion_tokens
+            self.total_tokens = total_tokens
+
+    class ChatInvokeCompletion:
+        def __init__(self, *, completion: object, usage: ChatInvokeUsage | None) -> None:
+            self.completion = completion
+            self.usage = usage
+
+        @classmethod
+        def __class_getitem__(cls, item: object) -> type["ChatInvokeCompletion"]:
+            return cls
+
+    class BrowserProfile:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+    class BrowserSession:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+        async def kill(self) -> None:
+            return None
+
+        async def stop(self) -> None:
+            return None
+
+    class Agent:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+        async def run(self, max_steps: int) -> SimpleNamespace:
+            return SimpleNamespace(final_result=lambda: "Browser-use demo result")
+
+    messages_module.BaseMessage = BaseMessage
+    messages_module.SystemMessage = SystemMessage
+    messages_module.UserMessage = UserMessage
+    messages_module.AssistantMessage = AssistantMessage
+    views_module.ChatInvokeUsage = ChatInvokeUsage
+    views_module.ChatInvokeCompletion = ChatInvokeCompletion
+    profile_module.BrowserProfile = BrowserProfile
+    session_module.BrowserSession = BrowserSession
+    browser_use_module.Agent = Agent
+    browser_use_module.llm = llm_module
+    browser_use_module.browser = browser_module
+    llm_module.messages = messages_module
+    llm_module.views = views_module
+    browser_module.profile = profile_module
+    browser_module.session = session_module
+
+    return {
+        "browser_use": browser_use_module,
+        "browser_use.llm": llm_module,
+        "browser_use.llm.messages": messages_module,
+        "browser_use.llm.views": views_module,
+        "browser_use.browser": browser_module,
+        "browser_use.browser.profile": profile_module,
+        "browser_use.browser.session": session_module,
+    }
 
 
 def _build_docs_patches() -> ExitStack:
@@ -106,6 +209,7 @@ def _build_docs_patches() -> ExitStack:
     stack.enter_context(patch("any_llm.any_llm.AnyLLM.create", return_value=provider_mock))
     stack.enter_context(patch("any_llm.AnyLLM.get_all_provider_metadata", return_value=[fake_metadata]))
     stack.enter_context(patch("any_llm.types.completion.ChatCompletion", fake_chat_completion_class))
+    stack.enter_context(patch.dict(sys.modules, _build_fake_browser_use_modules()))
 
     return stack
 

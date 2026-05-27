@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -65,3 +66,25 @@ def test_main_writes_dynamic_cookbook_summary(monkeypatch: pytest.MonkeyPatch, t
 
     summary = (site_dir / "SUMMARY.md").read_text(encoding="utf-8")
     assert "* [Browser-Use with Any-LLM](cookbooks/browser-use-with-any-llm.md)" in summary
+
+
+def test_build_summary_falls_back_when_no_cookbooks(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(convert_to_gitbook, "cookbook_summary_entries", list)
+
+    summary = convert_to_gitbook.build_summary()
+
+    assert "* [Cookbooks](cookbooks/)" in summary
+
+
+def test_run_generator_invokes_subprocess(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    mock_run = Mock()
+
+    monkeypatch.setattr(convert_to_gitbook, "SCRIPT_DIR", tmp_path)
+    monkeypatch.setattr(convert_to_gitbook.subprocess, "run", mock_run)
+
+    convert_to_gitbook.run_generator("generate_docs.py")
+
+    mock_run.assert_called_once_with(
+        [convert_to_gitbook.sys.executable, str(tmp_path / "generate_docs.py")],
+        check=True,
+    )
