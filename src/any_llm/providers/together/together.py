@@ -12,6 +12,7 @@ try:
     import together
 
     from .utils import (
+        _convert_models_list,
         _convert_together_response_to_chat_completion,
         _create_openai_chunk_from_together_chunk,
     )
@@ -50,7 +51,7 @@ class TogetherProvider(AnyLLM):
     SUPPORTS_COMPLETION_IMAGE = True
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = False
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
     SUPPORTS_RERANK = False
 
@@ -122,8 +123,7 @@ class TogetherProvider(AnyLLM):
     @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Together list models response to OpenAI format."""
-        msg = "Together does not support listing models"
-        raise NotImplementedError(msg)
+        return _convert_models_list(response)
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
@@ -181,3 +181,8 @@ class TogetherProvider(AnyLLM):
         )
 
         return self._convert_completion_response(response.model_dump())
+
+    @override
+    async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
+        models_list = await self.client.models.list(**kwargs)
+        return self._convert_list_models_response(models_list)

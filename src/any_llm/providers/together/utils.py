@@ -17,6 +17,7 @@ from any_llm.types.completion import (
     CompletionUsage,
     Reasoning,
 )
+from any_llm.types.model import Model
 from any_llm.utils.reasoning import normalize_reasoning_from_provider_fields_and_xml_tags
 
 
@@ -141,3 +142,21 @@ def _convert_together_response_to_chat_completion(response_data: dict[str, Any],
         choices=choices_out,
         usage=usage,
     )
+
+
+def _convert_models_list(response: Any) -> list[Model]:
+    """Convert Together model listing response to OpenAI-compatible Model objects."""
+    raw_models = response.data if hasattr(response, "data") else response
+    converted_models: list[Model] = []
+
+    for model in raw_models:
+        data = model.model_dump() if hasattr(model, "model_dump") else dict(vars(model))
+        if data.get("object") is None:
+            data["object"] = "model"
+        if data.get("created") is None:
+            data["created"] = 0
+        if data.get("owned_by") is None:
+            data["owned_by"] = data.get("organization") or "together"
+        converted_models.append(Model.model_validate(data))
+
+    return converted_models
