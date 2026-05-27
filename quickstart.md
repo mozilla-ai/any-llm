@@ -239,10 +239,12 @@ When enabled, provider-specific exceptions are automatically converted to `any-l
 ```python
 from any_llm import completion
 from any_llm.exceptions import (
-    RateLimitError,
-    AuthenticationError,
-    ProviderError,
     AnyLLMError,
+    AuthenticationError,
+    InvalidRequestError,
+    ModelNotFoundError,
+    ProviderError,
+    RateLimitError,
 )
 
 try:
@@ -251,10 +253,14 @@ try:
         provider="openai",
         messages=[{"role": "user", "content": "Hello!"}]
     )
+except ModelNotFoundError as e:
+    print(f"Model not found: {e.message}")
 except RateLimitError as e:
     print(f"Rate limited: {e.message}")
 except AuthenticationError as e:
     print(f"Auth failed: {e.message}")
+except InvalidRequestError as e:
+    print(f"Invalid request: {e.message}")
 except ProviderError as e:
     print(f"Provider error: {e.message}")
 except AnyLLMError as e:

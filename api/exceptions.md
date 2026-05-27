@@ -173,6 +173,24 @@ class UnsupportedParameterError(AnyLLMError):
 | `parameter_name` | `str` | The unsupported parameter name. |
 | `provider_name` | `str` | Name of the provider (also accessible via the inherited `provider_name` attribute). |
 
+## Common Scenarios
+
+The table below maps typical error conditions to the unified exception that `any-llm` raises. Use this to decide which exceptions to catch in your application.
+
+| Scenario | Exception | Example Trigger |
+|----------|-----------|-----------------|
+| Invalid or unknown model name | `ModelNotFoundError` | `model="not-a-real-model"` |
+| Bad or missing API key | `AuthenticationError` | Invalid `api_key` parameter |
+| Too many requests | `RateLimitError` | Provider rate limit exceeded |
+| Input too long | `ContextLengthExceededError` | Exceeding the model's context window |
+| Malformed request parameters | `InvalidRequestError` | Invalid parameter values |
+| Content blocked by safety filter | `ContentFilterError` | Harmful or policy-violating content |
+| Provider internal / network error | `ProviderError` | 5xx responses, timeouts, connection errors |
+
+{% hint style="warning" %}
+Note that `ModelNotFoundError` and `InvalidRequestError` are **separate** subclasses of `AnyLLMError`. A model-not-found error will not be caught by `except InvalidRequestError`. Catch `ModelNotFoundError` explicitly if you need to handle it.
+{% endhint %}
+
 ## Usage
 
 ```python
@@ -180,8 +198,10 @@ from any_llm import completion
 from any_llm.exceptions import (
     AnyLLMError,
     AuthenticationError,
-    RateLimitError,
     ContextLengthExceededError,
+    InvalidRequestError,
+    ModelNotFoundError,
+    RateLimitError,
 )
 
 try:
@@ -190,12 +210,16 @@ try:
         provider="openai",
         messages=[{"role": "user", "content": "Hello!"}],
     )
+except ModelNotFoundError as e:
+    print(f"Model not found: {e.message}")
 except RateLimitError as e:
     print(f"Rate limited by {e.provider_name}: {e.message}")
     # Access the original provider exception for details
     print(f"Original: {e.original_exception}")
 except AuthenticationError as e:
     print(f"Auth failed: {e.message}")
+except InvalidRequestError as e:
+    print(f"Invalid request: {e.message}")
 except ContextLengthExceededError as e:
     print(f"Input too long: {e.message}")
 except AnyLLMError as e:

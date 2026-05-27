@@ -101,7 +101,7 @@ async def acompletion(
 | `api_key` | `str \| None` | None | API key for the provider |
 | `api_base` | `str \| None` | None | Base URL for the provider API |
 | `user` | `str \| None` | None | Unique identifier for the end user |
-| `session_label` | `str \| None` | None | Optional user session label metadata for platform traces; exported as anyllm.user_session_label |
+| `session_label` | `str \| None` | None | Deprecated, no longer used. Previously used for platform traces. |
 | `parallel_tool_calls` | `bool \| None` | None | Whether to allow parallel tool calls |
 | `logprobs` | `bool \| None` | None | Include token-level log probabilities in the response |
 | `top_logprobs` | `int \| None` | None | Number of alternatives to return when logprobs are requested |
