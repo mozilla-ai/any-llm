@@ -28,7 +28,9 @@ def _is_notebook_only_code(source: str) -> bool:
         return True
     if "nest_asyncio" in source:
         return True
-    if "await " in source:
+    try:
+        compile(source, "<notebook-cell>", "exec")
+    except SyntaxError:
         return True
     return False
 

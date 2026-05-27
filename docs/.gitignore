@@ -1,5 +1,5 @@
 api/
 providers.md
-cookbooks/any-llm-getting-started.md
+cookbooks/*.md
 llms.txt
 llms-full.txt
