@@ -12,7 +12,7 @@ The rerank API lets you reorder a list of documents by their relevance to a quer
 | Provider | `SUPPORTS_RERANK` | Notes |
 |----------|-------------------|-------|
 | Cohere | Yes | Native rerank via the Cohere V2 SDK |
-| Gateway | Yes | Proxies to `/v1/rerank` on an upstream server |
+| Otari | Yes | Proxies to `/v1/rerank` on an upstream server |
 
 All other providers return `SUPPORTS_RERANK = False` and raise `NotImplementedError` if called.
 
@@ -80,6 +80,8 @@ An async variant `arerank()` is also available with the same signature.
 | `index` | `int` | Zero-based index into the original `documents` list |
 | `relevance_score` | `float` | Relevance score (higher is more relevant) |
 
-## Gateway Provider
+## Otari Provider
 
-The gateway provider (`provider="gateway"`) can proxy rerank requests to an upstream server that exposes a `/v1/rerank` endpoint. The gateway provider sends the request via HTTP with correct authentication headers.
+The otari provider (`provider="otari"`) can proxy rerank requests to an upstream server that exposes a `/v1/rerank` endpoint. The otari provider sends the request via HTTP with correct authentication headers.
+
+The `gateway` provider key remains as a deprecated alias to `otari` for backward compatibility.
