@@ -70,10 +70,10 @@ def test_cohere_supports_rerank() -> None:
     assert CohereProvider.SUPPORTS_RERANK is True
 
 
-def test_gateway_supports_rerank() -> None:
-    from any_llm.providers.gateway import GatewayProvider
+def test_otari_supports_rerank() -> None:
+    from any_llm.providers.otari import OtariProvider
 
-    assert GatewayProvider.SUPPORTS_RERANK is True
+    assert OtariProvider.SUPPORTS_RERANK is True
 
 
 def test_openai_base_does_not_support_rerank() -> None:
@@ -255,91 +255,72 @@ def test_openai_metadata_rerank_false() -> None:
 
 
 @pytest.mark.asyncio
-async def test_gateway_rerank_http_call() -> None:
-    """Verify the gateway provider makes a POST to /v1/rerank."""
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+async def test_otari_rerank_http_call() -> None:
+    pytest.importorskip("otari")
 
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {
-            "id": "rerank-123",
-            "results": [{"index": 0, "relevance_score": 0.9}],
-            "usage": {"total_tokens": 50},
-        }
-        mock_client.post.return_value = mock_resp
+    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+        client = MagicMock()
+        client.platform_mode = False
+        client.openai = AsyncMock()
+        client.rerank = AsyncMock(
+            return_value={
+                "id": "rerank-123",
+                "results": [{"index": 0, "relevance_score": 0.9}],
+                "usage": {"total_tokens": 50},
+            }
+        )
+        mock_otari_client.return_value = client
 
-        from any_llm.providers.gateway import GatewayProvider
+        from any_llm.providers.otari import OtariProvider
 
-        provider = GatewayProvider(api_key="test-key", api_base="http://localhost:8000")
+        provider = OtariProvider(api_key="test-key", api_base="http://localhost:8000")
         result = await provider._arerank("rerank-v3.5", "query", ["doc1"])
 
         assert isinstance(result, RerankResponse)
         assert result.id == "rerank-123"
         assert len(result.results) == 1
         assert result.results[0].relevance_score == 0.9
-
-        call_args = mock_client.post.call_args
-        assert "/v1/rerank" in call_args[0][0]
+        client.rerank.assert_awaited_once_with(model="rerank-v3.5", query="query", documents=["doc1"])
 
 
 @pytest.mark.asyncio
-async def test_gateway_rerank_passes_top_n() -> None:
-    """Verify top_n and max_tokens_per_doc are passed in the request body."""
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+async def test_otari_rerank_passes_top_n() -> None:
+    pytest.importorskip("otari")
 
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {
-            "id": "rerank-456",
-            "results": [{"index": 0, "relevance_score": 0.9}],
-        }
-        mock_client.post.return_value = mock_resp
+    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+        client = MagicMock()
+        client.platform_mode = False
+        client.openai = AsyncMock()
+        client.rerank = AsyncMock(return_value={"id": "rerank-456", "results": [{"index": 0, "relevance_score": 0.9}]})
+        mock_otari_client.return_value = client
 
-        from any_llm.providers.gateway import GatewayProvider
+        from any_llm.providers.otari import OtariProvider
 
-        provider = GatewayProvider(api_key="test-key", api_base="http://localhost:8000")
+        provider = OtariProvider(api_key="test-key", api_base="http://localhost:8000")
         await provider._arerank("rerank-v3.5", "query", ["doc1"], top_n=5, max_tokens_per_doc=256)
-
-        call_args = mock_client.post.call_args
-        body = call_args[1]["json"]
-        assert body["top_n"] == 5
-        assert body["max_tokens_per_doc"] == 256
+        client.rerank.assert_awaited_once_with(
+            model="rerank-v3.5",
+            query="query",
+            documents=["doc1"],
+            top_n=5,
+            max_tokens_per_doc=256,
+        )
 
 
 @pytest.mark.asyncio
-async def test_gateway_rerank_strips_v1_suffix() -> None:
-    """Verify that /v1 suffix is stripped from base URL before building the rerank URL."""
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+async def test_otari_rerank_raises_when_sdk_lacks_rerank() -> None:
+    pytest.importorskip("otari")
+    from types import SimpleNamespace
 
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {
-            "id": "rerank-789",
-            "results": [],
-        }
-        mock_client.post.return_value = mock_resp
+    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+        client = SimpleNamespace(platform_mode=False, openai=AsyncMock())
+        mock_otari_client.return_value = client
 
-        from any_llm.providers.gateway import GatewayProvider
+        from any_llm.providers.otari import OtariProvider
 
-        provider = GatewayProvider(api_key="test-key", api_base="http://localhost:8000")
-        await provider._arerank("model", "query", [])
-
-        call_args = mock_client.post.call_args
-        url = call_args[0][0]
-        assert url == "http://localhost:8000/v1/rerank"
-        assert "/v1/v1/" not in url
+        provider = OtariProvider(api_key="test-key", api_base="http://localhost:8000")
+        with pytest.raises(NotImplementedError, match="rerank"):
+            await provider._arerank("model", "query", [])
 
 
 @pytest.mark.asyncio
@@ -403,7 +384,7 @@ async def test_arerank_api_function() -> None:
 
 
 def test_rerank_response_model_validate() -> None:
-    """Test that RerankResponse can be validated from a dict (gateway wire format)."""
+    """Test that RerankResponse can be validated from a dict (otari wire format)."""
     data = {
         "id": "rerank-wire",
         "results": [
@@ -656,104 +637,22 @@ def test_rerank_api_with_client_args() -> None:
 
 
 @pytest.mark.asyncio
-async def test_gateway_rerank_platform_mode_http_error() -> None:
-    """Gateway rerank wraps HTTPStatusError as openai.APIStatusError in platform mode."""
-    import httpx
+async def test_otari_rerank_propagates_sdk_errors() -> None:
+    pytest.importorskip("otari")
 
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+        client = MagicMock()
+        client.platform_mode = False
+        client.openai = AsyncMock()
+        client.rerank = AsyncMock(side_effect=RuntimeError("boom"))
+        mock_otari_client.return_value = client
 
-        mock_response = MagicMock(spec=httpx.Response)
-        mock_response.status_code = 400
-        mock_response.headers = {}
-        mock_response.stream = MagicMock()
-        mock_response.is_closed = True
-        http_error = httpx.HTTPStatusError("Bad Request", request=MagicMock(), response=mock_response)
-        mock_client.post.return_value = MagicMock()
-        mock_client.post.return_value.raise_for_status.side_effect = http_error
+        from any_llm.providers.otari import OtariProvider
 
-        from any_llm.providers.gateway import GatewayProvider
+        provider = OtariProvider(api_key="test-key", api_base="http://localhost:8000")
 
-        provider = GatewayProvider(api_key="test-key", api_base="http://localhost:8000")
-        provider.platform_mode = True
-
-        import openai
-
-        with pytest.raises(openai.APIStatusError):
+        with pytest.raises(RuntimeError, match="boom"):
             await provider._arerank("model", "query", ["doc"])
-
-
-@pytest.mark.asyncio
-async def test_gateway_rerank_platform_mode_generic_error() -> None:
-    """Gateway rerank calls _handle_platform_error for generic exceptions in platform mode."""
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        mock_client.post.side_effect = ConnectionError("connection failed")
-
-        from any_llm.providers.gateway import GatewayProvider
-
-        provider = GatewayProvider(api_key="test-key", api_base="http://localhost:8000")
-        provider.platform_mode = True
-
-        with patch.object(provider, "_handle_platform_error") as mock_handle:
-            with pytest.raises(ConnectionError):
-                await provider._arerank("model", "query", ["doc"])
-
-            mock_handle.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_gateway_rerank_non_platform_http_error_reraises() -> None:
-    """Gateway rerank re-raises HTTPStatusError when not in platform mode."""
-    import httpx
-
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        mock_response = MagicMock(spec=httpx.Response)
-        mock_response.status_code = 500
-        http_error = httpx.HTTPStatusError("Server Error", request=MagicMock(), response=mock_response)
-        mock_client.post.return_value = MagicMock()
-        mock_client.post.return_value.raise_for_status.side_effect = http_error
-
-        from any_llm.providers.gateway import GatewayProvider
-
-        provider = GatewayProvider(api_key="test-key", api_base="http://localhost:8000")
-        provider.platform_mode = False
-
-        with pytest.raises(httpx.HTTPStatusError):
-            await provider._arerank("model", "query", ["doc"])
-
-
-@pytest.mark.asyncio
-async def test_gateway_rerank_sends_auth_headers() -> None:
-    """Verify the gateway provider sends correct Authorization and AnyLLM-Key headers."""
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {"results": []}
-        mock_client.post.return_value = mock_resp
-
-        from any_llm.providers.gateway import GatewayProvider
-
-        provider = GatewayProvider(api_key="my-secret-key", api_base="http://localhost:8000")
-        await provider._arerank("model", "query", ["doc"])
-
-        call_args = mock_client.post.call_args
-        headers = call_args[1]["headers"]
-        assert headers["Authorization"] == "Bearer my-secret-key"
 
 
 def test_cohere_convert_rerank_params_ignores_none_max_tokens() -> None:

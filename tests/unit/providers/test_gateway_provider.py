@@ -1,566 +1,160 @@
-import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
-import openai
 import pytest
 
-from any_llm.exceptions import (
-    AuthenticationError,
-    GatewayTimeoutError,
-    InsufficientFundsError,
-    ModelNotFoundError,
-    RateLimitError,
-    UpstreamProviderError,
+pytest.importorskip("otari")
+
+from any_llm.providers.gateway import GatewayProvider
+from any_llm.providers.otari import OtariProvider
+from any_llm.providers.otari.otari import LEGACY_GATEWAY_HEADER_NAME
+from any_llm.types.completion import CompletionParams
+
+
+def _mock_otari_client(platform_mode: bool = False) -> MagicMock:
+    mock_client = MagicMock()
+    mock_client.platform_mode = platform_mode
+    mock_client.openai = AsyncMock()
+    return mock_client
+
+
+def test_gateway_provider_warns_and_uses_otari_provider() -> None:
+    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+        mock_otari_client.return_value = _mock_otari_client()
+
+        with pytest.warns(DeprecationWarning, match="gateway.*deprecated"):
+            provider = GatewayProvider(api_base="https://otari.example.com")
+
+    assert isinstance(provider, OtariProvider)
+
+
+def test_gateway_provider_is_backed_by_otari_client() -> None:
+    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+        mocked_client = _mock_otari_client(platform_mode=True)
+        mock_otari_client.return_value = mocked_client
+
+        with pytest.warns(DeprecationWarning, match="gateway.*deprecated"):
+            provider = GatewayProvider(api_base="https://otari.example.com")
+
+    assert provider.platform_mode is True
+    assert provider.otari_client is mocked_client
+    assert provider.client is mocked_client.openai
+
+
+def test_gateway_provider_uses_gateway_identity_and_env_names() -> None:
+    assert GatewayProvider.PROVIDER_NAME == "gateway"
+    assert GatewayProvider.ENV_API_KEY_NAME == "GATEWAY_API_KEY"
+    assert GatewayProvider.ENV_API_BASE_NAME == "GATEWAY_API_BASE"
+
+
+def test_gateway_header_constant_is_legacy_name() -> None:
+    from any_llm.providers.gateway.gateway import GATEWAY_HEADER_NAME
+
+    assert GATEWAY_HEADER_NAME == LEGACY_GATEWAY_HEADER_NAME
+
+
+@patch.dict(
+    "os.environ", {"GATEWAY_API_BASE": "https://gateway.env", "OTARI_API_BASE": "https://otari.env"}, clear=False
 )
-from any_llm.providers.gateway.gateway import (
-    GATEWAY_HEADER_NAME,
-    GATEWAY_PLATFORM_TOKEN_ENV,
-    GatewayProvider,
+def test_gateway_provider_prefers_gateway_env_api_base() -> None:
+    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+        mock_otari_client.return_value = _mock_otari_client()
+
+        with pytest.warns(DeprecationWarning, match="gateway.*deprecated"):
+            GatewayProvider()
+
+    call_kwargs = mock_otari_client.call_args.kwargs
+    assert call_kwargs["api_base"] == "https://gateway.env"
+
+
+@patch.dict("os.environ", {"OTARI_API_BASE": "https://otari.env"}, clear=False)
+def test_otari_provider_prefers_otari_env_api_base() -> None:
+    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+        mock_otari_client.return_value = _mock_otari_client()
+        OtariProvider()
+
+    call_kwargs = mock_otari_client.call_args.kwargs
+    assert call_kwargs["api_base"] == "https://otari.env"
+
+
+@patch.dict(
+    "os.environ",
+    {
+        "OTARI_API_BASE": "https://otari.env",
+        "OTARI_PLATFORM_TOKEN": "platform-token",
+        "OTARI_API_KEY": "",
+    },
+    clear=False,
 )
+def test_otari_provider_platform_mode_uses_platform_token_not_placeholder_key() -> None:
+    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+        mock_otari_client.return_value = _mock_otari_client(platform_mode=True)
+        OtariProvider(platform_mode=True)
 
-# -- Non-platform mode (existing behaviour) -----------------------------------
-
-
-def test_gateway_init_requires_api_base() -> None:
-    with pytest.raises(ValueError, match="api_base is required"):
-        GatewayProvider(api_key="test-key")
-
-
-@patch("any_llm.providers.openai.base.AsyncOpenAI")
-def test_gateway_init_with_api_key(mock_openai_class: MagicMock) -> None:
-    mock_client = AsyncMock()
-    mock_openai_class.return_value = mock_client
-
-    GatewayProvider(api_key="test-key", api_base="https://gateway.example.com")
-
-    mock_openai_class.assert_called_once()
-    call_kwargs = mock_openai_class.call_args[1]
-    assert call_kwargs["base_url"] == "https://gateway.example.com"
-    assert call_kwargs["api_key"] == "test-key"
-    assert call_kwargs["default_headers"][GATEWAY_HEADER_NAME] == "Bearer test-key"
+    call_kwargs = mock_otari_client.call_args.kwargs
+    assert call_kwargs["platform_token"] == "platform-token"  # noqa: S105
+    assert "api_key" not in call_kwargs
 
 
-@patch("any_llm.providers.openai.base.AsyncOpenAI")
-def test_gateway_init_without_api_key(mock_openai_class: MagicMock) -> None:
-    mock_client = AsyncMock()
-    mock_openai_class.return_value = mock_client
+@patch.dict(
+    "os.environ",
+    {
+        "OTARI_API_BASE": "https://otari.env",
+        "OTARI_PLATFORM_TOKEN": "platform-token",
+        "OTARI_API_KEY": "",
+    },
+    clear=False,
+)
+def test_otari_provider_auto_mode_prefers_platform_token_over_placeholder_key() -> None:
+    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+        mock_otari_client.return_value = _mock_otari_client(platform_mode=True)
+        OtariProvider()
 
-    GatewayProvider(api_base="https://gateway.example.com")
-
-    mock_openai_class.assert_called_once()
-    call_kwargs = mock_openai_class.call_args[1]
-    assert call_kwargs["base_url"] == "https://gateway.example.com"
-    # When no key is provided, a placeholder is used to satisfy the OpenAI SDK (>= 2.34.0)
-    assert call_kwargs["api_key"] == "no-key-required"
+    call_kwargs = mock_otari_client.call_args.kwargs
+    assert call_kwargs["platform_token"] == "platform-token"  # noqa: S105
+    assert "api_key" not in call_kwargs
 
 
-@patch("any_llm.providers.openai.base.AsyncOpenAI")
-@patch("any_llm.providers.gateway.gateway.logger")
-def test_gateway_init_header_override_warning(mock_logger: MagicMock, mock_openai_class: MagicMock) -> None:
-    mock_client = AsyncMock()
-    mock_openai_class.return_value = mock_client
+@patch.dict("os.environ", {"GATEWAY_API_BASE": "https://gateway.env"}, clear=False)
+def test_otari_provider_falls_back_to_gateway_env_api_base() -> None:
+    with patch.dict("os.environ", {"OTARI_API_BASE": ""}, clear=False):
+        with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+            mock_otari_client.return_value = _mock_otari_client()
+            OtariProvider()
 
-    GatewayProvider(
-        api_key="new-key",
-        api_base="https://gateway.example.com",
-        default_headers={GATEWAY_HEADER_NAME: "Bearer old-key"},
+    call_kwargs = mock_otari_client.call_args.kwargs
+    assert call_kwargs["api_base"] == "https://gateway.env"
+
+
+def test_otari_provider_requires_api_base_when_no_env() -> None:
+    with patch.dict("os.environ", {}, clear=True):
+        with pytest.raises(ValueError, match="api_base is required"):
+            OtariProvider()
+
+
+@pytest.mark.asyncio
+async def test_otari_completion_converts_max_tokens_to_max_completion_tokens() -> None:
+    mocked_client = _mock_otari_client()
+    mocked_client.completion = AsyncMock(
+        return_value={
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 1700000000,
+            "model": "gpt-4",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
     )
 
-    mock_logger.info.assert_called_once()
-    assert "already set" in mock_logger.info.call_args[0][0]
-    call_kwargs = mock_openai_class.call_args[1]
-    assert call_kwargs["default_headers"][GATEWAY_HEADER_NAME] == "Bearer new-key"
-
-
-@patch("any_llm.providers.openai.base.AsyncOpenAI")
-@patch.dict(os.environ, {"GATEWAY_API_KEY": "env-key"}, clear=False)
-def test_gateway_init_with_env_api_key(mock_openai_class: MagicMock) -> None:
-    mock_client = AsyncMock()
-    mock_openai_class.return_value = mock_client
-
-    GatewayProvider(api_base="https://gateway.example.com")
-
-    call_kwargs = mock_openai_class.call_args[1]
-    assert call_kwargs["api_key"] == "env-key"
-    assert call_kwargs["default_headers"][GATEWAY_HEADER_NAME] == "Bearer env-key"
-
-
-@patch("any_llm.providers.openai.base.AsyncOpenAI")
-@patch.dict(os.environ, {}, clear=True)
-def test_gateway_init_without_any_api_key(mock_openai_class: MagicMock) -> None:
-    mock_client = AsyncMock()
-    mock_openai_class.return_value = mock_client
-
-    GatewayProvider(api_base="https://gateway.example.com")
-
-    call_kwargs = mock_openai_class.call_args[1]
-    # When no key is provided, a placeholder is used to satisfy the OpenAI SDK (>= 2.34.0)
-    assert call_kwargs["api_key"] == "no-key-required"
-    assert "default_headers" not in call_kwargs or GATEWAY_HEADER_NAME not in call_kwargs.get("default_headers", {})
-
-
-def test_verify_api_key_with_provided_key() -> None:
-    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
-        provider = GatewayProvider(api_key="test-key", api_base="https://gateway.example.com")
-        result = provider._verify_and_set_api_key("provided-key")
-        assert result == "provided-key"
-
-
-@patch.dict(os.environ, {"GATEWAY_API_KEY": "env-key"}, clear=False)
-def test_verify_api_key_with_env_variable() -> None:
-    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
-        provider = GatewayProvider(api_key="test-key", api_base="https://gateway.example.com")
-        result = provider._verify_and_set_api_key(None)
-        assert result == "env-key"
-
-
-@patch.dict(os.environ, {}, clear=True)
-def test_verify_api_key_none_returns_placeholder() -> None:
-    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
-        provider = GatewayProvider(api_base="https://gateway.example.com")
-        result = provider._verify_and_set_api_key(None)
-        assert result == "no-key-required"
-
-
-@patch("any_llm.providers.openai.base.AsyncOpenAI")
-def test_gateway_client_initialization_with_custom_headers(mock_openai_class: MagicMock) -> None:
-    mock_client = AsyncMock()
-    mock_openai_class.return_value = mock_client
-
-    custom_headers = {"X-Custom-Header": "custom-value"}
-    GatewayProvider(api_key="test-key", api_base="https://gateway.example.com", default_headers=custom_headers)
-
-    call_kwargs = mock_openai_class.call_args[1]
-    assert call_kwargs["default_headers"][GATEWAY_HEADER_NAME] == "Bearer test-key"
-    assert call_kwargs["default_headers"]["X-Custom-Header"] == "custom-value"
-
-
-@patch("any_llm.providers.openai.base.AsyncOpenAI")
-def test_gateway_passes_kwargs_to_parent(mock_openai_class: MagicMock) -> None:
-    mock_client = AsyncMock()
-    mock_openai_class.return_value = mock_client
-
-    GatewayProvider(
-        api_key="test-key",
-        api_base="https://gateway.example.com",
-        timeout=30,
-        max_retries=5,
-        default_headers={},
+    with patch("any_llm.providers.otari.otari.OtariClient", return_value=mocked_client):
+        provider = OtariProvider(api_base="https://otari.example.com")
+    params = CompletionParams(
+        model_id="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=64,
     )
 
-    call_kwargs = mock_openai_class.call_args[1]
-    assert call_kwargs["timeout"] == 30
-    assert call_kwargs["max_retries"] == 5
-    assert call_kwargs["default_headers"][GATEWAY_HEADER_NAME] == "Bearer test-key"
-
-
-# -- Platform mode: initialisation -------------------------------------------
-
-
-@patch("any_llm.providers.openai.base.AsyncOpenAI")
-def test_gateway_platform_mode_explicit(mock_openai_class: MagicMock) -> None:
-    """Explicit platform_mode=True sends only Authorization header, not AnyLLM-Key."""
-    mock_openai_class.return_value = AsyncMock()
-
-    provider = GatewayProvider(
-        api_key="user-token",
-        api_base="https://gateway.example.com",
-        platform_mode=True,
-    )
-
-    assert provider.platform_mode is True
-    call_kwargs = mock_openai_class.call_args[1]
-    assert call_kwargs["api_key"] == "user-token"
-    assert call_kwargs["base_url"] == "https://gateway.example.com"
-    assert GATEWAY_HEADER_NAME not in call_kwargs.get("default_headers", {})
-
-
-def test_gateway_platform_mode_requires_token() -> None:
-    """platform_mode=True without a token raises ValueError."""
-    with pytest.raises(ValueError, match="Platform mode requires a user token"):
-        GatewayProvider(api_base="https://gateway.example.com", platform_mode=True)
-
-
-@patch("any_llm.providers.openai.base.AsyncOpenAI")
-@patch.dict(os.environ, {GATEWAY_PLATFORM_TOKEN_ENV: "env-platform-token"}, clear=False)
-def test_gateway_platform_mode_explicit_with_env_token(mock_openai_class: MagicMock) -> None:
-    """platform_mode=True falls back to GATEWAY_PLATFORM_TOKEN env var."""
-    mock_openai_class.return_value = AsyncMock()
-
-    provider = GatewayProvider(api_base="https://gateway.example.com", platform_mode=True)
-
-    assert provider.platform_mode is True
-    call_kwargs = mock_openai_class.call_args[1]
-    assert call_kwargs["api_key"] == "env-platform-token"
-
-
-@patch("any_llm.providers.openai.base.AsyncOpenAI")
-@patch.dict(os.environ, {GATEWAY_PLATFORM_TOKEN_ENV: "env-platform-token"}, clear=False)
-def test_gateway_platform_mode_auto_detect_via_env(mock_openai_class: MagicMock) -> None:
-    """When GATEWAY_PLATFORM_TOKEN is set and no api_key, auto-enter platform mode."""
-    mock_openai_class.return_value = AsyncMock()
-
-    provider = GatewayProvider(api_base="https://gateway.example.com")
-
-    assert provider.platform_mode is True
-    call_kwargs = mock_openai_class.call_args[1]
-    assert call_kwargs["api_key"] == "env-platform-token"
-    assert GATEWAY_HEADER_NAME not in call_kwargs.get("default_headers", {})
-
-
-@patch("any_llm.providers.openai.base.AsyncOpenAI")
-@patch.dict(os.environ, {GATEWAY_PLATFORM_TOKEN_ENV: "env-platform-token"}, clear=False)
-def test_gateway_platform_mode_env_ignored_when_api_key_provided(mock_openai_class: MagicMock) -> None:
-    """When an explicit api_key is provided, GATEWAY_PLATFORM_TOKEN does not trigger platform mode."""
-    mock_openai_class.return_value = AsyncMock()
-
-    provider = GatewayProvider(api_key="gateway-key", api_base="https://gateway.example.com")
-
-    assert provider.platform_mode is False
-    call_kwargs = mock_openai_class.call_args[1]
-    assert call_kwargs["api_key"] == "gateway-key"
-    assert call_kwargs["default_headers"][GATEWAY_HEADER_NAME] == "Bearer gateway-key"
-
-
-@patch("any_llm.providers.openai.base.AsyncOpenAI")
-def test_gateway_default_mode_sets_platform_mode_false(mock_openai_class: MagicMock) -> None:
-    """Non-platform init sets platform_mode to False."""
-    mock_openai_class.return_value = AsyncMock()
-
-    provider = GatewayProvider(api_key="test-key", api_base="https://gateway.example.com")
-    assert provider.platform_mode is False
-
-
-# -- Platform mode: error handling --------------------------------------------
-
-
-def _make_api_status_error(
-    status_code: int,
-    message: str = "error",
-    headers: dict[str, str] | None = None,
-) -> openai.APIStatusError:
-    """Build an ``openai.APIStatusError`` with a fake httpx response."""
-    resp_headers = {"content-type": "application/json"}
-    if headers:
-        resp_headers.update(headers)
-    response = httpx.Response(
-        status_code=status_code,
-        headers=resp_headers,
-        json={"error": {"message": message}},
-        request=httpx.Request("POST", "https://gateway.example.com/v1/chat/completions"),
-    )
-    return openai.APIStatusError(
-        message=message,
-        response=response,
-        body={"error": {"message": message}},
-    )
-
-
-def _make_platform_provider() -> GatewayProvider:
-    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
-        return GatewayProvider(
-            api_key="user-token",
-            api_base="https://gateway.example.com",
-            platform_mode=True,
-        )
-
-
-def test_gateway_platform_error_401() -> None:
-    provider = _make_platform_provider()
-    exc = _make_api_status_error(401, "Invalid token")
-
-    with pytest.raises(AuthenticationError, match="Invalid token"):
-        provider._handle_platform_error(exc)
-
-
-def test_gateway_platform_error_402() -> None:
-    provider = _make_platform_provider()
-    exc = _make_api_status_error(402, "Budget exceeded")
-
-    with pytest.raises(InsufficientFundsError, match="Budget exceeded"):
-        provider._handle_platform_error(exc)
-
-
-def test_gateway_platform_error_403() -> None:
-    provider = _make_platform_provider()
-    exc = _make_api_status_error(403, "Forbidden")
-
-    with pytest.raises(AuthenticationError, match="Forbidden"):
-        provider._handle_platform_error(exc)
-
-
-def test_gateway_platform_error_404() -> None:
-    provider = _make_platform_provider()
-    exc = _make_api_status_error(404, "Model not found")
-
-    with pytest.raises(ModelNotFoundError, match="Model not found"):
-        provider._handle_platform_error(exc)
-
-
-def test_gateway_platform_error_429_with_retry_after() -> None:
-    provider = _make_platform_provider()
-    exc = _make_api_status_error(429, "Too many requests", headers={"retry-after": "30"})
-
-    with pytest.raises(RateLimitError) as exc_info:
-        provider._handle_platform_error(exc)
-
-    assert exc_info.value.retry_after == "30"
-    assert "Too many requests" in str(exc_info.value)
-
-
-def test_gateway_platform_error_429_without_retry_after() -> None:
-    provider = _make_platform_provider()
-    exc = _make_api_status_error(429, "Rate limited")
-
-    with pytest.raises(RateLimitError) as exc_info:
-        provider._handle_platform_error(exc)
-
-    assert exc_info.value.retry_after is None
-
-
-def test_gateway_platform_error_502() -> None:
-    provider = _make_platform_provider()
-    exc = _make_api_status_error(502, "Bad gateway")
-
-    with pytest.raises(UpstreamProviderError, match="Bad gateway"):
-        provider._handle_platform_error(exc)
-
-
-def test_gateway_platform_error_504() -> None:
-    provider = _make_platform_provider()
-    exc = _make_api_status_error(504, "Gateway timeout")
-
-    with pytest.raises(GatewayTimeoutError, match="Gateway timeout"):
-        provider._handle_platform_error(exc)
-
-
-def test_gateway_platform_error_correlation_id() -> None:
-    provider = _make_platform_provider()
-    exc = _make_api_status_error(
-        500,
-        "Internal error",
-        headers={"x-correlation-id": "abc-123"},
-    )
-
-    with pytest.raises(openai.APIStatusError):
-        provider._handle_platform_error(exc)
-
-
-def test_gateway_platform_error_correlation_id_in_mapped_error() -> None:
-    provider = _make_platform_provider()
-    exc = _make_api_status_error(
-        401,
-        "Unauthorized",
-        headers={"x-correlation-id": "trace-xyz"},
-    )
-
-    with pytest.raises(AuthenticationError, match="correlation_id=trace-xyz"):
-        provider._handle_platform_error(exc)
-
-
-def test_gateway_platform_error_unknown_status_reraises() -> None:
-    """Unrecognised status codes pass through unchanged."""
-    provider = _make_platform_provider()
-    exc = _make_api_status_error(500, "Internal server error")
-
-    with pytest.raises(openai.APIStatusError):
-        provider._handle_platform_error(exc)
-
-
-def test_gateway_platform_error_non_api_error_reraises() -> None:
-    """Non-APIStatusError exceptions pass through unchanged."""
-    provider = _make_platform_provider()
-
-    with pytest.raises(RuntimeError, match="something else"):
-        provider._handle_platform_error(RuntimeError("something else"))
-
-
-@pytest.mark.asyncio
-async def test_gateway_platform_acompletion_wraps_errors() -> None:
-    """_acompletion wraps APIStatusError in platform mode."""
-    provider = _make_platform_provider()
-    exc = _make_api_status_error(429, "Rate limited", headers={"retry-after": "5"})
-    provider.client = AsyncMock()
-    provider.client.chat.completions.create = AsyncMock(side_effect=exc)
-
-    with pytest.raises(RateLimitError) as exc_info:
-        await provider._acompletion(
-            MagicMock(
-                model_id="openai:gpt-4",
-                messages=[],
-                reasoning_effort=None,
-                stream=False,
-                response_format=None,
-            ),
-        )
-
-    assert exc_info.value.retry_after == "5"
-
-
-@pytest.mark.asyncio
-async def test_gateway_non_platform_acompletion_no_wrapping() -> None:
-    """In non-platform mode, errors are not wrapped by _handle_platform_error."""
-    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
-        provider = GatewayProvider(api_key="key", api_base="https://gateway.example.com")
-
-    assert provider.platform_mode is False
-    exc = _make_api_status_error(429, "Rate limited")
-    provider.client = AsyncMock()
-    provider.client.chat.completions.create = AsyncMock(side_effect=exc)
-
-    with pytest.raises(openai.APIStatusError):
-        await provider._acompletion(
-            MagicMock(
-                model_id="openai:gpt-4",
-                messages=[],
-                reasoning_effort=None,
-                stream=False,
-                response_format=None,
-            ),
-        )
-
-
-# -- Platform mode: success paths and other method overrides ------------------
-
-
-def _completion_params_mock() -> MagicMock:
-    return MagicMock(
-        model_id="openai:gpt-4",
-        messages=[],
-        reasoning_effort=None,
-        stream=False,
-        response_format=None,
-    )
-
-
-@pytest.mark.asyncio
-async def test_gateway_platform_acompletion_success() -> None:
-    """Platform-mode _acompletion returns the result on success (no error wrapping interferes)."""
-    provider = _make_platform_provider()
-    sentinel = MagicMock(name="completion-result")
-
-    with patch.object(
-        type(provider).__bases__[0], "_acompletion", new_callable=AsyncMock, return_value=sentinel
-    ) as mock_super:
-        result = await provider._acompletion(_completion_params_mock())
-
-    mock_super.assert_awaited_once()
-    assert result is sentinel
-
-
-@pytest.mark.asyncio
-async def test_gateway_platform_aresponses_wraps_errors() -> None:
-    """_aresponses wraps APIStatusError in platform mode."""
-    provider = _make_platform_provider()
-    exc = _make_api_status_error(502, "Bad gateway")
-
-    with patch.object(type(provider).__bases__[0], "_aresponses", new_callable=AsyncMock, side_effect=exc):
-        with pytest.raises(UpstreamProviderError, match="Bad gateway"):
-            await provider._aresponses(MagicMock())
-
-
-@pytest.mark.asyncio
-async def test_gateway_platform_aresponses_success() -> None:
-    """Platform-mode _aresponses returns the result on success."""
-    provider = _make_platform_provider()
-    sentinel = MagicMock(name="responses-result")
-
-    with patch.object(
-        type(provider).__bases__[0], "_aresponses", new_callable=AsyncMock, return_value=sentinel
-    ) as mock_super:
-        result = await provider._aresponses(MagicMock())
-
-    mock_super.assert_awaited_once()
-    assert result is sentinel
-
-
-@pytest.mark.asyncio
-async def test_gateway_platform_aembedding_wraps_errors() -> None:
-    """_aembedding wraps APIStatusError in platform mode."""
-    provider = _make_platform_provider()
-    exc = _make_api_status_error(401, "Unauthorized")
-
-    with patch.object(type(provider).__bases__[0], "_aembedding", new_callable=AsyncMock, side_effect=exc):
-        with pytest.raises(AuthenticationError, match="Unauthorized"):
-            await provider._aembedding("text-embedding-3-small", "hello")
-
-
-@pytest.mark.asyncio
-async def test_gateway_platform_aembedding_success() -> None:
-    """Platform-mode _aembedding returns the result on success."""
-    provider = _make_platform_provider()
-    sentinel = MagicMock(name="embedding-result")
-
-    with patch.object(
-        type(provider).__bases__[0], "_aembedding", new_callable=AsyncMock, return_value=sentinel
-    ) as mock_super:
-        result = await provider._aembedding("text-embedding-3-small", "hello")
-
-    mock_super.assert_awaited_once()
-    assert result is sentinel
-
-
-@pytest.mark.asyncio
-async def test_gateway_platform_alist_models_wraps_errors() -> None:
-    """_alist_models wraps APIStatusError in platform mode."""
-    provider = _make_platform_provider()
-    exc = _make_api_status_error(504, "Timed out")
-
-    with patch.object(type(provider).__bases__[0], "_alist_models", new_callable=AsyncMock, side_effect=exc):
-        with pytest.raises(GatewayTimeoutError, match="Timed out"):
-            await provider._alist_models()
-
-
-@pytest.mark.asyncio
-async def test_gateway_platform_alist_models_success() -> None:
-    """Platform-mode _alist_models returns the result on success."""
-    provider = _make_platform_provider()
-    sentinel = MagicMock(name="models-result")
-
-    with patch.object(
-        type(provider).__bases__[0], "_alist_models", new_callable=AsyncMock, return_value=sentinel
-    ) as mock_super:
-        result = await provider._alist_models()
-
-    mock_super.assert_awaited_once()
-    assert result is sentinel
-
-
-@pytest.mark.asyncio
-async def test_gateway_non_platform_aresponses_no_wrapping() -> None:
-    """In non-platform mode, _aresponses errors pass through unchanged."""
-    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
-        provider = GatewayProvider(api_key="key", api_base="https://gateway.example.com")
-
-    exc = _make_api_status_error(502, "Bad gateway")
-
-    with patch.object(type(provider).__bases__[0], "_aresponses", new_callable=AsyncMock, side_effect=exc):
-        with pytest.raises(openai.APIStatusError):
-            await provider._aresponses(MagicMock())
-
-
-@pytest.mark.asyncio
-async def test_gateway_non_platform_aembedding_no_wrapping() -> None:
-    """In non-platform mode, _aembedding errors pass through unchanged."""
-    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
-        provider = GatewayProvider(api_key="key", api_base="https://gateway.example.com")
-
-    exc = _make_api_status_error(401, "Unauthorized")
-
-    with patch.object(type(provider).__bases__[0], "_aembedding", new_callable=AsyncMock, side_effect=exc):
-        with pytest.raises(openai.APIStatusError):
-            await provider._aembedding("text-embedding-3-small", "hello")
-
-
-@pytest.mark.asyncio
-async def test_gateway_non_platform_alist_models_no_wrapping() -> None:
-    """In non-platform mode, _alist_models errors pass through unchanged."""
-    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
-        provider = GatewayProvider(api_key="key", api_base="https://gateway.example.com")
-
-    exc = _make_api_status_error(504, "Timed out")
-
-    with patch.object(type(provider).__bases__[0], "_alist_models", new_callable=AsyncMock, side_effect=exc):
-        with pytest.raises(openai.APIStatusError):
-            await provider._alist_models()
+    await provider._acompletion(params)
+
+    call_kwargs = mocked_client.completion.call_args.kwargs
+    assert call_kwargs["max_completion_tokens"] == 64
+    assert "max_tokens" not in call_kwargs

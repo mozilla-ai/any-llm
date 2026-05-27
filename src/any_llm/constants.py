@@ -40,6 +40,7 @@ class LLMProvider(StrEnum):
     NEBIUS = "nebius"
     OLLAMA = "ollama"
     OPENAI = "openai"
+    OTARI = "otari"
     OPENROUTER = "openrouter"
     PORTKEY = "portkey"
     QINIU = "qiniu"
