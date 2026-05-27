@@ -8,8 +8,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from any_llm.exceptions import BatchNotCompleteError
+from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams
 from any_llm.types.batch import BatchResult
 from any_llm.types.completion import CompletionParams
+from any_llm.types.image import ImageGenerationParams
 from any_llm.types.model import Model
 
 pytest.importorskip("otari")
@@ -119,26 +121,26 @@ async def test_otari_embedding_uses_converter() -> None:
 @pytest.mark.asyncio
 async def test_otari_image_generation_calls_openai_images_generate() -> None:
     mocked_client = _mock_otari_client()
-    mocked_client.openai.images.generate.return_value = {"data": [{"url": "https://img.example"}]}
+    mocked_client.openai.images.generate.return_value = MagicMock()
     provider = _build_provider(mocked_client)
 
-    params = SimpleNamespace(model_id="gpt-image", to_api_kwargs=lambda: {"prompt": "cat"})
+    params = ImageGenerationParams(model_id="gpt-image", prompt="cat")
     result = await provider._aimage_generation(params, size="1024x1024")
 
-    assert result["data"][0]["url"] == "https://img.example"
+    assert result is mocked_client.openai.images.generate.return_value
     mocked_client.openai.images.generate.assert_awaited_once_with(model="gpt-image", prompt="cat", size="1024x1024")
 
 
 @pytest.mark.asyncio
 async def test_otari_transcription_calls_openai_audio_transcriptions_create() -> None:
     mocked_client = _mock_otari_client()
-    mocked_client.openai.audio.transcriptions.create.return_value = {"text": "hello"}
+    mocked_client.openai.audio.transcriptions.create.return_value = MagicMock()
     provider = _build_provider(mocked_client)
 
-    params = SimpleNamespace(model_id="whisper", file=b"audio", to_api_kwargs=lambda: {"language": "en"})
+    params = AudioTranscriptionParams(model_id="whisper", file=b"audio", language="en")
     result = await provider._atranscription(params)
 
-    assert result["text"] == "hello"
+    assert result is mocked_client.openai.audio.transcriptions.create.return_value
     mocked_client.openai.audio.transcriptions.create.assert_awaited_once_with(
         model="whisper", file=b"audio", language="en"
     )
@@ -150,12 +152,12 @@ async def test_otari_speech_returns_response_content() -> None:
     mocked_client.openai.audio.speech.create.return_value = SimpleNamespace(content=b"audio-bytes")
     provider = _build_provider(mocked_client)
 
-    params = SimpleNamespace(model_id="tts", input="hello", voice="alloy", to_api_kwargs=lambda: {"format": "mp3"})
+    params = AudioSpeechParams(model_id="tts", input="hello", voice="alloy", response_format="mp3")
     result = await provider._aspeech(params)
 
     assert result == b"audio-bytes"
     mocked_client.openai.audio.speech.create.assert_awaited_once_with(
-        model="tts", input="hello", voice="alloy", format="mp3"
+        model="tts", input="hello", voice="alloy", response_format="mp3"
     )
 
 
@@ -167,7 +169,9 @@ async def test_otari_moderation_uses_default_model_and_converter_include_raw() -
     provider = _build_provider(mocked_client)
 
     sentinel = object()
-    with patch("any_llm.providers.otari.otari._convert_moderation_response_from_openai", return_value=sentinel) as convert:
+    with patch(
+        "any_llm.providers.otari.otari._convert_moderation_response_from_openai", return_value=sentinel
+    ) as convert:
         result = await provider._amoderation(model="", input="hello", include_raw=True)
 
     assert result is sentinel
