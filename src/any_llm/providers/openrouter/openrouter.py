@@ -1,10 +1,12 @@
+from collections.abc import Sequence
 from typing import Any
 
 from typing_extensions import override
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.providers.openrouter.utils import build_reasoning_directive
+from any_llm.providers.openrouter.utils import _convert_models_list, build_reasoning_directive
 from any_llm.types.completion import CompletionParams
+from any_llm.types.model import Model
 
 
 class OpenrouterProvider(BaseOpenAIProvider):
@@ -21,6 +23,12 @@ class OpenrouterProvider(BaseOpenAIProvider):
     SUPPORTS_EMBEDDING = True
     # OpenRouter does not expose a moderation endpoint.
     SUPPORTS_MODERATION = False
+
+    @staticmethod
+    @override
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        """Convert OpenRouter list models response to valid Model objects."""
+        return _convert_models_list(response)
 
     @staticmethod
     @override
