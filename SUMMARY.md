@@ -6,7 +6,8 @@
 
 ## Cookbooks
 
-* [Getting Started](cookbooks/any-llm-getting-started.md)
+* [Getting Started with Any-LLM](cookbooks/any-llm-getting-started.md)
+* [Browser-Use with Any-LLM](cookbooks/browser-use-with-any-llm.md)
 
 ## API Reference
 
