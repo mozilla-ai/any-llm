@@ -143,7 +143,7 @@ Update when you:
 Documentation to update:
 - **Docstrings** in code (required)
 - **README.md** if changing core functionality
-- Authored docs in `docs/` (e.g. `docs/quickstart.md`, `docs/platform/*`) when adding or changing features
+- Authored docs in `docs/` (e.g. `docs/quickstart.md`) when adding or changing features
 
 Authored docs live in `docs/`. Generated files (`docs/api/`, `docs/providers.md`, `docs/cookbooks/any-llm-getting-started.md`) are built by CI and not committed to the repository. The final publish artifact is `site/`, which CI builds and pushes to the `gitbook-docs` branch.
 

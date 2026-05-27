@@ -218,7 +218,6 @@ The landscape of LLM provider interfaces is fragmented. While OpenAI's API has b
 - **[Full Documentation](https://docs.mozilla.ai/any-llm/)** - Complete guides and API reference
 - **[Supported Providers](https://docs.mozilla.ai/any-llm/providers/)** - List of all supported LLM providers
 - **[Cookbook Examples](https://docs.mozilla.ai/any-llm/cookbooks/any-llm-getting-started)** - In-depth usage examples
-- **[Platform](https://otari.ai/)** - Managed control plane for key management, usage tracking, and cost visibility
 
 
 ## Contributing

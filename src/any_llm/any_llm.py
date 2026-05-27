@@ -37,7 +37,7 @@ from any_llm.types.messages import (
     MessageStopEvent,
     MessageStreamEvent,
 )
-from any_llm.types.provider import PlatformKey, ProviderMetadata
+from any_llm.types.provider import ProviderMetadata
 from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import async_coro_to_sync_iter, async_iter_to_sync_iter, run_async_in_sync
 from any_llm.utils.exception_handler import handle_exceptions
@@ -134,8 +134,6 @@ class AnyLLM(ABC):
     For example, in `gemini` provider, this could include `google.genai.types.Tool`.
     """
 
-    ANY_LLM_KEY: str = "ANY_LLM_KEY"
-
     def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self._verify_no_missing_packages()
         self._init_client(
@@ -210,39 +208,6 @@ class AnyLLM(ABC):
             raise ImportError(msg) from e
 
         provider_class: type[AnyLLM] = getattr(module, provider_class_name)
-
-        if not api_key:
-            api_key = os.getenv(cls.ANY_LLM_KEY)
-
-        if api_key:
-            try:
-                # Validate if the key conforms with the any-api format.
-                # If it does, any-llm must ask any-api for the corresponding provider key.
-                PlatformKey(api_key=api_key)
-
-                # Import and instantiate PlatformProvider in-place to avoid circular dependency issues.
-                platform_class_name = "PlatformProvider"
-                platform_module_path = "any_llm.providers.platform"
-                try:
-                    platform_module = importlib.import_module(platform_module_path)
-                except ImportError as e:
-                    msg = f"Could not import module {module_path}: {e!s}. Please ensure the provider is supported by doing AnyLLM.get_supported_providers()"
-                    raise ImportError(msg) from e
-
-                platform_class: type[AnyLLM] = getattr(platform_module, platform_class_name)
-
-                # Instantiate the class first and pass the provider next,
-                # so we don't change the common API between different providers.
-                # pop platform-specific kwargs to avoid passing them to the provider's __init__
-                client_name = kwargs.pop("client_name", None)
-                platform_provider = platform_class(
-                    api_key=api_key, api_base=api_base, client_name=client_name, **kwargs
-                )
-                platform_provider.provider = provider_class  # type: ignore[attr-defined]
-            except ValueError:
-                pass
-            else:
-                return platform_provider
 
         return provider_class(api_key=api_key, api_base=api_base, **kwargs)
 
@@ -596,7 +561,7 @@ class AnyLLM(ABC):
             frequency_penalty: Penalize new tokens based on frequency in text
             seed: Random seed for reproducible results
             user: Unique identifier for the end user
-            session_label: Optional user session label metadata for platform traces; exported as anyllm.user_session_label
+            session_label: Deprecated, no longer used. Previously used for platform traces.
             parallel_tool_calls: Whether to allow parallel tool calls
             logprobs: Include token-level log probabilities in the response
             top_logprobs: Number of alternatives to return when logprobs are requested
@@ -646,9 +611,6 @@ class AnyLLM(ABC):
             max_completion_tokens=max_completion_tokens,
             reasoning_effort=reasoning_effort,
         )
-
-        if session_label is not None and self.PROVIDER_NAME == "platform":
-            kwargs["session_label"] = session_label
 
         result = await self._acompletion(params, **kwargs)
 
