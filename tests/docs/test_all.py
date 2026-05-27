@@ -119,6 +119,19 @@ def _build_fake_browser_use_modules() -> dict[str, ModuleType]:
     }
 
 
+def _build_fake_dotenv_modules() -> dict[str, ModuleType]:
+    dotenv_module: Any = ModuleType("dotenv")
+
+    def load_dotenv() -> bool:
+        return True
+
+    dotenv_module.load_dotenv = load_dotenv
+
+    return {
+        "dotenv": dotenv_module,
+    }
+
+
 def _build_docs_patches() -> ExitStack:
     stack = ExitStack()
 
@@ -212,6 +225,7 @@ def _build_docs_patches() -> ExitStack:
     stack.enter_context(patch("any_llm.AnyLLM.get_all_provider_metadata", return_value=[fake_metadata]))
     stack.enter_context(patch("any_llm.types.completion.ChatCompletion", fake_chat_completion_class))
     stack.enter_context(patch.dict(sys.modules, _build_fake_browser_use_modules()))
+    stack.enter_context(patch.dict(sys.modules, _build_fake_dotenv_modules()))
 
     return stack
 
