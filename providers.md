@@ -8,7 +8,7 @@ description: Complete list of LLM providers supported by any-llm including OpenA
 | ID | Key | Base | Responses | Completion | Streaming<br>(Completions) | Reasoning<br>(Completions) | Image <br>(Completions) | Embedding | List Models | Batch |
 |----|-----|------|-----------|------------|--------------------------|--------------------------|-----------|-----------|-------------|-------|
 | [`anthropic`](https://docs.anthropic.com/en/home) | ANTHROPIC_API_KEY | ANTHROPIC_BASE_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
-| [`azure`](https://azure.microsoft.com/en-us/products/ai-services/openai-service) | AZURE_API_KEY | AZURE_AI_CHAT_ENDPOINT | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| [`azure`](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure) | AZURE_API_KEY | AZURE_AI_CHAT_ENDPOINT | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ |
 | [`azureanthropic`](https://learn.microsoft.com/en-us/azure/ai-foundry/model-inference/concepts/models) | AZURE_ANTHROPIC_API_KEY | AZURE_ANTHROPIC_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
 | [`azureopenai`](https://learn.microsoft.com/en-us/azure/ai-foundry/) | AZURE_OPENAI_API_KEY | AZURE_OPENAI_ENDPOINT | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ |
 | [`bedrock`](https://aws.amazon.com/bedrock/) | AWS_BEARER_TOKEN_BEDROCK | AWS_ENDPOINT_URL_BEDROCK_RUNTIME | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
