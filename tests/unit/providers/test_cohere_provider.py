@@ -11,7 +11,7 @@ from any_llm.providers.cohere.utils import (
     _create_openai_chunk_from_cohere_chunk,
     _patch_messages,
 )
-from any_llm.types.completion import CompletionParams, CreateEmbeddingResponse
+from any_llm.types.completion import CompletionParams, CreateEmbeddingResponse, ReasoningEffort
 
 
 def _mk_provider() -> Any:
@@ -207,9 +207,23 @@ def test_preprocess_response_format_unsupported_raises() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("reasoning_effort", ["auto", "none"])
-async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
-    """Test that reasoning_effort 'auto' and 'none' are filtered from Cohere API calls."""
+@pytest.mark.parametrize(
+    ("reasoning_effort", "expected_thinking"),
+    [
+        ("auto", None),
+        ("none", {"type": "disabled"}),
+        (None, {"type": "disabled"}),
+        ("minimal", {"type": "enabled", "token_budget": 256}),
+        ("low", {"type": "enabled", "token_budget": 1024}),
+        ("medium", {"type": "enabled", "token_budget": 8192}),
+        ("high", {"type": "enabled", "token_budget": 24576}),
+        ("xhigh", {"type": "enabled", "token_budget": 32768}),
+    ],
+)
+async def test_reasoning_effort_mapped_to_thinking(
+    reasoning_effort: ReasoningEffort | None, expected_thinking: dict[str, Any] | None
+) -> None:
+    """Test reasoning_effort maps to Cohere thinking config like Gemini."""
     pytest.importorskip("cohere")
     from any_llm.providers.cohere.cohere import CohereProvider
 
@@ -224,12 +238,16 @@ async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
                 CompletionParams(
                     model_id="command-r-plus",
                     messages=[{"role": "user", "content": "Hello"}],
-                    reasoning_effort=reasoning_effort,  # type: ignore[arg-type]
+                    reasoning_effort=reasoning_effort,
                 ),
             )
 
             call_kwargs = mock_client.chat.call_args[1]
             assert "reasoning_effort" not in call_kwargs
+            if expected_thinking is None:
+                assert "thinking" not in call_kwargs
+            else:
+                assert call_kwargs["thinking"] == expected_thinking
 
 
 def _mock_tool_call(tool_id: str, name: str, arguments: str) -> Mock:
