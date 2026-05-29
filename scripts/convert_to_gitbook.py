@@ -18,6 +18,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).parent
 DOCS_SRC = Path("docs")
 SITE_DIR = Path("site")
+SITE_IGNORE_PATTERNS = ("*.ipynb",)
 
 
 def run_generator(script_name: str) -> None:
@@ -82,6 +83,11 @@ def build_summary() -> str:
 """
 
 
+def copy_docs_to_site() -> None:
+    """Copy docs into the site artifact, excluding notebook source files."""
+    shutil.copytree(DOCS_SRC, SITE_DIR, ignore=shutil.ignore_patterns(*SITE_IGNORE_PATTERNS))
+
+
 def main() -> None:
     for script_name in (
         "generate_api_docs.py",
@@ -92,7 +98,7 @@ def main() -> None:
 
     if SITE_DIR.exists():
         shutil.rmtree(SITE_DIR)
-    shutil.copytree(DOCS_SRC, SITE_DIR)
+    copy_docs_to_site()
 
     (SITE_DIR / "SUMMARY.md").write_text(build_summary(), encoding="utf-8")
     print(f"\nDone - {len(list(SITE_DIR.rglob('*.md')))} files written to {SITE_DIR}/")
