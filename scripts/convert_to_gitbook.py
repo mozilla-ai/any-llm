@@ -18,7 +18,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).parent
 DOCS_SRC = Path("docs")
 SITE_DIR = Path("site")
-SITE_IGNORE_PATTERNS = ("*.ipynb",)
+SITE_IGNORE_PATTERNS = ("*.ipynb", ".gitignore")
 
 
 def run_generator(script_name: str) -> None:
