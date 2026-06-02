@@ -32,6 +32,15 @@ if TYPE_CHECKING:
     from any_llm.types.rerank import RerankResponse
 
 
+REASONING_EFFORT_TO_THINKING_BUDGETS = {
+    "minimal": 256,
+    "low": 1024,
+    "medium": 8192,
+    "high": 24576,
+    "xhigh": 32768,
+}
+
+
 class CohereProvider(AnyLLM):
     """Cohere Provider using the new response conversion utilities."""
 
@@ -59,12 +68,18 @@ class CohereProvider(AnyLLM):
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Cohere API."""
-        # Cohere does not support providing reasoning effort
         converted_params = params.model_dump(
-            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream", "stream_options"}
+            exclude_none=True,
+            exclude={"model_id", "messages", "response_format", "stream", "stream_options", "reasoning_effort"},
         )
-        if converted_params.get("reasoning_effort") in ("auto", "none"):
-            converted_params.pop("reasoning_effort")
+        if params.reasoning_effort != "auto":
+            if params.reasoning_effort is None or params.reasoning_effort == "none":
+                converted_params["thinking"] = {"type": "disabled"}
+            else:
+                converted_params["thinking"] = {
+                    "type": "enabled",
+                    "token_budget": REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort],
+                }
         converted_params.update(kwargs)
         return converted_params
 
