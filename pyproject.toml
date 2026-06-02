@@ -104,6 +104,9 @@ sagemaker = [
   "boto3",
 ]
 
+lmstudio = [
+  "lmstudio>=1.5.0",
+]
 
 # These providers don't require any additional dependencies, but are included for completeness.
 azureopenai = []
@@ -121,7 +124,6 @@ inception = []
 llama = []
 llamacpp = []
 llamafile = []
-lmstudio = []
 moonshot = []
 nebius = []
 openai = []
