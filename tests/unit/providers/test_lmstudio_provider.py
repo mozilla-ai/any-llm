@@ -307,7 +307,7 @@ async def test_acompletion_with_tools_raises() -> None:
             CompletionParams(
                 model_id="m",
                 messages=[{"role": "user", "content": "weather?"}],
-                tools=[{"type": "function", "function": {"name": "get_weather"}}],
+                tools=[get_weather],
             )
         )
 
@@ -382,3 +382,15 @@ def test_convert_models_list_helper() -> None:
 )
 def test_map_stop_reason(stop_reason: str | None, expected: str) -> None:
     assert utils._map_stop_reason(stop_reason) == expected
+
+
+@pytest.mark.parametrize(
+    ("content", "expected_content", "expected_reasoning"),
+    [
+        ("<think>because</think>final", "final", "because"),
+        ("preface <think>because</think> final", "preface  final", "because"),
+        ("no tags here", "no tags here", None),
+    ],
+)
+def test_split_reasoning_from_content(content: str, expected_content: str, expected_reasoning: str | None) -> None:
+    assert utils._split_reasoning_from_content(content) == (expected_content, expected_reasoning)

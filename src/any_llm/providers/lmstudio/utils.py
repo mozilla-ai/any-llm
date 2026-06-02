@@ -65,11 +65,15 @@ def _usage_from_stats(stats: LlmPredictionStats | None) -> CompletionUsage:
 
 
 def _split_reasoning_from_content(content: str) -> tuple[str, str | None]:
-    """Extract reasoning wrapped in <think></think> tags from the content (if present)."""
+    """Extract reasoning wrapped in <think></think> tags from the content (if present).
+
+    Any text before the opening tag or after the closing tag is preserved as content,
+    so a model that emits a preface before its reasoning block does not lose output.
+    """
     if "<think>" in content and "</think>" in content:
-        reasoning = content.split("<think>", 1)[1].split("</think>", 1)[0]
-        remainder = content.split("</think>", 1)[1]
-        return remainder, reasoning
+        before, after_open = content.split("<think>", 1)
+        reasoning, after_close = after_open.split("</think>", 1)
+        return before + after_close, reasoning
     return content, None
 
 

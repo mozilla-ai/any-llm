@@ -131,7 +131,7 @@ class LmstudioProvider(AnyLLM):
         config: dict[str, Any] = {}
         if params.temperature is not None:
             config["temperature"] = params.temperature
-        max_tokens = params.max_completion_tokens or params.max_tokens
+        max_tokens = params.max_completion_tokens if params.max_completion_tokens is not None else params.max_tokens
         if max_tokens is not None:
             config["maxTokens"] = max_tokens
         if params.top_p is not None:
