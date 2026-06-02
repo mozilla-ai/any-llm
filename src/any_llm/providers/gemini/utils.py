@@ -29,6 +29,22 @@ from any_llm.types.model import Model
 _INLINE_SIZE_LIMIT = 20 * 1024 * 1024
 
 
+def _has_json_schema_refs(schema: Any) -> bool:
+    """Return True if *schema* contains a ``$defs`` block or any ``$ref`` reference.
+
+    ``google.genai.types.Schema`` does not accept ``$ref``/``$defs``. When present,
+    the schema must be routed through ``FunctionDeclaration.parameters_json_schema``
+    instead, which the SDK forwards to the server as raw JSON Schema.
+    """
+    if isinstance(schema, dict):
+        if "$defs" in schema or "$ref" in schema:
+            return True
+        return any(_has_json_schema_refs(v) for v in schema.values())
+    if isinstance(schema, list):
+        return any(_has_json_schema_refs(v) for v in schema)
+    return False
+
+
 def _convert_tool_spec(tools: list[dict[str, Any] | Any]) -> list[types.Tool]:
     converted_tools = []
     function_declarations = []
@@ -43,6 +59,17 @@ def _convert_tool_spec(tools: list[dict[str, Any] | Any]) -> list[types.Tool]:
 
         function = tool["function"]
         params: dict[str, Any] = function.get("parameters") or {}
+
+        if _has_json_schema_refs(params):
+            function_declarations.append(
+                types.FunctionDeclaration(
+                    name=function["name"],
+                    description=function.get("description", ""),
+                    parameters_json_schema=params,
+                )
+            )
+            continue
+
         properties: dict[str, dict[str, Any]] = {}
         for param_name, param_info in (params.get("properties") or {}).items():
             prop: dict[str, Any] = {
