@@ -726,9 +726,7 @@ def test_convert_tool_spec_nested_ref_only() -> None:
             }
         },
     }
-    tools = _convert_tool_spec(
-        [{"type": "function", "function": {"name": "nested", "parameters": raw_params}}]
-    )
+    tools = _convert_tool_spec([{"type": "function", "function": {"name": "nested", "parameters": raw_params}}])
     decl = tools[0].function_declarations[0]  # type: ignore[index]
     assert decl.parameters is None
     assert decl.parameters_json_schema == raw_params
@@ -759,14 +757,16 @@ def test_convert_tool_spec_mixed_ref_and_plain_tools() -> None:
         ]
     )
     assert len(tools) == 1
-    decls = tools[0].function_declarations  # type: ignore[union-attr]
+    decls = tools[0].function_declarations
+    assert decls is not None
     assert len(decls) == 2
     assert decls[0].name == "with_ref"
     assert decls[0].parameters is None
     assert decls[0].parameters_json_schema is not None
     assert decls[1].name == "plain"
     assert decls[1].parameters_json_schema is None
-    assert decls[1].parameters.type == "OBJECT"  # type: ignore[union-attr]
+    assert decls[1].parameters is not None
+    assert decls[1].parameters.type == "OBJECT"
 
 
 @pytest.mark.asyncio
