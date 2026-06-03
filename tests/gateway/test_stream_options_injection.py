@@ -98,3 +98,27 @@ def test_preserves_client_stream_options() -> None:
         }
     )
     assert kwargs["stream_options"] == custom
+
+
+def test_preserves_extra_request_fields() -> None:
+    """Unknown OpenAI-compatible fields should pass through to acompletion kwargs."""
+    kwargs = _build_completion_kwargs(
+        {
+            "model": "openai:gpt-4",
+            "messages": [{"role": "user", "content": "Hello"}],
+            "custom_request_field": {"enabled": True},
+        }
+    )
+    assert kwargs["custom_request_field"] == {"enabled": True}
+
+
+def test_preserves_provider_specific_extra_fields() -> None:
+    """Provider-specific request fields should pass through to acompletion kwargs."""
+    kwargs = _build_completion_kwargs(
+        {
+            "model": "openrouter:anthropic/claude-sonnet-4.5",
+            "messages": [{"role": "user", "content": "Hello"}],
+            "provider": {"only": ["Anthropic"], "allow_fallbacks": False},
+        }
+    )
+    assert kwargs["provider"] == {"only": ["Anthropic"], "allow_fallbacks": False}
