@@ -36,7 +36,7 @@ from any_llm.types.completion import (
 from any_llm.types.image import ImageGenerationParams, ImagesResponse
 from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
-from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
+from any_llm.types.responses import ParsedResponse, Response, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.structured_output import (
     build_responses_text_format,
     get_json_schema,
@@ -227,7 +227,7 @@ class BaseOpenAIProvider(AnyLLM):
     @override
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
-    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+    ) -> ResponseResource | Response | ParsedResponse[Any] | AsyncIterator[ResponseStreamEvent]:
         """Call OpenAI Responses API"""
         response_format = params.response_format
         create_kwargs = params.model_dump(exclude_none=True, exclude={"response_format"})

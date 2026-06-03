@@ -328,8 +328,9 @@ def responses(
 
     Returns:
         Either a `ResponseResource` object (OpenResponses-compliant providers),
-        a `Response` object (non-compliant providers), or an iterator of
-        `ResponseStreamEvent` (streaming).
+        a `Response` object (non-compliant providers), a `ParsedResponse` (with
+        `output_parsed`) when a structured `response_format` type is given, or an
+        iterator of `ResponseStreamEvent` (streaming).
 
     Raises:
         NotImplementedError: If the selected provider does not support the Responses API.
@@ -468,8 +469,9 @@ async def aresponses(
 
     Returns:
         Either a `ResponseResource` object (OpenResponses-compliant providers),
-        a `Response` object (non-compliant providers), or an iterator of
-        `ResponseStreamEvent` (streaming).
+        a `Response` object (non-compliant providers), a `ParsedResponse` (with
+        `output_parsed`) when a structured `response_format` type is given, or an
+        iterator of `ResponseStreamEvent` (streaming).
 
     Raises:
         NotImplementedError: If the selected provider does not support the Responses API.

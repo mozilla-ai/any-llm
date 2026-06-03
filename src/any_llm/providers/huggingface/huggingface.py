@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     )
 
     from any_llm.types.model import Model
-    from any_llm.types.responses import Response, ResponsesParams
+    from any_llm.types.responses import ParsedResponse, Response, ResponsesParams
 
 
 class HuggingfaceProvider(AnyLLM):
@@ -213,7 +213,7 @@ class HuggingfaceProvider(AnyLLM):
     @override
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
-    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+    ) -> ResponseResource | Response | ParsedResponse[Any] | AsyncIterator[ResponseStreamEvent]:
         """Call OpenResponses API via HuggingFace router.
 
         See: https://huggingface.co/docs/inference-providers/guides/responses-api

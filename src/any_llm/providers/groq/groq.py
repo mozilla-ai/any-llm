@@ -8,7 +8,7 @@ from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
+from any_llm.types.responses import ParsedResponse, Response, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.structured_output import (
     build_responses_text_format,
     get_json_schema,
@@ -170,7 +170,7 @@ class GroqProvider(AnyLLM):
     @override
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
-    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+    ) -> ResponseResource | Response | ParsedResponse[Any] | AsyncIterator[ResponseStreamEvent]:
         """Call Groq Responses API and normalize into ChatCompletion/Chunks."""
         # Python SDK doesn't yet support it: https://community.groq.com/feature-requests-6/groq-python-sdk-support-for-responses-api-262
 

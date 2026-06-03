@@ -851,6 +851,7 @@ class AnyLLM(ABC):
         response = run_async_in_sync(
             self.aresponses(model, input_data, **kwargs), allow_running_loop=allow_running_loop
         )
+        # ParsedResponse (structured output) is a subclass of Response, so it is covered here.
         if isinstance(response, (ResponseResource, Response)):
             return response
         return async_iter_to_sync_iter(response, allow_running_loop=allow_running_loop)
@@ -1043,7 +1044,7 @@ class AnyLLM(ABC):
 
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
-    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+    ) -> ResponseResource | Response | ParsedResponse[Any] | AsyncIterator[ResponseStreamEvent]:
         if not self.SUPPORTS_RESPONSES:
             msg = "Provider doesn't support responses."
             raise NotImplementedError(msg)

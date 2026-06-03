@@ -121,6 +121,23 @@ async def test_aresponses_stream_with_response_format_raises(mock_openai_class: 
 
 
 @patch("any_llm.providers.openai.base.AsyncOpenAI")
+def test_responses_sync_basemodel_returns_parsed(mock_openai_class: MagicMock) -> None:
+    """The synchronous wrapper must return the ParsedResponse (a Response subclass), not iterate it."""
+    parsed = parse_responses_output(_make_openai_response('{"city_name": "Paris"}'), _City)
+
+    mock_client = AsyncMock()
+    mock_client.responses.parse = AsyncMock(return_value=parsed)
+    mock_openai_class.return_value = mock_client
+
+    provider = _ResponsesProvider(api_key="key")
+    result = provider.responses(model="gpt-4o", input_data="capital of France?", response_format=_City)
+
+    assert isinstance(result, ParsedResponse)
+    assert isinstance(result.output_parsed, _City)
+    assert result.output_parsed.city_name == "Paris"
+
+
+@patch("any_llm.providers.openai.base.AsyncOpenAI")
 def test_list_models_returns_model_list_when_supported(mock_openai_class: MagicMock) -> None:
     class ListModelsProvider(BaseOpenAIProvider):
         SUPPORTS_LIST_MODELS = True
