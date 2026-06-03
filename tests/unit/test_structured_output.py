@@ -149,3 +149,37 @@ def test_parse_responses_output_returns_none_when_not_normalizable() -> None:
 
     result = parse_responses_output(NotAResponse(), PydanticModel)
     assert result is None
+
+
+def test_parse_responses_output_skips_non_message_output() -> None:
+    """Non-message outputs and non-text content (e.g. tool calls, refusals) are skipped; the message is parsed."""
+    from openai.types.responses import ResponseFunctionToolCall, ResponseOutputRefusal
+
+    function_call = ResponseFunctionToolCall(
+        id="fc-1", type="function_call", call_id="call-1", name="do_thing", arguments="{}", status="completed"
+    )
+    message = ResponseOutputMessage(
+        id="msg-1",
+        type="message",
+        role="assistant",
+        status="completed",
+        content=[
+            ResponseOutputRefusal(type="refusal", refusal="n/a"),
+            ResponseOutputText(type="output_text", text='{"name": "Alice", "age": 30}', annotations=[]),
+        ],
+    )
+    response = Response(
+        id="resp-1",
+        created_at=0,
+        model="test-model",
+        object="response",
+        output=[function_call, message],
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        tools=[],
+    )
+
+    parsed = parse_responses_output(response, PydanticModel)
+    assert isinstance(parsed, ParsedResponse)
+    assert isinstance(parsed.output_parsed, PydanticModel)
+    assert parsed.output_parsed.name == "Alice"

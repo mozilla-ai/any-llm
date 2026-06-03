@@ -79,7 +79,7 @@ def parse_responses_output(response: Any, response_format: type) -> ParsedRespon
     try:
         parsed: ParsedResponse[Any] = ParsedResponse.model_validate(response.model_dump(warnings=False))
     except ValidationError:
-        if isinstance(response, Response):
+        if isinstance(response, Response):  # pragma: no cover - a valid Response always validates as ParsedResponse
             raise
         logger.warning(
             "Could not normalize %s into a ParsedResponse; returning it without output_parsed.",

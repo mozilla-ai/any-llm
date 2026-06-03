@@ -120,6 +120,24 @@ async def test_aresponses_stream_with_response_format_raises(mock_openai_class: 
         await provider.aresponses(model="gpt-4o", input_data="hi", response_format=_City, stream=True)
 
 
+@pytest.mark.asyncio
+@patch("any_llm.providers.openai.base.AsyncOpenAI")
+async def test_aresponses_without_response_format_returns_response(mock_openai_class: MagicMock) -> None:
+    """No response_format: neither parse nor text.format is used, and the raw Response is returned."""
+    mock_client = AsyncMock()
+    mock_client.responses.create = AsyncMock(return_value=_make_openai_response('{"city_name": "Paris"}'))
+    mock_client.responses.parse = AsyncMock()
+    mock_openai_class.return_value = mock_client
+
+    provider = _ResponsesProvider(api_key="key")
+    result = await provider.aresponses(model="gpt-4o", input_data="hi")
+
+    mock_client.responses.parse.assert_not_called()
+    assert "text" not in mock_client.responses.create.call_args.kwargs
+    assert isinstance(result, Response)
+    assert not isinstance(result, ParsedResponse)
+
+
 @patch("any_llm.providers.openai.base.AsyncOpenAI")
 def test_responses_sync_basemodel_returns_parsed(mock_openai_class: MagicMock) -> None:
     """The synchronous wrapper must return the ParsedResponse (a Response subclass), not iterate it."""
