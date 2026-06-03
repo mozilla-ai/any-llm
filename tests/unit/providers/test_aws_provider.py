@@ -768,3 +768,25 @@ def test_convert_tool_spec_with_parameters() -> None:
         tool_choice=None,
     )
     assert tool_config["tools"][0]["toolSpec"]["inputSchema"]["json"] == params
+
+
+def test_convert_tool_spec_empty_description() -> None:
+    """Regression: an empty description ("") must be coerced to a non-empty string.
+
+    Bedrock's Converse API requires toolSpec.description to have a minimum length of 1.
+    LangChain serializes tools without a docstring as ``"description": ""``; ``.get(default)``
+    only fires when the key is missing, so the empty string must be coerced explicitly.
+    """
+    # (a) description present but empty -> coerced to " "
+    tool_config = _convert_tool_spec(
+        [{"type": "function", "function": {"name": "ping", "description": "", "parameters": None}}],
+        tool_choice=None,
+    )
+    assert tool_config["tools"][0]["toolSpec"]["description"] == " "
+
+    # (b) description key missing -> existing behaviour preserved
+    tool_config = _convert_tool_spec(
+        [{"type": "function", "function": {"name": "ping", "parameters": None}}],
+        tool_choice=None,
+    )
+    assert tool_config["tools"][0]["toolSpec"]["description"] == " "
