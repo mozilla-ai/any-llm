@@ -36,7 +36,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.MOONSHOT: "kimi-k2-thinking",
         LLMProvider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         LLMProvider.HUGGINGFACE: "Qwen/Qwen2.5-72B-Instruct",
-        LLMProvider.NEOSANTARA: "grok-4.1-fast-reasoning",
+        LLMProvider.NEOSANTARA: "grok-4.1-fast-non-reasoning",
         LLMProvider.NEBIUS: "openai/gpt-oss-120b",
         LLMProvider.SAMBANOVA: "gpt-oss-120b",
         LLMProvider.TOGETHER: "openai/gpt-oss-20b",
@@ -65,7 +65,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.TOGETHER: "openai/gpt-oss-20b",
         LLMProvider.XAI: "grok-3-mini-latest",
         LLMProvider.INCEPTION: "mercury",
-        LLMProvider.NEOSANTARA: "garda-core",
+        LLMProvider.NEOSANTARA: "gemini-3-flash-preview",
         LLMProvider.NEBIUS: "openai/gpt-oss-120b",
         LLMProvider.OLLAMA: "llama3.2:1b",
         LLMProvider.LLAMAFILE: "N/A",
@@ -104,6 +104,7 @@ def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict
         LLMProvider.OLLAMA: "llava-phi3",  # Fast vision model compatible with OpenAI format
         LLMProvider.FIREWORKS: "accounts/fireworks/models/kimi-k2p5",
         LLMProvider.BEDROCK: "anthropic.claude-3-haiku-20240307-v1:0",  # Claude 3 Haiku with vision support
+        LLMProvider.Neosantara: "gemini-3-flash-preview", # Vision model compatible with OpenAI format
     }
 
 
