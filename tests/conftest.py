@@ -104,7 +104,7 @@ def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict
         LLMProvider.OLLAMA: "llava-phi3",  # Fast vision model compatible with OpenAI format
         LLMProvider.FIREWORKS: "accounts/fireworks/models/kimi-k2p5",
         LLMProvider.BEDROCK: "anthropic.claude-3-haiku-20240307-v1:0",  # Claude 3 Haiku with vision support
-        LLMProvider.Neosantara: "gemini-3-flash-preview", # Vision model compatible with OpenAI format
+        LLMProvider.NEOSANTARA: "gemini-3-flash-preview",  # Vision model compatible with OpenAI format
     }
 
 
