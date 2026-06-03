@@ -1,11 +1,123 @@
+import dataclasses
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from openai.types.responses import ResponseOutputMessage, ResponseOutputText
+from pydantic import BaseModel
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.completion import CompletionParams
 from any_llm.types.model import Model
+from any_llm.types.responses import ParsedResponse, Response
+from any_llm.utils.structured_output import parse_responses_output
+
+
+class _City(BaseModel):
+    city_name: str
+
+
+@dataclasses.dataclass
+class _CityDataclass:
+    city_name: str
+
+
+class _ResponsesProvider(BaseOpenAIProvider):
+    SUPPORTS_RESPONSES = True
+    PROVIDER_NAME = "ResponsesProvider"
+    ENV_API_KEY_NAME = "TEST_API_KEY"
+    PROVIDER_DOCUMENTATION_URL = "https://example.com"
+    API_BASE = "https://api.example.com/v1"
+
+
+def _make_openai_response(text: str) -> Response:
+    message = ResponseOutputMessage(
+        id="msg-1",
+        type="message",
+        role="assistant",
+        status="completed",
+        content=[ResponseOutputText(type="output_text", text=text, annotations=[])],
+    )
+    return Response(
+        id="resp-1",
+        created_at=0,
+        model="test-model",
+        object="response",
+        output=[message],
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        tools=[],
+    )
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.openai.base.AsyncOpenAI")
+async def test_aresponses_basemodel_uses_parse(mock_openai_class: MagicMock) -> None:
+    parsed = parse_responses_output(_make_openai_response('{"city_name": "Paris"}'), _City)
+
+    mock_client = AsyncMock()
+    mock_client.responses.parse = AsyncMock(return_value=parsed)
+    mock_client.responses.create = AsyncMock()
+    mock_openai_class.return_value = mock_client
+
+    provider = _ResponsesProvider(api_key="key")
+    result = await provider.aresponses(model="gpt-4o", input_data="capital of France?", response_format=_City)
+
+    mock_client.responses.parse.assert_awaited_once()
+    assert mock_client.responses.parse.call_args.kwargs["text_format"] is _City
+    mock_client.responses.create.assert_not_called()
+    assert isinstance(result, ParsedResponse)
+    assert isinstance(result.output_parsed, _City)
+    assert result.output_parsed.city_name == "Paris"
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.openai.base.AsyncOpenAI")
+async def test_aresponses_dataclass_uses_create_and_is_parsed(mock_openai_class: MagicMock) -> None:
+    mock_client = AsyncMock()
+    mock_client.responses.create = AsyncMock(return_value=_make_openai_response('{"city_name": "Paris"}'))
+    mock_client.responses.parse = AsyncMock()
+    mock_openai_class.return_value = mock_client
+
+    provider = _ResponsesProvider(api_key="key")
+    result = await provider.aresponses(model="gpt-4o", input_data="capital of France?", response_format=_CityDataclass)
+
+    mock_client.responses.parse.assert_not_called()
+    create_kwargs = mock_client.responses.create.call_args.kwargs
+    assert create_kwargs["text"]["format"]["type"] == "json_schema"
+    assert "response_format" not in create_kwargs
+    assert isinstance(result, ParsedResponse)
+    assert isinstance(result.output_parsed, _CityDataclass)
+    assert result.output_parsed.city_name == "Paris"
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.openai.base.AsyncOpenAI")
+async def test_aresponses_dict_response_format_is_passed_through_unparsed(mock_openai_class: MagicMock) -> None:
+    raw = _make_openai_response('{"city_name": "Paris"}')
+    mock_client = AsyncMock()
+    mock_client.responses.create = AsyncMock(return_value=raw)
+    mock_client.responses.parse = AsyncMock()
+    mock_openai_class.return_value = mock_client
+
+    response_format = {"type": "json_schema", "name": "City", "schema": {"type": "object"}}
+
+    provider = _ResponsesProvider(api_key="key")
+    result = await provider.aresponses(model="gpt-4o", input_data="hi", response_format=response_format)
+
+    mock_client.responses.parse.assert_not_called()
+    assert mock_client.responses.create.call_args.kwargs["text"] == {"format": response_format}
+    assert not isinstance(result, ParsedResponse)
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.openai.base.AsyncOpenAI")
+async def test_aresponses_stream_with_response_format_raises(mock_openai_class: MagicMock) -> None:
+    mock_openai_class.return_value = AsyncMock()
+    provider = _ResponsesProvider(api_key="key")
+
+    with pytest.raises(ValueError, match="stream is not supported for response_format"):
+        await provider.aresponses(model="gpt-4o", input_data="hi", response_format=_City, stream=True)
 
 
 @patch("any_llm.providers.openai.base.AsyncOpenAI")

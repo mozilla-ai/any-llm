@@ -7,6 +7,7 @@ from openai._streaming import AsyncStream
 from openai.types.responses import Response as OpenAIResponse
 from openai.types.responses import ResponseStreamEvent
 from openresponses_types import ResponseResource
+from pydantic import BaseModel
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
@@ -20,6 +21,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     Reasoning,
 )
+from any_llm.utils.structured_output import build_responses_text_format, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -216,11 +218,29 @@ class HuggingfaceProvider(AnyLLM):
 
         See: https://huggingface.co/docs/inference-providers/guides/responses-api
         """
+        response_format = params.response_format
+        create_kwargs = params.model_dump(exclude_none=True, exclude={"response_format"})
+
+        if is_structured_output_type(response_format):
+            create_kwargs.pop("text", None)
+            if issubclass(response_format, BaseModel):
+                return await self.responses_client.responses.parse(
+                    text_format=response_format,
+                    **create_kwargs,
+                    **kwargs,
+                )
+            create_kwargs["text"] = build_responses_text_format(response_format)
+        elif isinstance(response_format, dict):
+            create_kwargs["text"] = {"format": response_format}
+
         response: Response | AsyncStream[ResponseStreamEvent] = await self.responses_client.responses.create(
-            **params.model_dump(exclude_none=True), **kwargs
+            **create_kwargs, **kwargs
         )
 
         if isinstance(response, OpenAIResponse):
+            # Structured output: return the raw Response so the base layer parses it into a ParsedResponse.
+            if is_structured_output_type(response_format):
+                return response
             return ResponseResource.model_validate(response.model_dump(warnings=False))
 
         if isinstance(response, AsyncStream):

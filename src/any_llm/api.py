@@ -19,7 +19,7 @@ from any_llm.types.messages import MessageResponse, MessageStreamEvent
 from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
 from any_llm.types.rerank import RerankResponse
-from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
+from any_llm.types.responses import ParsedResponse, Response, ResponseInputParam, ResponseStreamEvent
 
 
 def completion(
@@ -258,6 +258,7 @@ def responses(
     parallel_tool_calls: bool | None = None,
     reasoning: Any | None = None,
     text: Any | None = None,
+    response_format: dict[str, Any] | type | None = None,
     presence_penalty: float | None = None,
     frequency_penalty: float | None = None,
     truncation: str | None = None,
@@ -274,12 +275,13 @@ def responses(
     conversation: str | dict[str, Any] | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> ResponseResource | Response | Iterator[ResponseStreamEvent]:
+) -> ResponseResource | Response | ParsedResponse[Any] | Iterator[ResponseStreamEvent]:
     """Create a response using the OpenResponses API.
 
     This implements the OpenResponses specification and returns either
     `openresponses_types.ResponseResource` (for OpenResponses-compliant providers)
     or `openai.types.responses.Response` (for providers using OpenAI's native API).
+    If a structured `response_format` type is given, a `ParsedResponse` (with `output_parsed`) is returned.
     If `stream=True`, an iterator of `any_llm.types.responses.ResponseStreamEvent` items is returned.
 
     Args:
@@ -304,6 +306,9 @@ def responses(
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
         reasoning: Configuration options for reasoning models.
         text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
+        response_format: Structured-output type. A Pydantic ``BaseModel`` or dataclass returns a ``ParsedResponse``
+            with the parsed object in ``output_parsed`` (the analogue of ``client.responses.parse``); a raw
+            ``text.format`` dict is passed through unparsed.
         presence_penalty: Penalizes new tokens based on whether they appear in the text so far.
         frequency_penalty: Penalizes new tokens based on their frequency in the text so far.
         truncation: Controls how the service truncates input when it exceeds the model context window.
@@ -356,6 +361,7 @@ def responses(
         parallel_tool_calls=parallel_tool_calls,
         reasoning=reasoning,
         text=text,
+        response_format=response_format,
         presence_penalty=presence_penalty,
         frequency_penalty=frequency_penalty,
         truncation=truncation,
@@ -392,6 +398,7 @@ async def aresponses(
     parallel_tool_calls: bool | None = None,
     reasoning: Any | None = None,
     text: Any | None = None,
+    response_format: dict[str, Any] | type | None = None,
     presence_penalty: float | None = None,
     frequency_penalty: float | None = None,
     truncation: str | None = None,
@@ -408,12 +415,13 @@ async def aresponses(
     conversation: str | dict[str, Any] | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+) -> ResponseResource | Response | ParsedResponse[Any] | AsyncIterator[ResponseStreamEvent]:
     """Create a response using the OpenResponses API.
 
     This implements the OpenResponses specification and returns either
     `openresponses_types.ResponseResource` (for OpenResponses-compliant providers)
     or `openai.types.responses.Response` (for providers using OpenAI's native API).
+    If a structured `response_format` type is given, a `ParsedResponse` (with `output_parsed`) is returned.
     If `stream=True`, an iterator of `any_llm.types.responses.ResponseStreamEvent` items is returned.
 
     Args:
@@ -438,6 +446,9 @@ async def aresponses(
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
         reasoning: Configuration options for reasoning models.
         text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
+        response_format: Structured-output type. A Pydantic ``BaseModel`` or dataclass returns a ``ParsedResponse``
+            with the parsed object in ``output_parsed`` (the analogue of ``client.responses.parse``); a raw
+            ``text.format`` dict is passed through unparsed.
         presence_penalty: Penalizes new tokens based on whether they appear in the text so far.
         frequency_penalty: Penalizes new tokens based on their frequency in the text so far.
         truncation: Controls how the service truncates input when it exceeds the model context window.
@@ -490,6 +501,7 @@ async def aresponses(
         parallel_tool_calls=parallel_tool_calls,
         reasoning=reasoning,
         text=text,
+        response_format=response_format,
         presence_penalty=presence_penalty,
         frequency_penalty=frequency_penalty,
         truncation=truncation,

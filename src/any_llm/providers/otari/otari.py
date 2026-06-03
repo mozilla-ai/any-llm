@@ -14,6 +14,7 @@ from any_llm.types.batch import Batch, BatchResult, BatchResultError, BatchResul
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
 from any_llm.types.rerank import RerankResponse
+from any_llm.utils.structured_output import build_responses_text_format, is_structured_output_type
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
@@ -192,7 +193,14 @@ class OtariProvider(BaseOpenAIProvider):
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
     ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
-        response_kwargs = params.model_dump(exclude_none=True, exclude={"model", "input"})
+        response_format = params.response_format
+        response_kwargs = params.model_dump(exclude_none=True, exclude={"model", "input", "response_format"})
+        # Otari has no parse() helper: request schema-conformant JSON via text.format and let the
+        # base layer parse the result into a ParsedResponse.
+        if is_structured_output_type(response_format):
+            response_kwargs["text"] = build_responses_text_format(response_format)
+        elif isinstance(response_format, dict):
+            response_kwargs["text"] = {"format": response_format}
         response_kwargs.update(kwargs)
         result = await self.otari_client.response(model=params.model, input=params.input, **response_kwargs)
         return cast("ResponseResource | Response | AsyncIterator[ResponseStreamEvent]", result)

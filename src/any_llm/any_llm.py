@@ -38,10 +38,20 @@ from any_llm.types.messages import (
     MessageStreamEvent,
 )
 from any_llm.types.provider import ProviderMetadata
-from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
+from any_llm.types.responses import (
+    ParsedResponse,
+    Response,
+    ResponseInputParam,
+    ResponsesParams,
+    ResponseStreamEvent,
+)
 from any_llm.utils.aio import async_coro_to_sync_iter, async_iter_to_sync_iter, run_async_in_sync
 from any_llm.utils.exception_handler import handle_exceptions
-from any_llm.utils.structured_output import is_structured_output_type, parse_json_content
+from any_llm.utils.structured_output import (
+    is_structured_output_type,
+    parse_json_content,
+    parse_responses_output,
+)
 
 ResponseFormatT = TypeVar("ResponseFormatT", bound=BaseModel)
 
@@ -777,7 +787,53 @@ class AnyLLM(ABC):
 
         return convert_stream()
 
-    def responses(self, **kwargs: Any) -> ResponseResource | Response | Iterator[ResponseStreamEvent]:
+    # Overloads let type checkers narrow the return type based on response_format and stream.
+    @overload
+    def responses(
+        self,
+        model: str,
+        input_data: str | ResponseInputParam,
+        *,
+        response_format: type[ResponseFormatT],
+        stream: Literal[False] | None = ...,
+        **kwargs: Any,
+    ) -> ParsedResponse[ResponseFormatT]: ...
+
+    @overload
+    def responses(
+        self,
+        model: str,
+        input_data: str | ResponseInputParam,
+        *,
+        stream: Literal[True],
+        **kwargs: Any,
+    ) -> Iterator[ResponseStreamEvent]: ...
+
+    @overload
+    def responses(
+        self,
+        model: str,
+        input_data: str | ResponseInputParam,
+        *,
+        response_format: dict[str, Any] | None = ...,
+        stream: Literal[False] | None = ...,
+        **kwargs: Any,
+    ) -> ResponseResource | Response: ...
+
+    @overload
+    def responses(
+        self,
+        model: str,
+        input_data: str | ResponseInputParam,
+        *,
+        response_format: dict[str, Any] | type | None = ...,
+        stream: bool | None = ...,
+        **kwargs: Any,
+    ) -> ResponseResource | Response | Iterator[ResponseStreamEvent] | ParsedResponse[Any]: ...
+
+    def responses(
+        self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
+    ) -> ResponseResource | Response | Iterator[ResponseStreamEvent] | ParsedResponse[Any]:
         """Create a response synchronously.
 
         See [AnyLLM.aresponses][any_llm.any_llm.AnyLLM.aresponses]
@@ -785,14 +841,63 @@ class AnyLLM(ABC):
         allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
         if kwargs.get("stream"):
             return async_coro_to_sync_iter(
-                cast("Coroutine[Any, Any, AsyncIterator[ResponseStreamEvent]]", self.aresponses(**kwargs)),
+                cast(
+                    "Coroutine[Any, Any, AsyncIterator[ResponseStreamEvent]]",
+                    self.aresponses(model, input_data, **kwargs),
+                ),
                 allow_running_loop=allow_running_loop,
             )
 
-        response = run_async_in_sync(self.aresponses(**kwargs), allow_running_loop=allow_running_loop)
+        response = run_async_in_sync(
+            self.aresponses(model, input_data, **kwargs), allow_running_loop=allow_running_loop
+        )
         if isinstance(response, (ResponseResource, Response)):
             return response
         return async_iter_to_sync_iter(response, allow_running_loop=allow_running_loop)
+
+    # Overloads let type checkers narrow the return type based on response_format and stream.
+    @overload
+    async def aresponses(
+        self,
+        model: str,
+        input_data: str | ResponseInputParam,
+        *,
+        response_format: type[ResponseFormatT],
+        stream: Literal[False] | None = ...,
+        **kwargs: Any,
+    ) -> ParsedResponse[ResponseFormatT]: ...
+
+    @overload
+    async def aresponses(
+        self,
+        model: str,
+        input_data: str | ResponseInputParam,
+        *,
+        stream: Literal[True],
+        **kwargs: Any,
+    ) -> AsyncIterator[ResponseStreamEvent]: ...
+
+    @overload
+    async def aresponses(
+        self,
+        model: str,
+        input_data: str | ResponseInputParam,
+        *,
+        response_format: dict[str, Any] | None = ...,
+        stream: Literal[False] | None = ...,
+        **kwargs: Any,
+    ) -> ResponseResource | Response: ...
+
+    @overload
+    async def aresponses(
+        self,
+        model: str,
+        input_data: str | ResponseInputParam,
+        *,
+        response_format: dict[str, Any] | type | None = ...,
+        stream: bool | None = ...,
+        **kwargs: Any,
+    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent] | ParsedResponse[Any]: ...
 
     @handle_exceptions(wrap_streaming=True)
     async def aresponses(
@@ -811,6 +916,7 @@ class AnyLLM(ABC):
         parallel_tool_calls: bool | None = None,
         reasoning: Any | None = None,
         text: Any | None = None,
+        response_format: dict[str, Any] | type | None = None,
         presence_penalty: float | None = None,
         frequency_penalty: float | None = None,
         truncation: str | None = None,
@@ -826,7 +932,7 @@ class AnyLLM(ABC):
         prompt_cache_retention: str | None = None,
         conversation: str | dict[str, Any] | None = None,
         **kwargs: Any,
-    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent] | ParsedResponse[Any]:
         """Create a response using the OpenResponses API.
 
         This implements the OpenResponses specification and returns either
@@ -850,6 +956,10 @@ class AnyLLM(ABC):
             parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
             reasoning: Configuration options for reasoning models.
             text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
+            response_format: Structured-output type. When a Pydantic ``BaseModel`` or dataclass is passed, the
+                response is parsed and returned as a ``ParsedResponse`` whose ``output_parsed`` holds the typed
+                object (the Responses-API analogue of ``client.responses.parse``). A raw OpenAI ``text.format``
+                dict is also accepted and passed through unparsed.
             presence_penalty: Penalizes new tokens based on whether they appear in the text so far.
             frequency_penalty: Penalizes new tokens based on their frequency in the text so far.
             truncation: Controls how the service truncates input when it exceeds the model context window.
@@ -868,13 +978,19 @@ class AnyLLM(ABC):
 
         Returns:
             Either a `ResponseResource` object (OpenResponses-compliant providers),
-            a `Response` object (non-compliant providers), or an iterator of
+            a `Response` object (non-compliant providers), a `ParsedResponse` (when a
+            structured `response_format` type is given), or an iterator of
             `ResponseStreamEvent` (streaming).
 
         Raises:
             NotImplementedError: If the selected provider does not support the Responses API.
+            ValueError: If a structured `response_format` is combined with `stream=True`.
 
         """
+        if is_structured_output_type(response_format) and stream:
+            msg = "stream is not supported for response_format"
+            raise ValueError(msg)
+
         prepared_tools = None
         if tools:
             prepared_tools = prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
@@ -893,6 +1009,7 @@ class AnyLLM(ABC):
             parallel_tool_calls=parallel_tool_calls,
             reasoning=reasoning,
             text=text,
+            response_format=response_format,
             presence_penalty=presence_penalty,
             frequency_penalty=frequency_penalty,
             truncation=truncation,
@@ -910,7 +1027,19 @@ class AnyLLM(ABC):
             **kwargs,
         )
 
-        return await self._aresponses(params)
+        result = await self._aresponses(params)
+
+        if is_structured_output_type(response_format):
+            # OpenAI-SDK providers return a ParsedResponse directly (via responses.parse);
+            # other providers return a raw Response/ResponseResource that we parse here.
+            if isinstance(result, ParsedResponse):
+                return result
+            if isinstance(result, (Response, ResponseResource)):
+                parsed = parse_responses_output(result, response_format)
+                if parsed is not None:
+                    return parsed
+
+        return result
 
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
