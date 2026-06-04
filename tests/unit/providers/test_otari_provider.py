@@ -329,3 +329,77 @@ async def test_otari_completion_uses_converted_params_with_max_tokens_remap() ->
     call_kwargs = mocked_client.completion.call_args.kwargs
     assert call_kwargs["max_completion_tokens"] == 42
     assert "max_tokens" not in call_kwargs
+
+
+def _make_openai_response(text: str):  # type: ignore[no-untyped-def]
+    from openai.types.responses import ResponseOutputMessage, ResponseOutputText
+
+    from any_llm.types.responses import Response
+
+    message = ResponseOutputMessage(
+        id="msg-1",
+        type="message",
+        role="assistant",
+        status="completed",
+        content=[ResponseOutputText(type="output_text", text=text, annotations=[])],
+    )
+    return Response(
+        id="resp-1",
+        created_at=0,
+        model="test-model",
+        object="response",
+        output=[message],
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        tools=[],
+    )
+
+
+@pytest.mark.asyncio
+async def test_otari_aresponses_basemodel_requests_schema_and_is_parsed() -> None:
+    from pydantic import BaseModel
+
+    from any_llm.types.responses import ParsedResponse
+
+    class City(BaseModel):
+        city_name: str
+
+    client = _mock_otari_client()
+    client.response = AsyncMock(return_value=_make_openai_response('{"city_name": "Paris"}'))
+    provider = _build_provider(client)
+
+    result = await provider.aresponses("model", "capital of France?", response_format=City)
+
+    assert "response_format" not in client.response.call_args.kwargs
+    assert client.response.call_args.kwargs["text"]["format"]["type"] == "json_schema"
+    assert isinstance(result, ParsedResponse)
+    assert result.output_parsed is not None
+    assert result.output_parsed.city_name == "Paris"
+
+
+@pytest.mark.asyncio
+async def test_otari_aresponses_dict_response_format_sets_text_format() -> None:
+    from any_llm.types.responses import ParsedResponse
+
+    client = _mock_otari_client()
+    client.response = AsyncMock(return_value=_make_openai_response("{}"))
+    provider = _build_provider(client)
+
+    response_format = {"type": "json_schema", "name": "City", "schema": {"type": "object"}}
+    result = await provider.aresponses("model", "hi", response_format=response_format)
+
+    assert client.response.call_args.kwargs["text"] == {"format": response_format}
+    # A raw dict response_format is passed through unparsed (not a ParsedResponse).
+    assert not isinstance(result, ParsedResponse)
+
+
+@pytest.mark.asyncio
+async def test_otari_aresponses_without_response_format() -> None:
+    client = _mock_otari_client()
+    client.response = AsyncMock(return_value=_make_openai_response("{}"))
+    provider = _build_provider(client)
+
+    await provider.aresponses("model", "hi")
+
+    # No structured response_format -> no text.format injected.
+    assert "text" not in client.response.call_args.kwargs

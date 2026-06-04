@@ -1,9 +1,37 @@
 import dataclasses
 from typing import Any
 
+from openai.types.responses import ResponseOutputMessage, ResponseOutputText
 from pydantic import BaseModel
 
-from any_llm.utils.structured_output import get_json_schema, is_structured_output_type, parse_json_content
+from any_llm.types.responses import ParsedResponse, Response
+from any_llm.utils.structured_output import (
+    build_responses_text_format,
+    get_json_schema,
+    is_structured_output_type,
+    parse_json_content,
+    parse_responses_output,
+)
+
+
+def _make_response(text: str) -> Response:
+    message = ResponseOutputMessage(
+        id="msg-1",
+        type="message",
+        role="assistant",
+        status="completed",
+        content=[ResponseOutputText(type="output_text", text=text, annotations=[])],
+    )
+    return Response(
+        id="resp-1",
+        created_at=0,
+        model="test-model",
+        object="response",
+        output=[message],
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        tools=[],
+    )
 
 
 class PydanticModel(BaseModel):
@@ -85,3 +113,73 @@ def test_parse_json_content_dataclass_nested() -> None:
     assert result.name == "Alice"
     assert isinstance(result.address, Address)
     assert result.address.city == "Paris"
+
+
+def test_build_responses_text_format_basemodel() -> None:
+    text_config = build_responses_text_format(PydanticModel)
+    fmt = text_config["format"]
+    assert fmt["type"] == "json_schema"
+    assert fmt["name"] == "PydanticModel"
+    assert "name" in fmt["schema"]["properties"]
+
+
+def test_build_responses_text_format_dataclass() -> None:
+    text_config = build_responses_text_format(DataclassModel)
+    assert text_config["format"]["name"] == "DataclassModel"
+    assert "age" in text_config["format"]["schema"]["properties"]
+
+
+def test_parse_responses_output_basemodel() -> None:
+    parsed = parse_responses_output(_make_response('{"name": "Alice", "age": 30}'), PydanticModel)
+    assert isinstance(parsed, ParsedResponse)
+    assert isinstance(parsed.output_parsed, PydanticModel)
+    assert parsed.output_parsed.name == "Alice"
+
+
+def test_parse_responses_output_dataclass() -> None:
+    parsed = parse_responses_output(_make_response('{"name": "Bob", "age": 7}'), DataclassModel)
+    assert isinstance(parsed, ParsedResponse)
+    assert isinstance(parsed.output_parsed, DataclassModel)
+    assert parsed.output_parsed.age == 7
+
+
+def test_parse_responses_output_returns_none_when_not_normalizable() -> None:
+    class NotAResponse(BaseModel):
+        output: list[Any] = []
+
+    result = parse_responses_output(NotAResponse(), PydanticModel)
+    assert result is None
+
+
+def test_parse_responses_output_skips_non_message_output() -> None:
+    """Non-message outputs and non-text content (e.g. tool calls, refusals) are skipped; the message is parsed."""
+    from openai.types.responses import ResponseFunctionToolCall, ResponseOutputRefusal
+
+    function_call = ResponseFunctionToolCall(
+        id="fc-1", type="function_call", call_id="call-1", name="do_thing", arguments="{}", status="completed"
+    )
+    message = ResponseOutputMessage(
+        id="msg-1",
+        type="message",
+        role="assistant",
+        status="completed",
+        content=[
+            ResponseOutputRefusal(type="refusal", refusal="n/a"),
+            ResponseOutputText(type="output_text", text='{"name": "Alice", "age": 30}', annotations=[]),
+        ],
+    )
+    response = Response(
+        id="resp-1",
+        created_at=0,
+        model="test-model",
+        object="response",
+        output=[function_call, message],
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        tools=[],
+    )
+
+    parsed = parse_responses_output(response, PydanticModel)
+    assert isinstance(parsed, ParsedResponse)
+    assert isinstance(parsed.output_parsed, PydanticModel)
+    assert parsed.output_parsed.name == "Alice"
