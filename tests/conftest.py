@@ -36,7 +36,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.MOONSHOT: "kimi-k2-thinking",
         LLMProvider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         LLMProvider.HUGGINGFACE: "Qwen/Qwen2.5-72B-Instruct",
-        LLMProvider.NEOSANTARA: "grok-4.1-fast-non-reasoning",
+        LLMProvider.NEOSANTARA: "deepseek-v4-flash",
         LLMProvider.NEBIUS: "openai/gpt-oss-120b",
         LLMProvider.SAMBANOVA: "gpt-oss-120b",
         LLMProvider.TOGETHER: "openai/gpt-oss-20b",

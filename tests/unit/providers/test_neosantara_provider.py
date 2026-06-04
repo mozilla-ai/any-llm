@@ -11,7 +11,7 @@ def test_provider_basics() -> None:
     assert provider.API_BASE == "https://api.neosantara.xyz/v1"
 
 
-def test_neosantara_supports_gateway_flags() -> None:
+def test_neosantara_supports_flags() -> None:
     provider = NeosantaraProvider(api_key="dummy_key")
     assert provider.SUPPORTS_COMPLETION is True
     assert provider.SUPPORTS_COMPLETION_STREAMING is True
