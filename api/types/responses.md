@@ -71,7 +71,7 @@ Normalized parameters for the Responses API, used internally to pass structured 
 | `temperature` | `float \| None` | Controls randomness in the response (0.0 to 2.0) |
 | `top_p` | `float \| None` | Controls diversity via nucleus sampling (0.0 to 1.0) |
 | `max_output_tokens` | `int \| None` | Maximum number of tokens to generate |
-| `response_format` | `dict[str, Any] \| type[BaseModel] \| None` | Format specification for the response |
+| `response_format` | `dict[str, Any] \| type \| None` | Structured-output format for the response. Accepts a Pydantic ``BaseModel`` subclass or a dataclass type (parsed into ``ParsedResponse.output_parsed``), or a raw OpenAI ``text.format`` dict. |
 | `stream` | `bool \| None` | Whether to stream the response |
 | `parallel_tool_calls` | `bool \| None` | Whether to allow parallel tool calls |
 | `top_logprobs` | `int \| None` | Number of top alternatives to return when logprobs are requested |
