@@ -36,6 +36,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.MOONSHOT: "kimi-k2-thinking",
         LLMProvider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         LLMProvider.HUGGINGFACE: "Qwen/Qwen2.5-72B-Instruct",
+        LLMProvider.NEOSANTARA: "deepseek-v4-flash",
         LLMProvider.NEBIUS: "openai/gpt-oss-120b",
         LLMProvider.SAMBANOVA: "gpt-oss-120b",
         LLMProvider.TOGETHER: "openai/gpt-oss-20b",
@@ -64,6 +65,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.TOGETHER: "openai/gpt-oss-20b",
         LLMProvider.XAI: "grok-3-mini-latest",
         LLMProvider.INCEPTION: "mercury",
+        LLMProvider.NEOSANTARA: "gemini-3-flash-preview",
         LLMProvider.NEBIUS: "openai/gpt-oss-120b",
         LLMProvider.OLLAMA: "llama3.2:1b",
         LLMProvider.LLAMAFILE: "N/A",
@@ -102,6 +104,7 @@ def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict
         LLMProvider.OLLAMA: "llava-phi3",  # Fast vision model compatible with OpenAI format
         LLMProvider.FIREWORKS: "accounts/fireworks/models/kimi-k2p5",
         LLMProvider.BEDROCK: "anthropic.claude-3-haiku-20240307-v1:0",  # Claude 3 Haiku with vision support
+        LLMProvider.NEOSANTARA: "gemini-3-flash-preview",  # Vision model compatible with OpenAI format
     }
 
 
@@ -110,6 +113,7 @@ def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict
 def embedding_provider_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.OPENAI: "text-embedding-ada-002",
+        LLMProvider.NEOSANTARA: "text-embedding-3-small",
         LLMProvider.NEBIUS: "Qwen/Qwen3-Embedding-8B",
         LLMProvider.SAMBANOVA: "Meta-Llama-3.1-8B-Instruct",
         LLMProvider.MISTRAL: "mistral-embed",
@@ -149,6 +153,7 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.LLAMACPP: {"api_base": "http://127.0.0.1:8090/v1"},
         LLMProvider.VLLM: {"api_base": "http://127.0.0.1:8080/v1"},
         LLMProvider.MISTRAL: {"timeout_ms": 100000},
+        LLMProvider.NEOSANTARA: {"timeout": 10},
         LLMProvider.NEBIUS: {"api_base": "https://api.studio.nebius.com/v1/"},
         LLMProvider.OPENAI: {"timeout": 10},
         LLMProvider.TOGETHER: {"timeout": 10},

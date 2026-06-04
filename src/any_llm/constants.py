@@ -38,6 +38,7 @@ class LLMProvider(StrEnum):
     MISTRAL = "mistral"
     MOONSHOT = "moonshot"
     MZAI = "mzai"
+    NEOSANTARA = "neosantara"
     NEBIUS = "nebius"
     OLLAMA = "ollama"
     OPENAI = "openai"
