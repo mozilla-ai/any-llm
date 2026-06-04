@@ -3,9 +3,13 @@ from __future__ import annotations
 import json
 import tempfile
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 from any_llm.exceptions import BatchNotCompleteError
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams
@@ -41,6 +45,10 @@ def _mock_otari_client() -> MagicMock:
     client.cancel_batch = AsyncMock()
     client.list_batches = AsyncMock()
     client.retrieve_batch_results = AsyncMock()
+    client._base_url = "https://otari.example.com/v1"
+    client._auth_headers = {"Authorization": "Bearer test-token"}
+    client._http = MagicMock()
+    client._http.post = AsyncMock()
     return client
 
 
@@ -403,3 +411,266 @@ async def test_otari_aresponses_without_response_format() -> None:
 
     # No structured response_format -> no text.format injected.
     assert "text" not in client.response.call_args.kwargs
+
+
+# -- _amessages (Anthropic Messages API pass-through) --
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_non_streaming_sends_to_messages_endpoint() -> None:
+    """Test _amessages sends Anthropic-format body to /v1/messages."""
+    from any_llm.types.messages import MessageResponse, MessagesParams
+
+    client = _mock_otari_client()
+    sample_response = {
+        "id": "msg_test123",
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "text", "text": "Hello!"}],
+        "model": "claude-sonnet-4-5",
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+    }
+    client._http.post.return_value = MagicMock(status_code=200, json=lambda: sample_response)
+    provider = _build_provider(client)
+
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+    )
+    result = await provider._amessages(params)
+
+    assert isinstance(result, MessageResponse)
+    assert result.id == "msg_test123"
+    assert result.content[0].type == "text"
+    assert result.content[0].text == "Hello!"
+
+    # Verify the HTTP call
+    call_args = client._http.post.call_args
+    assert call_args is not None
+    url = call_args[0][0] if call_args[0] else ""
+    assert url == "https://otari.example.com/v1/messages"
+    headers = call_args[1].get("headers", {})
+    assert headers["Content-Type"] == "application/json"
+    assert "Authorization" in headers
+
+    # Verify the body is Anthropic format
+    body = call_args[1].get("json", {})
+    assert body["model"] == "claude-sonnet-4-5"
+    assert body["max_tokens"] == 1024
+    assert body["messages"] == [{"role": "user", "content": "Hello"}]
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_preserves_cache_control() -> None:
+    """Test cache_control in system prompt is preserved."""
+    from any_llm.types.messages import MessagesParams
+
+    client = _mock_otari_client()
+    sample_response = {
+        "id": "msg_test123",
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "text", "text": "OK"}],
+        "model": "claude-sonnet-4-5",
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+    }
+    client._http.post.return_value = MagicMock(status_code=200, json=lambda: sample_response)
+    provider = _build_provider(client)
+
+    system_blocks = [
+        {"type": "text", "text": "You are helpful.", "cache_control": {"type": "ephemeral"}},
+    ]
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        system=system_blocks,
+    )
+    await provider._amessages(params)
+
+    call_args = client._http.post.call_args
+    body = call_args[1].get("json", {})
+    assert body["system"] == system_blocks
+    assert body["system"][0]["cache_control"] == {"type": "ephemeral"}
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_preserves_thinking() -> None:
+    """Test thinking configuration is preserved."""
+    from any_llm.types.messages import MessagesParams
+
+    client = _mock_otari_client()
+    sample_response = {
+        "id": "msg_test123",
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "text", "text": "OK"}],
+        "model": "claude-sonnet-4-5",
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+    }
+    client._http.post.return_value = MagicMock(status_code=200, json=lambda: sample_response)
+    provider = _build_provider(client)
+
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        thinking={"type": "enabled", "budget_tokens": 8192},
+    )
+    await provider._amessages(params)
+
+    call_args = client._http.post.call_args
+    body = call_args[1].get("json", {})
+    assert body["thinking"] == {"type": "enabled", "budget_tokens": 8192}
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_passes_extra_kwargs() -> None:
+    """Test extra kwargs are forwarded in the body."""
+    from any_llm.types.messages import MessagesParams
+
+    client = _mock_otari_client()
+    sample_response = {
+        "id": "msg_test123",
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "text", "text": "OK"}],
+        "model": "claude-sonnet-4-5",
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+    }
+    client._http.post.return_value = MagicMock(status_code=200, json=lambda: sample_response)
+    provider = _build_provider(client)
+
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+    )
+    await provider._amessages(params, metadata={"user_id": "u1"})
+
+    call_args = client._http.post.call_args
+    body = call_args[1].get("json", {})
+    assert body["metadata"] == {"user_id": "u1"}
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_streaming_delegates_to_stream_helper() -> None:
+    """Test streaming _amessages calls _stream_anthropic_events."""
+    from any_llm.types.messages import MessagesParams
+
+    client = _mock_otari_client()
+
+    async def _mock_aiter() -> AsyncIterator[str]:
+        yield 'data: {"type": "message_start", "message": {"id": "msg_1", "type": "message", "role": "assistant", "content": [], "model": "claude", "stop_reason": null, "usage": {"input_tokens": 10, "output_tokens": 0}}}'
+        yield 'data: {"type": "message_stop"}'
+
+    mock_response = MagicMock(status_code=200)
+    mock_response.aiter_lines = _mock_aiter
+    client._http.post.return_value = mock_response
+    provider = _build_provider(client)
+
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        stream=True,
+    )
+    result = await provider._amessages(params)
+
+    # Verify HTTP call included stream=True
+    call_args = client._http.post.call_args
+    body = call_args[1].get("json", {})
+    assert body["stream"] is True
+
+    # Verify result is an async iterator
+    import inspect
+
+    assert inspect.isasyncgen(result)
+
+
+@pytest.mark.asyncio
+async def test_otari_stream_anthropic_events_parses_sse() -> None:
+    """Test _stream_anthropic_events parses SSE data lines."""
+    from any_llm.types.messages import (
+        ContentBlockDeltaEvent,
+        MessageStartEvent,
+    )
+
+    client = _mock_otari_client()
+    provider = _build_provider(client)
+
+    # Build a mock httpx response that yields SSE lines
+    sse_lines = [
+        'data: {"type": "message_start", "message": {"id": "msg_1", "type": "message", "role": "assistant", "content": [], "model": "claude", "stop_reason": null, "usage": {"input_tokens": 10, "output_tokens": 0}}}',
+        'data: {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}',
+        'data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello"}}',
+        'data: {"type": "content_block_stop", "index": 0}',
+        'data: {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 5}}',
+        'data: {"type": "message_stop"}',
+    ]
+
+    async def _mock_aiter_lines() -> AsyncIterator[str]:
+        for line in sse_lines:
+            yield line
+
+    mock_response = MagicMock(status_code=200)
+    mock_response.aiter_lines = _mock_aiter_lines
+
+    events = []
+    async for event in provider._stream_anthropic_events(mock_response):
+        events.append(event)
+
+    types = [e.type for e in events]
+    assert "message_start" in types
+    assert "content_block_start" in types
+    assert "content_block_delta" in types
+    assert "content_block_stop" in types
+    assert "message_delta" in types
+    assert "message_stop" in types
+
+    msg_start = next(e for e in events if isinstance(e, MessageStartEvent))
+    assert msg_start.message.id == "msg_1"
+
+    text_delta = next(e for e in events if isinstance(e, ContentBlockDeltaEvent))
+    assert text_delta.delta.type == "text_delta"
+    assert text_delta.delta.text == "Hello"
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_none_params_excluded() -> None:
+    """Test that None params are excluded from the request body."""
+    from any_llm.types.messages import MessagesParams
+
+    client = _mock_otari_client()
+    sample_response = {
+        "id": "msg_test123",
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "text", "text": "OK"}],
+        "model": "claude-sonnet-4-5",
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+    }
+    client._http.post.return_value = MagicMock(status_code=200, json=lambda: sample_response)
+    provider = _build_provider(client)
+
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+    )
+    await provider._amessages(params)
+
+    call_args = client._http.post.call_args
+    body = call_args[1].get("json", {})
+    assert "temperature" not in body
+    assert "top_p" not in body
+    assert "system" not in body
+    assert "tools" not in body
+    assert "thinking" not in body
+    assert "cache_control" not in body

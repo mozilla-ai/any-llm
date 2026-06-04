@@ -12,6 +12,7 @@ from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.openai.utils import _convert_moderation_response_from_openai
 from any_llm.types.batch import Batch, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+from any_llm.types.messages import MessageResponse, MessagesParams, MessageStreamEvent
 from any_llm.types.model import Model
 from any_llm.types.rerank import RerankResponse
 from any_llm.utils.structured_output import build_responses_text_format, is_structured_output_type
@@ -19,6 +20,7 @@ from any_llm.utils.structured_output import build_responses_text_format, is_stru
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
+    from httpx import Response as _HttpxResponse
     from openresponses_types import ResponseResource
 
     from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
@@ -188,6 +190,85 @@ class OtariProvider(BaseOpenAIProvider):
             **completion_kwargs,
         )
         return self._convert_completion_response_async(response)
+
+    @override
+    async def _amessages(
+        self, params: MessagesParams, **kwargs: Any
+    ) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
+        """Send Anthropic-format messages directly to otari's /v1/messages endpoint.
+
+        This preserves cache_control, thinking, and system prompt structure that
+        would be lost during Anthropic-to-OpenAI conversion.
+        """
+        body = params.model_dump(exclude_none=True)
+        body.pop("stream", None)
+        body.update(kwargs)
+
+        url = f"{self.otari_client._base_url}/messages"
+        headers = {
+            "Content-Type": "application/json",
+            **self.otari_client._auth_headers,
+        }
+
+        if params.stream:
+            body["stream"] = True
+            response = await self.otari_client._http.post(url, headers=headers, json=body)
+            response.raise_for_status()
+            return self._stream_anthropic_events(response)
+
+        response = await self.otari_client._http.post(url, headers=headers, json=body)
+        response.raise_for_status()
+        data = response.json()
+        return MessageResponse.model_validate(data)
+
+    async def _stream_anthropic_events(self, response: _HttpxResponse) -> AsyncIterator[MessageStreamEvent]:
+        """Parse SSE events from an Anthropic Messages API streaming response."""
+        from anthropic.types import (
+            RawContentBlockDeltaEvent,
+            RawContentBlockStartEvent,
+            RawContentBlockStopEvent,
+            RawMessageDeltaEvent,
+            RawMessageStartEvent,
+            RawMessageStopEvent,
+        )
+
+        buf = ""
+        async for line in response.aiter_lines():
+            if line.startswith("data: "):
+                payload = json.loads(line[6:])
+                event_type = payload.get("type")
+                if event_type == "message_start":
+                    yield RawMessageStartEvent.model_validate(payload)
+                elif event_type == "content_block_start":
+                    yield RawContentBlockStartEvent.model_validate(payload)
+                elif event_type == "content_block_delta":
+                    yield RawContentBlockDeltaEvent.model_validate(payload)
+                elif event_type == "content_block_stop":
+                    yield RawContentBlockStopEvent.model_validate(payload)
+                elif event_type == "message_delta":
+                    yield RawMessageDeltaEvent.model_validate(payload)
+                elif event_type == "message_stop":
+                    yield RawMessageStopEvent.model_validate(payload)
+            elif line.startswith("data:"):
+                # Handle continuation lines (data: without space)
+                buf += line[5:]
+            elif not line.strip() and buf:
+                # Empty line signals end of event
+                payload = json.loads(buf)
+                event_type = payload.get("type")
+                if event_type == "message_start":
+                    yield RawMessageStartEvent.model_validate(payload)
+                elif event_type == "content_block_start":
+                    yield RawContentBlockStartEvent.model_validate(payload)
+                elif event_type == "content_block_delta":
+                    yield RawContentBlockDeltaEvent.model_validate(payload)
+                elif event_type == "content_block_stop":
+                    yield RawContentBlockStopEvent.model_validate(payload)
+                elif event_type == "message_delta":
+                    yield RawMessageDeltaEvent.model_validate(payload)
+                elif event_type == "message_stop":
+                    yield RawMessageStopEvent.model_validate(payload)
+                buf = ""
 
     @override
     async def _aresponses(
