@@ -38,6 +38,7 @@ REASONING_EFFORT_TO_THINKING_BUDGETS = {
     "medium": 8192,
     "high": 24576,
     "xhigh": 32768,
+    "max": 32768,
 }
 
 

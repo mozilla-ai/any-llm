@@ -47,7 +47,8 @@ REASONING_EFFORT_TO_ANTHROPIC_EFFORT = {
     "low": "low",
     "medium": "medium",
     "high": "high",
-    "xhigh": "max",
+    "xhigh": "xhigh",
+    "max": "max",
 }
 
 
