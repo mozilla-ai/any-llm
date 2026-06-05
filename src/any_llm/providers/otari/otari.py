@@ -5,6 +5,18 @@ import json
 import os
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
+import httpx
+
+# Anthropic raw event types for SSE parsing.  anthropic is a core dependency so
+# this import is unconditional.
+from anthropic.types import (
+    RawContentBlockDeltaEvent,
+    RawContentBlockStartEvent,
+    RawContentBlockStopEvent,
+    RawMessageDeltaEvent,
+    RawMessageStartEvent,
+    RawMessageStopEvent,
+)
 from typing_extensions import override
 
 from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError
@@ -27,6 +39,27 @@ if TYPE_CHECKING:
     from any_llm.types.image import ImageGenerationParams, ImagesResponse
     from any_llm.types.moderation import ModerationResponse
     from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
+
+
+def _dispatch_sse_event(payload: dict[str, Any]) -> MessageStreamEvent | None:
+    """Dispatch an Anthropic SSE data payload to the right raw event type.
+
+    Returns ``None`` when the event type is unknown.
+    """
+    event_type = payload.get("type")
+    if event_type == "message_start":
+        return RawMessageStartEvent.model_validate(payload)
+    if event_type == "content_block_start":
+        return RawContentBlockStartEvent.model_validate(payload)
+    if event_type == "content_block_delta":
+        return RawContentBlockDeltaEvent.model_validate(payload)
+    if event_type == "content_block_stop":
+        return RawContentBlockStopEvent.model_validate(payload)
+    if event_type == "message_delta":
+        return RawMessageDeltaEvent.model_validate(payload)
+    if event_type == "message_stop":
+        return RawMessageStopEvent.model_validate(payload)
+    return None
 
 
 class CreateBatchParams(TypedDict, total=False):
@@ -106,6 +139,9 @@ class OtariProvider(BaseOpenAIProvider):
     SUPPORTS_RERANK = True
 
     otari_client: Any
+    _messages_api_base: str
+    _messages_auth_headers: dict[str, str]
+    _http: httpx.AsyncClient
 
     @classmethod
     def _resolve_env_api_base(cls) -> str | None:
@@ -179,6 +215,34 @@ class OtariProvider(BaseOpenAIProvider):
         self.client = self.otari_client.openai
         self.platform_mode = self.otari_client.platform_mode
 
+        # Build auth headers for /v1/messages (Anthropic endpoint) using the
+        # same resolution logic the otari SDK uses internally.  This avoids
+        # depending on private otari SDK attributes.
+        normalized_api_key = self._normalize_placeholder_api_key(api_key)
+        resolved_api_key = normalized_api_key or self._resolve_env_api_key()
+        resolved_platform_token = self._resolve_platform_token()
+        self._messages_auth_headers = {**(default_headers or {})}
+
+        if self.platform_mode:
+            # Platform mode: bearer token in Authorization header.
+            token = normalized_api_key or resolved_platform_token
+            if token:
+                self._messages_auth_headers["Authorization"] = f"Bearer {token}"
+        else:
+            # Non-platform mode: API key in Otari-Key header.
+            key = resolved_api_key or ""
+            if key:
+                self._messages_auth_headers[OTARI_HEADER_NAME] = f"Bearer {key}"
+
+        # Derive the /v1/messages endpoint URL from the api_base.
+        cleaned = resolved_api_base.rstrip("/")
+        v1_base = cleaned if cleaned.endswith("/v1") else f"{cleaned}/v1"
+        self._messages_api_base = f"{v1_base}/messages"
+
+        # Own httpx client for /v1/messages requests (separate from the otari
+        # SDK's internal client).
+        self._http = httpx.AsyncClient()
+
     @override
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
@@ -204,71 +268,46 @@ class OtariProvider(BaseOpenAIProvider):
         body.pop("stream", None)
         body.update(kwargs)
 
-        url = f"{self.otari_client._base_url}/messages"
         headers = {
             "Content-Type": "application/json",
-            **self.otari_client._auth_headers,
+            **self._messages_auth_headers,
         }
 
         if params.stream:
             body["stream"] = True
-            response = await self.otari_client._http.post(url, headers=headers, json=body)
-            response.raise_for_status()
-            return self._stream_anthropic_events(response)
+            http_response = await self._http.post(self._messages_api_base, headers=headers, json=body)
+            http_response.raise_for_status()
+            return self._stream_anthropic_events(http_response)
 
-        response = await self.otari_client._http.post(url, headers=headers, json=body)
-        response.raise_for_status()
-        data = response.json()
+        http_response = await self._http.post(self._messages_api_base, headers=headers, json=body)
+        http_response.raise_for_status()
+        data = http_response.json()
         return MessageResponse.model_validate(data)
 
     async def _stream_anthropic_events(self, response: _HttpxResponse) -> AsyncIterator[MessageStreamEvent]:
         """Parse SSE events from an Anthropic Messages API streaming response."""
-        from anthropic.types import (
-            RawContentBlockDeltaEvent,
-            RawContentBlockStartEvent,
-            RawContentBlockStopEvent,
-            RawMessageDeltaEvent,
-            RawMessageStartEvent,
-            RawMessageStopEvent,
-        )
-
         buf = ""
         async for line in response.aiter_lines():
             if line.startswith("data: "):
                 payload = json.loads(line[6:])
-                event_type = payload.get("type")
-                if event_type == "message_start":
-                    yield RawMessageStartEvent.model_validate(payload)
-                elif event_type == "content_block_start":
-                    yield RawContentBlockStartEvent.model_validate(payload)
-                elif event_type == "content_block_delta":
-                    yield RawContentBlockDeltaEvent.model_validate(payload)
-                elif event_type == "content_block_stop":
-                    yield RawContentBlockStopEvent.model_validate(payload)
-                elif event_type == "message_delta":
-                    yield RawMessageDeltaEvent.model_validate(payload)
-                elif event_type == "message_stop":
-                    yield RawMessageStopEvent.model_validate(payload)
+                event = _dispatch_sse_event(payload)
+                if event is not None:
+                    yield event
             elif line.startswith("data:"):
-                # Handle continuation lines (data: without space)
                 buf += line[5:]
             elif not line.strip() and buf:
-                # Empty line signals end of event
                 payload = json.loads(buf)
-                event_type = payload.get("type")
-                if event_type == "message_start":
-                    yield RawMessageStartEvent.model_validate(payload)
-                elif event_type == "content_block_start":
-                    yield RawContentBlockStartEvent.model_validate(payload)
-                elif event_type == "content_block_delta":
-                    yield RawContentBlockDeltaEvent.model_validate(payload)
-                elif event_type == "content_block_stop":
-                    yield RawContentBlockStopEvent.model_validate(payload)
-                elif event_type == "message_delta":
-                    yield RawMessageDeltaEvent.model_validate(payload)
-                elif event_type == "message_stop":
-                    yield RawMessageStopEvent.model_validate(payload)
+                event = _dispatch_sse_event(payload)
+                if event is not None:
+                    yield event
                 buf = ""
+
+        # Flush any remaining buffered data on stream termination.
+        if buf:
+            payload = json.loads(buf)
+            event = _dispatch_sse_event(payload)
+            if event is not None:
+                yield event
 
     @override
     async def _aresponses(

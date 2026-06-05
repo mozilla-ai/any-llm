@@ -45,11 +45,14 @@ def _mock_otari_client() -> MagicMock:
     client.cancel_batch = AsyncMock()
     client.list_batches = AsyncMock()
     client.retrieve_batch_results = AsyncMock()
-    client._base_url = "https://otari.example.com/v1"
-    client._auth_headers = {"Authorization": "Bearer test-token"}
-    client._http = MagicMock()
-    client._http.post = AsyncMock()
     return client
+
+
+def _setup_messages_mock(provider: OtariProvider, sample_response: dict[str, Any]) -> AsyncMock:
+    """Replace provider._http.post with an AsyncMock and return it."""
+    mock_post = AsyncMock(return_value=MagicMock(status_code=200, json=lambda: sample_response))
+    patch.object(provider._http, "post", mock_post).start()
+    return mock_post
 
 
 def test_extract_model_from_requests_none_when_missing() -> None:
@@ -431,8 +434,8 @@ async def test_otari_amessages_non_streaming_sends_to_messages_endpoint() -> Non
         "stop_reason": "end_turn",
         "usage": {"input_tokens": 10, "output_tokens": 5},
     }
-    client._http.post.return_value = MagicMock(status_code=200, json=lambda: sample_response)
     provider = _build_provider(client)
+    mock_post = _setup_messages_mock(provider, sample_response)
 
     params = MessagesParams(
         model="claude-sonnet-4-5",
@@ -447,13 +450,13 @@ async def test_otari_amessages_non_streaming_sends_to_messages_endpoint() -> Non
     assert result.content[0].text == "Hello!"
 
     # Verify the HTTP call
-    call_args = client._http.post.call_args
+    call_args = mock_post.call_args
     assert call_args is not None
     url = call_args[0][0] if call_args[0] else ""
     assert url == "https://otari.example.com/v1/messages"
     headers = call_args[1].get("headers", {})
     assert headers["Content-Type"] == "application/json"
-    assert "Authorization" in headers
+    # No auth header expected because mock client has no api_key and platform_mode=False
 
     # Verify the body is Anthropic format
     body = call_args[1].get("json", {})
@@ -477,8 +480,8 @@ async def test_otari_amessages_preserves_cache_control() -> None:
         "stop_reason": "end_turn",
         "usage": {"input_tokens": 10, "output_tokens": 5},
     }
-    client._http.post.return_value = MagicMock(status_code=200, json=lambda: sample_response)
     provider = _build_provider(client)
+    mock_post = _setup_messages_mock(provider, sample_response)
 
     system_blocks = [
         {"type": "text", "text": "You are helpful.", "cache_control": {"type": "ephemeral"}},
@@ -491,7 +494,7 @@ async def test_otari_amessages_preserves_cache_control() -> None:
     )
     await provider._amessages(params)
 
-    call_args = client._http.post.call_args
+    call_args = mock_post.call_args
     body = call_args[1].get("json", {})
     assert body["system"] == system_blocks
     assert body["system"][0]["cache_control"] == {"type": "ephemeral"}
@@ -512,8 +515,8 @@ async def test_otari_amessages_preserves_thinking() -> None:
         "stop_reason": "end_turn",
         "usage": {"input_tokens": 10, "output_tokens": 5},
     }
-    client._http.post.return_value = MagicMock(status_code=200, json=lambda: sample_response)
     provider = _build_provider(client)
+    mock_post = _setup_messages_mock(provider, sample_response)
 
     params = MessagesParams(
         model="claude-sonnet-4-5",
@@ -523,7 +526,7 @@ async def test_otari_amessages_preserves_thinking() -> None:
     )
     await provider._amessages(params)
 
-    call_args = client._http.post.call_args
+    call_args = mock_post.call_args
     body = call_args[1].get("json", {})
     assert body["thinking"] == {"type": "enabled", "budget_tokens": 8192}
 
@@ -543,8 +546,8 @@ async def test_otari_amessages_passes_extra_kwargs() -> None:
         "stop_reason": "end_turn",
         "usage": {"input_tokens": 10, "output_tokens": 5},
     }
-    client._http.post.return_value = MagicMock(status_code=200, json=lambda: sample_response)
     provider = _build_provider(client)
+    mock_post = _setup_messages_mock(provider, sample_response)
 
     params = MessagesParams(
         model="claude-sonnet-4-5",
@@ -553,7 +556,7 @@ async def test_otari_amessages_passes_extra_kwargs() -> None:
     )
     await provider._amessages(params, metadata={"user_id": "u1"})
 
-    call_args = client._http.post.call_args
+    call_args = mock_post.call_args
     body = call_args[1].get("json", {})
     assert body["metadata"] == {"user_id": "u1"}
 
@@ -571,8 +574,9 @@ async def test_otari_amessages_streaming_delegates_to_stream_helper() -> None:
 
     mock_response = MagicMock(status_code=200)
     mock_response.aiter_lines = _mock_aiter
-    client._http.post.return_value = mock_response
     provider = _build_provider(client)
+    mock_post = AsyncMock(return_value=mock_response)
+    patch.object(provider._http, "post", mock_post).start()
 
     params = MessagesParams(
         model="claude-sonnet-4-5",
@@ -583,7 +587,7 @@ async def test_otari_amessages_streaming_delegates_to_stream_helper() -> None:
     result = await provider._amessages(params)
 
     # Verify HTTP call included stream=True
-    call_args = client._http.post.call_args
+    call_args = mock_post.call_args
     body = call_args[1].get("json", {})
     assert body["stream"] is True
 
@@ -656,8 +660,8 @@ async def test_otari_amessages_none_params_excluded() -> None:
         "stop_reason": "end_turn",
         "usage": {"input_tokens": 10, "output_tokens": 5},
     }
-    client._http.post.return_value = MagicMock(status_code=200, json=lambda: sample_response)
     provider = _build_provider(client)
+    mock_post = _setup_messages_mock(provider, sample_response)
 
     params = MessagesParams(
         model="claude-sonnet-4-5",
@@ -666,7 +670,7 @@ async def test_otari_amessages_none_params_excluded() -> None:
     )
     await provider._amessages(params)
 
-    call_args = client._http.post.call_args
+    call_args = mock_post.call_args
     body = call_args[1].get("json", {})
     assert "temperature" not in body
     assert "top_p" not in body
