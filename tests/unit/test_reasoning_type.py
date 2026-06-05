@@ -8,6 +8,9 @@ expect ``delta.reasoning`` / ``message.reasoning`` to be a string.
 import json
 from typing import Any
 
+import pytest
+from pydantic import ValidationError
+
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -147,6 +150,30 @@ def test_chat_completion_message_accepts_string_reasoning_on_input() -> None:
     message = completion.choices[0].message
     assert message.reasoning is not None
     assert message.reasoning.content == "plain reasoning"
+
+
+def test_reasoning_rejects_dict_without_content_key() -> None:
+    """A dict that lacks the ``content`` key falls through and fails standard validation."""
+    with pytest.raises(ValidationError):
+        Reasoning.model_validate({"other_field": "value"})
+
+
+def test_reasoning_rejects_dict_with_none_content() -> None:
+    """A dict where ``content`` is None falls through and fails standard validation."""
+    with pytest.raises(ValidationError):
+        Reasoning.model_validate({"content": None})
+
+
+def test_reasoning_rejects_non_string_non_dict_input() -> None:
+    """An int or other non-string/non-dict input falls through and fails standard validation."""
+    with pytest.raises(ValidationError):
+        Reasoning.model_validate(123)
+
+
+def test_reasoning_coerces_non_string_content_in_dict() -> None:
+    """A dict whose ``content`` value is not a string is coerced via ``str()``."""
+    reasoning = Reasoning.model_validate({"content": 42})
+    assert reasoning.content == "42"
 
 
 def test_reasoning_roundtrip_through_json() -> None:
