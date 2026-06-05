@@ -75,7 +75,7 @@ A literal type controlling reasoning depth for models that support it.
 **Import:** `from any_llm.types.completion import ReasoningEffort`
 
 ```
-ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "auto"]
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max", "auto"]
 ```
 
 The value `"auto"` (the default) maps to each provider's own default reasoning level.
@@ -111,7 +111,7 @@ Normalized parameters for chat completions, used internally to pass structured p
 | `logit_bias` | `dict[str, float] \| None` | Bias the likelihood of specified tokens during generation |
 | `stream_options` | `dict[str, Any] \| None` | Additional options controlling streaming behavior |
 | `max_completion_tokens` | `int \| None` | Maximum number of tokens for the completion (provider-dependent) |
-| `reasoning_effort` | `Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'auto'] \| None` |  |
+| `reasoning_effort` | `Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'] \| None` |  |
 
 ## Additional Re-exports
 

@@ -35,7 +35,7 @@ def completion(
     logit_bias: dict[str, float] | None = None,
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
-    reasoning_effort: Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'auto'] | None = "auto",
+    reasoning_effort: Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'] | None = "auto",
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]
@@ -73,7 +73,7 @@ async def acompletion(
     logit_bias: dict[str, float] | None = None,
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
-    reasoning_effort: Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'auto'] | None = "auto",
+    reasoning_effort: Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'] | None = "auto",
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]
@@ -108,7 +108,7 @@ async def acompletion(
 | `logit_bias` | `dict[str, float] \| None` | None | Bias the likelihood of specified tokens during generation |
 | `stream_options` | `dict[str, Any] \| None` | None | Additional options controlling streaming behavior |
 | `max_completion_tokens` | `int \| None` | None | Maximum number of tokens for the completion |
-| `reasoning_effort` | `Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'auto'] \| None` | "auto" | Reasoning effort level for models that support it. "auto" will map to each provider's default. |
+| `reasoning_effort` | `Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'] \| None` | "auto" | Reasoning effort level for models that support it. "auto" will map to each provider's default. |
 | `client_args` | `dict[str, Any] \| None` | None | Additional provider-specific arguments that will be passed to the provider's client instantiation. |
 | `**kwargs` | `Any` | *required* | Additional provider-specific arguments that will be passed to the provider's API call. |
 
