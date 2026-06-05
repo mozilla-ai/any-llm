@@ -35,6 +35,7 @@ Token usage information for Messages API.
 | `inference_geo` | `str \| None` | The geographic region where inference was performed for this request. |
 | `input_tokens` | `int` | The number of input tokens which were used. |
 | `output_tokens` | `int` | The number of output tokens which were used. |
+| `output_tokens_details` | `OutputTokensDetails \| None` | Breakdown of output tokens by category. `output_tokens` remains the inclusive, authoritative total used for billing. This object provides a read-only decomposition for observability — for example, how many of the billed output tokens were spent on internal reasoning that may have been summarized before being returned to you. |
 | `server_tool_use` | `ServerToolUsage \| None` | The number of server tool requests. |
 | `service_tier` | `Literal['standard', 'priority', 'batch'] \| None` | If the request used the priority, standard, or batch tier. |
 
