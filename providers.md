@@ -28,7 +28,7 @@ description: Complete list of LLM providers supported by any-llm including OpenA
 | [`llama`](https://www.llama.com/products/llama-api/) | LLAMA_API_KEY | LLAMA_API_BASE | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | [`llamacpp`](https://github.com/ggml-org/llama.cpp) | None | LLAMACPP_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`llamafile`](https://github.com/Mozilla-Ocho/llamafile) | None | LLAMAFILE_API_BASE | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | ❌ |
-| [`lmstudio`](https://lmstudio.ai/) | LM_STUDIO_API_KEY | LM_STUDIO_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| [`lmstudio`](https://lmstudio.ai/docs/python) | LM_STUDIO_API_KEY | LM_STUDIO_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
 | [`minimax`](https://www.minimax.io/platform_overview) | MINIMAX_API_KEY | MINIMAX_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | [`mistral`](https://docs.mistral.ai/) | MISTRAL_API_KEY | MISTRAL_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
 | [`moonshot`](https://platform.moonshot.ai/) | MOONSHOT_API_KEY | MOONSHOT_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
