@@ -1508,7 +1508,7 @@ def generate_types_completion_page() -> str:
             "**Import:** `from any_llm.types.completion import ReasoningEffort`",
             "",
             """```
-ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "auto"]
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max", "auto"]
 ```""",
             "",
             'The value `"auto"` (the default) maps to each provider\'s own default reasoning level.',

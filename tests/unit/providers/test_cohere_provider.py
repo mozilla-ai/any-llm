@@ -218,6 +218,7 @@ def test_preprocess_response_format_unsupported_raises() -> None:
         ("medium", {"type": "enabled", "token_budget": 8192}),
         ("high", {"type": "enabled", "token_budget": 24576}),
         ("xhigh", {"type": "enabled", "token_budget": 32768}),
+        ("max", {"type": "enabled", "token_budget": 32768}),
     ],
 )
 async def test_reasoning_effort_mapped_to_thinking(
