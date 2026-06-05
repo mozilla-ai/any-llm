@@ -164,10 +164,17 @@ def test_reasoning_rejects_dict_with_none_content() -> None:
         Reasoning.model_validate({"content": None})
 
 
-def test_reasoning_rejects_non_string_non_dict_input() -> None:
-    """An int or other non-string/non-dict input falls through and fails standard validation."""
+@pytest.mark.parametrize("invalid_input", [123, None, [], 1.5, ("tuple",)])
+def test_reasoning_rejects_non_string_non_dict_input(invalid_input: Any) -> None:
+    """Non-string, non-dict inputs fall through and fail standard validation."""
     with pytest.raises(ValidationError):
-        Reasoning.model_validate(123)
+        Reasoning.model_validate(invalid_input)
+
+
+def test_reasoning_accepts_empty_string() -> None:
+    """An empty string is valid reasoning content."""
+    reasoning = Reasoning.model_validate("")
+    assert reasoning.content == ""
 
 
 def test_reasoning_coerces_non_string_content_in_dict() -> None:
