@@ -153,6 +153,7 @@ class OllamaProvider(AnyLLM):
         response: AsyncIterator[OllamaChatResponse] = await self.client.chat(
             model=model,
             messages=messages,
+            tools=kwargs.pop("tools", None),
             think=kwargs.pop("think", None),
             stream=True,
             options=kwargs,
