@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -87,6 +88,44 @@ async def test_completion_with_dict_response_format() -> None:
 
             call_kwargs = provider.client.chat.call_args[1]
             assert call_kwargs["format"] == response_format
+
+
+@pytest.mark.asyncio
+async def test_streaming_completion_passes_tools_top_level() -> None:
+    """Test that tools are passed as a top-level kwarg to client.chat(), not inside options."""
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "parameters": {"type": "object", "properties": {"location": {"type": "string"}}},
+            },
+        }
+    ]
+
+    async def empty_async_iter() -> AsyncIterator[None]:
+        return
+        yield
+
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=empty_async_iter())
+
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="llama3.1",
+                messages=[{"role": "user", "content": "What's the weather?"}],
+                tools=tools,
+                stream=True,
+            ),
+        )
+        async for _ in result:  # type: ignore[union-attr]
+            pass
+
+        call_kwargs = provider.client.chat.call_args[1]
+        assert call_kwargs["tools"] == tools
+        assert "tools" not in call_kwargs.get("options", {})
 
 
 @pytest.mark.asyncio
