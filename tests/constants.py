@@ -7,6 +7,7 @@ LOCAL_PROVIDERS = [
     LLMProvider.OLLAMA,
     LLMProvider.LMSTUDIO,
     LLMProvider.LLAMAFILE,
+    LLMProvider.CASCADIA,
 ]
 
 # Providers that should never run in CI (only for local development)
@@ -14,6 +15,7 @@ CI_EXCLUDED_PROVIDERS = [
     LLMProvider.AZUREANTHROPIC,
     LLMProvider.VERTEXAIANTHROPIC,
     LLMProvider.VLLM,
+    LLMProvider.CASCADIA,
 ]
 
 # Strip whitespace and drop empties so values like "anthropic, otari" or an unset env var
