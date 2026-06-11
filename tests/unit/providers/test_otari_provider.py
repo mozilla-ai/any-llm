@@ -67,6 +67,22 @@ def test_as_plain_dict_normalizes_models_and_passes_through() -> None:
     assert _as_plain_dict(passthrough) is passthrough
 
 
+def test_as_plain_dict_prefers_to_dict_over_model_dump() -> None:
+    """otari's generated models leak oneOf/anyOf union wrappers via model_dump (breaking
+    tool_calls and Messages content); their to_dict unwraps to the actual instance, so
+    _as_plain_dict must prefer to_dict."""
+    from pydantic import BaseModel
+
+    class _OtariLike(BaseModel):
+        value: int
+
+        def to_dict(self) -> dict[str, int]:
+            return {"unwrapped": self.value}
+
+    # model_dump would return {"value": 7}; the fix must use to_dict's unwrapped form.
+    assert _as_plain_dict(_OtariLike(value=7)) == {"unwrapped": 7}
+
+
 def test_extract_model_from_requests_none_when_missing() -> None:
     assert _extract_model_from_requests([]) is None
     assert _extract_model_from_requests([{"custom_id": "1", "body": {}}]) is None

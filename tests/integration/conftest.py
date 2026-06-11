@@ -51,11 +51,6 @@ _OTARI_SKIPPED_TESTS: dict[str, str] = {
     "test_retrieve_batch_results_with_api_function": "batch needs provider_name + gateway batch support",
     "test_completion_with_image": "gateway returns 502 on multimodal image content",
     "test_completion_with_pdf": "gateway returns 502 on multimodal pdf content",
-    # any-llm otari provider deserialization bugs
-    "test_agent_loop_parallel_tool_calls": "tool_calls deserialization bug (any-llm#1126)",
-    "test_agent_loop_sequential_tool_calls": "tool_calls deserialization bug (any-llm#1126)",
-    "test_messages_non_streaming": "non-streaming Messages deserialization bug (any-llm#1126)",
-    "test_messages_with_system_prompt": "non-streaming Messages deserialization bug (any-llm#1126)",
 }
 
 
