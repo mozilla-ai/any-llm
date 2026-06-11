@@ -168,8 +168,9 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.BEDROCK: {"region_name": "us-east-1"},
         LLMProvider.CEREBRAS: {"timeout": 10},
         LLMProvider.COHERE: {"timeout": 10},
-        LLMProvider.GATEWAY: {"api_base": "http://127.0.0.1:3000", "timeout": 1},
-        LLMProvider.OTARI: {"api_base": "http://127.0.0.1:3000", "timeout": 1},
+        # otari/gateway intentionally omit a default api_base: they resolve the endpoint from
+        # OTARI_API_BASE / GATEWAY_API_BASE and are skipped when that is unset (see
+        # tests/integration/conftest.py), so no localhost placeholder is needed here.
         LLMProvider.GROQ: {"timeout": 10},
         LLMProvider.LLAMACPP: {"api_base": "http://127.0.0.1:8090/v1"},
         LLMProvider.VLLM: {"api_base": "http://127.0.0.1:8080/v1"},
