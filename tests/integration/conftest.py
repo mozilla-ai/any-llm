@@ -5,8 +5,8 @@ import pytest
 from any_llm.constants import LLMProvider
 from tests.constants import EXPECTED_PROVIDERS
 
-# The otari/gateway gateway has no server started in CI (unlike ollama, llamacpp, lmstudio and
-# llamafile, which the local integration job boots up). Its integration tests can therefore
+# The otari and gateway providers have no server started in CI (unlike ollama, llamacpp,
+# lmstudio and llamafile, which the local integration job boots up). Their integration tests can
 # only run against a real endpoint configured via these env vars, for example the dedicated
 # otari e2e job. When the endpoint is not configured we skip rather than fail: otari 0.1.0's
 # SDK is urllib3-based, so an unreachable placeholder host raises errors the per-test skip
