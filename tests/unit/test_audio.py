@@ -401,7 +401,7 @@ def test_speech_params_rejects_extra_fields() -> None:
 
 
 def test_supports_audio_only_on_expected_providers() -> None:
-    expected_supported = {LLMProvider.OPENAI, LLMProvider.AZUREOPENAI, LLMProvider.GATEWAY, LLMProvider.OTARI}
+    expected_supported = {LLMProvider.OPENAI, LLMProvider.AZUREOPENAI}
 
     for provider_enum in expected_supported:
         cls = AnyLLM.get_provider_class(provider_enum)

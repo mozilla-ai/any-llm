@@ -176,22 +176,21 @@ class OtariProvider(BaseOpenAIProvider):
             token = normalized_api_key or resolved_platform_token
             if not token:
                 msg = (
-                    "Platform mode requires a user token "
-                    f"(pass api_key or set {OTARI_AI_TOKEN_ENV}/{GATEWAY_PLATFORM_TOKEN_ENV})"
+                    "Platform mode requires a user token (pass api_key or set "
+                    f"{OTARI_AI_TOKEN_ENV}/{OTARI_PLATFORM_TOKEN_ENV}/{GATEWAY_PLATFORM_TOKEN_ENV})"
                 )
                 raise ValueError(msg)
             client_kwargs["platform_token"] = token
             using_platform_token = True
         elif platform_mode is False:
             client_kwargs["api_key"] = resolved_api_key
-        else:
-            if normalized_api_key:
-                client_kwargs["api_key"] = normalized_api_key
-            elif resolved_platform_token:
-                client_kwargs["platform_token"] = resolved_platform_token
-                using_platform_token = True
-            elif resolved_api_key:
-                client_kwargs["api_key"] = resolved_api_key
+        elif normalized_api_key:
+            client_kwargs["api_key"] = normalized_api_key
+        elif resolved_platform_token:
+            client_kwargs["platform_token"] = resolved_platform_token
+            using_platform_token = True
+        elif resolved_api_key:
+            client_kwargs["api_key"] = resolved_api_key
 
         if not resolved_api_base and not using_platform_token:
             msg = (
