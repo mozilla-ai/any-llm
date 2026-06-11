@@ -15,7 +15,6 @@ from any_llm.providers.otari.otari import OtariProvider
 def _mock_otari_client() -> MagicMock:
     client = MagicMock()
     client.platform_mode = False
-    client.openai = AsyncMock()
     client.create_batch = AsyncMock()
     client.retrieve_batch = AsyncMock()
     client.cancel_batch = AsyncMock()
@@ -25,7 +24,7 @@ def _mock_otari_client() -> MagicMock:
 
 
 def _build_provider(mocked_client: MagicMock) -> OtariProvider:
-    with patch("any_llm.providers.otari.otari.OtariClient", return_value=mocked_client):
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient", return_value=mocked_client):
         return OtariProvider(api_base="https://otari.example.com")
 
 

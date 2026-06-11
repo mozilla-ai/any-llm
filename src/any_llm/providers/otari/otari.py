@@ -5,6 +5,7 @@ import json
 import os
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
+from pydantic import BaseModel
 from typing_extensions import override
 
 from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError
@@ -42,12 +43,15 @@ class ListBatchesOptions(TypedDict, total=False):
 _MISSING_PACKAGES_ERROR: ImportError | None = None
 _OTARI_BATCH_NOT_COMPLETE_ERROR: Any = None
 try:
-    OtariClient = importlib.import_module("otari").OtariClient
+    AsyncOtariClient = importlib.import_module("otari").AsyncOtariClient
     _OTARI_BATCH_NOT_COMPLETE_ERROR = importlib.import_module("otari.errors").BatchNotCompleteError
 except ImportError as e:  # pragma: no cover - exercised through MISSING_PACKAGES_ERROR checks
     _MISSING_PACKAGES_ERROR = e
 
 
+# Canonical platform-token env var exposed by otari 0.1.0; the others are kept as
+# legacy aliases for backwards compatibility.
+OTARI_AI_TOKEN_ENV = "OTARI_AI_TOKEN"  # noqa: S105
 OTARI_PLATFORM_TOKEN_ENV = "OTARI_PLATFORM_TOKEN"  # noqa: S105
 GATEWAY_PLATFORM_TOKEN_ENV = "GATEWAY_PLATFORM_TOKEN"  # noqa: S105
 OTARI_HEADER_NAME = "Otari-Key"
@@ -55,6 +59,19 @@ LEGACY_GATEWAY_HEADER_NAME = "AnyLLM-Key"
 
 LEGACY_GATEWAY_API_KEY_ENV = "GATEWAY_API_KEY"
 LEGACY_GATEWAY_API_BASE_ENV = "GATEWAY_API_BASE"
+
+
+def _as_plain_dict(response: Any) -> Any:
+    """Normalize an otari-native pydantic response into a plain dict.
+
+    otari 0.1.0's async client returns its own typed pydantic models rather than
+    OpenAI types. Dumping them to a dict lets any-llm's own response types validate
+    the payload (extra keys like ``additional_properties`` are ignored/allowed).
+    Non-model inputs (e.g. dicts in unit tests) are returned unchanged.
+    """
+    if isinstance(response, BaseModel):
+        return response.model_dump()
+    return response
 
 
 def _parse_jsonl_to_requests(file_path: str) -> list[dict[str, Any]]:
@@ -98,9 +115,12 @@ class OtariProvider(BaseOpenAIProvider):
     SUPPORTS_MODERATION = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
-    SUPPORTS_IMAGE_GENERATION = True
-    SUPPORTS_AUDIO_TRANSCRIPTION = True
-    SUPPORTS_AUDIO_SPEECH = True
+    # otari 0.1.0's public async client dropped the embedded OpenAI passthrough and
+    # does not expose image generation or audio (speech/transcription). Tracked for
+    # upstream re-enablement; see the otari issue linked in the any-llm PR.
+    SUPPORTS_IMAGE_GENERATION = False
+    SUPPORTS_AUDIO_TRANSCRIPTION = False
+    SUPPORTS_AUDIO_SPEECH = False
     SUPPORTS_RERANK = True
 
     otari_client: Any
@@ -115,7 +135,11 @@ class OtariProvider(BaseOpenAIProvider):
 
     @staticmethod
     def _resolve_platform_token() -> str | None:
-        return os.getenv(OTARI_PLATFORM_TOKEN_ENV) or os.getenv(GATEWAY_PLATFORM_TOKEN_ENV)
+        return (
+            os.getenv(OTARI_AI_TOKEN_ENV)
+            or os.getenv(OTARI_PLATFORM_TOKEN_ENV)
+            or os.getenv(GATEWAY_PLATFORM_TOKEN_ENV)
+        )
 
     @override
     def _resolve_api_base(self, api_base: str | None = None) -> str | None:
@@ -133,36 +157,31 @@ class OtariProvider(BaseOpenAIProvider):
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
-        resolved_api_base = self._resolve_api_base(api_base)
-        if not resolved_api_base:
-            msg = (
-                "For any-llm otari, api_base is required "
-                f"(set via parameter or {self.ENV_API_BASE_NAME}/{LEGACY_GATEWAY_API_BASE_ENV} env vars)"
-            )
-            raise ValueError(msg)
-
         platform_mode = kwargs.pop("platform_mode", None)
         default_headers = kwargs.pop("default_headers", None)
 
+        resolved_api_base = self._resolve_api_base(api_base)
         normalized_api_key = self._normalize_placeholder_api_key(api_key)
         resolved_api_key = normalized_api_key or self._resolve_env_api_key()
         resolved_platform_token = self._resolve_platform_token()
 
-        client_kwargs: dict[str, Any] = {
-            "api_base": resolved_api_base,
-            "default_headers": default_headers,
-            "openai_options": kwargs or None,
-        }
+        client_kwargs: dict[str, Any] = {"default_headers": default_headers}
+        if resolved_api_base:
+            client_kwargs["api_base"] = resolved_api_base
 
+        # Track whether the client will authenticate with a platform token. otari
+        # defaults api_base to the hosted gateway in that case, so api_base is optional.
+        using_platform_token = False
         if platform_mode is True:
             token = normalized_api_key or resolved_platform_token
             if not token:
                 msg = (
                     "Platform mode requires a user token "
-                    f"(pass api_key or set {OTARI_PLATFORM_TOKEN_ENV}/{GATEWAY_PLATFORM_TOKEN_ENV})"
+                    f"(pass api_key or set {OTARI_AI_TOKEN_ENV}/{GATEWAY_PLATFORM_TOKEN_ENV})"
                 )
                 raise ValueError(msg)
             client_kwargs["platform_token"] = token
+            using_platform_token = True
         elif platform_mode is False:
             client_kwargs["api_key"] = resolved_api_key
         else:
@@ -170,11 +189,22 @@ class OtariProvider(BaseOpenAIProvider):
                 client_kwargs["api_key"] = normalized_api_key
             elif resolved_platform_token:
                 client_kwargs["platform_token"] = resolved_platform_token
+                using_platform_token = True
             elif resolved_api_key:
                 client_kwargs["api_key"] = resolved_api_key
 
-        self.otari_client = OtariClient(**client_kwargs)
-        self.client = self.otari_client.openai
+        if not resolved_api_base and not using_platform_token:
+            msg = (
+                "For any-llm otari, api_base is required unless a platform token is provided "
+                f"(set via parameter or {self.ENV_API_BASE_NAME}/{LEGACY_GATEWAY_API_BASE_ENV} env vars). "
+                "With a platform token, otari defaults to its hosted gateway."
+            )
+            raise ValueError(msg)
+
+        self.otari_client = AsyncOtariClient(**client_kwargs)
+        # otari 0.1.0's async client has no embedded OpenAI passthrough; every base
+        # client-based method is overridden below, so self.client is never used for I/O.
+        self.client = self.otari_client
         self.platform_mode = self.otari_client.platform_mode
 
     @override
@@ -187,7 +217,16 @@ class OtariProvider(BaseOpenAIProvider):
             messages=params.messages,
             **completion_kwargs,
         )
-        return self._convert_completion_response_async(response)
+        # otari returns its own typed ChatCompletion (non-stream) or an async iterator
+        # of typed chunks (stream); normalize both to any-llm types.
+        if hasattr(response, "__aiter__"):
+
+            async def _chunk_iterator() -> AsyncIterator[ChatCompletionChunk]:
+                async for chunk in response:
+                    yield self._convert_completion_chunk_response(_as_plain_dict(chunk))
+
+            return _chunk_iterator()
+        return self._convert_completion_response(_as_plain_dict(response))
 
     @override
     async def _aresponses(
@@ -213,35 +252,31 @@ class OtariProvider(BaseOpenAIProvider):
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         result = await self.otari_client.embedding(model=model, input=inputs, **kwargs)
-        return self._convert_embedding_response(result)
+        return self._convert_embedding_response(_as_plain_dict(result))
 
     @override
     async def _aimage_generation(self, params: ImageGenerationParams, **kwargs: Any) -> ImagesResponse:
-        api_kwargs = params.to_api_kwargs()
-        api_kwargs.update(kwargs)
-        return await self.otari_client.openai.images.generate(model=params.model_id, **api_kwargs)  # type: ignore[no-any-return]
+        msg = (
+            "otari 0.1.0 does not expose image generation in its public async client. "
+            "Re-enable once otari adds it upstream."
+        )
+        raise NotImplementedError(msg)
 
     @override
     async def _atranscription(self, params: AudioTranscriptionParams, **kwargs: Any) -> Transcription:
-        api_kwargs = params.to_api_kwargs()
-        api_kwargs.update(kwargs)
-        return await self.otari_client.openai.audio.transcriptions.create(  # type: ignore[no-any-return]
-            model=params.model_id,
-            file=params.file,
-            **api_kwargs,
+        msg = (
+            "otari 0.1.0 does not expose audio transcription in its public async client. "
+            "Re-enable once otari adds it upstream."
         )
+        raise NotImplementedError(msg)
 
     @override
     async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
-        api_kwargs = params.to_api_kwargs()
-        api_kwargs.update(kwargs)
-        response = await self.otari_client.openai.audio.speech.create(
-            model=params.model_id,
-            input=params.input,
-            voice=params.voice,
-            **api_kwargs,
+        msg = (
+            "otari 0.1.0 does not expose audio speech in its public async client. "
+            "Re-enable once otari adds it upstream."
         )
-        return cast("bytes", response.content)
+        raise NotImplementedError(msg)
 
     @override
     async def _amoderation(
@@ -252,7 +287,7 @@ class OtariProvider(BaseOpenAIProvider):
     ) -> ModerationResponse:
         include_raw = kwargs.pop("include_raw", False)
         model_name = model or "omni-moderation-latest"
-        raw = await self.otari_client.openai.moderations.create(
+        raw = await self.otari_client.moderation(
             model=model_name,
             input=cast("Any", input),
             **kwargs,
@@ -262,7 +297,7 @@ class OtariProvider(BaseOpenAIProvider):
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models = await self.otari_client.list_models()
-        return [Model.model_validate(model) if not isinstance(model, Model) else model for model in models]
+        return [model if isinstance(model, Model) else Model.model_validate(_as_plain_dict(model)) for model in models]
 
     @override
     async def _acreate_batch(
@@ -395,9 +430,5 @@ class OtariProvider(BaseOpenAIProvider):
         documents: list[str],
         **kwargs: Any,
     ) -> RerankResponse:
-        if not hasattr(self.otari_client, "rerank"):
-            msg = "Installed otari SDK does not expose rerank(). Upgrade otari to use rerank support."
-            raise NotImplementedError(msg)
-        rerank_fn = cast("Any", self.otari_client).rerank
-        result = await rerank_fn(model=model, query=query, documents=documents, **kwargs)
-        return RerankResponse.model_validate(result)
+        result = await self.otari_client.rerank(model=model, query=query, documents=documents, **kwargs)
+        return RerankResponse.model_validate(_as_plain_dict(result))

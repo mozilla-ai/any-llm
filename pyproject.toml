@@ -114,10 +114,10 @@ databricks = []
 deepseek = []
 fireworks = []
 gateway = [
-  "otari>=0.0.1",
+  "otari>=0.1.0",
 ]
 otari = [
-  "otari>=0.0.1",
+  "otari>=0.1.0",
 ]
 github = []
 inception = []
@@ -146,6 +146,12 @@ Source = "https://github.com/mozilla-ai/any-llm"
 
 [tool.uv]
 exclude-newer = "7 days"
+# Temporary: otari 0.1.0 (published 2026-06-10, first-party / mozilla.ai owned) is
+# newer than the global 7-day exclude-newer window, which would otherwise make it
+# unresolvable. This fixed-date override unblocks resolution now. Remove it once the
+# global window has caught up (after ~2026-06-17), or bump the date when adopting a
+# future otari release, since a stale date here would block newer otari versions.
+exclude-newer-package = { otari = "2026-06-12" }
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
