@@ -12,7 +12,13 @@ from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.openai.utils import _convert_moderation_response_from_openai
 from any_llm.types.batch import Batch, BatchResult, BatchResultError, BatchResultItem
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    CompletionParams,
+    CreateEmbeddingResponse,
+    ParsedChatCompletion,
+)
 from any_llm.types.messages import (
     ContentBlockDeltaEvent,
     ContentBlockStartEvent,
@@ -24,7 +30,12 @@ from any_llm.types.messages import (
 )
 from any_llm.types.model import Model
 from any_llm.types.rerank import RerankResponse
-from any_llm.utils.structured_output import build_responses_text_format, is_structured_output_type
+from any_llm.utils.structured_output import (
+    build_responses_text_format,
+    get_json_schema,
+    is_structured_output_type,
+    parse_json_content,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
@@ -250,17 +261,46 @@ class OtariProvider(BaseOpenAIProvider):
         the current OpenAI spec, but the otari gateway accepts only ``max_tokens`` and errors
         on ``max_completion_tokens``. Remap it back so the token limit reaches the upstream
         provider instead of producing an upstream error.
+
+        The base also leaves a Pydantic ``response_format`` as the model class (the OpenAI SDK
+        consumes it via ``parse()``); otari has no ``parse()`` helper, so send it as a
+        json_schema dict instead. The parsed object is reconstructed in ``_acompletion``.
         """
         converted = BaseOpenAIProvider._convert_completion_params(params, **kwargs)
         if "max_completion_tokens" in converted:
             converted["max_tokens"] = converted.pop("max_completion_tokens")
+        response_format = converted.get("response_format")
+        if is_structured_output_type(response_format):
+            converted["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": response_format.__name__, "schema": get_json_schema(response_format)},
+            }
         return converted
+
+    @staticmethod
+    def _to_parsed_completion(completion: ChatCompletion, response_format: type) -> ParsedChatCompletion[Any]:
+        """Wrap a completion as a ParsedChatCompletion, parsing each message's JSON content."""
+        parsed: ParsedChatCompletion[Any] = ParsedChatCompletion.model_validate(completion, from_attributes=True)
+        for choice in parsed.choices:
+            if choice.message.content is not None:
+                choice.message.parsed = parse_json_content(response_format, choice.message.content)
+        return parsed
 
     @override
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        # Capture the original response_format before _convert_completion_params rewrites it,
+        # so the JSON content can be parsed back into the requested type.
+        response_format = params.response_format
+        wants_structured = is_structured_output_type(response_format)
         completion_kwargs = self._convert_completion_params(params, **kwargs)
+        if wants_structured:
+            if params.stream:
+                msg = "stream is not supported for response_format"
+                raise ValueError(msg)
+            completion_kwargs.pop("stream", None)
+
         response = await self.otari_client.completion(
             model=params.model_id,
             messages=params.messages,
@@ -275,7 +315,12 @@ class OtariProvider(BaseOpenAIProvider):
                     yield self._convert_completion_chunk_response(_as_plain_dict(chunk))
 
             return _chunk_iterator()
-        return self._convert_completion_response(_as_plain_dict(response))
+        completion = self._convert_completion_response(_as_plain_dict(response))
+        # Re-check inline (rather than reusing ``wants_structured``) so the TypeGuard narrows
+        # response_format to ``type`` for _to_parsed_completion.
+        if is_structured_output_type(response_format):
+            return self._to_parsed_completion(completion, response_format)
+        return completion
 
     @override
     async def _amessages(
