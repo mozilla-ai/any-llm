@@ -274,8 +274,8 @@ class OtariProvider(BaseOpenAIProvider):
         SDK's ``message()`` to preserve them.
         """
         api_kwargs = params.model_dump(exclude_none=True)
-        api_kwargs.pop("stream", None)
         api_kwargs.update(kwargs)
+        api_kwargs.pop("stream", None)
 
         if params.stream:
             return self._stream_messages_async(**api_kwargs)
