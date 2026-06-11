@@ -134,6 +134,47 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  run-otari-e2e-tests:
+    # End-to-end tests against the hosted otari endpoint. The otari URL and API key live in
+    # GitHub secrets (OTARI_API_BASE / OTARI_API_KEY) so they stay out of the codebase. Runs on
+    # merge to main and on manual dispatch; skipped on pull_request_target since the secrets are
+    # not exposed to untrusted forks.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: 3.13
+          activate-environment: true
+
+      - name: Install dependencies
+        run: |
+          uv sync --group tests --extra all
+
+      - name: Run Otari e2e integration tests
+        env:
+          OTARI_API_BASE: ${{ secrets.OTARI_API_BASE }}
+          OTARI_API_KEY: ${{ secrets.OTARI_API_KEY }}
+          # Mark otari as expected so missing credentials or connection errors fail the job
+          # instead of silently skipping (see tests/integration/conftest.py).
+          EXPECTED_PROVIDERS: otari
+          INCLUDE_LOCAL_PROVIDERS: "true"
+          INCLUDE_NON_LOCAL_PROVIDERS: "false"
+        run: |
+          pytest tests/integration -v -k otari --cov --cov-report=xml || [ $? -eq 5 ]
+
+      - name: Upload coverage reports to Codecov
+        if: always()
+        uses: codecov/codecov-action@v6
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
   run-local-integration-tests:
     needs: [expected-providers, determine-jobs-to-run]
     if: needs.determine-jobs-to-run.outputs.should_run_local == 'true'
