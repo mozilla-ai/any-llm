@@ -208,6 +208,63 @@ def test_otari_to_parsed_completion_parses_json_content() -> None:
     assert parsed.choices[0].message.content == '{"city": "Paris"}'
 
 
+@pytest.mark.asyncio
+async def test_otari_acompletion_returns_parsed_completion_for_structured_output() -> None:
+    from pydantic import BaseModel
+
+    from any_llm.types.completion import ParsedChatCompletion
+
+    class Schema(BaseModel):
+        city: str
+
+    mocked_client = _mock_otari_client()
+    mocked_client.completion = AsyncMock(
+        return_value={
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 1700000000,
+            "model": "anthropic:claude-haiku-4-5",
+            "choices": [
+                {"index": 0, "message": {"role": "assistant", "content": '{"city": "Paris"}'}, "finish_reason": "stop"}
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+    )
+    provider = _build_provider(mocked_client)
+    params = CompletionParams(
+        model_id="anthropic:claude-haiku-4-5",
+        messages=[{"role": "user", "content": "What is the capital of France?"}],
+        response_format=Schema,
+    )
+
+    result = await provider._acompletion(params)
+
+    assert isinstance(result, ParsedChatCompletion)
+    assert result.choices[0].message.parsed == Schema(city="Paris")
+    # The otari client receives a json_schema dict, not the Pydantic class.
+    sent = mocked_client.completion.call_args.kwargs["response_format"]
+    assert sent["type"] == "json_schema"
+
+
+@pytest.mark.asyncio
+async def test_otari_acompletion_rejects_stream_with_response_format() -> None:
+    from pydantic import BaseModel
+
+    class Schema(BaseModel):
+        city: str
+
+    provider = _build_provider(_mock_otari_client())
+    params = CompletionParams(
+        model_id="anthropic:claude-haiku-4-5",
+        messages=[{"role": "user", "content": "hi"}],
+        response_format=Schema,
+        stream=True,
+    )
+
+    with pytest.raises(ValueError, match="stream is not supported for response_format"):
+        await provider._acompletion(params)
+
+
 def test_otari_does_not_advertise_image_or_audio_support() -> None:
     # otari 0.1.0's public async client dropped the OpenAI passthrough that backed
     # these capabilities; they should report as unsupported.
