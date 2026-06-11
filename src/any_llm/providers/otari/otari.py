@@ -13,6 +13,15 @@ from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.openai.utils import _convert_moderation_response_from_openai
 from any_llm.types.batch import Batch, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+from any_llm.types.messages import (
+    ContentBlockDeltaEvent,
+    ContentBlockStartEvent,
+    ContentBlockStopEvent,
+    MessageDeltaEvent,
+    MessageResponse,
+    MessageStartEvent,
+    MessageStopEvent,
+)
 from any_llm.types.model import Model
 from any_llm.types.rerank import RerankResponse
 from any_llm.utils.structured_output import build_responses_text_format, is_structured_output_type
@@ -24,6 +33,7 @@ if TYPE_CHECKING:
 
     from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
     from any_llm.types.image import ImageGenerationParams, ImagesResponse
+    from any_llm.types.messages import MessagesParams, MessageStreamEvent
     from any_llm.types.moderation import ModerationResponse
     from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
@@ -96,6 +106,31 @@ def _extract_model_from_requests(requests: list[dict[str, Any]]) -> str | None:
         model: Any = requests[0]["body"].get("model")
         return str(model) if model is not None else None
     return None
+
+
+# otari's /messages stream yields raw Anthropic SSE event dicts (the SDK has no
+# single typed model for them). Map each by its ``type`` field to the matching
+# any-llm event model; unknown types (e.g. ``ping``) are skipped.
+_MESSAGE_STREAM_EVENT_TYPES: dict[str, type[BaseModel]] = {
+    "message_start": MessageStartEvent,
+    "message_delta": MessageDeltaEvent,
+    "message_stop": MessageStopEvent,
+    "content_block_start": ContentBlockStartEvent,
+    "content_block_delta": ContentBlockDeltaEvent,
+    "content_block_stop": ContentBlockStopEvent,
+}
+
+
+def _message_stream_event_from_dict(event: dict[str, Any]) -> MessageStreamEvent | None:
+    """Validate a raw otari message SSE event dict into a typed MessageStreamEvent.
+
+    Returns ``None`` for event types any-llm does not surface (e.g. ``ping``).
+    """
+    event_type = event.get("type")
+    model = _MESSAGE_STREAM_EVENT_TYPES.get(event_type) if isinstance(event_type, str) else None
+    if model is None:
+        return None
+    return cast("MessageStreamEvent", model.model_validate(event))
 
 
 class OtariProvider(BaseOpenAIProvider):
@@ -226,6 +261,35 @@ class OtariProvider(BaseOpenAIProvider):
 
             return _chunk_iterator()
         return self._convert_completion_response(_as_plain_dict(response))
+
+    @override
+    async def _amessages(
+        self, params: MessagesParams, **kwargs: Any
+    ) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
+        """Native Anthropic Messages API pass-through via otari's /messages endpoint.
+
+        The base implementation converts Messages to Chat Completions, which silently
+        drops Anthropic-only features (``cache_control`` on system blocks, ``thinking``
+        config). otari's gateway serves /messages natively, so delegate to the otari
+        SDK's ``message()`` to preserve them.
+        """
+        api_kwargs = params.model_dump(exclude_none=True)
+        api_kwargs.pop("stream", None)
+        api_kwargs.update(kwargs)
+
+        if params.stream:
+            return self._stream_messages_async(**api_kwargs)
+
+        response = await self.otari_client.message(**api_kwargs)
+        return MessageResponse.model_validate(_as_plain_dict(response))
+
+    async def _stream_messages_async(self, **api_kwargs: Any) -> AsyncIterator[MessageStreamEvent]:
+        """Stream otari's /messages endpoint, yielding typed any-llm event models."""
+        stream = await self.otari_client.message(stream=True, **api_kwargs)
+        async for event in stream:
+            converted = _message_stream_event_from_dict(_as_plain_dict(event))
+            if converted is not None:
+                yield converted
 
     @override
     async def _aresponses(
