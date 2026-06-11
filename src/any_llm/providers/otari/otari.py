@@ -241,6 +241,21 @@ class OtariProvider(BaseOpenAIProvider):
         self.client = self.otari_client
         self.platform_mode = self.otari_client.platform_mode
 
+    @staticmethod
+    @override
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert completion params for the otari gateway.
+
+        The base OpenAI layer remaps ``max_tokens`` to ``max_completion_tokens`` to follow
+        the current OpenAI spec, but the otari gateway accepts only ``max_tokens`` and errors
+        on ``max_completion_tokens``. Remap it back so the token limit reaches the upstream
+        provider instead of producing an upstream error.
+        """
+        converted = BaseOpenAIProvider._convert_completion_params(params, **kwargs)
+        if "max_completion_tokens" in converted:
+            converted["max_tokens"] = converted.pop("max_completion_tokens")
+        return converted
+
     @override
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any

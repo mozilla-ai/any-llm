@@ -141,6 +141,21 @@ async def test_otari_embedding_uses_converter() -> None:
     mock_convert.assert_called_once_with(raw_result)
 
 
+def test_otari_remaps_max_completion_tokens_to_max_tokens() -> None:
+    """The otari gateway accepts ``max_tokens``; the base OpenAI layer remaps it to
+    ``max_completion_tokens``, which the gateway errors on, so otari must remap it back."""
+    params = CompletionParams(
+        model_id="anthropic:claude-haiku-4-5",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=64,
+    )
+
+    converted = OtariProvider._convert_completion_params(params)
+
+    assert converted["max_tokens"] == 64
+    assert "max_completion_tokens" not in converted
+
+
 def test_otari_does_not_advertise_image_or_audio_support() -> None:
     # otari 0.1.0's public async client dropped the OpenAI passthrough that backed
     # these capabilities; they should report as unsupported.
