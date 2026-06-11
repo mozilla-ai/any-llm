@@ -86,11 +86,17 @@ def _as_plain_dict(response: Any) -> Any:
     """Normalize an otari-native pydantic response into a plain dict.
 
     otari 0.1.0's async client returns its own typed pydantic models rather than
-    OpenAI types. Dumping them to a dict lets any-llm's own response types validate
-    the payload (extra keys like ``additional_properties`` are ignored/allowed).
-    Non-model inputs (e.g. dicts in unit tests) are returned unchanged.
+    OpenAI types. The generated models use oneOf/anyOf unions for some fields (e.g.
+    ``tool_calls`` and Messages content blocks); their ``to_dict()`` unwraps each union
+    to the actual instance, whereas Pydantic's ``model_dump()`` leaks the union wrapper
+    (``actual_instance`` / ``anyof_schema_*``) and fails any-llm's validation. Prefer
+    ``to_dict()``, falling back to ``model_dump()`` for plain pydantic models. Non-model
+    inputs (e.g. dicts in unit tests) are returned unchanged.
     """
     if isinstance(response, BaseModel):
+        to_dict = getattr(response, "to_dict", None)
+        if callable(to_dict):
+            return to_dict()
         return response.model_dump()
     return response
 
