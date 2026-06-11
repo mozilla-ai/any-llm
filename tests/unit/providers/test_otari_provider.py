@@ -11,7 +11,7 @@ import pytest
 from any_llm.exceptions import BatchNotCompleteError
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams
 from any_llm.types.batch import BatchResult
-from any_llm.types.completion import CompletionParams
+from any_llm.types.completion import ChatCompletion, CompletionParams
 from any_llm.types.image import ImageGenerationParams
 from any_llm.types.model import Model
 
@@ -139,6 +139,130 @@ async def test_otari_embedding_uses_converter() -> None:
     assert result is sentinel
     mocked_client.embedding.assert_awaited_once_with(model="embed-model", input="hello", user="u")
     mock_convert.assert_called_once_with(raw_result)
+
+
+def test_otari_remaps_max_completion_tokens_to_max_tokens() -> None:
+    """The otari gateway accepts ``max_tokens``; the base OpenAI layer remaps it to
+    ``max_completion_tokens``, which the gateway errors on, so otari must remap it back."""
+    params = CompletionParams(
+        model_id="anthropic:claude-haiku-4-5",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=64,
+    )
+
+    converted = OtariProvider._convert_completion_params(params)
+
+    assert converted["max_tokens"] == 64
+    assert "max_completion_tokens" not in converted
+
+
+def test_otari_converts_pydantic_response_format_to_json_schema() -> None:
+    """otari has no parse() helper, so a Pydantic response_format must be sent as a json_schema dict."""
+    from pydantic import BaseModel
+
+    class Schema(BaseModel):
+        city: str
+
+    params = CompletionParams(
+        model_id="anthropic:claude-haiku-4-5",
+        messages=[{"role": "user", "content": "hi"}],
+        response_format=Schema,
+    )
+
+    converted = OtariProvider._convert_completion_params(params)
+
+    response_format = converted["response_format"]
+    assert response_format["type"] == "json_schema"
+    assert response_format["json_schema"]["name"] == "Schema"
+    assert "city" in response_format["json_schema"]["schema"]["properties"]
+
+
+def test_otari_to_parsed_completion_parses_json_content() -> None:
+    from pydantic import BaseModel
+
+    from any_llm.types.completion import ParsedChatCompletion
+
+    class Schema(BaseModel):
+        city: str
+
+    completion = ChatCompletion.model_validate(
+        {
+            "id": "x",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "anthropic:claude-haiku-4-5",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": '{"city": "Paris"}'},
+                }
+            ],
+        }
+    )
+
+    parsed = OtariProvider._to_parsed_completion(completion, Schema)
+
+    assert isinstance(parsed, ParsedChatCompletion)
+    assert parsed.choices[0].message.parsed == Schema(city="Paris")
+    assert parsed.choices[0].message.content == '{"city": "Paris"}'
+
+
+@pytest.mark.asyncio
+async def test_otari_acompletion_returns_parsed_completion_for_structured_output() -> None:
+    from pydantic import BaseModel
+
+    from any_llm.types.completion import ParsedChatCompletion
+
+    class Schema(BaseModel):
+        city: str
+
+    mocked_client = _mock_otari_client()
+    mocked_client.completion = AsyncMock(
+        return_value={
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 1700000000,
+            "model": "anthropic:claude-haiku-4-5",
+            "choices": [
+                {"index": 0, "message": {"role": "assistant", "content": '{"city": "Paris"}'}, "finish_reason": "stop"}
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+    )
+    provider = _build_provider(mocked_client)
+    params = CompletionParams(
+        model_id="anthropic:claude-haiku-4-5",
+        messages=[{"role": "user", "content": "What is the capital of France?"}],
+        response_format=Schema,
+    )
+
+    result = await provider._acompletion(params)
+
+    assert isinstance(result, ParsedChatCompletion)
+    assert result.choices[0].message.parsed == Schema(city="Paris")
+    # The otari client receives a json_schema dict, not the Pydantic class.
+    sent = mocked_client.completion.call_args.kwargs["response_format"]
+    assert sent["type"] == "json_schema"
+
+
+@pytest.mark.asyncio
+async def test_otari_acompletion_rejects_stream_with_response_format() -> None:
+    from pydantic import BaseModel
+
+    class Schema(BaseModel):
+        city: str
+
+    provider = _build_provider(_mock_otari_client())
+    params = CompletionParams(
+        model_id="anthropic:claude-haiku-4-5",
+        messages=[{"role": "user", "content": "hi"}],
+        response_format=Schema,
+        stream=True,
+    )
+
+    with pytest.raises(ValueError, match="stream is not supported for response_format"):
+        await provider._acompletion(params)
 
 
 def test_otari_does_not_advertise_image_or_audio_support() -> None:
@@ -331,7 +455,7 @@ async def test_otari_retrieve_batch_results_parses_error_from_dict_item() -> Non
 
 
 @pytest.mark.asyncio
-async def test_otari_completion_uses_converted_params_with_max_tokens_remap() -> None:
+async def test_otari_completion_sends_max_tokens_not_max_completion_tokens() -> None:
     mocked_client = _mock_otari_client()
     mocked_client.completion = AsyncMock(
         return_value={
@@ -356,8 +480,8 @@ async def test_otari_completion_uses_converted_params_with_max_tokens_remap() ->
     await provider._acompletion(params)
 
     call_kwargs = mocked_client.completion.call_args.kwargs
-    assert call_kwargs["max_completion_tokens"] == 42
-    assert "max_tokens" not in call_kwargs
+    assert call_kwargs["max_tokens"] == 42
+    assert "max_completion_tokens" not in call_kwargs
 
 
 @pytest.mark.asyncio

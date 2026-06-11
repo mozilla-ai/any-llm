@@ -150,7 +150,7 @@ def test_otari_provider_requires_api_base_when_no_env() -> None:
 
 
 @pytest.mark.asyncio
-async def test_otari_completion_converts_max_tokens_to_max_completion_tokens() -> None:
+async def test_otari_completion_sends_max_tokens() -> None:
     mocked_client = _mock_otari_client()
     mocked_client.completion = AsyncMock(
         return_value={
@@ -174,8 +174,8 @@ async def test_otari_completion_converts_max_tokens_to_max_completion_tokens() -
     await provider._acompletion(params)
 
     call_kwargs = mocked_client.completion.call_args.kwargs
-    assert call_kwargs["max_completion_tokens"] == 64
-    assert "max_tokens" not in call_kwargs
+    assert call_kwargs["max_tokens"] == 64
+    assert "max_completion_tokens" not in call_kwargs
 
 
 @pytest.mark.parametrize(
