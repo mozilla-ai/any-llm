@@ -117,7 +117,7 @@ def test_llamafile_parameter_overrides_env_var() -> None:
 @patch.dict(os.environ, {"OTARI_API_BASE": "https://env-otari.example.com"}, clear=False)
 def test_otari_uses_env_var_for_api_base() -> None:
     """OtariProvider should use OTARI_API_BASE env var."""
-    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_otari_client:
         mock_otari_client.return_value = type("Client", (), {"openai": AsyncMock(), "platform_mode": False})()
         OtariProvider()
         call_kwargs = mock_otari_client.call_args.kwargs
@@ -134,7 +134,7 @@ def test_otari_requires_api_base_without_env_var() -> None:
 def test_otari_parameter_overrides_env_var() -> None:
     """Direct api_base parameter should override OTARI_API_BASE env var."""
     with patch.dict(os.environ, {"OTARI_API_BASE": "https://env-otari.example.com"}, clear=False):
-        with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+        with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_otari_client:
             mock_otari_client.return_value = type("Client", (), {"openai": AsyncMock(), "platform_mode": False})()
             OtariProvider(api_base="https://param-otari.example.com")
             call_kwargs = mock_otari_client.call_args.kwargs
@@ -145,7 +145,7 @@ def test_otari_parameter_overrides_env_var() -> None:
 def test_otari_uses_legacy_gateway_api_base_as_fallback() -> None:
     """OtariProvider should fallback to GATEWAY_API_BASE when OTARI_API_BASE is unset."""
     with patch.dict(os.environ, {"OTARI_API_BASE": ""}, clear=False):
-        with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+        with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_otari_client:
             mock_otari_client.return_value = type("Client", (), {"openai": AsyncMock(), "platform_mode": False})()
             OtariProvider()
             call_kwargs = mock_otari_client.call_args.kwargs

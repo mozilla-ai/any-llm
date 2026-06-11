@@ -31,12 +31,6 @@ if TYPE_CHECKING:
 
 GATEWAY_HEADER_NAME = LEGACY_GATEWAY_HEADER_NAME
 
-_STATUS_TO_EXCEPTION: dict[int, type[AuthenticationError | ModelNotFoundError]] = {
-    401: AuthenticationError,
-    403: AuthenticationError,
-    404: ModelNotFoundError,
-}
-
 
 class GatewayProvider(OtariProvider):
     PROVIDER_NAME = "gateway"
@@ -59,55 +53,31 @@ class GatewayProvider(OtariProvider):
         return os.getenv(GATEWAY_PLATFORM_TOKEN_ENV) or os.getenv(OTARI_PLATFORM_TOKEN_ENV)
 
     def _handle_platform_error(self, exc: Exception) -> None:
-        import openai
+        from otari import errors as otari_errors
 
-        if not isinstance(exc, openai.APIStatusError):
+        # otari 0.1.0 raises its own typed exceptions (no longer openai.APIStatusError);
+        # translate them into any-llm's equivalents, preserving the original as the cause.
+        if not isinstance(exc, otari_errors.OtariError):
             raise exc
 
-        status = exc.status_code
-        headers = exc.response.headers
-        correlation_id = headers.get("x-correlation-id")
-        retry_after = headers.get("retry-after")
+        common: dict[str, Any] = {
+            "message": exc.message,
+            "original_exception": exc,
+            "provider_name": self.PROVIDER_NAME,
+        }
 
-        detail = str(exc.message) if hasattr(exc, "message") else str(exc)
-        if correlation_id:
-            detail = f"{detail} (correlation_id={correlation_id})"
-
-        if (exc_cls := _STATUS_TO_EXCEPTION.get(status)) is not None:
-            raise exc_cls(
-                message=detail,
-                original_exception=exc,
-                provider_name=self.PROVIDER_NAME,
-            ) from exc
-
-        if status == 402:
-            raise InsufficientFundsError(
-                message=detail,
-                original_exception=exc,
-                provider_name=self.PROVIDER_NAME,
-            ) from exc
-
-        if status == 429:
-            raise RateLimitError(
-                message=detail,
-                original_exception=exc,
-                provider_name=self.PROVIDER_NAME,
-                retry_after=retry_after,
-            ) from exc
-
-        if status == 502:
-            raise UpstreamProviderError(
-                message=detail,
-                original_exception=exc,
-                provider_name=self.PROVIDER_NAME,
-            ) from exc
-
-        if status == 504:
-            raise GatewayTimeoutError(
-                message=detail,
-                original_exception=exc,
-                provider_name=self.PROVIDER_NAME,
-            ) from exc
+        if isinstance(exc, otari_errors.AuthenticationError):
+            raise AuthenticationError(**common) from exc
+        if isinstance(exc, otari_errors.ModelNotFoundError):
+            raise ModelNotFoundError(**common) from exc
+        if isinstance(exc, otari_errors.InsufficientFundsError):
+            raise InsufficientFundsError(**common) from exc
+        if isinstance(exc, otari_errors.RateLimitError):
+            raise RateLimitError(**common, retry_after=exc.retry_after) from exc
+        if isinstance(exc, otari_errors.UpstreamProviderError):
+            raise UpstreamProviderError(**common) from exc
+        if isinstance(exc, otari_errors.GatewayTimeoutError):
+            raise GatewayTimeoutError(**common) from exc
 
         raise exc
 

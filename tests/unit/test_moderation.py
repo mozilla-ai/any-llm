@@ -554,23 +554,20 @@ def test_openai_moderation_converter_handles_types_non_dict_and_plain_dict_input
 
 @pytest.mark.asyncio
 async def test_gateway_platform_amoderation_wraps_errors() -> None:
-    """Gateway platform-mode _amoderation wraps provider errors."""
+    """Gateway platform-mode _amoderation maps otari typed errors to any-llm errors."""
+    from otari import errors as otari_errors
+
     from any_llm.exceptions import AuthenticationError
     from any_llm.providers.gateway.gateway import GatewayProvider
 
-    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient"):
         provider = GatewayProvider(
             api_key="token",
             api_base="https://gateway.example.com",
             platform_mode=True,
         )
 
-    request = Mock()
-    response = Mock(status_code=401, headers={})
-    import openai
-
-    exc = openai.APIStatusError("Unauthorized", response=response, body={"message": "Unauthorized"})
-    exc.request = request
+    exc = otari_errors.AuthenticationError("Unauthorized")
 
     with patch.object(type(provider).__bases__[0], "_amoderation", new_callable=AsyncMock, side_effect=exc):
         with pytest.raises(AuthenticationError):

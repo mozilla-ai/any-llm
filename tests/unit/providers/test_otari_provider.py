@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -16,32 +17,43 @@ from any_llm.types.model import Model
 
 pytest.importorskip("otari")
 
-from any_llm.providers.otari.otari import OtariProvider, _extract_model_from_requests, _parse_jsonl_to_requests
+from any_llm.providers.otari.otari import (
+    OtariProvider,
+    _as_plain_dict,
+    _extract_model_from_requests,
+    _parse_jsonl_to_requests,
+)
 
 
 def _build_provider(mocked_client: MagicMock) -> OtariProvider:
-    with patch("any_llm.providers.otari.otari.OtariClient", return_value=mocked_client):
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient", return_value=mocked_client):
         return OtariProvider(api_base="https://otari.example.com")
 
 
 def _mock_otari_client() -> MagicMock:
     client = MagicMock()
     client.platform_mode = False
-    client.openai = SimpleNamespace(
-        images=SimpleNamespace(generate=AsyncMock()),
-        audio=SimpleNamespace(
-            transcriptions=SimpleNamespace(create=AsyncMock()),
-            speech=SimpleNamespace(create=AsyncMock()),
-        ),
-        moderations=SimpleNamespace(create=AsyncMock()),
-    )
+    client.completion = AsyncMock()
     client.embedding = AsyncMock()
+    client.moderation = AsyncMock()
+    client.rerank = AsyncMock()
     client.list_models = AsyncMock()
     client.retrieve_batch = AsyncMock()
     client.cancel_batch = AsyncMock()
     client.list_batches = AsyncMock()
     client.retrieve_batch_results = AsyncMock()
     return client
+
+
+def test_as_plain_dict_normalizes_models_and_passes_through() -> None:
+    from pydantic import BaseModel
+
+    class _Model(BaseModel):
+        value: int
+
+    assert _as_plain_dict(_Model(value=1)) == {"value": 1}
+    passthrough = {"already": "dict"}
+    assert _as_plain_dict(passthrough) is passthrough
 
 
 def test_extract_model_from_requests_none_when_missing() -> None:
@@ -75,7 +87,7 @@ def test_parse_jsonl_to_requests_skips_blank_lines() -> None:
     clear=False,
 )
 def test_otari_auto_mode_prefers_explicit_api_key_over_platform_token() -> None:
-    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_otari_client:
         mock_otari_client.return_value = _mock_otari_client()
         OtariProvider(api_key="explicit-key")
 
@@ -94,7 +106,7 @@ def test_otari_auto_mode_prefers_explicit_api_key_over_platform_token() -> None:
     clear=False,
 )
 def test_otari_auto_mode_uses_resolved_api_key_when_no_platform_token() -> None:
-    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_otari_client:
         mock_otari_client.return_value = _mock_otari_client()
         OtariProvider()
 
@@ -118,54 +130,43 @@ async def test_otari_embedding_uses_converter() -> None:
     mock_convert.assert_called_once_with(raw_result)
 
 
-@pytest.mark.asyncio
-async def test_otari_image_generation_calls_openai_images_generate() -> None:
-    mocked_client = _mock_otari_client()
-    mocked_client.openai.images.generate.return_value = MagicMock()
-    provider = _build_provider(mocked_client)
+def test_otari_does_not_advertise_image_or_audio_support() -> None:
+    # otari 0.1.0's public async client dropped the OpenAI passthrough that backed
+    # these capabilities; they should report as unsupported.
+    assert OtariProvider.SUPPORTS_IMAGE_GENERATION is False
+    assert OtariProvider.SUPPORTS_AUDIO_TRANSCRIPTION is False
+    assert OtariProvider.SUPPORTS_AUDIO_SPEECH is False
 
+
+@pytest.mark.asyncio
+async def test_otari_image_generation_raises_not_implemented() -> None:
+    provider = _build_provider(_mock_otari_client())
     params = ImageGenerationParams(model_id="gpt-image", prompt="cat")
-    result = await provider._aimage_generation(params, size="1024x1024")
-
-    assert result is mocked_client.openai.images.generate.return_value
-    mocked_client.openai.images.generate.assert_awaited_once_with(model="gpt-image", prompt="cat", size="1024x1024")
+    with pytest.raises(NotImplementedError):
+        await provider._aimage_generation(params, size="1024x1024")
 
 
 @pytest.mark.asyncio
-async def test_otari_transcription_calls_openai_audio_transcriptions_create() -> None:
-    mocked_client = _mock_otari_client()
-    mocked_client.openai.audio.transcriptions.create.return_value = MagicMock()
-    provider = _build_provider(mocked_client)
-
+async def test_otari_transcription_raises_not_implemented() -> None:
+    provider = _build_provider(_mock_otari_client())
     params = AudioTranscriptionParams(model_id="whisper", file=b"audio", language="en")
-    result = await provider._atranscription(params)
-
-    assert result is mocked_client.openai.audio.transcriptions.create.return_value
-    mocked_client.openai.audio.transcriptions.create.assert_awaited_once_with(
-        model="whisper", file=b"audio", language="en"
-    )
+    with pytest.raises(NotImplementedError):
+        await provider._atranscription(params)
 
 
 @pytest.mark.asyncio
-async def test_otari_speech_returns_response_content() -> None:
-    mocked_client = _mock_otari_client()
-    mocked_client.openai.audio.speech.create.return_value = SimpleNamespace(content=b"audio-bytes")
-    provider = _build_provider(mocked_client)
-
+async def test_otari_speech_raises_not_implemented() -> None:
+    provider = _build_provider(_mock_otari_client())
     params = AudioSpeechParams(model_id="tts", input="hello", voice="alloy", response_format="mp3")
-    result = await provider._aspeech(params)
-
-    assert result == b"audio-bytes"
-    mocked_client.openai.audio.speech.create.assert_awaited_once_with(
-        model="tts", input="hello", voice="alloy", response_format="mp3"
-    )
+    with pytest.raises(NotImplementedError):
+        await provider._aspeech(params)
 
 
 @pytest.mark.asyncio
 async def test_otari_moderation_uses_default_model_and_converter_include_raw() -> None:
     mocked_client = _mock_otari_client()
     raw_response = {"id": "mod-1"}
-    mocked_client.openai.moderations.create.return_value = raw_response
+    mocked_client.moderation.return_value = raw_response
     provider = _build_provider(mocked_client)
 
     sentinel = object()
@@ -175,8 +176,25 @@ async def test_otari_moderation_uses_default_model_and_converter_include_raw() -
         result = await provider._amoderation(model="", input="hello", include_raw=True)
 
     assert result is sentinel
-    mocked_client.openai.moderations.create.assert_awaited_once_with(model="omni-moderation-latest", input="hello")
+    mocked_client.moderation.assert_awaited_once_with(model="omni-moderation-latest", input="hello")
     convert.assert_called_once_with(raw_response, include_raw=True)
+
+
+@pytest.mark.asyncio
+async def test_otari_rerank_uses_native_method_and_validates() -> None:
+    mocked_client = _mock_otari_client()
+    raw_result = {
+        "id": "rr-1",
+        "results": [{"index": 0, "relevance_score": 0.9}, {"index": 1, "relevance_score": 0.1}],
+    }
+    mocked_client.rerank.return_value = raw_result
+    provider = _build_provider(mocked_client)
+
+    result = await provider._arerank(model="rerank-1", query="q", documents=["a", "b"], top_n=2)
+
+    assert result.id == "rr-1"
+    assert [r.index for r in result.results] == [0, 1]
+    mocked_client.rerank.assert_awaited_once_with(model="rerank-1", query="q", documents=["a", "b"], top_n=2)
 
 
 @pytest.mark.asyncio
@@ -315,7 +333,7 @@ async def test_otari_completion_uses_converted_params_with_max_tokens_remap() ->
         }
     )
 
-    with patch("any_llm.providers.otari.otari.OtariClient", return_value=mocked_client):
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient", return_value=mocked_client):
         provider = OtariProvider(api_base="https://otari.example.com")
 
     params = CompletionParams(
@@ -329,6 +347,36 @@ async def test_otari_completion_uses_converted_params_with_max_tokens_remap() ->
     call_kwargs = mocked_client.completion.call_args.kwargs
     assert call_kwargs["max_completion_tokens"] == 42
     assert "max_tokens" not in call_kwargs
+
+
+@pytest.mark.asyncio
+async def test_otari_completion_streams_and_converts_chunks() -> None:
+    chunk = {
+        "id": "chatcmpl-1",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "gpt-4",
+        "choices": [{"index": 0, "delta": {"content": "hi"}, "finish_reason": None}],
+    }
+
+    async def _stream() -> Any:
+        yield chunk
+
+    mocked_client = _mock_otari_client()
+    mocked_client.completion = AsyncMock(return_value=_stream())
+    provider = _build_provider(mocked_client)
+
+    params = CompletionParams(
+        model_id="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=True,
+    )
+
+    result = await provider._acompletion(params)
+    collected = [c async for c in result]  # type: ignore[union-attr]
+
+    assert len(collected) == 1
+    assert collected[0].choices[0].delta.content == "hi"
 
 
 def _make_openai_response(text: str):  # type: ignore[no-untyped-def]

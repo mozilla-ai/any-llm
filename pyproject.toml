@@ -114,10 +114,10 @@ databricks = []
 deepseek = []
 fireworks = []
 gateway = [
-  "otari>=0.0.1",
+  "otari>=0.1.0",
 ]
 otari = [
-  "otari>=0.0.1",
+  "otari>=0.1.0",
 ]
 github = []
 inception = []
@@ -146,6 +146,13 @@ Source = "https://github.com/mozilla-ai/any-llm"
 
 [tool.uv]
 exclude-newer = "7 days"
+# otari is first-party (mozilla.ai owns it) and co-developed with any-llm, so we
+# intentionally exempt it from the global 7-day exclude-newer soak and always resolve the
+# latest published otari. The far-future date is a sentinel meaning "never soak otari".
+# Trade-off: uv.lock is gitignored and CI re-resolves on every run, so a broken otari
+# release reaches CI immediately with no pinned fallback. We accept that for this dep
+# because we control its publishing; the soak still applies to every other dependency.
+exclude-newer-package = { otari = "2100-01-01" }
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]

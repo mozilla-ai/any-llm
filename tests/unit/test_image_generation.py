@@ -165,8 +165,6 @@ def test_supports_image_generation_only_on_expected_providers() -> None:
     expected_supported = {
         LLMProvider.OPENAI,
         LLMProvider.AZUREOPENAI,
-        LLMProvider.GATEWAY,
-        LLMProvider.OTARI,
         LLMProvider.NEOSANTARA,
     }
 

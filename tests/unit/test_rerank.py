@@ -258,7 +258,7 @@ def test_openai_metadata_rerank_false() -> None:
 async def test_otari_rerank_http_call() -> None:
     pytest.importorskip("otari")
 
-    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_otari_client:
         client = MagicMock()
         client.platform_mode = False
         client.openai = AsyncMock()
@@ -287,7 +287,7 @@ async def test_otari_rerank_http_call() -> None:
 async def test_otari_rerank_passes_top_n() -> None:
     pytest.importorskip("otari")
 
-    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_otari_client:
         client = MagicMock()
         client.platform_mode = False
         client.openai = AsyncMock()
@@ -305,22 +305,6 @@ async def test_otari_rerank_passes_top_n() -> None:
             top_n=5,
             max_tokens_per_doc=256,
         )
-
-
-@pytest.mark.asyncio
-async def test_otari_rerank_raises_when_sdk_lacks_rerank() -> None:
-    pytest.importorskip("otari")
-    from types import SimpleNamespace
-
-    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
-        client = SimpleNamespace(platform_mode=False, openai=AsyncMock())
-        mock_otari_client.return_value = client
-
-        from any_llm.providers.otari import OtariProvider
-
-        provider = OtariProvider(api_key="test-key", api_base="http://localhost:8000")
-        with pytest.raises(NotImplementedError, match="rerank"):
-            await provider._arerank("model", "query", [])
 
 
 @pytest.mark.asyncio
@@ -640,7 +624,7 @@ def test_rerank_api_with_client_args() -> None:
 async def test_otari_rerank_propagates_sdk_errors() -> None:
     pytest.importorskip("otari")
 
-    with patch("any_llm.providers.otari.otari.OtariClient") as mock_otari_client:
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_otari_client:
         client = MagicMock()
         client.platform_mode = False
         client.openai = AsyncMock()
