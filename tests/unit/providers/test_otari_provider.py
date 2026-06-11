@@ -21,7 +21,17 @@ from any_llm.providers.otari.otari import (
     OtariProvider,
     _as_plain_dict,
     _extract_model_from_requests,
+    _message_stream_event_from_dict,
     _parse_jsonl_to_requests,
+)
+from any_llm.types.messages import (
+    ContentBlockDeltaEvent,
+    ContentBlockStartEvent,
+    MessageResponse,
+    MessagesParams,
+    MessageStartEvent,
+    MessageStopEvent,
+    TextBlock,
 )
 
 
@@ -34,6 +44,7 @@ def _mock_otari_client() -> MagicMock:
     client = MagicMock()
     client.platform_mode = False
     client.completion = AsyncMock()
+    client.message = AsyncMock()
     client.embedding = AsyncMock()
     client.moderation = AsyncMock()
     client.rerank = AsyncMock()
@@ -451,3 +462,123 @@ async def test_otari_aresponses_without_response_format() -> None:
 
     # No structured response_format -> no text.format injected.
     assert "text" not in client.response.call_args.kwargs
+
+
+def _message_response_payload() -> dict[str, Any]:
+    return {
+        "id": "msg_1",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-sonnet-4-5",
+        "content": [{"type": "text", "text": "hi"}],
+        "stop_reason": "end_turn",
+        "stop_sequence": None,
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+        # otari-native models carry extra keys; MessageResponse should ignore them.
+        "additional_properties": {"served_by": "otari"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_delegates_to_native_endpoint_preserving_anthropic_fields() -> None:
+    client = _mock_otari_client()
+    client.message.return_value = _message_response_payload()
+    provider = _build_provider(client)
+
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        system=[{"type": "text", "text": "You are helpful.", "cache_control": {"type": "ephemeral"}}],
+        thinking={"type": "enabled", "budget_tokens": 1024},
+    )
+
+    result = await provider._amessages(params, metadata={"user_id": "u1"})
+
+    assert isinstance(result, MessageResponse)
+    assert result.id == "msg_1"
+    block = result.content[0]
+    assert isinstance(block, TextBlock)
+    assert block.text == "hi"
+
+    call_kwargs = client.message.call_args.kwargs
+    assert call_kwargs["model"] == "claude-sonnet-4-5"
+    assert call_kwargs["max_tokens"] == 100
+    # cache_control on the system block and thinking config survive the pass-through.
+    assert call_kwargs["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert call_kwargs["thinking"] == {"type": "enabled", "budget_tokens": 1024}
+    # Extra kwargs are forwarded; stream is not set for non-streaming calls.
+    assert call_kwargs["metadata"] == {"user_id": "u1"}
+    assert "stream" not in call_kwargs
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_excludes_none_valued_optional_params() -> None:
+    client = _mock_otari_client()
+    client.message.return_value = _message_response_payload()
+    provider = _build_provider(client)
+
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+    )
+
+    await provider._amessages(params)
+
+    call_kwargs = client.message.call_args.kwargs
+    # Unset optionals (temperature, tools, ...) are dropped, not sent as None.
+    assert "temperature" not in call_kwargs
+    assert "tools" not in call_kwargs
+    assert "system" not in call_kwargs
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_streaming_yields_typed_events_and_skips_unknown() -> None:
+    raw_events = [
+        {"type": "message_start", "message": _message_response_payload()},
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+        {"type": "ping"},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}},
+        {"type": "content_block_stop", "index": 0},
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+            "usage": {"output_tokens": 5},
+        },
+        {"type": "message_stop"},
+    ]
+
+    async def _aiter() -> Any:
+        for event in raw_events:
+            yield event
+
+    client = _mock_otari_client()
+    client.message.return_value = _aiter()
+    provider = _build_provider(client)
+
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+
+    result = await provider._amessages(params)
+
+    assert not isinstance(result, MessageResponse)
+    collected = [event async for event in result]
+
+    # The unknown "ping" event is skipped; everything else is yielded in order.
+    assert isinstance(collected[0], MessageStartEvent)
+    assert isinstance(collected[1], ContentBlockStartEvent)
+    assert isinstance(collected[2], ContentBlockDeltaEvent)
+    assert isinstance(collected[-1], MessageStopEvent)
+    assert len(collected) == len(raw_events) - 1
+    assert client.message.call_args.kwargs["stream"] is True
+
+
+def test_message_stream_event_from_dict_returns_none_for_unknown_type() -> None:
+    assert _message_stream_event_from_dict({"type": "ping"}) is None
+    assert _message_stream_event_from_dict({"no_type": True}) is None
+    assert isinstance(_message_stream_event_from_dict({"type": "message_stop"}), MessageStopEvent)
