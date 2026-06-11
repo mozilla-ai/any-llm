@@ -1,12 +1,33 @@
+import logging
 import os
 from collections import defaultdict
 from collections.abc import Generator
 from typing import Any
 
 import pytest
+from typing_extensions import override
 
 from any_llm.constants import LLMProvider
 from tests.constants import CI_EXCLUDED_PROVIDERS, INCLUDE_LOCAL_PROVIDERS, INCLUDE_NON_LOCAL_PROVIDERS, LOCAL_PROVIDERS
+
+
+class _IgnoreEventLoopClosedFilter(logging.Filter):
+    """Drop the noisy ``Event loop is closed`` records asyncio logs during teardown.
+
+    pytest-asyncio uses a function-scoped event loop, so the loop is closed at the end of
+    each async test. httpx ``AsyncClient`` instances held by providers are finalized
+    afterwards and schedule ``aclose()`` on the already-closed loop, which asyncio reports
+    through its logger as ``RuntimeError: Event loop is closed``. These are teardown
+    artifacts, not real failures; every other asyncio record passes through untouched.
+    """
+
+    @override
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "Event loop is closed" not in record.getMessage()
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    logging.getLogger("asyncio").addFilter(_IgnoreEventLoopClosedFilter())
 
 
 @pytest.fixture
