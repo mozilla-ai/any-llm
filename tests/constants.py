@@ -7,7 +7,6 @@ LOCAL_PROVIDERS = [
     LLMProvider.OLLAMA,
     LLMProvider.LMSTUDIO,
     LLMProvider.LLAMAFILE,
-    LLMProvider.GATEWAY,
     LLMProvider.OTARI,
 ]
 

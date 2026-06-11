@@ -35,7 +35,6 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.ANTHROPIC: "claude-sonnet-4-6",
         LLMProvider.GEMINI: "gemini-2.5-flash",
-        LLMProvider.GATEWAY: "gpt-5-nano",
         LLMProvider.OTARI: "gpt-5-nano",
         LLMProvider.VERTEXAI: "gemini-2.5-flash",
         LLMProvider.GITHUB: "openai/gpt-4.1-nano",
@@ -76,7 +75,6 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.ANTHROPIC: "claude-haiku-4-5",
         LLMProvider.DEEPSEEK: "deepseek-chat",
         LLMProvider.OPENAI: "gpt-5-nano",
-        LLMProvider.GATEWAY: "gpt-5-nano",
         LLMProvider.OTARI: "gpt-5-nano",
         LLMProvider.GEMINI: "gemini-3-flash-preview",
         LLMProvider.GITHUB: "openai/gpt-4.1-nano",
@@ -150,7 +148,6 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.AZURE: "openai/text-embedding-3-small",
         LLMProvider.VOYAGE: "voyage-3.5-lite",
         LLMProvider.LLAMACPP: "N/A",
-        LLMProvider.GATEWAY: "text-embedding-ada-002",
         LLMProvider.OTARI: "text-embedding-ada-002",
         LLMProvider.AZUREOPENAI: "gpt-4.1-nano",  # Not an embedding model but it's the only one we have deployed in Azure OpenAI
         LLMProvider.OPENROUTER: "qwen/qwen3-embedding-8b",
@@ -168,7 +165,6 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.BEDROCK: {"region_name": "us-east-1"},
         LLMProvider.CEREBRAS: {"timeout": 10},
         LLMProvider.COHERE: {"timeout": 10},
-        LLMProvider.GATEWAY: {"api_base": "http://127.0.0.1:3000", "timeout": 1},
         LLMProvider.OTARI: {"api_base": "http://127.0.0.1:3000", "timeout": 1},
         LLMProvider.GROQ: {"timeout": 10},
         LLMProvider.LLAMACPP: {"api_base": "http://127.0.0.1:8090/v1"},

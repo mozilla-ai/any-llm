@@ -451,3 +451,41 @@ async def test_otari_aresponses_without_response_format() -> None:
 
     # No structured response_format -> no text.format injected.
     assert "text" not in client.response.call_args.kwargs
+
+
+@patch.dict(
+    "os.environ",
+    {
+        "OTARI_API_BASE": "https://otari.env",
+        "OTARI_PLATFORM_TOKEN": "platform-token",
+        "OTARI_API_KEY": "",
+    },
+    clear=False,
+)
+def test_otari_platform_mode_uses_platform_token_not_placeholder_key() -> None:
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_otari_client:
+        mock_otari_client.return_value = _mock_otari_client()
+        OtariProvider(platform_mode=True)
+
+    call_kwargs = mock_otari_client.call_args.kwargs
+    assert call_kwargs["platform_token"] == "platform-token"  # noqa: S105
+    assert "api_key" not in call_kwargs
+
+
+@patch.dict(
+    "os.environ",
+    {
+        "OTARI_API_BASE": "https://otari.env",
+        "OTARI_PLATFORM_TOKEN": "platform-token",
+        "OTARI_API_KEY": "",
+    },
+    clear=False,
+)
+def test_otari_auto_mode_prefers_platform_token_over_placeholder_key() -> None:
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_otari_client:
+        mock_otari_client.return_value = _mock_otari_client()
+        OtariProvider()
+
+    call_kwargs = mock_otari_client.call_args.kwargs
+    assert call_kwargs["platform_token"] == "platform-token"  # noqa: S105
+    assert "api_key" not in call_kwargs
