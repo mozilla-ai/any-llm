@@ -160,6 +160,7 @@ def test_parse_responses_output_roundtrips_json_schema_text_format() -> None:
 
     parsed = parse_responses_output(response, DataclassModel)
     assert isinstance(parsed, ParsedResponse)
+    assert isinstance(parsed.output_parsed, DataclassModel)
     assert parsed.output_parsed.age == 5
 
 
