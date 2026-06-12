@@ -45,18 +45,36 @@ def parse_json_content(response_format: type, content: str) -> Any:
     return TypeAdapter(response_format).validate_json(content)
 
 
+def get_strict_json_schema(response_format: type) -> dict[str, Any]:
+    """Get a strict JSON schema (``additionalProperties: false``, all fields required).
+
+    Mirrors the schema the OpenAI SDK emits for ``responses.parse()``/``chat.completions.parse()``
+    so the manual dataclass path stays byte-for-byte compatible with the native BaseModel path.
+    Works with both Pydantic BaseModel subclasses and dataclass types.
+    """
+    from openai.lib._pydantic import _ensure_strict_json_schema
+
+    schema = get_json_schema(response_format)
+    return _ensure_strict_json_schema(schema, path=(), root=schema)
+
+
 def build_responses_text_format(response_format: type) -> dict[str, Any]:
     """Build the Responses API ``text`` config that requests schema-conformant JSON.
 
     Used by providers that cannot call ``client.responses.parse()`` (e.g. the
     OpenResponses providers) so the model still emits JSON matching the schema.
-    Works with both Pydantic BaseModel subclasses and dataclass types.
+    The schema is made strict to match what ``responses.parse()`` sends for
+    BaseModel types: OpenAI requires ``additionalProperties: false``, and lenient
+    providers (Groq, HuggingFace) only echo back a complete ``text.format`` (with
+    the ``schema`` field) when ``strict`` is set. Works with both Pydantic
+    BaseModel subclasses and dataclass types.
     """
     return {
         "format": {
             "type": "json_schema",
+            "strict": True,
             "name": response_format.__name__,
-            "schema": get_json_schema(response_format),
+            "schema": get_strict_json_schema(response_format),
         }
     }
 
@@ -77,7 +95,9 @@ def parse_responses_output(response: Any, response_format: type) -> ParsedRespon
     from any_llm.types.responses import ParsedResponse, Response
 
     try:
-        parsed: ParsedResponse[Any] = ParsedResponse.model_validate(response.model_dump(warnings=False))
+        # by_alias=True preserves alias-only fields (e.g. ResponseFormatTextJSONSchemaConfig.schema,
+        # whose Python attribute is schema_) so the round-trip re-validates cleanly.
+        parsed: ParsedResponse[Any] = ParsedResponse.model_validate(response.model_dump(by_alias=True, warnings=False))
     except ValidationError:
         if isinstance(response, Response):  # pragma: no cover - a valid Response always validates as ParsedResponse
             raise
