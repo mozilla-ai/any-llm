@@ -48,18 +48,60 @@ def parse_json_content(response_format: type, content: str) -> Any:
     return TypeAdapter(response_format).validate_json(content)
 
 
+def _make_schema_strict(schema: dict[str, Any]) -> dict[str, Any]:
+    """Recursively enforce ``additionalProperties: false`` and require every property.
+
+    Fallback used only if OpenAI's private strict-schema helper is unavailable; covers the
+    common object/array/$defs cases (it does not rewrite optional fields as nullable).
+    """
+
+    def _walk(obj: Any) -> None:
+        if isinstance(obj, dict):
+            if obj.get("type") == "object" and "properties" in obj:
+                obj["additionalProperties"] = False
+                obj["required"] = list(obj["properties"].keys())
+            for value in obj.values():
+                _walk(value)
+        elif isinstance(obj, list):
+            for item in obj:
+                _walk(item)
+
+    _walk(schema)
+    return schema
+
+
+def get_strict_json_schema(response_format: type) -> dict[str, Any]:
+    """Get a strict JSON schema (``additionalProperties: false``, all fields required).
+
+    Mirrors the schema the OpenAI SDK emits for ``responses.parse()``/``chat.completions.parse()``
+    so the manual dataclass path stays byte-for-byte compatible with the native BaseModel path.
+    Works with both Pydantic BaseModel subclasses and dataclass types.
+    """
+    schema = get_json_schema(response_format)
+    try:
+        from openai.lib._pydantic import _ensure_strict_json_schema
+    except ImportError:  # pragma: no cover - private SDK helper relocated/removed
+        return _make_schema_strict(schema)
+    return _ensure_strict_json_schema(schema, path=(), root=schema)
+
+
 def build_responses_text_format(response_format: type) -> dict[str, Any]:
     """Build the Responses API ``text`` config that requests schema-conformant JSON.
 
     Used by providers that cannot call ``client.responses.parse()`` (e.g. the
     OpenResponses providers) so the model still emits JSON matching the schema.
-    Works with both Pydantic BaseModel subclasses and dataclass types.
+    The schema is made strict to match what ``responses.parse()`` sends for
+    BaseModel types: OpenAI requires ``additionalProperties: false``, and lenient
+    providers (Groq, HuggingFace) only echo back a complete ``text.format`` (with
+    the ``schema`` field) when ``strict`` is set. Works with both Pydantic
+    BaseModel subclasses and dataclass types.
     """
     return {
         "format": {
             "type": "json_schema",
+            "strict": True,
             "name": response_format.__name__,
-            "schema": get_json_schema(response_format),
+            "schema": get_strict_json_schema(response_format),
         }
     }
 
@@ -80,7 +122,9 @@ def parse_responses_output(response: Any, response_format: type) -> ParsedRespon
     from any_llm.types.responses import ParsedResponse, Response
 
     try:
-        parsed: ParsedResponse[Any] = ParsedResponse.model_validate(response.model_dump(warnings=False))
+        # by_alias=True preserves alias-only fields (e.g. ResponseFormatTextJSONSchemaConfig.schema,
+        # whose Python attribute is schema_) so the round-trip re-validates cleanly.
+        parsed: ParsedResponse[Any] = ParsedResponse.model_validate(response.model_dump(by_alias=True, warnings=False))
     except ValidationError:
         if isinstance(response, Response):  # pragma: no cover - a valid Response always validates as ParsedResponse
             raise

@@ -130,6 +130,59 @@ def test_build_responses_text_format_dataclass() -> None:
     assert "age" in text_config["format"]["schema"]["properties"]
 
 
+def test_build_responses_text_format_is_strict() -> None:
+    """The text format must be strict so OpenAI accepts it and lenient providers echo the schema back."""
+    for model in (PydanticModel, DataclassModel):
+        fmt = build_responses_text_format(model)["format"]
+        assert fmt["strict"] is True
+        assert fmt["schema"]["additionalProperties"] is False
+
+
+def test_make_schema_strict_fallback() -> None:
+    """The fallback (used if OpenAI's private helper disappears) enforces strictness on nested objects."""
+    from any_llm.utils.structured_output import _make_schema_strict
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "nested": {"type": "object", "properties": {"x": {"type": "integer"}}},
+        },
+    }
+    strict = _make_schema_strict(schema)
+    assert strict["additionalProperties"] is False
+    assert strict["required"] == ["name", "nested"]
+    assert strict["properties"]["nested"]["additionalProperties"] is False
+    assert strict["properties"]["nested"]["required"] == ["x"]
+
+
+def test_parse_responses_output_roundtrips_json_schema_text_format() -> None:
+    """Regression: a json_schema text.format must survive the model_dump round-trip.
+
+    The OpenAI type stores the schema under the Python attribute ``schema_`` with an alias of
+    ``schema``; dumping without ``by_alias=True`` drops it and re-validation fails.
+    """
+    from openai.types.responses import ResponseFormatTextJSONSchemaConfig
+    from openai.types.responses.response_text_config import ResponseTextConfig
+
+    response = _make_response('{"name": "Carol", "age": 5}')
+    response.text = ResponseTextConfig(
+        format=ResponseFormatTextJSONSchemaConfig.model_validate(
+            {
+                "name": "DataclassModel",
+                "schema": {"type": "object", "properties": {"name": {"type": "string"}}},
+                "type": "json_schema",
+                "strict": True,
+            }
+        )
+    )
+
+    parsed = parse_responses_output(response, DataclassModel)
+    assert isinstance(parsed, ParsedResponse)
+    assert isinstance(parsed.output_parsed, DataclassModel)
+    assert parsed.output_parsed.age == 5
+
+
 def test_parse_responses_output_basemodel() -> None:
     parsed = parse_responses_output(_make_response('{"name": "Alice", "age": 30}'), PydanticModel)
     assert isinstance(parsed, ParsedResponse)

@@ -7,7 +7,7 @@ LOCAL_PROVIDERS = [
     LLMProvider.OLLAMA,
     LLMProvider.LMSTUDIO,
     LLMProvider.LLAMAFILE,
-    LLMProvider.GATEWAY,
+    LLMProvider.OTARI,
 ]
 
 # Providers that should never run in CI (only for local development)

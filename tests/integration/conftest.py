@@ -5,29 +5,28 @@ import pytest
 from any_llm.constants import LLMProvider
 from tests.constants import EXPECTED_PROVIDERS
 
-# otari is a hosted gateway (like openrouter) and gateway is its legacy alias. Neither has a
-# server started in CI by default, so their integration tests can only run against a real
-# endpoint. otari authenticates with a platform token (OTARI_AI_TOKEN) and defaults to the
-# hosted api.otari.ai; a self-hosted deployment uses OTARI_API_BASE / GATEWAY_API_BASE. When
-# none of those are configured we skip rather than fail (otari 0.1.0's SDK is urllib3-based, so
-# an unreachable host raises errors the per-test skip clauses do not catch). Listing the
-# provider in EXPECTED_PROVIDERS forces a run so a misconfigured CI job fails loudly.
-_GATEWAY_PROVIDER_ENV_VARS: dict[LLMProvider, tuple[str, ...]] = {
-    LLMProvider.OTARI: ("OTARI_AI_TOKEN", "OTARI_API_BASE"),
-    LLMProvider.GATEWAY: ("GATEWAY_API_BASE", "OTARI_API_BASE", "OTARI_AI_TOKEN"),
+# otari is a hosted gateway (like openrouter). It has no server started in CI by default, so its
+# integration tests can only run against a real endpoint. otari authenticates with a platform
+# token (OTARI_AI_TOKEN) and defaults to the hosted api.otari.ai; a self-hosted deployment uses
+# OTARI_API_BASE (or the legacy GATEWAY_API_BASE alias). When none of those are configured we skip
+# rather than fail (otari 0.1.0's SDK is urllib3-based, so an unreachable host raises errors the
+# per-test skip clauses do not catch). Listing the provider in EXPECTED_PROVIDERS forces a run so a
+# misconfigured CI job fails loudly.
+_OTARI_PROVIDER_ENV_VARS: dict[LLMProvider, tuple[str, ...]] = {
+    LLMProvider.OTARI: ("OTARI_AI_TOKEN", "OTARI_API_BASE", "GATEWAY_API_BASE"),
 }
 
 
 @pytest.fixture(autouse=True)
 def _skip_unconfigured_gateway_providers(request: pytest.FixtureRequest) -> None:
-    """Skip otari/gateway integration tests when no real endpoint is configured."""
+    """Skip otari integration tests when no real endpoint is configured."""
     callspec = getattr(request.node, "callspec", None)
     if callspec is None:
         return
     provider = callspec.params.get("provider")
     if not isinstance(provider, LLMProvider) or provider in EXPECTED_PROVIDERS:
         return
-    env_vars = _GATEWAY_PROVIDER_ENV_VARS.get(provider)
+    env_vars = _OTARI_PROVIDER_ENV_VARS.get(provider)
     if env_vars and not any(os.getenv(var) for var in env_vars):
         pytest.skip(f"{provider.value} endpoint not configured (set {' or '.join(env_vars)}), skipping")
 
@@ -43,8 +42,6 @@ _OTARI_SKIPPED_TESTS: dict[str, str] = {
     "test_responses_async": "no Responses-API upstream on the test account (otari-ai#907)",
     "test_responses_format_basemodel": "no Responses-API upstream on the test account (otari-ai#907)",
     "test_responses_format_dataclass": "no Responses-API upstream on the test account (otari-ai#907)",
-    "test_completion_reasoning": "reasoning content not surfaced by the gateway",
-    "test_completion_reasoning_streaming": "reasoning content not surfaced by the gateway",
     "test_create_and_retrieve_batch": "batch needs provider_name + gateway batch support",
     "test_list_batches": "batch needs provider_name + gateway batch support",
     "test_retrieve_batch_results_not_complete": "batch needs provider_name + gateway batch support",
