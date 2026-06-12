@@ -61,6 +61,9 @@ def messages_params_to_completion_params(params: MessagesParams) -> dict[str, An
     if params.stream is not None:
         result["stream"] = params.stream
 
+    if params.output_format is not None:
+        result["response_format"] = params.output_format
+
     if params.tools:
         result["tools"] = _convert_tools_to_openai(params.tools)
 

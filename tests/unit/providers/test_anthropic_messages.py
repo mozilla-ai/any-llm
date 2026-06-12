@@ -175,6 +175,60 @@ async def test_amessages_non_streaming_with_all_params() -> None:
 
 
 @pytest.mark.asyncio
+async def test_amessages_output_format_uses_native_parse() -> None:
+    """With output_format set, the native path returns messages.parse output unchanged."""
+    from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
+    from pydantic import BaseModel
+
+    class City(BaseModel):
+        city_name: str
+
+    parsed_message = ParsedMessage[City](
+        id="msg_parse",
+        type="message",
+        role="assistant",
+        model="claude-3-5-sonnet",
+        stop_reason="end_turn",
+        stop_sequence=None,
+        content=[
+            ParsedTextBlock[City](
+                type="text",
+                text='{"city_name": "Paris"}',
+                citations=None,
+                parsed_output=City(city_name="Paris"),
+            )
+        ],
+        usage=_make_usage(),
+    )
+
+    mock_client = Mock()
+    mock_client.messages.parse = AsyncMock(return_value=parsed_message)
+    mock_client.messages.create = AsyncMock()
+
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = mock_client
+
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=1024,
+        output_format=City,
+    )
+    result = await BaseAnthropicProvider._amessages(provider, params)
+
+    # The SDK's ParsedMessage is returned as-is, no conversion or re-validation.
+    assert result is parsed_message
+    assert result.parsed_output == City(city_name="Paris")
+    mock_client.messages.create.assert_not_called()
+
+    # output_format is passed to parse as its dedicated kwarg; other params still flow through.
+    call_kwargs = mock_client.messages.parse.call_args.kwargs
+    assert call_kwargs["output_format"] is City
+    assert call_kwargs["model"] == "claude-3-5-sonnet"
+    assert call_kwargs["max_tokens"] == 1024
+
+
+@pytest.mark.asyncio
 async def test_amessages_cache_control_passthrough() -> None:
     """Test that cache_control is passed through to the API call."""
     mock_message = _make_message(content=[TextBlock(type="text", text="Hello!")])

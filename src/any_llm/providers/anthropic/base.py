@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from anthropic.types import Message
     from anthropic.types.messages.message_batch import MessageBatch
     from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
+    from anthropic.types.parsed_message import ParsedMessage
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
@@ -189,8 +190,18 @@ class BaseAnthropicProvider(AnyLLM, ABC):
     @override
     async def _amessages(
         self, params: MessagesParams, **kwargs: Any
-    ) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
-        """Native Anthropic Messages API pass-through."""
+    ) -> MessageResponse | ParsedMessage[Any] | AsyncIterator[MessageStreamEvent]:
+        """Native Anthropic Messages API pass-through.
+
+        When ``output_format`` is set, uses native ``messages.parse`` (which drives the GA
+        ``output_config`` primitive) so generation is schema-constrained, and returns the
+        SDK's ``ParsedMessage`` unchanged.
+        """
+        if params.output_format is not None:
+            parse_kwargs = params.model_dump(exclude_none=True, exclude={"output_format", "stream"})
+            parse_kwargs.update(kwargs)
+            return await self.client.messages.parse(output_format=params.output_format, **parse_kwargs)
+
         api_kwargs = params.model_dump(exclude_none=True)
         api_kwargs.pop("stream", None)
         api_kwargs.update(kwargs)

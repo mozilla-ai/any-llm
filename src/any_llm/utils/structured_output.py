@@ -8,6 +8,9 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 from any_llm.logging import logger
 
 if TYPE_CHECKING:
+    from anthropic.types import Message as AnthropicMessage
+    from anthropic.types.parsed_message import ParsedMessage
+
     from any_llm.types.responses import ParsedResponse
 
 
@@ -94,3 +97,38 @@ def parse_responses_output(response: Any, response_format: type) -> ParsedRespon
             if isinstance(content, ParsedResponseOutputText) and content.text and content.parsed is None:
                 content.parsed = parse_json_content(response_format, content.text)
     return parsed
+
+
+def build_parsed_message(message: AnthropicMessage, output_format: type) -> ParsedMessage[Any]:
+    """Build Anthropic's ``ParsedMessage`` from a Messages API response.
+
+    Mirrors what ``client.messages.parse`` returns: each text block becomes a
+    ``ParsedTextBlock`` whose ``parsed_output`` holds the typed object, and the message's
+    ``parsed_output`` property surfaces the first one. Used for providers without a native
+    parse helper so the structured-output result shape matches Anthropic's exactly.
+    Works with both Pydantic BaseModel subclasses and dataclass types.
+    """
+    from anthropic.types import TextBlock
+    from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
+
+    # Parametrize the generics at runtime so pydantic validates parsed_output against the
+    # requested type; route through Any since a type held in a variable is not valid as a
+    # static type parameter.
+    parsed_text_block: Any = ParsedTextBlock
+    parsed_message: Any = ParsedMessage
+    text_block_cls = parsed_text_block[output_format]
+    message_cls = parsed_message[output_format]
+
+    content: list[Any] = []
+    for block in message.content:
+        if isinstance(block, TextBlock):
+            parsed = parse_json_content(output_format, block.text) if block.text else None
+            content.append(
+                text_block_cls(type="text", text=block.text, citations=block.citations, parsed_output=parsed)
+            )
+        else:
+            content.append(block)
+
+    data = message.model_dump(exclude={"content"})
+    result: ParsedMessage[Any] = message_cls(**data, content=content)
+    return result

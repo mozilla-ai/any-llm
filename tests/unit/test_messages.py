@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from any_llm.api import amessages
-from any_llm.types.messages import MessageResponse
+from any_llm.types.messages import MessageResponse, ParsedMessage, ParsedTextBlock
 
 
 @pytest.mark.asyncio
@@ -381,7 +381,7 @@ async def test_default_amessages_streaming() -> None:
         stream=True,
     )
     result = await AnyLLM._amessages(mock_provider, params)
-    assert not isinstance(result, MessageResponse)
+    assert not isinstance(result, (MessageResponse, ParsedMessage))
 
     events = []
     async for event in result:
@@ -462,3 +462,121 @@ async def test_amessages_constructs_params_correctly() -> None:
     assert params.max_tokens == 512
     assert params.system == "Be helpful"
     assert params.temperature == 0.5
+
+
+def _json_completion(content: str = '{"city_name": "Paris"}') -> Any:
+    from any_llm.types.completion import ChatCompletion
+
+    return ChatCompletion.model_validate(
+        {
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": content}}],
+        }
+    )
+
+
+def _openai_provider() -> Any:
+    from any_llm import AnyLLM
+
+    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
+        return AnyLLM.create("openai", api_key="test-key")
+
+
+@pytest.mark.asyncio
+async def test_amessages_output_format_returns_parsed_message() -> None:
+    """A Pydantic output_format returns Anthropic's ParsedMessage via the completion bridge."""
+    from pydantic import BaseModel
+
+    class City(BaseModel):
+        city_name: str
+
+    provider = _openai_provider()
+    provider._acompletion = AsyncMock(return_value=_json_completion())
+
+    result = await provider.amessages(
+        model="test-model",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=128,
+        output_format=City,
+    )
+
+    assert isinstance(result, ParsedMessage)
+    assert isinstance(result.parsed_output, City)
+    assert result.parsed_output.city_name == "Paris"
+    block = result.content[0]
+    assert isinstance(block, ParsedTextBlock)
+    assert block.parsed_output == result.parsed_output
+
+    # output_format is bridged to the completion call as response_format.
+    completion_params = provider._acompletion.call_args.args[0]
+    assert completion_params.response_format is City
+
+
+@pytest.mark.asyncio
+async def test_amessages_output_format_dataclass() -> None:
+    """A dataclass output_format is parsed into a ParsedMessage too."""
+    import dataclasses
+
+    @dataclasses.dataclass
+    class City:
+        city_name: str
+
+    provider = _openai_provider()
+    provider._acompletion = AsyncMock(return_value=_json_completion())
+
+    result = await provider.amessages(
+        model="test-model",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=128,
+        output_format=City,
+    )
+
+    assert isinstance(result, ParsedMessage)
+    assert isinstance(result.parsed_output, City)
+    assert result.parsed_output.city_name == "Paris"
+
+
+@pytest.mark.asyncio
+async def test_amessages_output_format_empty_content_leaves_parsed_none() -> None:
+    """When the completion returns no text, parsed_output stays None rather than erroring."""
+    from pydantic import BaseModel
+
+    class City(BaseModel):
+        city_name: str
+
+    provider = _openai_provider()
+    provider._acompletion = AsyncMock(return_value=_json_completion(content=""))
+
+    result = await provider.amessages(
+        model="test-model",
+        messages=[{"role": "user", "content": "Hi"}],
+        max_tokens=128,
+        output_format=City,
+    )
+
+    assert isinstance(result, ParsedMessage)
+    assert result.parsed_output is None
+
+
+@pytest.mark.asyncio
+async def test_amessages_output_format_rejects_streaming() -> None:
+    """output_format combined with stream=True raises ValueError."""
+    from pydantic import BaseModel
+
+    class City(BaseModel):
+        city_name: str
+
+    provider = _openai_provider()
+    provider._acompletion = AsyncMock(return_value=_json_completion())
+
+    with pytest.raises(ValueError, match="stream is not supported for output_format"):
+        await provider.amessages(
+            model="test-model",
+            messages=[{"role": "user", "content": "Hi"}],
+            max_tokens=128,
+            output_format=City,
+            stream=True,
+        )
