@@ -19,7 +19,6 @@ description: Complete list of LLM providers supported by any-llm including OpenA
 | [`deepinfra`](https://deepinfra.com/docs/openai_api) | DEEPINFRA_API_KEY | DEEPINFRA_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`deepseek`](https://platform.deepseek.com/) | DEEPSEEK_API_KEY | DEEPSEEK_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`fireworks`](https://fireworks.ai/api) | FIREWORKS_API_KEY | FIREWORKS_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| [`gateway`](https://mozilla-ai.github.io/otari/) | GATEWAY_API_KEY | GATEWAY_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [`gemini`](https://ai.google.dev/gemini-api/docs) | GEMINI_API_KEY/GOOGLE_API_KEY | GOOGLE_GEMINI_BASE_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [`github`](https://docs.github.com/en/github-models) | GITHUB_TOKEN | GITHUB_MODELS_API_BASE | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ |
 | [`groq`](https://groq.com/api) | GROQ_API_KEY | GROQ_BASE_URL | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |

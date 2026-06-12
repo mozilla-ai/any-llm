@@ -83,5 +83,3 @@ An async variant `arerank()` is also available with the same signature.
 ## Otari Provider
 
 The otari provider (`provider="otari"`) can proxy rerank requests to an upstream server that exposes a `/v1/rerank` endpoint. The otari provider sends the request via HTTP with correct authentication headers.
-
-The `gateway` provider key remains as a deprecated alias to `otari` for backward compatibility.
