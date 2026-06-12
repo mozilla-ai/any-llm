@@ -45,6 +45,28 @@ def parse_json_content(response_format: type, content: str) -> Any:
     return TypeAdapter(response_format).validate_json(content)
 
 
+def _make_schema_strict(schema: dict[str, Any]) -> dict[str, Any]:
+    """Recursively enforce ``additionalProperties: false`` and require every property.
+
+    Fallback used only if OpenAI's private strict-schema helper is unavailable; covers the
+    common object/array/$defs cases (it does not rewrite optional fields as nullable).
+    """
+
+    def _walk(obj: Any) -> None:
+        if isinstance(obj, dict):
+            if obj.get("type") == "object" and "properties" in obj:
+                obj["additionalProperties"] = False
+                obj["required"] = list(obj["properties"].keys())
+            for value in obj.values():
+                _walk(value)
+        elif isinstance(obj, list):
+            for item in obj:
+                _walk(item)
+
+    _walk(schema)
+    return schema
+
+
 def get_strict_json_schema(response_format: type) -> dict[str, Any]:
     """Get a strict JSON schema (``additionalProperties: false``, all fields required).
 
@@ -52,9 +74,11 @@ def get_strict_json_schema(response_format: type) -> dict[str, Any]:
     so the manual dataclass path stays byte-for-byte compatible with the native BaseModel path.
     Works with both Pydantic BaseModel subclasses and dataclass types.
     """
-    from openai.lib._pydantic import _ensure_strict_json_schema
-
     schema = get_json_schema(response_format)
+    try:
+        from openai.lib._pydantic import _ensure_strict_json_schema
+    except ImportError:  # pragma: no cover - private SDK helper relocated/removed
+        return _make_schema_strict(schema)
     return _ensure_strict_json_schema(schema, path=(), root=schema)
 
 

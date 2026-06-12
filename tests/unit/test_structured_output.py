@@ -137,6 +137,24 @@ def test_build_responses_text_format_is_strict() -> None:
         assert fmt["schema"]["additionalProperties"] is False
 
 
+def test_make_schema_strict_fallback() -> None:
+    """The fallback (used if OpenAI's private helper disappears) enforces strictness on nested objects."""
+    from any_llm.utils.structured_output import _make_schema_strict
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "nested": {"type": "object", "properties": {"x": {"type": "integer"}}},
+        },
+    }
+    strict = _make_schema_strict(schema)
+    assert strict["additionalProperties"] is False
+    assert strict["required"] == ["name", "nested"]
+    assert strict["properties"]["nested"]["additionalProperties"] is False
+    assert strict["properties"]["nested"]["required"] == ["x"]
+
+
 def test_parse_responses_output_roundtrips_json_schema_text_format() -> None:
     """Regression: a json_schema text.format must survive the model_dump round-trip.
 
