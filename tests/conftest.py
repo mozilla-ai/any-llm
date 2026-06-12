@@ -36,8 +36,10 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.ANTHROPIC: "claude-sonnet-4-6",
         LLMProvider.GEMINI: "gemini-2.5-flash",
         LLMProvider.GATEWAY: "gpt-5-nano",
-        # anthropic via otari completes but does not surface reasoning content; use a reasoning
-        # model (needs the otari SDK reasoning-string fix, mozilla-ai/otari#145, to deserialize).
+        # No anthropic model via otari surfaces reasoning content (tested haiku/sonnet/opus, even
+        # with reasoning_effort set: OpenAI reasoning_effort is not mapped to Anthropic extended
+        # thinking). gpt-oss-120b does emit reasoning, which needs the otari SDK reasoning-string
+        # fix (mozilla-ai/otari#145) to deserialize.
         LLMProvider.OTARI: "mzai:openai/gpt-oss-120b",
         LLMProvider.VERTEXAI: "gemini-2.5-flash",
         LLMProvider.GITHUB: "openai/gpt-4.1-nano",
