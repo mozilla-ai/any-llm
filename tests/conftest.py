@@ -36,7 +36,9 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.ANTHROPIC: "claude-sonnet-4-6",
         LLMProvider.GEMINI: "gemini-2.5-flash",
         LLMProvider.GATEWAY: "gpt-5-nano",
-        LLMProvider.OTARI: "anthropic:claude-haiku-4-5",
+        # anthropic via otari completes but does not surface reasoning content; use a reasoning
+        # model (needs the otari SDK reasoning-string fix, mozilla-ai/otari#145, to deserialize).
+        LLMProvider.OTARI: "mzai:openai/gpt-oss-120b",
         LLMProvider.VERTEXAI: "gemini-2.5-flash",
         LLMProvider.GITHUB: "openai/gpt-4.1-nano",
         LLMProvider.GROQ: "openai/gpt-oss-20b",

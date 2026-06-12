@@ -43,8 +43,6 @@ _OTARI_SKIPPED_TESTS: dict[str, str] = {
     "test_responses_async": "no Responses-API upstream on the test account (otari-ai#907)",
     "test_responses_format_basemodel": "no Responses-API upstream on the test account (otari-ai#907)",
     "test_responses_format_dataclass": "no Responses-API upstream on the test account (otari-ai#907)",
-    "test_completion_reasoning": "reasoning content not surfaced by the gateway",
-    "test_completion_reasoning_streaming": "reasoning content not surfaced by the gateway",
     "test_create_and_retrieve_batch": "batch needs provider_name + gateway batch support",
     "test_list_batches": "batch needs provider_name + gateway batch support",
     "test_retrieve_batch_results_not_complete": "batch needs provider_name + gateway batch support",
