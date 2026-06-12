@@ -11,7 +11,7 @@ import pytest
 from any_llm.exceptions import BatchNotCompleteError
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams
 from any_llm.types.batch import BatchResult
-from any_llm.types.completion import CompletionParams
+from any_llm.types.completion import ChatCompletion, CompletionParams
 from any_llm.types.image import ImageGenerationParams
 from any_llm.types.model import Model
 
@@ -21,7 +21,17 @@ from any_llm.providers.otari.otari import (
     OtariProvider,
     _as_plain_dict,
     _extract_model_from_requests,
+    _message_stream_event_from_dict,
     _parse_jsonl_to_requests,
+)
+from any_llm.types.messages import (
+    ContentBlockDeltaEvent,
+    ContentBlockStartEvent,
+    MessageResponse,
+    MessagesParams,
+    MessageStartEvent,
+    MessageStopEvent,
+    TextBlock,
 )
 
 
@@ -34,6 +44,7 @@ def _mock_otari_client() -> MagicMock:
     client = MagicMock()
     client.platform_mode = False
     client.completion = AsyncMock()
+    client.message = AsyncMock()
     client.embedding = AsyncMock()
     client.moderation = AsyncMock()
     client.rerank = AsyncMock()
@@ -54,6 +65,22 @@ def test_as_plain_dict_normalizes_models_and_passes_through() -> None:
     assert _as_plain_dict(_Model(value=1)) == {"value": 1}
     passthrough = {"already": "dict"}
     assert _as_plain_dict(passthrough) is passthrough
+
+
+def test_as_plain_dict_prefers_to_dict_over_model_dump() -> None:
+    """otari's generated models leak oneOf/anyOf union wrappers via model_dump (breaking
+    tool_calls and Messages content); their to_dict unwraps to the actual instance, so
+    _as_plain_dict must prefer to_dict."""
+    from pydantic import BaseModel
+
+    class _OtariLike(BaseModel):
+        value: int
+
+        def to_dict(self) -> dict[str, int]:
+            return {"unwrapped": self.value}
+
+    # model_dump would return {"value": 7}; the fix must use to_dict's unwrapped form.
+    assert _as_plain_dict(_OtariLike(value=7)) == {"unwrapped": 7}
 
 
 def test_extract_model_from_requests_none_when_missing() -> None:
@@ -128,6 +155,130 @@ async def test_otari_embedding_uses_converter() -> None:
     assert result is sentinel
     mocked_client.embedding.assert_awaited_once_with(model="embed-model", input="hello", user="u")
     mock_convert.assert_called_once_with(raw_result)
+
+
+def test_otari_remaps_max_completion_tokens_to_max_tokens() -> None:
+    """The otari gateway accepts ``max_tokens``; the base OpenAI layer remaps it to
+    ``max_completion_tokens``, which the gateway errors on, so otari must remap it back."""
+    params = CompletionParams(
+        model_id="anthropic:claude-haiku-4-5",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=64,
+    )
+
+    converted = OtariProvider._convert_completion_params(params)
+
+    assert converted["max_tokens"] == 64
+    assert "max_completion_tokens" not in converted
+
+
+def test_otari_converts_pydantic_response_format_to_json_schema() -> None:
+    """otari has no parse() helper, so a Pydantic response_format must be sent as a json_schema dict."""
+    from pydantic import BaseModel
+
+    class Schema(BaseModel):
+        city: str
+
+    params = CompletionParams(
+        model_id="anthropic:claude-haiku-4-5",
+        messages=[{"role": "user", "content": "hi"}],
+        response_format=Schema,
+    )
+
+    converted = OtariProvider._convert_completion_params(params)
+
+    response_format = converted["response_format"]
+    assert response_format["type"] == "json_schema"
+    assert response_format["json_schema"]["name"] == "Schema"
+    assert "city" in response_format["json_schema"]["schema"]["properties"]
+
+
+def test_otari_to_parsed_completion_parses_json_content() -> None:
+    from pydantic import BaseModel
+
+    from any_llm.types.completion import ParsedChatCompletion
+
+    class Schema(BaseModel):
+        city: str
+
+    completion = ChatCompletion.model_validate(
+        {
+            "id": "x",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "anthropic:claude-haiku-4-5",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": '{"city": "Paris"}'},
+                }
+            ],
+        }
+    )
+
+    parsed = OtariProvider._to_parsed_completion(completion, Schema)
+
+    assert isinstance(parsed, ParsedChatCompletion)
+    assert parsed.choices[0].message.parsed == Schema(city="Paris")
+    assert parsed.choices[0].message.content == '{"city": "Paris"}'
+
+
+@pytest.mark.asyncio
+async def test_otari_acompletion_returns_parsed_completion_for_structured_output() -> None:
+    from pydantic import BaseModel
+
+    from any_llm.types.completion import ParsedChatCompletion
+
+    class Schema(BaseModel):
+        city: str
+
+    mocked_client = _mock_otari_client()
+    mocked_client.completion = AsyncMock(
+        return_value={
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 1700000000,
+            "model": "anthropic:claude-haiku-4-5",
+            "choices": [
+                {"index": 0, "message": {"role": "assistant", "content": '{"city": "Paris"}'}, "finish_reason": "stop"}
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+    )
+    provider = _build_provider(mocked_client)
+    params = CompletionParams(
+        model_id="anthropic:claude-haiku-4-5",
+        messages=[{"role": "user", "content": "What is the capital of France?"}],
+        response_format=Schema,
+    )
+
+    result = await provider._acompletion(params)
+
+    assert isinstance(result, ParsedChatCompletion)
+    assert result.choices[0].message.parsed == Schema(city="Paris")
+    # The otari client receives a json_schema dict, not the Pydantic class.
+    sent = mocked_client.completion.call_args.kwargs["response_format"]
+    assert sent["type"] == "json_schema"
+
+
+@pytest.mark.asyncio
+async def test_otari_acompletion_rejects_stream_with_response_format() -> None:
+    from pydantic import BaseModel
+
+    class Schema(BaseModel):
+        city: str
+
+    provider = _build_provider(_mock_otari_client())
+    params = CompletionParams(
+        model_id="anthropic:claude-haiku-4-5",
+        messages=[{"role": "user", "content": "hi"}],
+        response_format=Schema,
+        stream=True,
+    )
+
+    with pytest.raises(ValueError, match="stream is not supported for response_format"):
+        await provider._acompletion(params)
 
 
 def test_otari_does_not_advertise_image_or_audio_support() -> None:
@@ -320,7 +471,7 @@ async def test_otari_retrieve_batch_results_parses_error_from_dict_item() -> Non
 
 
 @pytest.mark.asyncio
-async def test_otari_completion_uses_converted_params_with_max_tokens_remap() -> None:
+async def test_otari_completion_sends_max_tokens_not_max_completion_tokens() -> None:
     mocked_client = _mock_otari_client()
     mocked_client.completion = AsyncMock(
         return_value={
@@ -345,8 +496,8 @@ async def test_otari_completion_uses_converted_params_with_max_tokens_remap() ->
     await provider._acompletion(params)
 
     call_kwargs = mocked_client.completion.call_args.kwargs
-    assert call_kwargs["max_completion_tokens"] == 42
-    assert "max_tokens" not in call_kwargs
+    assert call_kwargs["max_tokens"] == 42
+    assert "max_completion_tokens" not in call_kwargs
 
 
 @pytest.mark.asyncio
@@ -489,3 +640,123 @@ def test_otari_auto_mode_prefers_platform_token_over_placeholder_key() -> None:
     call_kwargs = mock_otari_client.call_args.kwargs
     assert call_kwargs["platform_token"] == "platform-token"  # noqa: S105
     assert "api_key" not in call_kwargs
+
+
+def _message_response_payload() -> dict[str, Any]:
+    return {
+        "id": "msg_1",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-sonnet-4-5",
+        "content": [{"type": "text", "text": "hi"}],
+        "stop_reason": "end_turn",
+        "stop_sequence": None,
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+        # otari-native models carry extra keys; MessageResponse should ignore them.
+        "additional_properties": {"served_by": "otari"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_delegates_to_native_endpoint_preserving_anthropic_fields() -> None:
+    client = _mock_otari_client()
+    client.message.return_value = _message_response_payload()
+    provider = _build_provider(client)
+
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        system=[{"type": "text", "text": "You are helpful.", "cache_control": {"type": "ephemeral"}}],
+        thinking={"type": "enabled", "budget_tokens": 1024},
+    )
+
+    result = await provider._amessages(params, metadata={"user_id": "u1"})
+
+    assert isinstance(result, MessageResponse)
+    assert result.id == "msg_1"
+    block = result.content[0]
+    assert isinstance(block, TextBlock)
+    assert block.text == "hi"
+
+    call_kwargs = client.message.call_args.kwargs
+    assert call_kwargs["model"] == "claude-sonnet-4-5"
+    assert call_kwargs["max_tokens"] == 100
+    # cache_control on the system block and thinking config survive the pass-through.
+    assert call_kwargs["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert call_kwargs["thinking"] == {"type": "enabled", "budget_tokens": 1024}
+    # Extra kwargs are forwarded; stream is not set for non-streaming calls.
+    assert call_kwargs["metadata"] == {"user_id": "u1"}
+    assert "stream" not in call_kwargs
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_excludes_none_valued_optional_params() -> None:
+    client = _mock_otari_client()
+    client.message.return_value = _message_response_payload()
+    provider = _build_provider(client)
+
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+    )
+
+    await provider._amessages(params)
+
+    call_kwargs = client.message.call_args.kwargs
+    # Unset optionals (temperature, tools, ...) are dropped, not sent as None.
+    assert "temperature" not in call_kwargs
+    assert "tools" not in call_kwargs
+    assert "system" not in call_kwargs
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_streaming_yields_typed_events_and_skips_unknown() -> None:
+    raw_events = [
+        {"type": "message_start", "message": _message_response_payload()},
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+        {"type": "ping"},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}},
+        {"type": "content_block_stop", "index": 0},
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+            "usage": {"output_tokens": 5},
+        },
+        {"type": "message_stop"},
+    ]
+
+    async def _aiter() -> Any:
+        for event in raw_events:
+            yield event
+
+    client = _mock_otari_client()
+    client.message.return_value = _aiter()
+    provider = _build_provider(client)
+
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+
+    result = await provider._amessages(params)
+
+    assert not isinstance(result, MessageResponse)
+    collected = [event async for event in result]
+
+    # The unknown "ping" event is skipped; everything else is yielded in order.
+    assert isinstance(collected[0], MessageStartEvent)
+    assert isinstance(collected[1], ContentBlockStartEvent)
+    assert isinstance(collected[2], ContentBlockDeltaEvent)
+    assert isinstance(collected[-1], MessageStopEvent)
+    assert len(collected) == len(raw_events) - 1
+    assert client.message.call_args.kwargs["stream"] is True
+
+
+def test_message_stream_event_from_dict_returns_none_for_unknown_type() -> None:
+    assert _message_stream_event_from_dict({"type": "ping"}) is None
+    assert _message_stream_event_from_dict({"no_type": True}) is None
+    assert isinstance(_message_stream_event_from_dict({"type": "message_stop"}), MessageStopEvent)

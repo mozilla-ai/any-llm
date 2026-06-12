@@ -35,7 +35,11 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.ANTHROPIC: "claude-sonnet-4-6",
         LLMProvider.GEMINI: "gemini-2.5-flash",
-        LLMProvider.OTARI: "gpt-5-nano",
+        # No anthropic model via otari surfaces reasoning content (tested haiku/sonnet/opus, even
+        # with reasoning_effort set: OpenAI reasoning_effort is not mapped to Anthropic extended
+        # thinking). gpt-oss-120b does emit reasoning, which needs the otari SDK reasoning-string
+        # fix (mozilla-ai/otari#145) to deserialize.
+        LLMProvider.OTARI: "mzai:openai/gpt-oss-120b",
         LLMProvider.VERTEXAI: "gemini-2.5-flash",
         LLMProvider.GITHUB: "openai/gpt-4.1-nano",
         LLMProvider.GROQ: "openai/gpt-oss-20b",
@@ -75,7 +79,8 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.ANTHROPIC: "claude-haiku-4-5",
         LLMProvider.DEEPSEEK: "deepseek-chat",
         LLMProvider.OPENAI: "gpt-5-nano",
-        LLMProvider.OTARI: "gpt-5-nano",
+        # otari routes provider:model; anthropic is the only upstream the test account serves reliably.
+        LLMProvider.OTARI: "anthropic:claude-haiku-4-5",
         LLMProvider.GEMINI: "gemini-3-flash-preview",
         LLMProvider.GITHUB: "openai/gpt-4.1-nano",
         LLMProvider.VERTEXAI: "gemini-3-flash-preview",
@@ -148,7 +153,8 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.AZURE: "openai/text-embedding-3-small",
         LLMProvider.VOYAGE: "voyage-3.5-lite",
         LLMProvider.LLAMACPP: "N/A",
-        LLMProvider.OTARI: "text-embedding-ada-002",
+        # otari intentionally omitted: the test account has no embedding model (see otari-ai #1036),
+        # so test_embedding skips otari.
         LLMProvider.AZUREOPENAI: "gpt-4.1-nano",  # Not an embedding model but it's the only one we have deployed in Azure OpenAI
         LLMProvider.OPENROUTER: "qwen/qwen3-embedding-8b",
         LLMProvider.DEEPINFRA: "BAAI/bge-base-en-v1.5",
@@ -165,7 +171,9 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.BEDROCK: {"region_name": "us-east-1"},
         LLMProvider.CEREBRAS: {"timeout": 10},
         LLMProvider.COHERE: {"timeout": 10},
-        LLMProvider.OTARI: {"api_base": "http://127.0.0.1:3000", "timeout": 1},
+        # otari omits a default api_base: the provider resolves the hosted endpoint from
+        # OTARI_AI_TOKEN (platform mode), and is skipped when unconfigured (see
+        # tests/integration/conftest.py).
         LLMProvider.GROQ: {"timeout": 10},
         LLMProvider.LLAMACPP: {"api_base": "http://127.0.0.1:8090/v1"},
         LLMProvider.VLLM: {"api_base": "http://127.0.0.1:8080/v1"},

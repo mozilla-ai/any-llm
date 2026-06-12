@@ -12,10 +12,30 @@ from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.openai.utils import _convert_moderation_response_from_openai
 from any_llm.types.batch import Batch, BatchResult, BatchResultError, BatchResultItem
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    CompletionParams,
+    CreateEmbeddingResponse,
+    ParsedChatCompletion,
+)
+from any_llm.types.messages import (
+    ContentBlockDeltaEvent,
+    ContentBlockStartEvent,
+    ContentBlockStopEvent,
+    MessageDeltaEvent,
+    MessageResponse,
+    MessageStartEvent,
+    MessageStopEvent,
+)
 from any_llm.types.model import Model
 from any_llm.types.rerank import RerankResponse
-from any_llm.utils.structured_output import build_responses_text_format, is_structured_output_type
+from any_llm.utils.structured_output import (
+    build_responses_text_format,
+    get_json_schema,
+    is_structured_output_type,
+    parse_json_content,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
@@ -24,6 +44,7 @@ if TYPE_CHECKING:
 
     from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
     from any_llm.types.image import ImageGenerationParams, ImagesResponse
+    from any_llm.types.messages import MessagesParams, MessageStreamEvent
     from any_llm.types.moderation import ModerationResponse
     from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
@@ -65,11 +86,17 @@ def _as_plain_dict(response: Any) -> Any:
     """Normalize an otari-native pydantic response into a plain dict.
 
     otari 0.1.0's async client returns its own typed pydantic models rather than
-    OpenAI types. Dumping them to a dict lets any-llm's own response types validate
-    the payload (extra keys like ``additional_properties`` are ignored/allowed).
-    Non-model inputs (e.g. dicts in unit tests) are returned unchanged.
+    OpenAI types. The generated models use oneOf/anyOf unions for some fields (e.g.
+    ``tool_calls`` and Messages content blocks); their ``to_dict()`` unwraps each union
+    to the actual instance, whereas Pydantic's ``model_dump()`` leaks the union wrapper
+    (``actual_instance`` / ``anyof_schema_*``) and fails any-llm's validation. Prefer
+    ``to_dict()``, falling back to ``model_dump()`` for plain pydantic models. Non-model
+    inputs (e.g. dicts in unit tests) are returned unchanged.
     """
     if isinstance(response, BaseModel):
+        to_dict = getattr(response, "to_dict", None)
+        if callable(to_dict):
+            return to_dict()
         return response.model_dump()
     return response
 
@@ -96,6 +123,31 @@ def _extract_model_from_requests(requests: list[dict[str, Any]]) -> str | None:
         model: Any = requests[0]["body"].get("model")
         return str(model) if model is not None else None
     return None
+
+
+# otari's /messages stream yields raw Anthropic SSE event dicts (the SDK has no
+# single typed model for them). Map each by its ``type`` field to the matching
+# any-llm event model; unknown types (e.g. ``ping``) are skipped.
+_MESSAGE_STREAM_EVENT_TYPES: dict[str, type[BaseModel]] = {
+    "message_start": MessageStartEvent,
+    "message_delta": MessageDeltaEvent,
+    "message_stop": MessageStopEvent,
+    "content_block_start": ContentBlockStartEvent,
+    "content_block_delta": ContentBlockDeltaEvent,
+    "content_block_stop": ContentBlockStopEvent,
+}
+
+
+def _message_stream_event_from_dict(event: dict[str, Any]) -> MessageStreamEvent | None:
+    """Validate a raw otari message SSE event dict into a typed MessageStreamEvent.
+
+    Returns ``None`` for event types any-llm does not surface (e.g. ``ping``).
+    """
+    event_type = event.get("type")
+    model = _MESSAGE_STREAM_EVENT_TYPES.get(event_type) if isinstance(event_type, str) else None
+    if model is None:
+        return None
+    return cast("MessageStreamEvent", model.model_validate(event))
 
 
 class OtariProvider(BaseOpenAIProvider):
@@ -206,11 +258,55 @@ class OtariProvider(BaseOpenAIProvider):
         self.client = self.otari_client
         self.platform_mode = self.otari_client.platform_mode
 
+    @staticmethod
+    @override
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert completion params for the otari gateway.
+
+        The base OpenAI layer remaps ``max_tokens`` to ``max_completion_tokens`` to follow
+        the current OpenAI spec, but the otari gateway accepts only ``max_tokens`` and errors
+        on ``max_completion_tokens``. Remap it back so the token limit reaches the upstream
+        provider instead of producing an upstream error.
+
+        The base also leaves a Pydantic ``response_format`` as the model class (the OpenAI SDK
+        consumes it via ``parse()``); otari has no ``parse()`` helper, so send it as a
+        json_schema dict instead. The parsed object is reconstructed in ``_acompletion``.
+        """
+        converted = BaseOpenAIProvider._convert_completion_params(params, **kwargs)
+        if "max_completion_tokens" in converted:
+            converted["max_tokens"] = converted.pop("max_completion_tokens")
+        response_format = converted.get("response_format")
+        if is_structured_output_type(response_format):
+            converted["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": response_format.__name__, "schema": get_json_schema(response_format)},
+            }
+        return converted
+
+    @staticmethod
+    def _to_parsed_completion(completion: ChatCompletion, response_format: type) -> ParsedChatCompletion[Any]:
+        """Wrap a completion as a ParsedChatCompletion, parsing each message's JSON content."""
+        parsed: ParsedChatCompletion[Any] = ParsedChatCompletion.model_validate(completion, from_attributes=True)
+        for choice in parsed.choices:
+            if choice.message.content is not None:
+                choice.message.parsed = parse_json_content(response_format, choice.message.content)
+        return parsed
+
     @override
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        # Capture the original response_format before _convert_completion_params rewrites it,
+        # so the JSON content can be parsed back into the requested type.
+        response_format = params.response_format
+        wants_structured = is_structured_output_type(response_format)
         completion_kwargs = self._convert_completion_params(params, **kwargs)
+        if wants_structured:
+            if params.stream:
+                msg = "stream is not supported for response_format"
+                raise ValueError(msg)
+            completion_kwargs.pop("stream", None)
+
         response = await self.otari_client.completion(
             model=params.model_id,
             messages=params.messages,
@@ -225,7 +321,41 @@ class OtariProvider(BaseOpenAIProvider):
                     yield self._convert_completion_chunk_response(_as_plain_dict(chunk))
 
             return _chunk_iterator()
-        return self._convert_completion_response(_as_plain_dict(response))
+        completion = self._convert_completion_response(_as_plain_dict(response))
+        # Re-check inline (rather than reusing ``wants_structured``) so the TypeGuard narrows
+        # response_format to ``type`` for _to_parsed_completion.
+        if is_structured_output_type(response_format):
+            return self._to_parsed_completion(completion, response_format)
+        return completion
+
+    @override
+    async def _amessages(
+        self, params: MessagesParams, **kwargs: Any
+    ) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
+        """Native Anthropic Messages API pass-through via otari's /messages endpoint.
+
+        The base implementation converts Messages to Chat Completions, which silently
+        drops Anthropic-only features (``cache_control`` on system blocks, ``thinking``
+        config). otari's gateway serves /messages natively, so delegate to the otari
+        SDK's ``message()`` to preserve them.
+        """
+        api_kwargs = params.model_dump(exclude_none=True)
+        api_kwargs.update(kwargs)
+        api_kwargs.pop("stream", None)
+
+        if params.stream:
+            return self._stream_messages_async(**api_kwargs)
+
+        response = await self.otari_client.message(**api_kwargs)
+        return MessageResponse.model_validate(_as_plain_dict(response))
+
+    async def _stream_messages_async(self, **api_kwargs: Any) -> AsyncIterator[MessageStreamEvent]:
+        """Stream otari's /messages endpoint, yielding typed any-llm event models."""
+        stream = await self.otari_client.message(stream=True, **api_kwargs)
+        async for event in stream:
+            converted = _message_stream_event_from_dict(_as_plain_dict(event))
+            if converted is not None:
+                yield converted
 
     @override
     async def _aresponses(

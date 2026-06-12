@@ -17,7 +17,11 @@ CI_EXCLUDED_PROVIDERS = [
     LLMProvider.VLLM,
 ]
 
-EXPECTED_PROVIDERS = os.environ.get("EXPECTED_PROVIDERS", "").split(",")
+# Strip whitespace and drop empties so values like "anthropic, otari" or an unset env var
+# (which would otherwise yield [""]) compare cleanly in `provider in EXPECTED_PROVIDERS` checks.
+EXPECTED_PROVIDERS = [
+    provider.strip() for provider in os.environ.get("EXPECTED_PROVIDERS", "").split(",") if provider.strip()
+]
 
 INCLUDE_LOCAL_PROVIDERS = os.getenv("INCLUDE_LOCAL_PROVIDERS", "true").lower() in ("true", "1", "t")
 
