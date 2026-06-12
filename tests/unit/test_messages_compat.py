@@ -39,6 +39,39 @@ def test_basic_text_message_conversion() -> None:
     assert result["messages"][0]["content"] == "Hello"
 
 
+def test_output_format_type_passes_through_as_response_format() -> None:
+    """A structured-output type is forwarded to the bridge as the completion response_format."""
+    from pydantic import BaseModel
+
+    class Schema(BaseModel):
+        city: str
+
+    params = MessagesParams(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        output_format=Schema,
+    )
+    result = messages_params_to_completion_params(params)
+    assert result["response_format"] is Schema
+
+
+def test_output_config_dict_translated_to_json_schema_response_format() -> None:
+    """A raw Anthropic output_config dict becomes an OpenAI json_schema response_format."""
+    output_config = {"format": {"type": "json_schema", "schema": {"title": "City", "type": "object"}}}
+    params = MessagesParams(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        output_format=output_config,
+    )
+    result = messages_params_to_completion_params(params)
+    assert result["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "City", "schema": {"title": "City", "type": "object"}},
+    }
+
+
 def test_system_message_prepended() -> None:
     """Test that system message is prepended as a system role message."""
     params = MessagesParams(

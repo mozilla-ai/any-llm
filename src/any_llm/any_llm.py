@@ -691,7 +691,7 @@ class AnyLLM(ABC):
         metadata: dict[str, Any] | None = None,
         thinking: dict[str, Any] | None = None,
         cache_control: dict[str, Any] | None = None,
-        output_format: type | None = None,
+        output_format: type | dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> MessageResponse | ParsedMessage[Any] | AsyncIterator[MessageStreamEvent]:
         """Create a message using the Anthropic Messages API asynchronously.
@@ -714,10 +714,11 @@ class AnyLLM(ABC):
             metadata: Request metadata.
             thinking: Thinking/reasoning configuration.
             cache_control: Cache control configuration for prompt caching.
-            output_format: Structured-output type, mirroring Anthropic's
-                ``messages.parse(output_format=...)``. A Pydantic ``BaseModel`` or dataclass
-                makes the call return Anthropic's ``ParsedMessage``, with the typed object on
-                its ``parsed_output`` property. Not supported with ``stream=True``.
+            output_format: Structured output, mirroring Anthropic's ``messages.parse``/
+                ``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed
+                ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic
+                JSON schemas (``parsed_output`` holds the parsed JSON). The call returns
+                Anthropic's ``ParsedMessage``. Not supported with ``stream=True``.
             **kwargs: Additional provider-specific arguments.
 
         Returns:
@@ -728,7 +729,7 @@ class AnyLLM(ABC):
             ValueError: If `output_format` is combined with `stream=True`.
 
         """
-        if is_structured_output_type(output_format) and stream:
+        if output_format is not None and stream:
             msg = "stream is not supported for output_format"
             raise ValueError(msg)
 
@@ -751,9 +752,10 @@ class AnyLLM(ABC):
         )
         result = await self._amessages(params, **kwargs)
 
-        # The Anthropic provider already returns a ParsedMessage via native messages.parse;
-        # for bridged providers, build the same shape from the response's JSON text.
-        if is_structured_output_type(output_format) and isinstance(result, MessageResponse):
+        # The Anthropic provider already returns a ParsedMessage via native messages.parse (typed
+        # case); for the raw-dict case and for all bridged providers it returns a MessageResponse,
+        # so build the same ParsedMessage shape from the response's JSON text here.
+        if output_format is not None and isinstance(result, MessageResponse):
             return build_parsed_message(result, output_format)
 
         return result

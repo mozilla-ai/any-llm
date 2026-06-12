@@ -19,6 +19,7 @@ from any_llm.types.messages import (
     MessageStreamEvent,
     ThinkingBlock,
 )
+from any_llm.utils.structured_output import is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -193,14 +194,21 @@ class BaseAnthropicProvider(AnyLLM, ABC):
     ) -> MessageResponse | ParsedMessage[Any] | AsyncIterator[MessageStreamEvent]:
         """Native Anthropic Messages API pass-through.
 
-        When ``output_format`` is set, uses native ``messages.parse`` (which drives the GA
-        ``output_config`` primitive) so generation is schema-constrained, and returns the
-        SDK's ``ParsedMessage`` unchanged.
+        When ``output_format`` is a structured-output type, uses native ``messages.parse``
+        (which drives the GA ``output_config`` primitive) and returns the SDK's ``ParsedMessage``
+        unchanged. When it is a raw ``output_config`` dict, passes it straight to native
+        ``messages.create(output_config=...)`` and returns a ``MessageResponse`` (the base layer
+        then builds the matching ``ParsedMessage`` from its JSON text).
         """
         if params.output_format is not None:
-            parse_kwargs = params.model_dump(exclude_none=True, exclude={"output_format", "stream"})
-            parse_kwargs.update(kwargs)
-            return await self.client.messages.parse(output_format=params.output_format, **parse_kwargs)
+            native_kwargs = params.model_dump(exclude_none=True, exclude={"output_format", "stream"})
+            native_kwargs.update(kwargs)
+            if is_structured_output_type(params.output_format):
+                return await self.client.messages.parse(output_format=params.output_format, **native_kwargs)
+            message = await self.client.messages.create(
+                output_config=cast("Any", params.output_format), **native_kwargs
+            )
+            return self._convert_native_message_to_response(message)
 
         api_kwargs = params.model_dump(exclude_none=True)
         api_kwargs.pop("stream", None)
