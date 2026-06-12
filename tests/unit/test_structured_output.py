@@ -1,6 +1,8 @@
 import dataclasses
+import json
 from typing import Any
 
+import pytest
 from openai.types.responses import ResponseOutputMessage, ResponseOutputText
 from pydantic import BaseModel
 
@@ -318,9 +320,6 @@ def test_build_parsed_message_raw_dict_malformed_json_raises() -> None:
     likewise lets json.loads raise JSONDecodeError (a ValueError subclass) rather
     than wrapping it, so both stay consistent.
     """
-    import json
-
-    import pytest
     from anthropic.types import TextBlock
 
     output_config = {"format": {"type": "json_schema", "schema": {"type": "object"}}}
