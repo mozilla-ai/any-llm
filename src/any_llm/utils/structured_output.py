@@ -8,7 +8,7 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 from any_llm.logging import logger
 
 if TYPE_CHECKING:
-    from any_llm.types.responses import ParsedResponse
+    from any_llm.types.responses import ParsedResponse, Response
 
 
 def is_structured_output_type(response_format: Any) -> TypeGuard[type]:
@@ -123,13 +123,17 @@ def parse_responses_output(response: Any, response_format: type) -> ParsedRespon
         # whose Python attribute is schema_) so the round-trip re-validates cleanly.
         parsed: ParsedResponse[Any] = ParsedResponse.model_validate(response.model_dump(by_alias=True, warnings=False))
     except ValidationError:
-        if isinstance(response, Response):  # pragma: no cover - a valid Response always validates as ParsedResponse
-            raise
-        logger.warning(
-            "Could not normalize %s into a ParsedResponse; returning it without output_parsed.",
-            type(response).__name__,
-        )
-        return None
+        if isinstance(response, Response):
+            # Some providers return a valid Response whose shape does not satisfy the stricter
+            # ParsedResponse schema (e.g. Fireworks: usage.output_tokens_details=None). Build the
+            # ParsedResponse without re-validating the whole payload so output_parsed still works.
+            parsed = _parsed_response_from_raw(response)
+        else:
+            logger.warning(
+                "Could not normalize %s into a ParsedResponse; returning it without output_parsed.",
+                type(response).__name__,
+            )
+            return None
 
     for output in parsed.output:
         if not isinstance(output, ParsedResponseOutputMessage):
@@ -138,3 +142,42 @@ def parse_responses_output(response: Any, response_format: type) -> ParsedRespon
             if isinstance(content, ParsedResponseOutputText) and content.text and content.parsed is None:
                 content.parsed = parse_json_content(response_format, content.text)
     return parsed
+
+
+def _parsed_response_from_raw(response: Response) -> ParsedResponse[Any]:
+    """Build a ``ParsedResponse`` from an already-validated ``Response`` without re-validation.
+
+    Used when a provider returns a valid ``Response`` that does not satisfy the stricter
+    ``ParsedResponse`` schema. Message text content is rebuilt as ``ParsedResponseOutputText``
+    (which carries ``parsed``) so the downstream parse loop and ``output_parsed`` keep working;
+    other fields are carried over verbatim via ``model_construct`` (no coercion).
+    """
+    from openai.types.responses import (
+        ParsedResponseOutputMessage,
+        ParsedResponseOutputText,
+        ResponseOutputMessage,
+        ResponseOutputText,
+    )
+
+    from any_llm.types.responses import ParsedResponse
+
+    parsed_output: list[Any] = []
+    for item in response.output:
+        if not isinstance(item, ResponseOutputMessage):
+            parsed_output.append(item)
+            continue
+        parsed_content: list[Any] = [
+            ParsedResponseOutputText.model_construct(**content.model_dump(by_alias=True, warnings=False))
+            if isinstance(content, ResponseOutputText)
+            else content
+            for content in item.content
+        ]
+        parsed_output.append(
+            ParsedResponseOutputMessage.model_construct(
+                **{**item.model_dump(by_alias=True, warnings=False), "content": parsed_content}
+            )
+        )
+
+    data = response.model_dump(by_alias=True, warnings=False)
+    data["output"] = parsed_output
+    return ParsedResponse.model_construct(**data)
