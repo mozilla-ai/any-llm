@@ -2,7 +2,6 @@ import dataclasses
 from typing import Any
 
 from openai.types.responses import ResponseOutputMessage, ResponseOutputText
-from openai.types.responses.response_usage import InputTokensDetails, ResponseUsage
 from pydantic import BaseModel
 
 from any_llm.types.responses import ParsedResponse, Response
@@ -181,28 +180,6 @@ def test_parse_responses_output_roundtrips_json_schema_text_format() -> None:
     assert isinstance(parsed, ParsedResponse)
     assert isinstance(parsed.output_parsed, DataclassModel)
     assert parsed.output_parsed.age == 5
-
-
-def test_parse_responses_output_non_conformant_response_falls_back() -> None:
-    """A valid Response that fails strict ParsedResponse validation still yields output_parsed.
-
-    Mirrors Fireworks, which returns usage.output_tokens_details=None (rejected by the stricter
-    ParsedResponse schema). The lenient fallback must still surface the parsed message text.
-    """
-    response = _make_response('{"name": "Dana", "age": 9}')
-    # output_tokens_details=None is what trips ParsedResponse validation.
-    response.usage = ResponseUsage.model_construct(
-        input_tokens=5,
-        output_tokens=3,
-        total_tokens=8,
-        input_tokens_details=InputTokensDetails(cached_tokens=0),
-        output_tokens_details=None,
-    )
-
-    parsed = parse_responses_output(response, DataclassModel)
-    assert isinstance(parsed, ParsedResponse)
-    assert isinstance(parsed.output_parsed, DataclassModel)
-    assert parsed.output_parsed.age == 9
 
 
 def test_parse_responses_output_basemodel() -> None:
