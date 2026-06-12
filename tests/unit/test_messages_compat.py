@@ -72,6 +72,22 @@ def test_output_config_dict_translated_to_json_schema_response_format() -> None:
     }
 
 
+def test_output_config_without_title_uses_structured_output_name() -> None:
+    """A schema with no title falls back to the default json_schema name."""
+    output_config = {"format": {"type": "json_schema", "schema": {"type": "object"}}}
+    params = MessagesParams(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        output_format=output_config,
+    )
+    result = messages_params_to_completion_params(params)
+    assert result["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "structured_output", "schema": {"type": "object"}},
+    }
+
+
 def test_system_message_prepended() -> None:
     """Test that system message is prepended as a system role message."""
     params = MessagesParams(

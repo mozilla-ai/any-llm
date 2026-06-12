@@ -309,3 +309,22 @@ def test_build_parsed_message_raw_output_config_dict() -> None:
     block = parsed.content[0]
     assert isinstance(block, ParsedTextBlock)
     assert block.parsed_output == {"name": "Alice", "age": 30}
+
+
+def test_build_parsed_message_raw_dict_malformed_json_raises() -> None:
+    """Malformed text on the raw-dict path raises raw, mirroring the typed path.
+
+    The typed path lets pydantic's ValidationError propagate; the raw-dict path
+    likewise lets json.loads raise JSONDecodeError (a ValueError subclass) rather
+    than wrapping it, so both stay consistent.
+    """
+    import json
+
+    import pytest
+    from anthropic.types import TextBlock
+
+    output_config = {"format": {"type": "json_schema", "schema": {"type": "object"}}}
+    message = _make_anthropic_message([TextBlock(type="text", text="{not valid json")])
+
+    with pytest.raises(json.JSONDecodeError):
+        build_parsed_message(message, output_config)

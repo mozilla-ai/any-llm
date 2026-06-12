@@ -161,7 +161,7 @@ def build_parsed_message(message: AnthropicMessage, output_format: type | dict[s
     from anthropic.types import TextBlock
     from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
 
-    def _parse(text: str) -> Any:
+    def _parse(text: str) -> object:
         if is_structured_output_type(output_format):
             return parse_json_content(output_format, text)
         return json.loads(text)
