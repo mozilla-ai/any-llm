@@ -96,7 +96,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.LMSTUDIO: "google/gemma-3-4b",  # You must have LM Studio running and the server enabled
         LLMProvider.VLLM: "Qwen/Qwen2.5-0.5B-Instruct",
         LLMProvider.COHERE: "command-a-03-2025",
-        LLMProvider.CEREBRAS: "llama3.1-8b",
+        LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.HUGGINGFACE: "Qwen/Qwen2.5-72B-Instruct",
         LLMProvider.BEDROCK: "amazon.nova-lite-v1:0",
         LLMProvider.SAGEMAKER: "<sagemaker_endpoint_name>",
@@ -122,7 +122,7 @@ def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict
         **provider_model_map,
         LLMProvider.OPENAI: "gpt-5-mini",  # Slightly more powerful so that it doesn't get caught in a loop of logic
         LLMProvider.WATSONX: "meta-llama/llama-guard-3-11b-vision",
-        LLMProvider.SAMBANOVA: "Llama-4-Maverick-17B-128E-Instruct",
+        LLMProvider.SAMBANOVA: "gemma-4-31B-it",
         LLMProvider.NEBIUS: "Qwen/Qwen2.5-VL-72B-Instruct",
         LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
         LLMProvider.OLLAMA: "llava-phi3",  # Fast vision model compatible with OpenAI format
