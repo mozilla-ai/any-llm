@@ -15,7 +15,7 @@ from any_llm.types.completion import (
     ReasoningEffort,
 )
 from any_llm.types.image import ImageGenerationParams, ImagesResponse
-from any_llm.types.messages import MessageResponse, MessageStreamEvent
+from any_llm.types.messages import MessageResponse, MessageStreamEvent, ParsedMessage
 from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
 from any_llm.types.rerank import RerankResponse
@@ -539,11 +539,12 @@ def messages(
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
     cache_control: dict[str, Any] | None = None,
+    output_format: type | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> MessageResponse | Iterator[MessageStreamEvent]:
+) -> MessageResponse | ParsedMessage[Any] | Iterator[MessageStreamEvent]:
     """Create a message using the Anthropic Messages API.
 
     Args:
@@ -563,13 +564,17 @@ def messages(
         metadata: Request metadata.
         thinking: Thinking/reasoning configuration.
         cache_control: Cache control configuration for prompt caching.
+        output_format: Structured-output type, mirroring Anthropic's ``messages.parse(output_format=...)``.
+            A Pydantic ``BaseModel`` or dataclass makes the call return Anthropic's ``ParsedMessage``,
+            with the typed object on its ``parsed_output`` property. Not supported with streaming.
         api_key: API key for the provider.
         api_base: Base URL for the provider API.
         client_args: Additional provider-specific arguments for client instantiation.
         **kwargs: Additional provider-specific arguments.
 
     Returns:
-        MessageResponse or an iterator of MessageStreamEvent (if streaming).
+        MessageResponse (or ParsedMessage when `output_format` is given), or an iterator of
+        MessageStreamEvent (if streaming).
 
     """
     if provider is None:
@@ -594,6 +599,7 @@ def messages(
         metadata=metadata,
         thinking=thinking,
         cache_control=cache_control,
+        output_format=output_format,
         **kwargs,
     )
 
@@ -615,11 +621,12 @@ async def amessages(
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
     cache_control: dict[str, Any] | None = None,
+    output_format: type | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
+) -> MessageResponse | ParsedMessage[Any] | AsyncIterator[MessageStreamEvent]:
     """Create a message using the Anthropic Messages API asynchronously.
 
     Args:
@@ -639,13 +646,17 @@ async def amessages(
         metadata: Request metadata.
         thinking: Thinking/reasoning configuration.
         cache_control: Cache control configuration for prompt caching.
+        output_format: Structured-output type, mirroring Anthropic's ``messages.parse(output_format=...)``.
+            A Pydantic ``BaseModel`` or dataclass makes the call return Anthropic's ``ParsedMessage``,
+            with the typed object on its ``parsed_output`` property. Not supported with streaming.
         api_key: API key for the provider.
         api_base: Base URL for the provider API.
         client_args: Additional provider-specific arguments for client instantiation.
         **kwargs: Additional provider-specific arguments.
 
     Returns:
-        MessageResponse or an async iterator of MessageStreamEvent (if streaming).
+        MessageResponse (or ParsedMessage when `output_format` is given), or an async iterator
+        of MessageStreamEvent (if streaming).
 
     """
     if provider is None:
@@ -670,6 +681,7 @@ async def amessages(
         metadata=metadata,
         thinking=thinking,
         cache_control=cache_control,
+        output_format=output_format,
         **kwargs,
     )
 

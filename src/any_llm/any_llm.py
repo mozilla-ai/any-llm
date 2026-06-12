@@ -36,6 +36,7 @@ from any_llm.types.messages import (
     MessagesParams,
     MessageStopEvent,
     MessageStreamEvent,
+    ParsedMessage,
 )
 from any_llm.types.provider import ProviderMetadata
 from any_llm.types.responses import (
@@ -48,6 +49,7 @@ from any_llm.types.responses import (
 from any_llm.utils.aio import async_coro_to_sync_iter, async_iter_to_sync_iter, run_async_in_sync
 from any_llm.utils.exception_handler import handle_exceptions
 from any_llm.utils.structured_output import (
+    build_parsed_message,
     is_structured_output_type,
     parse_json_content,
     parse_responses_output,
@@ -659,7 +661,7 @@ class AnyLLM(ABC):
         *,
         allow_running_loop: bool | None = None,
         **kwargs: Any,
-    ) -> MessageResponse | Iterator[MessageStreamEvent]:
+    ) -> MessageResponse | ParsedMessage[Any] | Iterator[MessageStreamEvent]:
         """Create a message using the Anthropic Messages API synchronously.
 
         See [AnyLLM.amessages][any_llm.any_llm.AnyLLM.amessages]
@@ -667,7 +669,7 @@ class AnyLLM(ABC):
         if allow_running_loop is None:
             allow_running_loop = INSIDE_NOTEBOOK
         response = run_async_in_sync(self.amessages(**kwargs), allow_running_loop=allow_running_loop)
-        if isinstance(response, MessageResponse):
+        if isinstance(response, (MessageResponse, ParsedMessage)):
             return response
         return async_iter_to_sync_iter(response)
 
@@ -689,8 +691,9 @@ class AnyLLM(ABC):
         metadata: dict[str, Any] | None = None,
         thinking: dict[str, Any] | None = None,
         cache_control: dict[str, Any] | None = None,
+        output_format: type | None = None,
         **kwargs: Any,
-    ) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
+    ) -> MessageResponse | ParsedMessage[Any] | AsyncIterator[MessageStreamEvent]:
         """Create a message using the Anthropic Messages API asynchronously.
 
         All providers support this via automatic conversion to/from Chat Completions.
@@ -711,12 +714,24 @@ class AnyLLM(ABC):
             metadata: Request metadata.
             thinking: Thinking/reasoning configuration.
             cache_control: Cache control configuration for prompt caching.
+            output_format: Structured-output type, mirroring Anthropic's
+                ``messages.parse(output_format=...)``. A Pydantic ``BaseModel`` or dataclass
+                makes the call return Anthropic's ``ParsedMessage``, with the typed object on
+                its ``parsed_output`` property. Not supported with ``stream=True``.
             **kwargs: Additional provider-specific arguments.
 
         Returns:
-            MessageResponse or an async iterator of MessageStreamEvent (if streaming).
+            MessageResponse (or ParsedMessage when `output_format` is given), or an async
+            iterator of MessageStreamEvent (if streaming).
+
+        Raises:
+            ValueError: If `output_format` is combined with `stream=True`.
 
         """
+        if is_structured_output_type(output_format) and stream:
+            msg = "stream is not supported for output_format"
+            raise ValueError(msg)
+
         params = MessagesParams(
             model=model,
             messages=messages,
@@ -732,12 +747,20 @@ class AnyLLM(ABC):
             metadata=metadata,
             thinking=thinking,
             cache_control=cache_control,
+            output_format=output_format,
         )
-        return await self._amessages(params, **kwargs)
+        result = await self._amessages(params, **kwargs)
+
+        # The Anthropic provider already returns a ParsedMessage via native messages.parse;
+        # for bridged providers, build the same shape from the response's JSON text.
+        if is_structured_output_type(output_format) and isinstance(result, MessageResponse):
+            return build_parsed_message(result, output_format)
+
+        return result
 
     async def _amessages(
         self, params: MessagesParams, **kwargs: Any
-    ) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
+    ) -> MessageResponse | ParsedMessage[Any] | AsyncIterator[MessageStreamEvent]:
         """Default implementation: converts Messages ↔ Completions format.
 
         Providers with native Messages API support (e.g., Anthropic) override this

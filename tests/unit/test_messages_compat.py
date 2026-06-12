@@ -458,6 +458,34 @@ def test_temperature_and_top_p_passed_through() -> None:
     assert result["top_p"] == 0.9
 
 
+def test_output_format_not_included_when_none() -> None:
+    """Test that response_format is omitted from completion params when output_format is unset."""
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Hi"}],
+        max_tokens=1024,
+    )
+    result = messages_params_to_completion_params(params)
+    assert "response_format" not in result
+
+
+def test_output_format_passed_through_as_response_format() -> None:
+    """Test that output_format is forwarded to the bridge as completion response_format."""
+    from pydantic import BaseModel
+
+    class City(BaseModel):
+        name: str
+
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Hi"}],
+        max_tokens=1024,
+        output_format=City,
+    )
+    result = messages_params_to_completion_params(params)
+    assert result["response_format"] is City
+
+
 def test_budget_to_reasoning_effort_minimal() -> None:
     """Test budget <= 1024 maps to 'minimal'."""
     from any_llm.utils.messages_compat import _budget_to_reasoning_effort

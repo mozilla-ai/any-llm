@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from any_llm.types.responses import ParsedResponse, Response
 from any_llm.utils.structured_output import (
+    build_parsed_message,
     build_responses_text_format,
     get_json_schema,
     is_structured_output_type,
@@ -236,3 +237,58 @@ def test_parse_responses_output_skips_non_message_output() -> None:
     assert isinstance(parsed, ParsedResponse)
     assert isinstance(parsed.output_parsed, PydanticModel)
     assert parsed.output_parsed.name == "Alice"
+
+
+def _make_anthropic_message(content: list[Any]) -> Any:
+    from any_llm.types.messages import MessageResponse, MessageUsage
+
+    return MessageResponse(
+        id="msg-1",
+        type="message",
+        role="assistant",
+        model="test-model",
+        stop_reason="end_turn",
+        content=content,
+        usage=MessageUsage(input_tokens=1, output_tokens=1),
+    )
+
+
+def test_build_parsed_message_parses_text_blocks() -> None:
+    from anthropic.types import TextBlock
+    from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
+
+    message = _make_anthropic_message([TextBlock(type="text", text='{"name": "Alice", "age": 30}')])
+    parsed = build_parsed_message(message, PydanticModel)
+
+    assert isinstance(parsed, ParsedMessage)
+    assert isinstance(parsed.parsed_output, PydanticModel)
+    assert parsed.parsed_output.name == "Alice"
+    block = parsed.content[0]
+    assert isinstance(block, ParsedTextBlock)
+    assert block.parsed_output == parsed.parsed_output
+    assert block.text == '{"name": "Alice", "age": 30}'
+
+
+def test_build_parsed_message_dataclass() -> None:
+    from anthropic.types import TextBlock
+
+    message = _make_anthropic_message([TextBlock(type="text", text='{"name": "Bob", "age": 7}')])
+    parsed = build_parsed_message(message, DataclassModel)
+
+    assert parsed.parsed_output == DataclassModel(name="Bob", age=7)
+
+
+def test_build_parsed_message_passes_non_text_blocks_through() -> None:
+    """Tool-use blocks survive unchanged; empty text blocks get parsed_output=None."""
+    from anthropic.types import TextBlock, ToolUseBlock
+    from anthropic.types.parsed_message import ParsedTextBlock
+
+    tool_block = ToolUseBlock(type="tool_use", id="tu-1", name="do_thing", input={})
+    message = _make_anthropic_message([tool_block, TextBlock(type="text", text="")])
+    parsed = build_parsed_message(message, PydanticModel)
+
+    assert parsed.content[0] == tool_block
+    text_block = parsed.content[1]
+    assert isinstance(text_block, ParsedTextBlock)
+    assert text_block.parsed_output is None
+    assert parsed.parsed_output is None

@@ -12,6 +12,7 @@ from anthropic.types import TextBlock as AnthropicTextBlock
 from anthropic.types import ThinkingBlock as AnthropicThinkingBlock
 from anthropic.types import ToolUseBlock as AnthropicToolUseBlock
 from anthropic.types import Usage as AnthropicUsage
+from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
 from anthropic.types.raw_message_delta_event import Delta as MessageDelta
 from pydantic import BaseModel, ConfigDict
 
@@ -31,6 +32,8 @@ __all__ = [
     "MessageStreamEvent",
     "MessageUsage",
     "MessagesParams",
+    "ParsedMessage",
+    "ParsedTextBlock",
     "StopReason",
     "TextBlock",
     "TextDelta",
@@ -115,3 +118,12 @@ class MessagesParams(BaseModel):
 
     cache_control: dict[str, Any] | None = None
     """Cache control configuration for prompt caching"""
+
+    output_format: type | None = None
+    """Structured-output type, mirroring Anthropic's ``messages.parse(output_format=...)``.
+
+    A Pydantic ``BaseModel`` subclass or a dataclass type. The Anthropic provider passes it
+    to native ``messages.parse`` (which builds ``output_config.format`` from it); other
+    providers route it through the completion bridge. Either way the result is Anthropic's
+    ``ParsedMessage``, with the typed object on its ``parsed_output`` property.
+    """

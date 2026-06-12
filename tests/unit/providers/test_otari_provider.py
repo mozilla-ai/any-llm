@@ -31,6 +31,7 @@ from any_llm.types.messages import (
     MessagesParams,
     MessageStartEvent,
     MessageStopEvent,
+    ParsedMessage,
     TextBlock,
 )
 
@@ -691,6 +692,44 @@ async def test_otari_amessages_delegates_to_native_endpoint_preserving_anthropic
 
 
 @pytest.mark.asyncio
+async def test_otari_amessages_output_format_falls_back_to_bridge() -> None:
+    """With output_format set, otari delegates to the Completions bridge, not /messages."""
+    completion = ChatCompletion.model_validate(
+        {
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "claude-sonnet-4-5",
+            "choices": [
+                {"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": '{"city": "Paris"}'}}
+            ],
+        }
+    )
+
+    from pydantic import BaseModel
+
+    class City(BaseModel):
+        city: str
+
+    client = _mock_otari_client()
+    provider = _build_provider(client)
+    provider._acompletion = AsyncMock(return_value=completion)  # type: ignore[method-assign]
+
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=100,
+        output_format=City,
+    )
+
+    result = await provider._amessages(params)
+
+    assert isinstance(result, MessageResponse)
+    provider._acompletion.assert_called_once()
+    client.message.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_otari_amessages_excludes_none_valued_optional_params() -> None:
     client = _mock_otari_client()
     client.message.return_value = _message_response_payload()
@@ -744,7 +783,7 @@ async def test_otari_amessages_streaming_yields_typed_events_and_skips_unknown()
 
     result = await provider._amessages(params)
 
-    assert not isinstance(result, MessageResponse)
+    assert not isinstance(result, (MessageResponse, ParsedMessage))
     collected = [event async for event in result]
 
     # The unknown "ping" event is skipped; everything else is yielded in order.
