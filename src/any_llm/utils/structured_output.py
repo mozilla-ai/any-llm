@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from typing import TYPE_CHECKING, Any, TypeGuard
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -156,8 +157,6 @@ def build_parsed_message(message: AnthropicMessage, output_format: type | dict[s
     ``output_config`` dict, in which case ``parsed_output`` holds the parsed JSON (a plain
     ``dict``/``list``) and the generics are parametrized as ``Any``.
     """
-    import json
-
     from anthropic.types import TextBlock
     from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
 
