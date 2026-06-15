@@ -224,6 +224,37 @@ async def test_amessages_output_format_uses_native_parse() -> None:
     # output_format is passed to parse as its dedicated kwarg; other params still flow through.
     call_kwargs = mock_client.messages.parse.call_args.kwargs
     assert call_kwargs["output_format"] is City
+
+
+@pytest.mark.asyncio
+async def test_amessages_output_config_dict_passes_through_to_create() -> None:
+    """A raw output_config dict goes to native messages.create(output_config=...), not parse."""
+    output_config = {"format": {"type": "json_schema", "schema": {"type": "object"}}}
+    mock_message = _make_message(content=[TextBlock(type="text", text='{"city_name": "Paris"}')])
+
+    mock_client = Mock()
+    mock_client.messages.create = AsyncMock(return_value=mock_message)
+    mock_client.messages.parse = AsyncMock()
+
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = mock_client
+    provider._convert_native_message_to_response = BaseAnthropicProvider._convert_native_message_to_response
+
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=1024,
+        output_format=output_config,
+    )
+    result = await BaseAnthropicProvider._amessages(provider, params)
+
+    # The raw-dict path returns a MessageResponse (the base layer builds the ParsedMessage).
+    assert isinstance(result, MessageResponse)
+    mock_client.messages.parse.assert_not_called()
+    mock_client.messages.create.assert_called_once()
+    call_kwargs = mock_client.messages.create.call_args.kwargs
+    assert call_kwargs["output_config"] == output_config
+    assert "output_format" not in call_kwargs
     assert call_kwargs["model"] == "claude-3-5-sonnet"
     assert call_kwargs["max_tokens"] == 1024
 

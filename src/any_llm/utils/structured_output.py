@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from typing import TYPE_CHECKING, Any, TypeGuard
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -143,30 +144,40 @@ def parse_responses_output(response: Any, response_format: type) -> ParsedRespon
     return parsed
 
 
-def build_parsed_message(message: AnthropicMessage, output_format: type) -> ParsedMessage[Any]:
+def build_parsed_message(message: AnthropicMessage, output_format: type | dict[str, Any]) -> ParsedMessage[Any]:
     """Build Anthropic's ``ParsedMessage`` from a Messages API response.
 
     Mirrors what ``client.messages.parse`` returns: each text block becomes a
-    ``ParsedTextBlock`` whose ``parsed_output`` holds the typed object, and the message's
+    ``ParsedTextBlock`` whose ``parsed_output`` holds the parsed value, and the message's
     ``parsed_output`` property surfaces the first one. Used for providers without a native
     parse helper so the structured-output result shape matches Anthropic's exactly.
-    Works with both Pydantic BaseModel subclasses and dataclass types.
+
+    ``output_format`` is either a structured-output type (Pydantic ``BaseModel`` subclass or
+    dataclass), in which case ``parsed_output`` holds the typed object, or a raw Anthropic
+    ``output_config`` dict, in which case ``parsed_output`` holds the parsed JSON (a plain
+    ``dict``/``list``) and the generics are parametrized as ``Any``.
     """
     from anthropic.types import TextBlock
     from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
 
+    def _parse(text: str) -> object:
+        if is_structured_output_type(output_format):
+            return parse_json_content(output_format, text)
+        return json.loads(text)
+
     # Parametrize the generics at runtime so pydantic validates parsed_output against the
     # requested type; route through Any since a type held in a variable is not valid as a
-    # static type parameter.
+    # static type parameter, and a raw schema has no Python type to validate against.
     parsed_text_block: Any = ParsedTextBlock
     parsed_message: Any = ParsedMessage
-    text_block_cls = parsed_text_block[output_format]
-    message_cls = parsed_message[output_format]
+    type_param: Any = output_format if is_structured_output_type(output_format) else Any
+    text_block_cls = parsed_text_block[type_param]
+    message_cls = parsed_message[type_param]
 
     content: list[Any] = []
     for block in message.content:
         if isinstance(block, TextBlock):
-            parsed = parse_json_content(output_format, block.text) if block.text else None
+            parsed = _parse(block.text) if block.text else None
             content.append(
                 text_block_cls(type="text", text=block.text, citations=block.citations, parsed_output=parsed)
             )

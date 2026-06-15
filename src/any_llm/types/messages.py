@@ -119,11 +119,14 @@ class MessagesParams(BaseModel):
     cache_control: dict[str, Any] | None = None
     """Cache control configuration for prompt caching"""
 
-    output_format: type | None = None
-    """Structured-output type, mirroring Anthropic's ``messages.parse(output_format=...)``.
+    output_format: type | dict[str, Any] | None = None
+    """Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
 
-    A Pydantic ``BaseModel`` subclass or a dataclass type. The Anthropic provider passes it
-    to native ``messages.parse`` (which builds ``output_config.format`` from it); other
-    providers route it through the completion bridge. Either way the result is Anthropic's
-    ``ParsedMessage``, with the typed object on its ``parsed_output`` property.
+    Either a Pydantic ``BaseModel`` subclass or dataclass **type**, or a raw Anthropic
+    ``output_config`` **dict** (e.g. ``{"format": {"type": "json_schema", "schema": {...}}}``)
+    for non-Pydantic JSON schemas. A type goes to native ``messages.parse`` on Anthropic; a
+    dict is passed through to native ``messages.create(output_config=...)``. Other providers
+    route either form through the completion bridge. The result is Anthropic's ``ParsedMessage``:
+    its ``parsed_output`` holds the typed object for a type, or the parsed JSON (plain
+    ``dict``/``list``) for a raw schema.
     """

@@ -580,3 +580,51 @@ async def test_amessages_output_format_rejects_streaming() -> None:
             output_format=City,
             stream=True,
         )
+
+
+@pytest.mark.asyncio
+async def test_amessages_output_config_dict_returns_parsed_message() -> None:
+    """A raw output_config dict yields a ParsedMessage with plain-JSON parsed_output via the bridge."""
+    output_config = {"format": {"type": "json_schema", "schema": {"type": "object", "title": "City"}}}
+
+    provider = _openai_provider()
+    provider._acompletion = AsyncMock(return_value=_json_completion())
+
+    result = await provider.amessages(
+        model="test-model",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=128,
+        output_format=output_config,
+    )
+
+    assert isinstance(result, ParsedMessage)
+    # No Python type: parsed_output is the JSON-loaded object.
+    assert result.parsed_output == {"city_name": "Paris"}
+    block = result.content[0]
+    assert isinstance(block, ParsedTextBlock)
+    assert block.parsed_output == {"city_name": "Paris"}
+
+    # The output_config schema is bridged as an OpenAI json_schema response_format.
+    completion_params = provider._acompletion.call_args.args[0]
+    assert completion_params.response_format == {
+        "type": "json_schema",
+        "json_schema": {"name": "City", "schema": {"type": "object", "title": "City"}},
+    }
+
+
+@pytest.mark.asyncio
+async def test_amessages_output_config_dict_rejects_streaming() -> None:
+    """A raw output_config dict combined with stream=True also raises ValueError."""
+    output_config = {"format": {"type": "json_schema", "schema": {"type": "object"}}}
+
+    provider = _openai_provider()
+    provider._acompletion = AsyncMock(return_value=_json_completion())
+
+    with pytest.raises(ValueError, match="stream is not supported for output_format"):
+        await provider.amessages(
+            model="test-model",
+            messages=[{"role": "user", "content": "Hi"}],
+            max_tokens=128,
+            output_format=output_config,
+            stream=True,
+        )
