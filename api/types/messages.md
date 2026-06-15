@@ -77,4 +77,4 @@ Normalized parameters for the Anthropic Messages API, used internally to pass st
 | `metadata` | `dict[str, Any] \| None` | Request metadata |
 | `thinking` | `dict[str, Any] \| None` | Thinking/reasoning configuration |
 | `cache_control` | `dict[str, Any] \| None` | Cache control configuration for prompt caching |
-| `output_format` | `type \| None` | Structured-output type, mirroring Anthropic's ``messages.parse(output_format=...)``. A Pydantic ``BaseModel`` subclass or a dataclass type. The Anthropic provider passes it to native ``messages.parse`` (which builds ``output_config.format`` from it); other providers route it through the completion bridge. Either way the result is Anthropic's ``ParsedMessage``, with the typed object on its ``parsed_output`` property. |
+| `output_format` | `type \| dict[str, Any] \| None` |  |

@@ -25,7 +25,7 @@ def messages(
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
     cache_control: dict[str, Any] | None = None,
-    output_format: type | None = None,
+    output_format: type | dict[str, Any] | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
@@ -55,7 +55,7 @@ async def amessages(
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
     cache_control: dict[str, Any] | None = None,
-    output_format: type | None = None,
+    output_format: type | dict[str, Any] | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
@@ -82,7 +82,7 @@ async def amessages(
 | `metadata` | `dict[str, Any] \| None` | None | Request metadata. |
 | `thinking` | `dict[str, Any] \| None` | None | Thinking/reasoning configuration. |
 | `cache_control` | `dict[str, Any] \| None` | None | Cache control configuration for prompt caching. |
-| `output_format` | `type \| None` | None | Structured-output type, mirroring Anthropic's ``messages.parse(output_format=...)``. A Pydantic ``BaseModel`` or dataclass makes the call return Anthropic's ``ParsedMessage``, with the typed object on its ``parsed_output`` property. Not supported with streaming. |
+| `output_format` | `type \| dict[str, Any] \| None` | None | Structured output, mirroring Anthropic's ``messages.parse``/``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output`` holds the parsed JSON). The call returns Anthropic's ``ParsedMessage``. Not supported with streaming. |
 | `api_key` | `str \| None` | None | API key for the provider. |
 | `api_base` | `str \| None` | None | Base URL for the provider API. |
 | `client_args` | `dict[str, Any] \| None` | None | Additional provider-specific arguments for client instantiation. |
