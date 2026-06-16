@@ -7,7 +7,7 @@ from typing import Any, Literal, cast
 
 from openai import AsyncOpenAI
 from openai._streaming import AsyncStream
-from openai._types import NOT_GIVEN, Omit
+from openai._types import Omit
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from openai.types.chat.parsed_chat_completion import ParsedChatCompletion as OpenAIParsedChatCompletion
@@ -279,11 +279,15 @@ class BaseOpenAIProvider(AnyLLM):
             msg = "This provider does not support embeddings."
             raise NotImplementedError(msg)
 
+        # `_convert_embedding_params` already folds `dimensions` (and any other
+        # caller kwargs) into the dict, so spread it straight through — mirroring
+        # `_acompletion`, which names only `model`/`messages` and spreads the
+        # rest. Forwarding `dimensions` explicitly *as well* passed it twice and
+        # raised "got multiple values for keyword argument 'dimensions'".
         embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
         return self._convert_embedding_response(
             await self.client.embeddings.create(
                 model=model,
-                dimensions=kwargs.get("dimensions", NOT_GIVEN),
                 **embedding_kwargs,
             )
         )
