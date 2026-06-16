@@ -48,6 +48,9 @@ def _mock_otari_client() -> MagicMock:
     client.message = AsyncMock()
     client.embedding = AsyncMock()
     client.moderation = AsyncMock()
+    client.image_generation = AsyncMock()
+    client.transcription = AsyncMock()
+    client.speech = AsyncMock()
     client.rerank = AsyncMock()
     client.list_models = AsyncMock()
     client.retrieve_batch = AsyncMock()
@@ -282,36 +285,80 @@ async def test_otari_acompletion_rejects_stream_with_response_format() -> None:
         await provider._acompletion(params)
 
 
-def test_otari_does_not_advertise_image_or_audio_support() -> None:
-    # otari 0.1.0's public async client dropped the OpenAI passthrough that backed
-    # these capabilities; they should report as unsupported.
-    assert OtariProvider.SUPPORTS_IMAGE_GENERATION is False
-    assert OtariProvider.SUPPORTS_AUDIO_TRANSCRIPTION is False
-    assert OtariProvider.SUPPORTS_AUDIO_SPEECH is False
+def test_otari_advertises_image_and_audio_support() -> None:
+    # otari 0.2.0's public async client exposes image generation and audio (speech/
+    # transcription), so the provider wires them through and reports support.
+    assert OtariProvider.SUPPORTS_IMAGE_GENERATION is True
+    assert OtariProvider.SUPPORTS_AUDIO_TRANSCRIPTION is True
+    assert OtariProvider.SUPPORTS_AUDIO_SPEECH is True
 
 
 @pytest.mark.asyncio
-async def test_otari_image_generation_raises_not_implemented() -> None:
-    provider = _build_provider(_mock_otari_client())
+async def test_otari_image_generation_calls_client_and_converts() -> None:
+    mocked_client = _mock_otari_client()
+    mocked_client.image_generation.return_value = {"created": 0, "data": [{"url": "https://img/cat.png"}]}
+    provider = _build_provider(mocked_client)
     params = ImageGenerationParams(model_id="gpt-image", prompt="cat")
-    with pytest.raises(NotImplementedError):
-        await provider._aimage_generation(params, size="1024x1024")
+
+    result = await provider._aimage_generation(params, size="1024x1024")
+
+    mocked_client.image_generation.assert_awaited_once_with(model="gpt-image", prompt="cat", size="1024x1024")
+    assert result.data is not None
+    assert result.data[0].url == "https://img/cat.png"
 
 
 @pytest.mark.asyncio
-async def test_otari_transcription_raises_not_implemented() -> None:
-    provider = _build_provider(_mock_otari_client())
+async def test_otari_transcription_json_format_returns_text() -> None:
+    mocked_client = _mock_otari_client()
+    mocked_client.transcription.return_value = SimpleNamespace(json={"text": "hello world"}, text=None)
+    provider = _build_provider(mocked_client)
     params = AudioTranscriptionParams(model_id="whisper", file=b"audio", language="en")
-    with pytest.raises(NotImplementedError):
-        await provider._atranscription(params)
+
+    result = await provider._atranscription(params)
+
+    mocked_client.transcription.assert_awaited_once_with(model="whisper", file=b"audio", language="en")
+    assert result.text == "hello world"
 
 
 @pytest.mark.asyncio
-async def test_otari_speech_raises_not_implemented() -> None:
-    provider = _build_provider(_mock_otari_client())
+async def test_otari_transcription_text_format_returns_text() -> None:
+    mocked_client = _mock_otari_client()
+    mocked_client.transcription.return_value = SimpleNamespace(json=None, text="plain transcript")
+    provider = _build_provider(mocked_client)
+    params = AudioTranscriptionParams(model_id="whisper", file=b"audio", response_format="text")
+
+    result = await provider._atranscription(params)
+
+    assert result.text == "plain transcript"
+
+
+@pytest.mark.asyncio
+async def test_otari_transcription_reads_file_handle() -> None:
+    import io
+
+    mocked_client = _mock_otari_client()
+    mocked_client.transcription.return_value = SimpleNamespace(json={"text": "hi"}, text=None)
+    provider = _build_provider(mocked_client)
+    # IO handles do not pass AudioTranscriptionParams validation, so build the params
+    # without validation to exercise the file-handle (.read()) branch directly.
+    params = AudioTranscriptionParams.model_construct(model_id="whisper", file=io.BytesIO(b"audio-bytes"))
+
+    await provider._atranscription(params)
+
+    mocked_client.transcription.assert_awaited_once_with(model="whisper", file=b"audio-bytes")
+
+
+@pytest.mark.asyncio
+async def test_otari_speech_returns_bytes() -> None:
+    mocked_client = _mock_otari_client()
+    mocked_client.speech.return_value = b"audio-bytes"
+    provider = _build_provider(mocked_client)
     params = AudioSpeechParams(model_id="tts", input="hello", voice="alloy", response_format="mp3")
-    with pytest.raises(NotImplementedError):
-        await provider._aspeech(params)
+
+    result = await provider._aspeech(params)
+
+    mocked_client.speech.assert_awaited_once_with(model="tts", input="hello", voice="alloy", response_format="mp3")
+    assert result == b"audio-bytes"
 
 
 @pytest.mark.asyncio

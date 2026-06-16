@@ -166,6 +166,7 @@ def test_supports_image_generation_only_on_expected_providers() -> None:
         LLMProvider.OPENAI,
         LLMProvider.AZUREOPENAI,
         LLMProvider.NEOSANTARA,
+        LLMProvider.OTARI,
     }
 
     for provider_enum in expected_supported:
