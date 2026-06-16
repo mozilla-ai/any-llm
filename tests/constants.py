@@ -2,12 +2,15 @@ import os
 
 from any_llm.constants import LLMProvider
 
+# otari is a hosted gateway (api.otari.ai), not a local server. It must stay out of
+# LOCAL_PROVIDERS so the token-bearing integration job (INCLUDE_LOCAL_PROVIDERS=false)
+# actually parametrizes and runs it; the unconfigured case is skipped in
+# tests/integration/conftest.py instead.
 LOCAL_PROVIDERS = [
     LLMProvider.LLAMACPP,
     LLMProvider.OLLAMA,
     LLMProvider.LMSTUDIO,
     LLMProvider.LLAMAFILE,
-    LLMProvider.OTARI,
 ]
 
 # Providers that should never run in CI (only for local development)
