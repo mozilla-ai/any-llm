@@ -95,7 +95,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.NEBIUS: "openai/gpt-oss-120b",
         LLMProvider.OLLAMA: "llama3.2:1b",
         LLMProvider.LLAMAFILE: "N/A",
-        LLMProvider.LMSTUDIO: "google/gemma-3-4b",  # You must have LM Studio running and the server enabled
+        LLMProvider.LMSTUDIO: "qwen/qwen3-1.7b",  # small model keeps the LM Studio cache under the 10GB Actions limit; you must have LM Studio running and the server enabled
         LLMProvider.VLLM: "Qwen/Qwen2.5-0.5B-Instruct",
         LLMProvider.COHERE: "command-a-03-2025",
         LLMProvider.CEREBRAS: "gpt-oss-120b",
