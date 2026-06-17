@@ -416,3 +416,42 @@ async def test_huggingface_aresponses_without_response_format() -> None:
 
     client.responses.parse.assert_not_called()
     assert "text" not in client.responses.create.call_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_huggingface_tool_call_with_null_arguments() -> None:
+    """HF returns arguments=None for no-arg tool calls; coerce to a string so parsing succeeds.
+
+    Regression for the agent-loop failure where ChatCompletionMessage validation rejected
+    a tool call whose function.arguments was null.
+    """
+    messages = [{"role": "user", "content": "What is the date?"}]
+
+    with mock_huggingface_provider() as mock_huggingface:
+        mock_huggingface.return_value.chat_completion.return_value = {
+            "id": "hf-response-id",
+            "created": 0,
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call-1",
+                                "type": "function",
+                                "function": {"name": "get_current_date", "arguments": None},
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
+        provider = HuggingfaceProvider(api_key="test-api-key")
+        result = await provider._acompletion(CompletionParams(model_id="model-id", messages=messages))
+
+    tool_calls = result.choices[0].message.tool_calls
+    assert tool_calls is not None
+    assert tool_calls[0].function.arguments == "{}"
