@@ -418,7 +418,9 @@ class GoogleProvider(AnyLLM):
     ) -> Sequence[Batch]:
         """List batch jobs using the Google GenAI Batch API."""
         config_kwargs: dict[str, Any] = {}
-        if limit:
+        if limit is not None:
+            if limit <= 0:
+                return []
             config_kwargs["page_size"] = limit
         if after:
             config_kwargs["page_token"] = after
@@ -428,6 +430,10 @@ class GoogleProvider(AnyLLM):
         batches: list[Batch] = []
         async for job in pager:
             batches.append(_convert_google_batch_job_to_openai_batch(job))
+            # page_size only caps results per page; the pager auto-follows every page,
+            # so enforce limit as a total cap to stop once we have enough.
+            if limit is not None and len(batches) >= limit:
+                break
         return batches
 
     @override

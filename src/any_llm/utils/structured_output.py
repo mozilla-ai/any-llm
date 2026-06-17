@@ -4,7 +4,7 @@ import dataclasses
 import json
 from typing import TYPE_CHECKING, Any, TypeGuard
 
-from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter
 
 from any_llm.logging import logger
 
@@ -110,38 +110,50 @@ def build_responses_text_format(response_format: type) -> dict[str, Any]:
 def parse_responses_output(response: Any, response_format: type) -> ParsedResponse[Any] | None:
     """Normalize a raw Responses result into a ``ParsedResponse`` with ``output_parsed``.
 
-    Takes an OpenAI ``Response`` (what every provider yields on the structured-output
-    path) and returns an OpenAI ``ParsedResponse`` whose ``output_parsed`` holds the
-    typed object. Works with both Pydantic BaseModel subclasses and dataclass types.
+    Builds the ``ParsedResponse`` with the OpenAI SDK's tolerant ``construct_type_unchecked``
+    (the same primitive ``responses.parse()`` uses for Pydantic models) rather than strictly
+    re-validating the whole response. Strict validation is brittle: providers can return output
+    items that a raw ``Response`` accepts but the stricter ``ParsedResponse`` output union
+    rejects (e.g. Fireworks echoes the request input back as a ``role="user"`` / ``input_text``
+    message). The structured JSON is parsed out of each assistant ``output_text`` into
+    ``response_format``; all other content and items are preserved untouched. Works with both
+    Pydantic ``BaseModel`` subclasses and dataclass types.
 
-    Returns ``None`` (after logging a warning) if ``response`` cannot be normalized into
-    a ``ParsedResponse`` (e.g. an OpenResponses ``ResponseResource`` whose schema diverges
-    from OpenAI's), so callers can fall back to the original object.
+    Returns ``None`` (after logging a warning) if ``response`` is not an OpenAI ``Response``
+    (e.g. an OpenResponses ``ResponseResource`` whose schema diverges), so callers can fall
+    back to the original object.
     """
-    from openai.types.responses import ParsedResponseOutputMessage, ParsedResponseOutputText
+    # construct_type_unchecked is a private OpenAI SDK helper (the same one responses.parse()
+    # uses) with no public equivalent: it does lenient type coercion, which is exactly what we
+    # need here. Pydantic's model_validate cannot replace it because strict validation is what
+    # breaks on non-standardized provider output. If the SDK relocates it, this import breaks
+    # loudly in CI; the repo already depends on other openai.lib internals (see the HF provider).
+    from openai._models import construct_type_unchecked
 
     from any_llm.types.responses import ParsedResponse, Response
 
-    try:
-        # by_alias=True preserves alias-only fields (e.g. ResponseFormatTextJSONSchemaConfig.schema,
-        # whose Python attribute is schema_) so the round-trip re-validates cleanly.
-        parsed: ParsedResponse[Any] = ParsedResponse.model_validate(response.model_dump(by_alias=True, warnings=False))
-    except ValidationError:
-        if isinstance(response, Response):  # pragma: no cover - a valid Response always validates as ParsedResponse
-            raise
+    if not isinstance(response, Response):
         logger.warning(
             "Could not normalize %s into a ParsedResponse; returning it without output_parsed.",
             type(response).__name__,
         )
         return None
 
-    for output in parsed.output:
-        if not isinstance(output, ParsedResponseOutputMessage):
+    # by_alias=True preserves alias-only fields (e.g. ResponseFormatTextJSONSchemaConfig.schema,
+    # whose Python attribute is schema_); warnings=False silences serialization notices for
+    # provider output items that diverge from the strict response schema.
+    dumped = response.model_dump(by_alias=True, warnings=False)
+
+    # Parse the structured JSON out of each assistant ``output_text`` into the requested type.
+    # Non-text content (refusals, echoed ``input_text``) and non-message items are left as-is.
+    for item in dumped.get("output") or []:
+        if not isinstance(item, dict) or item.get("type") != "message":
             continue
-        for content in output.content:
-            if isinstance(content, ParsedResponseOutputText) and content.text and content.parsed is None:
-                content.parsed = parse_json_content(response_format, content.text)
-    return parsed
+        for content in item.get("content") or []:
+            if isinstance(content, dict) and content.get("type") == "output_text" and content.get("text"):
+                content["parsed"] = parse_json_content(response_format, content["text"])
+
+    return construct_type_unchecked(type_=ParsedResponse[Any], value=dumped)
 
 
 def build_parsed_message(message: AnthropicMessage, output_format: type | dict[str, Any]) -> ParsedMessage[Any]:
