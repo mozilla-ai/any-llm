@@ -168,12 +168,9 @@ class OtariProvider(BaseOpenAIProvider):
     SUPPORTS_MODERATION = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
-    # otari 0.1.0's public async client dropped the embedded OpenAI passthrough and
-    # does not expose image generation or audio (speech/transcription). Tracked for
-    # upstream re-enablement; see the otari issue linked in the any-llm PR.
-    SUPPORTS_IMAGE_GENERATION = False
-    SUPPORTS_AUDIO_TRANSCRIPTION = False
-    SUPPORTS_AUDIO_SPEECH = False
+    SUPPORTS_IMAGE_GENERATION = True
+    SUPPORTS_AUDIO_TRANSCRIPTION = True
+    SUPPORTS_AUDIO_SPEECH = True
     SUPPORTS_RERANK = True
 
     otari_client: Any
@@ -392,27 +389,48 @@ class OtariProvider(BaseOpenAIProvider):
 
     @override
     async def _aimage_generation(self, params: ImageGenerationParams, **kwargs: Any) -> ImagesResponse:
-        msg = (
-            "otari 0.1.0 does not expose image generation in its public async client. "
-            "Re-enable once otari adds it upstream."
+        from any_llm.types.image import ImagesResponse
+
+        api_kwargs = params.to_api_kwargs()
+        api_kwargs.update(kwargs)
+        prompt = api_kwargs.pop("prompt")
+        result = await self.otari_client.image_generation(
+            model=params.model_id,
+            prompt=prompt,
+            **api_kwargs,
         )
-        raise NotImplementedError(msg)
+        return ImagesResponse.model_validate(_as_plain_dict(result))
 
     @override
     async def _atranscription(self, params: AudioTranscriptionParams, **kwargs: Any) -> Transcription:
-        msg = (
-            "otari 0.1.0 does not expose audio transcription in its public async client. "
-            "Re-enable once otari adds it upstream."
+        from any_llm.types.audio import Transcription
+
+        api_kwargs = params.to_api_kwargs()
+        api_kwargs.update(kwargs)
+        file_bytes = params.file if isinstance(params.file, bytes) else params.file.read()
+        result = await self.otari_client.transcription(
+            model=params.model_id,
+            file=file_bytes,
+            **api_kwargs,
         )
-        raise NotImplementedError(msg)
+        # otari wraps the response: ``json`` for JSON formats, ``text`` for text/srt/vtt.
+        if result.json is not None:
+            return Transcription.model_validate(result.json)
+        return Transcription(text=result.text)
 
     @override
     async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
-        msg = (
-            "otari 0.1.0 does not expose audio speech in its public async client. "
-            "Re-enable once otari adds it upstream."
+        api_kwargs = params.to_api_kwargs()
+        api_kwargs.update(kwargs)
+        return cast(
+            "bytes",
+            await self.otari_client.speech(
+                model=params.model_id,
+                input=params.input,
+                voice=params.voice,
+                **api_kwargs,
+            ),
         )
-        raise NotImplementedError(msg)
 
     @override
     async def _amoderation(
