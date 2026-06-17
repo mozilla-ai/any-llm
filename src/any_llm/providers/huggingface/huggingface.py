@@ -49,21 +49,19 @@ if TYPE_CHECKING:
     from any_llm.types.responses import ParsedResponse, Response, ResponsesParams
 
 
-def _normalize_tool_calls(tool_calls: Any) -> Any:
-    """Coerce HF tool-call ``function.arguments`` to a string.
+def _normalize_tool_calls(tool_calls: list[dict[str, Any]] | None) -> None:
+    """Coerce HF tool-call ``function.arguments`` to a string, in place.
 
     HuggingFace returns ``arguments: null`` for tool calls with no arguments (e.g. a
     parameterless function), but OpenAI's ``ChatCompletionMessage`` requires a string,
     so the raw payload fails validation. Default the missing arguments to ``"{}"``.
     """
-    if not isinstance(tool_calls, list):
-        return tool_calls
+    if not tool_calls:
+        return
     for tool_call in tool_calls:
-        if isinstance(tool_call, dict):
-            function = tool_call.get("function")
-            if isinstance(function, dict) and function.get("arguments") is None:
-                function["arguments"] = "{}"
-    return tool_calls
+        function = tool_call.get("function")
+        if isinstance(function, dict) and function.get("arguments") is None:
+            function["arguments"] = "{}"
 
 
 class HuggingfaceProvider(AnyLLM):
@@ -191,10 +189,11 @@ class HuggingfaceProvider(AnyLLM):
                 if "content" in msg["reasoning"]:
                     reasoning_obj = Reasoning(content=msg["reasoning"]["content"])
 
+            _normalize_tool_calls(msg.get("tool_calls"))
             message = ChatCompletionMessage(
                 role="assistant",
                 content=msg.get("content"),
-                tool_calls=_normalize_tool_calls(msg.get("tool_calls")),
+                tool_calls=msg.get("tool_calls"),
                 reasoning=reasoning_obj,
             )
             choices_out.append(Choice(index=i, finish_reason=ch.get("finish_reason"), message=message))

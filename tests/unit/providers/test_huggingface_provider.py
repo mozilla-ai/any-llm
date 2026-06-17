@@ -4,6 +4,9 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from openai.types.chat.chat_completion_message_function_tool_call import (
+    ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
+)
 
 from any_llm.providers.huggingface.huggingface import HuggingfaceProvider
 from any_llm.providers.huggingface.utils import _create_openai_chunk_from_huggingface_chunk
@@ -452,6 +455,9 @@ async def test_huggingface_tool_call_with_null_arguments() -> None:
         provider = HuggingfaceProvider(api_key="test-api-key")
         result = await provider._acompletion(CompletionParams(model_id="model-id", messages=messages))
 
+    assert isinstance(result, ChatCompletion)
     tool_calls = result.choices[0].message.tool_calls
     assert tool_calls is not None
-    assert tool_calls[0].function.arguments == "{}"
+    tool_call = tool_calls[0]
+    assert isinstance(tool_call, OpenAIChatCompletionMessageFunctionToolCall)
+    assert tool_call.function.arguments == "{}"
