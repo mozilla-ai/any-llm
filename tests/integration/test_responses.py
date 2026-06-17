@@ -12,6 +12,16 @@ from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.types.responses import ParsedResponse, Response
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
+# HuggingFace routes the Responses API through a community OpenResponses Space that
+# returns a server-side 400 for strict json_schema requests, so structured output is
+# unreliable there regardless of the model.
+STRUCTURED_RESPONSES_UNSUPPORTED_PROVIDERS = [LLMProvider.HUGGINGFACE]
+
+# Fireworks' Responses API echoes the input back instead of returning a conformant
+# structured response on the create()+text-format path used for non-Pydantic schemas
+# (e.g. dataclasses); the native parse() path used for Pydantic models works.
+NONPYDANTIC_RESPONSES_UNSUPPORTED_PROVIDERS = [*STRUCTURED_RESPONSES_UNSUPPORTED_PROVIDERS, LLMProvider.FIREWORKS]
+
 
 @pytest.mark.asyncio
 async def test_responses_async(
@@ -56,6 +66,8 @@ async def test_responses_format_basemodel(
         llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_RESPONSES:
             pytest.skip(f"{provider.value} does not support responses, skipping")
+        if provider in STRUCTURED_RESPONSES_UNSUPPORTED_PROVIDERS:
+            pytest.skip(f"{provider.value} does not reliably support structured responses, skipping")
         model_id = provider_model_map[provider]
         result = await llm.aresponses(
             model_id,
@@ -94,6 +106,8 @@ async def test_responses_format_dataclass(
         llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_RESPONSES:
             pytest.skip(f"{provider.value} does not support responses, skipping")
+        if provider in NONPYDANTIC_RESPONSES_UNSUPPORTED_PROVIDERS:
+            pytest.skip(f"{provider.value} does not reliably support non-Pydantic structured responses, skipping")
         model_id = provider_model_map[provider]
         result = await llm.aresponses(
             model_id,

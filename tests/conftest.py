@@ -57,7 +57,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.COHERE: "command-a-reasoning-08-2025",
         LLMProvider.DEEPSEEK: "deepseek-reasoner",
-        LLMProvider.MOONSHOT: "kimi-k2-thinking",
+        LLMProvider.MOONSHOT: "kimi-thinking-preview",
         LLMProvider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         LLMProvider.HUGGINGFACE: "Qwen/Qwen2.5-72B-Instruct",
         LLMProvider.NEOSANTARA: "deepseek-v4-flash",
@@ -125,6 +125,7 @@ def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict
         LLMProvider.SAMBANOVA: "gemma-4-31B-it",
         LLMProvider.NEBIUS: "Qwen/Qwen2.5-VL-72B-Instruct",
         LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
+        LLMProvider.COHERE: "command-a-vision-07-2025",  # command-a-03-2025 rejects image content
         LLMProvider.OLLAMA: "llava-phi3",  # Fast vision model compatible with OpenAI format
         LLMProvider.FIREWORKS: "accounts/fireworks/models/kimi-k2p5",
         LLMProvider.BEDROCK: "anthropic.claude-3-haiku-20240307-v1:0",  # Claude 3 Haiku with vision support

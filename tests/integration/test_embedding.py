@@ -39,6 +39,7 @@ async def test_embedding_providers_async(
     assert len(result.data) > 0
     for entry in result.data:
         assert all(isinstance(v, float) for v in entry.embedding)
-    if provider not in (LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.LMSTUDIO):
+    # Cohere's embed-v4.0 returns the embeddings but reports usage as 0 tokens.
+    if provider not in (LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.LMSTUDIO, LLMProvider.COHERE):
         assert result.usage.prompt_tokens > 0
         assert result.usage.total_tokens > 0
