@@ -42,12 +42,12 @@ _OTARI_SKIPPED_TESTS: dict[str, str] = {
     "test_responses_async": "no Responses-API upstream on the test account (otari-ai#907)",
     "test_responses_format_basemodel": "no Responses-API upstream on the test account (otari-ai#907)",
     "test_responses_format_dataclass": "no Responses-API upstream on the test account (otari-ai#907)",
-    "test_create_and_retrieve_batch": "batch needs provider_name + gateway batch support",
-    "test_list_batches": "batch needs provider_name + gateway batch support",
-    "test_retrieve_batch_results_not_complete": "batch needs provider_name + gateway batch support",
-    "test_retrieve_batch_results_with_api_function": "batch needs provider_name + gateway batch support",
-    "test_completion_with_image": "gateway returns 502 on multimodal image content",
-    "test_completion_with_pdf": "gateway returns 502 on multimodal pdf content",
+    "test_create_and_retrieve_batch": "batch endpoints return 404 on the hosted platform (otari-ai#1117)",
+    "test_list_batches": "batch endpoints return 404 on the hosted platform (otari-ai#1117)",
+    "test_retrieve_batch_results_not_complete": "batch endpoints return 404 on the hosted platform (otari-ai#1117)",
+    "test_retrieve_batch_results_with_api_function": "batch endpoints return 404 on the hosted platform (otari-ai#1117)",
+    "test_completion_with_image": "gateway returns 502 on multimodal image content (otari#183)",
+    "test_completion_with_pdf": "gateway returns 502 on multimodal pdf content (otari#183)",
 }
 
 
