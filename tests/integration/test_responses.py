@@ -12,15 +12,11 @@ from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.types.responses import ParsedResponse, Response
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
-# HuggingFace routes the Responses API through a community OpenResponses Space that
-# returns a server-side 400 for strict json_schema requests, so structured output is
-# unreliable there regardless of the model.
-STRUCTURED_RESPONSES_UNSUPPORTED_PROVIDERS = [LLMProvider.HUGGINGFACE]
-
-# Fireworks' Responses API echoes the input back instead of returning a conformant
-# structured response on the create()+text-format path used for non-Pydantic schemas
-# (e.g. dataclasses); the native parse() path used for Pydantic models works.
-NONPYDANTIC_RESPONSES_UNSUPPORTED_PROVIDERS = [*STRUCTURED_RESPONSES_UNSUPPORTED_PROVIDERS, LLMProvider.FIREWORKS]
+# HuggingFace routes the Responses API through a community OpenResponses Space
+# (evalstate-openresponses.hf.space) that returns a server-side HTTP 400 for json_schema
+# (structured-output) requests, while plain responses succeed. The failure is upstream of
+# any-llm (the Space never runs the model), so it cannot be parsed around.
+HF_STRUCTURED_RESPONSES_BROKEN = [LLMProvider.HUGGINGFACE]
 
 
 @pytest.mark.asyncio
@@ -66,8 +62,11 @@ async def test_responses_format_basemodel(
         llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_RESPONSES:
             pytest.skip(f"{provider.value} does not support responses, skipping")
-        if provider in STRUCTURED_RESPONSES_UNSUPPORTED_PROVIDERS:
-            pytest.skip(f"{provider.value} does not reliably support structured responses, skipping")
+        if provider in HF_STRUCTURED_RESPONSES_BROKEN:
+            pytest.skip(
+                f"{provider.value} OpenResponses Space returns HTTP 400 for structured-output "
+                "(json_schema) requests, skipping"
+            )
         model_id = provider_model_map[provider]
         result = await llm.aresponses(
             model_id,
@@ -106,8 +105,11 @@ async def test_responses_format_dataclass(
         llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_RESPONSES:
             pytest.skip(f"{provider.value} does not support responses, skipping")
-        if provider in NONPYDANTIC_RESPONSES_UNSUPPORTED_PROVIDERS:
-            pytest.skip(f"{provider.value} does not reliably support non-Pydantic structured responses, skipping")
+        if provider in HF_STRUCTURED_RESPONSES_BROKEN:
+            pytest.skip(
+                f"{provider.value} OpenResponses Space returns HTTP 400 for structured-output "
+                "(json_schema) requests, skipping"
+            )
         model_id = provider_model_map[provider]
         result = await llm.aresponses(
             model_id,
