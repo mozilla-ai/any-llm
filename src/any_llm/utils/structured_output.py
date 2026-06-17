@@ -123,6 +123,11 @@ def parse_responses_output(response: Any, response_format: type) -> ParsedRespon
     (e.g. an OpenResponses ``ResponseResource`` whose schema diverges), so callers can fall
     back to the original object.
     """
+    # construct_type_unchecked is a private OpenAI SDK helper (the same one responses.parse()
+    # uses) with no public equivalent: it does lenient type coercion, which is exactly what we
+    # need here. Pydantic's model_validate cannot replace it because strict validation is what
+    # breaks on non-standardized provider output. If the SDK relocates it, this import breaks
+    # loudly in CI; the repo already depends on other openai.lib internals (see the HF provider).
     from openai._models import construct_type_unchecked
 
     from any_llm.types.responses import ParsedResponse, Response
