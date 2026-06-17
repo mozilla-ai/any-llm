@@ -434,6 +434,20 @@ def test_convert_cohere_embedding_response_no_meta() -> None:
     assert len(result.data) == 1
 
 
+def test_convert_cohere_embedding_response_uses_billed_units_when_tokens_absent() -> None:
+    """embed-v4.0 reports usage under meta.billed_units; meta.tokens is null, so fall back to it."""
+    vectors = [[0.1, 0.2, 0.3]]
+    mock_response = _mock_embed_by_type_response(vectors)
+    mock_response.meta.tokens = None
+    mock_response.meta.billed_units = Mock()
+    mock_response.meta.billed_units.input_tokens = 7
+
+    result = _convert_cohere_embedding_response("embed-v4.0", mock_response)
+
+    assert result.usage.prompt_tokens == 7
+    assert result.usage.total_tokens == 7
+
+
 def test_convert_cohere_embedding_response_empty_vectors() -> None:
     mock_response = _mock_embed_by_type_response(vectors=[])
 

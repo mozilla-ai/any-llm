@@ -241,6 +241,51 @@ def test_parse_responses_output_skips_non_message_output() -> None:
     assert parsed.output_parsed.name == "Alice"
 
 
+def test_parse_responses_output_tolerates_echoed_input_items() -> None:
+    """Providers like Fireworks echo the request input back as a user/input_text output item.
+
+    A raw Response accepts it but strict ParsedResponse validation does not, so parsing must
+    skip it and still extract output_parsed from the real assistant output_text.
+    """
+    from openai._models import construct_type_unchecked
+
+    echoed_input = {
+        "id": "msg-0",
+        "type": "message",
+        "role": "user",
+        "status": "completed",
+        "content": [{"type": "input_text", "text": "What is the capital of France?"}],
+    }
+    assistant = ResponseOutputMessage(
+        id="msg-1",
+        type="message",
+        role="assistant",
+        status="completed",
+        content=[ResponseOutputText(type="output_text", text='{"name": "Bob", "age": 7}', annotations=[])],
+    )
+    # Build a Response that carries the non-conformant echoed-input item without validating it.
+    response = construct_type_unchecked(
+        type_=Response,
+        value={
+            "id": "resp-1",
+            "created_at": 0,
+            "model": "test-model",
+            "object": "response",
+            "output": [echoed_input, assistant.model_dump()],
+            "parallel_tool_calls": False,
+            "tool_choice": "auto",
+            "tools": [],
+        },
+    )
+
+    parsed = parse_responses_output(response, DataclassModel)
+    assert isinstance(parsed, ParsedResponse)
+    assert isinstance(parsed.output_parsed, DataclassModel)
+    assert parsed.output_parsed.age == 7
+    # The echoed input item is preserved, not dropped.
+    assert len(parsed.output) == 2
+
+
 def _make_anthropic_message(content: list[Any]) -> Any:
     from any_llm.types.messages import MessageResponse, MessageUsage
 

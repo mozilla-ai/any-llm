@@ -289,8 +289,14 @@ def _convert_cohere_embedding_response(model: str, response: Any) -> CreateEmbed
 
     prompt_tokens = 0
     total_tokens = 0
-    if response.meta and response.meta.tokens:
-        prompt_tokens = int(response.meta.tokens.input_tokens or 0)
+    if response.meta:
+        # Cohere reports embed usage under meta.billed_units.input_tokens; meta.tokens is
+        # typically null for embeddings, so fall back to billed_units to avoid reporting 0.
+        # Use explicit None checks so an API-reported 0 is preserved rather than treated as absent.
+        if response.meta.tokens is not None and response.meta.tokens.input_tokens is not None:
+            prompt_tokens = int(response.meta.tokens.input_tokens)
+        elif response.meta.billed_units is not None and response.meta.billed_units.input_tokens is not None:
+            prompt_tokens = int(response.meta.billed_units.input_tokens)
         total_tokens = prompt_tokens
 
     return CreateEmbeddingResponse(
