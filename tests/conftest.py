@@ -57,7 +57,9 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.COHERE: "command-a-reasoning-08-2025",
         LLMProvider.DEEPSEEK: "deepseek-reasoner",
-        LLMProvider.MOONSHOT: "kimi-thinking-preview",
+        # kimi-k2-thinking and kimi-thinking-preview are discontinued; kimi-k2.6 is the
+        # current reasoning-capable model (thinking mode, native multimodal).
+        LLMProvider.MOONSHOT: "kimi-k2.6",
         LLMProvider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         LLMProvider.HUGGINGFACE: "Qwen/Qwen2.5-72B-Instruct",
         LLMProvider.NEOSANTARA: "deepseek-v4-flash",
