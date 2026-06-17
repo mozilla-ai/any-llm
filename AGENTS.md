@@ -43,11 +43,22 @@ This repo uses `uv` for local dev (Python 3.11+). For the full, up-to-date comma
 - Do not use class-based test grouping (`class TestFoo:`). All tests should be standalone functions.
 - Do not add decorative section-separator comments (e.g., `# -----------` banners). Well-named test functions and natural file ordering are sufficient.
 - Place imports at the top of test files unless the import is for an optional dependency that may not be installed (e.g., provider-specific SDKs like `mistralai`, `cohere`). In that case, inline imports inside the test function are acceptable to avoid breaking the entire file.
+- Integration tests run on `main` post-merge, and on a PR only via the `run-integration-tests` label (auto-removed after each run); they are not a merge gate, so failures accumulate. A red suite is usually a backlog of unrelated causes, not one regression: check a test's history (`gh run view <id> --log`) before assuming a recent break, then root-cause each as an any-llm bug (fix + test), a deprecated/wrong test model (update `tests/conftest.py`, cite docs), missing CI infra (skip, naming it), or a provider outage (a whole provider failing at once, e.g. 429s, is transient).
+- The dataclass/dict structured-output path (`parse_responses_output`) is separate from the Pydantic `responses.parse()` path; a bug can hit one and not the other, so test both.
 
 ## Commit & Pull Request Guidelines
 
 - Commits follow the project’s history: Conventional Commits such as `feat(scope): ...`, `fix: ...`, `chore(deps): ...`, `tests: ...`.
 - PRs should follow [.github/pull_request_template.md](.github/pull_request_template.md): clear description, linked issues (e.g., `Fixes #123`), completed checklist, and AI-usage disclosure when applicable.
+
+## Definition of done
+
+Before requesting review, every PR must clear:
+
+1. **`uv run pre-commit run --all-files`** clean (ruff lint + format, `mypy` strict). Don't drop `# type: ignore` based on local mypy; CI `run-linter` is authoritative.
+2. **`uv run pytest tests/unit`** green, with tests for every branch in changed code (~85% patch coverage; Codecov gates it).
+3. **Integration tests for any provider/feature you touched**, run with real keys locally or via the `run-integration-tests` label on the PR. Don't claim a provider works without running it.
+4. **Every skip and fix is root-caused**, with a concrete reason (HTTP status, deprecated model, missing CI infra), never "flaky" or "does not reliably support".
 
 ## Mypy and Provider SDKs
 
