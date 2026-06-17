@@ -15,6 +15,11 @@ from any_llm.exceptions import BatchNotCompleteError, MissingApiKeyError
 from any_llm.types.batch import Batch
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
+# Providers whose batch API is not OpenAI-file-style. These tests upload a local
+# JSONL file and create a batch from it; Bedrock instead requires S3 URIs plus a
+# role_arn/output_s3_uri/model_id, so the generic file-based flow can never apply.
+FILE_BATCH_UNSUPPORTED_PROVIDERS = [LLMProvider.BEDROCK]
+
 
 @pytest.mark.asyncio
 async def test_create_and_retrieve_batch(
@@ -27,6 +32,8 @@ async def test_create_and_retrieve_batch(
         llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_BATCH:
             pytest.skip(f"{provider.value} does not support batch completions, skipping")
+        if provider in FILE_BATCH_UNSUPPORTED_PROVIDERS:
+            pytest.skip(f"{provider.value} does not support file-based batch creation, skipping")
 
         model_id = provider_model_map[provider]
 
@@ -221,6 +228,8 @@ async def test_retrieve_batch_results_not_complete(
         llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_BATCH:
             pytest.skip(f"{provider.value} does not support batch completions, skipping")
+        if provider in FILE_BATCH_UNSUPPORTED_PROVIDERS:
+            pytest.skip(f"{provider.value} does not support file-based batch creation, skipping")
 
         model_id = provider_model_map[provider]
 
@@ -281,6 +290,8 @@ async def test_retrieve_batch_results_with_api_function(
         llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_BATCH:
             pytest.skip(f"{provider.value} does not support batch completions, skipping")
+        if provider in FILE_BATCH_UNSUPPORTED_PROVIDERS:
+            pytest.skip(f"{provider.value} does not support file-based batch creation, skipping")
 
         model_id = provider_model_map[provider]
 

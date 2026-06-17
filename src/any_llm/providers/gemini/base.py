@@ -428,6 +428,10 @@ class GoogleProvider(AnyLLM):
         batches: list[Batch] = []
         async for job in pager:
             batches.append(_convert_google_batch_job_to_openai_batch(job))
+            # page_size only caps results per page; the pager auto-follows every page,
+            # so enforce limit as a total cap to stop once we have enough.
+            if limit and len(batches) >= limit:
+                break
         return batches
 
     @override
