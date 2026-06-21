@@ -45,6 +45,23 @@ def _has_json_schema_refs(schema: Any) -> bool:
     return False
 
 
+def _strip_additional_properties(schema: Any) -> Any:
+    """Return a schema copy without JSON Schema's ``additionalProperties`` keyword.
+
+    Gemini's ``response_schema`` uses ``google.genai.types.Schema``, not the full
+    JSON Schema dialect accepted by OpenAI structured outputs. OpenAI strict
+    schemas commonly include ``additionalProperties: false``; the Google SDK
+    serializes that as ``additional_properties`` and Gemini rejects the request.
+    """
+    if isinstance(schema, dict):
+        return {
+            key: _strip_additional_properties(value) for key, value in schema.items() if key != "additionalProperties"
+        }
+    if isinstance(schema, list):
+        return [_strip_additional_properties(value) for value in schema]
+    return schema
+
+
 def _convert_tool_spec(tools: list[dict[str, Any] | Any]) -> list[types.Tool]:
     converted_tools = []
     function_declarations = []
