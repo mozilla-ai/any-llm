@@ -27,6 +27,7 @@ from any_llm.types.completion import (
 from any_llm.types.model import Model
 
 _INLINE_SIZE_LIMIT = 20 * 1024 * 1024
+JSONSchemaValue = dict[str, "JSONSchemaValue"] | list["JSONSchemaValue"] | str | int | float | bool | None
 
 
 def _has_json_schema_refs(schema: Any) -> bool:
@@ -45,7 +46,7 @@ def _has_json_schema_refs(schema: Any) -> bool:
     return False
 
 
-def _strip_additional_properties(schema: Any) -> Any:
+def _strip_additional_properties(schema: JSONSchemaValue, *, _in_properties_map: bool = False) -> JSONSchemaValue:
     """Return a schema copy without JSON Schema's ``additionalProperties`` keyword.
 
     Gemini's ``response_schema`` uses ``google.genai.types.Schema``, not the full
@@ -54,9 +55,12 @@ def _strip_additional_properties(schema: Any) -> Any:
     serializes that as ``additional_properties`` and Gemini rejects the request.
     """
     if isinstance(schema, dict):
-        return {
-            key: _strip_additional_properties(value) for key, value in schema.items() if key != "additionalProperties"
-        }
+        cleaned: dict[str, JSONSchemaValue] = {}
+        for key, value in schema.items():
+            if key == "additionalProperties" and not _in_properties_map:
+                continue
+            cleaned[key] = _strip_additional_properties(value, _in_properties_map=key == "properties")
+        return cleaned
     if isinstance(schema, list):
         return [_strip_additional_properties(value) for value in schema]
     return schema
