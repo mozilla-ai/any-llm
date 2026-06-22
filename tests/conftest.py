@@ -52,6 +52,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.LLAMAFILE: "N/A",
         LLMProvider.LLAMACPP: "N/A",
         LLMProvider.VLLM: "N/A",
+        LLMProvider.CASCADIA: "N/A",
         LLMProvider.LMSTUDIO: "qwen3-0.6b",
         LLMProvider.AZUREOPENAI: "gpt-4.1-nano",
         LLMProvider.CEREBRAS: "gpt-oss-120b",
@@ -97,6 +98,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.LLAMAFILE: "N/A",
         LLMProvider.LMSTUDIO: "qwen/qwen3-1.7b",  # small model keeps the LM Studio cache under the 10GB Actions limit; you must have LM Studio running and the server enabled
         LLMProvider.VLLM: "Qwen/Qwen2.5-0.5B-Instruct",
+        LLMProvider.CASCADIA: "Qwen/Qwen2.5-0.5B-Instruct",
         LLMProvider.COHERE: "command-a-03-2025",
         LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.HUGGINGFACE: "Qwen/Qwen2.5-72B-Instruct",
@@ -180,6 +182,7 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.GROQ: {"timeout": 10},
         LLMProvider.LLAMACPP: {"api_base": "http://127.0.0.1:8090/v1"},
         LLMProvider.VLLM: {"api_base": "http://127.0.0.1:8080/v1"},
+        LLMProvider.CASCADIA: {"api_base": "http://localhost:9090/v1"},
         LLMProvider.MISTRAL: {"timeout_ms": 100000},
         LLMProvider.NEOSANTARA: {"timeout": 10},
         LLMProvider.NEBIUS: {"api_base": "https://api.studio.nebius.com/v1/"},

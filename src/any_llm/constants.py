@@ -21,6 +21,7 @@ class LLMProvider(StrEnum):
     AZURE = "azure"
     AZUREANTHROPIC = "azureanthropic"
     AZUREOPENAI = "azureopenai"
+    CASCADIA = "cascadia"
     CEREBRAS = "cerebras"
     COHERE = "cohere"
     DATABRICKS = "databricks"
