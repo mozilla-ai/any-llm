@@ -34,10 +34,14 @@ class RequestyProvider(BaseOpenAIProvider):
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Requesty API, including reasoning directive."""
+        # Extract ``reasoning`` before delegating so the base converter does not
+        # forward it as a top-level kwarg (unsupported by the OpenAI SDK's
+        # ``create()``). Requesty expects it nested under ``extra_body`` instead.
+        reasoning = kwargs.pop("reasoning", None)
         converted_params = BaseOpenAIProvider._convert_completion_params(params, **kwargs)
 
         reasoning_directive = build_reasoning_directive(
-            reasoning=kwargs.get("reasoning"),
+            reasoning=reasoning,
             reasoning_effort=params.reasoning_effort,
         )
 

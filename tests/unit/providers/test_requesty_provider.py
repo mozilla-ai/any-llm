@@ -162,6 +162,9 @@ async def test_reasoning_with_custom_reasoning_object() -> None:
         assert "extra_body" in call_args.kwargs
         assert call_args.kwargs["extra_body"]["reasoning"]["effort"] == "high"
         assert call_args.kwargs["extra_body"]["reasoning"]["max_tokens"] == 1000
+        # Regression guard: the top-level ``reasoning`` kwarg must not leak to the
+        # API call; it should only appear nested under ``extra_body``.
+        assert "reasoning" not in call_args.kwargs
 
 
 @pytest.mark.asyncio

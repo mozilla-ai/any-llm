@@ -28,17 +28,14 @@ def build_reasoning_directive(
     Returns:
         Dict for request body "reasoning" key, or None to omit
     """
-    # Priority 1: Direct reasoning object for advanced users
     if reasoning is not None:
         return _normalize_reasoning_obj(reasoning)
 
-    # Priority 2: Standard reasoning_effort parameter
     if reasoning_effort and reasoning_effort not in ("auto", "none"):
         level = str(reasoning_effort).lower()
         if level in {"low", "medium", "high"}:
             return {"effort": level}
 
-    # Default: No reasoning (including for "auto")
     return None
 
 
