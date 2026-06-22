@@ -33,6 +33,13 @@ def test_api_key_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert provider._verify_and_set_api_key(None) == "env-key"
 
 
+def test_explicit_api_key_takes_precedence_over_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    # An explicit key must win over CASCADIA_API_KEY in the environment.
+    monkeypatch.setenv("CASCADIA_API_KEY", "env-key")
+    provider = CascadiaProvider(api_key="explicit-key")
+    assert provider._verify_and_set_api_key("explicit-key") == "explicit-key"
+
+
 def test_api_base_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CASCADIA_API_BASE", "http://fleet.internal:9090/v1")
     provider = CascadiaProvider()

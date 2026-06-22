@@ -182,7 +182,7 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.GROQ: {"timeout": 10},
         LLMProvider.LLAMACPP: {"api_base": "http://127.0.0.1:8090/v1"},
         LLMProvider.VLLM: {"api_base": "http://127.0.0.1:8080/v1"},
-        LLMProvider.CASCADIA: {"api_base": "http://127.0.0.1:9090/v1"},
+        LLMProvider.CASCADIA: {"api_base": "http://localhost:9090/v1"},
         LLMProvider.MISTRAL: {"timeout_ms": 100000},
         LLMProvider.NEOSANTARA: {"timeout": 10},
         LLMProvider.NEBIUS: {"api_base": "https://api.studio.nebius.com/v1/"},

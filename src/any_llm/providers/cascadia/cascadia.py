@@ -35,7 +35,7 @@ class CascadiaProvider(BaseOpenAIProvider):
     SUPPORTS_RESPONSES = False
 
     @override
-    def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
+    def _verify_and_set_api_key(self, api_key: str | None = None) -> str:
         # Honor an explicit key or CASCADIA_API_KEY from the environment. Cascadia
         # coordinators on trusted LANs may run keyless, so fall back to a placeholder
         # instead of hard-failing when no key is set (vLLM convention).
