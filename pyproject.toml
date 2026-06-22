@@ -21,7 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 
 all = [
-  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,vertexaianthropic,cohere,cerebras,fireworks,groq,bedrock,azure,azureanthropic,azureopenai,watsonx,together,sambanova,ollama,moonshot,neosantara,nebius,xai,databricks,deepseek,inception,openai,otari,openrouter,portkey,qiniu,lmstudio,llama,voyage,perplexity,platform,llamafile,llamacpp,sagemaker,github,zai,minimax,mzai,vllm,dashscope,deepinfra]"
+  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,vertexaianthropic,cohere,cerebras,fireworks,groq,bedrock,azure,azureanthropic,azureopenai,watsonx,together,sambanova,ollama,moonshot,neosantara,nebius,xai,databricks,deepseek,inception,openai,otari,openrouter,portkey,qiniu,requesty,lmstudio,llama,voyage,perplexity,platform,llamafile,llamacpp,sagemaker,github,zai,minimax,mzai,vllm,dashscope,deepinfra]"
 ]
 
 platform = [
@@ -128,6 +128,7 @@ openai = []
 openrouter = []
 portkey = []
 qiniu = []
+requesty = []
 sambanova = []
 minimax = []
 mzai = []
