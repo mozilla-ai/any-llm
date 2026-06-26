@@ -53,6 +53,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.LLAMACPP: "N/A",
         LLMProvider.VLLM: "N/A",
         LLMProvider.CASCADIA: "N/A",
+        LLMProvider.ATLASCLOUD: "deepseek-ai/deepseek-v4-flash",
         LLMProvider.LMSTUDIO: "qwen3-0.6b",
         LLMProvider.AZUREOPENAI: "gpt-4.1-nano",
         LLMProvider.CEREBRAS: "gpt-oss-120b",
@@ -99,6 +100,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.LMSTUDIO: "qwen/qwen3-1.7b",  # small model keeps the LM Studio cache under the 10GB Actions limit; you must have LM Studio running and the server enabled
         LLMProvider.VLLM: "Qwen/Qwen2.5-0.5B-Instruct",
         LLMProvider.CASCADIA: "Qwen/Qwen2.5-0.5B-Instruct",
+        LLMProvider.ATLASCLOUD: "deepseek-v3",
         LLMProvider.COHERE: "command-a-03-2025",
         LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.HUGGINGFACE: "Qwen/Qwen2.5-72B-Instruct",
