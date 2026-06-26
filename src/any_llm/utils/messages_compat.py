@@ -10,12 +10,8 @@ from any_llm.types.messages import (
     ContentBlockStartEvent,
     ContentBlockStopEvent,
     InputJSONDelta,
-    MessageDelta,
-    MessageDeltaEvent,
-    MessageDeltaUsage,
     MessageResponse,
     MessageStartEvent,
-    MessageStopEvent,
     MessageUsage,
     StopReason,
     TextBlock,
@@ -316,6 +312,8 @@ class StreamingState:
         self.model = "unknown"
         self.input_tokens = 0
         self.output_tokens = 0
+        self.cache_read_input_tokens = 0
+        self.stop_reason: StopReason | None = None
         self.tool_call_id: str | None = None
         self.tool_call_name: str | None = None
 
@@ -323,27 +321,13 @@ class StreamingState:
 def chat_completion_chunk_to_message_stream_events(
     chunk: ChatCompletionChunk,
     state: StreamingState,
-) -> list[
-    MessageStartEvent
-    | MessageDeltaEvent
-    | MessageStopEvent
-    | ContentBlockStartEvent
-    | ContentBlockDeltaEvent
-    | ContentBlockStopEvent
-]:
+) -> list[MessageStartEvent | ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent]:
     """Convert a ChatCompletionChunk to a list of MessageStreamEvents.
 
     This is stateful: it tracks the current content block index and type to emit
     the correct lifecycle events (start/delta/stop).
     """
-    events: list[
-        MessageStartEvent
-        | MessageDeltaEvent
-        | MessageStopEvent
-        | ContentBlockStartEvent
-        | ContentBlockDeltaEvent
-        | ContentBlockStopEvent
-    ] = []
+    events: list[MessageStartEvent | ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent] = []
     state.model = chunk.model
 
     if chunk.usage:
@@ -351,6 +335,9 @@ def chat_completion_chunk_to_message_stream_events(
             state.input_tokens = chunk.usage.prompt_tokens
         if chunk.usage.completion_tokens:
             state.output_tokens = chunk.usage.completion_tokens
+        prompt_details = chunk.usage.prompt_tokens_details
+        if prompt_details and prompt_details.cached_tokens:
+            state.cache_read_input_tokens = prompt_details.cached_tokens
 
     if not state.started:
         state.started = True
@@ -444,29 +431,14 @@ def chat_completion_chunk_to_message_stream_events(
 
     if choice.finish_reason:
         _close_current_block(state, events)
-        stop_reason = _finish_reason_to_stop_reason(choice.finish_reason)
-        events.append(
-            MessageDeltaEvent(
-                type="message_delta",
-                delta=MessageDelta(stop_reason=stop_reason),
-                usage=MessageDeltaUsage(output_tokens=state.output_tokens, input_tokens=state.input_tokens),
-            )
-        )
-        events.append(MessageStopEvent(type="message_stop"))
+        state.stop_reason = _finish_reason_to_stop_reason(choice.finish_reason)
 
     return events
 
 
 def _close_current_block(
     state: StreamingState,
-    events: list[
-        MessageStartEvent
-        | MessageDeltaEvent
-        | MessageStopEvent
-        | ContentBlockStartEvent
-        | ContentBlockDeltaEvent
-        | ContentBlockStopEvent
-    ],
+    events: list[MessageStartEvent | ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent],
 ) -> None:
     """Emit a content_block_stop event for the current block if one is open."""
     if state.current_block_type is not None:
