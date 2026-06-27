@@ -396,6 +396,70 @@ async def test_default_amessages_streaming() -> None:
     assert "message_stop" in types
 
 
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_usage_from_trailing_chunk() -> None:
+    """Usage (incl. cache) from a trailing usage-only chunk after finish_reason is reported in message_delta."""
+    from any_llm.types.completion import (
+        ChatCompletionChunk,
+        ChoiceDelta,
+        ChunkChoice,
+        CompletionUsage,
+        PromptTokensDetails,
+    )
+    from any_llm.types.messages import MessageDeltaEvent, MessagesParams
+
+    async def mock_stream() -> Any:
+        yield ChatCompletionChunk(
+            id="chunk-1",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hello"), finish_reason=None)],
+        )
+        yield ChatCompletionChunk(
+            id="chunk-2",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(), finish_reason="stop")],
+        )
+        yield ChatCompletionChunk(
+            id="chunk-3",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[],
+            usage=CompletionUsage(
+                prompt_tokens=100,
+                completion_tokens=50,
+                total_tokens=150,
+                prompt_tokens_details=PromptTokensDetails(cached_tokens=80),
+            ),
+        )
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    from any_llm.any_llm import AnyLLM
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage))
+
+    events = [event async for event in result]
+    delta = next(e for e in events if isinstance(e, MessageDeltaEvent))
+    assert delta.usage.input_tokens == 100
+    assert delta.usage.output_tokens == 50
+    assert delta.usage.cache_read_input_tokens == 80
+    assert delta.delta.stop_reason == "end_turn"
+    assert events[-1].type == "message_stop"
+
+
 def test_supports_messages_flag() -> None:
     """Test that SUPPORTS_MESSAGES defaults to True."""
     from any_llm.any_llm import AnyLLM
