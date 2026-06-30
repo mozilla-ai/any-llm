@@ -89,7 +89,7 @@ together = [
 ]
 
 ollama = [
-  "ollama>=0.5.1"
+  "ollama>=0.6.0"
 ]
 
 voyage = [
