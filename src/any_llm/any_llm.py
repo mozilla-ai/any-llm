@@ -785,16 +785,11 @@ class AnyLLM(ABC):
 
         async def convert_stream() -> AsyncIterator[MessageStreamEvent]:
             state = StreamingState()
-            emitted_stop = False
             async for chunk in result:
-                events = chat_completion_chunk_to_message_stream_events(chunk, state)
-                for event in events:
-                    if isinstance(event, MessageStopEvent):
-                        emitted_stop = True
+                for event in chat_completion_chunk_to_message_stream_events(chunk, state):
                     yield event
-            # Some providers don't send a final chunk with finish_reason,
-            # so ensure the stream always ends with message_stop.
-            if state.started and not emitted_stop:
+            # Emit the closing events after the full stream is consumed so trailing-chunk usage is included.
+            if state.started:
                 if state.current_block_type is not None:
                     yield ContentBlockStopEvent(
                         type="content_block_stop",
@@ -802,10 +797,11 @@ class AnyLLM(ABC):
                     )
                 yield MessageDeltaEvent(
                     type="message_delta",
-                    delta=MessageDelta(stop_reason="end_turn"),
+                    delta=MessageDelta(stop_reason=state.stop_reason or "end_turn"),
                     usage=MessageDeltaUsage(
                         output_tokens=state.output_tokens,
                         input_tokens=state.input_tokens,
+                        cache_read_input_tokens=state.cache_read_input_tokens or None,
                     ),
                 )
                 yield MessageStopEvent(type="message_stop")
