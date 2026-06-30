@@ -57,6 +57,45 @@ def _is_tool_call(message: dict[str, Any]) -> bool:
     return message["role"] == "assistant" and message.get("tool_calls") is not None
 
 
+def _extract_anthropic_thinking_signature(message: dict[str, Any]) -> str | None:
+    """Extract the encrypted thinking signature stored on a message's extra_content, if any."""
+    extra_content = message.get("extra_content")
+    if isinstance(extra_content, dict) and isinstance(anthropic_extra := extra_content.get("anthropic"), dict):
+        signature = anthropic_extra.get("signature")
+        if isinstance(signature, str):
+            return signature
+    return None
+
+
+def _extract_reasoning_text(message: dict[str, Any]) -> str:
+    """Extract the plain-text reasoning content from a message, regardless of its shape.
+
+    ``reasoning`` may be a plain string (the OpenAI-wire-compatible serialized form) or a
+    ``{"content": str}`` dict, depending on how the caller constructed the message.
+    """
+    reasoning = message.get("reasoning")
+    if isinstance(reasoning, str):
+        return reasoning
+    if isinstance(reasoning, dict) and isinstance(content := reasoning.get("content"), str):
+        return content
+    return ""
+
+
+def _build_anthropic_thinking_block(message: dict[str, Any]) -> dict[str, Any] | None:
+    """Reconstruct an Anthropic ``thinking`` content block for replay across turns.
+
+    When extended thinking is enabled, Anthropic requires the ``thinking`` block (including
+    its encrypted ``signature``) to be passed back unmodified on subsequent turns, e.g.
+    alongside tool results. Without it, the model loses its original reasoning trace, which
+    can lead to degraded or repeated reasoning. See
+    https://docs.claude.com/en/docs/build-with-claude/extended-thinking#preserving-thinking-blocks
+    """
+    signature = _extract_anthropic_thinking_signature(message)
+    if signature is None:
+        return None
+    return {"type": "thinking", "thinking": _extract_reasoning_text(message), "signature": signature}
+
+
 def _convert_content_for_anthropic(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Convert content blocks from OpenAI format to Anthropic format.
     - Parse the "content" field block by block
@@ -122,9 +161,11 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
             # See https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview#tool-use-examples
             if _is_tool_call(message):
                 # Convert ALL tool calls from the assistant message
-                tool_use_blocks = []
+                content_blocks: list[dict[str, Any]] = []
+                if thinking_block := _build_anthropic_thinking_block(message):
+                    content_blocks.append(thinking_block)
                 for tool_call in message["tool_calls"]:
-                    tool_use_blocks.append(
+                    content_blocks.append(
                         {
                             "type": "tool_use",
                             "id": tool_call["id"],
@@ -134,7 +175,7 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
                     )
                 message = {
                     "role": "assistant",
-                    "content": tool_use_blocks,
+                    "content": content_blocks,
                 }
             elif message["role"] == "tool":
                 # Use tool_call_id from the message itself
@@ -156,6 +197,18 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
                 message = {
                     "role": "user",
                     "content": [tool_result],
+                }
+            elif message["role"] == "assistant" and (thinking_block := _build_anthropic_thinking_block(message)):
+                existing_content = message.get("content", "")
+                if isinstance(existing_content, str):
+                    content_blocks = [thinking_block]
+                    if existing_content:
+                        content_blocks.append({"type": "text", "text": existing_content})
+                else:
+                    content_blocks = [thinking_block, *existing_content]
+                message = {
+                    "role": "assistant",
+                    "content": content_blocks,
                 }
 
             if "content" in message and isinstance(message["content"], list):
@@ -212,6 +265,11 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
             }
         elif chunk.delta.type == "thinking_delta":
             delta = {"reasoning": {"content": chunk.delta.thinking}}
+        elif chunk.delta.type == "signature_delta":
+            # The encrypted signature of the thinking block. Must be preserved unmodified
+            # and passed back to Anthropic on subsequent turns (e.g. alongside tool results)
+            # to maintain reasoning continuity. See https://docs.claude.com/en/docs/build-with-claude/extended-thinking
+            delta = {"extra_content": {"anthropic": {"signature": chunk.delta.signature}}}
 
     elif isinstance(chunk, ContentBlockStopEvent):
         if hasattr(chunk, "content_block") and chunk.content_block.type == "tool_use":
@@ -254,6 +312,7 @@ def _convert_response(response: Message) -> ChatCompletion:
     content_parts: list[str] = []
     tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
     reasoning_content: str | None = None
+    thinking_signature: str | None = None
     for content_block in response.content:
         if content_block.type == "text":
             content_parts.append(content_block.text)
@@ -273,6 +332,11 @@ def _convert_response(response: Message) -> ChatCompletion:
                 reasoning_content = content_block.thinking
             else:
                 reasoning_content += content_block.thinking
+            # The encrypted signature must be preserved and replayed unmodified on
+            # subsequent turns (e.g. alongside tool results) to maintain reasoning
+            # continuity. See https://docs.claude.com/en/docs/build-with-claude/extended-thinking
+            if content_block.signature:
+                thinking_signature = content_block.signature
         else:
             msg = f"Unsupported content block type: {content_block.type}"
             raise ValueError(msg)
@@ -282,6 +346,7 @@ def _convert_response(response: Message) -> ChatCompletion:
         content="".join(content_parts),
         reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
         tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls or None),
+        extra_content={"anthropic": {"signature": thinking_signature}} if thinking_signature else None,
     )
 
     cache_read = response.usage.cache_read_input_tokens or 0

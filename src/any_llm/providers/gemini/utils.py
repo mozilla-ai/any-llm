@@ -405,6 +405,13 @@ def _create_openai_chunk_from_google_chunk(
                 for key, value in args.items():
                     args_dict[key] = value
 
+            # Include thought_signature if present (OpenAI compatibility format), mirroring
+            # the non-streaming conversion in _convert_response_to_response_dict.
+            extra_content = None
+            thought_signature = getattr(part, "thought_signature", None)
+            if thought_signature is not None and isinstance(thought_signature, bytes):
+                extra_content = {"google": {"thought_signature": base64.b64encode(thought_signature).decode("utf-8")}}
+
             tool_calls_list.append(
                 ChoiceDeltaToolCall(
                     index=len(tool_calls_list),
@@ -414,6 +421,7 @@ def _create_openai_chunk_from_google_chunk(
                         name=function_call.name,
                         arguments=json.dumps(args_dict),
                     ),
+                    extra_content=extra_content,
                 )
             )
         elif part.text:
