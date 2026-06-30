@@ -1,5 +1,6 @@
 import base64
 from contextlib import contextmanager
+from copy import deepcopy
 from typing import Any, get_args
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -325,6 +326,65 @@ async def test_completion_with_dict_json_schema_response_format() -> None:
 
         assert generation_config.response_mime_type == "application/json"
         assert generation_config.response_schema == expected_schema
+
+
+@pytest.mark.asyncio
+async def test_completion_with_dict_json_schema_strips_additional_properties() -> None:
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Hello"}]
+    response_format: dict[str, Any] = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "TestOutput",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "metadata": {
+                        "type": "object",
+                        "properties": {
+                            "additionalProperties": {"type": "string"},
+                            "value": {"type": "integer"},
+                        },
+                        "required": ["additionalProperties", "value"],
+                        "additionalProperties": False,
+                    },
+                },
+                "required": ["name", "metadata"],
+                "additionalProperties": False,
+            },
+        },
+    }
+    original_response_format = deepcopy(response_format)
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key=api_key)
+        await provider._acompletion(
+            CompletionParams(model_id=model, messages=messages, response_format=response_format)
+        )
+        assert response_format == original_response_format
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+
+        assert generation_config.response_mime_type == "application/json"
+        assert generation_config.response_schema == {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "metadata": {
+                    "type": "object",
+                    "properties": {
+                        "additionalProperties": {"type": "string"},
+                        "value": {"type": "integer"},
+                    },
+                    "required": ["additionalProperties", "value"],
+                },
+            },
+            "required": ["name", "metadata"],
+        }
 
 
 @pytest.mark.asyncio
