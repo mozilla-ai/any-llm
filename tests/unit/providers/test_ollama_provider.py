@@ -129,9 +129,19 @@ async def test_streaming_completion_passes_tools_top_level() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("reasoning_effort", ["auto", "none"])
-async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
-    """Test that reasoning_effort 'auto' and 'none' are filtered from Ollama API calls."""
+@pytest.mark.parametrize(
+    ("reasoning_effort", "expected_think"),
+    [
+        ("minimal", "low"),
+        ("low", "low"),
+        ("medium", "medium"),
+        ("high", "high"),
+        ("xhigh", "high"),
+        ("max", "high"),
+    ],
+)
+async def test_reasoning_effort_maps_to_think_level(reasoning_effort: str, expected_think: str) -> None:
+    """Test that reasoning_effort is mapped to Ollama's leveled `think` parameter."""
     with patch.object(OllamaProvider, "_init_client"):
         provider = OllamaProvider(api_key=None)
         provider.client = Mock()
@@ -140,11 +150,88 @@ async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
         with patch.object(OllamaProvider, "_convert_completion_response", return_value=Mock()):
             await provider._acompletion(
                 CompletionParams(
-                    model_id="llama3.1",
+                    model_id="qwen3",
                     messages=[{"role": "user", "content": "Hello"}],
                     reasoning_effort=reasoning_effort,  # type: ignore[arg-type]
                 ),
             )
 
             call_kwargs = provider.client.chat.call_args[1]
+            assert call_kwargs["think"] == expected_think
             assert "reasoning_effort" not in call_kwargs.get("options", {})
+            assert "think" not in call_kwargs.get("options", {})
+
+
+@pytest.mark.asyncio
+async def test_reasoning_effort_none_disables_think() -> None:
+    """Test that reasoning_effort 'none' explicitly disables thinking."""
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=Mock())
+
+        with patch.object(OllamaProvider, "_convert_completion_response", return_value=Mock()):
+            await provider._acompletion(
+                CompletionParams(
+                    model_id="qwen3",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    reasoning_effort="none",
+                ),
+            )
+
+            call_kwargs = provider.client.chat.call_args[1]
+            assert call_kwargs["think"] is False
+            assert "reasoning_effort" not in call_kwargs.get("options", {})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reasoning_effort", ["auto", None])
+async def test_reasoning_effort_auto_leaves_think_unset(reasoning_effort: str | None) -> None:
+    """Test that 'auto'/None leave `think` unset so Ollama uses its per-model default."""
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=Mock())
+
+        with patch.object(OllamaProvider, "_convert_completion_response", return_value=Mock()):
+            await provider._acompletion(
+                CompletionParams(
+                    model_id="qwen3",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    reasoning_effort=reasoning_effort,  # type: ignore[arg-type]
+                ),
+            )
+
+            call_kwargs = provider.client.chat.call_args[1]
+            assert call_kwargs["think"] is None
+            assert "reasoning_effort" not in call_kwargs.get("options", {})
+
+
+@pytest.mark.asyncio
+async def test_streaming_completion_passes_think_level_top_level() -> None:
+    """Test that the leveled `think` is passed as a top-level kwarg to client.chat(), not in options."""
+
+    async def empty_async_iter() -> AsyncIterator[None]:
+        return
+        yield
+
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=empty_async_iter())
+
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="qwen3",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort="medium",
+                stream=True,
+            ),
+        )
+        async for _ in result:  # type: ignore[union-attr]
+            pass
+
+        call_kwargs = provider.client.chat.call_args[1]
+        assert call_kwargs["think"] == "medium"
+        assert "think" not in call_kwargs.get("options", {})
+        assert "reasoning_effort" not in call_kwargs.get("options", {})
