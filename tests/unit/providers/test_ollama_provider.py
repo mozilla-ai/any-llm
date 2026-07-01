@@ -129,6 +129,69 @@ async def test_streaming_completion_passes_tools_top_level() -> None:
 
 
 @pytest.mark.asyncio
+async def test_streaming_assigns_distinct_tool_call_indices() -> None:
+    """Ollama streams each tool call in its own chunk and the chunk converter
+    stamps every tool-call delta with index=0. When a model emits several tool
+    calls, a consumer that accumulates streaming deltas by index concatenates
+    the arguments of distinct calls into one invalid JSON string. The provider
+    must reassign a stream-global, monotonically increasing index so each tool
+    call stays in its own slot."""
+
+    def _make_chunk(name: str, arguments: dict[str, str]) -> Mock:
+        func = Mock()
+        func.name = name
+        func.arguments = arguments
+        tool_call = Mock()
+        tool_call.function = func
+
+        message = Mock(spec=OllamaMessage)
+        message.content = None
+        message.role = "assistant"
+        message.thinking = None
+        message.tool_calls = [tool_call]
+
+        chunk = Mock(spec=OllamaChatResponse)
+        chunk.message = message
+        chunk.created_at = None
+        chunk.model = "llama3.1"
+        chunk.done_reason = None
+        chunk.prompt_eval_count = None
+        chunk.eval_count = None
+        return chunk
+
+    chunks = [
+        _make_chunk("find", {"query": "diode connected nmos"}),
+        _make_chunk("find", {"query": "5t nmos ota"}),
+        _make_chunk("find", {"query": "source follower"}),
+    ]
+
+    async def chunk_iter() -> AsyncIterator[Mock]:
+        for chunk in chunks:
+            yield chunk
+
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=chunk_iter())
+
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="llama3.1",
+                messages=[{"role": "user", "content": "find three fixtures"}],
+                stream=True,
+            ),
+        )
+
+        indices = []
+        async for chunk in result:  # type: ignore[union-attr]
+            for choice in chunk.choices:
+                for tool_call in choice.delta.tool_calls or []:
+                    indices.append(tool_call.index)
+
+    assert indices == [0, 1, 2], f"expected distinct per-call indices, got {indices}"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("reasoning_effort", "expected_think"),
     [
