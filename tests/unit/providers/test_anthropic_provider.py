@@ -1050,6 +1050,27 @@ def test_non_streaming_response_without_thinking_has_no_extra_content() -> None:
     assert result.choices[0].message.extra_content is None
 
 
+def test_non_streaming_response_empty_thinking_signature_has_no_extra_content() -> None:
+    """An empty (falsy) signature, e.g. display='omitted' before the signature streams in, should not be stored."""
+    from anthropic.types import Message, ThinkingBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason="end_turn",
+        content=[ThinkingBlock(type="thinking", thinking="", signature="")],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].message.extra_content is None
+
+
 def test_convert_messages_replays_thinking_block_with_tool_call() -> None:
     """Anthropic requires the unmodified thinking block (with signature) to be replayed
     alongside the tool_use block when continuing a turn that used extended thinking."""
@@ -1117,6 +1138,52 @@ def test_convert_messages_replays_thinking_block_with_text() -> None:
     ]
 
 
+def test_convert_messages_replays_thinking_block_with_list_content() -> None:
+    """An assistant message whose content is already a list of blocks (not a plain string) should
+    have the thinking block prepended to the existing blocks, not replace them."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Describe this image."},
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "It's a cat."}],
+            "reasoning": "Looking at the image.",
+            "extra_content": {"anthropic": {"signature": "sig-list"}},
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assistant_message = converted[1]
+    assert assistant_message["content"] == [
+        {"type": "thinking", "thinking": "Looking at the image.", "signature": "sig-list"},
+        {"type": "text", "text": "It's a cat."},
+    ]
+
+
+def test_extract_anthropic_thinking_signature_ignores_non_string_signature() -> None:
+    """A malformed signature (non-string) should be treated as absent, not crash."""
+    from any_llm.providers.anthropic.utils import _extract_anthropic_thinking_signature
+
+    message = {"extra_content": {"anthropic": {"signature": 12345}}}
+
+    assert _extract_anthropic_thinking_signature(message) is None
+
+
+def test_build_anthropic_thinking_block_defaults_to_empty_thinking_text() -> None:
+    """When a signature is present but reasoning is missing or malformed, thinking text defaults to ''."""
+    from any_llm.providers.anthropic.utils import _build_anthropic_thinking_block
+
+    message = {"extra_content": {"anthropic": {"signature": "sig-no-reasoning"}}}
+
+    assert _build_anthropic_thinking_block(message) == {
+        "type": "thinking",
+        "thinking": "",
+        "signature": "sig-no-reasoning",
+    }
+
+
 def test_convert_messages_without_thinking_signature_unchanged() -> None:
     """Without a signature, assistant messages should be forwarded unchanged (no thinking block)."""
     from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
@@ -1148,6 +1215,54 @@ def test_convert_messages_ignores_unrelated_extra_content() -> None:
     _, converted = _convert_messages_for_anthropic(messages)
 
     assert converted[1] == {"role": "assistant", "content": "Hello there!"}
+
+
+def test_convert_messages_replays_thinking_block_with_none_content() -> None:
+    """A reasoning-only assistant turn (content=None, no tool_calls) must not crash on replay.
+
+    Regression test: message.get("content") can be explicitly None rather than a string or
+    list, e.g. for a turn that only produced reasoning and no visible text or tool call.
+    """
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Just think about it, don't answer."},
+        {
+            "role": "assistant",
+            "content": None,
+            "reasoning": "Thinking without responding.",
+            "extra_content": {"anthropic": {"signature": "sig-none-content"}},
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assistant_message = converted[1]
+    assert assistant_message["content"] == [
+        {"type": "thinking", "thinking": "Thinking without responding.", "signature": "sig-none-content"},
+    ]
+
+
+def test_convert_messages_replays_thinking_block_with_empty_string_content() -> None:
+    """An empty string content (as opposed to None) should behave the same: only the thinking block is kept."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Just think about it, don't answer."},
+        {
+            "role": "assistant",
+            "content": "",
+            "reasoning": "Thinking without responding.",
+            "extra_content": {"anthropic": {"signature": "sig-empty-content"}},
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assistant_message = converted[1]
+    assert assistant_message["content"] == [
+        {"type": "thinking", "thinking": "Thinking without responding.", "signature": "sig-empty-content"},
+    ]
 
 
 def test_convert_tool_spec_none_parameters() -> None:

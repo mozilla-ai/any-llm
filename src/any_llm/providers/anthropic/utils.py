@@ -199,13 +199,15 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
                     "content": [tool_result],
                 }
             elif message["role"] == "assistant" and (thinking_block := _build_anthropic_thinking_block(message)):
-                existing_content = message.get("content", "")
+                # existing_content may be None (a reasoning-only turn with no text/tool_calls),
+                # a plain string, or a list of content blocks.
+                existing_content = message.get("content")
+                content_blocks = [thinking_block]
                 if isinstance(existing_content, str):
-                    content_blocks = [thinking_block]
                     if existing_content:
                         content_blocks.append({"type": "text", "text": existing_content})
-                else:
-                    content_blocks = [thinking_block, *existing_content]
+                elif isinstance(existing_content, list):
+                    content_blocks.extend(existing_content)
                 message = {
                     "role": "assistant",
                     "content": content_blocks,
