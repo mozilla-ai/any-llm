@@ -341,8 +341,8 @@ def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[dict[str, Any
             "description": tool["description"],
             "input_schema": {
                 "type": "object",
-                "properties": tool["parameters"].get("properties") or {},
-                "required": tool["parameters"].get("required", []),
+                "properties": params.get("properties") or {},
+                "required": params.get("required", []),
             },
         }
         anthropic_tools.append(anthropic_tool)
@@ -396,9 +396,6 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
     result_kwargs: dict[str, Any] = kwargs.copy()
 
     if params.response_format:
-        if params.stream:
-            msg = "stream and response_format"
-            raise UnsupportedParameterError(msg, provider_name)
         result_kwargs["output_config"] = _convert_response_format(params.response_format, provider_name)
     if params.max_tokens is None:
         logger.warning(f"max_tokens is required for Anthropic, setting to {DEFAULT_MAX_TOKENS}")
