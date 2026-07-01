@@ -124,9 +124,6 @@ class GoogleProvider(AnyLLM):
         if params.parallel_tool_calls is not None:
             error_message = "parallel_tool_calls"
             raise UnsupportedParameterError(error_message, provider_name)
-        if params.stream and params.response_format is not None:
-            error_message = "stream and response_format"
-            raise UnsupportedParameterError(error_message, provider_name)
 
         if params.frequency_penalty is not None:
             kwargs["frequency_penalty"] = params.frequency_penalty

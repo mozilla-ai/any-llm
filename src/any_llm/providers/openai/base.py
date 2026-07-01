@@ -82,7 +82,9 @@ class BaseOpenAIProvider(AnyLLM):
         Plain dataclasses are converted to JSON schema dicts since the
         OpenAI SDK's ``.parse()`` only supports Pydantic BaseModel types.
         """
-        if is_structured_output_type(params.response_format) and not issubclass(params.response_format, BaseModel):
+        if is_structured_output_type(params.response_format) and (
+            params.stream or not issubclass(params.response_format, BaseModel)
+        ):
             params.response_format = {
                 "type": "json_schema",
                 "json_schema": {
@@ -202,10 +204,7 @@ class BaseOpenAIProvider(AnyLLM):
         response_format = completion_kwargs.get("response_format")
         use_parse = is_structured_output_type(response_format)
 
-        if response_format:
-            if params.stream:
-                msg = "stream is not supported for response_format"
-                raise ValueError(msg)
+        if response_format and not params.stream:
             completion_kwargs.pop("stream", None)
 
         if use_parse:

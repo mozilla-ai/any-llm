@@ -1,7 +1,8 @@
 import dataclasses
-from contextlib import contextmanager
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC
-from typing import Any, get_args
+from typing import Any, cast, get_args
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -626,22 +627,49 @@ async def test_completion_with_response_format_dict_json_object_raises() -> None
 
 
 @pytest.mark.asyncio
-async def test_stream_with_response_format_raises() -> None:
+async def test_stream_with_response_format_passes_output_config() -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
+    schema = {"type": "object", "properties": {"city_name": {"type": "string"}}, "required": ["city_name"]}
+    response_format: dict[str, Any] = {
+        "type": "json_schema",
+        "json_schema": {"name": "Foo", "schema": schema},
+    }
 
-    provider = AnthropicProvider(api_key=api_key)
+    async def empty_events() -> AsyncIterator[Any]:
+        if False:
+            yield None
 
-    with pytest.raises(UnsupportedParameterError, match="stream and response_format"):
-        await provider._acompletion(
-            CompletionParams(
-                model_id=model,
-                messages=messages,
-                response_format={"type": "json_schema", "json_schema": {"name": "Foo", "schema": {}}},
-                stream=True,
-            )
+    @asynccontextmanager
+    async def empty_stream() -> AsyncIterator[AsyncIterator[Any]]:
+        yield empty_events()
+
+    with mock_anthropic_provider() as mock_anthropic:
+        mock_anthropic.return_value.messages.stream = Mock(return_value=empty_stream())
+        provider = AnthropicProvider(api_key=api_key)
+        stream = cast(
+            "AsyncIterator[Any]",
+            await provider._acompletion(
+                CompletionParams(
+                    model_id=model,
+                    messages=messages,
+                    response_format=response_format,
+                    stream=True,
+                )
+            ),
         )
+
+        async for _ in stream:
+            pass
+
+        expected_output_config = {"format": {"type": "json_schema", "schema": transform_schema(schema)}}
+        mock_anthropic.return_value.messages.stream.assert_called_once()
+        call_kwargs = mock_anthropic.return_value.messages.stream.call_args.kwargs
+        assert call_kwargs["model"] == model
+        assert call_kwargs["messages"] == messages
+        assert call_kwargs["max_tokens"] == DEFAULT_MAX_TOKENS
+        assert call_kwargs["output_config"] == expected_output_config
 
 
 @pytest.mark.asyncio
