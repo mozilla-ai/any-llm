@@ -15,7 +15,7 @@ from any_llm.providers.gemini.utils import (
     _convert_tool_spec,
     _create_openai_chunk_from_google_chunk,
 )
-from any_llm.types.completion import CompletionParams, PromptTokensDetails, ReasoningEffort
+from any_llm.types.completion import ChatCompletion, CompletionParams, PromptTokensDetails, ReasoningEffort
 
 TEST_IMAGE_BYTES = b"test-image-bytes"
 TEST_PDF_BYTES = b"%PDF-1.4\ntest"
@@ -913,6 +913,144 @@ def test_streaming_completion_with_multiple_tool_calls() -> None:
     assert chunk.choices[0].delta.tool_calls[0].function.name == "get_weather"
     assert chunk.choices[0].delta.tool_calls[1].function is not None
     assert chunk.choices[0].delta.tool_calls[1].function.name == "get_weather"
+
+
+def _make_single_tool_call_chunk(name: str, args: dict[str, Any]) -> Mock:
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_function_call = Mock()
+    mock_function_call.name = name
+    mock_function_call.args = args
+
+    mock_part = Mock()
+    mock_part.function_call = mock_function_call
+    mock_part.thought = None
+    mock_part.text = None
+
+    mock_response.candidates[0].content.parts = [mock_part]
+    mock_response.candidates[0].finish_reason = Mock()
+    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.model_version = "gemini-2.5-flash"
+    mock_response.usage_metadata = None
+    return mock_response
+
+
+def test_streaming_completion_tool_call_index_stable_across_chunks() -> None:
+    """Tool call index/id must not reset to 0 for every chunk of the same stream.
+
+    Regression test for https://github.com/mozilla-ai/any-llm/issues/1148: each
+    chunk in a Gemini stream used to be converted independently, so repeated calls
+    to the same function across different chunks (e.g. three separate `read_file`
+    calls) all received index=0 and an identical tool call id.
+    """
+    tool_call_counter: list[int] = [0]
+
+    chunk_1 = _create_openai_chunk_from_google_chunk(
+        _make_single_tool_call_chunk("read_file", {"path": "src/index.ts"}), tool_call_counter
+    )
+    chunk_2 = _create_openai_chunk_from_google_chunk(
+        _make_single_tool_call_chunk("read_file", {"path": "src/page.ts"}), tool_call_counter
+    )
+    chunk_3 = _create_openai_chunk_from_google_chunk(
+        _make_single_tool_call_chunk("read_file", {"path": "src/router.ts"}), tool_call_counter
+    )
+
+    tool_calls = []
+    for chunk in (chunk_1, chunk_2, chunk_3):
+        assert chunk.choices[0].delta.tool_calls is not None
+        assert len(chunk.choices[0].delta.tool_calls) == 1
+        tool_calls.append(chunk.choices[0].delta.tool_calls[0])
+
+    assert [tc.index for tc in tool_calls] == [0, 1, 2]
+    assert len({tc.id for tc in tool_calls}) == 3, "Each streamed tool call must have a unique id"
+
+
+def test_streaming_completion_multiple_tool_calls_within_chunk_after_prior_chunks() -> None:
+    """Indices for parallel tool calls within a chunk continue from prior chunks in the stream."""
+    tool_call_counter: list[int] = [0]
+
+    first_chunk = _create_openai_chunk_from_google_chunk(
+        _make_single_tool_call_chunk("read_file", {"path": "src/index.ts"}), tool_call_counter
+    )
+    assert first_chunk.choices[0].delta.tool_calls is not None
+    assert first_chunk.choices[0].delta.tool_calls[0].index == 0
+
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_function_call_1 = Mock()
+    mock_function_call_1.name = "get_weather"
+    mock_function_call_1.args = {"location": "Paris"}
+
+    mock_function_call_2 = Mock()
+    mock_function_call_2.name = "get_weather"
+    mock_function_call_2.args = {"location": "London"}
+
+    mock_part_1 = Mock()
+    mock_part_1.function_call = mock_function_call_1
+    mock_part_1.thought = None
+    mock_part_1.text = None
+
+    mock_part_2 = Mock()
+    mock_part_2.function_call = mock_function_call_2
+    mock_part_2.thought = None
+    mock_part_2.text = None
+
+    mock_response.candidates[0].content.parts = [mock_part_1, mock_part_2]
+    mock_response.candidates[0].finish_reason = Mock()
+    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.model_version = "gemini-2.5-flash"
+    mock_response.usage_metadata = None
+
+    second_chunk = _create_openai_chunk_from_google_chunk(mock_response, tool_call_counter)
+
+    assert second_chunk.choices[0].delta.tool_calls is not None
+    assert [tc.index for tc in second_chunk.choices[0].delta.tool_calls] == [1, 2]
+
+
+async def _async_iter_chunks(items: list[Mock]) -> Any:
+    for item in items:
+        yield item
+
+
+@pytest.mark.asyncio
+async def test_streaming_via_acompletion_keeps_tool_call_index_stable_across_chunks() -> None:
+    """End-to-end regression test for #1148 through GoogleProvider._acompletion.
+
+    Exercises the actual streaming plumbing (not just the pure conversion
+    helper) to make sure the `tool_call_counter` created in the `_stream()`
+    closure is correctly forwarded through `_convert_completion_chunk_response`'s
+    `**kwargs` for every chunk of the stream, so indices/ids stay stable across
+    chunks rather than resetting.
+    """
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Read three files"}]
+
+    raw_chunks = [
+        _make_single_tool_call_chunk("read_file", {"path": "src/index.ts"}),
+        _make_single_tool_call_chunk("read_file", {"path": "src/page.ts"}),
+        _make_single_tool_call_chunk("read_file", {"path": "src/router.ts"}),
+    ]
+
+    with mock_gemini_provider() as mock_genai:
+        mock_client = mock_genai.return_value
+        mock_client.aio.models.generate_content_stream = AsyncMock(return_value=_async_iter_chunks(raw_chunks))
+
+        provider = GeminiProvider(api_key=api_key)
+        result = await provider._acompletion(CompletionParams(model_id=model, messages=messages, stream=True))
+
+        tool_calls = []
+        assert not isinstance(result, ChatCompletion)
+        async for chunk in result:
+            assert chunk.choices[0].delta.tool_calls is not None
+            tool_calls.extend(chunk.choices[0].delta.tool_calls)
+
+    assert [tc.index for tc in tool_calls] == [0, 1, 2]
+    assert len({tc.id for tc in tool_calls}) == 3, "Each streamed tool call must have a unique id"
 
 
 def test_convert_response_preserves_thought_signature() -> None:

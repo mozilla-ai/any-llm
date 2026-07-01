@@ -384,13 +384,26 @@ def _create_openai_embedding_response_from_google(
 
 def _create_openai_chunk_from_google_chunk(
     response: types.GenerateContentResponse,
+    tool_call_counter: list[int] | None = None,
 ) -> ChatCompletionChunk:
-    """Convert a Google GenerateContentResponse to an OpenAI ChatCompletionChunk."""
+    """Convert a Google GenerateContentResponse to an OpenAI ChatCompletionChunk.
+
+    Args:
+        response: The Google GenerateContentResponse streaming chunk.
+        tool_call_counter: Optional single-element list holding the number of tool
+            calls already emitted earlier in the same stream. This should be created
+            once per stream and passed in by the caller so that ``index`` (and the
+            generated tool call ``id``) stay stable and unique across chunks, rather
+            than restarting at 0 for every chunk.
+    """
 
     assert response.candidates
     candidate = response.candidates[0]
     assert candidate.content
     assert candidate.content.parts
+
+    if tool_call_counter is None:
+        tool_call_counter = [0]
 
     content = ""
     reasoning_content = ""
@@ -405,10 +418,13 @@ def _create_openai_chunk_from_google_chunk(
                 for key, value in args.items():
                     args_dict[key] = value
 
+            tool_call_index = tool_call_counter[0]
+            tool_call_counter[0] += 1
+
             tool_calls_list.append(
                 ChoiceDeltaToolCall(
-                    index=len(tool_calls_list),
-                    id=f"call_{hash(function_call.name)}_{len(tool_calls_list)}",
+                    index=tool_call_index,
+                    id=f"call_{hash(function_call.name)}_{tool_call_index}",
                     type="function",
                     function=ChoiceDeltaToolCallFunction(
                         name=function_call.name,
