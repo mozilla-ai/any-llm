@@ -909,6 +909,40 @@ def test_streaming_tool_chunks_preserve_parallel_tool_index() -> None:
     assert delta_result.choices[0].delta.tool_calls[0].function.arguments == '{"city":"Rome"}'
 
 
+def test_streaming_thinking_signature_delta_sets_extra_content() -> None:
+    """The encrypted thinking signature must be surfaced on the streaming delta's extra_content."""
+    from anthropic.types import ContentBlockDeltaEvent, SignatureDelta
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    delta_chunk = ContentBlockDeltaEvent(
+        type="content_block_delta",
+        index=0,
+        delta=SignatureDelta(type="signature_delta", signature="sig-12345"),
+    )
+    result = _create_openai_chunk_from_anthropic_chunk(delta_chunk, "claude-3-haiku")
+
+    assert result.choices[0].delta.extra_content == {"anthropic": {"signature": "sig-12345"}}
+
+
+def test_streaming_thinking_delta_does_not_set_extra_content() -> None:
+    """A plain thinking_delta (no signature yet) should not set extra_content."""
+    from anthropic.types import ContentBlockDeltaEvent, ThinkingDelta
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    delta_chunk = ContentBlockDeltaEvent(
+        type="content_block_delta",
+        index=0,
+        delta=ThinkingDelta(type="thinking_delta", thinking="Let me think..."),
+    )
+    result = _create_openai_chunk_from_anthropic_chunk(delta_chunk, "claude-3-haiku")
+
+    assert result.choices[0].delta.extra_content is None
+    assert result.choices[0].delta.reasoning is not None
+    assert result.choices[0].delta.reasoning.content == "Let me think..."
+
+
 def test_non_streaming_response_preserves_multiple_tool_calls() -> None:
     from anthropic.types import Message, ToolUseBlock, Usage
 
@@ -940,6 +974,267 @@ def test_non_streaming_response_preserves_multiple_tool_calls() -> None:
     assert isinstance(result.choices[0].message.tool_calls[1], ChatCompletionMessageFunctionToolCall)
     assert result.choices[0].message.tool_calls[1].function is not None
     assert result.choices[0].message.tool_calls[1].function.name == "get_time"
+
+
+def test_non_streaming_response_preserves_thinking_signature() -> None:
+    """The encrypted thinking signature must be surfaced on the message's extra_content."""
+    from anthropic.types import Message, ThinkingBlock, ToolUseBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason="tool_use",
+        content=[
+            ThinkingBlock(type="thinking", thinking="Let me reason...", signature="sig-12345"),
+            ToolUseBlock(type="tool_use", id="toolu_1", name="get_weather", input={"city": "Rome"}),
+        ],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].message.reasoning is not None
+    assert result.choices[0].message.reasoning.content == "Let me reason..."
+    assert result.choices[0].message.extra_content == {"anthropic": {"signature": "sig-12345"}}
+
+
+def test_non_streaming_response_without_thinking_has_no_extra_content() -> None:
+    from anthropic.types import Message, TextBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason="end_turn",
+        content=[TextBlock(type="text", text="Hello")],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].message.extra_content is None
+
+
+def test_non_streaming_response_empty_thinking_signature_has_no_extra_content() -> None:
+    """An empty (falsy) signature, e.g. display='omitted' before the signature streams in, should not be stored."""
+    from anthropic.types import Message, ThinkingBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason="end_turn",
+        content=[ThinkingBlock(type="thinking", thinking="", signature="")],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].message.extra_content is None
+
+
+def test_convert_messages_replays_thinking_block_with_tool_call() -> None:
+    """Anthropic requires the unmodified thinking block (with signature) to be replayed
+    alongside the tool_use block when continuing a turn that used extended thinking."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "What's the weather in Paris?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "reasoning": "Let me check the weather tool.",
+            "extra_content": {"anthropic": {"signature": "sig-12345"}},
+            "tool_calls": [
+                {
+                    "id": "toolu_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "toolu_1", "content": '{"temp": "20C"}'},
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assistant_message = converted[1]
+    assert assistant_message["role"] == "assistant"
+    assert assistant_message["content"][0] == {
+        "type": "thinking",
+        "thinking": "Let me check the weather tool.",
+        "signature": "sig-12345",
+    }
+    assert assistant_message["content"][1] == {
+        "type": "tool_use",
+        "id": "toolu_1",
+        "name": "get_weather",
+        "input": {"city": "Paris"},
+    }
+
+
+def test_convert_messages_replays_thinking_block_with_text() -> None:
+    """A plain-text assistant message that carries a thinking signature should also replay it.
+
+    Also covers the dict-shaped ``{"content": str}`` form of ``reasoning``, as opposed to the
+    plain string form used in test_convert_messages_replays_thinking_block_with_tool_call.
+    """
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "What is 2 + 2?"},
+        {
+            "role": "assistant",
+            "content": "The answer is 4.",
+            "reasoning": {"content": "2 + 2 = 4."},
+            "extra_content": {"anthropic": {"signature": "sig-67890"}},
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assistant_message = converted[1]
+    assert assistant_message["content"] == [
+        {"type": "thinking", "thinking": "2 + 2 = 4.", "signature": "sig-67890"},
+        {"type": "text", "text": "The answer is 4."},
+    ]
+
+
+def test_convert_messages_replays_thinking_block_with_list_content() -> None:
+    """An assistant message whose content is already a list of blocks (not a plain string) should
+    have the thinking block prepended to the existing blocks, not replace them."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Describe this image."},
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "It's a cat."}],
+            "reasoning": "Looking at the image.",
+            "extra_content": {"anthropic": {"signature": "sig-list"}},
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assistant_message = converted[1]
+    assert assistant_message["content"] == [
+        {"type": "thinking", "thinking": "Looking at the image.", "signature": "sig-list"},
+        {"type": "text", "text": "It's a cat."},
+    ]
+
+
+def test_extract_anthropic_thinking_signature_ignores_non_string_signature() -> None:
+    """A malformed signature (non-string) should be treated as absent, not crash."""
+    from any_llm.providers.anthropic.utils import _extract_anthropic_thinking_signature
+
+    message = {"extra_content": {"anthropic": {"signature": 12345}}}
+
+    assert _extract_anthropic_thinking_signature(message) is None
+
+
+def test_build_anthropic_thinking_block_defaults_to_empty_thinking_text() -> None:
+    """When a signature is present but reasoning is missing or malformed, thinking text defaults to ''."""
+    from any_llm.providers.anthropic.utils import _build_anthropic_thinking_block
+
+    message = {"extra_content": {"anthropic": {"signature": "sig-no-reasoning"}}}
+
+    assert _build_anthropic_thinking_block(message) == {
+        "type": "thinking",
+        "thinking": "",
+        "signature": "sig-no-reasoning",
+    }
+
+
+def test_convert_messages_without_thinking_signature_unchanged() -> None:
+    """Without a signature, assistant messages should be forwarded unchanged (no thinking block)."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Hi"},
+        {"role": "assistant", "content": "Hello there!"},
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assert converted[1] == {"role": "assistant", "content": "Hello there!"}
+
+
+def test_convert_messages_ignores_unrelated_extra_content() -> None:
+    """An extra_content dict without an 'anthropic' key (e.g. from a different provider) should be a no-op."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Hi"},
+        {
+            "role": "assistant",
+            "content": "Hello there!",
+            "reasoning": "Greeting the user.",
+            "extra_content": {"google": {"thought_signature": "unrelated"}},
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assert converted[1] == {"role": "assistant", "content": "Hello there!"}
+
+
+def test_convert_messages_replays_thinking_block_with_none_content() -> None:
+    """A reasoning-only assistant turn (content=None, no tool_calls) must not crash on replay.
+
+    Regression test: message.get("content") can be explicitly None rather than a string or
+    list, e.g. for a turn that only produced reasoning and no visible text or tool call.
+    """
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Just think about it, don't answer."},
+        {
+            "role": "assistant",
+            "content": None,
+            "reasoning": "Thinking without responding.",
+            "extra_content": {"anthropic": {"signature": "sig-none-content"}},
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assistant_message = converted[1]
+    assert assistant_message["content"] == [
+        {"type": "thinking", "thinking": "Thinking without responding.", "signature": "sig-none-content"},
+    ]
+
+
+def test_convert_messages_replays_thinking_block_with_empty_string_content() -> None:
+    """An empty string content (as opposed to None) should behave the same: only the thinking block is kept."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Just think about it, don't answer."},
+        {
+            "role": "assistant",
+            "content": "",
+            "reasoning": "Thinking without responding.",
+            "extra_content": {"anthropic": {"signature": "sig-empty-content"}},
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assistant_message = converted[1]
+    assert assistant_message["content"] == [
+        {"type": "thinking", "thinking": "Thinking without responding.", "signature": "sig-empty-content"},
+    ]
 
 
 def test_convert_tool_spec_none_parameters() -> None:

@@ -58,6 +58,15 @@ class Reasoning(BaseModel):
 class ChatCompletionMessage(OpenAIChatCompletionMessage):
     reasoning: Reasoning | None = None
     annotations: list[dict[str, Any]] | None = None  # type: ignore[assignment]
+    extra_content: dict[str, Any] | None = None
+    """Provider-specific metadata that needs to be preserved across multi-turn conversations.
+
+    For example, Anthropic's extended thinking requires the encrypted ``signature`` of a
+    ``thinking`` block to be passed back unmodified alongside subsequent tool calls.
+
+    Example extra_content structure for Anthropic:
+        {"anthropic": {"signature": "<encrypted-signature>"}}
+    """
 
 
 class Choice(OpenAIChoice):
@@ -84,8 +93,26 @@ class ParsedChatCompletion(ChatCompletion, Generic[ContentType]):
     choices: list[ParsedChoice[ContentType]]  # type: ignore[assignment]
 
 
+class ChoiceDeltaToolCall(OpenAIChoiceDeltaToolCall):
+    """Streaming counterpart of ``ChatCompletionMessageFunctionToolCall``.
+
+    Adds the same ``extra_content`` field so provider-specific tool-call metadata (e.g.
+    Gemini's ``thought_signature``) can be carried on streaming deltas, not just on the
+    final non-streaming tool call.
+    """
+
+    extra_content: dict[str, Any] | None = None
+
+
 class ChoiceDelta(OpenAIChoiceDelta):
     reasoning: Reasoning | None = None
+    tool_calls: list[ChoiceDeltaToolCall] | None = None  # type: ignore[assignment]
+    extra_content: dict[str, Any] | None = None
+    """Streaming counterpart of ``ChatCompletionMessage.extra_content``.
+
+    Carries provider-specific metadata (e.g. Anthropic's thinking block ``signature``)
+    that arrives as part of a streaming delta rather than the final message.
+    """
 
 
 class ChunkChoice(OpenAIChunkChoice):
@@ -118,7 +145,6 @@ PromptTokensDetails = OpenAIPromptTokensDetails
 CreateEmbeddingResponse = OpenAICreateEmbeddingResponse
 Embedding = OpenAIEmbedding
 Usage = OpenAIUsage
-ChoiceDeltaToolCall = OpenAIChoiceDeltaToolCall
 ChoiceDeltaToolCallFunction = OpenAIChoiceDeltaToolCallFunction
 
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max", "auto"]
