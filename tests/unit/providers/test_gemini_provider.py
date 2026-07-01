@@ -15,7 +15,7 @@ from any_llm.providers.gemini.utils import (
     _convert_tool_spec,
     _create_openai_chunk_from_google_chunk,
 )
-from any_llm.types.completion import CompletionParams, PromptTokensDetails, ReasoningEffort
+from any_llm.types.completion import ChatCompletion, CompletionParams, PromptTokensDetails, ReasoningEffort
 
 TEST_IMAGE_BYTES = b"test-image-bytes"
 TEST_PDF_BYTES = b"%PDF-1.4\ntest"
@@ -1095,6 +1095,48 @@ def test_streaming_completion_multiple_tool_calls_within_chunk_after_prior_chunk
 
     assert second_chunk.choices[0].delta.tool_calls is not None
     assert [tc.index for tc in second_chunk.choices[0].delta.tool_calls] == [1, 2]
+
+
+async def _async_iter_chunks(items: list[Mock]) -> Any:
+    for item in items:
+        yield item
+
+
+@pytest.mark.asyncio
+async def test_streaming_via_acompletion_keeps_tool_call_index_stable_across_chunks() -> None:
+    """End-to-end regression test for #1148 through GoogleProvider._acompletion.
+
+    Exercises the actual streaming plumbing (not just the pure conversion
+    helper) to make sure the `tool_call_counter` created in the `_stream()`
+    closure is correctly forwarded through `_convert_completion_chunk_response`'s
+    `**kwargs` for every chunk of the stream, so indices/ids stay stable across
+    chunks rather than resetting.
+    """
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Read three files"}]
+
+    raw_chunks = [
+        _make_single_tool_call_chunk("read_file", {"path": "src/index.ts"}),
+        _make_single_tool_call_chunk("read_file", {"path": "src/page.ts"}),
+        _make_single_tool_call_chunk("read_file", {"path": "src/router.ts"}),
+    ]
+
+    with mock_gemini_provider() as mock_genai:
+        mock_client = mock_genai.return_value
+        mock_client.aio.models.generate_content_stream = AsyncMock(return_value=_async_iter_chunks(raw_chunks))
+
+        provider = GeminiProvider(api_key=api_key)
+        result = await provider._acompletion(CompletionParams(model_id=model, messages=messages, stream=True))
+
+        tool_calls = []
+        assert not isinstance(result, ChatCompletion)
+        async for chunk in result:
+            assert chunk.choices[0].delta.tool_calls is not None
+            tool_calls.extend(chunk.choices[0].delta.tool_calls)
+
+    assert [tc.index for tc in tool_calls] == [0, 1, 2]
+    assert len({tc.id for tc in tool_calls}) == 3, "Each streamed tool call must have a unique id"
 
 
 def test_convert_response_preserves_thought_signature() -> None:
