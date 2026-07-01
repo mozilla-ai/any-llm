@@ -392,22 +392,44 @@ async def test_completion_with_unsupported_dict_response_format_raises() -> None
 
 
 @pytest.mark.asyncio
-async def test_completion_with_stream_and_response_format_raises() -> None:
+async def test_stream_with_response_format_passes_generation_config() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
+    expected_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "value": {"type": "integer"},
+        },
+        "required": ["name", "value"],
+    }
+    response_format: dict[str, Any] = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "TestOutput",
+            "schema": expected_schema,
+        },
+    }
 
-    with mock_gemini_provider():
+    with mock_gemini_provider() as mock_genai:
+        mock_genai.return_value.aio.models.generate_content_stream = AsyncMock()
         provider = GeminiProvider(api_key=api_key)
-        with pytest.raises(UnsupportedParameterError):
-            await provider._acompletion(
-                CompletionParams(
-                    model_id=model,
-                    messages=messages,
-                    stream=True,
-                    response_format={"type": "json_object"},
-                )
+        await provider._acompletion(
+            CompletionParams(
+                model_id=model,
+                messages=messages,
+                stream=True,
+                response_format=response_format,
             )
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content_stream.call_args
+        generation_config = call_kwargs["config"]
+
+    assert call_kwargs["model"] == model
+    assert generation_config.response_mime_type == "application/json"
+    assert generation_config.response_schema == expected_schema
 
 
 @pytest.mark.asyncio
