@@ -276,15 +276,14 @@ def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, An
     return usage
 
 
-def _thought_signature_extra_content(part: Any) -> dict[str, Any] | None:
+def _thought_signature_extra_content(part: types.Part) -> dict[str, Any] | None:
     """Build the OpenAI-compatible extra_content payload for a Gemini thought_signature, if present.
 
     Shared by both the non-streaming (_convert_response_to_response_dict) and streaming
     (_create_openai_chunk_from_google_chunk) conversion paths so they stay in sync.
     """
-    thought_signature = getattr(part, "thought_signature", None)
-    if thought_signature is not None and isinstance(thought_signature, bytes):
-        return {"google": {"thought_signature": base64.b64encode(thought_signature).decode("utf-8")}}
+    if part.thought_signature is not None and isinstance(part.thought_signature, bytes):
+        return {"google": {"thought_signature": base64.b64encode(part.thought_signature).decode("utf-8")}}
     return None
 
 
@@ -393,13 +392,26 @@ def _create_openai_embedding_response_from_google(
 
 def _create_openai_chunk_from_google_chunk(
     response: types.GenerateContentResponse,
+    tool_call_counter: list[int] | None = None,
 ) -> ChatCompletionChunk:
-    """Convert a Google GenerateContentResponse to an OpenAI ChatCompletionChunk."""
+    """Convert a Google GenerateContentResponse to an OpenAI ChatCompletionChunk.
+
+    Args:
+        response: The Google GenerateContentResponse streaming chunk.
+        tool_call_counter: Optional single-element list holding the number of tool
+            calls already emitted earlier in the same stream. This should be created
+            once per stream and passed in by the caller so that ``index`` (and the
+            generated tool call ``id``) stay stable and unique across chunks, rather
+            than restarting at 0 for every chunk.
+    """
 
     assert response.candidates
     candidate = response.candidates[0]
     assert candidate.content
     assert candidate.content.parts
+
+    if tool_call_counter is None:
+        tool_call_counter = [0]
 
     content = ""
     reasoning_content = ""
@@ -418,10 +430,13 @@ def _create_openai_chunk_from_google_chunk(
             # the non-streaming conversion in _convert_response_to_response_dict.
             extra_content = _thought_signature_extra_content(part)
 
+            tool_call_index = tool_call_counter[0]
+            tool_call_counter[0] += 1
+
             tool_calls_list.append(
                 ChoiceDeltaToolCall(
-                    index=len(tool_calls_list),
-                    id=f"call_{hash(function_call.name)}_{len(tool_calls_list)}",
+                    index=tool_call_index,
+                    id=f"call_{hash(function_call.name)}_{tool_call_index}",
                     type="function",
                     function=ChoiceDeltaToolCallFunction(
                         name=function_call.name,
