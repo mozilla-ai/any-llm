@@ -276,6 +276,18 @@ def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, An
     return usage
 
 
+def _thought_signature_extra_content(part: Any) -> dict[str, Any] | None:
+    """Build the OpenAI-compatible extra_content payload for a Gemini thought_signature, if present.
+
+    Shared by both the non-streaming (_convert_response_to_response_dict) and streaming
+    (_create_openai_chunk_from_google_chunk) conversion paths so they stay in sync.
+    """
+    thought_signature = getattr(part, "thought_signature", None)
+    if thought_signature is not None and isinstance(thought_signature, bytes):
+        return {"google": {"thought_signature": base64.b64encode(thought_signature).decode("utf-8")}}
+    return None
+
+
 def _convert_response_to_response_dict(response: types.GenerateContentResponse) -> dict[str, Any]:
     response_dict = {
         "id": "google_genai_response",
@@ -315,11 +327,8 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                 }
 
                 # Include thought_signature if present (OpenAI compatibility format)
-                thought_signature = getattr(part, "thought_signature", None)
-                if thought_signature is not None and isinstance(thought_signature, bytes):
-                    tool_call_dict["extra_content"] = {
-                        "google": {"thought_signature": base64.b64encode(thought_signature).decode("utf-8")}
-                    }
+                if extra_content := _thought_signature_extra_content(part):
+                    tool_call_dict["extra_content"] = extra_content
 
                 tool_calls_list.append(tool_call_dict)
             elif getattr(part, "text", None):
@@ -407,10 +416,7 @@ def _create_openai_chunk_from_google_chunk(
 
             # Include thought_signature if present (OpenAI compatibility format), mirroring
             # the non-streaming conversion in _convert_response_to_response_dict.
-            extra_content = None
-            thought_signature = getattr(part, "thought_signature", None)
-            if thought_signature is not None and isinstance(thought_signature, bytes):
-                extra_content = {"google": {"thought_signature": base64.b64encode(thought_signature).decode("utf-8")}}
+            extra_content = _thought_signature_extra_content(part)
 
             tool_calls_list.append(
                 ChoiceDeltaToolCall(
