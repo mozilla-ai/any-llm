@@ -1,0 +1,85 @@
+name: GitHub Pages Redirects
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'src/**'
+      - 'scripts/generate_provider_table.py'
+      - 'scripts/generate_openapi.py'
+      - 'scripts/generate_api_docs.py'
+      - 'scripts/generate_cookbooks.py'
+      - 'scripts/convert_to_gitbook.py'
+      - 'scripts/generate_github_pages_redirects.py'
+      - '.github/workflows/pages-redirect.yaml'
+      - 'pyproject.toml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'src/**'
+      - 'scripts/generate_provider_table.py'
+      - 'scripts/generate_openapi.py'
+      - 'scripts/generate_api_docs.py'
+      - 'scripts/generate_cookbooks.py'
+      - 'scripts/convert_to_gitbook.py'
+      - 'scripts/generate_github_pages_redirects.py'
+      - '.github/workflows/pages-redirect.yaml'
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+jobs:
+  redirect-site:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install the latest version of uv and set the python version to 3.13
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: 3.13
+          activate-environment: true
+
+      - name: Install Python dependencies
+        run: uv sync --group docs --extra all
+
+      - name: Build GitBook site
+        run: uv run python scripts/convert_to_gitbook.py
+
+      - name: Build GitHub Pages redirects
+        run: uv run python scripts/generate_github_pages_redirects.py
+
+      - name: Upload generated redirect site as PR artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: github-pages-redirect-preview
+          path: gh-pages-redirect/
+
+      - name: Deploy to gh-pages branch
+        if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+          mv gh-pages-redirect/ /tmp/gh-pages-redirect/
+
+          git fetch origin gh-pages || true
+          if git rev-parse --verify origin/gh-pages >/dev/null 2>&1; then
+            git checkout gh-pages
+          else
+            git checkout --orphan gh-pages
+            git rm -rf .
+          fi
+
+          rsync -a --delete --exclude='.git' /tmp/gh-pages-redirect/ .
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "docs: update GitHub Pages redirects from ${{ github.sha }}"
+            git push origin gh-pages
+          fi

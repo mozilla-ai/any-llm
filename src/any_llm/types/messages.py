@@ -12,6 +12,7 @@ from anthropic.types import TextBlock as AnthropicTextBlock
 from anthropic.types import ThinkingBlock as AnthropicThinkingBlock
 from anthropic.types import ToolUseBlock as AnthropicToolUseBlock
 from anthropic.types import Usage as AnthropicUsage
+from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
 from anthropic.types.raw_message_delta_event import Delta as MessageDelta
 from pydantic import BaseModel, ConfigDict
 
@@ -31,6 +32,8 @@ __all__ = [
     "MessageStreamEvent",
     "MessageUsage",
     "MessagesParams",
+    "ParsedMessage",
+    "ParsedTextBlock",
     "StopReason",
     "TextBlock",
     "TextDelta",
@@ -115,3 +118,15 @@ class MessagesParams(BaseModel):
 
     cache_control: dict[str, Any] | None = None
     """Cache control configuration for prompt caching"""
+
+    output_format: type | dict[str, Any] | None = None
+    """Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
+
+    Either a Pydantic ``BaseModel`` subclass or dataclass **type**, or a raw Anthropic
+    ``output_config`` **dict** (e.g. ``{"format": {"type": "json_schema", "schema": {...}}}``)
+    for non-Pydantic JSON schemas. A type goes to native ``messages.parse`` on Anthropic; a
+    dict is passed through to native ``messages.create(output_config=...)``. Other providers
+    route either form through the completion bridge. The result is Anthropic's ``ParsedMessage``:
+    its ``parsed_output`` holds the typed object for a type, or the parsed JSON (plain
+    ``dict``/``list``) for a raw schema.
+    """

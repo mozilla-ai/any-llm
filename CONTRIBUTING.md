@@ -58,12 +58,17 @@ source .venv/bin/activate
 uv sync --all-extras -U --python=3.13
 
 # 5. Ensure all checks pass
-uv run pre-commit run --all-files --verbose
+UV_SYSTEM_PYTHON=0 uv run pre-commit run --all-files --verbose
+```
 
+> **Note:** mypy errors about missing modules (e.g. `groq`, `mistralai`) are
+> expected when running locally without provider extras installed. These are
+> optional dependencies and CI is the authoritative environment for mypy checks.
+
+```bash
 # 7. Verify your setup
 pytest -v tests/unit
 pytest -v tests/integration -n auto
-
 ```
 
 ### Setting Up API Keys
@@ -138,9 +143,9 @@ Update when you:
 Documentation to update:
 - **Docstrings** in code (required)
 - **README.md** if changing core functionality
-- Authored docs in `docs/` (e.g. `docs/quickstart.md`, `docs/gateway/*`, `docs/platform/*`) when adding or changing features
+- Authored docs in `docs/` (e.g. `docs/quickstart.md`) when adding or changing features
 
-Authored docs live in `docs/`. Generated files (`docs/api/`, `docs/providers.md`, `docs/openapi.json`, `docs/cookbooks/any-llm-getting-started.md`) are built by CI and not committed to the repository. The final publish artifact is `site/`, which CI builds and pushes to the `gitbook-docs` branch.
+Authored docs live in `docs/`. Generated files (`docs/api/`, `docs/providers.md`, `docs/cookbooks/any-llm-getting-started.md`) are built by CI and not committed to the repository. The final publish artifact is `site/`, which CI builds and pushes to the `gitbook-docs` branch.
 
 To preview the rendered output locally:
 
@@ -162,38 +167,6 @@ git commit -m "Update documentation for Azure OpenAI configuration"
 git commit -m "fix bug"
 git commit -m "update"
 git commit -m "wip"
-```
-
-## Developing the Gateway
-
-If you are contributing to the `any-llm-gateway` (the FastAPI proxy), the setup differs slightly from the SDK. We use a layered Docker Compose setup:
-
-1. `docker-compose.yml`: Defines the production image (used by end-users).
-2. `docker-compose.override.yml`: Overrides the image with your local build context.
-
-### Running the Gateway Locally
-
-Because the `docker-compose.override.yml` is checked into the repository, Docker will automatically detect it and build from your source code.
-
-1. **Navigate to the gateway directory**
-
-   ```bash
-   cd any-llm-gateway
-   ```
-
-2. **Run with Build** Run the following command to build your local changes and start the service:
-```bash
-docker compose up --build
-```
-
-3. **Verify Local Version** To ensure you are running your local version, check the logs or the health endpoint. The service runs on http://localhost:8000.
-
-### Gateway Tests
-To run tests specifically for the gateway:
-
-```bash
-# From the project root
-pytest tests/gateway
 ```
 
 ## Adding a New Provider

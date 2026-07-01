@@ -706,6 +706,115 @@ def test_convert_tool_spec_parameters_missing_properties() -> None:
     assert decl.parameters.properties == {}  # type: ignore[union-attr]
 
 
+def test_convert_tool_spec_json_schema_with_defs_and_refs() -> None:
+    """Regression for #1094: JSON Schema with $defs/$ref must route through parameters_json_schema.
+
+    google.genai.types.Schema rejects $ref/$defs (Pydantic extra_forbidden). The SDK exposes
+    FunctionDeclaration.parameters_json_schema for raw JSON Schema input; ref-bearing schemas
+    must use that field instead of the reshaped `parameters=types.Schema(...)` path.
+    """
+    raw_params = {
+        "$defs": {
+            "Param": {
+                "properties": {
+                    "content": {
+                        "anyOf": [{"type": "string"}, {"type": "null"}],
+                        "description": "A content.",
+                        "title": "Content",
+                    },
+                    "content2": {"description": "An other content", "title": "Content2", "type": "string"},
+                },
+                "required": ["content", "content2"],
+                "title": "Param",
+                "type": "object",
+                "additionalProperties": False,
+            }
+        },
+        "properties": {
+            "param": {
+                "description": "A mock param.",
+                "items": {"$ref": "#/$defs/Param"},
+                "type": "array",
+            }
+        },
+        "required": ["param"],
+        "type": "object",
+        "additionalProperties": False,
+    }
+    openai_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "json_schema_tool_ex",
+                "description": "An example tool that uses a JSON schema to define the input structure.",
+                "parameters": raw_params,
+            },
+        }
+    ]
+
+    tools = _convert_tool_spec(openai_tools)
+
+    assert len(tools) == 1
+    decl = tools[0].function_declarations[0]  # type: ignore[index]
+    assert decl.name == "json_schema_tool_ex"
+    assert decl.parameters is None
+    assert decl.parameters_json_schema == raw_params
+
+
+def test_convert_tool_spec_nested_ref_only() -> None:
+    """A $ref nested deep inside an item schema (no top-level $defs) must still trigger routing."""
+    raw_params = {
+        "type": "object",
+        "properties": {
+            "outer": {
+                "type": "object",
+                "properties": {"inner": {"$ref": "#/components/schemas/Thing"}},
+            }
+        },
+    }
+    tools = _convert_tool_spec([{"type": "function", "function": {"name": "nested", "parameters": raw_params}}])
+    decl = tools[0].function_declarations[0]  # type: ignore[index]
+    assert decl.parameters is None
+    assert decl.parameters_json_schema == raw_params
+
+
+def test_convert_tool_spec_mixed_ref_and_plain_tools() -> None:
+    """Ref-bearing and plain tools in the same call should each take the appropriate path."""
+    tools = _convert_tool_spec(
+        [
+            {
+                "type": "function",
+                "function": {
+                    "name": "with_ref",
+                    "parameters": {
+                        "$defs": {"X": {"type": "string"}},
+                        "type": "object",
+                        "properties": {"x": {"$ref": "#/$defs/X"}},
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "plain",
+                    "parameters": {"type": "object", "properties": {"q": {"type": "string"}}},
+                },
+            },
+        ]
+    )
+    assert len(tools) == 1
+    decls = tools[0].function_declarations
+    assert decls is not None
+    assert len(decls) == 2
+    assert decls[0].name == "with_ref"
+    assert decls[0].parameters is None
+    assert decls[0].parameters_json_schema is not None
+    assert decls[1].name == "plain"
+    assert decls[1].parameters_json_schema is None
+    assert decls[1].parameters is not None
+    assert decls[1].parameters.type == "OBJECT"
+
+
 @pytest.mark.asyncio
 async def test_gemini_with_built_in_tools() -> None:
     """Test that built-in tools are added correctly when specified."""

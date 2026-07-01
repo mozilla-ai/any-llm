@@ -17,4 +17,4 @@ class LlamacppProvider(BaseOpenAIProvider):
 
     @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
-        return ""
+        return "no-key-required"

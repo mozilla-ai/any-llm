@@ -5,7 +5,7 @@ import importlib
 import os
 import warnings
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, overload
+from typing import IO, TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, overload
 
 from openresponses_types import ResponseResource
 from pydantic import BaseModel
@@ -18,6 +18,7 @@ from any_llm.exceptions import (
     UnsupportedProviderError,
 )
 from any_llm.tools import prepare_tools
+from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionMessage,
@@ -25,6 +26,7 @@ from any_llm.types.completion import (
     ParsedChatCompletion,
     ReasoningEffort,
 )
+from any_llm.types.image import ImageGenerationParams, ImagesResponse
 from any_llm.types.messages import (
     ContentBlockStopEvent,
     MessageDelta,
@@ -34,12 +36,24 @@ from any_llm.types.messages import (
     MessagesParams,
     MessageStopEvent,
     MessageStreamEvent,
+    ParsedMessage,
 )
-from any_llm.types.provider import PlatformKey, ProviderMetadata
-from any_llm.types.responses import Response, ResponseInputParam, ResponsesParams, ResponseStreamEvent
+from any_llm.types.provider import ProviderMetadata
+from any_llm.types.responses import (
+    ParsedResponse,
+    Response,
+    ResponseInputParam,
+    ResponsesParams,
+    ResponseStreamEvent,
+)
 from any_llm.utils.aio import async_coro_to_sync_iter, async_iter_to_sync_iter, run_async_in_sync
 from any_llm.utils.exception_handler import handle_exceptions
-from any_llm.utils.structured_output import is_structured_output_type, parse_json_content
+from any_llm.utils.structured_output import (
+    build_parsed_message,
+    is_structured_output_type,
+    parse_json_content,
+    parse_responses_output,
+)
 
 ResponseFormatT = TypeVar("ResponseFormatT", bound=BaseModel)
 
@@ -49,6 +63,8 @@ if TYPE_CHECKING:
     from any_llm.types.batch import Batch, BatchResult
     from any_llm.types.completion import ChatCompletionChunk, CreateEmbeddingResponse
     from any_llm.types.model import Model
+    from any_llm.types.moderation import ModerationResponse
+    from any_llm.types.rerank import RerankResponse
 
 
 class AnyLLM(ABC):
@@ -86,6 +102,9 @@ class AnyLLM(ABC):
     SUPPORTS_EMBEDDING: bool
     """OpenAI Embedding API"""
 
+    SUPPORTS_MODERATION: bool = False
+    """OpenAI-compatible moderation API."""
+
     SUPPORTS_RESPONSES: bool
     """OpenAI Responses API"""
 
@@ -94,6 +113,18 @@ class AnyLLM(ABC):
 
     SUPPORTS_BATCH: bool
     """OpenAI Batch Completion API"""
+
+    SUPPORTS_IMAGE_GENERATION: bool = False
+    """Image Generation API (e.g., OpenAI DALL-E)"""
+
+    SUPPORTS_AUDIO_TRANSCRIPTION: bool = False
+    """Audio Transcription API (e.g., OpenAI Whisper)"""
+
+    SUPPORTS_AUDIO_SPEECH: bool = False
+    """Audio Speech / TTS API (e.g., OpenAI TTS)"""
+
+    SUPPORTS_RERANK: bool = False
+    """Rerank API - reorder documents by relevance to a query."""
 
     SUPPORTS_MESSAGES: bool = True
     """Anthropic Messages API (all providers support it via conversion)"""
@@ -114,8 +145,6 @@ class AnyLLM(ABC):
     This should be a list of the allowed built-in tool instances.
     For example, in `gemini` provider, this could include `google.genai.types.Tool`.
     """
-
-    ANY_LLM_KEY: str = "ANY_LLM_KEY"
 
     def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self._verify_no_missing_packages()
@@ -191,39 +220,6 @@ class AnyLLM(ABC):
             raise ImportError(msg) from e
 
         provider_class: type[AnyLLM] = getattr(module, provider_class_name)
-
-        if not api_key:
-            api_key = os.getenv(cls.ANY_LLM_KEY)
-
-        if api_key:
-            try:
-                # Validate if the key conforms with the any-api format.
-                # If it does, any-llm must ask any-api for the corresponding provider key.
-                PlatformKey(api_key=api_key)
-
-                # Import and instantiate PlatformProvider in-place to avoid circular dependency issues.
-                platform_class_name = "PlatformProvider"
-                platform_module_path = "any_llm.providers.platform"
-                try:
-                    platform_module = importlib.import_module(platform_module_path)
-                except ImportError as e:
-                    msg = f"Could not import module {module_path}: {e!s}. Please ensure the provider is supported by doing AnyLLM.get_supported_providers()"
-                    raise ImportError(msg) from e
-
-                platform_class: type[AnyLLM] = getattr(platform_module, platform_class_name)
-
-                # Instantiate the class first and pass the provider next,
-                # so we don't change the common API between different providers.
-                # pop platform-specific kwargs to avoid passing them to the provider's __init__
-                client_name = kwargs.pop("client_name", None)
-                platform_provider = platform_class(
-                    api_key=api_key, api_base=api_base, client_name=client_name, **kwargs
-                )
-                platform_provider.provider = provider_class  # type: ignore[attr-defined]
-            except ValueError:
-                pass
-            else:
-                return platform_provider
 
         return provider_class(api_key=api_key, api_base=api_base, **kwargs)
 
@@ -356,6 +352,16 @@ class AnyLLM(ABC):
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
 
+    @staticmethod
+    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
+
+    @staticmethod
+    def _convert_rerank_response(response: Any) -> RerankResponse:
+        msg = "Subclasses must implement this method"
+        raise NotImplementedError(msg)
+
     @classmethod
     def get_provider_metadata(cls) -> ProviderMetadata:
         """Get provider metadata without requiring instantiation.
@@ -376,9 +382,14 @@ class AnyLLM(ABC):
             image=cls.SUPPORTS_COMPLETION_IMAGE,
             pdf=cls.SUPPORTS_COMPLETION_PDF,
             embedding=cls.SUPPORTS_EMBEDDING,
+            moderation=cls.SUPPORTS_MODERATION,
             responses=cls.SUPPORTS_RESPONSES,
             list_models=cls.SUPPORTS_LIST_MODELS,
             batch_completion=cls.SUPPORTS_BATCH,
+            image_generation=cls.SUPPORTS_IMAGE_GENERATION,
+            audio_transcription=cls.SUPPORTS_AUDIO_TRANSCRIPTION,
+            audio_speech=cls.SUPPORTS_AUDIO_SPEECH,
+            rerank=cls.SUPPORTS_RERANK,
             messages=cls.SUPPORTS_MESSAGES,
             class_name=cls.__name__,
         )
@@ -562,7 +573,7 @@ class AnyLLM(ABC):
             frequency_penalty: Penalize new tokens based on frequency in text
             seed: Random seed for reproducible results
             user: Unique identifier for the end user
-            session_label: Optional user session label metadata for platform traces; exported as anyllm.user_session_label
+            session_label: Deprecated, no longer used. Previously used for platform traces.
             parallel_tool_calls: Whether to allow parallel tool calls
             logprobs: Include token-level log probabilities in the response
             top_logprobs: Number of alternatives to return when logprobs are requested
@@ -613,9 +624,6 @@ class AnyLLM(ABC):
             reasoning_effort=reasoning_effort,
         )
 
-        if session_label is not None and self.PROVIDER_NAME == "platform":
-            kwargs["session_label"] = session_label
-
         result = await self._acompletion(params, **kwargs)
 
         if is_structured_output_type(response_format):
@@ -653,7 +661,7 @@ class AnyLLM(ABC):
         *,
         allow_running_loop: bool | None = None,
         **kwargs: Any,
-    ) -> MessageResponse | Iterator[MessageStreamEvent]:
+    ) -> MessageResponse | ParsedMessage[Any] | Iterator[MessageStreamEvent]:
         """Create a message using the Anthropic Messages API synchronously.
 
         See [AnyLLM.amessages][any_llm.any_llm.AnyLLM.amessages]
@@ -661,7 +669,7 @@ class AnyLLM(ABC):
         if allow_running_loop is None:
             allow_running_loop = INSIDE_NOTEBOOK
         response = run_async_in_sync(self.amessages(**kwargs), allow_running_loop=allow_running_loop)
-        if isinstance(response, MessageResponse):
+        if isinstance(response, (MessageResponse, ParsedMessage)):
             return response
         return async_iter_to_sync_iter(response)
 
@@ -683,8 +691,9 @@ class AnyLLM(ABC):
         metadata: dict[str, Any] | None = None,
         thinking: dict[str, Any] | None = None,
         cache_control: dict[str, Any] | None = None,
+        output_format: type | dict[str, Any] | None = None,
         **kwargs: Any,
-    ) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
+    ) -> MessageResponse | ParsedMessage[Any] | AsyncIterator[MessageStreamEvent]:
         """Create a message using the Anthropic Messages API asynchronously.
 
         All providers support this via automatic conversion to/from Chat Completions.
@@ -705,12 +714,25 @@ class AnyLLM(ABC):
             metadata: Request metadata.
             thinking: Thinking/reasoning configuration.
             cache_control: Cache control configuration for prompt caching.
+            output_format: Structured output, mirroring Anthropic's ``messages.parse``/
+                ``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed
+                ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic
+                JSON schemas (``parsed_output`` holds the parsed JSON). The call returns
+                Anthropic's ``ParsedMessage``. Not supported with ``stream=True``.
             **kwargs: Additional provider-specific arguments.
 
         Returns:
-            MessageResponse or an async iterator of MessageStreamEvent (if streaming).
+            MessageResponse (or ParsedMessage when `output_format` is given), or an async
+            iterator of MessageStreamEvent (if streaming).
+
+        Raises:
+            ValueError: If `output_format` is combined with `stream=True`.
 
         """
+        if output_format is not None and stream:
+            msg = "stream is not supported for output_format"
+            raise ValueError(msg)
+
         params = MessagesParams(
             model=model,
             messages=messages,
@@ -726,12 +748,21 @@ class AnyLLM(ABC):
             metadata=metadata,
             thinking=thinking,
             cache_control=cache_control,
+            output_format=output_format,
         )
-        return await self._amessages(params, **kwargs)
+        result = await self._amessages(params, **kwargs)
+
+        # The Anthropic provider already returns a ParsedMessage via native messages.parse (typed
+        # case); for the raw-dict case and for all bridged providers it returns a MessageResponse,
+        # so build the same ParsedMessage shape from the response's JSON text here.
+        if output_format is not None and isinstance(result, MessageResponse):
+            return build_parsed_message(result, output_format)
+
+        return result
 
     async def _amessages(
         self, params: MessagesParams, **kwargs: Any
-    ) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
+    ) -> MessageResponse | ParsedMessage[Any] | AsyncIterator[MessageStreamEvent]:
         """Default implementation: converts Messages ↔ Completions format.
 
         Providers with native Messages API support (e.g., Anthropic) override this
@@ -781,7 +812,53 @@ class AnyLLM(ABC):
 
         return convert_stream()
 
-    def responses(self, **kwargs: Any) -> ResponseResource | Response | Iterator[ResponseStreamEvent]:
+    # Overloads let type checkers narrow the return type based on response_format and stream.
+    @overload
+    def responses(
+        self,
+        model: str,
+        input_data: str | ResponseInputParam,
+        *,
+        response_format: type[ResponseFormatT],
+        stream: Literal[False] | None = ...,
+        **kwargs: Any,
+    ) -> ParsedResponse[ResponseFormatT]: ...
+
+    @overload
+    def responses(
+        self,
+        model: str,
+        input_data: str | ResponseInputParam,
+        *,
+        stream: Literal[True],
+        **kwargs: Any,
+    ) -> Iterator[ResponseStreamEvent]: ...
+
+    @overload
+    def responses(
+        self,
+        model: str,
+        input_data: str | ResponseInputParam,
+        *,
+        response_format: dict[str, Any] | None = ...,
+        stream: Literal[False] | None = ...,
+        **kwargs: Any,
+    ) -> ResponseResource | Response: ...
+
+    @overload
+    def responses(
+        self,
+        model: str,
+        input_data: str | ResponseInputParam,
+        *,
+        response_format: dict[str, Any] | type | None = ...,
+        stream: bool | None = ...,
+        **kwargs: Any,
+    ) -> ResponseResource | Response | Iterator[ResponseStreamEvent] | ParsedResponse[Any]: ...
+
+    def responses(
+        self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
+    ) -> ResponseResource | Response | Iterator[ResponseStreamEvent] | ParsedResponse[Any]:
         """Create a response synchronously.
 
         See [AnyLLM.aresponses][any_llm.any_llm.AnyLLM.aresponses]
@@ -789,14 +866,64 @@ class AnyLLM(ABC):
         allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
         if kwargs.get("stream"):
             return async_coro_to_sync_iter(
-                cast("Coroutine[Any, Any, AsyncIterator[ResponseStreamEvent]]", self.aresponses(**kwargs)),
+                cast(
+                    "Coroutine[Any, Any, AsyncIterator[ResponseStreamEvent]]",
+                    self.aresponses(model, input_data, **kwargs),
+                ),
                 allow_running_loop=allow_running_loop,
             )
 
-        response = run_async_in_sync(self.aresponses(**kwargs), allow_running_loop=allow_running_loop)
+        response = run_async_in_sync(
+            self.aresponses(model, input_data, **kwargs), allow_running_loop=allow_running_loop
+        )
+        # ParsedResponse (structured output) is a subclass of Response, so it is covered here.
         if isinstance(response, (ResponseResource, Response)):
             return response
         return async_iter_to_sync_iter(response, allow_running_loop=allow_running_loop)
+
+    # Overloads let type checkers narrow the return type based on response_format and stream.
+    @overload
+    async def aresponses(
+        self,
+        model: str,
+        input_data: str | ResponseInputParam,
+        *,
+        response_format: type[ResponseFormatT],
+        stream: Literal[False] | None = ...,
+        **kwargs: Any,
+    ) -> ParsedResponse[ResponseFormatT]: ...
+
+    @overload
+    async def aresponses(
+        self,
+        model: str,
+        input_data: str | ResponseInputParam,
+        *,
+        stream: Literal[True],
+        **kwargs: Any,
+    ) -> AsyncIterator[ResponseStreamEvent]: ...
+
+    @overload
+    async def aresponses(
+        self,
+        model: str,
+        input_data: str | ResponseInputParam,
+        *,
+        response_format: dict[str, Any] | None = ...,
+        stream: Literal[False] | None = ...,
+        **kwargs: Any,
+    ) -> ResponseResource | Response: ...
+
+    @overload
+    async def aresponses(
+        self,
+        model: str,
+        input_data: str | ResponseInputParam,
+        *,
+        response_format: dict[str, Any] | type | None = ...,
+        stream: bool | None = ...,
+        **kwargs: Any,
+    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent] | ParsedResponse[Any]: ...
 
     @handle_exceptions(wrap_streaming=True)
     async def aresponses(
@@ -815,6 +942,7 @@ class AnyLLM(ABC):
         parallel_tool_calls: bool | None = None,
         reasoning: Any | None = None,
         text: Any | None = None,
+        response_format: dict[str, Any] | type | None = None,
         presence_penalty: float | None = None,
         frequency_penalty: float | None = None,
         truncation: str | None = None,
@@ -830,7 +958,7 @@ class AnyLLM(ABC):
         prompt_cache_retention: str | None = None,
         conversation: str | dict[str, Any] | None = None,
         **kwargs: Any,
-    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent] | ParsedResponse[Any]:
         """Create a response using the OpenResponses API.
 
         This implements the OpenResponses specification and returns either
@@ -854,6 +982,10 @@ class AnyLLM(ABC):
             parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
             reasoning: Configuration options for reasoning models.
             text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
+            response_format: Structured-output type. When a Pydantic ``BaseModel`` or dataclass is passed, the
+                response is parsed and returned as a ``ParsedResponse`` whose ``output_parsed`` holds the typed
+                object (the Responses-API analogue of ``client.responses.parse``). A raw OpenAI ``text.format``
+                dict is also accepted and passed through unparsed.
             presence_penalty: Penalizes new tokens based on whether they appear in the text so far.
             frequency_penalty: Penalizes new tokens based on their frequency in the text so far.
             truncation: Controls how the service truncates input when it exceeds the model context window.
@@ -872,13 +1004,19 @@ class AnyLLM(ABC):
 
         Returns:
             Either a `ResponseResource` object (OpenResponses-compliant providers),
-            a `Response` object (non-compliant providers), or an iterator of
+            a `Response` object (non-compliant providers), a `ParsedResponse` (when a
+            structured `response_format` type is given), or an iterator of
             `ResponseStreamEvent` (streaming).
 
         Raises:
             NotImplementedError: If the selected provider does not support the Responses API.
+            ValueError: If a structured `response_format` is combined with `stream=True`.
 
         """
+        if is_structured_output_type(response_format) and stream:
+            msg = "stream is not supported for response_format"
+            raise ValueError(msg)
+
         prepared_tools = None
         if tools:
             prepared_tools = prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
@@ -897,6 +1035,7 @@ class AnyLLM(ABC):
             parallel_tool_calls=parallel_tool_calls,
             reasoning=reasoning,
             text=text,
+            response_format=response_format,
             presence_penalty=presence_penalty,
             frequency_penalty=frequency_penalty,
             truncation=truncation,
@@ -914,11 +1053,23 @@ class AnyLLM(ABC):
             **kwargs,
         )
 
-        return await self._aresponses(params)
+        result = await self._aresponses(params)
+
+        if is_structured_output_type(response_format):
+            # OpenAI-SDK providers return a ParsedResponse directly (via responses.parse);
+            # other providers return a raw Response/ResponseResource that we parse here.
+            if isinstance(result, ParsedResponse):
+                return result
+            if isinstance(result, (Response, ResponseResource)):
+                parsed = parse_responses_output(result, response_format)
+                if parsed is not None:
+                    return parsed
+
+        return result
 
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
-    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+    ) -> ResponseResource | Response | ParsedResponse[Any] | AsyncIterator[ResponseStreamEvent]:
         if not self.SUPPORTS_RESPONSES:
             msg = "Provider doesn't support responses."
             raise NotImplementedError(msg)
@@ -938,6 +1089,185 @@ class AnyLLM(ABC):
             msg = "Provider doesn't support embedding."
             raise NotImplementedError(msg)
         msg = "Subclasses must implement _aembedding method"
+        raise NotImplementedError(msg)
+
+    def _image_generation(self, model: str, prompt: str, **kwargs: Any) -> ImagesResponse:
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(self.aimage_generation(model, prompt, **kwargs), allow_running_loop=allow_running_loop)
+
+    @handle_exceptions()
+    async def aimage_generation(self, model: str, prompt: str, **kwargs: Any) -> ImagesResponse:
+        """Create an image asynchronously.
+
+        Args:
+            model: Model identifier for the chosen provider (e.g., model='dall-e-3' for LLMProvider.OPENAI).
+            prompt: A text description of the desired image(s).
+            **kwargs: Additional parameters (n, size, quality, style, response_format, user).
+
+        Returns:
+            The image generation response from the provider.
+
+        """
+        params = ImageGenerationParams(model_id=model, prompt=prompt, **kwargs)
+        return await self._aimage_generation(params)
+
+    async def _aimage_generation(self, params: ImageGenerationParams, **kwargs: Any) -> ImagesResponse:
+        if not self.SUPPORTS_IMAGE_GENERATION:
+            msg = "Provider doesn't support image generation."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _aimage_generation method"
+        raise NotImplementedError(msg)
+
+    def _transcription(self, model: str, file: bytes | IO[bytes], **kwargs: Any) -> Transcription:
+        """Transcribe audio synchronously.
+
+        See [AnyLLM.atranscription][any_llm.any_llm.AnyLLM.atranscription]
+        """
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(self.atranscription(model, file, **kwargs), allow_running_loop=allow_running_loop)
+
+    @handle_exceptions()
+    async def atranscription(self, model: str, file: bytes | IO[bytes], **kwargs: Any) -> Transcription:
+        """Transcribe audio asynchronously.
+
+        Args:
+            model: Model identifier for the chosen provider (e.g., model='whisper-1' for LLMProvider.OPENAI).
+            file: Audio file content as bytes or file-like object.
+                Supported formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm.
+            **kwargs: Additional parameters (language, prompt, response_format, temperature, timestamp_granularities).
+
+        Returns:
+            The transcription response from the provider.
+
+        """
+        params = AudioTranscriptionParams(model_id=model, file=file, **kwargs)
+        return await self._atranscription(params)
+
+    async def _atranscription(self, params: AudioTranscriptionParams, **kwargs: Any) -> Transcription:
+        if not self.SUPPORTS_AUDIO_TRANSCRIPTION:
+            msg = "Provider doesn't support audio transcription."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _atranscription method"
+        raise NotImplementedError(msg)
+
+    def _speech(
+        self,
+        model: str,
+        input: str,  # noqa: A002
+        voice: str,
+        **kwargs: Any,
+    ) -> bytes:
+        """Generate speech from text synchronously.
+
+        See [AnyLLM.aspeech][any_llm.any_llm.AnyLLM.aspeech]
+        """
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(self.aspeech(model, input, voice, **kwargs), allow_running_loop=allow_running_loop)
+
+    @handle_exceptions()
+    async def aspeech(self, model: str, input: str, voice: str, **kwargs: Any) -> bytes:  # noqa: A002
+        """Generate speech from text asynchronously.
+
+        Args:
+            model: Model identifier for the chosen provider (e.g., model='tts-1' for LLMProvider.OPENAI).
+            input: The text to generate audio for. Maximum 4096 characters.
+            voice: The voice to use for generation (e.g., 'alloy', 'echo', 'shimmer').
+            **kwargs: Additional parameters (instructions, response_format, speed).
+
+        Returns:
+            The generated audio content as bytes.
+
+        """
+        params = AudioSpeechParams(model_id=model, input=input, voice=voice, **kwargs)
+        return await self._aspeech(params)
+
+    async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
+        if not self.SUPPORTS_AUDIO_SPEECH:
+            msg = "Provider doesn't support audio speech."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _aspeech method"
+        raise NotImplementedError(msg)
+
+    def _moderation(
+        self,
+        model: str,
+        input: str | list[str] | list[dict[str, Any]],  # noqa: A002
+        **kwargs: Any,
+    ) -> ModerationResponse:
+        """Run a moderation check synchronously.
+
+        See [AnyLLM.amoderation][any_llm.any_llm.AnyLLM.amoderation]
+        """
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(
+            self.amoderation(model, input, **kwargs),
+            allow_running_loop=allow_running_loop,
+        )
+
+    @handle_exceptions()
+    async def amoderation(
+        self,
+        model: str,
+        input: str | list[str] | list[dict[str, Any]],  # noqa: A002
+        **kwargs: Any,
+    ) -> ModerationResponse:
+        """Run a moderation check asynchronously.
+
+        Args:
+            model: Provider-specific moderation model identifier.
+            input: A string, list of strings, or list of OpenAI-style content-part
+                dicts (for multimodal moderation).
+            **kwargs: Additional provider-specific arguments. Pass
+                ``include_raw=True`` to populate ``ModerationResult.provider_raw``.
+
+        Returns:
+            A ModerationResponse with one ``ModerationResult`` per input item.
+
+        Raises:
+            NotImplementedError: If the provider does not support moderation.
+        """
+        return await self._amoderation(model, input, **kwargs)
+
+    async def _amoderation(
+        self,
+        model: str,
+        input: str | list[str] | list[dict[str, Any]],  # noqa: A002
+        **kwargs: Any,
+    ) -> ModerationResponse:
+        if not self.SUPPORTS_MODERATION:
+            msg = f"Provider {self.PROVIDER_NAME} does not support moderation"
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _amoderation method"
+        raise NotImplementedError(msg)
+
+    def _rerank(self, model: str, query: str, documents: list[str], **kwargs: Any) -> RerankResponse:
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(self.arerank(model, query, documents, **kwargs), allow_running_loop=allow_running_loop)
+
+    @handle_exceptions()
+    async def arerank(self, model: str, query: str, documents: list[str], **kwargs: Any) -> RerankResponse:
+        """Rerank documents by relevance to a query.
+
+        Args:
+            model: Model identifier for the rerank model.
+            query: The search query string.
+            documents: List of document strings to rerank.
+            **kwargs: Additional provider-specific arguments.
+
+        Returns:
+            RerankResponse with results sorted by relevance_score descending.
+
+        Raises:
+            NotImplementedError: If the provider does not support reranking.
+
+        """
+        return await self._arerank(model, query, documents, **kwargs)
+
+    async def _arerank(self, model: str, query: str, documents: list[str], **kwargs: Any) -> RerankResponse:
+        if not self.SUPPORTS_RERANK:
+            msg = "Provider doesn't support rerank."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _arerank method"
         raise NotImplementedError(msg)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:

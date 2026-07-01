@@ -1,3 +1,4 @@
+import sys
 from collections.abc import AsyncIterable, AsyncIterator
 from contextlib import contextmanager
 from typing import Any
@@ -9,12 +10,17 @@ from any_llm.providers.watsonx.utils import _convert_streaming_chunk
 from any_llm.providers.watsonx.watsonx import WatsonxProvider
 from any_llm.types.completion import CompletionParams
 
+_SKIP_PYTHON_314 = pytest.mark.skipif(
+    sys.version_info >= (3, 14),
+    reason="ibm-watsonx-ai is not compatible with Python 3.14+ (StrEnum compatibility issues)",
+)
+
 
 @contextmanager
 def mock_watsonx_provider():  # type: ignore[no-untyped-def]
     with (
-        patch("any_llm.providers.watsonx.watsonx.ModelInference") as mock_model_inference,
-        patch("any_llm.providers.watsonx.watsonx._convert_response") as mock_convert_response,
+        patch("any_llm.providers.watsonx.watsonx.ModelInference", create=True) as mock_model_inference,
+        patch("any_llm.providers.watsonx.watsonx._convert_response", create=True) as mock_convert_response,
     ):
         mock_model_instance = MagicMock()
         mock_model_inference.return_value = mock_model_instance
@@ -31,8 +37,10 @@ def mock_watsonx_provider():  # type: ignore[no-untyped-def]
 @contextmanager
 def mock_watsonx_streaming_provider():  # type: ignore[no-untyped-def]
     with (
-        patch("any_llm.providers.watsonx.watsonx.ModelInference") as mock_model_inference,
-        patch("any_llm.providers.watsonx.watsonx._convert_streaming_chunk") as mock_convert_streaming_chunk,
+        patch("any_llm.providers.watsonx.watsonx.ModelInference", create=True) as mock_model_inference,
+        patch(
+            "any_llm.providers.watsonx.watsonx._convert_streaming_chunk", create=True
+        ) as mock_convert_streaming_chunk,
     ):
         mock_model_instance = MagicMock()
         mock_model_inference.return_value = mock_model_instance
@@ -53,6 +61,7 @@ def mock_watsonx_streaming_provider():  # type: ignore[no-untyped-def]
         yield mock_model_instance, mock_convert_streaming_chunk, mock_model_inference
 
 
+@_SKIP_PYTHON_314
 @pytest.mark.asyncio
 async def test_watsonx_non_streaming() -> None:
     api_key = "test-api-key"
@@ -73,6 +82,7 @@ async def test_watsonx_non_streaming() -> None:
         assert result == mock_convert_response.return_value
 
 
+@_SKIP_PYTHON_314
 @pytest.mark.asyncio
 async def test_watsonx_streaming() -> None:
     api_key = "test-api-key"
@@ -99,6 +109,7 @@ async def test_watsonx_streaming() -> None:
         assert result_list is not None
 
 
+@_SKIP_PYTHON_314
 @pytest.mark.asyncio
 async def test_watsonx_with_dataclass_response_format() -> None:
     """Test that dataclass response_format inlines JSON instruction into messages."""
@@ -127,12 +138,14 @@ async def test_watsonx_with_dataclass_response_format() -> None:
         assert "value" in modified_messages[0]["content"]
 
 
+@_SKIP_PYTHON_314
 def test_watsonx_SUPPORTS_COMPLETION_STREAMING() -> None:
     """Test that WatsonxProvider correctly advertises streaming support."""
     provider = WatsonxProvider(api_key="test-key")
     assert provider.SUPPORTS_COMPLETION_STREAMING is True
 
 
+@_SKIP_PYTHON_314
 @pytest.mark.asyncio
 @pytest.mark.parametrize("reasoning_effort", ["auto", "none"])
 async def test_reasoning_effort_filtered_out_in_acompletion(reasoning_effort: str) -> None:

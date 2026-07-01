@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Remove run-integration-tests label
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             await github.rest.issues.removeLabel({
@@ -47,7 +47,7 @@ jobs:
     steps:
       - name: Set expected providers for integration tests
         id: set_providers
-        run: echo "expected_providers=anthropic,azureopenai,bedrock,cerebras,cohere,deepseek,fireworks,gemini,groq,huggingface,inception,mistral,moonshot,nebius,openai,openrouter,perplexity,portkey,together,sambanova,voyage,xai,zai,minimax" >> $GITHUB_OUTPUT
+        run: echo "expected_providers=anthropic,azureopenai,bedrock,cerebras,cohere,deepseek,fireworks,gemini,groq,huggingface,inception,mistral,moonshot,nebius,openai,openrouter,otari,perplexity,portkey,together,sambanova,voyage,xai,zai,minimax" >> $GITHUB_OUTPUT
 
       - name: Set expected providers for local integration tests
         id: set_local_providers
@@ -119,6 +119,8 @@ jobs:
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
           MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          # otari is the hosted gateway (api.otari.ai); it authenticates with a platform token.
+          OTARI_AI_TOKEN: ${{ secrets.OTARI_AI_TOKEN }}
           EXPECTED_PROVIDERS: ${{ needs.expected-providers.outputs.providers }}
           INCLUDE_LOCAL_PROVIDERS: "false"
         run: |
@@ -130,7 +132,7 @@ jobs:
 
       - name: Upload coverage reports to Codecov
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
 
@@ -231,12 +233,12 @@ jobs:
 
       - name: Download LM Studio model
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio')
-        run: lms get google/gemma-3-4b --yes
+        run: lms get qwen/qwen3-1.7b --yes
 
       - name: Load model and start LM Studio server
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio')
         run: |
-          lms load google/gemma-3-4b --yes &
+          lms load qwen/qwen3-1.7b --yes &
           lms server start
 
       - name: Wait for LM Studio to be ready
@@ -265,6 +267,6 @@ jobs:
 
       - name: Upload coverage reports to Codecov
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

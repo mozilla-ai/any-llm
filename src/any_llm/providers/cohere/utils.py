@@ -11,10 +11,14 @@ from any_llm.types.completion import (
     ChatCompletionMessageFunctionToolCall,
     Choice,
     CompletionUsage,
+    CreateEmbeddingResponse,
+    Embedding,
     Function,
     Reasoning,
+    Usage,
 )
 from any_llm.types.model import Model
+from any_llm.types.rerank import RerankMeta, RerankResponse, RerankResult, RerankUsage
 
 
 def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -217,6 +221,89 @@ def _convert_response(response: V2ChatResponse, model: str) -> ChatCompletion:
         object="chat.completion",
         choices=[choice],
         usage=usage,
+    )
+
+
+def _convert_cohere_rerank_response(response: Any) -> RerankResponse:
+    """Convert a Cohere V2 rerank response to a normalized RerankResponse."""
+    results = [
+        RerankResult(
+            index=r.index,
+            relevance_score=r.relevance_score,
+        )
+        for r in response.results
+    ]
+    # Defensive: Cohere returns sorted but re-sort to guarantee the docstring contract
+    results.sort(key=lambda r: r.relevance_score, reverse=True)
+
+    meta = None
+    if hasattr(response, "meta") and response.meta is not None:
+        billed_units = None
+        tokens = None
+        if hasattr(response.meta, "billed_units") and response.meta.billed_units is not None:
+            billed_units = {}
+            if (
+                hasattr(response.meta.billed_units, "search_units")
+                and response.meta.billed_units.search_units is not None
+            ):
+                billed_units["search_units"] = float(response.meta.billed_units.search_units)
+        if hasattr(response.meta, "tokens") and response.meta.tokens is not None:
+            tokens = {}
+            if hasattr(response.meta.tokens, "input_tokens") and response.meta.tokens.input_tokens is not None:
+                tokens["input_tokens"] = int(response.meta.tokens.input_tokens)
+        if billed_units or tokens:
+            meta = RerankMeta(billed_units=billed_units or None, tokens=tokens or None)
+
+    usage = None
+    if meta and meta.tokens and "input_tokens" in meta.tokens:
+        usage = RerankUsage(total_tokens=meta.tokens["input_tokens"])
+
+    return RerankResponse(
+        id=response.id,
+        results=results,
+        meta=meta,
+        usage=usage,
+    )
+
+
+_EMBEDDING_TYPE_FIELDS = ("float_", "int8", "uint8", "binary", "ubinary")
+
+
+def _extract_vectors(embeddings_data: Any) -> list[list[float]]:
+    """Return the first non-empty embedding vectors from a Cohere EmbedByTypeResponseEmbeddings.
+
+    Integer-typed fields (int8, uint8, binary, ubinary) are cast to float.
+    """
+    for field in _EMBEDDING_TYPE_FIELDS:
+        vectors = getattr(embeddings_data, field, None)
+        if vectors:
+            return [[float(v) for v in vec] for vec in vectors]
+    return []
+
+
+def _convert_cohere_embedding_response(model: str, response: Any) -> CreateEmbeddingResponse:
+    """Convert a Cohere EmbedByTypeResponse to an OpenAI CreateEmbeddingResponse."""
+    vectors = _extract_vectors(response.embeddings)
+
+    openai_embeddings = [Embedding(embedding=vector, index=i, object="embedding") for i, vector in enumerate(vectors)]
+
+    prompt_tokens = 0
+    total_tokens = 0
+    if response.meta:
+        # Cohere reports embed usage under meta.billed_units.input_tokens; meta.tokens is
+        # typically null for embeddings, so fall back to billed_units to avoid reporting 0.
+        # Use explicit None checks so an API-reported 0 is preserved rather than treated as absent.
+        if response.meta.tokens is not None and response.meta.tokens.input_tokens is not None:
+            prompt_tokens = int(response.meta.tokens.input_tokens)
+        elif response.meta.billed_units is not None and response.meta.billed_units.input_tokens is not None:
+            prompt_tokens = int(response.meta.billed_units.input_tokens)
+        total_tokens = prompt_tokens
+
+    return CreateEmbeddingResponse(
+        data=openai_embeddings,
+        model=model,
+        object="list",
+        usage=Usage(prompt_tokens=prompt_tokens, total_tokens=total_tokens),
     )
 
 

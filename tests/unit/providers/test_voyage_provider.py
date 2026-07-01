@@ -1,3 +1,4 @@
+import sys
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -5,12 +6,20 @@ import pytest
 
 from any_llm.providers.voyage import VoyageProvider
 
+_SKIP_PYTHON_314 = pytest.mark.skipif(
+    sys.version_info >= (3, 14),
+    reason="voyageai is not compatible with Python 3.14+ (pydantic v1 breaking changes)",
+)
+
 
 @contextmanager
 def mock_voyage_provider():  # type: ignore[no-untyped-def]
     with (
-        patch("any_llm.providers.voyage.voyage.AsyncClient") as mock_async_client,
-        patch("any_llm.providers.voyage.utils._create_openai_embedding_response_from_voyage") as mock_convert_response,
+        patch("any_llm.providers.voyage.voyage.AsyncClient", create=True) as mock_async_client,
+        patch(
+            "any_llm.providers.voyage.utils._create_openai_embedding_response_from_voyage",
+            create=True,
+        ) as mock_convert_response,
     ):
         mock_convert_response.return_value = {
             "data": [
@@ -34,6 +43,7 @@ def mock_voyage_provider():  # type: ignore[no-untyped-def]
         yield mock_async_client
 
 
+@_SKIP_PYTHON_314
 @pytest.mark.asyncio
 async def test_embedding_with_single_text() -> None:
     """Test that embedding works correctly with a single text input."""
@@ -51,6 +61,7 @@ async def test_embedding_with_single_text() -> None:
         assert call_args[1]["texts"] == [text]
 
 
+@_SKIP_PYTHON_314
 @pytest.mark.asyncio
 async def test_embedding_with_multiple_texts() -> None:
     """Test that embedding works correctly with multiple text inputs."""
@@ -68,6 +79,7 @@ async def test_embedding_with_multiple_texts() -> None:
         assert call_args[1]["texts"] == texts
 
 
+@_SKIP_PYTHON_314
 @pytest.mark.asyncio
 async def test_embedding_with_additional_kwargs() -> None:
     """Test that embedding passes through additional kwargs."""
@@ -111,12 +123,16 @@ def test_convert_embedding_params_with_kwargs() -> None:
     assert result == expected
 
 
+@_SKIP_PYTHON_314
 def test_convert_embedding_response_default_model() -> None:
     """Test that _convert_embedding_response uses default model when not provided."""
     mock_result = Mock()
     mock_result.embeddings = [[0.1, 0.2, 0.3]]
     mock_result.total_tokens = 5
 
-    with patch("any_llm.providers.voyage.voyage._create_openai_embedding_response_from_voyage") as mock_convert:
+    with patch(
+        "any_llm.providers.voyage.voyage._create_openai_embedding_response_from_voyage",
+        create=True,
+    ) as mock_convert:
         VoyageProvider._convert_embedding_response({"result": mock_result})
         mock_convert.assert_called_once_with("voyage-model", mock_result)

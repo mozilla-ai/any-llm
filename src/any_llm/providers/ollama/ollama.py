@@ -31,6 +31,18 @@ if TYPE_CHECKING:
     from any_llm.types.model import Model
 
 
+# Ollama's `think` parameter accepts only low/medium/high levels (plus booleans)
+# Reasoning_effort scale is collapsed at the extremes.
+REASONING_EFFORT_TO_OLLAMA_THINK: dict[str, str] = {
+    "minimal": "low",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "high",
+    "max": "high",
+}
+
+
 class OllamaProvider(AnyLLM):
     """
     Ollama Provider using the new response conversion utilities.
@@ -53,6 +65,7 @@ class OllamaProvider(AnyLLM):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
+    SUPPORTS_RERANK = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -62,12 +75,14 @@ class OllamaProvider(AnyLLM):
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Ollama API."""
-        # Ollama does not support providing reasoning effort
         converted_params = params.model_dump(
-            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream", "stream_options"}
+            exclude_none=True,
+            exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream", "stream_options"},
         )
-        if converted_params.get("reasoning_effort") in ("auto", "none"):
-            converted_params.pop("reasoning_effort")
+        if params.reasoning_effort == "none":
+            converted_params["think"] = False
+        elif params.reasoning_effort is not None and params.reasoning_effort != "auto":
+            converted_params["think"] = REASONING_EFFORT_TO_OLLAMA_THINK[params.reasoning_effort]
         converted_params.update(kwargs)
         converted_params["num_ctx"] = converted_params.get("num_ctx", 32000)
         return converted_params
@@ -152,6 +167,7 @@ class OllamaProvider(AnyLLM):
         response: AsyncIterator[OllamaChatResponse] = await self.client.chat(
             model=model,
             messages=messages,
+            tools=kwargs.pop("tools", None),
             think=kwargs.pop("think", None),
             stream=True,
             options=kwargs,
@@ -201,9 +217,6 @@ class OllamaProvider(AnyLLM):
             cleaned_messages.append(cleaned_message)
 
         completion_kwargs = self._convert_completion_params(params, **kwargs)
-
-        if completion_kwargs.get("reasoning_effort") is not None:
-            completion_kwargs["think"] = True
 
         if params.stream:
             return self._stream_completion_async(params.model_id, cleaned_messages, **completion_kwargs)

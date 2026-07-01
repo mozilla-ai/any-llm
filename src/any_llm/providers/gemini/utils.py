@@ -3,13 +3,14 @@ import binascii
 import json
 import mimetypes
 from time import time
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from google.genai import types
 from google.genai.pagers import Pager
 
 from any_llm.exceptions import InvalidRequestError
 from any_llm.logging import logger
+from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.completion import (
     ChatCompletionChunk,
     ChoiceDelta,
@@ -28,6 +29,22 @@ from any_llm.types.model import Model
 _INLINE_SIZE_LIMIT = 20 * 1024 * 1024
 
 
+def _has_json_schema_refs(schema: Any) -> bool:
+    """Return True if *schema* contains a ``$defs`` block or any ``$ref`` reference.
+
+    ``google.genai.types.Schema`` does not accept ``$ref``/``$defs``. When present,
+    the schema must be routed through ``FunctionDeclaration.parameters_json_schema``
+    instead, which the SDK forwards to the server as raw JSON Schema.
+    """
+    if isinstance(schema, dict):
+        if "$defs" in schema or "$ref" in schema:
+            return True
+        return any(_has_json_schema_refs(v) for v in schema.values())
+    if isinstance(schema, list):
+        return any(_has_json_schema_refs(v) for v in schema)
+    return False
+
+
 def _convert_tool_spec(tools: list[dict[str, Any] | Any]) -> list[types.Tool]:
     converted_tools = []
     function_declarations = []
@@ -42,6 +59,17 @@ def _convert_tool_spec(tools: list[dict[str, Any] | Any]) -> list[types.Tool]:
 
         function = tool["function"]
         params: dict[str, Any] = function.get("parameters") or {}
+
+        if _has_json_schema_refs(params):
+            function_declarations.append(
+                types.FunctionDeclaration(
+                    name=function["name"],
+                    description=function.get("description", ""),
+                    parameters_json_schema=params,
+                )
+            )
+            continue
+
         properties: dict[str, dict[str, Any]] = {}
         for param_name, param_info in (params.get("properties") or {}).items():
             prop: dict[str, Any] = {
@@ -433,3 +461,168 @@ def _create_openai_chunk_from_google_chunk(
 
 def _convert_models_list(models_list: Pager[types.Model]) -> list[Model]:
     return [Model(id=model.name or "Unknown", object="model", created=0, owned_by="google") for model in models_list]
+
+
+_GOOGLE_TO_OPENAI_STATUS_MAP: dict[str, str] = {
+    "JOB_STATE_QUEUED": "validating",
+    "JOB_STATE_PENDING": "validating",
+    "JOB_STATE_RUNNING": "in_progress",
+    "JOB_STATE_PAUSED": "in_progress",
+    "JOB_STATE_UPDATING": "in_progress",
+    "JOB_STATE_SUCCEEDED": "completed",
+    "JOB_STATE_PARTIALLY_SUCCEEDED": "completed",
+    "JOB_STATE_FAILED": "failed",
+    "JOB_STATE_CANCELLING": "cancelling",
+    "JOB_STATE_CANCELLED": "cancelled",
+    "JOB_STATE_EXPIRED": "expired",
+}
+
+
+def _convert_google_batch_job_to_openai_batch(job: types.BatchJob) -> Batch:
+    """Convert a Google GenAI ``BatchJob`` to an OpenAI ``Batch``."""
+    state_str = job.state.value if job.state else "JOB_STATE_UNSPECIFIED"
+    openai_status = _GOOGLE_TO_OPENAI_STATUS_MAP.get(state_str)
+    if openai_status is None:
+        logger.warning("Unknown Google batch state: %s, defaulting to 'in_progress'", state_str)
+        openai_status = "in_progress"
+
+    stats = job.completion_stats
+    total = 0
+    completed = 0
+    failed = 0
+    if stats:
+        successful = stats.successful_count or 0
+        failed_count = stats.failed_count or 0
+        incomplete = stats.incomplete_count or 0
+        total = successful + failed_count + incomplete
+        completed = successful
+        failed = failed_count
+
+    request_counts = BatchRequestCounts(total=total, completed=completed, failed=failed)
+
+    created_at = int(job.create_time.timestamp()) if job.create_time else 0
+
+    output_uri = None
+    if job.output_info:
+        output_uri = job.output_info.gcs_output_directory or job.output_info.bigquery_output_table
+
+    src_uri = ""
+    if job.src:
+        if job.src.gcs_uri:
+            src_uri = job.src.gcs_uri[0] if job.src.gcs_uri else ""
+        elif job.src.file_name:
+            src_uri = job.src.file_name
+
+    metadata: dict[str, str] | None = None
+    if job.display_name:
+        metadata = {"displayName": job.display_name}
+
+    return Batch(
+        id=job.name or "",
+        object="batch",
+        endpoint="/v1/chat/completions",
+        status=cast("Any", openai_status),
+        created_at=created_at,
+        completion_window="24h",
+        request_counts=request_counts,
+        input_file_id=src_uri,
+        output_file_id=output_uri,
+        error_file_id=None,
+        metadata=metadata,
+    )
+
+
+def _convert_openai_request_to_inlined_request(
+    entry: dict[str, Any],
+    provider_name: str = "gemini",
+) -> types.InlinedRequest:
+    """Convert a single OpenAI-format JSONL entry to a Google ``InlinedRequest``.
+
+    The *entry* dict follows the OpenAI batch format with ``custom_id`` and
+    ``body`` (containing ``model``, ``messages``, and optional parameters).
+    """
+    body = entry.get("body", {})
+    messages = body.get("messages", [])
+    model = body.get("model", "")
+
+    contents, system_instruction = _convert_messages(messages, provider_name=provider_name)
+
+    config_kwargs: dict[str, Any] = {}
+    if "max_tokens" in body:
+        config_kwargs["max_output_tokens"] = body["max_tokens"]
+    if "temperature" in body:
+        config_kwargs["temperature"] = body["temperature"]
+    if "top_p" in body:
+        config_kwargs["top_p"] = body["top_p"]
+    if "stop" in body:
+        stop = body["stop"]
+        config_kwargs["stop_sequences"] = [stop] if isinstance(stop, str) else stop
+    if system_instruction:
+        config_kwargs["system_instruction"] = system_instruction
+
+    config = types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
+
+    metadata: dict[str, str] | None = None
+    custom_id = entry.get("custom_id")
+    if custom_id:
+        metadata = {"custom_id": str(custom_id)}
+
+    return types.InlinedRequest(
+        model=model,
+        contents=cast("Any", contents),
+        config=config,
+        metadata=metadata,
+    )
+
+
+def _convert_google_batch_output_to_result(output_lines: list[str]) -> BatchResult:
+    """Parse Google batch output JSONL lines into a ``BatchResult``.
+
+    Each output line is a JSON object containing the prediction result from the
+    Gemini/Vertex AI batch inference job.
+    """
+    from any_llm.providers.gemini.base import GoogleProvider
+
+    results: list[BatchResultItem] = []
+    for line in output_lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            record = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+
+        custom_id = ""
+        if "request" in record and "metadata" in record["request"]:
+            custom_id = record["request"]["metadata"].get("custom_id", "")
+
+        item = BatchResultItem(custom_id=custom_id)
+
+        response_data = record.get("response")
+        if response_data is None:
+            error_data = record.get("error")
+            if error_data:
+                item.error = BatchResultError(
+                    code=str(error_data.get("code", "unknown")),
+                    message=error_data.get("message", "Unknown error"),
+                )
+            else:
+                item.error = BatchResultError(
+                    code="unknown",
+                    message="Record contains neither response nor error",
+                )
+        else:
+            try:
+                response = types.GenerateContentResponse.model_validate(response_data)
+                response_dict = _convert_response_to_response_dict(response)
+                item.result = GoogleProvider._convert_completion_response((response_dict, record.get("model", "")))
+            except Exception as exc:
+                item.error = BatchResultError(
+                    code="parse_error",
+                    message=f"Failed to parse response: {exc}",
+                )
+
+        results.append(item)
+
+    return BatchResult(results=results)

@@ -19,7 +19,7 @@ repos:
         exclude: (\.md|\.ambr)$
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: "v0.15.8"
+    rev: "v0.15.12"
     hooks:
       - id: ruff
         args:
@@ -38,13 +38,6 @@ repos:
         types: [python]
         verbose: true
         exclude: demos|scripts
-      - id: openapi-spec
-        name: openapi-spec
-        entry: "uv run python scripts/generate_openapi.py"
-        language: system
-        files: ^src/any_llm/gateway/
-        pass_filenames: false
-        verbose: true
 
   - repo: https://github.com/codespell-project/codespell
     rev: "v2.4.2"

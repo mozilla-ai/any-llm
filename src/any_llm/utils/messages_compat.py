@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from any_llm.types.messages import (
     ContentBlockDeltaEvent,
@@ -24,12 +24,26 @@ from any_llm.types.messages import (
     ThinkingDelta,
     ToolUseBlock,
 )
+from any_llm.utils.structured_output import is_structured_output_type
 
 if TYPE_CHECKING:
     from anthropic.types import ContentBlock as SDKContentBlock
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
     from any_llm.types.messages import MessagesParams
+
+
+def _output_config_to_response_format(output_config: dict[str, Any]) -> dict[str, Any]:
+    """Translate a raw Anthropic ``output_config`` dict into a completion ``response_format``.
+
+    Lets the bridge carry a non-Pydantic JSON schema to non-Anthropic providers: the schema
+    under ``output_config["format"]["schema"]`` is rewrapped as the OpenAI ``json_schema``
+    response format. The name falls back to the schema's ``title`` (or ``"structured_output"``).
+    """
+    fmt = output_config.get("format") or {}
+    schema = fmt.get("schema") or {}
+    name = schema.get("title", "structured_output")
+    return {"type": "json_schema", "json_schema": {"name": name, "schema": schema}}
 
 
 def messages_params_to_completion_params(params: MessagesParams) -> dict[str, Any]:
@@ -60,6 +74,12 @@ def messages_params_to_completion_params(params: MessagesParams) -> dict[str, An
         result["stop"] = params.stop_sequences
     if params.stream is not None:
         result["stream"] = params.stream
+
+    if params.output_format is not None:
+        if is_structured_output_type(params.output_format):
+            result["response_format"] = params.output_format
+        else:
+            result["response_format"] = _output_config_to_response_format(cast("dict[str, Any]", params.output_format))
 
     if params.tools:
         result["tools"] = _convert_tools_to_openai(params.tools)

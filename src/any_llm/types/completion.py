@@ -22,14 +22,37 @@ from openai.types.completion_usage import CompletionUsage as OpenAICompletionUsa
 from openai.types.completion_usage import PromptTokensDetails as OpenAIPromptTokensDetails
 from openai.types.create_embedding_response import Usage as OpenAIUsage
 from openai.types.embedding import Embedding as OpenAIEmbedding
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_serializer, model_validator
 
 # See https://github.com/mozilla-ai/any-llm/issues/95:
 # OpenAI Completion API doesn't include reasoning information, so we need to extend the openai type
 
 
 class Reasoning(BaseModel):
+    """Reasoning content emitted by a model.
+
+    Serializes as a plain JSON string so that responses are compatible with
+    OpenAI-style clients that expect ``delta.reasoning`` / ``message.reasoning``
+    to be a string. The Python attribute ``content`` remains available for
+    typed access (e.g. ``message.reasoning.content``).
+    """
+
     content: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_input(cls, value: Any) -> Any:
+        """Accept either a plain string or the ``{"content": str}`` object form."""
+        if isinstance(value, str):
+            return {"content": value}
+        if isinstance(value, dict) and "content" in value and value["content"] is not None:
+            return {"content": str(value["content"])}
+        return value
+
+    @model_serializer
+    def _serialize(self) -> str:
+        """Serialize as a plain string for OpenAI-compatible wire format."""
+        return self.content
 
 
 class ChatCompletionMessage(OpenAIChatCompletionMessage):
@@ -43,6 +66,7 @@ class Choice(OpenAIChoice):
 
 class ChatCompletion(OpenAIChatCompletion):
     choices: list[Choice]  # type: ignore[assignment]
+    service_tier: str | None = None  # type: ignore[assignment]
 
 
 ContentType = TypeVar("ContentType")
@@ -70,6 +94,7 @@ class ChunkChoice(OpenAIChunkChoice):
 
 class ChatCompletionChunk(OpenAIChatCompletionChunk):
     choices: list[ChunkChoice]  # type: ignore[assignment]
+    service_tier: str | None = None  # type: ignore[assignment]
 
 
 class ChatCompletionMessageFunctionToolCall(OpenAIChatCompletionMessageFunctionToolCall):
@@ -96,7 +121,7 @@ Usage = OpenAIUsage
 ChoiceDeltaToolCall = OpenAIChoiceDeltaToolCall
 ChoiceDeltaToolCallFunction = OpenAIChoiceDeltaToolCallFunction
 
-ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "auto"]
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max", "auto"]
 
 
 class CompletionParams(BaseModel):

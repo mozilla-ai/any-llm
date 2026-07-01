@@ -19,6 +19,7 @@ from any_llm.types.messages import (
     MessageStreamEvent,
     ThinkingBlock,
 )
+from any_llm.utils.structured_output import is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
     from anthropic.types import Message
     from anthropic.types.messages.message_batch import MessageBatch
     from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
+    from anthropic.types.parsed_message import ParsedMessage
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
@@ -113,6 +115,7 @@ class BaseAnthropicProvider(AnyLLM, ABC):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = False
     SUPPORTS_BATCH = True
+    SUPPORTS_RERANK = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -188,8 +191,25 @@ class BaseAnthropicProvider(AnyLLM, ABC):
     @override
     async def _amessages(
         self, params: MessagesParams, **kwargs: Any
-    ) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
-        """Native Anthropic Messages API pass-through."""
+    ) -> MessageResponse | ParsedMessage[Any] | AsyncIterator[MessageStreamEvent]:
+        """Native Anthropic Messages API pass-through.
+
+        When ``output_format`` is a structured-output type, uses native ``messages.parse``
+        (which drives the GA ``output_config`` primitive) and returns the SDK's ``ParsedMessage``
+        unchanged. When it is a raw ``output_config`` dict, passes it straight to native
+        ``messages.create(output_config=...)`` and returns a ``MessageResponse`` (the base layer
+        then builds the matching ``ParsedMessage`` from its JSON text).
+        """
+        if params.output_format is not None:
+            native_kwargs = params.model_dump(exclude_none=True, exclude={"output_format", "stream"})
+            native_kwargs.update(kwargs)
+            if is_structured_output_type(params.output_format):
+                return await self.client.messages.parse(output_format=params.output_format, **native_kwargs)
+            message = await self.client.messages.create(
+                output_config=cast("Any", params.output_format), **native_kwargs
+            )
+            return self._convert_native_message_to_response(message)
+
         api_kwargs = params.model_dump(exclude_none=True)
         api_kwargs.pop("stream", None)
         api_kwargs.update(kwargs)

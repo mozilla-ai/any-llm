@@ -7,7 +7,7 @@ from typing import Any, Literal, cast
 
 from openai import AsyncOpenAI
 from openai._streaming import AsyncStream
-from openai._types import NOT_GIVEN, Omit
+from openai._types import Omit
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from openai.types.chat.parsed_chat_completion import ParsedChatCompletion as OpenAIParsedChatCompletion
@@ -20,9 +20,11 @@ from any_llm.exceptions import BatchNotCompleteError
 from any_llm.logging import logger
 from any_llm.providers.openai.utils import (
     _convert_chat_completion,
+    _convert_moderation_response_from_openai,
     _convert_parsed_chat_completion,
     _normalize_openai_dict_response,
 )
+from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
 from any_llm.types.batch import Batch, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.completion import (
     ChatCompletion,
@@ -31,9 +33,15 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     ReasoningEffort,
 )
+from any_llm.types.image import ImageGenerationParams, ImagesResponse
 from any_llm.types.model import Model
-from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
-from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
+from any_llm.types.moderation import ModerationResponse
+from any_llm.types.responses import ParsedResponse, Response, ResponsesParams, ResponseStreamEvent
+from any_llm.utils.structured_output import (
+    build_responses_text_format,
+    get_json_schema,
+    is_structured_output_type,
+)
 
 
 class BaseOpenAIProvider(AnyLLM):
@@ -52,8 +60,11 @@ class BaseOpenAIProvider(AnyLLM):
     SUPPORTS_COMPLETION_IMAGE = True
     SUPPORTS_COMPLETION_PDF = True
     SUPPORTS_EMBEDDING = True
+    SUPPORTS_MODERATION = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
+    SUPPORTS_IMAGE_GENERATION = False
+    SUPPORTS_RERANK = False
 
     _DEFAULT_REASONING_EFFORT: ReasoningEffort | None = None
 
@@ -216,13 +227,34 @@ class BaseOpenAIProvider(AnyLLM):
     @override
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
-    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+    ) -> ResponseResource | Response | ParsedResponse[Any] | AsyncIterator[ResponseStreamEvent]:
         """Call OpenAI Responses API"""
-        response = await self.client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
+        response_format = params.response_format
+        create_kwargs = params.model_dump(exclude_none=True, exclude={"response_format"})
+
+        if is_structured_output_type(response_format):
+            # Pydantic models use the native parse() helper (mirrors chat.completions.parse);
+            # dataclasses request schema-conformant JSON via text.format and are parsed by the base layer.
+            create_kwargs.pop("text", None)
+            if issubclass(response_format, BaseModel):
+                return await self.client.responses.parse(
+                    text_format=response_format,
+                    **create_kwargs,
+                    **kwargs,
+                )
+            create_kwargs["text"] = build_responses_text_format(response_format)
+        elif isinstance(response_format, dict):
+            create_kwargs["text"] = {"format": response_format}
+
+        response = await self.client.responses.create(**create_kwargs, **kwargs)
 
         if not isinstance(response, Response | AsyncStream):
             msg = f"Responses API returned an unexpected type: {type(response)}"
             raise ValueError(msg)
+        # When a structured response_format was requested, return the raw Response so the base
+        # layer can parse it into a ParsedResponse (do not collapse it to a ResponseResource).
+        if is_structured_output_type(response_format):
+            return response
         # if it's a Response, try to convert it to a ResponseResource. If that fails, return the Response
         if isinstance(response, Response):
             try:
@@ -247,14 +279,73 @@ class BaseOpenAIProvider(AnyLLM):
             msg = "This provider does not support embeddings."
             raise NotImplementedError(msg)
 
+        # `_convert_embedding_params` already folds `dimensions` (and any other
+        # caller kwargs) into the dict, so spread it straight through — mirroring
+        # `_acompletion`, which names only `model`/`messages` and spreads the
+        # rest. Forwarding `dimensions` explicitly *as well* passed it twice and
+        # raised "got multiple values for keyword argument 'dimensions'".
         embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
         return self._convert_embedding_response(
             await self.client.embeddings.create(
                 model=model,
-                dimensions=kwargs.get("dimensions", NOT_GIVEN),
                 **embedding_kwargs,
             )
         )
+
+    @override
+    async def _aimage_generation(self, params: ImageGenerationParams, **kwargs: Any) -> ImagesResponse:
+        api_kwargs = params.to_api_kwargs()
+        api_kwargs.update(kwargs)
+
+        return await self.client.images.generate(  # type: ignore[no-any-return]
+            model=params.model_id,
+            **api_kwargs,
+        )
+
+    @override
+    async def _atranscription(self, params: AudioTranscriptionParams, **kwargs: Any) -> Transcription:
+        api_kwargs = params.to_api_kwargs()
+        api_kwargs.update(kwargs)
+
+        return await self.client.audio.transcriptions.create(  # type: ignore[no-any-return]
+            model=params.model_id,
+            file=params.file,
+            **api_kwargs,
+        )
+
+    @override
+    async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
+        api_kwargs = params.to_api_kwargs()
+        api_kwargs.update(kwargs)
+
+        response = await self.client.audio.speech.create(
+            model=params.model_id,
+            input=params.input,
+            voice=params.voice,
+            **api_kwargs,
+        )
+        return response.content
+
+    @override
+    async def _amoderation(
+        self,
+        model: str,
+        input: str | list[str] | list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> ModerationResponse:
+        if not self.SUPPORTS_MODERATION:
+            msg = f"Provider {self.PROVIDER_NAME} does not support moderation"
+            raise NotImplementedError(msg)
+
+        include_raw = kwargs.pop("include_raw", False)
+        model_name = model or "omni-moderation-latest"
+
+        raw = await self.client.moderations.create(
+            model=model_name,
+            input=cast("Any", input),
+            **kwargs,
+        )
+        return _convert_moderation_response_from_openai(raw, include_raw=include_raw)
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:

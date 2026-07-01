@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.exceptions import UnsupportedParameterError
+from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError, UnsupportedParameterError
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -26,8 +27,11 @@ try:
     from google.genai import types
 
     from .utils import (
+        _convert_google_batch_job_to_openai_batch,
+        _convert_google_batch_output_to_result,
         _convert_messages,
         _convert_models_list,
+        _convert_openai_request_to_inlined_request,
         _convert_response_to_response_dict,
         _convert_tool_choice,
         _convert_tool_spec,
@@ -48,13 +52,22 @@ if TYPE_CHECKING:
         ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
     )
 
+    from any_llm.types.batch import Batch, BatchResult
     from any_llm.types.model import Model
 
     ChatCompletionMessageToolCallType = (
         OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
     )
 
-REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 256, "low": 1024, "medium": 8192, "high": 24576, "xhigh": 32768}
+REASONING_EFFORT_TO_THINKING_BUDGETS = {
+    "minimal": 256,
+    "low": 1024,
+    "medium": 8192,
+    "high": 24576,
+    "xhigh": 32768,
+    "max": 32768,
+}
+_SUPPORTED_BATCH_ENDPOINTS = frozenset({"/v1/chat/completions"})
 
 
 class GoogleProvider(AnyLLM):
@@ -68,7 +81,8 @@ class GoogleProvider(AnyLLM):
     SUPPORTS_COMPLETION_PDF = True
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
-    SUPPORTS_BATCH = False
+    SUPPORTS_BATCH = True
+    SUPPORTS_RERANK = False
 
     BUILT_IN_TOOLS: ClassVar[list[Any] | None] = [types.Tool]
 
@@ -306,3 +320,190 @@ class GoogleProvider(AnyLLM):
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.aio.models.list(**kwargs)
         return self._convert_list_models_response(models_list)
+
+    @override
+    async def _acreate_batch(
+        self,
+        input_file_path: str,
+        endpoint: str,
+        completion_window: str = "24h",
+        metadata: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> Batch:
+        """Create a batch job using the Google GenAI Batch API.
+
+        Reads a local JSONL file, converts each request from OpenAI format to
+        Google ``InlinedRequest`` objects, and submits them as a batch.
+
+        Optional keyword arguments:
+            dest: GCS or BigQuery URI for output (e.g. ``gs://bucket/output``).
+            display_name: Human-readable name for the batch job.
+            model: Model to use for all requests (overrides per-request model).
+        """
+        import asyncio
+
+        if endpoint not in _SUPPORTED_BATCH_ENDPOINTS:
+            msg = f"Google batch API only supports endpoints: {sorted(_SUPPORTED_BATCH_ENDPOINTS)}, got: '{endpoint}'"
+            raise InvalidRequestError(msg, provider_name=self.PROVIDER_NAME)
+
+        dest: str | None = kwargs.pop("dest", None)
+        display_name: str | None = kwargs.pop("display_name", None)
+        model_override: str | None = kwargs.pop("model", None)
+
+        file_content = await asyncio.to_thread(self._read_file, input_file_path)
+
+        inlined_requests: list[types.InlinedRequest] = []
+        first_model = model_override or ""
+        for line in file_content.strip().split("\n"):
+            if not line.strip():
+                continue
+            entry = json.loads(line)
+            req = _convert_openai_request_to_inlined_request(entry, provider_name=self.PROVIDER_NAME)
+            if model_override:
+                req = types.InlinedRequest(
+                    model=model_override,
+                    contents=req.contents,
+                    config=req.config,
+                    metadata=req.metadata,
+                )
+            inlined_requests.append(req)
+            if not first_model and req.model:
+                first_model = req.model
+
+        if not first_model:
+            msg = "No model specified: provide a 'model' kwarg or include 'model' in the JSONL request bodies."
+            raise ValueError(msg)
+
+        config_kwargs: dict[str, Any] = {}
+        if display_name:
+            config_kwargs["display_name"] = display_name
+        if dest:
+            config_kwargs["dest"] = dest
+
+        config = types.CreateBatchJobConfig(**config_kwargs) if config_kwargs else None
+
+        result = await self.client.aio.batches.create(
+            model=first_model,
+            src=inlined_requests,
+            config=config,
+        )
+        return _convert_google_batch_job_to_openai_batch(result)
+
+    @staticmethod
+    def _read_file(path: str) -> str:
+        """Read file content synchronously (called via ``asyncio.to_thread``)."""
+        from pathlib import Path
+
+        return Path(path).read_text()
+
+    @override
+    async def _aretrieve_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Retrieve a batch job from the Google GenAI Batch API."""
+        result = await self.client.aio.batches.get(name=batch_id)
+        return _convert_google_batch_job_to_openai_batch(result)
+
+    @override
+    async def _acancel_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Cancel a batch job using the Google GenAI Batch API."""
+        await self.client.aio.batches.cancel(name=batch_id)
+        result = await self.client.aio.batches.get(name=batch_id)
+        return _convert_google_batch_job_to_openai_batch(result)
+
+    @override
+    async def _alist_batches(
+        self,
+        after: str | None = None,
+        limit: int | None = None,
+        **kwargs: Any,
+    ) -> Sequence[Batch]:
+        """List batch jobs using the Google GenAI Batch API."""
+        config_kwargs: dict[str, Any] = {}
+        if limit is not None:
+            if limit <= 0:
+                return []
+            config_kwargs["page_size"] = limit
+        if after:
+            config_kwargs["page_token"] = after
+
+        config = types.ListBatchJobsConfig(**config_kwargs) if config_kwargs else None
+        pager = await self.client.aio.batches.list(config=config)
+        batches: list[Batch] = []
+        async for job in pager:
+            batches.append(_convert_google_batch_job_to_openai_batch(job))
+            # page_size only caps results per page; the pager auto-follows every page,
+            # so enforce limit as a total cap to stop once we have enough.
+            if limit is not None and len(batches) >= limit:
+                break
+        return batches
+
+    @override
+    async def _aretrieve_batch_results(self, batch_id: str, **kwargs: Any) -> BatchResult:
+        """Retrieve the results of a completed batch job.
+
+        Reads the output JSONL from the GCS location specified in the batch
+        job's ``output_info``.  Requires ``google-cloud-storage`` to be
+        installed.
+        """
+        import asyncio
+
+        job = await self.client.aio.batches.get(name=batch_id)
+
+        state_str = job.state.value if job.state else "JOB_STATE_UNSPECIFIED"
+        if state_str not in ("JOB_STATE_SUCCEEDED", "JOB_STATE_PARTIALLY_SUCCEEDED"):
+            openai_batch = _convert_google_batch_job_to_openai_batch(job)
+            raise BatchNotCompleteError(
+                batch_id=batch_id,
+                status=openai_batch.status or "unknown",
+                provider_name=self.PROVIDER_NAME,
+            )
+
+        gcs_dir = job.output_info.gcs_output_directory if job.output_info else None
+        if not gcs_dir:
+            msg = (
+                f"Batch '{batch_id}' has no GCS output directory. "
+                "Ensure a destination was configured when creating the batch."
+            )
+            raise ValueError(msg)
+
+        output_lines = await asyncio.to_thread(self._read_gcs_output, gcs_dir)
+        return _convert_google_batch_output_to_result(output_lines)
+
+    @staticmethod
+    def _read_gcs_output(gcs_dir: str) -> list[str]:
+        """Read all JSONL output files from a GCS directory.
+
+        Requires the ``google-cloud-storage`` package.
+        """
+        try:
+            from google.cloud import storage
+        except ImportError:
+            msg = (
+                "google-cloud-storage is required to retrieve batch results from GCS. "
+                "Install it with: pip install google-cloud-storage"
+            )
+            raise ImportError(msg)  # noqa: B904
+
+        if not gcs_dir.startswith("gs://"):
+            msg = f"Expected a GCS URI starting with 'gs://', got: {gcs_dir}"
+            raise ValueError(msg)
+
+        without_scheme = gcs_dir[len("gs://") :]
+        slash_idx = without_scheme.find("/")
+        if slash_idx == -1:
+            bucket_name = without_scheme
+            prefix = ""
+        else:
+            bucket_name = without_scheme[:slash_idx]
+            prefix = without_scheme[slash_idx + 1 :]
+
+        client = storage.Client()  # type: ignore[no-untyped-call]
+        bucket = client.bucket(bucket_name)  # type: ignore[no-untyped-call]
+        blobs = sorted(bucket.list_blobs(prefix=prefix), key=lambda b: b.name)
+
+        all_lines: list[str] = []
+        for blob in blobs:
+            if blob.name.endswith(".jsonl") or blob.name.endswith(".json"):
+                content = blob.download_as_text()
+                all_lines.extend(content.strip().split("\n"))
+
+        return all_lines

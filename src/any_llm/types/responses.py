@@ -1,5 +1,6 @@
 from typing import Any
 
+from openai.types.responses import ParsedResponse as OpenAIParsedResponse
 from openai.types.responses import Response as OpenAIResponse
 from openai.types.responses import ResponseInputParam as OpenAIResponseInputParam
 from openai.types.responses import ResponseOutputMessage as OpenAIResponseOutputMessage
@@ -7,6 +8,7 @@ from openai.types.responses import ResponseStreamEvent as OpenAIResponseStreamEv
 from pydantic import BaseModel, ConfigDict
 
 Response = OpenAIResponse
+ParsedResponse = OpenAIParsedResponse
 ResponseStreamEvent = OpenAIResponseStreamEvent
 ResponseOutputMessage = OpenAIResponseOutputMessage
 ResponseInputParam = OpenAIResponseInputParam
@@ -52,8 +54,12 @@ class ResponsesParams(BaseModel):
     max_output_tokens: int | None = None
     """Maximum number of tokens to generate"""
 
-    response_format: dict[str, Any] | type[BaseModel] | None = None
-    """Format specification for the response"""
+    response_format: dict[str, Any] | type | None = None
+    """Structured-output format for the response.
+
+    Accepts a Pydantic ``BaseModel`` subclass or a dataclass type (parsed into
+    ``ParsedResponse.output_parsed``), or a raw OpenAI ``text.format`` dict.
+    """
 
     stream: bool | None = None
     """Whether to stream the response"""

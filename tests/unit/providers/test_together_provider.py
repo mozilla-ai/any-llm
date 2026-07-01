@@ -1,12 +1,14 @@
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from together.types import ChatCompletionChunk as TogetherChatCompletionChunk
 
 from any_llm.providers.together.utils import _create_openai_chunk_from_together_chunk
 from any_llm.types.completion import ChatCompletionChunk, CompletionParams
+from any_llm.types.model import Model
 
 
 def make_together_chunk(
@@ -337,3 +339,69 @@ def test_convert_completion_params_without_response_format() -> None:
     result = TogetherProvider._convert_completion_params(params)
 
     assert "response_format" not in result
+
+
+def test_together_convert_models_list_maps_to_openai_model() -> None:
+    from any_llm.providers.together.together import TogetherProvider
+
+    response = [
+        SimpleNamespace(
+            id="meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            object="model",
+            created=1735689600,
+            organization="meta-llama",
+            type="chat",
+            context_length=131072,
+        )
+    ]
+
+    result = TogetherProvider._convert_list_models_response(response)
+
+    assert len(result) == 1
+    assert isinstance(result[0], Model)
+    assert result[0].id == "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+    assert result[0].object == "model"
+    assert result[0].created == 1735689600
+    assert result[0].owned_by == "meta-llama"
+    assert result[0].model_extra is not None
+    assert result[0].model_extra["type"] == "chat"
+    assert result[0].model_extra["context_length"] == 131072
+
+
+def test_together_convert_models_list_fills_missing_fields() -> None:
+    from any_llm.providers.together.together import TogetherProvider
+
+    response = [SimpleNamespace(id="deepseek-ai/DeepSeek-V3", created=None, object=None, organization=None)]
+
+    result = TogetherProvider._convert_list_models_response(response)
+
+    assert len(result) == 1
+    assert result[0].id == "deepseek-ai/DeepSeek-V3"
+    assert result[0].object == "model"
+    assert result[0].created == 0
+    assert result[0].owned_by == "together"
+
+
+@patch("any_llm.providers.together.together.together.AsyncTogether")
+def test_together_list_models_calls_client_and_passes_kwargs(mock_together_class: MagicMock) -> None:
+    from any_llm.providers.together.together import TogetherProvider
+
+    mock_client = AsyncMock()
+    mock_client.models.list.return_value = [
+        SimpleNamespace(
+            id="Qwen/Qwen2.5-72B-Instruct-Turbo",
+            object="model",
+            created=1735689600,
+            organization="Qwen",
+        )
+    ]
+    mock_together_class.return_value = mock_client
+
+    provider = TogetherProvider(api_key="test-api-key")
+    result = provider.list_models(dedicated=True)
+
+    mock_client.models.list.assert_called_once_with(dedicated=True)
+    assert len(result) == 1
+    assert isinstance(result[0], Model)
+    assert result[0].id == "Qwen/Qwen2.5-72B-Instruct-Turbo"
+    assert result[0].owned_by == "Qwen"

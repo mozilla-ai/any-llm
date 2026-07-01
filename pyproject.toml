@@ -15,13 +15,13 @@ dependencies = [
   "anthropic>=0.83.0",
   "rich",
   "httpx",
-  "typing_extensions>=4.4.0",
+  "typing_extensions>=4.5.0",
 ]
 
 [project.optional-dependencies]
 
 all = [
-  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,vertexaianthropic,cohere,cerebras,fireworks,groq,bedrock,azure,azureanthropic,azureopenai,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,openrouter,portkey,lmstudio,llama,voyage,perplexity,platform,llamafile,llamacpp,sagemaker,gateway,zai,minimax,mzai,vllm,dashscope,deepinfra,zyphra]"
+  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,vertexaianthropic,cohere,cerebras,fireworks,groq,bedrock,azure,azureanthropic,azureopenai,cascadia,watsonx,together,sambanova,ollama,moonshot,neosantara,nebius,xai,databricks,deepseek,inception,openai,otari,openrouter,portkey,qiniu,requesty,lmstudio,llama,voyage,perplexity,platform,llamafile,llamacpp,sagemaker,github,zai,minimax,mzai,vllm,dashscope,deepinfra,atlascloud,zyphra]"
 ]
 
 platform = [
@@ -40,10 +40,12 @@ anthropic = []
 
 gemini = [
   "google-genai",
+  "google-cloud-storage",
 ]
 
 vertexai = [
   "google-genai",
+  "google-cloud-storage",
 ]
 
 vertexaianthropic = [
@@ -87,7 +89,7 @@ together = [
 ]
 
 ollama = [
-  "ollama>=0.5.1"
+  "ollama>=0.6.0"
 ]
 
 voyage = [
@@ -102,45 +104,41 @@ sagemaker = [
   "boto3",
 ]
 
+lmstudio = [
+  "lmstudio>=1.5.0",
+]
 
 # These providers don't require any additional dependencies, but are included for completeness.
+atlascloud = []
 azureopenai = []
+cascadia = []
 databricks = []
 deepseek = []
 fireworks = []
+otari = [
+  "otari>=0.2.0",
+]
+github = []
 inception = []
 llama = []
 llamacpp = []
 llamafile = []
-lmstudio = []
 moonshot = []
 nebius = []
+neosantara = []
 openai = []
 openrouter = []
 portkey = []
+qiniu = []
+requesty = []
 sambanova = []
 minimax = []
 mzai = []
 vllm = []
-gateway = [
-  "fastapi>=0.115.0",
-  "uvicorn[standard]>=0.30.0",
-  "sqlalchemy>=2.0.0",
-  "alembic>=1.13.0",
-  "pydantic-settings>=2.0.0",
-  "pyyaml>=6.0",
-  "click>=8.1.0",
-  "python-dotenv>=1.0.0",
-  "psycopg2-binary>=2.9.9",
-  "prometheus-client>=0.20.0",
-]
 zai = []
 dashscope = []
 deepinfra = []
 zyphra = []
-
-[project.scripts]
-any-llm-gateway = "any_llm.gateway.cli:main"
 
 [project.urls]
 Documentation = "https://docs.mozilla.ai/any-llm/"
@@ -149,10 +147,16 @@ Source = "https://github.com/mozilla-ai/any-llm"
 
 [tool.uv]
 exclude-newer = "7 days"
+# otari is first-party (mozilla.ai owns it) and co-developed with any-llm, so we
+# intentionally exempt it from the global 7-day exclude-newer soak and always resolve the
+# latest published otari. The far-future date is a sentinel meaning "never soak otari".
+# Trade-off: uv.lock is gitignored and CI re-resolves on every run, so a broken otari
+# release reaches CI immediately with no pinned fallback. We accept that for this dep
+# because we control its publishing; the soak still applies to every other dependency.
+exclude-newer-package = { otari = "2100-01-01" }
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
-"any_llm.gateway" = ["alembic.ini", "alembic/**/*"]
 
 [tool.setuptools.packages.find]
 exclude = ["tests", "tests.*"]
@@ -208,7 +212,6 @@ extend-select = ["ALL"]
 "src/any_llm/providers/**" = ["D"]
 "src/any_llm/any_llm.py" = ["D"]
 "src/any_llm/types/**" = ["A005", "D"]
-"src/any_llm/gateway/**" = ["D"]
 "scripts/**" = ["D", "T201"]
 "docs/cookbooks/**" = ["D", "T201"]
 
@@ -263,8 +266,8 @@ docs = [
 
 
 lint = [
-  "pre-commit==4.5.1",
-  "pre-commit-uv==4.2.1",
+  "pre-commit==4.6.0",
+  "pre-commit-uv==4.2.2",
   "mypy",
   "types-aiofiles",
   "types-pyyaml",
@@ -280,7 +283,7 @@ tests = [
   "pytest-timeout",
   "debugpy",
   "aiofiles",
-  "testcontainers[postgres]>=4.0.0",
+
 ]
 
 # For completeness, but 'uv sync --group dev' currently installs the others too.

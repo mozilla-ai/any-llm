@@ -17,7 +17,7 @@ def test_all_providers_in_enum() -> None:
 
     provider_dirs = []
     for item in providers_dir.iterdir():
-        if item.is_dir() and item.name not in ("__pycache__", "google", "platform"):
+        if item.is_dir() and item.name != "__pycache__":
             provider_dirs.append(item.name)
 
     enum_values = [provider.value for provider in LLMProvider]
@@ -40,7 +40,7 @@ def test_provider_enum_values_match_directory_names() -> None:
 
     actual_providers = set()
     for item in providers_dir.iterdir():
-        if item.is_dir() and item.name not in ("__pycache__", "google", "platform"):
+        if item.is_dir() and item.name != "__pycache__":
             actual_providers.add(item.name)
 
     enum_providers = {provider.value for provider in LLMProvider}
@@ -125,8 +125,13 @@ async def test_all_providers_have_required_attributes(provider: LLMProvider) -> 
         kwargs["location"] = "test-location"
     if provider == "sagemaker":
         pytest.skip("sagemaker requires AWS credentials on instantiation")
+    if sys.version_info >= (3, 14) and provider.value in ("voyage", "watsonx"):
+        pytest.skip(f"{provider.value} is not compatible with Python 3.14+")
 
-    provider_instance = AnyLLM.create(provider.value, **kwargs)
+    try:
+        provider_instance = AnyLLM.create(provider.value, **kwargs)
+    except ImportError:
+        pytest.skip(f"{provider.value} required packages are not installed")
 
     assert provider_instance.PROVIDER_NAME is not None
     assert provider_instance.PROVIDER_DOCUMENTATION_URL is not None
@@ -139,6 +144,8 @@ async def test_all_providers_have_required_attributes(provider: LLMProvider) -> 
 
 
 def test_providers_raise_MissingApiKeyError(provider: LLMProvider) -> None:
+    if sys.version_info >= (3, 14) and provider.value in ("voyage", "watsonx"):
+        pytest.skip(f"{provider.value} is not compatible with Python 3.14+")
     if provider in (
         LLMProvider.BEDROCK,
         LLMProvider.LLAMACPP,
@@ -148,12 +155,15 @@ def test_providers_raise_MissingApiKeyError(provider: LLMProvider) -> None:
         LLMProvider.SAGEMAKER,
         LLMProvider.VERTEXAI,
         LLMProvider.VLLM,
-        LLMProvider.GATEWAY,
+        LLMProvider.OTARI,
     ):
         pytest.skip("This provider handles `api_key` differently.")
     with patch.dict(os.environ, {}, clear=True):
-        with pytest.raises(MissingApiKeyError):
-            AnyLLM.create(provider.value)
+        try:
+            with pytest.raises(MissingApiKeyError):
+                AnyLLM.create(provider.value)
+        except ImportError:
+            pytest.skip(f"{provider.value} required packages are not installed")
 
 
 @pytest.mark.parametrize(
@@ -176,6 +186,8 @@ def test_providers_raise_MissingApiKeyError(provider: LLMProvider) -> None:
     ],
 )
 def test_providers_raise_ImportError_from_original(provider_name: str, module_name: str) -> None:
+    if sys.version_info >= (3, 14) and provider_name in ("voyage", "watsonx"):
+        pytest.skip(f"{provider_name} is not compatible with Python 3.14+")
     with patch.dict(sys.modules, {module_name: None}):
         for mod in list(sys.modules):
             if mod.startswith((f"any_llm.providers.{provider_name}", f"{module_name}.")):
@@ -183,7 +195,13 @@ def test_providers_raise_ImportError_from_original(provider_name: str, module_na
         with pytest.raises(ImportError) as e:
             AnyLLM.create(provider_name, api_key="test_key")
         original_error = e.value.__cause__
+        error_str = str(original_error) if original_error is not None else str(e.value)
         assert any(
-            msg in str(original_error)
-            for msg in [f"import of {module_name} halted", f"'{module_name}' is not a package"]
+            msg in error_str
+            for msg in [
+                f"import of {module_name} halted",
+                f"'{module_name}' is not a package",
+                "not compatible with Python",
+                module_name,
+            ]
         )

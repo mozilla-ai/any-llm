@@ -1,15 +1,16 @@
 # mypy: disable-error-code="no-untyped-call"
+from __future__ import annotations
+
 import asyncio
 import functools
 import json
 import os
-from collections.abc import AsyncIterator, Callable, Iterator, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.exceptions import MissingApiKeyError
+from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError, MissingApiKeyError
 from any_llm.logging import logger
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
@@ -19,13 +20,21 @@ try:
     import boto3
 
     from .utils import (
+        _convert_bedrock_batch_output_to_result,
+        _convert_bedrock_job_to_openai_batch,
         _convert_params,
         _convert_response,
         _create_openai_chunk_from_aws_chunk,
         _create_openai_embedding_response_from_aws,
+        _parse_s3_uri,
     )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+
+    from any_llm.types.batch import Batch, BatchResult
 
 
 class BedrockProvider(AnyLLM):
@@ -44,7 +53,8 @@ class BedrockProvider(AnyLLM):
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
-    SUPPORTS_BATCH = False
+    SUPPORTS_BATCH = True
+    SUPPORTS_RERANK = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -228,10 +238,172 @@ class BedrockProvider(AnyLLM):
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        client = boto3.client(
-            "bedrock",
-            endpoint_url=self.api_base,
-            **self.kwargs,
-        )
+        client = self._get_bedrock_control_client()
         response = client.list_foundation_models(**kwargs)
         return self._convert_list_models_response(response)
+
+    def _get_bedrock_control_client(self) -> Any:
+        """Return a ``bedrock`` control-plane client for batch and model management operations."""
+        return boto3.client("bedrock", **self.kwargs)
+
+    def _get_s3_client(self) -> Any:
+        """Return an ``s3`` client for reading batch output files."""
+        return boto3.client("s3", **self.kwargs)
+
+    @override
+    async def _acreate_batch(
+        self,
+        input_file_path: str,
+        endpoint: str,
+        completion_window: str = "24h",
+        metadata: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> Batch:
+        """Create a batch inference job on AWS Bedrock.
+
+        ``input_file_path`` must be an S3 URI (e.g. ``s3://bucket/input.jsonl``).
+        The JSONL file should use the Bedrock Converse API request format.
+
+        Required keyword arguments:
+            role_arn: IAM role ARN that grants Bedrock permission to run the job.
+            output_s3_uri: S3 URI where Bedrock will write the results.
+
+        Optional keyword arguments:
+            job_name: Human-readable name for the job (auto-generated if omitted).
+            model_id: The Bedrock model ID to use. Required by the Bedrock API.
+        """
+        role_arn: str | None = kwargs.pop("role_arn", None)
+        output_s3_uri: str | None = kwargs.pop("output_s3_uri", None)
+        job_name: str | None = kwargs.pop("job_name", None)
+        model_id: str | None = kwargs.pop("model_id", None)
+
+        if not role_arn:
+            msg = "Bedrock batch requires 'role_arn' to be passed as a keyword argument."
+            raise InvalidRequestError(msg, provider_name=self.PROVIDER_NAME)
+        if not output_s3_uri:
+            msg = "Bedrock batch requires 'output_s3_uri' to be passed as a keyword argument."
+            raise InvalidRequestError(msg, provider_name=self.PROVIDER_NAME)
+        if not model_id:
+            msg = "Bedrock batch requires 'model_id' to be passed as a keyword argument."
+            raise InvalidRequestError(msg, provider_name=self.PROVIDER_NAME)
+
+        _parse_s3_uri(input_file_path)
+        _parse_s3_uri(output_s3_uri)
+
+        if job_name is None:
+            import uuid
+
+            job_name = f"any-llm-batch-{uuid.uuid4().hex[:8]}"
+
+        create_kwargs: dict[str, Any] = {
+            "jobName": job_name,
+            "roleArn": role_arn,
+            "modelId": model_id,
+            "inputDataConfig": {"s3InputDataConfig": {"s3Uri": input_file_path}},
+            "outputDataConfig": {"s3OutputDataConfig": {"s3Uri": output_s3_uri}},
+            "modelInvocationType": "Converse",
+        }
+
+        if metadata:
+            create_kwargs["tags"] = [{"key": k, "value": v} for k, v in metadata.items()]
+
+        bedrock_control = self._get_bedrock_control_client()
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None, functools.partial(bedrock_control.create_model_invocation_job, **create_kwargs)
+        )
+
+        job_arn = response["jobArn"]
+        job_response = await loop.run_in_executor(
+            None, functools.partial(bedrock_control.get_model_invocation_job, jobIdentifier=job_arn)
+        )
+        return _convert_bedrock_job_to_openai_batch(job_response)
+
+    @override
+    async def _aretrieve_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Retrieve a batch inference job from AWS Bedrock."""
+        bedrock_control = self._get_bedrock_control_client()
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None, functools.partial(bedrock_control.get_model_invocation_job, jobIdentifier=batch_id)
+        )
+        return _convert_bedrock_job_to_openai_batch(response)
+
+    @override
+    async def _acancel_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Stop a batch inference job on AWS Bedrock."""
+        bedrock_control = self._get_bedrock_control_client()
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, functools.partial(bedrock_control.stop_model_invocation_job, jobIdentifier=batch_id)
+        )
+        response = await loop.run_in_executor(
+            None, functools.partial(bedrock_control.get_model_invocation_job, jobIdentifier=batch_id)
+        )
+        return _convert_bedrock_job_to_openai_batch(response)
+
+    @override
+    async def _alist_batches(
+        self,
+        after: str | None = None,
+        limit: int | None = None,
+        **kwargs: Any,
+    ) -> Sequence[Batch]:
+        """List batch inference jobs on AWS Bedrock."""
+        list_kwargs: dict[str, Any] = {}
+        if after:
+            list_kwargs["nextToken"] = after
+        if limit:
+            list_kwargs["maxResults"] = limit
+
+        bedrock_control = self._get_bedrock_control_client()
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None, functools.partial(bedrock_control.list_model_invocation_jobs, **list_kwargs)
+        )
+
+        summaries = response.get("invocationJobSummaries", [])
+        return [_convert_bedrock_job_to_openai_batch(s) for s in summaries]
+
+    @override
+    async def _aretrieve_batch_results(self, batch_id: str, **kwargs: Any) -> BatchResult:
+        """Retrieve the results of a completed batch inference job from AWS Bedrock.
+
+        Reads the output JSONL file from the S3 location specified in the job
+        configuration.
+        """
+        bedrock_control = self._get_bedrock_control_client()
+        loop = asyncio.get_event_loop()
+        job = await loop.run_in_executor(
+            None, functools.partial(bedrock_control.get_model_invocation_job, jobIdentifier=batch_id)
+        )
+
+        status = job.get("status", "")
+        if status not in ("Completed", "PartiallyCompleted"):
+            openai_batch = _convert_bedrock_job_to_openai_batch(job)
+            raise BatchNotCompleteError(
+                batch_id=batch_id,
+                status=openai_batch.status or "unknown",
+                provider_name=self.PROVIDER_NAME,
+            )
+
+        output_s3_uri = job.get("outputDataConfig", {}).get("s3OutputDataConfig", {}).get("s3Uri", "")
+        input_s3_uri = job.get("inputDataConfig", {}).get("s3InputDataConfig", {}).get("s3Uri", "")
+
+        _, input_key = _parse_s3_uri(input_s3_uri)
+        input_filename = input_key.rsplit("/", maxsplit=1)[-1]
+        output_bucket, output_key_prefix = _parse_s3_uri(output_s3_uri)
+        if not output_key_prefix.endswith("/"):
+            output_key_prefix += "/"
+
+        job_arn = job.get("jobArn", "")
+        job_id = job_arn.rsplit("/", maxsplit=1)[-1] if "/" in job_arn else job_arn
+        output_key = f"{output_key_prefix}{job_id}/{input_filename}.out"
+
+        s3_client = self._get_s3_client()
+        s3_response = await loop.run_in_executor(
+            None, functools.partial(s3_client.get_object, Bucket=output_bucket, Key=output_key)
+        )
+        body_bytes: bytes = await loop.run_in_executor(None, s3_response["Body"].read)
+        output_lines = body_bytes.decode("utf-8").strip().split("\n")
+        return _convert_bedrock_batch_output_to_result(output_lines)

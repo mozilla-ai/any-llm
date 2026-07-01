@@ -119,7 +119,7 @@ async def test_completion_with_kwargs() -> None:
 
 
 @pytest.mark.asyncio
-async def test_completion_with_stop_sequences_uses_anthropic_kwarg() -> None:
+async def test_completion_renames_stop_to_stop_sequences_list() -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
@@ -133,6 +133,24 @@ async def test_completion_with_stop_sequences_uses_anthropic_kwarg() -> None:
             messages=messages,
             max_tokens=DEFAULT_MAX_TOKENS,
             stop_sequences=["END", "STOP"],
+        )
+
+
+@pytest.mark.asyncio
+async def test_completion_renames_stop_to_stop_sequences_string() -> None:
+    api_key = "test-api-key"
+    model = "model-id"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key=api_key)
+        await provider._acompletion(CompletionParams(model_id=model, messages=messages, stop="END"))
+
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
+            model=model,
+            messages=messages,
+            max_tokens=DEFAULT_MAX_TOKENS,
+            stop_sequences=["END"],
         )
 
 
@@ -268,6 +286,39 @@ async def test_completion_with_custom_reasoning_effort(reasoning_effort: Reasoni
         else:
             assert call_kwargs["thinking"] == {"type": "adaptive"}
             assert call_kwargs["output_config"] == {"effort": REASONING_EFFORT_TO_ANTHROPIC_EFFORT[reasoning_effort]}
+
+
+@pytest.mark.parametrize(
+    ("reasoning_effort", "expected_effort"),
+    [
+        ("minimal", "low"),
+        ("low", "low"),
+        ("medium", "medium"),
+        ("high", "high"),
+        ("xhigh", "xhigh"),
+        ("max", "max"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_reasoning_effort_maps_to_distinct_anthropic_effort(
+    reasoning_effort: ReasoningEffort, expected_effort: str
+) -> None:
+    """Guard against mapping canonical xhigh onto Anthropic's max (see issue #1107).
+
+    Anthropic exposes low < medium < high < xhigh < max as distinct levels, so each
+    canonical effort must map to its intended Anthropic level rather than silently
+    escalating xhigh to max.
+    """
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(model_id="model-id", messages=messages, reasoning_effort=reasoning_effort)
+        )
+
+        call_kwargs = mock_anthropic.return_value.messages.create.call_args[1]
+        assert call_kwargs["output_config"] == {"effort": expected_effort}
 
 
 @pytest.mark.asyncio

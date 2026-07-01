@@ -14,6 +14,8 @@ try:
     from cohere import V2ChatResponse
 
     from .utils import (
+        _convert_cohere_embedding_response,
+        _convert_cohere_rerank_response,
         _convert_models_list,
         _convert_response,
         _create_openai_chunk_from_cohere_chunk,
@@ -27,6 +29,17 @@ if TYPE_CHECKING:
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
+    from any_llm.types.rerank import RerankResponse
+
+
+REASONING_EFFORT_TO_THINKING_BUDGETS = {
+    "minimal": 256,
+    "low": 1024,
+    "medium": 8192,
+    "high": 24576,
+    "xhigh": 32768,
+    "max": 32768,
+}
 
 
 class CohereProvider(AnyLLM):
@@ -41,11 +54,12 @@ class CohereProvider(AnyLLM):
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
-    SUPPORTS_COMPLETION_IMAGE = False
+    SUPPORTS_COMPLETION_IMAGE = True
     SUPPORTS_COMPLETION_PDF = False
-    SUPPORTS_EMBEDDING = False
+    SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
+    SUPPORTS_RERANK = True
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -55,12 +69,18 @@ class CohereProvider(AnyLLM):
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Cohere API."""
-        # Cohere does not support providing reasoning effort
         converted_params = params.model_dump(
-            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream", "stream_options"}
+            exclude_none=True,
+            exclude={"model_id", "messages", "response_format", "stream", "stream_options", "reasoning_effort"},
         )
-        if converted_params.get("reasoning_effort") in ("auto", "none"):
-            converted_params.pop("reasoning_effort")
+        if params.reasoning_effort != "auto":
+            if params.reasoning_effort is None or params.reasoning_effort == "none":
+                converted_params["thinking"] = {"type": "disabled"}
+            else:
+                converted_params["thinking"] = {
+                    "type": "enabled",
+                    "token_budget": REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort],
+                }
         converted_params.update(kwargs)
         return converted_params
 
@@ -81,22 +101,67 @@ class CohereProvider(AnyLLM):
     @staticmethod
     @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
-        """Convert embedding parameters for Cohere."""
-        msg = "Cohere does not support embeddings"
-        raise NotImplementedError(msg)
+        """Convert embedding parameters for Cohere.
+
+        Cohere requires ``input_type`` (one of ``search_document``,
+        ``search_query``, ``classification``, ``clustering``, ``image``).
+        Callers may pass it via **kwargs; the default is ``search_document``.
+        """
+        if isinstance(params, str):
+            params = [params]
+        converted: dict[str, Any] = {"texts": params}
+        converted["input_type"] = kwargs.pop("input_type", "search_document")
+        converted["embedding_types"] = kwargs.pop("embedding_types", ["float"])
+        converted.update(kwargs)
+        return converted
 
     @staticmethod
     @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
-        """Convert Cohere embedding response to OpenAI format."""
-        msg = "Cohere does not support embeddings"
-        raise NotImplementedError(msg)
+        """Convert Cohere EmbedByTypeResponse to OpenAI CreateEmbeddingResponse."""
+        model = response.get("model", "cohere")
+        return _convert_cohere_embedding_response(model, response["result"])
+
+    @override
+    async def _aembedding(
+        self,
+        model: str,
+        inputs: str | list[str],
+        **kwargs: Any,
+    ) -> CreateEmbeddingResponse:
+        embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
+        result = await self.client.embed(model=model, **embedding_kwargs)
+        response_data = {"model": model, "result": result}
+        return self._convert_embedding_response(response_data)
 
     @staticmethod
     @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Cohere list models response to OpenAI format."""
         return _convert_models_list(response)
+
+    @staticmethod
+    @override
+    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
+        """Convert rerank parameters for Cohere API."""
+        params: dict[str, Any] = {
+            "query": query,
+            "documents": documents,
+        }
+        if "top_n" in kwargs and kwargs["top_n"] is not None:
+            params["top_n"] = kwargs["top_n"]
+        if "max_tokens_per_doc" in kwargs and kwargs["max_tokens_per_doc"] is not None:
+            params["max_tokens_per_doc"] = kwargs["max_tokens_per_doc"]
+        for key in ("return_documents",):
+            if key in kwargs:
+                params[key] = kwargs[key]
+        return params
+
+    @staticmethod
+    @override
+    def _convert_rerank_response(response: Any) -> RerankResponse:
+        """Convert Cohere rerank response to normalized RerankResponse."""
+        return _convert_cohere_rerank_response(response)
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
@@ -161,3 +226,18 @@ class CohereProvider(AnyLLM):
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         model_list = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(model_list)
+
+    @override
+    async def _arerank(
+        self,
+        model: str,
+        query: str,
+        documents: list[str],
+        **kwargs: Any,
+    ) -> RerankResponse:
+        rerank_kwargs = self._convert_rerank_params(model, query, documents, **kwargs)
+        response = await self.client.rerank(
+            model=model,
+            **rerank_kwargs,
+        )
+        return self._convert_rerank_response(response)

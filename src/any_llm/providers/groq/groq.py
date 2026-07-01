@@ -3,12 +3,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from openai import AsyncOpenAI, AsyncStream
+from pydantic import BaseModel
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
-from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
+from any_llm.types.responses import ParsedResponse, Response, ResponsesParams, ResponseStreamEvent
+from any_llm.utils.structured_output import (
+    build_responses_text_format,
+    get_json_schema,
+    is_structured_output_type,
+)
 
 if TYPE_CHECKING:
     from openresponses_types import ResponseResource
@@ -55,6 +60,7 @@ class GroqProvider(AnyLLM):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
+    SUPPORTS_RERANK = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -164,7 +170,7 @@ class GroqProvider(AnyLLM):
     @override
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
-    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+    ) -> ResponseResource | Response | ParsedResponse[Any] | AsyncIterator[ResponseStreamEvent]:
         """Call Groq Responses API and normalize into ChatCompletion/Chunks."""
         # Python SDK doesn't yet support it: https://community.groq.com/feature-requests-6/groq-python-sdk-support-for-responses-api-262
 
@@ -178,7 +184,18 @@ class GroqProvider(AnyLLM):
             **self.kwargs,
         )
 
-        response = await client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
+        response_format = params.response_format
+        create_kwargs = params.model_dump(exclude_none=True, exclude={"response_format"})
+
+        if is_structured_output_type(response_format):
+            create_kwargs.pop("text", None)
+            if issubclass(response_format, BaseModel):
+                return await client.responses.parse(text_format=response_format, **create_kwargs, **kwargs)
+            create_kwargs["text"] = build_responses_text_format(response_format)
+        elif isinstance(response_format, dict):
+            create_kwargs["text"] = {"format": response_format}
+
+        response = await client.responses.create(**create_kwargs, **kwargs)
 
         if not isinstance(response, Response | AsyncStream):
             msg = f"Responses API returned an unexpected type: {type(response)}"

@@ -4,6 +4,8 @@ from time import time
 from typing import Any, Literal, cast
 
 from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
+from any_llm.logging import logger
+from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -26,7 +28,14 @@ from any_llm.types.completion import (
 
 INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
 
-REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 1024, "low": 2048, "medium": 8192, "high": 24576, "xhigh": 32768}
+REASONING_EFFORT_TO_THINKING_BUDGETS = {
+    "minimal": 1024,
+    "low": 2048,
+    "medium": 8192,
+    "high": 24576,
+    "xhigh": 32768,
+    "max": 32768,
+}
 
 
 def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -86,7 +95,7 @@ def _convert_tool_spec(tools: list[dict[str, Any]], tool_choice: str | dict[str,
             {
                 "toolSpec": {
                     "name": tool["function"]["name"],
-                    "description": tool["function"].get("description", " "),
+                    "description": tool["function"].get("description") or " ",
                     "inputSchema": {"json": tool["function"].get("parameters") or {"type": "object", "properties": {}}},
                 }
             }
@@ -516,3 +525,135 @@ def _create_openai_embedding_response_from_aws(
         object="list",
         usage=usage,
     )
+
+
+_BEDROCK_TO_OPENAI_STATUS_MAP: dict[str, str] = {
+    "Submitted": "validating",
+    "Validating": "validating",
+    "Scheduled": "validating",
+    "InProgress": "in_progress",
+    "Completed": "completed",
+    "PartiallyCompleted": "completed",
+    "Failed": "failed",
+    "Stopping": "cancelling",
+    "Stopped": "cancelled",
+    "Expired": "expired",
+}
+
+
+def _parse_s3_uri(s3_uri: str) -> tuple[str, str]:
+    """Parse an S3 URI into (bucket, key).
+
+    Args:
+        s3_uri: An S3 URI in the form ``s3://bucket/key``.
+
+    Returns:
+        A tuple of (bucket_name, object_key).
+
+    Raises:
+        InvalidRequestError: If the URI is not a valid ``s3://`` URI.
+    """
+    if not s3_uri.startswith("s3://"):
+        msg = f"Expected an S3 URI starting with 's3://', got: {s3_uri}"
+        raise InvalidRequestError(msg, provider_name="bedrock")
+
+    without_scheme = s3_uri[len("s3://") :]
+    slash_idx = without_scheme.find("/")
+    if slash_idx == -1:
+        msg = f"S3 URI must include a key after the bucket name: {s3_uri}"
+        raise InvalidRequestError(msg, provider_name="bedrock")
+
+    bucket = without_scheme[:slash_idx]
+    key = without_scheme[slash_idx + 1 :]
+    if not bucket or not key:
+        msg = f"S3 URI has an empty bucket or key: {s3_uri}"
+        raise InvalidRequestError(msg, provider_name="bedrock")
+
+    return bucket, key
+
+
+def _convert_bedrock_job_to_openai_batch(job: dict[str, Any]) -> Batch:
+    """Convert a Bedrock ``GetModelInvocationJob`` response to an OpenAI ``Batch``.
+
+    The *job* dict is the raw response from ``get_model_invocation_job`` or a
+    summary dict from ``list_model_invocation_jobs``.
+    """
+    status_str = job.get("status", "")
+    openai_status = _BEDROCK_TO_OPENAI_STATUS_MAP.get(status_str)
+    if openai_status is None:
+        logger.warning("Unknown Bedrock batch status: %s, defaulting to 'in_progress'", status_str)
+        openai_status = "in_progress"
+
+    total = job.get("totalRecordCount", 0) or 0
+    succeeded = job.get("successRecordCount", 0) or 0
+    failed = job.get("errorRecordCount", 0) or 0
+    request_counts = BatchRequestCounts(
+        total=total,
+        completed=succeeded,
+        failed=failed,
+    )
+
+    submit_time = job.get("submitTime")
+    created_at = int(submit_time.timestamp()) if submit_time else 0
+
+    job_arn = job.get("jobArn", "")
+    job_name = job.get("jobName", "")
+    metadata: dict[str, str] | None = {"jobName": job_name} if job_name else None
+
+    return Batch(
+        id=job_arn,
+        object="batch",
+        endpoint="/v1/chat/completions",
+        status=cast("Any", openai_status),
+        created_at=created_at,
+        completion_window="24h",
+        request_counts=request_counts,
+        input_file_id=job.get("inputDataConfig", {}).get("s3InputDataConfig", {}).get("s3Uri", ""),
+        output_file_id=job.get("outputDataConfig", {}).get("s3OutputDataConfig", {}).get("s3Uri"),
+        error_file_id=None,
+        metadata=metadata,
+    )
+
+
+def _convert_bedrock_batch_output_to_result(output_lines: list[str]) -> BatchResult:
+    """Parse Bedrock batch output JSONL lines into a ``BatchResult``.
+
+    Each output line from a Converse-format batch job is a JSON object with
+    ``recordId`` and ``modelOutput`` (on success) or ``error`` (on failure).
+    """
+    results: list[BatchResultItem] = []
+    for line in output_lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            record = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+
+        record_id = record.get("recordId", "")
+        item = BatchResultItem(custom_id=record_id)
+
+        if "error" in record:
+            err = record["error"]
+            item.error = BatchResultError(
+                code=err.get("errorCode", "unknown"),
+                message=err.get("errorMessage", "Unknown error"),
+            )
+        elif "modelOutput" in record:
+            try:
+                item.result = _convert_response(record["modelOutput"])
+            except Exception as exc:
+                item.error = BatchResultError(
+                    code="parse_error",
+                    message=f"Failed to parse model output: {exc}",
+                )
+        else:
+            item.error = BatchResultError(
+                code="unknown",
+                message="Record contains neither modelOutput nor error",
+            )
+
+        results.append(item)
+
+    return BatchResult(results=results)
