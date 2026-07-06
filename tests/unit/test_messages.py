@@ -1,12 +1,21 @@
 """Tests for messages()/amessages() SDK API."""
 
+from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from any_llm.any_llm import AnyLLM
 from any_llm.api import amessages
-from any_llm.types.messages import MessageResponse, ParsedMessage, ParsedTextBlock
+from any_llm.types.completion import (
+    ChatCompletionChunk,
+    ChoiceDelta,
+    ChunkChoice,
+    CompletionUsage,
+    PromptTokensDetails,
+)
+from any_llm.types.messages import MessageDeltaEvent, MessageResponse, MessagesParams, ParsedMessage, ParsedTextBlock
 
 
 @pytest.mark.asyncio
@@ -399,16 +408,8 @@ async def test_default_amessages_streaming() -> None:
 @pytest.mark.asyncio
 async def test_default_amessages_streaming_usage_from_trailing_chunk() -> None:
     """Usage (incl. cache) from a trailing usage-only chunk after finish_reason is reported in message_delta."""
-    from any_llm.types.completion import (
-        ChatCompletionChunk,
-        ChoiceDelta,
-        ChunkChoice,
-        CompletionUsage,
-        PromptTokensDetails,
-    )
-    from any_llm.types.messages import MessageDeltaEvent, MessagesParams
 
-    async def mock_stream() -> Any:
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
         yield ChatCompletionChunk(
             id="chunk-1",
             model="gpt-4",
@@ -440,8 +441,6 @@ async def test_default_amessages_streaming_usage_from_trailing_chunk() -> None:
     mock_provider = Mock()
     mock_provider._acompletion = AsyncMock(return_value=mock_stream())
 
-    from any_llm.any_llm import AnyLLM
-
     params = MessagesParams(
         model="gpt-4",
         messages=[{"role": "user", "content": "Hello"}],
@@ -458,6 +457,219 @@ async def test_default_amessages_streaming_usage_from_trailing_chunk() -> None:
     assert delta.usage.cache_read_input_tokens == 80
     assert delta.delta.stop_reason == "end_turn"
     assert events[-1].type == "message_stop"
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_flushes_usage_when_stream_fails() -> None:
+    """A stream that raises mid-iteration still emits a message_delta with the accumulated usage."""
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        yield ChatCompletionChunk(
+            id="chunk-1",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
+            usage=CompletionUsage(prompt_tokens=100, completion_tokens=10, total_tokens=110),
+        )
+        msg = "provider stream dropped"
+        raise RuntimeError(msg)
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage))
+
+    seen: list[Any] = []
+
+    async def consume() -> None:
+        async for event in result:
+            seen.append(event)
+
+    with pytest.raises(RuntimeError, match="provider stream dropped"):
+        await consume()
+
+    delta = next(e for e in seen if isinstance(e, MessageDeltaEvent))
+    assert delta.usage.input_tokens == 100
+    assert delta.usage.output_tokens == 10
+    assert delta.delta.stop_reason is None
+    assert all(e.type not in ("message_stop", "content_block_stop") for e in seen)
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_failure_before_first_chunk_emits_nothing() -> None:
+    """A stream that fails before producing any chunk emits no events, only the exception."""
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        msg = "connect failed"
+        raise RuntimeError(msg)
+        yield  # unreachable, makes this function an async generator
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage))
+
+    seen: list[Any] = []
+
+    async def consume() -> None:
+        async for event in result:
+            seen.append(event)
+
+    with pytest.raises(RuntimeError, match="connect failed"):
+        await consume()
+    assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_early_close_is_clean() -> None:
+    """Closing the event stream before it is exhausted does not raise from the cleanup path."""
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        yield ChatCompletionChunk(
+            id="chunk-1",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hello"), finish_reason=None)],
+        )
+        yield ChatCompletionChunk(
+            id="chunk-2",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content=" world"), finish_reason=None)],
+        )
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert isinstance(result, AsyncGenerator)
+
+    first = await anext(result)
+    assert first.type == "message_start"
+    await result.aclose()
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_close_after_failure_flush_is_clean() -> None:
+    """Closing the stream at the failure-path usage flush does not raise from the cleanup path."""
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        yield ChatCompletionChunk(
+            id="chunk-1",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
+            usage=CompletionUsage(prompt_tokens=100, completion_tokens=10, total_tokens=110),
+        )
+        msg = "provider stream dropped"
+        raise RuntimeError(msg)
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert isinstance(result, AsyncGenerator)
+
+    delta: MessageDeltaEvent | None = None
+    async for event in result:
+        if isinstance(event, MessageDeltaEvent):
+            delta = event
+            break
+    assert delta is not None
+    assert delta.usage.input_tokens == 100
+    await result.aclose()
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_no_finish_reason_closes_open_block() -> None:
+    """A stream that ends without finish_reason still closes the open block and defaults to end_turn."""
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        yield ChatCompletionChunk(
+            id="chunk-1",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hello"), finish_reason=None)],
+        )
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage))
+
+    events = [event async for event in result]
+    assert [e.type for e in events] == [
+        "message_start",
+        "content_block_start",
+        "content_block_delta",
+        "content_block_stop",
+        "message_delta",
+        "message_stop",
+    ]
+    delta = next(e for e in events if isinstance(e, MessageDeltaEvent))
+    assert delta.delta.stop_reason == "end_turn"
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_empty_stream_emits_nothing() -> None:
+    """A stream that ends without producing any chunks emits no events."""
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        return
+        yield  # unreachable, makes this function an async generator
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage))
+
+    events = [event async for event in result]
+    assert events == []
 
 
 def test_supports_messages_flag() -> None:
