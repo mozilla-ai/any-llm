@@ -91,6 +91,41 @@ async def test_completion_with_dict_response_format() -> None:
 
 
 @pytest.mark.asyncio
+async def test_streaming_completion_passes_format_top_level() -> None:
+    """Test that response_format is converted and passed as a top-level `format` kwarg when streaming."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class TestOutput:
+        name: str
+
+    async def empty_async_iter() -> AsyncIterator[None]:
+        return
+        yield
+
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=empty_async_iter())
+
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="llama3.1",
+                messages=[{"role": "user", "content": "Hello"}],
+                response_format=TestOutput,
+                stream=True,
+            ),
+        )
+        async for _ in result:  # type: ignore[union-attr]
+            pass
+
+        call_kwargs = provider.client.chat.call_args[1]
+        assert isinstance(call_kwargs["format"], dict)
+        assert "name" in call_kwargs["format"]["properties"]
+        assert "format" not in call_kwargs.get("options", {})
+
+
+@pytest.mark.asyncio
 async def test_streaming_completion_passes_tools_top_level() -> None:
     """Test that tools are passed as a top-level kwarg to client.chat(), not inside options."""
     tools = [

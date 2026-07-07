@@ -160,6 +160,7 @@ class OllamaProvider(AnyLLM):
         self,
         model: str,
         messages: list[dict[str, Any]],
+        output_format: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
@@ -169,6 +170,7 @@ class OllamaProvider(AnyLLM):
             messages=messages,
             tools=kwargs.pop("tools", None),
             think=kwargs.pop("think", None),
+            format=output_format,
             stream=True,
             options=kwargs,
         )
@@ -233,7 +235,9 @@ class OllamaProvider(AnyLLM):
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 
         if params.stream:
-            return self._stream_completion_async(params.model_id, cleaned_messages, **completion_kwargs)
+            return self._stream_completion_async(
+                params.model_id, cleaned_messages, output_format=output_format, **completion_kwargs
+            )
 
         response: OllamaChatResponse = await self.client.chat(
             model=params.model_id,
