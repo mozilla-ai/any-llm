@@ -3,6 +3,7 @@ import json
 from collections.abc import AsyncIterator, Sequence
 from io import BytesIO
 from pathlib import Path
+import time
 from typing import Any, Literal, cast
 
 from openai import AsyncOpenAI
@@ -128,7 +129,7 @@ class BaseOpenAIProvider(AnyLLM):
                     "API returned an unexpected created type: %s. Setting to int.",
                     type(response.created),
                 )
-                response.created = int(response.created)
+                response.created = int(response.created) if response.created is not None else int(time.time())
             normalized_chunk = _normalize_openai_dict_response(response.model_dump())
             # Some APIs (i.e. Perplexity) return `chat.completion` without the chunk
             # We can hardcode it as openai expects a literal

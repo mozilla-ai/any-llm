@@ -1,5 +1,6 @@
 """OpenAI Provider Utilities."""
 
+import time
 from typing import Any
 
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
@@ -78,7 +79,7 @@ def _convert_chat_completion(response: OpenAIChatCompletion) -> ChatCompletion:
             "API returned an unexpected created type: %s. Setting to int.",
             type(response.created),
         )
-        response.created = int(response.created)
+        response.created = int(response.created) if response.created is not None else int(time.time())
     normalized = _normalize_openai_dict_response(response.model_dump())
     return ChatCompletion.model_validate(normalized)
 
