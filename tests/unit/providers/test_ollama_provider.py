@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -154,6 +155,19 @@ async def test_completion_with_raw_schema_response_format() -> None:
 
             call_kwargs = provider.client.chat.call_args[1]
             assert call_kwargs["format"] == response_format
+
+
+@pytest.mark.parametrize(
+    "response_format",
+    [
+        {"type": "json_schema"},
+        {"type": "json_schema", "json_schema": {"name": "TestOutput"}},
+    ],
+)
+def test_convert_response_format_malformed_json_schema_raises(response_format: dict[str, Any]) -> None:
+    """Test that a json_schema response_format missing the inner schema raises a descriptive error."""
+    with pytest.raises(ValueError, match=r"must include 'json_schema\.schema'"):
+        OllamaProvider._convert_response_format(response_format)
 
 
 @pytest.mark.asyncio

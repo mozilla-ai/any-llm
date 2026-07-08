@@ -137,7 +137,11 @@ class OllamaProvider(AnyLLM):
         if isinstance(response_format, dict):
             response_type = response_format.get("type")
             if response_type == "json_schema":
-                schema: dict[str, Any] = response_format["json_schema"]["schema"]
+                json_schema = response_format.get("json_schema")
+                if json_schema is None or "schema" not in json_schema:
+                    msg = "json_schema response_format must include 'json_schema.schema'"
+                    raise ValueError(msg)
+                schema: dict[str, Any] = json_schema["schema"]
                 return schema
             if response_type == "json_object":
                 return "json"
