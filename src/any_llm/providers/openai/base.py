@@ -79,9 +79,9 @@ class BaseOpenAIProvider(AnyLLM):
         current OpenAI spec.  Providers whose API does not accept
         ``max_completion_tokens`` should override this method to remap back.
 
-        Plain dataclasses are converted to JSON schema dicts since the
-        OpenAI SDK's ``.parse()`` only supports Pydantic BaseModel types.
-        """
+        Structured-output types are converted to JSON schema dicts when streaming, or
+        when using plain dataclasses, since the OpenAI SDK's ``.parse()`` helper only
+        supports non-streaming calls and Pydantic BaseModel types.
         if is_structured_output_type(params.response_format) and (
             params.stream or not issubclass(params.response_format, BaseModel)
         ):
