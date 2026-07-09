@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from typing_extensions import override
 
@@ -119,6 +119,37 @@ class OllamaProvider(AnyLLM):
         """Convert Ollama list models response to OpenAI format."""
         return _convert_models_list(response)
 
+    @staticmethod
+    def _convert_response_format(
+        response_format: dict[str, Any] | type | None,
+    ) -> Literal["json"] | dict[str, Any] | None:
+        """Convert a `response_format` into Ollama's `format` argument.
+
+        Ollama's `format` accepts either the string "json" (unconstrained JSON mode) or a raw
+        JSON schema dict (https://docs.ollama.com/capabilities/structured-outputs). OpenAI-style
+        dicts (`json_object`, `json_schema`, `text`) are translated accordingly; any other dict
+        is assumed to already be a raw schema and passed through unchanged.
+        """
+        if response_format is None:
+            return None
+        if is_structured_output_type(response_format):
+            return get_json_schema(response_format)
+        if isinstance(response_format, dict):
+            response_type = response_format.get("type")
+            if response_type == "json_schema":
+                json_schema = response_format.get("json_schema")
+                if json_schema is None or "schema" not in json_schema:
+                    msg = "json_schema response_format must include 'json_schema.schema'"
+                    raise ValueError(msg)
+                schema: dict[str, Any] = json_schema["schema"]
+                return schema
+            if response_type == "json_object":
+                return "json"
+            if response_type == "text":
+                return None
+            return response_format
+        return None
+
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = AsyncClient(host=api_base, **kwargs)
@@ -160,6 +191,7 @@ class OllamaProvider(AnyLLM):
         self,
         model: str,
         messages: list[dict[str, Any]],
+        output_format: Literal["json"] | dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
@@ -169,6 +201,7 @@ class OllamaProvider(AnyLLM):
             messages=messages,
             tools=kwargs.pop("tools", None),
             think=kwargs.pop("think", None),
+            format=output_format,
             stream=True,
             options=kwargs,
         )
@@ -197,12 +230,7 @@ class OllamaProvider(AnyLLM):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using Ollama."""
 
-        output_format: dict[str, Any] | None = None
-        if params.response_format is not None:
-            if is_structured_output_type(params.response_format):
-                output_format = get_json_schema(params.response_format)
-            elif isinstance(params.response_format, dict):
-                output_format = params.response_format
+        output_format = self._convert_response_format(params.response_format)
 
         # (https://www.reddit.com/r/ollama/comments/1ked8x2/feeding_tool_output_back_to_llm/)
         cleaned_messages = []
@@ -233,7 +261,9 @@ class OllamaProvider(AnyLLM):
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 
         if params.stream:
-            return self._stream_completion_async(params.model_id, cleaned_messages, **completion_kwargs)
+            return self._stream_completion_async(
+                params.model_id, cleaned_messages, output_format=output_format, **completion_kwargs
+            )
 
         response: OllamaChatResponse = await self.client.chat(
             model=params.model_id,

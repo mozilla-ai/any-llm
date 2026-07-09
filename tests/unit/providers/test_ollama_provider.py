@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -68,9 +69,75 @@ async def test_completion_with_dataclass_response_format() -> None:
 
 
 @pytest.mark.asyncio
-async def test_completion_with_dict_response_format() -> None:
-    """Test that dict response_format is passed through unchanged."""
-    response_format = {"type": "json_object"}
+async def test_completion_with_json_object_response_format() -> None:
+    """Test that OpenAI-style {"type": "json_object"} is translated to Ollama's "json" mode."""
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=Mock())
+
+        with patch.object(OllamaProvider, "_convert_completion_response", return_value=Mock()):
+            await provider._acompletion(
+                CompletionParams(
+                    model_id="llama3.1",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    response_format={"type": "json_object"},
+                ),
+            )
+
+            call_kwargs = provider.client.chat.call_args[1]
+            assert call_kwargs["format"] == "json"
+
+
+@pytest.mark.asyncio
+async def test_completion_with_json_schema_response_format() -> None:
+    """Test that OpenAI-style {"type": "json_schema", ...} has its inner schema extracted."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}
+    response_format = {"type": "json_schema", "json_schema": {"name": "TestOutput", "schema": schema}}
+
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=Mock())
+
+        with patch.object(OllamaProvider, "_convert_completion_response", return_value=Mock()):
+            await provider._acompletion(
+                CompletionParams(
+                    model_id="llama3.1",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    response_format=response_format,
+                ),
+            )
+
+            call_kwargs = provider.client.chat.call_args[1]
+            assert call_kwargs["format"] == schema
+
+
+@pytest.mark.asyncio
+async def test_completion_with_text_response_format() -> None:
+    """Test that OpenAI-style {"type": "text"} disables Ollama's format constraint."""
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=Mock())
+
+        with patch.object(OllamaProvider, "_convert_completion_response", return_value=Mock()):
+            await provider._acompletion(
+                CompletionParams(
+                    model_id="llama3.1",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    response_format={"type": "text"},
+                ),
+            )
+
+            call_kwargs = provider.client.chat.call_args[1]
+            assert call_kwargs["format"] is None
+
+
+@pytest.mark.asyncio
+async def test_completion_with_raw_schema_response_format() -> None:
+    """Test that a raw JSON schema dict (Ollama's native style) is passed through unchanged."""
+    response_format = {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}
 
     with patch.object(OllamaProvider, "_init_client"):
         provider = OllamaProvider(api_key=None)
@@ -88,6 +155,82 @@ async def test_completion_with_dict_response_format() -> None:
 
             call_kwargs = provider.client.chat.call_args[1]
             assert call_kwargs["format"] == response_format
+
+
+@pytest.mark.parametrize(
+    "response_format",
+    [
+        {"type": "json_schema"},
+        {"type": "json_schema", "json_schema": {"name": "TestOutput"}},
+    ],
+)
+def test_convert_response_format_malformed_json_schema_raises(response_format: dict[str, Any]) -> None:
+    """Test that a json_schema response_format missing the inner schema raises a descriptive error."""
+    with pytest.raises(ValueError, match=r"must include 'json_schema\.schema'"):
+        OllamaProvider._convert_response_format(response_format)
+
+
+@pytest.mark.asyncio
+async def test_streaming_completion_passes_format_top_level() -> None:
+    """Test that response_format is converted and passed as a top-level `format` kwarg when streaming."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class TestOutput:
+        name: str
+
+    async def empty_async_iter() -> AsyncIterator[None]:
+        return
+        yield
+
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=empty_async_iter())
+
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="llama3.1",
+                messages=[{"role": "user", "content": "Hello"}],
+                response_format=TestOutput,
+                stream=True,
+            ),
+        )
+        async for _ in result:  # type: ignore[union-attr]
+            pass
+
+        call_kwargs = provider.client.chat.call_args[1]
+        assert isinstance(call_kwargs["format"], dict)
+        assert "name" in call_kwargs["format"]["properties"]
+        assert "format" not in call_kwargs.get("options", {})
+
+
+@pytest.mark.asyncio
+async def test_streaming_completion_translates_json_object_format() -> None:
+    """Test that OpenAI-style {"type": "json_object"} is translated to "json" when streaming."""
+
+    async def empty_async_iter() -> AsyncIterator[None]:
+        return
+        yield
+
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=empty_async_iter())
+
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="llama3.1",
+                messages=[{"role": "user", "content": "Hello"}],
+                response_format={"type": "json_object"},
+                stream=True,
+            ),
+        )
+        async for _ in result:  # type: ignore[union-attr]
+            pass
+
+        call_kwargs = provider.client.chat.call_args[1]
+        assert call_kwargs["format"] == "json"
 
 
 @pytest.mark.asyncio
