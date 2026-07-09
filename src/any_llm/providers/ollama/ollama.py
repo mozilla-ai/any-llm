@@ -172,8 +172,22 @@ class OllamaProvider(AnyLLM):
             stream=True,
             options=kwargs,
         )
+        # Ollama streams each tool call in its own chunk, and the chunk
+        # converter (_create_openai_chunk_from_ollama_chunk) stamps every
+        # tool-call delta with index=0. A consumer that accumulates streaming
+        # deltas by index then concatenates the arguments of distinct tool calls
+        # into a single, invalid JSON string. Assign a stream-global,
+        # monotonically increasing index so each tool call stays in its own slot.
+        tool_call_index = 0
         async for chunk in response:
-            yield self._convert_completion_chunk_response(chunk)
+            converted = self._convert_completion_chunk_response(chunk)
+            for choice in converted.choices:
+                delta = choice.delta
+                if delta is not None and delta.tool_calls:
+                    for tool_call in delta.tool_calls:
+                        tool_call.index = tool_call_index
+                        tool_call_index += 1
+            yield converted
 
     @override
     async def _acompletion(
