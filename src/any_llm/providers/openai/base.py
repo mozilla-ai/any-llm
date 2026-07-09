@@ -82,17 +82,18 @@ class BaseOpenAIProvider(AnyLLM):
         Structured-output types are converted to JSON schema dicts when streaming, or
         when using plain dataclasses, since the OpenAI SDK's ``.parse()`` helper only
         supports non-streaming calls and Pydantic BaseModel types.
+        """
+        converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
         if is_structured_output_type(params.response_format) and (
             params.stream or not issubclass(params.response_format, BaseModel)
         ):
-            params.response_format = {
+            converted_params["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {
                     "name": params.response_format.__name__,
                     "schema": get_json_schema(params.response_format),
                 },
             }
-        converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
         converted_params.update(kwargs)
 
         if "max_tokens" in converted_params:
