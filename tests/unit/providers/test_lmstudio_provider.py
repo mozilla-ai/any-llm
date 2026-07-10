@@ -392,7 +392,8 @@ def test_map_stop_reason(stop_reason: str | None, expected: str) -> None:
         ("no tags here", "no tags here", None),
         # LM Studio's runtime ends an inline reasoning trace with a fixed synthetic marker
         # when response_format is set (see #1167). The value below is the real marker observed
-        # in CI; the split must work for any hex nonce, so the next case uses a different one.
+        # in CI; the split must work for any hex nonce, so the next cases use a different
+        # lowercase nonce and an uppercase one.
         (
             'Paris is the capital.\n__LM_STUDIO_INTERNAL_LSEP_SYNTHETIC_REASONING_END_f4e9a8d2c6b14d0c9e5f3a7b8c1d2e6a__{\n  "city_name": "Paris"\n}',
             '{\n  "city_name": "Paris"\n}',
@@ -400,6 +401,11 @@ def test_map_stop_reason(stop_reason: str | None, expected: str) -> None:
         ),
         (
             "reasoning...__LM_STUDIO_INTERNAL_LSEP_SYNTHETIC_REASONING_END_0123456789abcdef__{}",
+            "{}",
+            "reasoning...",
+        ),
+        (
+            "reasoning...__LM_STUDIO_INTERNAL_LSEP_SYNTHETIC_REASONING_END_DEADBEEF01234567__{}",
             "{}",
             "reasoning...",
         ),

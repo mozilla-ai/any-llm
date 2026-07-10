@@ -65,7 +65,7 @@ def _usage_from_stats(stats: LlmPredictionStats | None) -> CompletionUsage:
     )
 
 
-_SYNTHETIC_REASONING_END = re.compile(r"__LM_STUDIO_INTERNAL_LSEP_SYNTHETIC_REASONING_END_[0-9a-f]+__")
+_SYNTHETIC_REASONING_END = re.compile(r"__LM_STUDIO_INTERNAL_LSEP_SYNTHETIC_REASONING_END_[0-9a-fA-F]+__")
 
 
 def _split_reasoning_from_content(content: str) -> tuple[str, str | None]:
