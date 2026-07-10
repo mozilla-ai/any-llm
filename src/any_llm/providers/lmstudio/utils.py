@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 import uuid
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -64,16 +65,27 @@ def _usage_from_stats(stats: LlmPredictionStats | None) -> CompletionUsage:
     )
 
 
-def _split_reasoning_from_content(content: str) -> tuple[str, str | None]:
-    """Extract reasoning wrapped in <think></think> tags from the content (if present).
+_SYNTHETIC_REASONING_END = re.compile(r"__LM_STUDIO_INTERNAL_LSEP_SYNTHETIC_REASONING_END_[0-9a-f]+__")
 
-    Any text before the opening tag or after the closing tag is preserved as content,
-    so a model that emits a preface before its reasoning block does not lose output.
+
+def _split_reasoning_from_content(content: str) -> tuple[str, str | None]:
+    """Extract reasoning from the content (if present).
+
+    Handles the two shapes LM Studio surfaces depending on the model:
+    - reasoning wrapped in <think></think> tags, where any text before the opening tag or
+      after the closing tag is preserved as content
+    - a reasoning prefix terminated by a synthetic
+      __LM_STUDIO_INTERNAL_LSEP_SYNTHETIC_REASONING_END_<hex>__ marker, emitted by reasoning
+      models when a response_format is requested; the prefix is reasoning and the trailing text
+      (the structured JSON answer) is the content
     """
     if "<think>" in content and "</think>" in content:
         before, after_open = content.split("<think>", 1)
         reasoning, after_close = after_open.split("</think>", 1)
         return before + after_close, reasoning
+    match = _SYNTHETIC_REASONING_END.search(content)
+    if match:
+        return content[match.end() :], content[: match.start()]
     return content, None
 
 
