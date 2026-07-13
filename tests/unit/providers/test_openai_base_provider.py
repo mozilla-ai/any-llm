@@ -224,24 +224,70 @@ def test_list_models_passes_kwargs_to_client(mock_openai_class: MagicMock) -> No
 
 
 @pytest.mark.asyncio
-async def test_stream_with_response_format_raises() -> None:
+async def test_stream_with_dict_response_format_uses_create() -> None:
     class TestProvider(BaseOpenAIProvider):
         PROVIDER_NAME = "TestProvider"
         ENV_API_KEY_NAME = "TEST_API_KEY"
         PROVIDER_DOCUMENTATION_URL = "https://example.com"
 
-    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
+    response_format = {"type": "json_object"}
+
+    with patch("any_llm.providers.openai.base.AsyncOpenAI") as mock_openai_class:
+        mock_client = AsyncMock()
+        mock_openai_class.return_value = mock_client
+        mock_client.chat.completions.create = AsyncMock(return_value=MagicMock())
+
         provider = TestProvider(api_key="test-key")
 
-        with pytest.raises(ValueError, match="stream is not supported for response_format"):
-            await provider._acompletion(
-                CompletionParams(
-                    model_id="test-model",
-                    messages=[{"role": "user", "content": "Hello"}],
-                    stream=True,
-                    response_format={"type": "json_object"},
-                )
+        await provider._acompletion(
+            CompletionParams(
+                model_id="test-model",
+                messages=[{"role": "user", "content": "Hello"}],
+                stream=True,
+                response_format=response_format,
             )
+        )
+
+        mock_client.chat.completions.create.assert_awaited_once_with(
+            model="test-model",
+            messages=[{"role": "user", "content": "Hello"}],
+            stream=True,
+            response_format=response_format,
+        )
+        mock_client.chat.completions.parse.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_stream_with_basemodel_response_format_uses_create_json_schema() -> None:
+    class TestProvider(BaseOpenAIProvider):
+        PROVIDER_NAME = "TestProvider"
+        ENV_API_KEY_NAME = "TEST_API_KEY"
+        PROVIDER_DOCUMENTATION_URL = "https://example.com"
+
+    with patch("any_llm.providers.openai.base.AsyncOpenAI") as mock_openai_class:
+        mock_client = AsyncMock()
+        mock_openai_class.return_value = mock_client
+        mock_client.chat.completions.create = AsyncMock(return_value=MagicMock())
+
+        provider = TestProvider(api_key="test-key")
+
+        await provider._acompletion(
+            CompletionParams(
+                model_id="test-model",
+                messages=[{"role": "user", "content": "Hello"}],
+                stream=True,
+                response_format=_City,
+            )
+        )
+
+        create_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        assert create_kwargs["stream"] is True
+        assert create_kwargs["response_format"]["type"] == "json_schema"
+        assert create_kwargs["response_format"]["json_schema"]["name"] == "_City"
+        assert create_kwargs["response_format"]["json_schema"]["schema"]["properties"] == {
+            "city_name": {"title": "City Name", "type": "string"}
+        }
+        mock_client.chat.completions.parse.assert_not_called()
 
 
 def test_base_provider_maps_max_tokens_to_max_completion_tokens() -> None:
