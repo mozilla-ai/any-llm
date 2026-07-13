@@ -1,0 +1,9 @@
+name: testing workflow files
+on: [push, pull_request_target]
+
+jobs:
+  test123:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "workflow ran"
