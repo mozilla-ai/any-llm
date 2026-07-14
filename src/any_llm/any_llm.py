@@ -37,6 +37,7 @@ from any_llm.types.messages import (
     MessageStopEvent,
     MessageStreamEvent,
     ParsedMessage,
+    StopReason,
 )
 from any_llm.types.provider import ProviderMetadata
 from any_llm.types.responses import (
@@ -785,29 +786,37 @@ class AnyLLM(ABC):
 
         async def convert_stream() -> AsyncIterator[MessageStreamEvent]:
             state = StreamingState()
-            emitted_stop = False
-            async for chunk in result:
-                events = chat_completion_chunk_to_message_stream_events(chunk, state)
-                for event in events:
-                    if isinstance(event, MessageStopEvent):
-                        emitted_stop = True
-                    yield event
-            # Some providers don't send a final chunk with finish_reason,
-            # so ensure the stream always ends with message_stop.
-            if state.started and not emitted_stop:
+
+            def usage_delta(stop_reason: StopReason | None) -> MessageDeltaEvent:
+                return MessageDeltaEvent(
+                    type="message_delta",
+                    delta=MessageDelta(stop_reason=stop_reason),
+                    usage=MessageDeltaUsage(
+                        output_tokens=state.output_tokens,
+                        input_tokens=state.input_tokens,
+                        cache_read_input_tokens=state.cache_read_input_tokens or None,
+                    ),
+                )
+
+            try:
+                async for chunk in result:
+                    for event in chat_completion_chunk_to_message_stream_events(chunk, state):
+                        yield event
+            except Exception:
+                # Flush the usage accumulated so far before re-raising, so a mid-stream failure still reports tokens.
+                # Report stop_reason=None so a finish_reason seen before the failure is never mistaken for a
+                # successful completion; message_stop stays reserved for the clean-completion path below.
+                if state.started:
+                    yield usage_delta(None)
+                raise
+            # Emit the closing events after the full stream is consumed so trailing-chunk usage is included.
+            if state.started:
                 if state.current_block_type is not None:
                     yield ContentBlockStopEvent(
                         type="content_block_stop",
                         index=state.current_block_index,
                     )
-                yield MessageDeltaEvent(
-                    type="message_delta",
-                    delta=MessageDelta(stop_reason="end_turn"),
-                    usage=MessageDeltaUsage(
-                        output_tokens=state.output_tokens,
-                        input_tokens=state.input_tokens,
-                    ),
-                )
+                yield usage_delta(state.stop_reason or "end_turn")
                 yield MessageStopEvent(type="message_stop")
 
         return convert_stream()

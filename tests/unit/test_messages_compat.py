@@ -13,6 +13,7 @@ from any_llm.types.completion import (
     ChunkChoice,
     CompletionUsage,
     Function,
+    PromptTokensDetails,
     Reasoning,
 )
 from any_llm.types.messages import MessagesParams
@@ -409,9 +410,8 @@ def test_streaming_text_events() -> None:
     )
     events2 = chat_completion_chunk_to_message_stream_events(chunk2, state)
     types2 = [e.type for e in events2]
-    assert "content_block_stop" in types2
-    assert "message_delta" in types2
-    assert "message_stop" in types2
+    assert types2 == ["content_block_stop"]
+    assert state.stop_reason == "end_turn"
 
 
 def test_streaming_tool_call_events() -> None:
@@ -918,7 +918,7 @@ def test_streaming_empty_content_no_delta() -> None:
 
 
 def test_streaming_finish_reason_length() -> None:
-    """Test streaming with finish_reason 'length' emits correct stop_reason."""
+    """Test streaming finish_reason 'length' records the correct stop_reason on state."""
     state = StreamingState()
     state.started = True
     state.current_block_index = 0
@@ -932,11 +932,68 @@ def test_streaming_finish_reason_length() -> None:
         choices=[ChunkChoice(index=0, delta=ChoiceDelta(), finish_reason="length")],
     )
     events = chat_completion_chunk_to_message_stream_events(chunk, state)
-    from any_llm.types.messages import MessageDeltaEvent
 
-    delta_event = next(e for e in events if e.type == "message_delta")
-    assert isinstance(delta_event, MessageDeltaEvent)
-    assert delta_event.delta.stop_reason == "max_tokens"
+    assert [e.type for e in events] == ["content_block_stop"]
+    assert state.stop_reason == "max_tokens"
+
+
+def test_streaming_usage_cache_read_from_prompt_tokens_details() -> None:
+    """A usage chunk's prompt_tokens_details.cached_tokens is recorded as cache_read on state."""
+    state = StreamingState()
+    chunk = ChatCompletionChunk(
+        id="chunk-1",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[],
+        usage=CompletionUsage(
+            prompt_tokens=100,
+            completion_tokens=20,
+            total_tokens=120,
+            prompt_tokens_details=PromptTokensDetails(cached_tokens=80),
+        ),
+    )
+    chat_completion_chunk_to_message_stream_events(chunk, state)
+    assert state.cache_read_input_tokens == 80
+
+
+def test_streaming_usage_zero_cached_tokens_leaves_cache_read_unset() -> None:
+    """cached_tokens=0 is falsy and must not set cache_read_input_tokens."""
+    state = StreamingState()
+    chunk = ChatCompletionChunk(
+        id="chunk-1",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[],
+        usage=CompletionUsage(
+            prompt_tokens=100,
+            completion_tokens=20,
+            total_tokens=120,
+            prompt_tokens_details=PromptTokensDetails(cached_tokens=0),
+        ),
+    )
+    chat_completion_chunk_to_message_stream_events(chunk, state)
+    assert state.cache_read_input_tokens == 0
+
+
+def test_streaming_usage_no_prompt_tokens_details_leaves_cache_read_unset() -> None:
+    """Usage without prompt_tokens_details leaves cache_read_input_tokens at its default."""
+    state = StreamingState()
+    chunk = ChatCompletionChunk(
+        id="chunk-1",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[],
+        usage=CompletionUsage(
+            prompt_tokens=100,
+            completion_tokens=20,
+            total_tokens=120,
+        ),
+    )
+    chat_completion_chunk_to_message_stream_events(chunk, state)
+    assert state.cache_read_input_tokens == 0
 
 
 def test_close_current_block_when_none() -> None:
