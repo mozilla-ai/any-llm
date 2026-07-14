@@ -250,7 +250,8 @@ class GoogleProvider(AnyLLM):
     @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert Google chunk response to OpenAI format."""
-        return _create_openai_chunk_from_google_chunk(response)
+        tool_call_counter = kwargs.get("tool_call_counter")
+        return _create_openai_chunk_from_google_chunk(response, tool_call_counter)
 
     @staticmethod
     @override
@@ -303,8 +304,9 @@ class GoogleProvider(AnyLLM):
             response_stream = await self.client.aio.models.generate_content_stream(**converted_kwargs)
 
             async def _stream() -> AsyncIterator[ChatCompletionChunk]:
+                tool_call_counter: list[int] = [0]
                 async for chunk in response_stream:
-                    yield self._convert_completion_chunk_response(chunk)
+                    yield self._convert_completion_chunk_response(chunk, tool_call_counter=tool_call_counter)
 
             return _stream()
 
