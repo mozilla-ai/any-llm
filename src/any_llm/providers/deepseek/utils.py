@@ -62,7 +62,8 @@ def _reinject_reasoning_content(messages: list[dict[str, Any]]) -> list[dict[str
             extra_content = message.get("extra_content")
             deepseek_extra = extra_content.get("deepseek") if isinstance(extra_content, dict) else None
             if isinstance(deepseek_extra, dict) and isinstance(deepseek_extra.get("reasoning_content"), str):
-                message = {**message, "reasoning_content": deepseek_extra["reasoning_content"]}
+                result.append({**message, "reasoning_content": deepseek_extra["reasoning_content"]})
+                continue
         result.append(message)
     return result
 
