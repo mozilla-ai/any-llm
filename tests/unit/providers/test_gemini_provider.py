@@ -895,6 +895,70 @@ def test_streaming_completion_with_tool_call() -> None:
     assert tool_call.function.arguments == '{"location": "Paris"}'
 
 
+def test_streaming_completion_with_tool_call_preserves_thought_signature() -> None:
+    """Streaming tool call deltas should carry thought_signature in extra_content, like non-streaming."""
+    from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
+
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_function_call = Mock()
+    mock_function_call.name = "get_weather"
+    mock_function_call.args = {"location": "Paris"}
+
+    original_bytes = b"test-signature-bytes"
+    mock_part = Mock()
+    mock_part.function_call = mock_function_call
+    mock_part.thought = None
+    mock_part.text = None
+    mock_part.thought_signature = original_bytes
+
+    mock_response.candidates[0].content.parts = [mock_part]
+    mock_response.candidates[0].finish_reason = Mock()
+    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.model_version = "gemini-2.5-flash"
+    mock_response.usage_metadata = None
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    assert chunk.choices[0].delta.tool_calls is not None
+    tool_call = chunk.choices[0].delta.tool_calls[0]
+    assert tool_call.extra_content is not None
+    assert tool_call.extra_content["google"]["thought_signature"] == base64.b64encode(original_bytes).decode("utf-8")
+
+
+def test_streaming_completion_with_tool_call_no_thought_signature() -> None:
+    """Streaming tool call deltas should not set extra_content when no thought_signature is present."""
+    from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
+
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_function_call = Mock()
+    mock_function_call.name = "get_weather"
+    mock_function_call.args = {"location": "Paris"}
+
+    mock_part = Mock()
+    mock_part.function_call = mock_function_call
+    mock_part.thought = None
+    mock_part.text = None
+    mock_part.thought_signature = None
+
+    mock_response.candidates[0].content.parts = [mock_part]
+    mock_response.candidates[0].finish_reason = Mock()
+    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.model_version = "gemini-2.5-flash"
+    mock_response.usage_metadata = None
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    assert chunk.choices[0].delta.tool_calls is not None
+    tool_call = chunk.choices[0].delta.tool_calls[0]
+    assert tool_call.extra_content is None
+
+
 def test_streaming_completion_with_multiple_tool_calls() -> None:
     """Test that streaming chunks handle multiple parallel tool calls."""
     from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
