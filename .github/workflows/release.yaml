@@ -122,7 +122,11 @@ jobs:
           PR_NUMBERS=""
           while IFS= read -r sha; do
             [ -z "$sha" ] && continue
-            NUMS=$(gh api "repos/${REPO}/commits/${sha}/pulls" --jq '.[].number' 2>/dev/null || true)
+            # No `|| true` here: a commit with no associated PR returns `[]` (jq exits 0,
+            # empty output) on its own. Letting genuine gh api failures (rate limit, network)
+            # propagate under `set -e` is intentional, so the job fails loudly instead of
+            # silently skipping PRs.
+            NUMS=$(gh api "repos/${REPO}/commits/${sha}/pulls" --jq '.[].number')
             PR_NUMBERS="$PR_NUMBERS $NUMS"
           done <<< "$COMMIT_SHAS"
           # `|| true` guards against grep's exit 1 (no matching lines) tripping `set -o pipefail`
