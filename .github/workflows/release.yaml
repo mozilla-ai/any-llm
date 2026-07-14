@@ -70,3 +70,51 @@ jobs:
       - name: Upload package
         if: github.event_name == 'release'
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  tag-prs-with-release:
+    if: github.event_name == 'release'
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Label merged PRs with the release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          # Find the previous tag reachable from this release's commit (empty if this is the first release).
+          PREV_TAG=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+
+          if [ -z "$PREV_TAG" ]; then
+            RANGE="$TAG"
+          else
+            RANGE="$PREV_TAG..$TAG"
+          fi
+          echo "Diffing range: $RANGE"
+
+          # Extract PR numbers from squash-merge subjects "... (#123)" and merge-commit subjects "Merge pull request #123 ...".
+          PR_NUMBERS=$(git log --pretty=format:%s "$RANGE" \
+            | grep -oE '\(#[0-9]+\)$|^Merge pull request #[0-9]+' \
+            | grep -oE '[0-9]+' \
+            | sort -un)
+
+          if [ -z "$PR_NUMBERS" ]; then
+            echo "No PRs found in range $RANGE"
+            exit 0
+          fi
+
+          # Create the release label if it doesn't already exist.
+          gh label create "$TAG" --color "0E8A16" --description "Included in release $TAG" 2>/dev/null || true
+
+          for pr in $PR_NUMBERS; do
+            echo "Labeling PR #$pr with $TAG"
+            gh pr edit "$pr" --add-label "$TAG" || echo "::warning::Failed to label PR #$pr (may not be a PR, or already closed/deleted)"
+          done
