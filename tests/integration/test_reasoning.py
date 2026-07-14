@@ -46,6 +46,9 @@ async def test_completion_reasoning(
                 LLMProvider.SAMBANOVA,
                 LLMProvider.TOGETHER,
                 LLMProvider.PORTKEY,
+                # DeepSeek's V4 models default thinking mode to disabled for "auto" (matching the
+                # old deepseek-chat behavior); an explicit value is needed to enable it.
+                LLMProvider.DEEPSEEK,
             )
             else "auto",
             max_tokens=4096
@@ -106,6 +109,9 @@ async def test_completion_reasoning_streaming(
                 LLMProvider.SAMBANOVA,
                 LLMProvider.TOGETHER,
                 LLMProvider.PORTKEY,
+                # DeepSeek's V4 models default thinking mode to disabled for "auto" (matching the
+                # old deepseek-chat behavior); an explicit value is needed to enable it.
+                LLMProvider.DEEPSEEK,
             )
             else "auto",
             max_tokens=4999
