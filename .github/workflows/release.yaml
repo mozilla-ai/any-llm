@@ -70,3 +70,78 @@ jobs:
       - name: Upload package
         if: github.event_name == 'release'
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  tag-prs-with-release:
+    name: Tag PRs with release
+    # Only run once the package has actually built and published successfully,
+    # so PRs are never labeled as "released" for a release that failed to ship.
+    needs: release
+    if: github.event_name == 'release'
+    permissions:
+      contents: read
+      # PRs are issues under the hood on GitHub: labeling an *existing* label onto a
+      # PR only needs pull-requests:write, but creating a brand-new label (which we
+      # do on every release, since each release gets its own never-seen-before label)
+      # goes through the Issues API and needs issues:write too.
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Label merged PRs with the release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          # Find the previous tag reachable from this release's commit (empty if this is the first release).
+          PREV_TAG=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+
+          if [ -z "$PREV_TAG" ]; then
+            RANGE="$TAG"
+          else
+            RANGE="$PREV_TAG..$TAG"
+          fi
+          echo "Diffing range: $RANGE"
+
+          COMMIT_SHAS=$(git log --pretty=format:%H "$RANGE")
+
+          if [ -z "$COMMIT_SHAS" ]; then
+            echo "No commits found in range $RANGE"
+            exit 0
+          fi
+
+          # Ask GitHub which PR each commit belongs to (native association, works for
+          # squash/merge-commit/rebase alike) instead of parsing commit message text.
+          PR_NUMBERS=""
+          while IFS= read -r sha; do
+            [ -z "$sha" ] && continue
+            # No `|| true` here: a commit with no associated PR returns `[]` (jq exits 0,
+            # empty output) on its own. Letting genuine gh api failures (rate limit, network)
+            # propagate under `set -e` is intentional, so the job fails loudly instead of
+            # silently skipping PRs.
+            NUMS=$(gh api "repos/${REPO}/commits/${sha}/pulls" --jq '.[].number')
+            PR_NUMBERS="$PR_NUMBERS $NUMS"
+          done <<< "$COMMIT_SHAS"
+          # `|| true` guards against grep's exit 1 (no matching lines) tripping `set -o pipefail`
+          # when none of the commits in range map to a PR.
+          PR_NUMBERS=$(echo "$PR_NUMBERS" | tr ' ' '\n' | { grep -E '^[0-9]+$' || true; } | sort -un)
+
+          if [ -z "$PR_NUMBERS" ]; then
+            echo "No PRs found in range $RANGE"
+            exit 0
+          fi
+
+          # Create the release label if it doesn't already exist.
+          gh label create "$TAG" --color "0E8A16" --description "Included in release $TAG" 2>/dev/null || true
+
+          for pr in $PR_NUMBERS; do
+            echo "Labeling PR #$pr with $TAG"
+            gh pr edit "$pr" --add-label "$TAG" || echo "::warning::Failed to label PR #$pr (may not be a PR, or already closed/deleted)"
+          done
