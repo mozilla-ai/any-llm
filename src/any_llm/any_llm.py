@@ -804,8 +804,10 @@ class AnyLLM(ABC):
                         yield event
             except Exception:
                 # Flush the usage accumulated so far before re-raising, so a mid-stream failure still reports tokens.
+                # Report stop_reason=None so a finish_reason seen before the failure is never mistaken for a
+                # successful completion; message_stop stays reserved for the clean-completion path below.
                 if state.started:
-                    yield usage_delta(state.stop_reason)
+                    yield usage_delta(None)
                 raise
             # Emit the closing events after the full stream is consumed so trailing-chunk usage is included.
             if state.started:

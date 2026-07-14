@@ -504,6 +504,62 @@ async def test_default_amessages_streaming_flushes_usage_when_stream_fails() -> 
 
 
 @pytest.mark.asyncio
+async def test_default_amessages_streaming_failure_after_finish_reason_reports_no_stop_reason() -> None:
+    """A stream that emits finish_reason and then fails must not report a completion stop_reason."""
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        yield ChatCompletionChunk(
+            id="chunk-1",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
+            usage=CompletionUsage(prompt_tokens=100, completion_tokens=10, total_tokens=110),
+        )
+        yield ChatCompletionChunk(
+            id="chunk-2",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(), finish_reason="stop")],
+        )
+        # The trailing usage-only chunk never arrives; the provider stream drops instead.
+        msg = "provider stream dropped"
+        raise RuntimeError(msg)
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage))
+
+    seen: list[Any] = []
+
+    async def consume() -> None:
+        async for event in result:
+            seen.append(event)
+
+    with pytest.raises(RuntimeError, match="provider stream dropped"):
+        await consume()
+
+    delta = next(e for e in seen if isinstance(e, MessageDeltaEvent))
+    assert delta.usage.input_tokens == 100
+    assert delta.usage.output_tokens == 10
+    # Even though finish_reason="stop" was seen, the failure path must report stop_reason=None
+    # so consumers cannot mistake the flushed delta for a successful completion.
+    assert delta.delta.stop_reason is None
+    # message_stop stays reserved for clean completion; it must never appear on the failure path.
+    # (content_block_stop legitimately appears here: the content block was closed when finish_reason arrived.)
+    assert all(e.type != "message_stop" for e in seen)
+
+
+@pytest.mark.asyncio
 async def test_default_amessages_streaming_failure_before_first_chunk_emits_nothing() -> None:
     """A stream that fails before producing any chunk emits no events, only the exception."""
 
