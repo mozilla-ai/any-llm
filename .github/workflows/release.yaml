@@ -72,9 +72,18 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
 
   tag-prs-with-release:
+    name: Tag PRs with release
+    # Only run once the package has actually built and published successfully,
+    # so PRs are never labeled as "released" for a release that failed to ship.
+    needs: release
     if: github.event_name == 'release'
     permissions:
       contents: read
+      # PRs are issues under the hood on GitHub: labeling an *existing* label onto a
+      # PR only needs pull-requests:write, but creating a brand-new label (which we
+      # do on every release, since each release gets its own never-seen-before label)
+      # goes through the Issues API and needs issues:write too.
+      issues: write
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
@@ -116,7 +125,9 @@ jobs:
             NUMS=$(gh api "repos/${REPO}/commits/${sha}/pulls" --jq '.[].number' 2>/dev/null || true)
             PR_NUMBERS="$PR_NUMBERS $NUMS"
           done <<< "$COMMIT_SHAS"
-          PR_NUMBERS=$(echo "$PR_NUMBERS" | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -un)
+          # `|| true` guards against grep's exit 1 (no matching lines) tripping `set -o pipefail`
+          # when none of the commits in range map to a PR.
+          PR_NUMBERS=$(echo "$PR_NUMBERS" | tr ' ' '\n' | { grep -E '^[0-9]+$' || true; } | sort -un)
 
           if [ -z "$PR_NUMBERS" ]; then
             echo "No PRs found in range $RANGE"
