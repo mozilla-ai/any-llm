@@ -86,6 +86,7 @@ jobs:
       - name: Label merged PRs with the release tag
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
           TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
@@ -100,11 +101,22 @@ jobs:
           fi
           echo "Diffing range: $RANGE"
 
-          # Extract PR numbers from squash-merge subjects "... (#123)" and merge-commit subjects "Merge pull request #123 ...".
-          PR_NUMBERS=$(git log --pretty=format:%s "$RANGE" \
-            | grep -oE '\(#[0-9]+\)$|^Merge pull request #[0-9]+' \
-            | grep -oE '[0-9]+' \
-            | sort -un)
+          COMMIT_SHAS=$(git log --pretty=format:%H "$RANGE")
+
+          if [ -z "$COMMIT_SHAS" ]; then
+            echo "No commits found in range $RANGE"
+            exit 0
+          fi
+
+          # Ask GitHub which PR each commit belongs to (native association, works for
+          # squash/merge-commit/rebase alike) instead of parsing commit message text.
+          PR_NUMBERS=""
+          while IFS= read -r sha; do
+            [ -z "$sha" ] && continue
+            NUMS=$(gh api "repos/${REPO}/commits/${sha}/pulls" --jq '.[].number' 2>/dev/null || true)
+            PR_NUMBERS="$PR_NUMBERS $NUMS"
+          done <<< "$COMMIT_SHAS"
+          PR_NUMBERS=$(echo "$PR_NUMBERS" | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -un)
 
           if [ -z "$PR_NUMBERS" ]; then
             echo "No PRs found in range $RANGE"
