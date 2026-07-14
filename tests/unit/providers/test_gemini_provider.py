@@ -1,4 +1,5 @@
 import base64
+from collections.abc import AsyncIterator
 from contextlib import contextmanager
 from typing import Any, get_args
 from unittest.mock import AsyncMock, Mock, patch
@@ -1097,7 +1098,7 @@ def test_streaming_completion_multiple_tool_calls_within_chunk_after_prior_chunk
     assert [tc.index for tc in second_chunk.choices[0].delta.tool_calls] == [1, 2]
 
 
-async def _async_iter_chunks(items: list[Mock]) -> Any:
+async def _async_iter_chunks(items: list[Mock]) -> AsyncIterator[Mock]:
     for item in items:
         yield item
 
