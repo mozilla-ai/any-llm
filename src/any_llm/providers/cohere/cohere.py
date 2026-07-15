@@ -197,9 +197,6 @@ class CohereProvider(AnyLLM):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         if params.response_format is not None:
             kwargs["response_format"] = self._preprocess_response_format(params.response_format)
-        if params.stream and params.response_format is not None:
-            msg = "stream and response_format"
-            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
         if params.parallel_tool_calls is not None:
             msg = "parallel_tool_calls"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)

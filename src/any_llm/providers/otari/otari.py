@@ -299,10 +299,7 @@ class OtariProvider(BaseOpenAIProvider):
         response_format = params.response_format
         wants_structured = is_structured_output_type(response_format)
         completion_kwargs = self._convert_completion_params(params, **kwargs)
-        if wants_structured:
-            if params.stream:
-                msg = "stream is not supported for response_format"
-                raise ValueError(msg)
+        if wants_structured and not params.stream:
             completion_kwargs.pop("stream", None)
 
         response = await self.otari_client.completion(

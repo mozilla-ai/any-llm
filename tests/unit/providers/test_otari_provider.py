@@ -267,13 +267,26 @@ async def test_otari_acompletion_returns_parsed_completion_for_structured_output
 
 
 @pytest.mark.asyncio
-async def test_otari_acompletion_rejects_stream_with_response_format() -> None:
+async def test_otari_acompletion_streams_with_response_format() -> None:
     from pydantic import BaseModel
 
     class Schema(BaseModel):
         city: str
 
-    provider = _build_provider(_mock_otari_client())
+    chunk = {
+        "id": "chatcmpl-1",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "anthropic:claude-haiku-4-5",
+        "choices": [{"index": 0, "delta": {"content": '{"city":'}, "finish_reason": None}],
+    }
+
+    async def _stream() -> Any:
+        yield chunk
+
+    mocked_client = _mock_otari_client()
+    mocked_client.completion = AsyncMock(return_value=_stream())
+    provider = _build_provider(mocked_client)
     params = CompletionParams(
         model_id="anthropic:claude-haiku-4-5",
         messages=[{"role": "user", "content": "hi"}],
@@ -281,8 +294,14 @@ async def test_otari_acompletion_rejects_stream_with_response_format() -> None:
         stream=True,
     )
 
-    with pytest.raises(ValueError, match="stream is not supported for response_format"):
-        await provider._acompletion(params)
+    result = await provider._acompletion(params)
+    collected = [item async for item in result]  # type: ignore[union-attr]
+
+    assert collected[0].choices[0].delta.content == '{"city":'
+    call_kwargs = mocked_client.completion.call_args.kwargs
+    assert call_kwargs["stream"] is True
+    assert call_kwargs["response_format"]["type"] == "json_schema"
+    assert call_kwargs["response_format"]["json_schema"]["name"] == "Schema"
 
 
 def test_otari_advertises_image_and_audio_support() -> None:

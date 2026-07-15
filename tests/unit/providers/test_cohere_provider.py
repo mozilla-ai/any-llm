@@ -41,18 +41,31 @@ def test_preprocess_response_format() -> None:
 
 
 @pytest.mark.asyncio
-async def test_stream_and_response_format_combination_raises() -> None:
+async def test_stream_with_response_format_passes_to_chat_stream() -> None:
+    response_format = {"type": "json_object"}
     provider = _mk_provider()
 
-    with pytest.raises(UnsupportedParameterError):
-        await provider._acompletion(
-            CompletionParams(
-                model_id="model-id",
-                messages=[{"role": "user", "content": "Hello"}],
-                stream=True,
-                response_format={"type": "json_object"},
-            )
+    async def _stream() -> Any:
+        if False:
+            yield None
+
+    provider.client.chat_stream = Mock(return_value=_stream())
+    result = await provider._acompletion(
+        CompletionParams(
+            model_id="model-id",
+            messages=[{"role": "user", "content": "Hello"}],
+            stream=True,
+            response_format=response_format,
         )
+    )
+    collected = [chunk async for chunk in result]
+
+    assert collected == []
+    provider.client.chat_stream.assert_called_once_with(
+        model="model-id",
+        messages=[{"role": "user", "content": "Hello"}],
+        response_format=response_format,
+    )
 
 
 @pytest.mark.asyncio
