@@ -108,6 +108,23 @@ async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
         assert "reasoning_effort" not in call_kwargs
 
 
+def test_stream_options_filtered_out() -> None:
+    """stream_options is an OpenAI-only knob (set by the Messages bridge for
+    streaming usage); the Groq SDK rejects it, so it must be dropped."""
+    pytest.importorskip("groq")
+    from any_llm.providers.groq.groq import GroqProvider
+
+    result = GroqProvider._convert_completion_params(
+        CompletionParams(
+            model_id="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": "Hello"}],
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+    )
+    assert "stream_options" not in result
+
+
 def test_to_chat_completion_extracts_cached_tokens() -> None:
     """Test that cached tokens from Groq usage are extracted into prompt_tokens_details."""
     from groq.types.chat import ChatCompletion as GroqChatCompletion
