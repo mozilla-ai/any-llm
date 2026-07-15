@@ -227,3 +227,17 @@ def test_azure_no_api_key_no_credential_raises() -> None:
     with mock_azure_provider():
         with pytest.raises(MissingApiKeyError):
             AzureProvider(api_base=custom_endpoint)
+
+
+def test_convert_completion_params_drops_stream_options() -> None:
+    """stream_options is an OpenAI-only knob (set by the Messages bridge for
+    streaming usage); the Azure AI Inference SDK does not model it and forwards
+    unknown kwargs to the transport, which rejects them, so it must be dropped."""
+    params = CompletionParams(
+        model_id="test-model",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=True,
+        stream_options={"include_usage": True},
+    )
+    result = AzureProvider._convert_completion_params(params)
+    assert "stream_options" not in result
