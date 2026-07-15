@@ -29,6 +29,7 @@ class LLMProvider(StrEnum):
     DEEPSEEK = "deepseek"
     FIREWORKS = "fireworks"
     GEMINI = "gemini"
+    GMI = "gmi"
     GITHUB = "github"
     GROQ = "groq"
     HUGGINGFACE = "huggingface"
