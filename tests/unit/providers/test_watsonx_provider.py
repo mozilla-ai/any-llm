@@ -176,6 +176,20 @@ def test_convert_completion_params_filters_reasoning_effort(reasoning_effort: st
     assert "reasoning_effort" not in result
 
 
+def test_convert_completion_params_drops_stream_options() -> None:
+    """stream_options is an OpenAI-only knob (set by the Messages bridge for
+    streaming usage). Watsonx merges the params dict straight into its chat
+    payload, so it must be dropped rather than forwarded as an unsupported field."""
+    params = CompletionParams(
+        model_id="test-model",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=True,
+        stream_options={"include_usage": True},
+    )
+    result = WatsonxProvider._convert_completion_params(params)
+    assert "stream_options" not in result
+
+
 def test_convert_streaming_chunk_with_tool_calls() -> None:
     """Test streaming chunk conversion with tool calls."""
     chunk = {
