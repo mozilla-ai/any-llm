@@ -1,29 +1,44 @@
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.cerebras.cerebras import CerebrasProvider
 from any_llm.providers.cerebras.utils import _convert_response, _create_openai_chunk_from_cerebras_chunk
 from any_llm.types.completion import CompletionParams
 
 
 @pytest.mark.asyncio
-async def test_stream_with_response_format_raises() -> None:
-    api_key = "test-api-key"
-    model = "model-id"
-    messages = [{"role": "user", "content": "Hello"}]
+async def test_stream_with_response_format_passes_to_completion_create() -> None:
+    response_format = {"type": "json_object"}
 
-    provider = CerebrasProvider(api_key=api_key)
+    async def _stream() -> Any:
+        if False:
+            yield None
 
-    chunks = provider._stream_completion_async(
-        model=model,
-        messages=messages,
-        response_format={"type": "json_object"},
+    with patch("any_llm.providers.cerebras.cerebras.cerebras") as mock_cerebras:
+        mock_client = Mock()
+        mock_client.chat.completions.create = AsyncMock(return_value=_stream())
+        mock_cerebras.AsyncCerebras.return_value = mock_client
+        provider = CerebrasProvider(api_key="test-api-key")
+
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Hello"}],
+                stream=True,
+                response_format=response_format,
+            )
+        )
+        collected = [chunk async for chunk in result]  # type: ignore[union-attr]
+
+    assert collected == []
+    mock_client.chat.completions.create.assert_awaited_once_with(
+        model="model-id",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=True,
+        response_format=response_format,
     )
-    with pytest.raises(UnsupportedParameterError):
-        async for _ in chunks:
-            pass
 
 
 def test_convert_response_extracts_reasoning() -> None:

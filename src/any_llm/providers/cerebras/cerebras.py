@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Any, cast
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.exceptions import UnsupportedParameterError
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
@@ -104,10 +103,6 @@ class CerebrasProvider(AnyLLM):
         messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> AsyncIterator[ChatCompletionChunk]:
-        if kwargs.get("response_format", None) is not None:
-            msg = "stream and response_format"
-            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
-
         cerebras_stream = await self.client.chat.completions.create(
             model=model,
             messages=messages,
