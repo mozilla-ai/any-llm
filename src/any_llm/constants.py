@@ -63,6 +63,7 @@ class LLMProvider(StrEnum):
     DASHSCOPE = "dashscope"
     DEEPINFRA = "deepinfra"
     ZAI = "zai"
+    TELNYX = "telnyx"
 
     @classmethod
     def from_string(cls, value: "str | LLMProvider") -> "LLMProvider":
