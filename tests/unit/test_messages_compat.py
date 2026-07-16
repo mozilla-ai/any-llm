@@ -493,6 +493,45 @@ def test_optional_params_not_included_when_none() -> None:
     assert "tools" not in result
 
 
+def test_stream_requests_include_usage() -> None:
+    """Streaming requests ask the backend for usage, otherwise OpenAI-compatible
+    providers omit it and the streamed bridge reports zero tokens."""
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Hi"}],
+        max_tokens=1024,
+        stream=True,
+    )
+    result = messages_params_to_completion_params(params)
+    assert result["stream"] is True
+    assert result["stream_options"] == {"include_usage": True}
+
+
+def test_non_stream_omits_stream_options() -> None:
+    """A non-streaming request has no usage-only chunk to request."""
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Hi"}],
+        max_tokens=1024,
+        stream=False,
+    )
+    result = messages_params_to_completion_params(params)
+    assert result["stream"] is False
+    assert "stream_options" not in result
+
+
+def test_unset_stream_omits_stream_options() -> None:
+    """When stream is unset, neither stream nor stream_options is included."""
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Hi"}],
+        max_tokens=1024,
+    )
+    result = messages_params_to_completion_params(params)
+    assert "stream" not in result
+    assert "stream_options" not in result
+
+
 def test_temperature_and_top_p_passed_through() -> None:
     """Test that temperature and top_p are passed when set."""
     params = MessagesParams(

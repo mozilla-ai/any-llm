@@ -146,3 +146,19 @@ async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
         )
         _, call_kwargs = mock_xai.return_value.chat.create.call_args
         assert "reasoning_effort" not in call_kwargs
+
+
+def test_stream_options_filtered_out() -> None:
+    """stream_options is an OpenAI-only knob (set by the Messages bridge for
+    streaming usage); the xAI SDK rejects it, so it must be dropped."""
+    from any_llm.providers.xai.xai import XaiProvider
+
+    result = XaiProvider._convert_completion_params(
+        CompletionParams(
+            model_id="model",
+            messages=[{"role": "user", "content": "Hello"}],
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+    )
+    assert "stream_options" not in result

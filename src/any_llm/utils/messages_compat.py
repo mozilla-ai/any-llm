@@ -70,6 +70,15 @@ def messages_params_to_completion_params(params: MessagesParams) -> dict[str, An
         result["stop"] = params.stop_sequences
     if params.stream is not None:
         result["stream"] = params.stream
+        if params.stream:
+            # OpenAI-compatible backends omit token usage from streamed chunks
+            # unless asked for it, so the streamed Messages bridge would report
+            # zero tokens. Request the trailing usage-only chunk that the
+            # streaming wrapper flushes into the closing ``message_delta``.
+            # Providers that don't support ``stream_options`` strip it in their
+            # own param conversion, and the native Anthropic provider never
+            # reaches this bridge (it overrides ``_amessages``).
+            result["stream_options"] = {"include_usage": True}
 
     if params.output_format is not None:
         if is_structured_output_type(params.output_format):

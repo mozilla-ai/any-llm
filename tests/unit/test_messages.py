@@ -9,7 +9,10 @@ import pytest
 from any_llm.any_llm import AnyLLM
 from any_llm.api import amessages
 from any_llm.types.completion import (
+    ChatCompletion,
     ChatCompletionChunk,
+    ChatCompletionMessage,
+    Choice,
     ChoiceDelta,
     ChunkChoice,
     CompletionUsage,
@@ -403,6 +406,71 @@ async def test_default_amessages_streaming() -> None:
     assert "content_block_stop" in types
     assert "message_delta" in types
     assert "message_stop" in types
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_requests_include_usage() -> None:
+    """Streaming through the bridge must ask the backend for usage, otherwise
+    OpenAI-compatible providers emit no usage-only chunk and the trailing-chunk
+    capture has nothing to report."""
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        yield ChatCompletionChunk(
+            id="chunk-1",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(), finish_reason="stop")],
+        )
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage))
+    async for _ in result:  # drive the generator so _acompletion is invoked
+        pass
+
+    completion_params = mock_provider._acompletion.call_args.args[0]
+    assert completion_params.stream is True
+    assert completion_params.stream_options == {"include_usage": True}
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_non_streaming_omits_include_usage() -> None:
+    """A non-streaming bridge call has no usage-only chunk to request."""
+    mock_completion = ChatCompletion(
+        id="c",
+        model="gpt-4",
+        created=0,
+        object="chat.completion",
+        choices=[
+            Choice(
+                index=0,
+                message=ChatCompletionMessage(role="assistant", content="hi"),
+                finish_reason="stop",
+            )
+        ],
+    )
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_completion)
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=False,
+    )
+    await AnyLLM._amessages(mock_provider, params)
+
+    completion_params = mock_provider._acompletion.call_args.args[0]
+    assert completion_params.stream_options is None
 
 
 @pytest.mark.asyncio

@@ -59,13 +59,16 @@ class XaiProvider(AnyLLM):
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for xAI API."""
-        # xAI does not support providing reasoning effort
+        # xAI does not support providing reasoning effort.
+        # stream_options is an OpenAI-only knob (the Messages bridge sets it to
+        # request streaming usage); the xAI SDK rejects it, so drop it here.
         converted_params = params.model_dump(
             exclude_none=True,
             exclude={
                 "model_id",
                 "messages",
                 "stream",
+                "stream_options",
                 "response_format",
                 "tools",
                 "tool_choice",

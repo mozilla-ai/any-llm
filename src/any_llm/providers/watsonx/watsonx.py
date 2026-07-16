@@ -66,9 +66,13 @@ class WatsonxProvider(AnyLLM):
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Watsonx API."""
-        # Watsonx does not support providing reasoning effort
+        # Watsonx does not support providing reasoning effort.
+        # stream_options is an OpenAI-only knob (the Messages bridge sets it to
+        # request streaming usage); Watsonx merges the params dict straight into
+        # its chat payload, so drop it here as the OpenAI-incompatible providers
+        # already do, rather than forward an unsupported field.
         converted_params = params.model_dump(
-            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}
+            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream", "stream_options"}
         )
         if converted_params.get("reasoning_effort") in ("auto", "none"):
             converted_params.pop("reasoning_effort")
