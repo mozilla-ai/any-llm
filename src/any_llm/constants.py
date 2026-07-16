@@ -30,6 +30,7 @@ class LLMProvider(StrEnum):
     FIREWORKS = "fireworks"
     GEMINI = "gemini"
     GITHUB = "github"
+    GMI = "gmi"
     GROQ = "groq"
     HUGGINGFACE = "huggingface"
     INCEPTION = "inception"
