@@ -10,3 +10,4 @@ class TelnyxProvider(BaseOpenAIProvider):
 
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_COMPLETION_PDF = False
+    SUPPORTS_EMBEDDING = False

@@ -19,6 +19,7 @@ def test_telnyx_supports_flags() -> None:
     assert provider.SUPPORTS_COMPLETION_STREAMING is True
     assert provider.SUPPORTS_COMPLETION_REASONING is True
     assert provider.SUPPORTS_COMPLETION_PDF is False
+    assert provider.SUPPORTS_EMBEDDING is False
     assert provider.SUPPORTS_LIST_MODELS is True
 
 
