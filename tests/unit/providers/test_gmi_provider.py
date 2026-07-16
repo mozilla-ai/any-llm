@@ -32,7 +32,9 @@ def test_factory_integration() -> None:
 
 
 def test_gmi_remaps_max_tokens_back_to_max_tokens() -> None:
-    params = CompletionParams(model_id="zai-org/GLM-5-FP8", messages=[{"role": "user", "content": "hi"}], max_tokens=8192)
+    params = CompletionParams(
+        model_id="zai-org/GLM-5-FP8", messages=[{"role": "user", "content": "hi"}], max_tokens=8192
+    )
     result = GmiProvider._convert_completion_params(params)
     assert result["max_tokens"] == 8192
     assert "max_completion_tokens" not in result

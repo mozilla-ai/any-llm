@@ -46,7 +46,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.FIREWORKS: "accounts/fireworks/models/gpt-oss-20b",
         LLMProvider.OPENAI: "gpt-5-nano",
         LLMProvider.MISTRAL: "magistral-medium-latest",
-        LLMProvider.GMI: "zai-org/GLM-5.2-FP8",
+        LLMProvider.GMI: "zai-org/GLM-5-FP8",
         LLMProvider.XAI: "grok-3-mini-latest",
         LLMProvider.OLLAMA: "qwen3:0.6b",
         LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
@@ -88,7 +88,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         # otari routes provider:model; anthropic is the only upstream the test account serves reliably.
         LLMProvider.OTARI: "anthropic:claude-haiku-4-5",
         LLMProvider.GEMINI: "gemini-3-flash-preview",
-        LLMProvider.GMI: "zai-org/GLM-5.2-FP8",
+        LLMProvider.GMI: "zai-org/GLM-5-FP8",
         LLMProvider.GITHUB: "openai/gpt-4.1-nano",
         LLMProvider.VERTEXAI: "gemini-3-flash-preview",
         LLMProvider.MOONSHOT: "moonshot-v1-8k",
