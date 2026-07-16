@@ -9,7 +9,10 @@ import pytest
 from any_llm.any_llm import AnyLLM
 from any_llm.api import amessages
 from any_llm.types.completion import (
+    ChatCompletion,
     ChatCompletionChunk,
+    ChatCompletionMessage,
+    Choice,
     ChoiceDelta,
     ChunkChoice,
     CompletionUsage,
@@ -442,8 +445,6 @@ async def test_default_amessages_streaming_requests_include_usage() -> None:
 @pytest.mark.asyncio
 async def test_default_amessages_non_streaming_omits_include_usage() -> None:
     """A non-streaming bridge call has no usage-only chunk to request."""
-    from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, Choice
-
     mock_completion = ChatCompletion(
         id="c",
         model="gpt-4",
