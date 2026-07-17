@@ -59,7 +59,10 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.AZUREOPENAI: "gpt-4.1-nano",
         LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.COHERE: "command-a-reasoning-08-2025",
-        LLMProvider.DEEPSEEK: "deepseek-reasoner",
+        # deepseek-reasoner is discontinued 2026-07-24 in favor of deepseek-v4-flash, where
+        # thinking mode is now a request-level toggle (see DeepseekProvider._convert_completion_params)
+        # rather than a dedicated model name.
+        LLMProvider.DEEPSEEK: "deepseek-v4-flash",
         # kimi-k2-thinking and kimi-thinking-preview are discontinued; kimi-k2.6 is the
         # current reasoning-capable model (thinking mode, native multimodal).
         LLMProvider.MOONSHOT: "kimi-k2.6",
@@ -83,7 +86,10 @@ def provider_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.MISTRAL: "mistral-small-latest",
         LLMProvider.ANTHROPIC: "claude-haiku-4-5",
-        LLMProvider.DEEPSEEK: "deepseek-chat",
+        # deepseek-chat is discontinued 2026-07-24 in favor of deepseek-v4-flash; thinking mode
+        # defaults to disabled for it unless reasoning_effort is set (see
+        # DeepseekProvider._convert_completion_params), matching the old deepseek-chat behavior.
+        LLMProvider.DEEPSEEK: "deepseek-v4-flash",
         LLMProvider.OPENAI: "gpt-5-nano",
         # otari routes provider:model; anthropic is the only upstream the test account serves reliably.
         LLMProvider.OTARI: "anthropic:claude-haiku-4-5",
