@@ -17,6 +17,9 @@ class EdenaiProvider(BaseOpenAIProvider):
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
+    # Eden AI exposes a /v3/responses endpoint, but any-llm's Responses support
+    # targets the OpenResponses-compatible shape, which Eden AI's endpoint has
+    # not been verified against, so the Responses API is left unsupported here.
     SUPPORTS_RESPONSES = False
     # Eden AI's OpenAI-compatible endpoint does not surface structured reasoning
     # content in a separate field (it is inlined in the message content), so

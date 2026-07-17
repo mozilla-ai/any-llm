@@ -13,11 +13,12 @@ if TYPE_CHECKING:
 def _convert_models_list(response: Any) -> Sequence[Model]:
     """Convert the Eden AI /v3/models response to valid Model objects.
 
-    Eden AI's ``/v3/models`` endpoint omits the ``object``, ``owned_by`` and
-    ``created`` fields that the OpenAI ``Model`` schema requires. The OpenAI SDK
-    accepts the missing fields via ``model_construct()``, but the resulting
-    objects fail round-trip serialization. This fills the required fields while
-    preserving Eden AI's extra attributes (``model_name``, ``context_length``, ...).
+    Eden AI's ``/v3/models`` response does not reliably populate every field the
+    OpenAI ``Model`` schema requires (``created`` in particular is absent, and
+    ``object``/``owned_by`` may be missing). The OpenAI SDK accepts the missing
+    fields via ``model_construct()``, but the resulting objects fail round-trip
+    serialization. This fills any missing required fields while preserving Eden
+    AI's extra attributes (``model_name``, ``context_length``, ...).
     """
     raw_models = response.data if hasattr(response, "data") else response
     result: list[Model] = []
