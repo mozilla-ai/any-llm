@@ -14,6 +14,7 @@ def moderation_provider_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.OPENAI: "omni-moderation-latest",
         LLMProvider.MISTRAL: "mistral-moderation-latest",
+        LLMProvider.EDENAI: "openai/omni-moderation-latest",
     }
 
 

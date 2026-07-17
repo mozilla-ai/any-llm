@@ -122,6 +122,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.MINIMAX: "MiniMax-M2",
         LLMProvider.ZAI: "glm-4-32b-0414-128k",
         LLMProvider.DEEPINFRA: "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        LLMProvider.EDENAI: "openai/gpt-4o-mini",
         LLMProvider.TELNYX: "meta-llama/Meta-Llama-3.1-8B-Instruct",
     }
 
@@ -169,6 +170,7 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.AZUREOPENAI: "gpt-4.1-nano",  # Not an embedding model but it's the only one we have deployed in Azure OpenAI
         LLMProvider.OPENROUTER: "qwen/qwen3-embedding-8b",
         LLMProvider.DEEPINFRA: "BAAI/bge-base-en-v1.5",
+        LLMProvider.EDENAI: "openai/text-embedding-3-small",
     }
 
 
