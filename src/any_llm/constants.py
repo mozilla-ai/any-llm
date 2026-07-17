@@ -63,6 +63,7 @@ class LLMProvider(StrEnum):
     MINIMAX = "minimax"
     DASHSCOPE = "dashscope"
     DEEPINFRA = "deepinfra"
+    EDENAI = "edenai"
     ZAI = "zai"
     TELNYX = "telnyx"
 
