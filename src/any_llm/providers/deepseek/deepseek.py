@@ -48,10 +48,13 @@ class DeepseekProvider(BaseOpenAIProvider):
             converted_params["max_tokens"] = converted_params.pop("max_completion_tokens")
 
         if params.model_id not in _LEGACY_MODEL_IDS:
+            # ``"auto"`` means "no explicit reasoning requested" (BaseOpenAIProvider._acompletion
+            # normalizes it to this provider's default before we run), so it is treated the same
+            # as ``None``/``"none"`` here -- matching every other provider's converter and keeping
+            # this self-contained even if called directly with ``"auto"``.
+            thinking_disabled = params.reasoning_effort in (None, "none", "auto")
             extra_body = converted_params.setdefault("extra_body", {})
-            extra_body.setdefault(
-                "thinking", {"type": "disabled" if params.reasoning_effort in (None, "none") else "enabled"}
-            )
+            extra_body.setdefault("thinking", {"type": "disabled" if thinking_disabled else "enabled"})
         return converted_params
 
     @staticmethod

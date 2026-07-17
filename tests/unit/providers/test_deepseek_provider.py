@@ -273,6 +273,17 @@ def test_deepseek_thinking_disabled_for_none_reasoning_effort_value() -> None:
     assert result["extra_body"]["thinking"] == {"type": "disabled"}
 
 
+def test_deepseek_thinking_disabled_for_auto_reasoning_effort_value() -> None:
+    """reasoning_effort="auto" (the default) is treated as "no reasoning requested"."""
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        reasoning_effort="auto",
+    )
+    result = DeepseekProvider._convert_completion_params(params)
+    assert result["extra_body"]["thinking"] == {"type": "disabled"}
+
+
 def test_deepseek_thinking_enabled_when_reasoning_effort_set() -> None:
     """An explicit reasoning_effort should enable thinking mode and be passed through."""
     params = CompletionParams(
