@@ -381,8 +381,11 @@ def test_reinject_reasoning_content_on_tool_call_message() -> None:
     result = _reinject_reasoning_content(messages)
 
     assert result[1]["reasoning_content"] == "I should call get_weather."
+    # The any_llm-internal extra_content must not be forwarded to DeepSeek's API.
+    assert "extra_content" not in result[1]
     # Original message dict must not be mutated in place.
     assert "reasoning_content" not in messages[1]
+    assert "extra_content" in messages[1]
 
 
 def test_reinject_reasoning_content_skips_non_tool_call_message() -> None:
@@ -399,6 +402,8 @@ def test_reinject_reasoning_content_skips_non_tool_call_message() -> None:
     result = _reinject_reasoning_content(messages)
 
     assert "reasoning_content" not in result[1]
+    # extra_content is any_llm-internal and is stripped even when reasoning is not reinjected.
+    assert "extra_content" not in result[1]
 
 
 def test_reinject_reasoning_content_handles_missing_extra_content() -> None:

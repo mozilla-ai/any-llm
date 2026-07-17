@@ -55,16 +55,21 @@ def _reinject_reasoning_content(messages: list[dict[str, Any]]) -> list[dict[str
     ``_inject_reasoning_extra_content`` when the response was first received.
 
     Reference: https://api-docs.deepseek.com/guides/thinking_mode#tool-calls
+
+    ``extra_content`` is an any_llm-internal side-channel and is stripped from every replayed
+    message here so it is never forwarded to DeepSeek's API: the OpenAI SDK passes unknown
+    message keys through verbatim, and only ``reasoning_content`` belongs on the wire.
     """
     result = []
     for message in messages:
+        extra_content = message.get("extra_content")
+        cleaned = {k: v for k, v in message.items() if k != "extra_content"} if extra_content is not None else message
         if message.get("role") == "assistant" and message.get("tool_calls") is not None:
-            extra_content = message.get("extra_content")
             deepseek_extra = extra_content.get("deepseek") if isinstance(extra_content, dict) else None
             if isinstance(deepseek_extra, dict) and isinstance(deepseek_extra.get("reasoning_content"), str):
-                result.append({**message, "reasoning_content": deepseek_extra["reasoning_content"]})
+                result.append({**cleaned, "reasoning_content": deepseek_extra["reasoning_content"]})
                 continue
-        result.append(message)
+        result.append(cleaned)
     return result
 
 
