@@ -21,7 +21,7 @@ def test_gmi_supports_flags() -> None:
     assert provider.SUPPORTS_EMBEDDING is False
     assert provider.SUPPORTS_MODERATION is False
     assert provider.SUPPORTS_LIST_MODELS is True
-    assert provider.SUPPORTS_RESPONSES is False
+    assert provider.SUPPORTS_RESPONSES is True
 
 
 def test_factory_integration() -> None:
@@ -62,3 +62,4 @@ def test_provider_metadata() -> None:
     assert metadata.image is False
     assert metadata.embedding is False
     assert metadata.list_models is True
+    assert metadata.responses is True
