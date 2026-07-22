@@ -64,10 +64,10 @@ def test_responses_params_preserves_codex_continuation_items() -> None:
 def test_responses_params_rejects_non_dictionary_input_items() -> None:
     """Responses input items must be dictionaries."""
     with pytest.raises(ValidationError):
-        ResponsesParams(model="test", input=cast(Any, ["hello"]))
+        ResponsesParams(model="test", input=cast("Any", ["hello"]))
 
 
 def test_responses_params_rejects_top_level_dictionary_input() -> None:
     """Responses input must be text or a list of dictionaries."""
     with pytest.raises(ValidationError):
-        ResponsesParams(model="test", input=cast(Any, {"role": "user", "content": "hello"}))
+        ResponsesParams(model="test", input=cast("Any", {"role": "user", "content": "hello"}))
