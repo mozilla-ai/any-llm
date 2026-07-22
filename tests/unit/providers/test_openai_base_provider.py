@@ -138,6 +138,31 @@ async def test_aresponses_without_response_format_returns_response(mock_openai_c
     assert not isinstance(result, ParsedResponse)
 
 
+@pytest.mark.asyncio
+@patch("any_llm.providers.openai.base.AsyncOpenAI")
+async def test_aresponses_forwards_extra_body(mock_openai_class: MagicMock) -> None:
+    mock_client = AsyncMock()
+    mock_client.responses.create = AsyncMock(return_value=_make_openai_response('{"city_name": "Paris"}'))
+    mock_openai_class.return_value = mock_client
+
+    provider = _ResponsesProvider(api_key="key")
+    extra_body = {
+        "client_metadata": {"x-codex-turn-metadata": {"session_id": "session_123"}},
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "hi"}],
+                "internal_chat_message_metadata_passthrough": {"turn_id": "turn_123"},
+            }
+        ],
+    }
+
+    await provider.aresponses(model="gpt-4o", input_data="hi", extra_body=extra_body)
+
+    assert mock_client.responses.create.call_args.kwargs["extra_body"] == extra_body
+
+
 @patch("any_llm.providers.openai.base.AsyncOpenAI")
 def test_responses_sync_basemodel_returns_parsed(mock_openai_class: MagicMock) -> None:
     """The synchronous wrapper must return the ParsedResponse (a Response subclass), not iterate it."""
