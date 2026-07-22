@@ -192,14 +192,6 @@ result = responses(
 print(result.output_text)
 ```
 
-#### Responses Input Compatibility
-
-`input_data` accepts a string or a list of JSON objects. any-llm validates the
-outer request while passing individual Responses items through unchanged. This
-preserves manual conversation history, including prior response output and
-encrypted reasoning items required for stateless Responses API continuation.
-The provider validates the contextual semantics of those items.
-
 ### Finding the Right Model
 
 The `provider_id` should match our [supported provider names](https://docs.mozilla.ai/any-llm/providers/).
