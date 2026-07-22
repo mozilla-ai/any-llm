@@ -966,6 +966,7 @@ class AnyLLM(ABC):
         prompt_cache_key: str | None = None,
         prompt_cache_retention: str | None = None,
         conversation: str | dict[str, Any] | None = None,
+        extra_body: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent] | ParsedResponse[Any]:
         """Create a response using the OpenResponses API.
@@ -1009,6 +1010,7 @@ class AnyLLM(ABC):
             prompt_cache_key: A key to use when reading from or writing to the prompt cache.
             prompt_cache_retention: How long to retain a prompt cache entry created by this request.
             conversation: The conversation to associate this response with (ID string or ConversationParam object).
+            extra_body: Additional fields to merge into an OpenAI-compatible Responses request body.
             **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
         Returns:
@@ -1062,7 +1064,10 @@ class AnyLLM(ABC):
             **kwargs,
         )
 
-        result = await self._aresponses(params)
+        provider_kwargs: dict[str, Any] = {}
+        if extra_body is not None:
+            provider_kwargs["extra_body"] = extra_body
+        result = await self._aresponses(params, **provider_kwargs)
 
         if is_structured_output_type(response_format):
             # OpenAI-SDK providers return a ParsedResponse directly (via responses.parse);
