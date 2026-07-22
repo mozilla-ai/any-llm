@@ -978,9 +978,9 @@ class AnyLLM(ABC):
 
         Args:
             model: Model identifier for the chosen provider (e.g., model='gpt-4.1-mini' for LLMProvider.OPENAI).
-            input_data: The input payload accepted by provider's Responses API.
-                For OpenAI-compatible providers, this is typically a list mixing
-                text, images, and tool instructions, or a dict per OpenAI spec.
+            input_data: Input text or a list of wire-format Responses items.
+                Items are passed through unchanged so prior response output and
+                reasoning items can be replayed in a stateless conversation.
             tools: Optional tools for tool calling (Python callables or OpenAI tool dicts)
             tool_choice: Controls which tools the model can call
             max_output_tokens: Maximum number of output tokens to generate

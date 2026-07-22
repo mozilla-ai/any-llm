@@ -1,6 +1,7 @@
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from pydantic import ValidationError
 
 from any_llm.api import aresponses
 from any_llm.types.responses import ResponsesParams
@@ -58,3 +59,15 @@ def test_responses_params_preserves_codex_continuation_items() -> None:
     params = ResponsesParams(model="test", input=input_data)
 
     assert params.input == input_data
+
+
+def test_responses_params_rejects_non_dictionary_input_items() -> None:
+    """Responses input items must be dictionaries."""
+    with pytest.raises(ValidationError):
+        ResponsesParams(model="test", input=cast(Any, ["hello"]))
+
+
+def test_responses_params_rejects_top_level_dictionary_input() -> None:
+    """Responses input must be text or a list of dictionaries."""
+    with pytest.raises(ValidationError):
+        ResponsesParams(model="test", input=cast(Any, {"role": "user", "content": "hello"}))
