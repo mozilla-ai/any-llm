@@ -43,7 +43,8 @@ from any_llm.types.provider import ProviderMetadata
 from any_llm.types.responses import (
     ParsedResponse,
     Response,
-    ResponseInputParam,
+    ResponseInput,
+    ResponseInputPayload,
     ResponsesParams,
     ResponseStreamEvent,
 )
@@ -826,7 +827,7 @@ class AnyLLM(ABC):
     def responses(
         self,
         model: str,
-        input_data: str | ResponseInputParam,
+        input_data: ResponseInput,
         *,
         response_format: type[ResponseFormatT],
         stream: Literal[False] | None = ...,
@@ -837,7 +838,7 @@ class AnyLLM(ABC):
     def responses(
         self,
         model: str,
-        input_data: str | ResponseInputParam,
+        input_data: ResponseInput,
         *,
         stream: Literal[True],
         **kwargs: Any,
@@ -847,7 +848,7 @@ class AnyLLM(ABC):
     def responses(
         self,
         model: str,
-        input_data: str | ResponseInputParam,
+        input_data: ResponseInput,
         *,
         response_format: dict[str, Any] | None = ...,
         stream: Literal[False] | None = ...,
@@ -858,7 +859,7 @@ class AnyLLM(ABC):
     def responses(
         self,
         model: str,
-        input_data: str | ResponseInputParam,
+        input_data: ResponseInput,
         *,
         response_format: dict[str, Any] | type | None = ...,
         stream: bool | None = ...,
@@ -866,7 +867,7 @@ class AnyLLM(ABC):
     ) -> ResponseResource | Response | Iterator[ResponseStreamEvent] | ParsedResponse[Any]: ...
 
     def responses(
-        self, model: str, input_data: str | ResponseInputParam, **kwargs: Any
+        self, model: str, input_data: ResponseInput, **kwargs: Any
     ) -> ResponseResource | Response | Iterator[ResponseStreamEvent] | ParsedResponse[Any]:
         """Create a response synchronously.
 
@@ -895,7 +896,7 @@ class AnyLLM(ABC):
     async def aresponses(
         self,
         model: str,
-        input_data: str | ResponseInputParam,
+        input_data: ResponseInput,
         *,
         response_format: type[ResponseFormatT],
         stream: Literal[False] | None = ...,
@@ -906,7 +907,7 @@ class AnyLLM(ABC):
     async def aresponses(
         self,
         model: str,
-        input_data: str | ResponseInputParam,
+        input_data: ResponseInput,
         *,
         stream: Literal[True],
         **kwargs: Any,
@@ -916,7 +917,7 @@ class AnyLLM(ABC):
     async def aresponses(
         self,
         model: str,
-        input_data: str | ResponseInputParam,
+        input_data: ResponseInput,
         *,
         response_format: dict[str, Any] | None = ...,
         stream: Literal[False] | None = ...,
@@ -927,7 +928,7 @@ class AnyLLM(ABC):
     async def aresponses(
         self,
         model: str,
-        input_data: str | ResponseInputParam,
+        input_data: ResponseInput,
         *,
         response_format: dict[str, Any] | type | None = ...,
         stream: bool | None = ...,
@@ -938,7 +939,7 @@ class AnyLLM(ABC):
     async def aresponses(
         self,
         model: str,
-        input_data: str | ResponseInputParam,
+        input_data: ResponseInput,
         *,
         tools: list[dict[str, Any] | Callable[..., Any]] | Any | None = None,
         tool_choice: str | dict[str, Any] | None = None,
@@ -978,9 +979,9 @@ class AnyLLM(ABC):
 
         Args:
             model: Model identifier for the chosen provider (e.g., model='gpt-4.1-mini' for LLMProvider.OPENAI).
-            input_data: The input payload accepted by provider's Responses API.
-                For OpenAI-compatible providers, this is typically a list mixing
-                text, images, and tool instructions, or a dict per OpenAI spec.
+            input_data: Input text or a list of wire-format Responses items.
+                Items are passed through unchanged so prior response output and
+                reasoning items can be replayed in a stateless conversation.
             tools: Optional tools for tool calling (Python callables or OpenAI tool dicts)
             tool_choice: Controls which tools the model can call
             max_output_tokens: Maximum number of output tokens to generate
@@ -1034,7 +1035,7 @@ class AnyLLM(ABC):
 
         params = ResponsesParams(
             model=model,
-            input=input_data,
+            input=cast("ResponseInputPayload", input_data),
             tools=prepared_tools,
             tool_choice=tool_choice,
             max_output_tokens=max_output_tokens,

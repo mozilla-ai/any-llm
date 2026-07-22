@@ -13,6 +13,12 @@ ResponseStreamEvent = OpenAIResponseStreamEvent
 ResponseOutputMessage = OpenAIResponseOutputMessage
 ResponseInputParam = OpenAIResponseInputParam
 
+# Public APIs retain the SDK's generated union for typed caller compatibility.
+# Runtime validation uses the wire shape so valid replayed history can contain
+# Responses items whose exact shape is not represented by that union.
+ResponseInputPayload = str | list[dict[str, Any]]
+ResponseInput = ResponseInputParam | ResponseInputPayload
+
 
 class ResponsesParams(BaseModel):
     """Normalized parameters for responses API.
@@ -27,10 +33,13 @@ class ResponsesParams(BaseModel):
     model: str
     """Model identifier (e.g., 'mistral-small-latest')"""
 
-    input: str | ResponseInputParam
-    """The input payload accepted by provider's Responses API.
-        For OpenAI-compatible providers, this is typically a list mixing
-        text, images, and tool instructions, or a dict per OpenAI spec.
+    input: ResponseInputPayload
+    """Input text or wire-format Responses items.
+
+    The outer request is validated, but input items are passed through without
+    schema validation. The API permits replaying provider response and
+    reasoning items whose context-dependent shapes can exceed the SDK's
+    generated ``ResponseInputParam`` union.
     """
 
     instructions: str | None = None
