@@ -19,7 +19,7 @@ from any_llm.types.messages import MessageResponse, MessageStreamEvent, ParsedMe
 from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
 from any_llm.types.rerank import RerankResponse
-from any_llm.types.responses import ParsedResponse, Response, ResponseInputParam, ResponseStreamEvent
+from any_llm.types.responses import ParsedResponse, Response, ResponseInput, ResponseStreamEvent
 
 
 def completion(
@@ -242,7 +242,7 @@ async def acompletion(
 
 def responses(
     model: str,
-    input_data: str | ResponseInputParam,
+    input_data: ResponseInput,
     *,
     provider: str | LLMProvider | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
@@ -386,7 +386,7 @@ def responses(
 
 async def aresponses(
     model: str,
-    input_data: str | ResponseInputParam,
+    input_data: ResponseInput,
     *,
     provider: str | LLMProvider | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,

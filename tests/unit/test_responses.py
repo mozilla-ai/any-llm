@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 from any_llm.api import aresponses
@@ -39,3 +41,20 @@ def test_explicit_parallel_tool_calls_preserved(value: bool) -> None:
     """Explicit True/False should be kept as-is."""
     params = ResponsesParams(model="test", input="hello", parallel_tool_calls=value)
     assert params.parallel_tool_calls is value
+
+
+def test_responses_params_preserves_codex_continuation_items() -> None:
+    """Responses input accepts Codex items not yet represented by the SDK union."""
+    input_data: list[dict[str, Any]] = [
+        {"type": "reasoning", "summary": [], "encrypted_content": "opaque"},
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "commentary"}],
+            "phase": "commentary",
+        },
+    ]
+
+    params = ResponsesParams(model="test", input=input_data)
+
+    assert params.input == input_data
