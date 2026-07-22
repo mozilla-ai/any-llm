@@ -62,7 +62,7 @@ Normalized parameters for the Responses API, used internally to pass structured 
 | Field | Type | Description |
 |-------|------|-------------|
 | `model` | `str` | Model identifier (e.g., 'mistral-small-latest') |
-| `input` | `str \| list[EasyInputMessageParam \| Message \| ResponseOutputMessageParam \| ResponseFileSearchToolCallParam \| ResponseComputerToolCallParam \| ComputerCallOutput \| ResponseFunctionWebSearchParam \| ResponseFunctionToolCallParam \| FunctionCallOutput \| ToolSearchCall \| ResponseToolSearchOutputItemParamParam \| AdditionalTools \| ResponseReasoningItemParam \| ResponseCompactionItemParamParam \| ImageGenerationCall \| ResponseCodeInterpreterToolCallParam \| LocalShellCall \| LocalShellCallOutput \| ShellCall \| ShellCallOutput \| ApplyPatchCall \| ApplyPatchCallOutput \| McpListTools \| McpApprovalRequest \| McpApprovalResponse \| McpCall \| ResponseCustomToolCallOutputParam \| ResponseCustomToolCallParam \| CompactionTrigger \| ItemReference \| Program \| ProgramOutput]` | The input payload accepted by provider's Responses API. For OpenAI-compatible providers, this is typically a list mixing text, images, and tool instructions, or a dict per OpenAI spec. |
+| `input` | `str \| list[dict[str, Any]]` | Input text or wire-format Responses items. The outer request is validated, but input items are passed through without schema validation. The API permits replaying provider response and reasoning items whose context-dependent shapes can exceed the SDK's generated ``ResponseInputParam`` union. |
 | `instructions` | `str \| None` |  |
 | `max_tool_calls` | `int \| None` |  |
 | `text` | `Any \| None` |  |
