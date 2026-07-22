@@ -44,6 +44,7 @@ from any_llm.types.responses import (
     ParsedResponse,
     Response,
     ResponseInput,
+    ResponseInputPayload,
     ResponsesParams,
     ResponseStreamEvent,
 )
@@ -1034,7 +1035,7 @@ class AnyLLM(ABC):
 
         params = ResponsesParams(
             model=model,
-            input=input_data,
+            input=cast("ResponseInputPayload", input_data),
             tools=prepared_tools,
             tool_choice=tool_choice,
             max_output_tokens=max_output_tokens,

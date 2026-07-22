@@ -13,9 +13,11 @@ ResponseStreamEvent = OpenAIResponseStreamEvent
 ResponseOutputMessage = OpenAIResponseOutputMessage
 ResponseInputParam = OpenAIResponseInputParam
 
-# The SDK's generated union is a static typing aid. Valid replayed history can
-# contain Responses items whose exact wire shape is not represented by it.
-ResponseInput = str | list[dict[str, Any]]
+# Public APIs retain the SDK's generated union for typed caller compatibility.
+# Runtime validation uses the wire shape so valid replayed history can contain
+# Responses items whose exact shape is not represented by that union.
+ResponseInputPayload = str | list[dict[str, Any]]
+ResponseInput = ResponseInputParam | ResponseInputPayload
 
 
 class ResponsesParams(BaseModel):
@@ -31,7 +33,7 @@ class ResponsesParams(BaseModel):
     model: str
     """Model identifier (e.g., 'mistral-small-latest')"""
 
-    input: ResponseInput
+    input: ResponseInputPayload
     """Input text or wire-format Responses items.
 
     The outer request is validated, but input items are passed through without
