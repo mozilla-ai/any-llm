@@ -43,9 +43,15 @@ def test_api_base_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_api_base_default_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("KENARI_API_BASE", raising=False)
     provider = KenariProvider(api_key="test-api-key")
-    # No env var, no explicit base: falls through to the class default.
     assert provider._resolve_api_base(None) is None
     assert str(provider.client.base_url).rstrip("/") == "https://kenari.id/v1"
+
+
+def test_explicit_api_base_takes_precedence_over_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("KENARI_API_BASE", "https://proxy.internal/v1")
+    provider = KenariProvider(api_key="test-api-key", api_base="https://explicit.example/v1")
+    assert provider._resolve_api_base("https://explicit.example/v1") == "https://explicit.example/v1"
+    assert str(provider.client.base_url).rstrip("/") == "https://explicit.example/v1"
 
 
 def test_capability_flags() -> None:
