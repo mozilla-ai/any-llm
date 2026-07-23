@@ -262,6 +262,7 @@ def test_all_docs(doc_file: pathlib.Path) -> None:
         with (
             patch("any_llm.any_llm.AnyLLM.split_model_provider") as mock_split,
             patch("any_llm.any_llm.AnyLLM.create") as mock_create,
+            patch("any_llm.any_llm.AnyLLM.create_openai_compatible") as mock_create_compatible,
             patch("any_llm.completion") as mock_completion,
             patch("any_llm.embedding") as mock_embedding,
             patch("any_llm.moderation") as mock_moderation,
@@ -269,6 +270,7 @@ def test_all_docs(doc_file: pathlib.Path) -> None:
         ):
             mock_split.return_value = (LLMProvider.OPENAI, "gpt-5")
             mock_create.return_value = mock_provider
+            mock_create_compatible.return_value = mock_provider
             mock_completion.side_effect = mock_completion_side_effect
             mock_embedding.return_value = mock_embedding_result
             mock_moderation.return_value = mock_moderation_result
