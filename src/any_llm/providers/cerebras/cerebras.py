@@ -105,7 +105,7 @@ class CerebrasProvider(AnyLLM):
     ) -> AsyncIterator[ChatCompletionChunk]:
         cerebras_stream = await self.client.chat.completions.create(
             model=model,
-            messages=messages,
+            messages=messages,  # type: ignore[arg-type]
             stream=True,
             **kwargs,
         )
@@ -142,7 +142,7 @@ class CerebrasProvider(AnyLLM):
 
         response = await self.client.chat.completions.create(
             model=params.model_id,
-            messages=params.messages,
+            messages=params.messages,  # type: ignore[arg-type]
             **completion_kwargs,
         )
 
