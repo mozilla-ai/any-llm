@@ -34,6 +34,7 @@ class LLMProvider(StrEnum):
     GROQ = "groq"
     HUGGINGFACE = "huggingface"
     INCEPTION = "inception"
+    KENARI = "kenari"
     LLAMA = "llama"
     LMSTUDIO = "lmstudio"
     LLAMAFILE = "llamafile"
