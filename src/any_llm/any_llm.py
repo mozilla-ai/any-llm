@@ -204,6 +204,36 @@ class AnyLLM(ABC):
         return cls._create_provider(provider, api_key=api_key, api_base=api_base, **kwargs)
 
     @classmethod
+    def create_openai_compatible(cls, name: str, api_base: str, api_key: str | None = None, **kwargs: Any) -> AnyLLM:
+        """Create a provider for an arbitrary OpenAI-compatible endpoint.
+
+        This is the supported way to use any-llm with a gateway that does not have a
+        dedicated provider entry. The returned provider reports ``name`` as its
+        identity rather than masquerading as ``openai``, and is usable exactly like a
+        provider from ``AnyLLM.create`` (``.completion(...)``, ``.list_models()``, ...).
+
+        Args:
+            name: Identifier for the endpoint (e.g. ``"mygateway"``). Reported as the provider name.
+            api_base: Base URL of the OpenAI-compatible endpoint (e.g. ``"https://mygateway.example/v1"``).
+            api_key: API key, if the endpoint requires one. Optional for keyless local servers.
+            **kwargs: Additional arguments forwarded to the underlying OpenAI client.
+
+        Returns:
+            A provider instance bound to the given endpoint.
+
+        """
+        from any_llm.providers.openai.custom import OpenAICompatibleProvider
+
+        # Mint a per-name subclass so the chosen identity flows through both instance
+        # access (self.PROVIDER_NAME) and the get_provider_metadata() classmethod, which
+        # reads cls.PROVIDER_NAME. The class __name__ stays stable for metadata.class_name.
+        provider_cls = cast(
+            "type[OpenAICompatibleProvider]",
+            type("OpenAICompatibleProvider", (OpenAICompatibleProvider,), {"PROVIDER_NAME": name}),
+        )
+        return provider_cls(api_base=api_base, api_key=api_key, **kwargs)
+
+    @classmethod
     def _create_provider(
         cls, provider_key: str | LLMProvider, api_key: str | None = None, api_base: str | None = None, **kwargs: Any
     ) -> AnyLLM:

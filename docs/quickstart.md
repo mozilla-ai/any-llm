@@ -96,6 +96,28 @@ print(response.choices[0].message.content)
 
 **Finding model names:** Check the [providers page](providers.md) for provider IDs, or use the [`list_models`](api/list-models.md) API to see available models for your provider.
 
+## Custom OpenAI-compatible Endpoints
+
+If your gateway or server speaks the OpenAI API but is not one of the [supported providers](providers.md), point any-llm at it directly with `AnyLLM.create_openai_compatible`. The provider reports the name you give it rather than reporting itself as `openai`, and is used exactly like any other provider instance:
+
+```python
+from any_llm import AnyLLM
+
+llm = AnyLLM.create_openai_compatible(
+    name="mygateway",
+    api_base="https://mygateway.example/v1",
+    api_key="your-key",  # optional for keyless local servers
+)
+
+response = llm.completion(
+    model="some-model",
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(response.choices[0].message.content)
+```
+
+Capability flags follow the OpenAI-compatible defaults; calling a capability the endpoint does not implement surfaces the endpoint's own error. Use this whenever you need an OpenAI-compatible endpoint that any-llm does not ship a dedicated provider for.
+
 ## Streaming
 
 For the [providers that support streaming](providers.md), you can enable it by passing `stream=True`:
