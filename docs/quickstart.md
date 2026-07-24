@@ -118,8 +118,6 @@ print(response.choices[0].message.content)
 
 Capability flags follow the OpenAI-compatible defaults. A capability the endpoint does not implement fails either locally with `NotImplementedError` (for flag-gated capabilities such as batch) or with the endpoint's own error for calls that any-llm forwards. Use this whenever you need an OpenAI-compatible endpoint that any-llm does not ship a dedicated provider for.
 
-> **Why not `AnyLLM.create("openai", api_base=...)`?** That workaround misreports the provider identity as `openai` in metadata and error messages, silently sends any `OPENAI_API_KEY` set in your environment to the custom endpoint, and raises `MissingApiKeyError` for keyless local servers. `create_openai_compatible` avoids all three.
-
 ## Streaming
 
 For the [providers that support streaming](providers.md), you can enable it by passing `stream=True`:
