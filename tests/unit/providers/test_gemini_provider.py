@@ -6,8 +6,14 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from google.genai import types
+from pydantic import BaseModel
 
-from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
+from any_llm.exceptions import (
+    ContentFilterFinishReasonError,
+    InvalidRequestError,
+    LengthFinishReasonError,
+    UnsupportedParameterError,
+)
 from any_llm.providers.gemini import GeminiProvider
 from any_llm.providers.gemini.base import REASONING_EFFORT_TO_THINKING_BUDGETS, GoogleProvider
 from any_llm.providers.gemini.utils import (
@@ -15,11 +21,29 @@ from any_llm.providers.gemini.utils import (
     _convert_response_to_response_dict,
     _convert_tool_spec,
     _create_openai_chunk_from_google_chunk,
+    _map_finish_reason,
 )
 from any_llm.types.completion import ChatCompletion, CompletionParams, PromptTokensDetails, ReasoningEffort
 
 TEST_IMAGE_BYTES = b"test-image-bytes"
 TEST_PDF_BYTES = b"%PDF-1.4\ntest"
+
+
+class StructuredAnswer(BaseModel):
+    answer: str
+
+
+def _make_gemini_response(
+    parts: list[types.Part] | None, finish_reason: types.FinishReason | None
+) -> types.GenerateContentResponse:
+    return types.GenerateContentResponse(
+        candidates=[
+            types.Candidate(
+                content=types.Content(parts=parts, role="model") if parts is not None else None,
+                finish_reason=finish_reason,
+            )
+        ]
+    )
 
 
 @contextmanager
@@ -625,6 +649,104 @@ def test_convert_response_multiple_parallel_tool_calls() -> None:
     assert len(set(tool_call_ids)) == 3
 
 
+@pytest.mark.parametrize(
+    ("gemini_finish_reason", "expected_mapped_reason"),
+    [
+        (types.FinishReason.STOP, "stop"),
+        (types.FinishReason.MAX_TOKENS, "length"),
+        (types.FinishReason.SAFETY, "content_filter"),
+        (types.FinishReason.RECITATION, "content_filter"),
+        (types.FinishReason.PROHIBITED_CONTENT, "content_filter"),
+        (types.FinishReason.BLOCKLIST, "content_filter"),
+        (types.FinishReason.SPII, "content_filter"),
+        (types.FinishReason.IMAGE_SAFETY, "content_filter"),
+        (types.FinishReason.IMAGE_PROHIBITED_CONTENT, "content_filter"),
+        (types.FinishReason.IMAGE_RECITATION, "content_filter"),
+        (types.FinishReason.OTHER, None),
+        (None, None),
+    ],
+)
+def test_map_finish_reason(gemini_finish_reason: types.FinishReason | None, expected_mapped_reason: str | None) -> None:
+    assert _map_finish_reason(gemini_finish_reason) == expected_mapped_reason
+
+
+@pytest.mark.parametrize(
+    ("gemini_finish_reason", "expected_finish_reason"),
+    [
+        (types.FinishReason.STOP, "stop"),
+        (types.FinishReason.MAX_TOKENS, "length"),
+        (types.FinishReason.SAFETY, "content_filter"),
+        (types.FinishReason.OTHER, "stop"),
+        (None, "stop"),
+    ],
+)
+def test_convert_response_maps_finish_reason(
+    gemini_finish_reason: types.FinishReason | None, expected_finish_reason: str
+) -> None:
+    response = _make_gemini_response([types.Part(text="Hello")], gemini_finish_reason)
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert len(response_dict["choices"]) == 1
+    choice = response_dict["choices"][0]
+    assert choice["finish_reason"] == expected_finish_reason
+    assert choice["message"]["content"] == "Hello"
+
+
+@pytest.mark.parametrize(
+    ("gemini_finish_reason", "expected_finish_reason"),
+    [
+        (types.FinishReason.MAX_TOKENS, "length"),
+        (types.FinishReason.SAFETY, "content_filter"),
+        (types.FinishReason.STOP, "tool_calls"),
+        (None, "tool_calls"),
+    ],
+)
+def test_convert_response_truncation_and_filtering_override_tool_calls(
+    gemini_finish_reason: types.FinishReason | None, expected_finish_reason: str
+) -> None:
+    response = _make_gemini_response(
+        [types.Part(function_call=types.FunctionCall(name="search_web", args={"query": "test"}))],
+        gemini_finish_reason,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert len(response_dict["choices"]) == 1
+    choice = response_dict["choices"][0]
+    assert choice["finish_reason"] == expected_finish_reason
+    assert len(choice["message"]["tool_calls"]) == 1
+
+
+def test_convert_response_emits_choice_for_reasoning_only_truncation() -> None:
+    """A thinking model can spend the whole max_output_tokens budget on reasoning; the terminal
+    reason must still be visible to callers instead of an empty choices list."""
+    response = _make_gemini_response([types.Part(text="internal reasoning", thought=True)], types.FinishReason.MAX_TOKENS)
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert len(response_dict["choices"]) == 1
+    choice = response_dict["choices"][0]
+    assert choice["finish_reason"] == "length"
+    assert choice["message"]["content"] is None
+    assert choice["message"]["reasoning"] == "internal reasoning"
+
+
+def test_convert_response_emits_choice_for_filtered_response_without_content() -> None:
+    response_dict = _convert_response_to_response_dict(_make_gemini_response(None, types.FinishReason.SAFETY))
+
+    assert len(response_dict["choices"]) == 1
+    choice = response_dict["choices"][0]
+    assert choice["finish_reason"] == "content_filter"
+    assert choice["message"]["content"] is None
+
+
+def test_convert_response_without_content_and_terminal_reason_has_no_choices() -> None:
+    response_dict = _convert_response_to_response_dict(_make_gemini_response(None, types.FinishReason.STOP))
+
+    assert response_dict["choices"] == []
+
+
 def test_convert_tool_spec_basic_mapping() -> None:
     openai_tools = [
         {
@@ -821,8 +943,7 @@ async def test_streaming_completion_includes_usage_data() -> None:
     mock_response.candidates[0].content.parts[0].text = "Hello"
     mock_response.candidates[0].content.parts[0].thought = None
     mock_response.candidates[0].content.parts[0].function_call = None
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
 
     mock_response.usage_metadata = Mock()
@@ -881,8 +1002,7 @@ def test_streaming_completion_with_tool_call() -> None:
     mock_part.text = None
 
     mock_response.candidates[0].content.parts = [mock_part]
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
     mock_response.usage_metadata = None
 
@@ -916,8 +1036,7 @@ def test_streaming_completion_with_tool_call_preserves_thought_signature() -> No
     mock_part.thought_signature = original_bytes
 
     mock_response.candidates[0].content.parts = [mock_part]
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
     mock_response.usage_metadata = None
 
@@ -948,8 +1067,7 @@ def test_streaming_completion_with_tool_call_no_thought_signature() -> None:
     mock_part.thought_signature = None
 
     mock_response.candidates[0].content.parts = [mock_part]
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
     mock_response.usage_metadata = None
 
@@ -987,8 +1105,7 @@ def test_streaming_completion_with_multiple_tool_calls() -> None:
     mock_part_2.text = None
 
     mock_response.candidates[0].content.parts = [mock_part_1, mock_part_2]
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
     mock_response.usage_metadata = None
 
@@ -1017,8 +1134,7 @@ def _make_single_tool_call_chunk(name: str, args: dict[str, Any]) -> Mock:
     mock_part.text = None
 
     mock_response.candidates[0].content.parts = [mock_part]
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
     mock_response.usage_metadata = None
     return mock_response
@@ -1087,8 +1203,7 @@ def test_streaming_completion_multiple_tool_calls_within_chunk_after_prior_chunk
     mock_part_2.text = None
 
     mock_response.candidates[0].content.parts = [mock_part_1, mock_part_2]
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
     mock_response.usage_metadata = None
 
@@ -1528,8 +1643,7 @@ def test_streaming_completion_with_reasoning_content() -> None:
     mock_text_part.function_call = None
 
     mock_response.candidates[0].content.parts = [mock_thought_part, mock_text_part]
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
     mock_response.usage_metadata = None
 
@@ -1555,8 +1669,7 @@ def test_streaming_completion_with_function_call_none() -> None:
     mock_part.text = "Just text content"
 
     mock_response.candidates[0].content.parts = [mock_part]
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
     mock_response.usage_metadata = None
 
@@ -1628,8 +1741,7 @@ def test_streaming_chunk_extracts_cached_tokens() -> None:
     mock_part.function_call = None
     mock_part.text = "Hello!"
     mock_response.candidates[0].content.parts = [mock_part]
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
 
     mock_response.usage_metadata = Mock()
@@ -1658,8 +1770,7 @@ def test_streaming_chunk_without_cached_tokens() -> None:
     mock_part.function_call = None
     mock_part.text = "Hello!"
     mock_response.candidates[0].content.parts = [mock_part]
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
 
     mock_response.usage_metadata = Mock()
@@ -1816,3 +1927,86 @@ def test_timeout_in_client_args_does_not_override_explicit_http_options() -> Non
         mock_client.assert_called_once()
         call_kwargs = mock_client.call_args[1]
         assert call_kwargs["http_options"].timeout == 10_000
+
+
+@pytest.mark.parametrize(
+    ("gemini_finish_reason", "expected_finish_reason"),
+    [
+        (types.FinishReason.STOP, "stop"),
+        (types.FinishReason.MAX_TOKENS, "length"),
+        (types.FinishReason.SAFETY, "content_filter"),
+        (types.FinishReason.OTHER, None),
+        (None, None),
+    ],
+)
+def test_streaming_chunk_maps_finish_reason(
+    gemini_finish_reason: types.FinishReason | None, expected_finish_reason: str | None
+) -> None:
+    chunk = _create_openai_chunk_from_google_chunk(_make_gemini_response([types.Part(text="Hello")], gemini_finish_reason))
+
+    assert chunk.choices[0].finish_reason == expected_finish_reason
+    assert chunk.choices[0].delta.content == "Hello"
+
+
+def test_streaming_chunk_emits_finish_reason_for_filtered_chunk_without_content() -> None:
+    chunk = _create_openai_chunk_from_google_chunk(_make_gemini_response(None, types.FinishReason.SAFETY))
+
+    assert chunk.choices[0].finish_reason == "content_filter"
+    assert chunk.choices[0].delta.content is None
+
+
+@pytest.mark.parametrize(
+    ("gemini_finish_reason", "expected_finish_reason"),
+    [
+        (types.FinishReason.MAX_TOKENS, "length"),
+        (types.FinishReason.SAFETY, "content_filter"),
+        (types.FinishReason.STOP, "tool_calls"),
+        (None, "tool_calls"),
+    ],
+)
+def test_streaming_chunk_truncation_and_filtering_override_tool_calls(
+    gemini_finish_reason: types.FinishReason | None, expected_finish_reason: str
+) -> None:
+    response = _make_gemini_response(
+        [types.Part(function_call=types.FunctionCall(name="search_web", args={"query": "test"}))],
+        gemini_finish_reason,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    assert chunk.choices[0].finish_reason == expected_finish_reason
+    assert chunk.choices[0].delta.tool_calls is not None
+
+
+@pytest.mark.asyncio
+async def test_acompletion_raises_length_error_for_truncated_structured_output() -> None:
+    """Regression test for #1196: Gemini truncation must raise LengthFinishReasonError instead of
+    surfacing as a malformed JSON ValidationError from structured output parsing."""
+    truncated_response = _make_gemini_response([types.Part(text='{"answer": "trunca')], types.FinishReason.MAX_TOKENS)
+
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_genai:
+        mock_genai.return_value.aio.models.generate_content = AsyncMock(return_value=truncated_response)
+        provider = GeminiProvider(api_key="test-api-key")
+
+        with pytest.raises(LengthFinishReasonError):
+            await provider.acompletion(
+                model="gemini-2.5-flash",
+                messages=[{"role": "user", "content": "Hello"}],
+                response_format=StructuredAnswer,
+            )
+
+
+@pytest.mark.asyncio
+async def test_acompletion_raises_content_filter_error_for_filtered_structured_output() -> None:
+    filtered_response = _make_gemini_response(None, types.FinishReason.SAFETY)
+
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_genai:
+        mock_genai.return_value.aio.models.generate_content = AsyncMock(return_value=filtered_response)
+        provider = GeminiProvider(api_key="test-api-key")
+
+        with pytest.raises(ContentFilterFinishReasonError):
+            await provider.acompletion(
+                model="gemini-2.5-flash",
+                messages=[{"role": "user", "content": "Hello"}],
+                response_format=StructuredAnswer,
+            )

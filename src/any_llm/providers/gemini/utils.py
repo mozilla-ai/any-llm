@@ -287,6 +287,46 @@ def _thought_signature_extra_content(part: types.Part) -> dict[str, Any] | None:
     return None
 
 
+_FINISH_REASON_MAP: dict[types.FinishReason, Literal["stop", "length", "content_filter"]] = {
+    types.FinishReason.STOP: "stop",
+    types.FinishReason.MAX_TOKENS: "length",
+    types.FinishReason.SAFETY: "content_filter",
+    types.FinishReason.RECITATION: "content_filter",
+    types.FinishReason.PROHIBITED_CONTENT: "content_filter",
+    types.FinishReason.BLOCKLIST: "content_filter",
+    types.FinishReason.SPII: "content_filter",
+    types.FinishReason.IMAGE_SAFETY: "content_filter",
+    types.FinishReason.IMAGE_PROHIBITED_CONTENT: "content_filter",
+    types.FinishReason.IMAGE_RECITATION: "content_filter",
+}
+
+
+def _map_finish_reason(
+    finish_reason: types.FinishReason | None,
+) -> Literal["stop", "length", "content_filter"] | None:
+    """Map a Gemini finish reason onto the OpenAI vocabulary.
+
+    Returns None for reasons without an OpenAI counterpart so that each call site can
+    choose its own fallback: a terminal "stop" for complete responses, or None for
+    stream chunks, where forcing a terminal reason would mislabel non-final chunks.
+    """
+    return _FINISH_REASON_MAP.get(finish_reason) if finish_reason is not None else None
+
+
+def _resolve_finish_reason(
+    mapped_finish_reason: Literal["stop", "length", "content_filter"] | None,
+    has_tool_calls: bool,
+) -> Literal["stop", "length", "content_filter", "tool_calls"] | None:
+    """Combine the mapped finish reason with tool call presence.
+
+    Truncation and filtering take priority over "tool_calls": a response cut short mid
+    tool call must not look like a completed tool call round.
+    """
+    if has_tool_calls and mapped_finish_reason not in ("length", "content_filter"):
+        return "tool_calls"
+    return mapped_finish_reason
+
+
 def _convert_response_to_response_dict(response: types.GenerateContentResponse) -> dict[str, Any]:
     response_dict = {
         "id": "google_genai_response",
@@ -296,18 +336,16 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
     }
 
     choices: list[dict[str, Any]] = []
-    if (
-        response.candidates
-        and len(response.candidates) > 0
-        and response.candidates[0].content
-        and response.candidates[0].content.parts
-        and len(response.candidates[0].content.parts) > 0
-    ):
+    if response.candidates:
+        candidate = response.candidates[0]
+        mapped_finish_reason = _map_finish_reason(candidate.finish_reason)
+
         reasoning = None
         tool_calls_list: list[dict[str, Any]] = []
         text_content = None
+        parts = candidate.content.parts if candidate.content else None
 
-        for part in response.candidates[0].content.parts:
+        for part in parts or []:
             if getattr(part, "thought", None):
                 reasoning = part.text
             elif function_call := getattr(part, "function_call", None):
@@ -333,29 +371,19 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
             elif getattr(part, "text", None):
                 text_content = part.text
 
-        if tool_calls_list:
+        # Truncated or filtered responses produce a choice even without content or tool
+        # calls, e.g. a thinking model that spent the whole max_output_tokens budget on
+        # reasoning, so callers see the terminal reason instead of an empty choices list.
+        if tool_calls_list or text_content or mapped_finish_reason in ("length", "content_filter"):
             choices.append(
                 {
                     "message": {
                         "role": "assistant",
-                        "content": None,
+                        "content": None if tool_calls_list else text_content,
                         "reasoning": reasoning,
-                        "tool_calls": tool_calls_list,
+                        "tool_calls": tool_calls_list or None,
                     },
-                    "finish_reason": "tool_calls",
-                    "index": 0,
-                }
-            )
-        elif text_content:
-            choices.append(
-                {
-                    "message": {
-                        "role": "assistant",
-                        "content": text_content,
-                        "reasoning": reasoning,
-                        "tool_calls": None,
-                    },
-                    "finish_reason": "stop",
+                    "finish_reason": _resolve_finish_reason(mapped_finish_reason, bool(tool_calls_list)) or "stop",
                     "index": 0,
                 }
             )
@@ -407,8 +435,6 @@ def _create_openai_chunk_from_google_chunk(
 
     assert response.candidates
     candidate = response.candidates[0]
-    assert candidate.content
-    assert candidate.content.parts
 
     if tool_call_counter is None:
         tool_call_counter = [0]
@@ -417,7 +443,11 @@ def _create_openai_chunk_from_google_chunk(
     reasoning_content = ""
     tool_calls_list: list[ChoiceDeltaToolCall] = []
 
-    for part in candidate.content.parts:
+    # Content can be absent on terminal chunks, e.g. when the response is truncated or
+    # filtered before any part is produced; the finish reason must still be surfaced.
+    parts = candidate.content.parts if candidate.content else None
+
+    for part in parts or []:
         if part.thought:
             reasoning_content += part.text or ""
         elif function_call := part.function_call:
@@ -448,12 +478,8 @@ def _create_openai_chunk_from_google_chunk(
         elif part.text:
             content += part.text
 
-    # Determine finish_reason based on what we found
-    finish_reason: Literal["stop", "length", "tool_calls", "content_filter", "function_call"] | None = None
-    if tool_calls_list:
-        finish_reason = "tool_calls"
-    elif candidate.finish_reason and candidate.finish_reason.value == "STOP":
-        finish_reason = "stop"
+    # Unmapped reasons stay None so non-final chunks are not forced to a terminal reason.
+    finish_reason = _resolve_finish_reason(_map_finish_reason(candidate.finish_reason), bool(tool_calls_list))
 
     delta = ChoiceDelta(
         content=content or None,
