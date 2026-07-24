@@ -31,9 +31,11 @@ class OpenAICompatibleProviderConfig:
     """
 
     name: str
-    api_base: str
     env_api_key_name: str
     provider_documentation_url: str
+    api_base: str | None = None
+    """Static default endpoint. None for providers whose base URL only comes from
+    the env var or an explicit api_base argument (e.g. databricks)."""
     env_api_base_name: str | None = None
     supports_completion: bool = True
     supports_completion_streaming: bool = True
@@ -49,6 +51,9 @@ class OpenAICompatibleProviderConfig:
     supports_rerank: bool = False
 
 
+# Rows replicate each migrated provider's effective flags, including values the
+# folder-based class inherited from BaseOpenAIProvider defaults (for example
+# moderation). Flag corrections are their own change, not part of a migration.
 PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
     "atlascloud": OpenAICompatibleProviderConfig(
         name="atlascloud",
@@ -57,6 +62,115 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         env_api_base_name="ATLASCLOUD_API_BASE",
         provider_documentation_url="https://www.atlascloud.ai/docs",
         supports_completion_reasoning=True,
+    ),
+    "dashscope": OpenAICompatibleProviderConfig(
+        name="dashscope",
+        api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        env_api_key_name="DASHSCOPE_API_KEY",
+        env_api_base_name="DASHSCOPE_API_BASE",
+        provider_documentation_url="https://bailian.console.aliyun.com/cn-beijing/?tab=api#/api",
+        supports_completion_image=True,
+        supports_completion_pdf=True,
+        supports_embedding=True,
+        supports_moderation=True,
+    ),
+    "databricks": OpenAICompatibleProviderConfig(
+        name="databricks",
+        env_api_key_name="DATABRICKS_TOKEN",
+        env_api_base_name="DATABRICKS_HOST",
+        provider_documentation_url="https://docs.databricks.com/",
+        supports_completion_reasoning=True,
+        supports_embedding=True,
+        supports_moderation=True,
+        supports_list_models=False,
+    ),
+    "deepinfra": OpenAICompatibleProviderConfig(
+        name="deepinfra",
+        api_base="https://api.deepinfra.com/v1/openai",
+        env_api_key_name="DEEPINFRA_API_KEY",
+        env_api_base_name="DEEPINFRA_API_BASE",
+        provider_documentation_url="https://deepinfra.com/docs/openai_api",
+        supports_completion_reasoning=True,
+        supports_completion_image=True,
+        supports_embedding=True,
+        supports_moderation=True,
+    ),
+    "moonshot": OpenAICompatibleProviderConfig(
+        name="moonshot",
+        api_base="https://api.moonshot.ai/v1",
+        env_api_key_name="MOONSHOT_API_KEY",
+        env_api_base_name="MOONSHOT_API_BASE",
+        provider_documentation_url="https://platform.moonshot.ai/",
+        supports_completion_reasoning=True,
+        supports_moderation=True,
+    ),
+    "mzai": OpenAICompatibleProviderConfig(
+        name="mzai",
+        api_base="https://platform-api.any-llm.ai/api/v1",
+        env_api_key_name="ANY_LLM_KEY",
+        env_api_base_name="ANY_LLM_PLATFORM_URL",
+        provider_documentation_url="https://any-llm.ai",
+        supports_completion_reasoning=True,
+        supports_completion_image=True,
+        supports_embedding=True,
+        supports_moderation=True,
+    ),
+    "nebius": OpenAICompatibleProviderConfig(
+        name="nebius",
+        api_base="https://api.studio.nebius.ai/v1",
+        env_api_key_name="NEBIUS_API_KEY",
+        env_api_base_name="NEBIUS_API_BASE",
+        provider_documentation_url="https://studio.nebius.ai/",
+        supports_completion_reasoning=True,
+        supports_completion_image=True,
+        supports_embedding=True,
+        supports_moderation=True,
+    ),
+    "neosantara": OpenAICompatibleProviderConfig(
+        name="neosantara",
+        api_base="https://api.neosantara.xyz/v1",
+        env_api_key_name="NEOSANTARA_API_KEY",
+        env_api_base_name="NEOSANTARA_API_BASE",
+        provider_documentation_url="https://docs.neosantara.xyz",
+        supports_completion_reasoning=True,
+        supports_completion_image=True,
+        supports_completion_pdf=True,
+        supports_embedding=True,
+        supports_moderation=True,
+        supports_responses=True,
+        supports_batch=True,
+        supports_image_generation=True,
+    ),
+    "perplexity": OpenAICompatibleProviderConfig(
+        name="perplexity",
+        api_base="https://api.perplexity.ai",
+        env_api_key_name="PERPLEXITY_API_KEY",
+        env_api_base_name="PERPLEXITY_BASE_URL",
+        provider_documentation_url="https://docs.perplexity.ai/",
+        supports_completion_image=True,
+        supports_moderation=True,
+        supports_list_models=False,
+    ),
+    "qiniu": OpenAICompatibleProviderConfig(
+        name="qiniu",
+        api_base="https://api.qnaigc.com/v1",
+        env_api_key_name="QINIU_API_KEY",
+        env_api_base_name="QINIU_API_BASE",
+        provider_documentation_url="https://developer.qiniu.com/aitokenapi",
+        supports_completion_reasoning=True,
+        supports_completion_image=True,
+        supports_embedding=True,
+        supports_moderation=True,
+    ),
+    "telnyx": OpenAICompatibleProviderConfig(
+        name="telnyx",
+        api_base="https://api.telnyx.com/v2/ai",
+        env_api_key_name="TELNYX_API_KEY",
+        env_api_base_name="TELNYX_API_BASE",
+        provider_documentation_url="https://developers.telnyx.com/docs/inference/getting-started",
+        supports_completion_reasoning=True,
+        supports_completion_image=True,
+        supports_moderation=True,
     ),
 }
 

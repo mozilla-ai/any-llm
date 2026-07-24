@@ -1,13 +1,11 @@
-from any_llm.providers.openai.base import BaseOpenAIProvider
+"""Import shim: this provider migrated to the config registry.
 
+The provider is now a row in ``any_llm.providers.registry``; this module keeps
+the historical deep-import path working.
+"""
 
-class TelnyxProvider(BaseOpenAIProvider):
-    API_BASE = "https://api.telnyx.com/v2/ai"
-    ENV_API_KEY_NAME = "TELNYX_API_KEY"
-    ENV_API_BASE_NAME = "TELNYX_API_BASE"
-    PROVIDER_NAME = "telnyx"
-    PROVIDER_DOCUMENTATION_URL = "https://developers.telnyx.com/docs/inference/getting-started"
+from any_llm.providers.registry import get_registry_provider_class
 
-    SUPPORTS_COMPLETION_REASONING = True
-    SUPPORTS_COMPLETION_PDF = False
-    SUPPORTS_EMBEDDING = False
+TelnyxProvider = get_registry_provider_class("telnyx")
+
+__all__ = ["TelnyxProvider"]

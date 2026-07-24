@@ -1,14 +1,11 @@
-from any_llm.providers.openai.base import BaseOpenAIProvider
+"""Import shim: this provider migrated to the config registry.
 
+The provider is now a row in ``any_llm.providers.registry``; this module keeps
+the historical deep-import path working.
+"""
 
-class NeosantaraProvider(BaseOpenAIProvider):
-    API_BASE = "https://api.neosantara.xyz/v1"
-    ENV_API_KEY_NAME = "NEOSANTARA_API_KEY"
-    ENV_API_BASE_NAME = "NEOSANTARA_API_BASE"
-    PROVIDER_NAME = "neosantara"
-    PROVIDER_DOCUMENTATION_URL = "https://docs.neosantara.xyz"
+from any_llm.providers.registry import get_registry_provider_class
 
-    SUPPORTS_RESPONSES = True
-    SUPPORTS_COMPLETION_REASONING = True
-    SUPPORTS_IMAGE_GENERATION = True
-    SUPPORTS_BATCH = True
+NeosantaraProvider = get_registry_provider_class("neosantara")
+
+__all__ = ["NeosantaraProvider"]
