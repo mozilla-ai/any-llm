@@ -35,6 +35,12 @@ def test_empty_api_base_raises() -> None:
         AnyLLM.create_openai_compatible(name="mygateway", api_base="")
 
 
+@pytest.mark.parametrize("name", ["", "   "])
+def test_blank_name_raises(name: str) -> None:
+    with pytest.raises(ValueError, match="name"):
+        AnyLLM.create_openai_compatible(name=name, api_base="https://mygateway.example/v1")
+
+
 def test_keyless_endpoint_uses_placeholder(monkeypatch: pytest.MonkeyPatch) -> None:
     # A keyless local server must not be blocked by MissingApiKeyError.
     monkeypatch.delenv("OPENAI_COMPATIBLE_API_KEY", raising=False)
@@ -69,7 +75,10 @@ def test_capability_flags_follow_openai_compatible_defaults() -> None:
 
 
 def test_client_kwargs_are_forwarded() -> None:
-    provider = OpenAICompatibleProvider(api_base="https://mygateway.example/v1", api_key="k", timeout=12.5)
+    provider = AnyLLM.create_openai_compatible(
+        name="mygateway", api_base="https://mygateway.example/v1", api_key="k", timeout=12.5
+    )
+    assert isinstance(provider, OpenAICompatibleProvider)
     assert provider.client.timeout == 12.5
 
 

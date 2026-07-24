@@ -116,7 +116,7 @@ response = llm.completion(
 print(response.choices[0].message.content)
 ```
 
-Capability flags follow the OpenAI-compatible defaults; calling a capability the endpoint does not implement surfaces the endpoint's own error. Use this whenever you need an OpenAI-compatible endpoint that any-llm does not ship a dedicated provider for.
+Capability flags follow the OpenAI-compatible defaults. A capability the endpoint does not implement fails either locally with `NotImplementedError` (for flag-gated capabilities such as batch) or with the endpoint's own error for calls that any-llm forwards. Use this whenever you need an OpenAI-compatible endpoint that any-llm does not ship a dedicated provider for.
 
 ## Streaming
 

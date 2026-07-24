@@ -17,9 +17,11 @@ class OpenAICompatibleProvider(BaseOpenAIProvider):
     gateway that any-llm does not ship a dedicated provider for, so nobody is blocked
     from using their endpoint.
 
-    Capability flags follow the OpenAI-compatible defaults from ``BaseOpenAIProvider``;
-    a call to an endpoint that does not implement a given capability surfaces the
-    provider's own error.
+    Capability flags follow the OpenAI-compatible defaults from ``BaseOpenAIProvider``
+    and are reported in the provider metadata. A capability the endpoint does not
+    implement fails either locally with ``NotImplementedError`` (for flag-gated
+    capabilities such as batch) or with the endpoint's own error for calls that
+    any-llm forwards.
 
     Prefer ``AnyLLM.create_openai_compatible(...)``, which reports the caller's chosen
     name as the provider identity (via a per-name subclass) rather than masquerading as
@@ -30,7 +32,6 @@ class OpenAICompatibleProvider(BaseOpenAIProvider):
     PROVIDER_NAME = "openai_compatible"
     PROVIDER_DOCUMENTATION_URL = "https://platform.openai.com/docs/api-reference"
     ENV_API_KEY_NAME = "OPENAI_COMPATIBLE_API_KEY"
-    ENV_API_BASE_NAME = "OPENAI_COMPATIBLE_API_BASE"
 
     def __init__(self, api_base: str, api_key: str | None = None, **kwargs: Any) -> None:
         if not api_base:

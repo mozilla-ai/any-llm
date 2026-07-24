@@ -224,6 +224,10 @@ class AnyLLM(ABC):
         """
         from any_llm.providers.openai.custom import OpenAICompatibleProvider
 
+        if not name.strip():
+            msg = "name must be a non-empty identifier for the endpoint."
+            raise ValueError(msg)
+
         # Mint a per-name subclass so the chosen identity flows through both instance
         # access (self.PROVIDER_NAME) and the get_provider_metadata() classmethod, which
         # reads cls.PROVIDER_NAME. The class __name__ stays stable for metadata.class_name.
