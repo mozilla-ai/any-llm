@@ -35,7 +35,7 @@ def _normalize_reasoning_on_message(message_dict: dict[str, Any]) -> None:
 # z.ai GLM models report context-window truncation as "model_context_window_exceeded",
 # which OpenAI spells "length". Values not listed here still fail validation so that
 # unknown stop reasons are surfaced instead of being silently coerced.
-_FINISH_REASON_ALIASES = {
+_FINISH_REASON_ALIASES: dict[str, str] = {
     "model_context_window_exceeded": "length",
 }
 
