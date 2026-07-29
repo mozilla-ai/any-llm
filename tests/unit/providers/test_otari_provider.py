@@ -108,41 +108,85 @@ def test_parse_jsonl_to_requests_skips_blank_lines() -> None:
     assert requests == [{"custom_id": "r1", "body": {"model": "gpt-4"}}]
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "OTARI_API_BASE": "https://otari.example.com",
-        "OTARI_API_KEY": "resolved-api-key",
-        "OTARI_PLATFORM_TOKEN": "platform-token",
-    },
-    clear=False,
-)
-def test_otari_auto_mode_prefers_explicit_api_key_over_platform_token() -> None:
-    with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_otari_client:
-        mock_otari_client.return_value = _mock_otari_client()
-        OtariProvider(api_key="explicit-key")
-
-    call_kwargs = mock_otari_client.call_args.kwargs
-    assert call_kwargs["api_key"] == "explicit-key"
-    assert "platform_token" not in call_kwargs
+# Every otari auth env var, blanked. Spread into a test's patch.dict and override only the
+# vars under test, so an ambient OTARI_AI_TOKEN (set in CI) can't leak into auth resolution.
+_OTARI_ENV_CLEARED = {
+    "OTARI_API_KEY": "",
+    "OTARI_AI_TOKEN": "",
+    "OTARI_PLATFORM_TOKEN": "",
+    "GATEWAY_PLATFORM_TOKEN": "",
+    "GATEWAY_API_KEY": "",
+    "OTARI_API_BASE": "",
+    "GATEWAY_API_BASE": "",
+}
 
 
-@patch.dict(
-    "os.environ",
-    {
-        "OTARI_API_BASE": "https://otari.example.com",
-        "OTARI_API_KEY": "resolved-api-key",
-        "OTARI_PLATFORM_TOKEN": "",
-    },
-    clear=False,
-)
-def test_otari_auto_mode_uses_resolved_api_key_when_no_platform_token() -> None:
+@patch.dict("os.environ", {**_OTARI_ENV_CLEARED, "OTARI_API_KEY": "tk_platform"}, clear=False)
+def test_otari_api_key_env_maps_to_platform_token_without_base() -> None:
+    """OTARI_API_KEY is otari.ai's documented platform token (Authorization: Bearer), so it
+    routes to platform mode and needs no api_base (otari defaults to its hosted gateway).
+    This is the otari.ai quickstart path."""
     with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_otari_client:
         mock_otari_client.return_value = _mock_otari_client()
         OtariProvider()
 
     call_kwargs = mock_otari_client.call_args.kwargs
-    assert call_kwargs["api_key"] == "resolved-api-key"
+    assert call_kwargs["platform_token"] == "tk_platform"  # noqa: S105
+    assert "api_key" not in call_kwargs
+    assert "api_base" not in call_kwargs
+
+
+@patch.dict("os.environ", {**_OTARI_ENV_CLEARED, "OTARI_PLATFORM_TOKEN": "env-platform"}, clear=False)
+def test_otari_explicit_api_key_param_maps_to_platform_token() -> None:
+    """An explicit api_key= param is the platform token too, and takes precedence over an
+    env platform-token alias."""
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_otari_client:
+        mock_otari_client.return_value = _mock_otari_client()
+        OtariProvider(api_key="tk_explicit")
+
+    call_kwargs = mock_otari_client.call_args.kwargs
+    assert call_kwargs["platform_token"] == "tk_explicit"  # noqa: S105
+    assert "api_key" not in call_kwargs
+
+
+@patch.dict(
+    "os.environ",
+    {**_OTARI_ENV_CLEARED, "GATEWAY_API_KEY": "gw-self", "GATEWAY_API_BASE": "https://self.example.com"},
+    clear=False,
+)
+def test_otari_gateway_api_key_env_maps_to_self_hosted_api_key() -> None:
+    """GATEWAY_API_KEY is the self-hosted virtual key (Otari-Key header), distinct from the
+    platform token; it routes to the api_key slot alongside its required base."""
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_otari_client:
+        mock_otari_client.return_value = _mock_otari_client()
+        OtariProvider()
+
+    call_kwargs = mock_otari_client.call_args.kwargs
+    assert call_kwargs["api_key"] == "gw-self"
+    assert "platform_token" not in call_kwargs
+    assert call_kwargs["api_base"] == "https://self.example.com"
+
+
+@patch.dict("os.environ", {**_OTARI_ENV_CLEARED, "OTARI_API_KEY": "tk_platform"}, clear=False)
+def test_otari_platform_mode_false_routes_key_to_self_hosted_slot() -> None:
+    """platform_mode=False forces the self-hosted path: the explicit key goes to the
+    Otari-Key api_key slot, not the platform token."""
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_otari_client:
+        mock_otari_client.return_value = _mock_otari_client()
+        OtariProvider(api_key="gw-key", api_base="https://self.example.com", platform_mode=False)
+
+    call_kwargs = mock_otari_client.call_args.kwargs
+    assert call_kwargs["api_key"] == "gw-key"
+    assert "platform_token" not in call_kwargs
+
+
+@patch.dict("os.environ", {**_OTARI_ENV_CLEARED, "GATEWAY_API_KEY": "gw-self"}, clear=False)
+def test_otari_self_hosted_key_without_base_raises() -> None:
+    """A self-hosted gateway key with no base and no platform token still requires api_base."""
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_otari_client:
+        mock_otari_client.return_value = _mock_otari_client()
+        with pytest.raises(ValueError, match="api_base is required"):
+            OtariProvider()
 
 
 @pytest.mark.asyncio

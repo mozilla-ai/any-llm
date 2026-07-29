@@ -71,8 +71,9 @@ except ImportError as e:  # pragma: no cover - exercised through MISSING_PACKAGE
     _MISSING_PACKAGES_ERROR = e
 
 
-# Canonical platform-token env var exposed by otari 0.1.0; the others are kept as
-# legacy aliases for backwards compatibility.
+# Platform-token env vars, sent as Authorization: Bearer to otari's hosted gateway. otari.ai
+# documents OTARI_API_KEY (ENV_API_KEY_NAME) as this token, so it is the primary source; the
+# others are accepted aliases. The self-hosted virtual-key path uses GATEWAY_API_KEY (Otari-Key).
 OTARI_AI_TOKEN_ENV = "OTARI_AI_TOKEN"  # noqa: S105
 OTARI_PLATFORM_TOKEN_ENV = "OTARI_PLATFORM_TOKEN"  # noqa: S105
 GATEWAY_PLATFORM_TOKEN_ENV = "GATEWAY_PLATFORM_TOKEN"  # noqa: S105
@@ -179,14 +180,17 @@ class OtariProvider(BaseOpenAIProvider):
     def _resolve_env_api_base(cls) -> str | None:
         return os.getenv(cls.ENV_API_BASE_NAME) or os.getenv(LEGACY_GATEWAY_API_BASE_ENV)
 
-    @classmethod
-    def _resolve_env_api_key(cls) -> str | None:
-        return os.getenv(cls.ENV_API_KEY_NAME) or os.getenv(LEGACY_GATEWAY_API_KEY_ENV)
-
     @staticmethod
-    def _resolve_platform_token() -> str | None:
+    def _resolve_gateway_api_key() -> str | None:
+        """Resolve the self-hosted gateway virtual key (Otari-Key header)."""
+        return os.getenv(LEGACY_GATEWAY_API_KEY_ENV)
+
+    @classmethod
+    def _resolve_platform_token(cls) -> str | None:
+        """Return the hosted-platform bearer token (primarily OTARI_API_KEY), or None if unset."""
         return (
-            os.getenv(OTARI_AI_TOKEN_ENV)
+            os.getenv(cls.ENV_API_KEY_NAME)
+            or os.getenv(OTARI_AI_TOKEN_ENV)
             or os.getenv(OTARI_PLATFORM_TOKEN_ENV)
             or os.getenv(GATEWAY_PLATFORM_TOKEN_ENV)
         )
@@ -199,7 +203,10 @@ class OtariProvider(BaseOpenAIProvider):
 
     @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str:
-        return api_key or self._resolve_env_api_key() or "no-key-required"
+        # Capture only the explicit key; env credentials (platform token or self-hosted gateway
+        # key) are resolved in _init_client. otari allows keyless self-hosted access, so a missing
+        # key is not an error here.
+        return api_key or "no-key-required"
 
     @staticmethod
     def _normalize_placeholder_api_key(api_key: str | None) -> str | None:
@@ -211,36 +218,39 @@ class OtariProvider(BaseOpenAIProvider):
         default_headers = kwargs.pop("default_headers", None)
 
         resolved_api_base = self._resolve_api_base(api_base)
-        normalized_api_key = self._normalize_placeholder_api_key(api_key)
-        resolved_api_key = normalized_api_key or self._resolve_env_api_key()
+        explicit_api_key = self._normalize_placeholder_api_key(api_key)
         resolved_platform_token = self._resolve_platform_token()
+        resolved_gateway_key = self._resolve_gateway_api_key()
 
         client_kwargs: dict[str, Any] = {"default_headers": default_headers}
         if resolved_api_base:
             client_kwargs["api_base"] = resolved_api_base
 
-        # Track whether the client will authenticate with a platform token. otari
-        # defaults api_base to the hosted gateway in that case, so api_base is optional.
+        # The generic credential (explicit api_key param or OTARI_API_KEY) is otari.ai's platform
+        # token (Authorization: Bearer). In auto mode it routes to platform mode, where otari
+        # defaults api_base to its hosted gateway, so api_base is optional. The self-hosted
+        # virtual-key path (Otari-Key header) is reached via GATEWAY_API_KEY or platform_mode=False.
         using_platform_token = False
         if platform_mode is True:
-            token = normalized_api_key or resolved_platform_token
+            token = explicit_api_key or resolved_platform_token
             if not token:
                 msg = (
                     "Platform mode requires a user token (pass api_key or set "
-                    f"{OTARI_AI_TOKEN_ENV}/{OTARI_PLATFORM_TOKEN_ENV}/{GATEWAY_PLATFORM_TOKEN_ENV})"
+                    f"{self.ENV_API_KEY_NAME}/{OTARI_AI_TOKEN_ENV})"
                 )
                 raise ValueError(msg)
             client_kwargs["platform_token"] = token
             using_platform_token = True
         elif platform_mode is False:
-            client_kwargs["api_key"] = resolved_api_key
-        elif normalized_api_key:
-            client_kwargs["api_key"] = normalized_api_key
+            client_kwargs["api_key"] = explicit_api_key or resolved_gateway_key
+        elif explicit_api_key:
+            client_kwargs["platform_token"] = explicit_api_key
+            using_platform_token = True
         elif resolved_platform_token:
             client_kwargs["platform_token"] = resolved_platform_token
             using_platform_token = True
-        elif resolved_api_key:
-            client_kwargs["api_key"] = resolved_api_key
+        elif resolved_gateway_key:
+            client_kwargs["api_key"] = resolved_gateway_key
 
         if not resolved_api_base and not using_platform_token:
             msg = (
