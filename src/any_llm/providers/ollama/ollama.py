@@ -84,6 +84,15 @@ class OllamaProvider(AnyLLM):
         elif params.reasoning_effort is not None and params.reasoning_effort != "auto":
             converted_params["think"] = REASONING_EFFORT_TO_OLLAMA_THINK[params.reasoning_effort]
         converted_params.update(kwargs)
+
+        max_tokens = converted_params.pop("max_tokens", None)
+        max_completion_tokens = converted_params.pop("max_completion_tokens", None)
+        if converted_params.get("num_predict") is None:
+            if max_completion_tokens is not None:
+                converted_params["num_predict"] = max_completion_tokens
+            elif max_tokens is not None:
+                converted_params["num_predict"] = max_tokens
+
         converted_params["num_ctx"] = converted_params.get("num_ctx", 32000)
         return converted_params
 

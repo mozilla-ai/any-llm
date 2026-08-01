@@ -12,6 +12,56 @@ from any_llm.types.completion import CompletionParams
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    ("max_tokens", "max_completion_tokens", "num_predict", "expected_num_predict"),
+    [
+        (101, None, None, 101),
+        (101, 202, None, 202),
+        (101, 202, 303, 303),
+    ],
+)
+async def test_completion_converts_output_token_limits_to_num_predict(
+    stream: bool,
+    max_tokens: int,
+    max_completion_tokens: int | None,
+    num_predict: int | None,
+    expected_num_predict: int,
+) -> None:
+    async def empty_async_iter() -> AsyncIterator[None]:
+        return
+        yield
+
+    provider_kwargs = {} if num_predict is None else {"num_predict": num_predict}
+    params = CompletionParams(
+        model_id="llama3.1",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=max_tokens,
+        max_completion_tokens=max_completion_tokens,
+        stream=stream,
+    )
+
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=empty_async_iter() if stream else Mock())
+
+        if stream:
+            result = await provider._acompletion(params, **provider_kwargs)
+            async for _ in result:  # type: ignore[union-attr]
+                pass
+        else:
+            with patch.object(OllamaProvider, "_convert_completion_response", return_value=Mock()):
+                await provider._acompletion(params, **provider_kwargs)
+
+        options = provider.client.chat.call_args.kwargs["options"]
+
+    assert options["num_predict"] == expected_num_predict
+    assert "max_tokens" not in options
+    assert "max_completion_tokens" not in options
+
+
+@pytest.mark.asyncio
 async def test_create_chat_completion_extracts_think_content() -> None:
     """Test that <think> content is correctly extracted into reasoning field."""
     # Create a mock Ollama response with <think> tags in content
