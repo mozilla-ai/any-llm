@@ -207,11 +207,11 @@ Every listed provider sits in one of two tiers. The tier is a support promise, n
 
 New third-party gateways land as **community** by default. CI cannot use repository secrets on fork PRs, so contribution-time live verification is the only bar we can actually enforce; we do not ask contributors for ongoing proof.
 
-Promotion to verified is a maintainer action, not something a PR can do: it takes a repository secret plus an entry in `EXPECTED_PROVIDERS` in `.github/workflows/tests-integration.yaml`, which forces the provider's integration tests to run rather than skip. Open an issue if you think a provider deserves it.
+Promotion to verified is a maintainer action, not something a PR can do; the full list of edits it takes is in [2a](#2a-config-only-gateways-add-a-registry-row). Open an issue if you think a provider deserves it.
 
 **Removal.** A community entry is removed when the gateway shuts down, or when users report sustained breakage that nobody steps up to fix. Cheap addition is only sustainable if removal is equally cheap, so removal PRs are routine and do not need the original contributor's sign-off.
 
-Surfacing the tier in the generated provider docs is still in progress; see [#1197](https://github.com/mozilla-ai/any-llm/issues/1197) for the remaining rollout.
+The tier shows up as a column in the generated [provider table](https://docs.mozilla.ai/any-llm/providers), sourced from `VERIFIED_PROVIDERS` in `src/any_llm/constants.py`.
 
 ### 1. Check Requirements
 
@@ -238,27 +238,20 @@ Add one row to `PROVIDER_REGISTRY` in `src/any_llm/providers/registry.py`:
 ),
 ```
 
-The row replaces the provider *class*, so there is no `BaseOpenAIProvider` subclass to write, no request or response code, and no dependency to add. Registering the name for everyone still touches a few files:
+That row is the whole change. There is no provider class, no folder, no `__init__.py`, no `pyproject.toml` extra, and no `LLMProvider` member: the name resolves by string everywhere a provider name is accepted, including `AnyLLM.create("examplegw")`, `"examplegw:model"`, and `provider="examplegw"`.
 
 - [ ] Add the row, setting capability flags for what the gateway actually supports. Flags default to the conservative baseline of completion, streaming, and model listing; everything else is opt-in. Do not set a flag you have not exercised against the live endpoint.
-- [ ] Add an `LLMProvider` member in `src/any_llm/constants.py`. A row resolves through `AnyLLM.create("examplegw")` without one, but the `"examplegw:model"` string form needs the member.
-- [ ] Add an empty extra to `pyproject.toml` (`examplegw = []`) and add the name to the `all` group. The extra stays empty because the registry uses the `openai` client, which is already a core dependency, but `tests/unit/test_provider_pyproject_options.py` asserts that every `LLMProvider` member has both, so omitting it fails CI.
-- [ ] Create `src/any_llm/providers/examplegw/__init__.py` re-exporting the generated class (full contents below).
 - [ ] Paste live verification output in the PR (see below).
 
-The package directory is required even though the row supplies all the behavior, because `tests/unit/test_provider.py` asserts a one-to-one mapping between `LLMProvider` members and directories under `src/any_llm/providers/`. The whole file is:
+Two things you may notice in the tree that do *not* apply to a new row. The registry providers already there carry a package directory and an `LLMProvider` member; those are compatibility shims from before they were migrated to rows, kept so their deep-import paths and `LLMProvider.<NAME>` references keep working. And a row is not added to the `tests/conftest.py` model maps, because a community gateway has no CI key.
 
-```python
-from any_llm.providers.registry import get_registry_provider_class
+**Promotion to the verified tier** is a maintainer change, and it is the one case where a row does need the rest of the scaffolding:
 
-ExamplegwProvider = get_registry_provider_class("examplegw")
-
-__all__ = ["ExamplegwProvider"]
-```
-
-The registry providers already in the tree carry a second `<name>.py` module alongside this file. That is a compatibility shim preserving the deep-import path they had before they were migrated to rows, so a new provider does not need one.
-
-Whether you also add `tests/conftest.py` model maps depends on the tier rather than on the row: a **community** provider has no CI key, so its integration tests skip and the maps would go unused, while a **verified** provider needs entries in the maps that match the capabilities it actually supports (no embedding model for a gateway that does not do embeddings). Adding the `LLMProvider` member enrolls the name in the integration test parametrization either way; with no key configured those tests skip rather than fail.
+- a repository secret holding the key
+- an `EXPECTED_PROVIDERS` entry in `.github/workflows/tests-integration.yaml`, which forces the integration tests to run rather than skip
+- the name in `VERIFIED_PROVIDERS` in `src/any_llm/constants.py`, which is what labels it verified in the generated table; `tests/unit/test_provider_tiers.py` asserts these two lists match
+- an `LLMProvider` member, so the enum-driven test matrix picks the provider up, which in turn requires a `pyproject.toml` extra plus an `all` group entry and a package directory under `src/any_llm/providers/`, because `tests/unit/test_provider.py` and `tests/unit/test_provider_pyproject_options.py` assert both
+- `tests/conftest.py` entries for the capabilities the provider supports
 
 **Live verification.** Run the following against the real endpoint with your own key and paste the output into the PR, with the key redacted:
 
