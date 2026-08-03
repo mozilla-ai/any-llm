@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from any_llm.exceptions import ProviderError
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.providers.openai.utils import _convert_chat_completion
+from any_llm.providers.openai.utils import _convert_chat_completion, _normalize_openai_dict_response
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 
 
@@ -207,3 +207,24 @@ def test_convert_chat_completion_still_rejects_unknown_finish_reason() -> None:
     )
     with pytest.raises(ValidationError):
         _convert_chat_completion(openai_response)
+
+
+def test_normalize_skips_choice_entries_that_are_not_dicts() -> None:
+    """A malformed entry in choices must be stepped over, not crash the normalizer or stop later entries."""
+    response_dict = {
+        "choices": [
+            None,
+            "unexpected",
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": "partial"},
+                "finish_reason": "model_context_window_exceeded",
+            },
+        ]
+    }
+
+    result = _normalize_openai_dict_response(response_dict)
+
+    assert result["choices"][0] is None
+    assert result["choices"][1] == "unexpected"
+    assert result["choices"][2]["finish_reason"] == "length"
