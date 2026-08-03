@@ -10,7 +10,7 @@ from typing import IO, TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, ove
 from openresponses_types import ResponseResource
 from pydantic import BaseModel
 
-from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider
+from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider, get_provider_tier
 from any_llm.exceptions import (
     ContentFilterFinishReasonError,
     LengthFinishReasonError,
@@ -491,6 +491,7 @@ class AnyLLM(ABC):
         """
         return ProviderMetadata(
             name=cls.PROVIDER_NAME,
+            tier=get_provider_tier(cls.PROVIDER_NAME),
             env_key=cls.ENV_API_KEY_NAME,
             env_api_base=cls.ENV_API_BASE_NAME,
             doc_url=cls.PROVIDER_DOCUMENTATION_URL,
