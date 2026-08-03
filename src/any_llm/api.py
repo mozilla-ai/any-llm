@@ -95,7 +95,7 @@ def completion(
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_id = model
 
     llm = AnyLLM.create(
@@ -204,7 +204,7 @@ async def acompletion(
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_id = model
 
     llm = AnyLLM.create(
@@ -345,7 +345,7 @@ def responses(
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_id = model
 
     llm = AnyLLM.create(
@@ -494,7 +494,7 @@ async def aresponses(
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_id = model
 
     llm = AnyLLM.create(
@@ -598,7 +598,7 @@ def messages(
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_id = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -682,7 +682,7 @@ async def amessages(
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_id = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -737,7 +737,7 @@ def embedding(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -775,7 +775,7 @@ async def aembedding(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -823,7 +823,7 @@ def image_generation(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -881,7 +881,7 @@ async def aimage_generation(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -942,7 +942,7 @@ def transcription(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -1000,7 +1000,7 @@ async def atranscription(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -1056,7 +1056,7 @@ def speech(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -1109,7 +1109,7 @@ async def aspeech(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -1163,7 +1163,7 @@ def moderation(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -1184,7 +1184,7 @@ async def amoderation(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -1204,7 +1204,7 @@ def _resolve_rerank_target(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     if top_n is not None:
@@ -1287,7 +1287,7 @@ def list_models(
     **kwargs: Any,
 ) -> Sequence[Model]:
     """List available models for a provider."""
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return llm.list_models(**kwargs)
 
 
@@ -1299,7 +1299,7 @@ async def alist_models(
     **kwargs: Any,
 ) -> Sequence[Model]:
     """List available models for a provider asynchronously."""
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return await llm.alist_models(**kwargs)
 
 
@@ -1332,7 +1332,7 @@ def create_batch(
         The created batch object
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return llm.create_batch(
         input_file_path=input_file_path,
         endpoint=endpoint,
@@ -1371,7 +1371,7 @@ async def acreate_batch(
         The created batch object
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return await llm.acreate_batch(
         input_file_path=input_file_path,
         endpoint=endpoint,
@@ -1404,7 +1404,7 @@ def retrieve_batch(
         The batch object
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return llm.retrieve_batch(batch_id, **kwargs)
 
 
@@ -1431,7 +1431,7 @@ async def aretrieve_batch(
         The batch object
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return await llm.aretrieve_batch(batch_id, **kwargs)
 
 
@@ -1458,7 +1458,7 @@ def cancel_batch(
         The cancelled batch object
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return llm.cancel_batch(batch_id, **kwargs)
 
 
@@ -1485,7 +1485,7 @@ async def acancel_batch(
         The cancelled batch object
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return await llm.acancel_batch(batch_id, **kwargs)
 
 
@@ -1514,7 +1514,7 @@ def list_batches(
         A list of batch objects
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return llm.list_batches(after=after, limit=limit, **kwargs)
 
 
@@ -1543,7 +1543,7 @@ async def alist_batches(
         A list of batch objects
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return await llm.alist_batches(after=after, limit=limit, **kwargs)
 
 
@@ -1570,7 +1570,7 @@ def retrieve_batch_results(
         The batch results containing per-request outcomes.
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return llm.retrieve_batch_results(batch_id, **kwargs)
 
 
@@ -1597,5 +1597,5 @@ async def aretrieve_batch_results(
         The batch results containing per-request outcomes.
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return await llm.aretrieve_batch_results(batch_id, **kwargs)

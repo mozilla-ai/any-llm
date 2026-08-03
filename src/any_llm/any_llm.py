@@ -250,7 +250,9 @@ class AnyLLM(ABC):
         if registry_class is not None:
             return registry_class(api_key=api_key, api_base=api_base, **kwargs)
 
-        provider_key = LLMProvider.from_string(provider_key).value
+        # Resolve through the shared resolver so the unsupported-provider error lists
+        # registry gateways too, not just the enum.
+        provider_key = str(cls.resolve_provider_key(provider_key))
 
         provider_class_name = f"{provider_key.capitalize()}Provider"
         provider_module_name = f"{provider_key}"
@@ -296,7 +298,9 @@ class AnyLLM(ABC):
         if registry_class is not None:
             return registry_class
 
-        provider_key = LLMProvider.from_string(provider_key).value
+        # Resolve through the shared resolver so the unsupported-provider error lists
+        # registry gateways too, not just the enum.
+        provider_key = str(cls.resolve_provider_key(provider_key))
 
         provider_class_name = f"{provider_key.capitalize()}Provider"
         provider_module_name = f"{provider_key}"
@@ -312,10 +316,54 @@ class AnyLLM(ABC):
         provider_class: type[AnyLLM] = getattr(module, provider_class_name)
         return provider_class
 
+    @staticmethod
+    def get_registry_provider_names() -> list[str]:
+        """Names of config-only gateways that exist only as registry rows.
+
+        Registry rows do not need an ``LLMProvider`` member, so these names are
+        absent from the enum and have to be added to any enumeration of
+        providers explicitly.
+        """
+        from any_llm.providers.registry import PROVIDER_REGISTRY
+
+        enum_values = {provider.value for provider in LLMProvider}
+        return sorted(name for name in PROVIDER_REGISTRY if name not in enum_values)
+
     @classmethod
     def get_supported_providers(cls) -> list[str]:
-        """Get a list of supported provider keys."""
-        return [provider.value for provider in LLMProvider]
+        """Get a list of supported provider keys.
+
+        Includes registry-only gateways, which resolve by name without an
+        ``LLMProvider`` member.
+        """
+        return [provider.value for provider in LLMProvider] + cls.get_registry_provider_names()
+
+    @classmethod
+    def resolve_provider_key(cls, provider_key: str | LLMProvider) -> str | LLMProvider:
+        """Resolve a provider key to an ``LLMProvider`` member where one exists.
+
+        Registry-only gateways have no enum member, so their name is returned
+        unchanged. Everything downstream (``create``, ``get_provider_class``)
+        accepts either form.
+
+        Raises:
+            UnsupportedProviderError: The key is neither an enum member nor a
+                registry row.
+
+        """
+        if isinstance(provider_key, LLMProvider):
+            return provider_key
+        # Match LLMProvider.from_string's normalization so both resolution paths
+        # accept the same spellings.
+        normalized = provider_key.strip().lower()
+        try:
+            return LLMProvider(normalized)
+        except ValueError:
+            from any_llm.providers.registry import get_registry_config
+
+            if get_registry_config(normalized) is not None:
+                return normalized
+            raise UnsupportedProviderError(provider_key, cls.get_supported_providers()) from None
 
     @classmethod
     def get_all_provider_metadata(cls) -> list[ProviderMetadata]:
@@ -337,21 +385,29 @@ class AnyLLM(ABC):
 
     @classmethod
     def get_provider_enum(cls, provider_key: str) -> LLMProvider:
-        """Convert a string provider key to a ProviderName enum."""
+        """Convert a string provider key to a ProviderName enum.
+
+        Registry-only gateways have no enum member, so this raises for them even
+        though they are resolvable. Use ``resolve_provider_key`` to accept both.
+        """
         try:
             return LLMProvider(provider_key)
         except ValueError as e:
-            supported = [provider.value for provider in LLMProvider]
-            raise UnsupportedProviderError(provider_key, supported) from e
+            # Report everything resolvable, not just the enum, so the message does
+            # not omit registry-only gateways.
+            raise UnsupportedProviderError(provider_key, cls.get_supported_providers()) from e
 
     @classmethod
-    def split_model_provider(cls, model: str) -> tuple[LLMProvider, str]:
+    def split_model_provider(cls, model: str) -> tuple[str | LLMProvider, str]:
         """Extract the provider key from the model identifier.
 
         Supports both new format 'provider:model' (e.g., 'mistral:mistral-small')
         and legacy format 'provider/model' (e.g., 'mistral/mistral-small').
 
         The legacy format will be deprecated in version 1.0.
+
+        Returns an ``LLMProvider`` member when the provider has one, and the bare
+        name for registry-only gateways. Both forms are accepted by ``create``.
         """
         colon_index = model.find(":")
         slash_index = model.find("/")
@@ -376,7 +432,7 @@ class AnyLLM(ABC):
         if not provider or not model_name:
             msg = f"Invalid model format. Expected 'provider:model' or 'provider/model', got '{model}'"
             raise ValueError(msg)
-        return cls.get_provider_enum(provider), model_name
+        return cls.resolve_provider_key(provider), model_name
 
     @staticmethod
     @abstractmethod
