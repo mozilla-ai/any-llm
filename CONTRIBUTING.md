@@ -222,7 +222,7 @@ Before requesting or implementing:
 - [ ] Provider's interface is compatible with any-llm's design
 - [ ] No existing issue/PR for adding this provider
 
-A provider that needs a **code folder** must also clear a usage bar: a substantial user base or unique capabilities. A folder is the expensive category, in review attention now and in maintenance and eventual cleanup later, so it carries that bar in both tiers. Registry rows waive it, because a row costs one line to add and one line to remove. Asking for the **verified** tier raises the bar further, since it commits us to holding a key and fixing breakage.
+A provider that needs a **code folder** must also clear a usage bar: a substantial user base or unique capabilities. A folder is the expensive category, in review attention now and in maintenance and eventual cleanup later, so it carries that bar in both tiers. Registry rows waive it because a row costs one line to add and one line to remove. Asking for the **verified** tier raises the bar further, since it commits us to holding a key and fixing breakage.
 
 ### 2a. Config-only Gateways: Add a Registry Row
 
@@ -323,9 +323,9 @@ Providers must inherit from the `AnyLLM` class found in `any_llm.any_llm`. All a
 - [ ] Test suite in `tests/unit/providers`
 - [ ] Minimum 85% coverage for provider code
 
-Unit tests are required either way. Integration tests depend on the tier: a **verified**-tier provider needs entries in the relevant `tests/conftest.py` maps below, so that it exercises the CI matrix, while a **community**-tier provider has no CI key and instead needs the live verification output pasted in the PR, as described in [2a](#2a-config-only-gateways-add-a-registry-row). Only fill in the maps for capabilities the provider actually supports.
+Unit tests are required in both tiers. Integration tests depend on the tier. A **verified**-tier provider needs entries in the relevant `tests/conftest.py` maps below, so that it exercises the CI matrix, and only for the capabilities the provider actually supports. A **community**-tier provider has no CI key, so it skips those maps and pastes live verification output in the PR instead; use the commands in [2a](#2a-config-only-gateways-add-a-registry-row), substituting your provider name and dropping any operation the provider does not support.
 
-Add your test config to the following in `tests/conftest.py`:
+For verified providers, add your test config to the following in `tests/conftest.py`:
 
 | Variable                                                                                                                                           | Notes                                                                                                    |
 | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
