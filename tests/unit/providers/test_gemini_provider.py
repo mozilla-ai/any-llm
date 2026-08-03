@@ -721,7 +721,9 @@ def test_convert_response_truncation_and_filtering_override_tool_calls(
 def test_convert_response_emits_choice_for_reasoning_only_truncation() -> None:
     """A thinking model can spend the whole max_output_tokens budget on reasoning; the terminal
     reason must still be visible to callers instead of an empty choices list."""
-    response = _make_gemini_response([types.Part(text="internal reasoning", thought=True)], types.FinishReason.MAX_TOKENS)
+    response = _make_gemini_response(
+        [types.Part(text="internal reasoning", thought=True)], types.FinishReason.MAX_TOKENS
+    )
 
     response_dict = _convert_response_to_response_dict(response)
 
@@ -1942,7 +1944,9 @@ def test_timeout_in_client_args_does_not_override_explicit_http_options() -> Non
 def test_streaming_chunk_maps_finish_reason(
     gemini_finish_reason: types.FinishReason | None, expected_finish_reason: str | None
 ) -> None:
-    chunk = _create_openai_chunk_from_google_chunk(_make_gemini_response([types.Part(text="Hello")], gemini_finish_reason))
+    chunk = _create_openai_chunk_from_google_chunk(
+        _make_gemini_response([types.Part(text="Hello")], gemini_finish_reason)
+    )
 
     assert chunk.choices[0].finish_reason == expected_finish_reason
     assert chunk.choices[0].delta.content == "Hello"
