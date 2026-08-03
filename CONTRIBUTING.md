@@ -116,7 +116,7 @@ Branch naming conventions:
 - `refactor/` - Code improvements without behavior changes
 
 ### 2. Make Changes
-Make your changes! Read our [Implementation Checklist](#2-implementation-checklist) if adding a new provider
+Make your changes! Read [Adding a New Provider](#adding-a-new-provider) first if that is what you are doing, since some providers need a config row rather than code, and some need no PR at all.
 
 ### 3. Write Tests
 
@@ -171,7 +171,45 @@ git commit -m "wip"
 
 ## Adding a New Provider
 
-Adding provider support is a major contribution! Here's the complete process:
+Not every provider needs code, and some need no PR at all. Start here.
+
+### 0. Do You Need a Provider Entry?
+
+**If your endpoint speaks the OpenAI API, you are never blocked.** Point any-llm straight at it:
+
+```python
+from any_llm import AnyLLM
+
+llm = AnyLLM.create_openai_compatible(
+    name="mygateway",
+    api_base="https://mygateway.example/v1",
+    api_key="your-key",  # optional for keyless local servers
+)
+```
+
+The provider reports the name you give it rather than reporting itself as `openai`, and is used exactly like any other provider instance. See [Custom OpenAI-compatible Endpoints](docs/quickstart.md#custom-openai-compatible-endpoints). This is the right path for private gateways, self-hosted servers, and anything you do not need us to ship.
+
+Open a PR when you want the provider **listed in our docs and resolvable by name** for everyone else. Which path that PR takes depends on whether the provider needs code:
+
+| Your provider...                                                                                                     | Goes in                                            | See |
+| -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | --- |
+| speaks the OpenAI API and needs nothing beyond a base URL, an API key env var, and capability flags                   | a row in `src/any_llm/providers/registry.py`        | [2a](#2a-config-only-gateways-add-a-registry-row) |
+| needs custom auth, non-OpenAI request or response shapes, param translation, or model-list quirks                     | a folder under `src/any_llm/providers/`             | [2b](#2b-providers-that-need-code) |
+
+The deciding question is whether the protocol *requires* the code, judged by the reviewer. Shipping an official SDK is not by itself a reason for a folder, and adding an override that is not needed does not turn a config-only gateway into a code provider.
+
+### Provider Tiers
+
+Every listed provider sits in one of two tiers. The tier is a support promise, not a statement about code shape: a config-only provider we hold keys for stays verified.
+
+- **Verified**: we hold API keys, integration tests run in CI, and we fix breakage. These are the providers the README and docs promote.
+- **Community**: verified live by the contributor when the PR is opened, then maintained by the community. No CI keys, and excluded from the integration test matrix.
+
+New third-party gateways land as **community** by default. CI cannot use repository secrets on fork PRs, so contribution-time live verification is the only bar we can actually enforce; we do not ask contributors for ongoing proof.
+
+**Removal.** A community entry is removed when the gateway shuts down, or when users report sustained breakage that nobody steps up to fix. Cheap addition is only sustainable if removal is equally cheap, so removal PRs are routine and do not need the original contributor's sign-off.
+
+Surfacing the tier in the generated provider docs is still in progress; see [#1197](https://github.com/mozilla-ai/any-llm/issues/1197) for the remaining rollout.
 
 ### 1. Check Requirements
 
@@ -179,12 +217,52 @@ Before requesting or implementing:
 
 - [ ] Provider has an official Python SDK **OR** well-documented REST API
 - [ ] Provider is actively maintained and supported
-- [ ] Provider has substantial user base or unique capabilities
 - [ ] Provider's interface is compatible with any-llm's design
 - [ ] No existing issue/PR for adding this provider
 
+For a **verified**-tier request, also expect us to weigh whether the provider has a substantial user base or unique capabilities, since that tier commits us to holding keys and fixing breakage.
 
-### 2. Implementation Checklist
+### 2a. Config-only Gateways: Add a Registry Row
+
+Add one row to `PROVIDER_REGISTRY` in `src/any_llm/providers/registry.py`:
+
+```python
+"mygateway": OpenAICompatibleProviderConfig(
+    name="mygateway",
+    api_base="https://api.mygateway.example/v1",
+    env_api_key_name="MYGATEWAY_API_KEY",
+    env_api_base_name="MYGATEWAY_API_BASE",
+    provider_documentation_url="https://docs.mygateway.example",
+),
+```
+
+- [ ] Add the row, setting capability flags for what the gateway actually supports. Flags default to the conservative baseline of completion, streaming, and model listing; everything else is opt-in. Do not set a flag you have not exercised against the live endpoint.
+- [ ] Add an `LLMProvider` entry in `src/any_llm/constants.py`. A row resolves through `AnyLLM.create("mygateway")` without one, but the `"mygateway:model"` string form needs the enum entry.
+- [ ] Paste live verification output in the PR (see below).
+
+There is no folder, no `__init__.py`, and no `pyproject.toml` extra: the registry builds on the `openai` client, which is already a core dependency. Skip the `tests/conftest.py` model maps too, since community providers are excluded from the integration matrix.
+
+**Live verification.** Run the following against the real endpoint with your own key and paste the output into the PR, with the key redacted:
+
+```python
+from any_llm import AnyLLM
+
+llm = AnyLLM.create("mygateway", api_key="...")
+
+# completion
+print(llm.completion(model="<model>", messages=[{"role": "user", "content": "Say hi"}]).choices[0].message.content)
+
+# streaming
+for chunk in llm.completion(model="<model>", messages=[{"role": "user", "content": "Count to 3"}], stream=True):
+    print(chunk.choices[0].delta.content or "", end="")
+
+# model listing
+print([model.id for model in llm.list_models()][:5])
+```
+
+If the gateway does not support model listing, set `supports_list_models=False` on the row and say so in the PR instead of pasting that call.
+
+### 2b. Providers That Need Code
 
 Implement the provider keeping this checklist in mind:
 
@@ -199,24 +277,24 @@ any_llm/
 
 **Required Implementation**:
 
-- [ ] Create provider module in `any_llm/providers/`<br>
-In `src/any_llm/provider.py`, add a field to `ProviderName` for your provider.
+- [ ] Create provider module in `src/any_llm/providers/`<br>
+In `src/any_llm/constants.py`, add a member to `LLMProvider` for your provider.
 - [ ] Handle provider-specific errors gracefully
 - [ ] Add type hints and docstrings
 - [ ] Use official SDK when available
 - [ ] Add to `pyproject.toml` optional dependencies
-- [ ] Add provider to `any_llm/__init__.py` <br>
+- [ ] Export the provider class from your package's `__init__.py` <br>
 <p>
 
-At minimum, the `__init__.py` file should contain :
+At minimum, `src/any_llm/providers/your_provider/__init__.py` should contain:
 
 ```python
-from any_llm.your_provider.your_provider import YourProvider
+from .your_provider import YourProvider
 
 __all__ = ["YourProvider"]
 ```
 
-Providers must inherit from the `Provider` class found in `any_llm.provider`. All abstract methods must be implemented and class variables must be set.
+Providers must inherit from the `AnyLLM` class found in `any_llm.any_llm`. All abstract methods must be implemented and class variables must be set, including the `SUPPORTS_*` capability flags. When overriding a base-class method, use the `@override` decorator from `typing_extensions`.
 
 **Testing Requirements**:
 
@@ -226,6 +304,8 @@ Providers must inherit from the `Provider` class found in `any_llm.provider`. Al
 - [ ] Streaming tests (if applicable)
 - [ ] Test suite in `tests/unit/providers`
 - [ ] Minimum 85% coverage for provider code
+
+Unit tests are required either way. Integration tests depend on the tier: a **verified**-tier provider needs the `tests/conftest.py` entries below so it joins the CI matrix, while a **community**-tier provider is excluded from that matrix and instead needs the live verification output pasted in the PR, as described in [2a](#2a-config-only-gateways-add-a-registry-row).
 
 Add your test config to the following in `tests/conftest.py`:
 
