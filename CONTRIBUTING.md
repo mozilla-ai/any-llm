@@ -227,27 +227,41 @@ For a **verified**-tier request, also expect us to weigh whether the provider ha
 Add one row to `PROVIDER_REGISTRY` in `src/any_llm/providers/registry.py`:
 
 ```python
-"mygateway": OpenAICompatibleProviderConfig(
-    name="mygateway",
-    api_base="https://api.mygateway.example/v1",
-    env_api_key_name="MYGATEWAY_API_KEY",
-    env_api_base_name="MYGATEWAY_API_BASE",
-    provider_documentation_url="https://docs.mygateway.example",
+"examplegw": OpenAICompatibleProviderConfig(
+    name="examplegw",
+    api_base="https://api.examplegw.test/v1",
+    env_api_key_name="EXAMPLEGW_API_KEY",
+    env_api_base_name="EXAMPLEGW_API_BASE",
+    provider_documentation_url="https://docs.examplegw.test",
 ),
 ```
 
+The row replaces the provider *class*, so there is no `BaseOpenAIProvider` subclass to write, no request or response code, and no dependency to add. Registering the name for everyone still touches a few files:
+
 - [ ] Add the row, setting capability flags for what the gateway actually supports. Flags default to the conservative baseline of completion, streaming, and model listing; everything else is opt-in. Do not set a flag you have not exercised against the live endpoint.
-- [ ] Add an `LLMProvider` entry in `src/any_llm/constants.py`. A row resolves through `AnyLLM.create("mygateway")` without one, but the `"mygateway:model"` string form needs the enum entry.
+- [ ] Add an `LLMProvider` member in `src/any_llm/constants.py`. A row resolves through `AnyLLM.create("examplegw")` without one, but the `"examplegw:model"` string form needs the member.
+- [ ] Add an empty extra to `pyproject.toml` (`examplegw = []`) and add the name to the `all` group. The extra stays empty because the registry uses the `openai` client, which is already a core dependency, but `tests/unit/test_provider_pyproject_options.py` asserts that every `LLMProvider` member has both, so omitting it fails CI.
+- [ ] Create `src/any_llm/providers/examplegw/__init__.py` re-exporting the generated class (full contents below).
 - [ ] Paste live verification output in the PR (see below).
 
-There is no folder, no `__init__.py`, and no `pyproject.toml` extra: the registry builds on the `openai` client, which is already a core dependency. Skip the `tests/conftest.py` model maps too, since community providers are excluded from the integration matrix.
+The package directory is required even though the row supplies all the behavior, because `tests/unit/test_provider.py` asserts a one-to-one mapping between `LLMProvider` members and directories under `src/any_llm/providers/`. The whole file is:
+
+```python
+from any_llm.providers.registry import get_registry_provider_class
+
+ExamplegwProvider = get_registry_provider_class("examplegw")
+
+__all__ = ["ExamplegwProvider"]
+```
+
+Whether you also add `tests/conftest.py` model maps depends on the tier rather than on the row: a **community** provider has no CI key, so its integration tests skip and the maps would go unused, while a **verified** provider needs entries in the maps that match the capabilities it actually supports (no embedding model for a gateway that does not do embeddings). Adding the `LLMProvider` member enrolls the name in the integration test parametrization either way; with no key configured those tests skip rather than fail.
 
 **Live verification.** Run the following against the real endpoint with your own key and paste the output into the PR, with the key redacted:
 
 ```python
 from any_llm import AnyLLM
 
-llm = AnyLLM.create("mygateway", api_key="...")
+llm = AnyLLM.create("examplegw", api_key="...")
 
 # completion
 print(llm.completion(model="<model>", messages=[{"role": "user", "content": "Say hi"}]).choices[0].message.content)
@@ -260,7 +274,7 @@ for chunk in llm.completion(model="<model>", messages=[{"role": "user", "content
 print([model.id for model in llm.list_models()][:5])
 ```
 
-If the gateway does not support model listing, set `supports_list_models=False` on the row and say so in the PR instead of pasting that call.
+If the gateway does not support one of these, set the matching flag to `False` on the row (`supports_completion_streaming=False`, `supports_list_models=False`) and say so in the PR instead of pasting that call.
 
 ### 2b. Providers That Need Code
 
@@ -305,7 +319,7 @@ Providers must inherit from the `AnyLLM` class found in `any_llm.any_llm`. All a
 - [ ] Test suite in `tests/unit/providers`
 - [ ] Minimum 85% coverage for provider code
 
-Unit tests are required either way. Integration tests depend on the tier: a **verified**-tier provider needs the `tests/conftest.py` entries below so it joins the CI matrix, while a **community**-tier provider is excluded from that matrix and instead needs the live verification output pasted in the PR, as described in [2a](#2a-config-only-gateways-add-a-registry-row).
+Unit tests are required either way. Integration tests depend on the tier: a **verified**-tier provider needs entries in the relevant `tests/conftest.py` maps below, so that it exercises the CI matrix, while a **community**-tier provider has no CI key and instead needs the live verification output pasted in the PR, as described in [2a](#2a-config-only-gateways-add-a-registry-row). Only fill in the maps for capabilities the provider actually supports.
 
 Add your test config to the following in `tests/conftest.py`:
 
