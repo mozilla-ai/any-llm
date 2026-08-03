@@ -89,6 +89,8 @@ pip install 'any-llm-sdk[all]'              # All supported providers
 
 See our [list of supported providers](https://docs.mozilla.ai/any-llm/providers/) to choose which ones you need.
 
+Using an OpenAI-compatible gateway or local server that isn't listed? You don't need a dedicated provider entry: see [Custom OpenAI-compatible Endpoints](https://docs.mozilla.ai/any-llm/quickstart#custom-openai-compatible-endpoints).
+
 ### Setting Up API Keys
 
 Set environment variables for your chosen providers:

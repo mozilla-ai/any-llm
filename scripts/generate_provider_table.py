@@ -25,6 +25,8 @@ description: Complete list of LLM providers supported by any-llm including OpenA
 
 `any-llm` supports multiple providers. Provider source code is in [`src/any_llm/providers/`](https://github.com/mozilla-ai/any-llm/tree/main/src/any_llm/providers).
 
+Is your endpoint OpenAI-compatible but not listed below? You are not blocked: use [`AnyLLM.create_openai_compatible`](quickstart.md#custom-openai-compatible-endpoints). Prefer it over pointing the `openai` provider at a custom `api_base`, which misreports the provider identity as `openai`, silently sends any `OPENAI_API_KEY` in your environment to the custom endpoint, and rejects keyless local servers.
+
 """
 
 
