@@ -126,7 +126,7 @@ Make your changes! Read [Adding a New Provider](#adding-a-new-provider) first if
 
 - **New features**: Add tests covering happy path and error cases
 - **Bug fixes**: Add a test that reproduces the bug
-- **Provider integrations**: Comprehensive test suite required
+- **Provider integrations**: Comprehensive test suite required, except for config-only gateways added as a registry row, which are covered by the generic registry tests (see [2a](#2a-config-only-gateways-add-a-registry-row))
 - **Target**: Minimum 85% coverage for new code
 
 
@@ -203,9 +203,11 @@ The deciding question is whether the protocol *requires* the code, judged by the
 Every listed provider sits in one of two tiers. The tier is a support promise, not a statement about code shape: a config-only provider we hold keys for stays verified.
 
 - **Verified**: we hold API keys, integration tests run in CI, and we fix breakage. These are the providers the README and docs promote.
-- **Community**: verified live by the contributor when the PR is opened, then maintained by the community. No CI keys, and excluded from the integration test matrix.
+- **Community**: verified live by the contributor when the PR is opened, then maintained by the community. No CI key, so the provider is not in the CI provider list and its integration tests skip there.
 
 New third-party gateways land as **community** by default. CI cannot use repository secrets on fork PRs, so contribution-time live verification is the only bar we can actually enforce; we do not ask contributors for ongoing proof.
+
+Promotion to verified is a maintainer action, not something a PR can do: it takes a repository secret plus an entry in `EXPECTED_PROVIDERS` in `.github/workflows/tests-integration.yaml`, which forces the provider's integration tests to run rather than skip. Open an issue if you think a provider deserves it.
 
 **Removal.** A community entry is removed when the gateway shuts down, or when users report sustained breakage that nobody steps up to fix. Cheap addition is only sustainable if removal is equally cheap, so removal PRs are routine and do not need the original contributor's sign-off.
 
@@ -220,7 +222,7 @@ Before requesting or implementing:
 - [ ] Provider's interface is compatible with any-llm's design
 - [ ] No existing issue/PR for adding this provider
 
-For a **verified**-tier request, also expect us to weigh whether the provider has a substantial user base or unique capabilities, since that tier commits us to holding keys and fixing breakage.
+A provider that needs a **code folder** must also clear a usage bar: a substantial user base or unique capabilities. A folder is the expensive category, in review attention now and in maintenance and eventual cleanup later, so it carries that bar in both tiers. Registry rows waive it, because a row costs one line to add and one line to remove. Asking for the **verified** tier raises the bar further, since it commits us to holding a key and fixing breakage.
 
 ### 2a. Config-only Gateways: Add a Registry Row
 
@@ -254,6 +256,8 @@ ExamplegwProvider = get_registry_provider_class("examplegw")
 __all__ = ["ExamplegwProvider"]
 ```
 
+The registry providers already in the tree carry a second `<name>.py` module alongside this file. That is a compatibility shim preserving the deep-import path they had before they were migrated to rows, so a new provider does not need one.
+
 Whether you also add `tests/conftest.py` model maps depends on the tier rather than on the row: a **community** provider has no CI key, so its integration tests skip and the maps would go unused, while a **verified** provider needs entries in the maps that match the capabilities it actually supports (no embedding model for a gateway that does not do embeddings). Adding the `LLMProvider` member enrolls the name in the integration test parametrization either way; with no key configured those tests skip rather than fail.
 
 **Live verification.** Run the following against the real endpoint with your own key and paste the output into the PR, with the key redacted:
@@ -281,7 +285,7 @@ If the gateway does not support one of these, set the matching flag to `False` o
 Implement the provider keeping this checklist in mind:
 
 ```
-any_llm/
+src/any_llm/
 ├── providers/
 │   ├── 📂 <your_provider>/
 │   │   ├── 📄 __init__.py
@@ -296,7 +300,7 @@ In `src/any_llm/constants.py`, add a member to `LLMProvider` for your provider.
 - [ ] Handle provider-specific errors gracefully
 - [ ] Add type hints and docstrings
 - [ ] Use official SDK when available
-- [ ] Add to `pyproject.toml` optional dependencies
+- [ ] Add an extra to `pyproject.toml` optional dependencies and add the name to the `all` group (`tests/unit/test_provider_pyproject_options.py` asserts both)
 - [ ] Export the provider class from your package's `__init__.py` <br>
 <p>
 
