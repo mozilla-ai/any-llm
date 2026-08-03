@@ -50,6 +50,7 @@ print(response.choices[0].message.content)
 ```
 **That's it!** Change the provider name and add provider-specific keys to switch between LLM providers.
 
+> **Note:** The same OpenAI client `base_url` / `api_base` pattern works with OpenAI-compatible multi-model gateways when you are not self-hosting — for example [DaoXE](https://daoxe.com) at `https://api.daoxe.com/v1`.
 
 > **Coming from LiteLLM?** Your API keys and environment variables carry over unchanged. Install the SDK with extras for the providers you need, then update your import and model strings:
 >
