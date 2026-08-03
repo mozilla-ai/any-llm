@@ -88,17 +88,24 @@ class OllamaProvider(AnyLLM):
 
         max_tokens = converted_params.pop("max_tokens", None)
         max_completion_tokens = converted_params.pop("max_completion_tokens", None)
-        if max_tokens is not None and max_completion_tokens is not None:
-            logger.warning(
-                "Ignoring max_tokens (%s) in favor of max_completion_tokens (%s).",
-                max_tokens,
-                max_completion_tokens,
-            )
-        if converted_params.get("num_predict") is None:
-            if max_completion_tokens is not None:
-                converted_params["num_predict"] = max_completion_tokens
-            elif max_tokens is not None:
-                converted_params["num_predict"] = max_tokens
+        requested_max_tokens = max_completion_tokens if max_completion_tokens is not None else max_tokens
+        explicit_num_predict = converted_params.get("num_predict")
+        if explicit_num_predict is not None:
+            if requested_max_tokens is not None:
+                logger.warning(
+                    "Ignoring the requested output token limit (%s) because num_predict (%s) is set.",
+                    requested_max_tokens,
+                    explicit_num_predict,
+                )
+        else:
+            if max_tokens is not None and max_completion_tokens is not None:
+                logger.warning(
+                    "Ignoring max_tokens (%s) in favor of max_completion_tokens (%s).",
+                    max_tokens,
+                    max_completion_tokens,
+                )
+            if requested_max_tokens is not None:
+                converted_params["num_predict"] = requested_max_tokens
 
         converted_params["num_ctx"] = converted_params.get("num_ctx", 32000)
         return converted_params

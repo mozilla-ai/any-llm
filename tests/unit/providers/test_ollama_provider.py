@@ -68,17 +68,22 @@ async def test_completion_converts_output_token_limits_to_num_predict(
 
 
 @pytest.mark.parametrize(
-    ("max_tokens", "max_completion_tokens", "expect_warning"),
+    ("max_tokens", "max_completion_tokens", "num_predict", "expected_num_predict", "expected_warning"),
     [
-        (101, 202, True),
-        (101, None, False),
-        (None, 202, False),
+        (101, 202, None, 202, "Ignoring max_tokens (101) in favor of max_completion_tokens (202)."),
+        (101, 202, 303, 303, "Ignoring the requested output token limit (202) because num_predict (303) is set."),
+        (101, None, 303, 303, "Ignoring the requested output token limit (101) because num_predict (303) is set."),
+        (101, None, None, 101, None),
+        (None, 202, None, 202, None),
+        (None, None, 303, 303, None),
     ],
 )
-def test_convert_completion_params_warns_when_both_token_limits_are_set(
+def test_convert_completion_params_warns_about_ignored_token_limits(
     max_tokens: int | None,
     max_completion_tokens: int | None,
-    expect_warning: bool,
+    num_predict: int | None,
+    expected_num_predict: int,
+    expected_warning: str | None,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     params = CompletionParams(
@@ -87,18 +92,22 @@ def test_convert_completion_params_warns_when_both_token_limits_are_set(
         max_tokens=max_tokens,
         max_completion_tokens=max_completion_tokens,
     )
+    provider_kwargs = {} if num_predict is None else {"num_predict": num_predict}
 
     any_llm_logger = logging.getLogger("any_llm")
+    original_propagate = any_llm_logger.propagate
     any_llm_logger.propagate = True
     try:
         with caplog.at_level(logging.WARNING, logger="any_llm"):
-            result = OllamaProvider._convert_completion_params(params)
+            result = OllamaProvider._convert_completion_params(params, **provider_kwargs)
     finally:
-        any_llm_logger.propagate = False
+        any_llm_logger.propagate = original_propagate
 
-    assert result["num_predict"] == (max_completion_tokens if max_completion_tokens is not None else max_tokens)
-    warned = "Ignoring max_tokens (101) in favor of max_completion_tokens (202)." in caplog.text
-    assert warned is expect_warning
+    assert result["num_predict"] == expected_num_predict
+    if expected_warning is None:
+        assert caplog.text == ""
+    else:
+        assert expected_warning in caplog.text
 
 
 @pytest.mark.asyncio
