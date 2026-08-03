@@ -1,12 +1,11 @@
-from any_llm.providers.openai import BaseOpenAIProvider
+"""Import shim: this provider migrated to the config registry.
 
+The provider is now a row in ``any_llm.providers.registry``; this module keeps
+the historical deep-import path working.
+"""
 
-class MzaiProvider(BaseOpenAIProvider):
-    API_BASE = "https://platform-api.any-llm.ai/api/v1"
-    ENV_API_KEY_NAME = "ANY_LLM_KEY"
-    ENV_API_BASE_NAME = "ANY_LLM_PLATFORM_URL"
-    PROVIDER_NAME = "mzai"
-    PROVIDER_DOCUMENTATION_URL = "https://any-llm.ai"
+from any_llm.providers.registry import get_registry_provider_class
 
-    SUPPORTS_COMPLETION_PDF = False
-    SUPPORTS_COMPLETION_REASONING = True
+MzaiProvider = get_registry_provider_class("mzai")
+
+__all__ = ["MzaiProvider"]

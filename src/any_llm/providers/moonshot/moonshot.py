@@ -1,14 +1,11 @@
-from any_llm.providers.openai.base import BaseOpenAIProvider
+"""Import shim: this provider migrated to the config registry.
 
+The provider is now a row in ``any_llm.providers.registry``; this module keeps
+the historical deep-import path working.
+"""
 
-class MoonshotProvider(BaseOpenAIProvider):
-    API_BASE = "https://api.moonshot.ai/v1"
-    ENV_API_KEY_NAME = "MOONSHOT_API_KEY"
-    ENV_API_BASE_NAME = "MOONSHOT_API_BASE"
-    PROVIDER_NAME = "moonshot"
-    PROVIDER_DOCUMENTATION_URL = "https://platform.moonshot.ai/"
+from any_llm.providers.registry import get_registry_provider_class
 
-    SUPPORTS_EMBEDDING = False  # Moonshot doesn't host an embedding model
-    SUPPORTS_COMPLETION_IMAGE = False
-    SUPPORTS_COMPLETION_PDF = False
-    SUPPORTS_COMPLETION_REASONING = True
+MoonshotProvider = get_registry_provider_class("moonshot")
+
+__all__ = ["MoonshotProvider"]

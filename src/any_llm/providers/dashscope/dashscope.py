@@ -1,11 +1,11 @@
-from any_llm.providers.openai.base import BaseOpenAIProvider
+"""Import shim: this provider migrated to the config registry.
 
+The provider is now a row in ``any_llm.providers.registry``; this module keeps
+the historical deep-import path working.
+"""
 
-class DashscopeProvider(BaseOpenAIProvider):
-    API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    ENV_API_KEY_NAME = "DASHSCOPE_API_KEY"
-    ENV_API_BASE_NAME = "DASHSCOPE_API_BASE"
-    PROVIDER_NAME = "dashscope"
-    PROVIDER_DOCUMENTATION_URL = "https://bailian.console.aliyun.com/cn-beijing/?tab=api#/api"
+from any_llm.providers.registry import get_registry_provider_class
 
-    SUPPORTS_COMPLETION_REASONING = False
+DashscopeProvider = get_registry_provider_class("dashscope")
+
+__all__ = ["DashscopeProvider"]

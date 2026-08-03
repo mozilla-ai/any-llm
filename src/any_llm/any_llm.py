@@ -241,7 +241,15 @@ class AnyLLM(ABC):
     def _create_provider(
         cls, provider_key: str | LLMProvider, api_key: str | None = None, api_base: str | None = None, **kwargs: Any
     ) -> AnyLLM:
-        """Dynamically load and create an instance of a provider based on the naming convention."""
+        """Dynamically load and create an instance of a provider.
+
+        Registry rows (config-only OpenAI-compatible gateways) resolve first;
+        everything else falls through to the folder-per-provider naming convention.
+        """
+        registry_class = cls._get_registry_provider_class(provider_key)
+        if registry_class is not None:
+            return registry_class(api_key=api_key, api_base=api_base, **kwargs)
+
         provider_key = LLMProvider.from_string(provider_key).value
 
         provider_class_name = f"{provider_key.capitalize()}Provider"
@@ -259,6 +267,20 @@ class AnyLLM(ABC):
 
         return provider_class(api_key=api_key, api_base=api_base, **kwargs)
 
+    @staticmethod
+    def _get_registry_provider_class(provider_key: str | LLMProvider) -> type[AnyLLM] | None:
+        """Resolve a provider key against the config registry, or None if not registered.
+
+        Imported lazily because the registry builds on BaseOpenAIProvider, which
+        imports this module.
+        """
+        from any_llm.providers.registry import get_registry_config, get_registry_provider_class
+
+        key = provider_key.value if isinstance(provider_key, LLMProvider) else provider_key
+        if get_registry_config(key) is None:
+            return None
+        return get_registry_provider_class(key)
+
     @classmethod
     def get_provider_class(cls, provider_key: str | LLMProvider) -> type[AnyLLM]:
         """Get the provider class without instantiating it.
@@ -270,6 +292,10 @@ class AnyLLM(ABC):
             The provider class
 
         """
+        registry_class = cls._get_registry_provider_class(provider_key)
+        if registry_class is not None:
+            return registry_class
+
         provider_key = LLMProvider.from_string(provider_key).value
 
         provider_class_name = f"{provider_key.capitalize()}Provider"
