@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.logging import logger
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
@@ -87,6 +88,12 @@ class OllamaProvider(AnyLLM):
 
         max_tokens = converted_params.pop("max_tokens", None)
         max_completion_tokens = converted_params.pop("max_completion_tokens", None)
+        if max_tokens is not None and max_completion_tokens is not None:
+            logger.warning(
+                "Ignoring max_tokens (%s) in favor of max_completion_tokens (%s).",
+                max_tokens,
+                max_completion_tokens,
+            )
         if converted_params.get("num_predict") is None:
             if max_completion_tokens is not None:
                 converted_params["num_predict"] = max_completion_tokens

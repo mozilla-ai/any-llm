@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
@@ -16,17 +17,19 @@ from any_llm.types.completion import CompletionParams
 @pytest.mark.parametrize(
     ("max_tokens", "max_completion_tokens", "num_predict", "expected_num_predict"),
     [
+        (None, None, None, None),
         (101, None, None, 101),
+        (None, 202, None, 202),
         (101, 202, None, 202),
         (101, 202, 303, 303),
     ],
 )
 async def test_completion_converts_output_token_limits_to_num_predict(
     stream: bool,
-    max_tokens: int,
+    max_tokens: int | None,
     max_completion_tokens: int | None,
     num_predict: int | None,
-    expected_num_predict: int,
+    expected_num_predict: int | None,
 ) -> None:
     async def empty_async_iter() -> AsyncIterator[None]:
         return
@@ -56,9 +59,46 @@ async def test_completion_converts_output_token_limits_to_num_predict(
 
         options = provider.client.chat.call_args.kwargs["options"]
 
-    assert options["num_predict"] == expected_num_predict
+    if expected_num_predict is None:
+        assert "num_predict" not in options
+    else:
+        assert options["num_predict"] == expected_num_predict
     assert "max_tokens" not in options
     assert "max_completion_tokens" not in options
+
+
+@pytest.mark.parametrize(
+    ("max_tokens", "max_completion_tokens", "expect_warning"),
+    [
+        (101, 202, True),
+        (101, None, False),
+        (None, 202, False),
+    ],
+)
+def test_convert_completion_params_warns_when_both_token_limits_are_set(
+    max_tokens: int | None,
+    max_completion_tokens: int | None,
+    expect_warning: bool,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    params = CompletionParams(
+        model_id="llama3.1",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=max_tokens,
+        max_completion_tokens=max_completion_tokens,
+    )
+
+    any_llm_logger = logging.getLogger("any_llm")
+    any_llm_logger.propagate = True
+    try:
+        with caplog.at_level(logging.WARNING, logger="any_llm"):
+            result = OllamaProvider._convert_completion_params(params)
+    finally:
+        any_llm_logger.propagate = False
+
+    assert result["num_predict"] == (max_completion_tokens if max_completion_tokens is not None else max_tokens)
+    warned = "Ignoring max_tokens (101) in favor of max_completion_tokens (202)." in caplog.text
+    assert warned is expect_warning
 
 
 @pytest.mark.asyncio
