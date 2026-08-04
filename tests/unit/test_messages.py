@@ -5,7 +5,7 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from anthropic.types.beta import BetaMessage, BetaStopReason
+from anthropic.types.beta import BetaCompactionIterationUsage, BetaIterationsUsage, BetaMessage, BetaStopReason
 from anthropic.types.beta.beta_context_management_response import BetaContextManagementResponse
 
 from any_llm.any_llm import AnyLLM
@@ -23,8 +23,10 @@ from any_llm.types.completion import (
 from any_llm.types.messages import (
     BetaDiagnostics,
     MessageDeltaEvent,
+    MessageDeltaUsage,
     MessageResponse,
     MessagesParams,
+    MessageUsage,
     ParsedBetaMessage,
     ParsedMessage,
     ParsedTextBlock,
@@ -175,7 +177,61 @@ def test_message_response_model() -> None:
     assert isinstance(block, TextBlock)
     assert block.text == "Hello!"
     assert resp.usage.input_tokens == 10
+    assert resp.usage.iterations is None
     assert resp.diagnostics is None
+
+
+def test_message_usage_preserves_typed_beta_iterations() -> None:
+    from anthropic.types.beta.beta_usage import BetaUsage
+
+    sdk_usage = BetaUsage.model_validate(
+        {
+            "input_tokens": 100,
+            "output_tokens": 20,
+            "iterations": [
+                {
+                    "type": "compaction",
+                    "input_tokens": 90,
+                    "output_tokens": 10,
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": 0,
+                }
+            ],
+        }
+    )
+
+    usage = MessageUsage.model_validate(sdk_usage, from_attributes=True)
+
+    assert MessageUsage.model_fields["iterations"].annotation == BetaIterationsUsage | None
+    assert usage.iterations is not None
+    assert isinstance(usage.iterations[0], BetaCompactionIterationUsage)
+    assert usage.model_dump()["iterations"][0]["type"] == "compaction"
+
+
+def test_message_delta_usage_preserves_typed_beta_iterations() -> None:
+    from anthropic.types.beta.beta_message_delta_usage import BetaMessageDeltaUsage
+
+    sdk_usage = BetaMessageDeltaUsage.model_validate(
+        {
+            "output_tokens": 20,
+            "iterations": [
+                {
+                    "type": "compaction",
+                    "input_tokens": 90,
+                    "output_tokens": 10,
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": 0,
+                }
+            ],
+        }
+    )
+
+    usage = MessageDeltaUsage.model_validate(sdk_usage, from_attributes=True)
+
+    assert MessageDeltaUsage.model_fields["iterations"].annotation == BetaIterationsUsage | None
+    assert usage.iterations is not None
+    assert isinstance(usage.iterations[0], BetaCompactionIterationUsage)
+    assert usage.model_dump()["iterations"][0]["type"] == "compaction"
 
 
 def test_message_response_preserves_typed_beta_telemetry() -> None:

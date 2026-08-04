@@ -18,6 +18,7 @@ from anthropic.types.beta import (
     BetaCompactionBlock,
     BetaCompactionContentBlockDelta,
     BetaContentBlock,
+    BetaIterationsUsage,
     BetaStopReason,
 )
 from anthropic.types.beta.beta_context_management_response import BetaContextManagementResponse
@@ -76,7 +77,7 @@ StopReason = BetaStopReason
 
 
 class MessageUsage(AnthropicUsage):
-    iterations: list[Any] | None = None
+    iterations: BetaIterationsUsage | None = None
 
 
 TextBlock = AnthropicTextBlock
@@ -109,7 +110,7 @@ class MessageDelta(AnthropicMessageDelta):
 
 
 class MessageDeltaUsage(AnthropicMessageDeltaUsage):
-    iterations: list[Any] | None = None
+    iterations: BetaIterationsUsage | None = None
 
 
 class MessageStartEvent(AnthropicMessageStartEvent):
