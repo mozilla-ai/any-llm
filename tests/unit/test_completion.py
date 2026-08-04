@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from any_llm import AnyLLM
-from any_llm.api import acompletion, aresponses
+from any_llm.api import acompletion, aresponses, responses
 from any_llm.constants import LLMProvider
 
 _PYTHON_314_INCOMPATIBLE_PROVIDERS = {"voyage", "watsonx"}
@@ -113,6 +113,29 @@ async def test_aresponses_context_management_parameter_capture() -> None:
             api_base=None,
         )
         assert mock_provider.aresponses.call_args.kwargs["context_management"] == context_management
+
+
+def test_responses_context_management_parameter_capture() -> None:
+    mock_provider = Mock()
+    mock_provider.responses = Mock(return_value=Mock())
+
+    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
+        mock_create.return_value = mock_provider
+        context_management = [{"type": "compaction", "compact_threshold": 200_000}]
+
+        responses(
+            model="openai:gpt-5.3-codex",
+            input_data="Continue the coding task.",
+            context_management=context_management,
+            api_key="openai-key",
+        )
+
+        mock_create.assert_called_once_with(
+            LLMProvider.OPENAI,
+            api_key="openai-key",
+            api_base=None,
+        )
+        assert mock_provider.responses.call_args.kwargs["context_management"] == context_management
 
 
 @pytest.mark.asyncio

@@ -199,14 +199,35 @@ compaction items are preserved in `result.output` and can be replayed with the
 rest of the response output on the next stateless request.
 
 ```python
+conversation = [
+    {"role": "user", "content": "Let's begin a long coding task."}
+]
+context_management = [
+    {"type": "compaction", "compact_threshold": 200_000}
+]
+
 result = responses(
     model="gpt-5.3-codex",
     provider="openai",
     input_data=conversation,
     store=False,
-    context_management=[
-        {"type": "compaction", "compact_threshold": 200_000}
-    ],
+    include=["reasoning.encrypted_content"],
+    context_management=context_management,
+)
+
+conversation.extend(
+    item.model_dump(exclude_none=True) for item in result.output
+)
+conversation.append(
+    {"role": "user", "content": "Continue with the next step."}
+)
+follow_up = responses(
+    model="gpt-5.3-codex",
+    provider="openai",
+    input_data=conversation,
+    store=False,
+    include=["reasoning.encrypted_content"],
+    context_management=context_management,
 )
 ```
 
