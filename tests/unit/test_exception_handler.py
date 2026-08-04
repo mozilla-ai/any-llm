@@ -312,6 +312,20 @@ def test_convert_exception_retry_after_is_none_without_the_header() -> None:
     assert result.retry_after is None
 
 
+@pytest.mark.parametrize("value", [True, 30.5, object()])
+def test_convert_exception_rejects_unusable_retry_after_values(value: object) -> None:
+    """Only a string or a plain int is a usable retry hint.
+
+    bool is excluded deliberately even though it is an int subclass: ``True``
+    would stringify to ``"True"``, which is not a delay a caller can act on.
+    """
+    error = _ResponseStatusError(429, "Rate limit exceeded")
+    error.response.headers = {"retry-after": value}  # type: ignore[attr-defined]
+    result = convert_exception(error, "openai")
+    assert isinstance(result, RateLimitError)
+    assert result.retry_after is None
+
+
 def test_convert_exception_retry_after_is_none_without_usable_headers() -> None:
     """A response with no headers mapping at all does not raise."""
     error = _ResponseStatusError(429, "Rate limit exceeded")
