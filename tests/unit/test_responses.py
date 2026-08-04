@@ -37,6 +37,13 @@ def test_omitted_parallel_tool_calls_stays_none() -> None:
     assert "parallel_tool_calls" not in params.model_dump(exclude_none=True)
 
 
+def test_omitted_context_management_stays_none() -> None:
+    params = ResponsesParams(model="test", input="hello")
+
+    assert params.context_management is None
+    assert "context_management" not in params.model_dump(exclude_none=True)
+
+
 @pytest.mark.parametrize("value", [True, False])
 def test_explicit_parallel_tool_calls_preserved(value: bool) -> None:
     """Explicit True/False should be kept as-is."""

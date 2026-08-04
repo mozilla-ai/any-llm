@@ -152,6 +152,7 @@ async def test_aresponses_without_response_format_returns_response(mock_openai_c
 
     mock_client.responses.parse.assert_not_called()
     assert "text" not in mock_client.responses.create.call_args.kwargs
+    assert "context_management" not in mock_client.responses.create.call_args.kwargs
     assert isinstance(result, Response)
     assert not isinstance(result, ParsedResponse)
 
