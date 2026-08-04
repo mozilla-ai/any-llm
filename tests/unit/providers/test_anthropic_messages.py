@@ -1,13 +1,18 @@
 """Tests for Anthropic provider native Messages API pass-through."""
 
+import json
+from collections.abc import AsyncIterator
 from typing import Any, Self
 from unittest.mock import AsyncMock, MagicMock, Mock
 
+import httpx
 import pytest
 from anthropic.types import Message, TextBlock, ThinkingBlock, ToolUseBlock, Usage
 
+from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.base import BaseAnthropicProvider
 from any_llm.types.messages import (
+    CompactionDelta,
     ContentBlockDeltaEvent,
     ContentBlockStartEvent,
     ContentBlockStopEvent,
@@ -134,6 +139,218 @@ async def test_amessages_non_streaming() -> None:
 
 
 @pytest.mark.asyncio
+async def test_amessages_context_compaction_uses_beta_resource_and_preserves_response() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            headers={"request-id": "req_test"},
+            json={
+                "id": "msg_compaction",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-opus-5",
+                "stop_reason": "compaction",
+                "stop_sequence": None,
+                "content": [{"type": "compaction", "content": "Conversation summary"}],
+                "usage": {
+                    "input_tokens": 10,
+                    "output_tokens": 5,
+                    "iterations": [
+                        {
+                            "type": "compaction",
+                            "input_tokens": 100,
+                            "output_tokens": 20,
+                            "cache_creation_input_tokens": 0,
+                            "cache_read_input_tokens": 0,
+                        }
+                    ],
+                },
+            },
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+    context_management = {"edits": [{"type": "compact_20260112"}]}
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        context_management=context_management,
+    )
+
+    try:
+        result = await provider._amessages(params)
+    finally:
+        await http_client.aclose()
+
+    assert isinstance(result, MessageResponse)
+    assert result.stop_reason == "compaction"
+    assert result.content[0].type == "compaction"
+    assert result.content[0].content == "Conversation summary"
+    assert result.usage.iterations is not None
+    assert result.usage.iterations[0].type == "compaction"
+
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.url.path == "/v1/messages"
+    assert request.url.query == b"beta=true"
+    assert request.headers["anthropic-beta"] == "compact-2026-01-12"
+    request_body = json.loads(request.content)
+    assert request_body["context_management"] == context_management
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("context_management", "betas", "expected_betas"),
+    [
+        (
+            {"edits": [{"type": "compact_20260112"}]},
+            ["custom-beta", "compact-2026-01-12"],
+            "custom-beta,compact-2026-01-12",
+        ),
+        (
+            {"edits": [{"type": "clear_tool_uses_20250919"}]},
+            None,
+            "context-management-2025-06-27",
+        ),
+        (None, ["custom-beta"], "custom-beta"),
+    ],
+)
+async def test_amessages_selects_betas_for_context_management(
+    context_management: dict[str, Any] | None, betas: list[str] | None, expected_betas: str
+) -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            headers={"request-id": "req_test"},
+            json={
+                "id": "msg_test",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-opus-5",
+                "stop_reason": "end_turn",
+                "stop_sequence": None,
+                "content": [{"type": "text", "text": "Done"}],
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        context_management=context_management,
+        betas=betas,
+    )
+
+    try:
+        await provider._amessages(params)
+    finally:
+        await http_client.aclose()
+
+    assert requests[0].headers["anthropic-beta"] == expected_betas
+
+
+@pytest.mark.asyncio
+async def test_amessages_streams_beta_compaction_events() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.query == b"beta=true"
+        events = [
+            (
+                "message_start",
+                {
+                    "type": "message_start",
+                    "message": {
+                        "id": "msg_compaction",
+                        "type": "message",
+                        "role": "assistant",
+                        "model": "claude-opus-5",
+                        "stop_reason": None,
+                        "stop_sequence": None,
+                        "content": [],
+                        "usage": {"input_tokens": 10, "output_tokens": 0},
+                    },
+                },
+            ),
+            (
+                "content_block_start",
+                {
+                    "type": "content_block_start",
+                    "index": 0,
+                    "content_block": {"type": "compaction", "content": None},
+                },
+            ),
+            (
+                "content_block_delta",
+                {
+                    "type": "content_block_delta",
+                    "index": 0,
+                    "delta": {"type": "compaction_delta", "content": "Conversation summary"},
+                },
+            ),
+            ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+            (
+                "message_delta",
+                {
+                    "type": "message_delta",
+                    "delta": {"stop_reason": "compaction", "stop_sequence": None},
+                    "usage": {"output_tokens": 5},
+                },
+            ),
+            ("message_stop", {"type": "message_stop"}),
+        ]
+        body = "".join(f"event: {name}\ndata: {json.dumps(data)}\n\n" for name, data in events)
+        return httpx.Response(200, text=body, headers={"content-type": "text/event-stream"})
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        stream=True,
+        context_management={"edits": [{"type": "compact_20260112"}]},
+    )
+
+    try:
+        stream = await provider._amessages(params)
+        assert isinstance(stream, AsyncIterator)
+        collected = [event async for event in stream]
+    finally:
+        await http_client.aclose()
+
+    assert [event.type for event in collected] == [
+        "message_start",
+        "content_block_start",
+        "content_block_delta",
+        "content_block_stop",
+        "message_delta",
+        "message_stop",
+    ]
+    content_start = collected[1]
+    assert isinstance(content_start, ContentBlockStartEvent)
+    assert content_start.content_block.type == "compaction"
+
+    content_delta = collected[2]
+    assert isinstance(content_delta, ContentBlockDeltaEvent)
+    assert isinstance(content_delta.delta, CompactionDelta)
+    assert content_delta.delta.type == "compaction_delta"
+    assert content_delta.delta.content == "Conversation summary"
+
+    message_delta = collected[4]
+    assert isinstance(message_delta, MessageDeltaEvent)
+    assert message_delta.delta.stop_reason == "compaction"
+
+
+@pytest.mark.asyncio
 async def test_amessages_non_streaming_with_all_params() -> None:
     """Test _amessages passes all optional params to API."""
     mock_message = _make_message(content=[TextBlock(type="text", text="Hello!")])
@@ -217,6 +434,7 @@ async def test_amessages_output_format_uses_native_parse() -> None:
     result = await BaseAnthropicProvider._amessages(provider, params)
 
     # The SDK's ParsedMessage is returned as-is, no conversion or re-validation.
+    assert isinstance(result, ParsedMessage)
     assert result is parsed_message
     assert result.parsed_output == City(city_name="Paris")
     mock_client.messages.create.assert_not_called()

@@ -15,7 +15,7 @@ from any_llm.types.completion import (
     ReasoningEffort,
 )
 from any_llm.types.image import ImageGenerationParams, ImagesResponse
-from any_llm.types.messages import MessageResponse, MessageStreamEvent, ParsedMessage
+from any_llm.types.messages import MessageResponse, MessageStreamEvent, ParsedBetaMessage, ParsedMessage
 from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
 from any_llm.types.rerank import RerankResponse
@@ -545,12 +545,14 @@ def messages(
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
     cache_control: dict[str, Any] | None = None,
+    context_management: dict[str, Any] | None = None,
+    betas: list[str] | None = None,
     output_format: type | dict[str, Any] | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> MessageResponse | ParsedMessage[Any] | Iterator[MessageStreamEvent]:
+) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | Iterator[MessageStreamEvent]:
     """Create a message using the Anthropic Messages API.
 
     Args:
@@ -570,6 +572,8 @@ def messages(
         metadata: Request metadata.
         thinking: Thinking/reasoning configuration.
         cache_control: Cache control configuration for prompt caching.
+        context_management: Anthropic context management configuration.
+        betas: Anthropic beta identifiers.
         output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
             Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
@@ -607,6 +611,8 @@ def messages(
         metadata=metadata,
         thinking=thinking,
         cache_control=cache_control,
+        context_management=context_management,
+        betas=betas,
         output_format=output_format,
         **kwargs,
     )
@@ -629,12 +635,14 @@ async def amessages(
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
     cache_control: dict[str, Any] | None = None,
+    context_management: dict[str, Any] | None = None,
+    betas: list[str] | None = None,
     output_format: type | dict[str, Any] | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> MessageResponse | ParsedMessage[Any] | AsyncIterator[MessageStreamEvent]:
+) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStreamEvent]:
     """Create a message using the Anthropic Messages API asynchronously.
 
     Args:
@@ -654,6 +662,8 @@ async def amessages(
         metadata: Request metadata.
         thinking: Thinking/reasoning configuration.
         cache_control: Cache control configuration for prompt caching.
+        context_management: Anthropic context management configuration.
+        betas: Anthropic beta identifiers.
         output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
             Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
@@ -691,6 +701,8 @@ async def amessages(
         metadata=metadata,
         thinking=thinking,
         cache_control=cache_control,
+        context_management=context_management,
+        betas=betas,
         output_format=output_format,
         **kwargs,
     )

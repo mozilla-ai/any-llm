@@ -31,6 +31,7 @@ from any_llm.types.messages import (
     MessagesParams,
     MessageStartEvent,
     MessageStopEvent,
+    ParsedBetaMessage,
     ParsedMessage,
     TextBlock,
 )
@@ -893,7 +894,7 @@ async def test_otari_amessages_streaming_yields_typed_events_and_skips_unknown()
 
     result = await provider._amessages(params)
 
-    assert not isinstance(result, (MessageResponse, ParsedMessage))
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
     collected = [event async for event in result]
 
     # The unknown "ping" event is skipped; everything else is yielded in order.

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from any_llm.any_llm import AnyLLM
-from any_llm.api import amessages
+from any_llm.api import amessages, messages
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -18,7 +18,14 @@ from any_llm.types.completion import (
     CompletionUsage,
     PromptTokensDetails,
 )
-from any_llm.types.messages import MessageDeltaEvent, MessageResponse, MessagesParams, ParsedMessage, ParsedTextBlock
+from any_llm.types.messages import (
+    MessageDeltaEvent,
+    MessageResponse,
+    MessagesParams,
+    ParsedBetaMessage,
+    ParsedMessage,
+    ParsedTextBlock,
+)
 
 
 @pytest.mark.asyncio
@@ -109,6 +116,22 @@ def test_messages_params_with_all_fields() -> None:
     assert params.stop_sequences == ["END"]
     assert params.tools is not None
     assert len(params.tools) == 1
+
+
+def test_messages_params_accepts_context_management_and_betas() -> None:
+    context_management = {"edits": [{"type": "compact_20260112"}]}
+    betas = ["compact-2026-01-12"]
+
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        context_management=context_management,
+        betas=betas,
+    )
+
+    assert params.context_management == context_management
+    assert params.betas == betas
 
 
 def test_messages_params_rejects_extra_fields() -> None:
@@ -273,6 +296,102 @@ async def test_amessages_parameter_capture() -> None:
 
 
 @pytest.mark.asyncio
+async def test_amessages_forwards_context_management_and_betas() -> None:
+    from inspect import signature
+
+    assert "context_management" in signature(amessages).parameters
+    assert "betas" in signature(amessages).parameters
+    assert "context_management" in signature(AnyLLM.amessages).parameters
+    assert "betas" in signature(AnyLLM.amessages).parameters
+
+    mock_provider = Mock()
+    mock_provider.amessages = AsyncMock(return_value=Mock())
+    context_management = {"edits": [{"type": "compact_20260112"}]}
+    betas = ["compact-2026-01-12"]
+
+    with patch("any_llm.any_llm.AnyLLM.create", return_value=mock_provider):
+        await amessages(
+            model="claude-opus-5",
+            provider="anthropic",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            context_management=context_management,
+            betas=betas,
+        )
+
+    call_kwargs = mock_provider.amessages.await_args.kwargs
+    assert call_kwargs["context_management"] == context_management
+    assert call_kwargs["betas"] == betas
+
+
+def test_messages_returns_parsed_beta_message_without_treating_it_as_a_stream() -> None:
+    from anthropic.types.beta import BetaUsage
+    from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage, ParsedBetaTextBlock
+    from pydantic import BaseModel
+
+    class Answer(BaseModel):
+        value: str
+
+    parsed_message = ParsedBetaMessage[Answer](
+        id="msg_beta_parse",
+        type="message",
+        role="assistant",
+        model="claude-opus-5",
+        stop_reason="end_turn",
+        content=[
+            ParsedBetaTextBlock[Answer](
+                type="text",
+                text='{"value":"ok"}',
+                parsed_output=Answer(value="ok"),
+            )
+        ],
+        usage=BetaUsage(input_tokens=1, output_tokens=1),
+    )
+    mock_provider = Mock(spec=AnyLLM)
+    mock_provider.amessages = AsyncMock(return_value=parsed_message)
+
+    result = AnyLLM.messages(
+        mock_provider,
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        context_management={"edits": [{"type": "compact_20260112"}]},
+        output_format=Answer,
+    )
+
+    assert result is parsed_message
+    assert parsed_message.parsed_output == Answer(value="ok")
+
+
+def test_messages_forwards_context_management_and_betas() -> None:
+    from inspect import signature
+
+    assert "context_management" in signature(messages).parameters
+    assert "betas" in signature(messages).parameters
+    assert "context_management" in signature(AnyLLM.messages).parameters
+    assert "betas" in signature(AnyLLM.messages).parameters
+
+    mock_provider = Mock()
+    mock_provider.messages = Mock(return_value=Mock())
+    context_management = {"edits": [{"type": "compact_20260112"}]}
+    betas = ["compact-2026-01-12"]
+
+    with patch("any_llm.any_llm.AnyLLM.create", return_value=mock_provider):
+        messages(
+            model="claude-opus-5",
+            provider="anthropic",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            context_management=context_management,
+            betas=betas,
+        )
+
+    call_kwargs = mock_provider.messages.call_args.kwargs
+    assert call_kwargs["context_management"] == context_management
+    assert call_kwargs["betas"] == betas
+
+
+@pytest.mark.asyncio
 async def test_amessages_with_explicit_provider() -> None:
     """Test amessages with explicit provider parameter."""
     mock_provider = Mock()
@@ -356,6 +475,26 @@ async def test_default_amessages_non_streaming() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "unsupported_params",
+    [
+        {"context_management": {"edits": [{"type": "compact_20260112"}]}},
+        {"betas": ["compact-2026-01-12"]},
+    ],
+)
+async def test_default_amessages_rejects_anthropic_beta_params(unsupported_params: dict[str, Any]) -> None:
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        **unsupported_params,
+    )
+
+    with pytest.raises(NotImplementedError, match="native Anthropic Messages"):
+        await AnyLLM._amessages(Mock(), params)
+
+
+@pytest.mark.asyncio
 async def test_default_amessages_streaming() -> None:
     """Test default _amessages streaming converts ChatCompletionChunks to MessageStreamEvents."""
     from any_llm.types.completion import (
@@ -393,7 +532,7 @@ async def test_default_amessages_streaming() -> None:
         stream=True,
     )
     result = await AnyLLM._amessages(mock_provider, params)
-    assert not isinstance(result, (MessageResponse, ParsedMessage))
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
 
     events = []
     async for event in result:
@@ -433,7 +572,7 @@ async def test_default_amessages_streaming_requests_include_usage() -> None:
         stream=True,
     )
     result = await AnyLLM._amessages(mock_provider, params)
-    assert not isinstance(result, (MessageResponse, ParsedMessage))
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
     async for _ in result:  # drive the generator so _acompletion is invoked
         pass
 
@@ -516,7 +655,7 @@ async def test_default_amessages_streaming_usage_from_trailing_chunk() -> None:
         stream=True,
     )
     result = await AnyLLM._amessages(mock_provider, params)
-    assert not isinstance(result, (MessageResponse, ParsedMessage))
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
 
     events = [event async for event in result]
     delta = next(e for e in events if isinstance(e, MessageDeltaEvent))
@@ -553,7 +692,7 @@ async def test_default_amessages_streaming_flushes_usage_when_stream_fails() -> 
         stream=True,
     )
     result = await AnyLLM._amessages(mock_provider, params)
-    assert not isinstance(result, (MessageResponse, ParsedMessage))
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
 
     seen: list[Any] = []
 
@@ -605,7 +744,7 @@ async def test_default_amessages_streaming_failure_after_finish_reason_reports_n
         stream=True,
     )
     result = await AnyLLM._amessages(mock_provider, params)
-    assert not isinstance(result, (MessageResponse, ParsedMessage))
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
 
     seen: list[Any] = []
 
@@ -646,7 +785,7 @@ async def test_default_amessages_streaming_failure_before_first_chunk_emits_noth
         stream=True,
     )
     result = await AnyLLM._amessages(mock_provider, params)
-    assert not isinstance(result, (MessageResponse, ParsedMessage))
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
 
     seen: list[Any] = []
 
@@ -757,7 +896,7 @@ async def test_default_amessages_streaming_no_finish_reason_closes_open_block() 
         stream=True,
     )
     result = await AnyLLM._amessages(mock_provider, params)
-    assert not isinstance(result, (MessageResponse, ParsedMessage))
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
 
     events = [event async for event in result]
     assert [e.type for e in events] == [
@@ -790,7 +929,7 @@ async def test_default_amessages_streaming_empty_stream_emits_nothing() -> None:
         stream=True,
     )
     result = await AnyLLM._amessages(mock_provider, params)
-    assert not isinstance(result, (MessageResponse, ParsedMessage))
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
 
     events = [event async for event in result]
     assert events == []

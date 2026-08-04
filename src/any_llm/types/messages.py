@@ -1,22 +1,28 @@
-from typing import Any
+from typing import Any, Literal, TypeAlias
 
-from anthropic.types import InputJSONDelta, MessageDeltaUsage, StopReason, TextDelta, ThinkingDelta
+from anthropic.types import ContentBlock as AnthropicContentBlock
+from anthropic.types import InputJSONDelta, RawContentBlockDelta, TextDelta, ThinkingDelta
 from anthropic.types import Message as AnthropicMessage
-from anthropic.types import RawContentBlockDeltaEvent as ContentBlockDeltaEvent
-from anthropic.types import RawContentBlockStartEvent as ContentBlockStartEvent
-from anthropic.types import RawContentBlockStopEvent as ContentBlockStopEvent
-from anthropic.types import RawMessageDeltaEvent as MessageDeltaEvent
-from anthropic.types import RawMessageStartEvent as MessageStartEvent
-from anthropic.types import RawMessageStopEvent as MessageStopEvent
+from anthropic.types import MessageDeltaUsage as AnthropicMessageDeltaUsage
+from anthropic.types import RawContentBlockDeltaEvent as AnthropicContentBlockDeltaEvent
+from anthropic.types import RawContentBlockStartEvent as AnthropicContentBlockStartEvent
+from anthropic.types import RawContentBlockStopEvent as AnthropicContentBlockStopEvent
+from anthropic.types import RawMessageDeltaEvent as AnthropicMessageDeltaEvent
+from anthropic.types import RawMessageStartEvent as AnthropicMessageStartEvent
+from anthropic.types import RawMessageStopEvent as AnthropicMessageStopEvent
 from anthropic.types import TextBlock as AnthropicTextBlock
 from anthropic.types import ThinkingBlock as AnthropicThinkingBlock
 from anthropic.types import ToolUseBlock as AnthropicToolUseBlock
 from anthropic.types import Usage as AnthropicUsage
+from anthropic.types.beta import BetaCompactionBlock, BetaCompactionContentBlockDelta
+from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage, ParsedBetaTextBlock
 from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
-from anthropic.types.raw_message_delta_event import Delta as MessageDelta
+from anthropic.types.raw_message_delta_event import Delta as AnthropicMessageDelta
 from pydantic import BaseModel, ConfigDict
 
 __all__ = [
+    "CompactionBlock",
+    "CompactionDelta",
     "ContentBlock",
     "ContentBlockDeltaEvent",
     "ContentBlockStartEvent",
@@ -32,6 +38,8 @@ __all__ = [
     "MessageStreamEvent",
     "MessageUsage",
     "MessagesParams",
+    "ParsedBetaMessage",
+    "ParsedBetaTextBlock",
     "ParsedMessage",
     "ParsedTextBlock",
     "StopReason",
@@ -42,7 +50,21 @@ __all__ = [
     "ToolUseBlock",
 ]
 
-MessageUsage = AnthropicUsage
+StopReason: TypeAlias = Literal[
+    "end_turn",
+    "max_tokens",
+    "stop_sequence",
+    "tool_use",
+    "pause_turn",
+    "compaction",
+    "refusal",
+    "model_context_window_exceeded",
+]
+
+
+class MessageUsage(AnthropicUsage):
+    iterations: list[Any] | None = None
+
 
 TextBlock = AnthropicTextBlock
 
@@ -53,12 +75,53 @@ class ThinkingBlock(AnthropicThinkingBlock):
     signature: str = ""
 
 
-ContentBlock = TextBlock | ToolUseBlock | ThinkingBlock
+CompactionBlock = BetaCompactionBlock
+CompactionDelta = BetaCompactionContentBlockDelta
 
-MessageContentBlock = ContentBlock
+ContentBlock = TextBlock | ToolUseBlock | ThinkingBlock | CompactionBlock
+
+MessageContentBlock = AnthropicContentBlock | CompactionBlock
 
 
 class MessageResponse(AnthropicMessage):
+    content: list[MessageContentBlock]  # type: ignore[assignment]
+    stop_reason: StopReason | None = None  # type: ignore[assignment]
+    usage: MessageUsage
+    context_management: Any | None = None
+    diagnostics: Any | None = None
+
+
+class MessageDelta(AnthropicMessageDelta):
+    stop_reason: StopReason | None = None  # type: ignore[assignment]
+
+
+class MessageDeltaUsage(AnthropicMessageDeltaUsage):
+    iterations: list[Any] | None = None
+
+
+class MessageStartEvent(AnthropicMessageStartEvent):
+    message: MessageResponse
+
+
+class MessageDeltaEvent(AnthropicMessageDeltaEvent):
+    delta: MessageDelta
+    usage: MessageDeltaUsage
+    context_management: Any | None = None
+
+
+class MessageStopEvent(AnthropicMessageStopEvent):
+    pass
+
+
+class ContentBlockStartEvent(AnthropicContentBlockStartEvent):
+    content_block: AnthropicContentBlock | CompactionBlock  # type: ignore[assignment]
+
+
+class ContentBlockDeltaEvent(AnthropicContentBlockDeltaEvent):
+    delta: RawContentBlockDelta | CompactionDelta  # type: ignore[assignment]
+
+
+class ContentBlockStopEvent(AnthropicContentBlockStopEvent):
     pass
 
 
@@ -118,6 +181,12 @@ class MessagesParams(BaseModel):
 
     cache_control: dict[str, Any] | None = None
     """Cache control configuration for prompt caching"""
+
+    context_management: dict[str, Any] | None = None
+    """Anthropic context management configuration"""
+
+    betas: list[str] | None = None
+    """Anthropic beta identifiers"""
 
     output_format: type | dict[str, Any] | None = None
     """Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.

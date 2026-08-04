@@ -36,6 +36,7 @@ from any_llm.types.messages import (
     MessagesParams,
     MessageStopEvent,
     MessageStreamEvent,
+    ParsedBetaMessage,
     ParsedMessage,
     StopReason,
 )
@@ -722,16 +723,21 @@ class AnyLLM(ABC):
         self,
         *,
         allow_running_loop: bool | None = None,
+        context_management: dict[str, Any] | None = None,
+        betas: list[str] | None = None,
         **kwargs: Any,
-    ) -> MessageResponse | ParsedMessage[Any] | Iterator[MessageStreamEvent]:
+    ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | Iterator[MessageStreamEvent]:
         """Create a message using the Anthropic Messages API synchronously.
 
         See [AnyLLM.amessages][any_llm.any_llm.AnyLLM.amessages]
         """
         if allow_running_loop is None:
             allow_running_loop = INSIDE_NOTEBOOK
-        response = run_async_in_sync(self.amessages(**kwargs), allow_running_loop=allow_running_loop)
-        if isinstance(response, (MessageResponse, ParsedMessage)):
+        response = run_async_in_sync(
+            self.amessages(context_management=context_management, betas=betas, **kwargs),
+            allow_running_loop=allow_running_loop,
+        )
+        if isinstance(response, (MessageResponse, ParsedMessage, ParsedBetaMessage)):
             return response
         return async_iter_to_sync_iter(response)
 
@@ -753,9 +759,11 @@ class AnyLLM(ABC):
         metadata: dict[str, Any] | None = None,
         thinking: dict[str, Any] | None = None,
         cache_control: dict[str, Any] | None = None,
+        context_management: dict[str, Any] | None = None,
+        betas: list[str] | None = None,
         output_format: type | dict[str, Any] | None = None,
         **kwargs: Any,
-    ) -> MessageResponse | ParsedMessage[Any] | AsyncIterator[MessageStreamEvent]:
+    ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStreamEvent]:
         """Create a message using the Anthropic Messages API asynchronously.
 
         All providers support this via automatic conversion to/from Chat Completions.
@@ -776,6 +784,8 @@ class AnyLLM(ABC):
             metadata: Request metadata.
             thinking: Thinking/reasoning configuration.
             cache_control: Cache control configuration for prompt caching.
+            context_management: Anthropic context management configuration.
+            betas: Anthropic beta identifiers.
             output_format: Structured output, mirroring Anthropic's ``messages.parse``/
                 ``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed
                 ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic
@@ -810,6 +820,8 @@ class AnyLLM(ABC):
             metadata=metadata,
             thinking=thinking,
             cache_control=cache_control,
+            context_management=context_management,
+            betas=betas,
             output_format=output_format,
         )
         result = await self._amessages(params, **kwargs)
@@ -824,12 +836,16 @@ class AnyLLM(ABC):
 
     async def _amessages(
         self, params: MessagesParams, **kwargs: Any
-    ) -> MessageResponse | ParsedMessage[Any] | AsyncIterator[MessageStreamEvent]:
+    ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStreamEvent]:
         """Default implementation: converts Messages ↔ Completions format.
 
         Providers with native Messages API support (e.g., Anthropic) override this
         for direct pass-through.
         """
+        if params.context_management is not None or params.betas:
+            msg = "context_management and betas require a provider with a native Anthropic Messages API"
+            raise NotImplementedError(msg)
+
         from any_llm.types.completion import CompletionParams
         from any_llm.utils.messages_compat import (
             StreamingState,
