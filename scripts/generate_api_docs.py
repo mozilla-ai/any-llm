@@ -26,6 +26,7 @@ from any_llm.types import completion as completion_types
 from any_llm.types import messages as messages_types
 from any_llm.types import provider as provider_types
 from any_llm.types import responses as responses_types
+from any_llm.utils.exception_handler import _REJECTED_REQUEST_STATUSES, _STATUS_ERROR_CLASSES
 
 DOCS_API_DIR = Path(__file__).parent.parent / "docs" / "api"
 
@@ -1164,12 +1165,18 @@ def generate_exceptions_page() -> str:
 |-----------|------|-------------|
 | `message` | `str` | Human-readable error message. |
 | `original_exception` | `Exception \\| None` | The original SDK exception that triggered this error. |
-| `provider_name` | `str \\| None` | Name of the provider that raised the error (if available). |"""
+| `provider_name` | `str \\| None` | Name of the provider that raised the error (if available). |
+| `status_code` | `int \\| None` | HTTP status the provider returned. |
+| `code` | `str \\| None` | Provider-specific error code from the response body. |
+| `param` | `str \\| None` | Request field the provider flagged as the cause. |
+| `error_type` | `str \\| None` | Provider-specific error category, such as `"invalid_request_error"`. |"""
     )
     parts.append("")
     parts.append(
         'The string representation includes the provider name when available: `"[openai] Rate limit exceeded"`.'
     )
+    parts.append("")
+    parts.append("Coverage of the four HTTP metadata fields varies by provider, so treat every one as optional.")
 
     # Provider errors (simple ones)
     simple_errors = [
@@ -1282,15 +1289,48 @@ class UnsupportedParameterError(AnyLLMError):
 | Input too long | `ContextLengthExceededError` | Exceeding the model's context window |
 | Malformed request parameters | `InvalidRequestError` | Invalid parameter values |
 | Content blocked by safety filter | `ContentFilterError` | Harmful or policy-violating content |
-| Provider internal / network error | `ProviderError` | 5xx responses, timeouts, connection errors |"""
+| Out of credits or quota | `InsufficientFundsError` | 402 responses |
+| Bad gateway upstream of the provider | `UpstreamProviderError` | 502 responses |
+| Provider timed out at its gateway | `GatewayTimeoutError` | 504 responses |
+| Provider internal / network error | `ProviderError` | Other 5xx responses, timeouts, connection errors |"""
     )
     parts.append("")
     parts.append(
         '{% hint style="warning" %}\n'
-        "Note that `ModelNotFoundError` and `InvalidRequestError` are **separate** subclasses of `AnyLLMError`. "
-        "A model-not-found error will not be caught by `except InvalidRequestError`. "
-        "Catch `ModelNotFoundError` explicitly if you need to handle it.\n"
+        "Every exception above is a **separate** subclass of `AnyLLMError`, not of each other. "
+        "A model-not-found error will not be caught by `except InvalidRequestError`, and "
+        "`InsufficientFundsError`, `UpstreamProviderError`, and `GatewayTimeoutError` will not be caught by "
+        "`except ProviderError`. Catch `AnyLLMError` if you want all of them.\n"
         "{% endhint %}"
+    )
+
+    # How the type is chosen
+    status_rows = [f"| {status} | `{cls.__name__}` |" for status, cls in sorted(_STATUS_ERROR_CLASSES.items())]
+    rejected = " or ".join(str(status) for status in sorted(_REJECTED_REQUEST_STATUSES))
+
+    parts.append("")
+    parts.append("## How the Exception Type Is Chosen")
+    parts.append("")
+    parts.append(
+        "`status_code` decides the type wherever it is unambiguous, because it is what the provider actually returned:"
+    )
+    parts.append("")
+    parts.append("| Status | Exception |")
+    parts.append("|--------|-----------|")
+    parts.extend(status_rows)
+    parts.append("| other 5xx | `ProviderError` |")
+    parts.append("")
+    parts.append(
+        f"A {rejected} means the request was rejected but not why, so the error message decides between the "
+        "specific causes that carry no status of their own (`ContextLengthExceededError`, `ContentFilterError`, "
+        "or a provider that reports a bad key as a 400), falling back to `InvalidRequestError`. When there is no "
+        "status at all, or the status is not one of those listed above (for example 409 or 413), the message "
+        "decides on its own."
+    )
+    parts.append("")
+    parts.append(
+        "One consequence worth noting: a 5xx is always a provider fault, even when its body happens to mention "
+        "something like a content policy."
     )
 
     # Usage

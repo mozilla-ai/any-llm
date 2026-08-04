@@ -333,26 +333,5 @@ attribute on the exception, or the parsed response body. Coverage varies by prov
 so treat every field as optional. Anything `any-llm` cannot recover is `None`,
 including `status_code` for a non-HTTP failure such as a timeout or connection error.
 
-### How the Exception Type Is Chosen
-
-`status_code` decides the type wherever it is unambiguous, because it is what the
-provider actually returned:
-
-| Status | Type |
-| --- | --- |
-| 401, 403 | `AuthenticationError` |
-| 402 | `InsufficientFundsError` |
-| 404 | `ModelNotFoundError` |
-| 429 | `RateLimitError` |
-| 502 | `UpstreamProviderError` |
-| 504 | `GatewayTimeoutError` |
-| other 5xx | `ProviderError` |
-
-A 400 or 422 means the request was rejected but not why, so the error message
-decides between the specific causes that carry no status of their own
-(`ContextLengthExceededError`, `ContentFilterError`, or a provider that reports a bad
-key as a 400), falling back to `InvalidRequestError`. When there is no status at all,
-the message decides on its own.
-
-One consequence worth noting: a 5xx is always a provider fault, even when its body
-happens to mention something like a content policy.
+`status_code` also drives which exception type you get. See
+[Exceptions](api/exceptions.md) for the full status-to-type mapping.
