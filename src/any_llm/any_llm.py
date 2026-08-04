@@ -784,7 +784,10 @@ class AnyLLM(ABC):
             metadata: Request metadata.
             thinking: Thinking/reasoning configuration.
             cache_control: Cache control configuration for prompt caching.
-            context_management: Anthropic context management configuration.
+            context_management: Anthropic context management configuration. The
+                `compact_20260112` strategy requires a supported model. Its `input_tokens`
+                trigger value must be at least 50,000 when provided; see
+                [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction).
             betas: Anthropic beta identifiers.
             output_format: Structured output, mirroring Anthropic's ``messages.parse``/
                 ``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed

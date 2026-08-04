@@ -296,6 +296,62 @@ def test_messages_betas_does_not_warn_for_recognized_edit(caplog: pytest.LogCapt
     assert caplog.text == ""
 
 
+def test_messages_betas_accepts_minimum_compaction_trigger() -> None:
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        context_management={
+            "edits": [
+                {
+                    "type": "compact_20260112",
+                    "trigger": {"type": "input_tokens", "value": 50_000},
+                }
+            ]
+        },
+    )
+
+    assert _messages_betas(params) == ["compact-2026-01-12"]
+
+
+@pytest.mark.parametrize("value", [1, 49_999, True, 50_000.0, "50000", None])
+def test_messages_betas_rejects_invalid_compaction_trigger_value(value: Any) -> None:
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        context_management={
+            "edits": [
+                {
+                    "type": "compact_20260112",
+                    "trigger": {"type": "input_tokens", "value": value},
+                }
+            ]
+        },
+    )
+
+    with pytest.raises(ValueError, match="trigger value must be an integer greater than or equal to 50000"):
+        _messages_betas(params)
+
+
+def test_messages_betas_does_not_validate_unknown_compaction_trigger_type() -> None:
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        context_management={
+            "edits": [
+                {
+                    "type": "compact_20260112",
+                    "trigger": {"type": "future_trigger", "value": 1},
+                }
+            ]
+        },
+    )
+
+    assert _messages_betas(params) == ["compact-2026-01-12"]
+
+
 @pytest.mark.parametrize("edits", [None, {"type": "compact_20260112"}])
 def test_messages_betas_rejects_non_list_edits(edits: Any) -> None:
     params = MessagesParams(

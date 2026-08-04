@@ -54,6 +54,7 @@ if TYPE_CHECKING:
 
 
 _COMPACTION_BETA = "compact-2026-01-12"
+_COMPACTION_MIN_TRIGGER_TOKENS = 50_000
 _CONTEXT_MANAGEMENT_BETA = "context-management-2025-06-27"
 
 _ANTHROPIC_TO_OPENAI_STATUS_MAP: dict[str, str] = {
@@ -64,9 +65,24 @@ _ANTHROPIC_TO_OPENAI_STATUS_MAP: dict[str, str] = {
 }
 
 
+def _get_context_edit_value(edit: Any, field: str) -> Any:
+    return edit.get(field) if isinstance(edit, Mapping) else getattr(edit, field, None)
+
+
 def _get_context_edit_type(edit: Any) -> str | None:
-    edit_type = edit.get("type") if isinstance(edit, Mapping) else getattr(edit, "type", None)
+    edit_type = _get_context_edit_value(edit, "type")
     return edit_type if isinstance(edit_type, str) else None
+
+
+def _validate_compaction_trigger(edit: Any) -> None:
+    trigger = _get_context_edit_value(edit, "trigger")
+    if trigger is None or _get_context_edit_value(trigger, "type") != "input_tokens":
+        return
+
+    value = _get_context_edit_value(trigger, "value")
+    if isinstance(value, bool) or not isinstance(value, int) or value < _COMPACTION_MIN_TRIGGER_TOKENS:
+        msg = "compact_20260112 input_tokens trigger value must be an integer greater than or equal to 50000"
+        raise ValueError(msg)
 
 
 def _pop_anthropic_beta_header(kwargs: dict[str, Any]) -> list[str]:
@@ -111,6 +127,7 @@ def _messages_betas(params: MessagesParams, header_betas: list[str] | None = Non
             edit_type = _get_context_edit_type(edit)
             inferred_beta = None
             if edit_type == "compact_20260112":
+                _validate_compaction_trigger(edit)
                 inferred_beta = _COMPACTION_BETA
             elif edit_type in {"clear_tool_uses_20250919", "clear_thinking_20251015"}:
                 inferred_beta = _CONTEXT_MANAGEMENT_BETA
