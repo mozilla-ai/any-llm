@@ -5,7 +5,8 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from anthropic.types.beta import BetaStopReason
+from anthropic.types.beta import BetaMessage, BetaStopReason
+from anthropic.types.beta.beta_context_management_response import BetaContextManagementResponse
 
 from any_llm.any_llm import AnyLLM
 from any_llm.api import amessages, messages
@@ -21,6 +22,7 @@ from any_llm.types.completion import (
 )
 from any_llm.types.messages import (
     MessageDeltaEvent,
+    MessageDiagnostics,
     MessageResponse,
     MessagesParams,
     ParsedBetaMessage,
@@ -173,6 +175,71 @@ def test_message_response_model() -> None:
     assert isinstance(block, TextBlock)
     assert block.text == "Hello!"
     assert resp.usage.input_tokens == 10
+
+
+def test_message_response_preserves_typed_beta_telemetry() -> None:
+    beta_message = BetaMessage.model_validate(
+        {
+            "id": "msg_beta",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-6",
+            "stop_reason": "end_turn",
+            "stop_sequence": None,
+            "content": [{"type": "text", "text": "Done"}],
+            "usage": {"input_tokens": 10, "output_tokens": 1},
+            "context_management": {
+                "applied_edits": [
+                    {
+                        "type": "clear_tool_uses_20250919",
+                        "cleared_input_tokens": 42,
+                        "cleared_tool_uses": 2,
+                    }
+                ]
+            },
+            "diagnostics": {
+                "cache_miss_reason": {
+                    "type": "model_changed",
+                    "cache_missed_input_tokens": 7,
+                }
+            },
+        }
+    )
+
+    response = MessageResponse.model_validate(beta_message, from_attributes=True)
+
+    assert isinstance(response.context_management, BetaContextManagementResponse)
+    applied_edit = response.context_management.applied_edits[0]
+    assert applied_edit.cleared_input_tokens == 42
+    assert isinstance(response.diagnostics, MessageDiagnostics)
+    assert response.diagnostics.cache_miss_reason is not None
+    assert response.diagnostics.cache_miss_reason.type == "model_changed"
+    assert response.diagnostics.cache_miss_reason.cache_missed_input_tokens == 7
+    dumped = response.model_dump()
+    assert dumped["context_management"]["applied_edits"][0]["cleared_input_tokens"] == 42
+    assert dumped["diagnostics"]["cache_miss_reason"]["cache_missed_input_tokens"] == 7
+
+
+def test_message_delta_event_preserves_typed_context_management() -> None:
+    event = MessageDeltaEvent.model_validate(
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": None, "stop_sequence": None},
+            "usage": {"output_tokens": 1},
+            "context_management": {
+                "applied_edits": [
+                    {
+                        "type": "clear_thinking_20251015",
+                        "cleared_input_tokens": 21,
+                        "cleared_thinking_turns": 1,
+                    }
+                ]
+            },
+        }
+    )
+
+    assert isinstance(event.context_management, BetaContextManagementResponse)
+    assert event.context_management.applied_edits[0].cleared_input_tokens == 21
 
 
 def test_message_stream_event_types() -> None:

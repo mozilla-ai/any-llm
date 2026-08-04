@@ -20,12 +20,14 @@ from anthropic.types.beta import (
     BetaContentBlock,
     BetaStopReason,
 )
+from anthropic.types.beta.beta_context_management_response import BetaContextManagementResponse
 from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage, ParsedBetaTextBlock
 from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
 from anthropic.types.raw_message_delta_event import Delta as AnthropicMessageDelta
 from pydantic import BaseModel, ConfigDict
 
 __all__ = [
+    "BetaContextManagementResponse",
     "CompactionBlock",
     "CompactionDelta",
     "ContentBlock",
@@ -33,10 +35,12 @@ __all__ = [
     "ContentBlockStartEvent",
     "ContentBlockStopEvent",
     "InputJSONDelta",
+    "MessageCacheMissReason",
     "MessageContentBlock",
     "MessageDelta",
     "MessageDeltaEvent",
     "MessageDeltaUsage",
+    "MessageDiagnostics",
     "MessageResponse",
     "MessageStartEvent",
     "MessageStopEvent",
@@ -79,12 +83,25 @@ ContentBlock = TextBlock | ToolUseBlock | ThinkingBlock | CompactionBlock
 MessageContentBlock = AnthropicContentBlock | BetaContentBlock
 
 
+class MessageCacheMissReason(BaseModel):
+    model_config = ConfigDict(extra="allow", from_attributes=True)
+
+    type: str
+    cache_missed_input_tokens: int | None = None
+
+
+class MessageDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="allow", from_attributes=True)
+
+    cache_miss_reason: MessageCacheMissReason | None = None
+
+
 class MessageResponse(AnthropicMessage):
     content: list[MessageContentBlock]  # type: ignore[assignment]
     stop_reason: StopReason | None = None  # type: ignore[assignment]
     usage: MessageUsage
-    context_management: Any | None = None
-    diagnostics: Any | None = None
+    context_management: BetaContextManagementResponse | None = None
+    diagnostics: MessageDiagnostics | None = None
 
 
 class MessageDelta(AnthropicMessageDelta):
@@ -102,7 +119,7 @@ class MessageStartEvent(AnthropicMessageStartEvent):
 class MessageDeltaEvent(AnthropicMessageDeltaEvent):
     delta: MessageDelta
     usage: MessageDeltaUsage
-    context_management: Any | None = None
+    context_management: BetaContextManagementResponse | None = None
 
 
 class MessageStopEvent(AnthropicMessageStopEvent):
