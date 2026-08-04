@@ -16,7 +16,7 @@ from any_llm.types.completion import (
     PromptTokensDetails,
     Reasoning,
 )
-from any_llm.types.messages import MessagesParams
+from any_llm.types.messages import MessagesParams, ThinkingBlock
 from any_llm.utils.messages_compat import (
     StreamingState,
     chat_completion_chunk_to_message_stream_events,
@@ -359,6 +359,7 @@ def test_chat_completion_reasoning_response_to_message() -> None:
     )
     result = chat_completion_to_message_response(completion)
     assert len(result.content) == 2
+    assert isinstance(result.content[0], ThinkingBlock)
     assert result.content[0].type == "thinking"
     assert result.content[0].thinking == "Let me think about this..."
     assert result.content[1].type == "text"

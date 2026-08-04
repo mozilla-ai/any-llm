@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from anthropic.types import ContentBlock as AnthropicContentBlock
 from anthropic.types import InputJSONDelta, RawContentBlockDelta, TextDelta, ThinkingDelta
@@ -20,12 +20,13 @@ from anthropic.types.beta import (
     BetaContentBlock,
     BetaIterationsUsage,
     BetaStopReason,
+    BetaThinkingBlock,
 )
 from anthropic.types.beta.beta_context_management_response import BetaContextManagementResponse
 from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage, ParsedBetaTextBlock
 from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
 from anthropic.types.raw_message_delta_event import Delta as AnthropicMessageDelta
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, BeforeValidator, ConfigDict
 
 if TYPE_CHECKING:
     from anthropic.types.beta.beta_diagnostics import BetaDiagnostics
@@ -92,7 +93,18 @@ class ThinkingBlock(AnthropicThinkingBlock):
 CompactionBlock = BetaCompactionBlock
 CompactionDelta = BetaCompactionContentBlockDelta
 
-MessageContentBlock = AnthropicContentBlock | BetaContentBlock
+
+def _normalize_thinking_block(value: Any) -> Any:
+    if isinstance(value, (AnthropicThinkingBlock, BetaThinkingBlock)) and not isinstance(value, ThinkingBlock):
+        return ThinkingBlock.model_validate(value, from_attributes=True)
+    return value
+
+
+MessageContentBlock = Annotated[
+    ThinkingBlock | AnthropicContentBlock | BetaContentBlock,
+    BeforeValidator(_normalize_thinking_block),
+]
+
 ContentBlock = MessageContentBlock
 
 

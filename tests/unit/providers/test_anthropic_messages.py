@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 import httpx
 import pytest
 from anthropic.types import Message, TextBlock, ThinkingBlock, ToolUseBlock, Usage
-from anthropic.types.beta import BetaMCPToolUseBlock, BetaMessage, BetaUsage
+from anthropic.types.beta import BetaMCPToolUseBlock, BetaMessage, BetaThinkingBlock, BetaUsage
 from pydantic import BaseModel
 
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
@@ -25,6 +25,9 @@ from any_llm.types.messages import (
     MessagesParams,
     MessageStartEvent,
     MessageStopEvent,
+)
+from any_llm.types.messages import (
+    ThinkingBlock as AnyLLMThinkingBlock,
 )
 
 
@@ -127,10 +130,83 @@ def test_convert_native_message_to_response_thinking() -> None:
     )
     result = BaseAnthropicProvider._convert_native_message_to_response(msg)
     assert len(result.content) == 2
+    assert isinstance(result.content[0], AnyLLMThinkingBlock)
     assert result.content[0].type == "thinking"
     assert result.content[0].thinking == "Let me reason..."
     assert result.content[1].type == "text"
     assert result.content[1].text == "The answer is 42."
+
+
+def test_convert_native_beta_message_to_response_thinking() -> None:
+    message = BetaMessage(
+        id="msg_beta",
+        type="message",
+        role="assistant",
+        model="claude-opus-5",
+        stop_reason="end_turn",
+        stop_sequence=None,
+        content=[BetaThinkingBlock(type="thinking", thinking="Let me reason...", signature="sig")],
+        usage=BetaUsage(input_tokens=1, output_tokens=1),
+    )
+
+    result = BaseAnthropicProvider._convert_native_message_to_response(cast("Message", message))
+
+    assert isinstance(result.content[0], AnyLLMThinkingBlock)
+    assert result.content[0].signature == "sig"
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        ThinkingBlock(type="thinking", thinking="Anthropic", signature="sig"),
+        BetaThinkingBlock(type="thinking", thinking="Beta", signature="sig"),
+    ],
+)
+def test_message_response_normalizes_embedded_sdk_thinking_block(block: Any) -> None:
+    response = MessageResponse.model_validate(
+        {
+            "id": "msg_test",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-opus-5",
+            "stop_reason": "end_turn",
+            "content": [block],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        }
+    )
+
+    assert isinstance(response.content[0], AnyLLMThinkingBlock)
+    assert response.content[0].signature == "sig"
+
+
+def test_message_response_defaults_missing_thinking_signature() -> None:
+    response = MessageResponse.model_validate(
+        {
+            "id": "msg_test",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-opus-5",
+            "stop_reason": "end_turn",
+            "content": [{"type": "thinking", "thinking": "Let me reason..."}],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        }
+    )
+
+    assert isinstance(response.content[0], AnyLLMThinkingBlock)
+    assert response.content[0].signature == ""
+
+
+def test_content_block_start_event_normalizes_sdk_thinking_block() -> None:
+    event = ContentBlockStartEvent.model_validate(
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": ThinkingBlock(type="thinking", thinking="Let me reason...", signature="sig"),
+        }
+    )
+
+    assert isinstance(event.content_block, AnyLLMThinkingBlock)
+    assert event.content_block.signature == "sig"
 
 
 def test_convert_native_message_to_response_cache_tokens() -> None:
