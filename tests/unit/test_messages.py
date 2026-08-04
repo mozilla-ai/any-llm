@@ -5,6 +5,7 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from anthropic.types.beta import BetaStopReason
 
 from any_llm.any_llm import AnyLLM
 from any_llm.api import amessages, messages
@@ -25,7 +26,12 @@ from any_llm.types.messages import (
     ParsedBetaMessage,
     ParsedMessage,
     ParsedTextBlock,
+    StopReason,
 )
+
+
+def test_stop_reason_aliases_anthropic_beta_type() -> None:
+    assert StopReason is BetaStopReason
 
 
 @pytest.mark.asyncio

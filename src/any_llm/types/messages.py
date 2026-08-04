@@ -1,4 +1,4 @@
-from typing import Any, Literal, TypeAlias
+from typing import Any
 
 from anthropic.types import ContentBlock as AnthropicContentBlock
 from anthropic.types import InputJSONDelta, RawContentBlockDelta, TextDelta, ThinkingDelta
@@ -14,7 +14,12 @@ from anthropic.types import TextBlock as AnthropicTextBlock
 from anthropic.types import ThinkingBlock as AnthropicThinkingBlock
 from anthropic.types import ToolUseBlock as AnthropicToolUseBlock
 from anthropic.types import Usage as AnthropicUsage
-from anthropic.types.beta import BetaCompactionBlock, BetaCompactionContentBlockDelta, BetaContentBlock
+from anthropic.types.beta import (
+    BetaCompactionBlock,
+    BetaCompactionContentBlockDelta,
+    BetaContentBlock,
+    BetaStopReason,
+)
 from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage, ParsedBetaTextBlock
 from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
 from anthropic.types.raw_message_delta_event import Delta as AnthropicMessageDelta
@@ -50,16 +55,7 @@ __all__ = [
     "ToolUseBlock",
 ]
 
-StopReason: TypeAlias = Literal[
-    "end_turn",
-    "max_tokens",
-    "stop_sequence",
-    "tool_use",
-    "pause_turn",
-    "compaction",
-    "refusal",
-    "model_context_window_exceeded",
-]
+StopReason = BetaStopReason
 
 
 class MessageUsage(AnthropicUsage):
