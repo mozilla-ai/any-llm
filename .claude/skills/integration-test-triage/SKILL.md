@@ -20,8 +20,9 @@ of the ones you need (`gh run view <id> --log-failed`). Root-cause each failure 
 - **Missing CI infrastructure**: skip it, naming the missing piece in the skip reason.
 - **Rate limiting or quota exhaustion**: 429s and quota errors. The suite runs under `-n auto`,
   so re-run serially to tell contention apart from an exhausted account.
-- **A provider outage**: errors across every test for one provider. Confirm against that
-  provider's public status page before calling it transient.
+- **A provider outage**: failures correlated on one provider, possibly narrowed to a single
+  model, endpoint, region, or operation rather than all of its tests. Treat the correlation
+  plus that provider's public status page as the evidence before calling it transient.
 
 Never record a cause as "flaky" or "does not reliably support". Every skip and fix needs a
 concrete reason (HTTP status, deprecated model, missing CI infra).
