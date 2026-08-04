@@ -71,6 +71,7 @@ def _get_context_edit_type(edit: Any) -> str | None:
 
 def _messages_betas(params: MessagesParams) -> list[str]:
     betas = list(params.betas or [])
+    has_explicit_betas = bool(params.betas)
     if params.context_management is None:
         return betas
 
@@ -84,6 +85,11 @@ def _messages_betas(params: MessagesParams) -> list[str]:
 
         if inferred_beta is not None and inferred_beta not in betas:
             betas.append(inferred_beta)
+        elif inferred_beta is None and edit_type is not None and not has_explicit_betas:
+            logger.warning(
+                "Cannot infer an Anthropic beta for context-management edit type %r; pass betas explicitly.",
+                edit_type,
+            )
     return betas
 
 

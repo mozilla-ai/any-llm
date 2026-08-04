@@ -1,6 +1,7 @@
 """Tests for Anthropic provider native Messages API pass-through."""
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Self
@@ -12,7 +13,7 @@ from anthropic.types import Message, TextBlock, ThinkingBlock, ToolUseBlock, Usa
 from pydantic import BaseModel
 
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
-from any_llm.providers.anthropic.base import BaseAnthropicProvider
+from any_llm.providers.anthropic.base import BaseAnthropicProvider, _messages_betas
 from any_llm.types.messages import (
     CompactionDelta,
     ContentBlockDeltaEvent,
@@ -216,6 +217,57 @@ async def test_amessages_context_compaction_uses_beta_resource_and_preserves_res
     assert request.headers["anthropic-beta"] == "compact-2026-01-12"
     request_body = json.loads(request.content)
     assert request_body["context_management"] == context_management
+
+
+def test_messages_betas_warns_for_unknown_edit_without_explicit_betas(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        context_management={"edits": [{"type": "clear_future_thing_2027"}]},
+    )
+
+    with caplog.at_level(logging.WARNING, logger="any_llm"):
+        betas = _messages_betas(params)
+
+    assert betas == []
+    assert "clear_future_thing_2027" in caplog.text
+    assert "pass betas explicitly" in caplog.text
+
+
+def test_messages_betas_does_not_warn_for_unknown_edit_with_explicit_betas(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        context_management={"edits": [{"type": "clear_future_thing_2027"}]},
+        betas=["future-beta"],
+    )
+
+    with caplog.at_level(logging.WARNING, logger="any_llm"):
+        betas = _messages_betas(params)
+
+    assert betas == ["future-beta"]
+    assert caplog.text == ""
+
+
+def test_messages_betas_does_not_warn_for_recognized_edit(caplog: pytest.LogCaptureFixture) -> None:
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        context_management={"edits": [{"type": "compact_20260112"}]},
+    )
+
+    with caplog.at_level(logging.WARNING, logger="any_llm"):
+        betas = _messages_betas(params)
+
+    assert betas == ["compact-2026-01-12"]
+    assert caplog.text == ""
 
 
 @pytest.mark.asyncio
