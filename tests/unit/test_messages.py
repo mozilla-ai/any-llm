@@ -38,6 +38,12 @@ def test_stop_reason_aliases_anthropic_beta_type() -> None:
     assert StopReason is BetaStopReason
 
 
+def test_content_block_alias_matches_message_content_block() -> None:
+    from any_llm.types.messages import ContentBlock, MessageContentBlock
+
+    assert ContentBlock is MessageContentBlock
+
+
 @pytest.mark.asyncio
 async def test_messages_invalid_model_format_no_separator() -> None:
     """Test amessages raises ValueError for model without separator."""

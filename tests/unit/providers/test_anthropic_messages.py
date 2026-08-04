@@ -14,7 +14,7 @@ from anthropic.types.beta import BetaMCPToolUseBlock, BetaMessage, BetaUsage
 from pydantic import BaseModel
 
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
-from any_llm.providers.anthropic.base import BaseAnthropicProvider, _messages_betas
+from any_llm.providers.anthropic.base import BaseAnthropicProvider, _messages_betas, _pop_anthropic_beta_header
 from any_llm.types.messages import (
     CompactionDelta,
     ContentBlockDeltaEvent,
@@ -294,6 +294,43 @@ def test_messages_betas_does_not_warn_for_recognized_edit(caplog: pytest.LogCapt
 
     assert betas == ["compact-2026-01-12"]
     assert caplog.text == ""
+
+
+@pytest.mark.parametrize("edits", [None, {"type": "compact_20260112"}])
+def test_messages_betas_rejects_non_list_edits(edits: Any) -> None:
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        context_management={"edits": edits},
+    )
+
+    with pytest.raises(ValueError, match=r"context_management\.edits must be a list"):
+        _messages_betas(params)
+
+
+def test_pop_anthropic_beta_header_decodes_bytes() -> None:
+    kwargs = {
+        "extra_headers": {
+            "anthropic-beta": b"fast-mode-2026-02-01, compact-2026-01-12",
+            "x-custom-header": "custom-value",
+        }
+    }
+
+    betas = _pop_anthropic_beta_header(kwargs)
+
+    assert betas == ["fast-mode-2026-02-01", "compact-2026-01-12"]
+    assert kwargs == {"extra_headers": {"x-custom-header": "custom-value"}}
+
+
+@pytest.mark.parametrize("value", [object(), b"\xff"])
+def test_pop_anthropic_beta_header_preserves_unparseable_values(value: object) -> None:
+    kwargs = {"extra_headers": {"anthropic-beta": value}}
+
+    betas = _pop_anthropic_beta_header(kwargs)
+
+    assert betas == []
+    assert kwargs["extra_headers"]["anthropic-beta"] is value
 
 
 @pytest.mark.asyncio

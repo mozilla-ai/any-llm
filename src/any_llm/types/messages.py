@@ -92,9 +92,8 @@ class ThinkingBlock(AnthropicThinkingBlock):
 CompactionBlock = BetaCompactionBlock
 CompactionDelta = BetaCompactionContentBlockDelta
 
-ContentBlock = TextBlock | ToolUseBlock | ThinkingBlock | CompactionBlock
-
 MessageContentBlock = AnthropicContentBlock | BetaContentBlock
+ContentBlock = MessageContentBlock
 
 
 class MessageResponse(AnthropicMessage):
@@ -137,6 +136,7 @@ class ContentBlockDeltaEvent(AnthropicContentBlockDeltaEvent):
 
 class ContentBlockStopEvent(AnthropicContentBlockStopEvent):
     content_block: MessageContentBlock | None = None
+    """Completed block, populated only by providers with a native Anthropic Messages API."""
 
 
 MessageStreamEvent = (

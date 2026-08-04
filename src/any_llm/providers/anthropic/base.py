@@ -79,9 +79,17 @@ def _pop_anthropic_beta_header(kwargs: dict[str, Any]) -> list[str]:
     found_beta_header = False
     for name, value in extra_headers.items():
         if isinstance(name, str) and name.lower() == "anthropic-beta":
-            found_beta_header = True
+            if isinstance(value, bytes):
+                try:
+                    value = value.decode()
+                except UnicodeDecodeError:
+                    remaining_headers[name] = value
+                    continue
             if isinstance(value, str):
+                found_beta_header = True
                 header_betas.extend(beta.strip() for beta in value.split(",") if beta.strip())
+            else:
+                remaining_headers[name] = value
         else:
             remaining_headers[name] = value
 
@@ -94,7 +102,12 @@ def _messages_betas(params: MessagesParams, header_betas: list[str] | None = Non
     betas = list(params.betas or [])
     has_explicit_betas = bool(params.betas or header_betas)
     if params.context_management is not None:
-        for edit in params.context_management.get("edits", []):
+        edits = params.context_management.get("edits", [])
+        if not isinstance(edits, list):
+            msg = "context_management.edits must be a list"
+            raise ValueError(msg)
+
+        for edit in edits:
             edit_type = _get_context_edit_type(edit)
             inferred_beta = None
             if edit_type == "compact_20260112":

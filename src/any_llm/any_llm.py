@@ -799,6 +799,8 @@ class AnyLLM(ABC):
 
         Raises:
             ValueError: If `output_format` is combined with `stream=True`.
+            NotImplementedError: If `context_management` or `betas` is used with a
+                provider that has no native Anthropic Messages API.
 
         """
         if output_format is not None and stream:
