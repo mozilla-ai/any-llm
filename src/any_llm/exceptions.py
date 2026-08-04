@@ -15,10 +15,24 @@ class AnyLLMError(Exception):
     All custom exceptions in any-llm inherit from this class. It preserves
     the original exception for debugging while providing a unified interface.
 
+    The structured HTTP fields are populated best-effort by
+    :func:`any_llm.utils.exception_handler.convert_exception` from whatever the
+    provider SDK exposed, so a consumer can classify a failure without reaching
+    into ``original_exception`` and coupling to a specific SDK's attribute
+    layout. Any field a provider does not report stays ``None``, and a non-HTTP
+    failure (timeout, connection error) reports ``status_code=None``.
+
     Attributes:
         message: Human-readable error message
         original_exception: The original SDK exception that triggered this error
         provider_name: Name of the provider that raised the error (if available)
+        status_code: HTTP status the provider returned, when the failure was an
+            HTTP error
+        code: Provider-specific error code from the response body
+        param: Request field the provider flagged as the cause
+        error_type: Provider-specific error category (OpenAI's ``type``, e.g.
+            ``"invalid_request_error"``). Named ``error_type`` to avoid
+            shadowing the builtin on the exception instance.
 
     """
 
@@ -29,11 +43,20 @@ class AnyLLMError(Exception):
         message: str | None = None,
         original_exception: Exception | None = None,
         provider_name: str | None = None,
+        *,
+        status_code: int | None = None,
+        code: str | None = None,
+        param: str | None = None,
+        error_type: str | None = None,
     ) -> None:
         self.message = message or self.default_message
         super().__init__(self.message)
         self.original_exception = original_exception
         self.provider_name = provider_name
+        self.status_code = status_code
+        self.code = code
+        self.param = param
+        self.error_type = error_type
 
     @override
     def __str__(self) -> str:
@@ -60,8 +83,21 @@ class RateLimitError(AnyLLMError):
         original_exception: Exception | None = None,
         provider_name: str | None = None,
         retry_after: str | None = None,
+        *,
+        status_code: int | None = None,
+        code: str | None = None,
+        param: str | None = None,
+        error_type: str | None = None,
     ) -> None:
-        super().__init__(message, original_exception, provider_name)
+        super().__init__(
+            message,
+            original_exception,
+            provider_name,
+            status_code=status_code,
+            code=code,
+            param=param,
+            error_type=error_type,
+        )
         self.retry_after = retry_after
 
 

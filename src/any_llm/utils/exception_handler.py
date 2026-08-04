@@ -4,7 +4,7 @@ import functools
 import os
 import re
 import warnings
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
 from pydantic import ValidationError
 
@@ -38,6 +38,108 @@ _DEPRECATION_WARNING = (
 )
 
 
+# Message/type-name patterns tried in order; the first match wins, so more
+# specific patterns must stay ahead of broader ones (for example the API-key
+# patterns before the bare "invalid"). Anything unmatched becomes a ProviderError.
+_ERROR_PATTERNS: tuple[tuple[str, type[AnyLLMError]], ...] = (
+    (r"ratelimit|rate_limit|too many requests|rate limit|quota exceeded", RateLimitError),
+    (
+        r"auth|permission|invalid api key|invalid key|unauthorized|authentication|"
+        r"permission denied|access denied|forbidden|invalid_api_key|api key not found|api key invalid|"
+        r"api key not valid|incorrect api key|not valid.*api key|"
+        r"api key.*invalid|invalid.*api key",
+        AuthenticationError,
+    ),
+    (r"context.*length|length.*context|token limit|maximum.*length", ContextLengthExceededError),
+    (r"notfound|not_found|model not found|does not exist|model.*not.*found", ModelNotFoundError),
+    (
+        r"content.*(filter|policy)|(filter|policy).*content|safety|moderation|blocked|harmful content",
+        ContentFilterError,
+    ),
+    (r"invalid|badrequest|validation", InvalidRequestError),
+    (r"insufficient.*funds|payment.*required|budget.*exceeded", InsufficientFundsError),
+    (r"bad.*gateway|upstream.*error|upstream.*provider", UpstreamProviderError),
+    (r"gateway.*timeout", GatewayTimeoutError),
+    (r"timeout|connection|network|server|internal|service|service unavailable", ProviderError),
+)
+
+
+class _ErrorMetadata(NamedTuple):
+    """Structured HTTP fields recovered from a provider SDK exception."""
+
+    status_code: int | None
+    code: str | None
+    param: str | None
+    error_type: str | None
+
+
+def _extract_status_code(exception: Exception) -> int | None:
+    """Read the HTTP status off the exception, or off its attached response."""
+    status_code = getattr(exception, "status_code", None)
+    if isinstance(status_code, int):
+        return status_code
+
+    response = getattr(exception, "response", None)
+    if response is not None:
+        response_status = getattr(response, "status_code", None)
+        if isinstance(response_status, int):
+            return response_status
+
+    return None
+
+
+def _error_body_dicts(exception: Exception) -> tuple[dict[str, Any], ...]:
+    """Dicts to read structured error fields from, in precedence order.
+
+    The OpenAI client unwraps a ``{"error": {...}}`` response body before
+    constructing the exception, so the fields usually sit at the top level of
+    ``body``. Other SDKs keep the nesting, and there the inner ``error`` dict is
+    the authoritative detail while the outer dict is only an envelope: Anthropic
+    sends a literal ``{"type": "error", "error": {"type": "invalid_request_error"}}``,
+    so the nested dict has to win to avoid reporting ``error_type="error"``.
+    """
+    body = getattr(exception, "body", None)
+    if not isinstance(body, dict):
+        return ()
+
+    nested = body.get("error")
+    if isinstance(nested, dict):
+        return (nested, body)
+    return (body,)
+
+
+def _extract_string_field(exception: Exception, name: str, bodies: tuple[dict[str, Any], ...]) -> str | None:
+    """Read a string field off the exception, falling back to the response body."""
+    value = getattr(exception, name, None)
+    if isinstance(value, str):
+        return value
+
+    for body in bodies:
+        body_value = body.get(name)
+        if isinstance(body_value, str):
+            return body_value
+
+    return None
+
+
+def _extract_error_metadata(exception: Exception) -> _ErrorMetadata:
+    """Pull structured HTTP metadata off a provider SDK exception, best-effort.
+
+    Provider-agnostic and non-raising: every field is optional, and a provider
+    that does not report one (or a non-HTTP failure such as a timeout) simply
+    yields ``None`` for it. ``getattr`` is used deliberately here because the
+    incoming exception is an arbitrary third-party SDK type whose attributes are
+    not statically known.
+    """
+    bodies = _error_body_dicts(exception)
+    return _ErrorMetadata(
+        status_code=_extract_status_code(exception),
+        code=_extract_string_field(exception, "code", bodies),
+        param=_extract_string_field(exception, "param", bodies),
+        error_type=_extract_string_field(exception, "type", bodies),
+    )
+
+
 def convert_exception(
     exception: Exception,
     provider_name: str,
@@ -46,6 +148,9 @@ def convert_exception(
 
     This function attempts to classify the exception based on its type name
     and message content, converting it to the appropriate AnyLLMError subclass.
+    Structured HTTP metadata the SDK exposed (``status_code``, ``code``,
+    ``param``, ``type``) is carried onto the unified exception so consumers can
+    classify a failure without unwrapping ``original_exception``.
 
     Args:
         exception: The original exception from the SDK
@@ -58,95 +163,23 @@ def convert_exception(
     if isinstance(exception, AnyLLMError):
         return exception
 
-    original_message = str(exception)
     exc_text = f"{type(exception).__name__.lower()} {str(exception).lower()}"
 
-    if re.search(r"ratelimit|rate_limit|too many requests|rate limit|quota exceeded", exc_text):
-        return RateLimitError(
-            message=original_message,
-            original_exception=exception,
-            provider_name=provider_name,
-        )
+    error_class: type[AnyLLMError] = ProviderError
+    for pattern, candidate in _ERROR_PATTERNS:
+        if re.search(pattern, exc_text):
+            error_class = candidate
+            break
 
-    if re.search(
-        r"auth|permission|invalid api key|invalid key|unauthorized|authentication|"
-        r"permission denied|access denied|forbidden|invalid_api_key|api key not found|api key invalid|"
-        r"api key not valid|incorrect api key|not valid.*api key|"
-        r"api key.*invalid|invalid.*api key",
-        exc_text,
-    ):
-        return AuthenticationError(
-            message=original_message,
-            original_exception=exception,
-            provider_name=provider_name,
-        )
-
-    if re.search(r"context.*length|length.*context|token limit|maximum.*length", exc_text):
-        return ContextLengthExceededError(
-            message=original_message,
-            original_exception=exception,
-            provider_name=provider_name,
-        )
-
-    if re.search(r"notfound|not_found|model not found|does not exist|model.*not.*found", exc_text):
-        return ModelNotFoundError(
-            message=original_message,
-            original_exception=exception,
-            provider_name=provider_name,
-        )
-
-    if re.search(
-        r"content.*(filter|policy)|(filter|policy).*content|safety|moderation|blocked|harmful content",
-        exc_text,
-    ):
-        return ContentFilterError(
-            message=original_message,
-            original_exception=exception,
-            provider_name=provider_name,
-        )
-
-    if re.search(r"invalid|badrequest|validation", exc_text):
-        return InvalidRequestError(
-            message=original_message,
-            original_exception=exception,
-            provider_name=provider_name,
-        )
-
-    if re.search(r"insufficient.*funds|payment.*required|budget.*exceeded", exc_text):
-        return InsufficientFundsError(
-            message=original_message,
-            original_exception=exception,
-            provider_name=provider_name,
-        )
-
-    if re.search(r"bad.*gateway|upstream.*error|upstream.*provider", exc_text):
-        return UpstreamProviderError(
-            message=original_message,
-            original_exception=exception,
-            provider_name=provider_name,
-        )
-
-    if re.search(r"gateway.*timeout", exc_text):
-        return GatewayTimeoutError(
-            message=original_message,
-            original_exception=exception,
-            provider_name=provider_name,
-        )
-
-    if re.search(
-        r"timeout|connection|network|server|internal|service|service unavailable",
-        exc_text,
-    ):
-        return ProviderError(
-            message=original_message,
-            original_exception=exception,
-            provider_name=provider_name,
-        )
-
-    return ProviderError(
-        message=original_message,
+    metadata = _extract_error_metadata(exception)
+    return error_class(
+        message=str(exception),
         original_exception=exception,
         provider_name=provider_name,
+        status_code=metadata.status_code,
+        code=metadata.code,
+        param=metadata.param,
+        error_type=metadata.error_type,
     )
 
 
