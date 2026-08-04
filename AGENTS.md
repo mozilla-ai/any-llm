@@ -28,7 +28,7 @@ This repo uses `uv` for local dev (Python 3.11+). For the full, up-to-date comma
 - Do not use class-based test grouping (`class TestFoo:`). All tests should be standalone functions.
 - Do not add decorative section-separator comments (e.g., `# -----------` banners). Well-named test functions and natural file ordering are sufficient.
 - Place imports at the top of test files unless the import is for an optional dependency that may not be installed (e.g., provider-specific SDKs like `mistralai`, `cohere`). In that case, inline imports inside the test function are acceptable to avoid breaking the entire file.
-- When the integration suite is red, follow the `integration-test-triage` skill before assuming a regression.
+- When the integration suite is red, follow the `integration-test-triage` skill (`.claude/skills/integration-test-triage/SKILL.md`) before assuming a regression.
 - The dataclass/dict structured-output path (`parse_responses_output`) is separate from the Pydantic `responses.parse()` path; a bug can hit one and not the other, so test both.
 
 ## Commit & Pull Request Guidelines
