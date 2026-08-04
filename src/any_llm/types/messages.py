@@ -14,7 +14,7 @@ from anthropic.types import TextBlock as AnthropicTextBlock
 from anthropic.types import ThinkingBlock as AnthropicThinkingBlock
 from anthropic.types import ToolUseBlock as AnthropicToolUseBlock
 from anthropic.types import Usage as AnthropicUsage
-from anthropic.types.beta import BetaCompactionBlock, BetaCompactionContentBlockDelta
+from anthropic.types.beta import BetaCompactionBlock, BetaCompactionContentBlockDelta, BetaContentBlock
 from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage, ParsedBetaTextBlock
 from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
 from anthropic.types.raw_message_delta_event import Delta as AnthropicMessageDelta
@@ -80,7 +80,7 @@ CompactionDelta = BetaCompactionContentBlockDelta
 
 ContentBlock = TextBlock | ToolUseBlock | ThinkingBlock | CompactionBlock
 
-MessageContentBlock = AnthropicContentBlock | CompactionBlock
+MessageContentBlock = AnthropicContentBlock | BetaContentBlock
 
 
 class MessageResponse(AnthropicMessage):
@@ -114,7 +114,7 @@ class MessageStopEvent(AnthropicMessageStopEvent):
 
 
 class ContentBlockStartEvent(AnthropicContentBlockStartEvent):
-    content_block: AnthropicContentBlock | CompactionBlock  # type: ignore[assignment]
+    content_block: MessageContentBlock  # type: ignore[assignment]
 
 
 class ContentBlockDeltaEvent(AnthropicContentBlockDeltaEvent):
@@ -122,7 +122,7 @@ class ContentBlockDeltaEvent(AnthropicContentBlockDeltaEvent):
 
 
 class ContentBlockStopEvent(AnthropicContentBlockStopEvent):
-    pass
+    content_block: MessageContentBlock | None = None
 
 
 MessageStreamEvent = (

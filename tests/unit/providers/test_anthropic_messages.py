@@ -4,12 +4,13 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any, Self
+from typing import Any, Self, cast
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import httpx
 import pytest
 from anthropic.types import Message, TextBlock, ThinkingBlock, ToolUseBlock, Usage
+from anthropic.types.beta import BetaMCPToolUseBlock, BetaMessage, BetaUsage
 from pydantic import BaseModel
 
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
@@ -89,6 +90,31 @@ def test_convert_native_message_to_response_tool_use() -> None:
     assert result.content[0].type == "tool_use"
     assert result.content[0].name == "get_weather"
     assert result.content[0].input == {"city": "London"}
+
+
+def test_convert_native_message_to_response_beta_only_block() -> None:
+    block = BetaMCPToolUseBlock(
+        id="mcp_tool_1",
+        input={"query": "test"},
+        name="search",
+        server_name="test-server",
+        type="mcp_tool_use",
+    )
+    message = BetaMessage(
+        id="msg_beta",
+        type="message",
+        role="assistant",
+        model="claude-opus-5",
+        stop_reason="tool_use",
+        stop_sequence=None,
+        content=[block],
+        usage=BetaUsage(input_tokens=1, output_tokens=1),
+    )
+
+    result = BaseAnthropicProvider._convert_native_message_to_response(cast("Message", message))
+
+    assert isinstance(result.content[0], BetaMCPToolUseBlock)
+    assert result.content[0].server_name == "test-server"
 
 
 def test_convert_native_message_to_response_thinking() -> None:
@@ -551,9 +577,92 @@ async def test_amessages_streams_beta_compaction_events() -> None:
     assert content_delta.delta.type == "compaction_delta"
     assert content_delta.delta.content == "Conversation summary"
 
+    content_stop = collected[3]
+    assert isinstance(content_stop, ContentBlockStopEvent)
+    assert content_stop.content_block is not None
+    assert content_stop.content_block.type == "compaction"
+    assert content_stop.content_block.content == "Conversation summary"
+
     message_delta = collected[4]
     assert isinstance(message_delta, MessageDeltaEvent)
     assert message_delta.delta.stop_reason == "compaction"
+
+
+@pytest.mark.asyncio
+async def test_amessages_streams_beta_only_content_block() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.query == b"beta=true"
+        events = [
+            (
+                "message_start",
+                {
+                    "type": "message_start",
+                    "message": {
+                        "id": "msg_mcp",
+                        "type": "message",
+                        "role": "assistant",
+                        "model": "claude-opus-5",
+                        "stop_reason": None,
+                        "stop_sequence": None,
+                        "content": [],
+                        "usage": {"input_tokens": 1, "output_tokens": 0},
+                    },
+                },
+            ),
+            (
+                "content_block_start",
+                {
+                    "type": "content_block_start",
+                    "index": 0,
+                    "content_block": {
+                        "type": "mcp_tool_use",
+                        "id": "mcp_tool_1",
+                        "input": {"query": "test"},
+                        "name": "search",
+                        "server_name": "test-server",
+                    },
+                },
+            ),
+            ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+            (
+                "message_delta",
+                {
+                    "type": "message_delta",
+                    "delta": {"stop_reason": "tool_use", "stop_sequence": None},
+                    "usage": {"output_tokens": 1},
+                },
+            ),
+            ("message_stop", {"type": "message_stop"}),
+        ]
+        body = "".join(f"event: {name}\ndata: {json.dumps(data)}\n\n" for name, data in events)
+        return httpx.Response(200, text=body, headers={"content-type": "text/event-stream"})
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        stream=True,
+        betas=["mcp-client-2025-04-04"],
+    )
+
+    try:
+        stream = await provider._amessages(params)
+        assert isinstance(stream, AsyncIterator)
+        collected = [event async for event in stream]
+    finally:
+        await http_client.aclose()
+
+    content_start = collected[1]
+    assert isinstance(content_start, ContentBlockStartEvent)
+    assert isinstance(content_start.content_block, BetaMCPToolUseBlock)
+    assert content_start.content_block.server_name == "test-server"
+
+    content_stop = collected[2]
+    assert isinstance(content_stop, ContentBlockStopEvent)
+    assert isinstance(content_stop.content_block, BetaMCPToolUseBlock)
+    assert content_stop.content_block.input == {"query": "test"}
 
 
 @pytest.mark.asyncio
