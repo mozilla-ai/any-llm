@@ -372,6 +372,24 @@ def test_messages_betas_does_not_warn_for_recognized_edit(caplog: pytest.LogCapt
     assert caplog.text == ""
 
 
+@pytest.mark.parametrize("edit", [{"value": "custom"}, {"type": 5}])
+def test_messages_betas_ignores_edit_without_string_type(
+    edit: dict[str, object], caplog: pytest.LogCaptureFixture
+) -> None:
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        context_management={"edits": [edit]},
+    )
+
+    with caplog.at_level(logging.WARNING, logger="any_llm"):
+        betas = _messages_betas(params)
+
+    assert betas == []
+    assert caplog.text == ""
+
+
 def test_messages_betas_accepts_minimum_compaction_trigger() -> None:
     params = MessagesParams(
         model="claude-opus-5",
@@ -677,7 +695,12 @@ async def test_amessages_streams_beta_compaction_events() -> None:
                         "stop_reason": None,
                         "stop_sequence": None,
                         "content": [],
-                        "usage": {"input_tokens": 10, "output_tokens": 0},
+                        "container": {
+                            "id": "container_1",
+                            "expires_at": "2026-08-05T00:00:00Z",
+                            "skills": [{"skill_id": "pdf", "type": "anthropic", "version": "latest"}],
+                        },
+                        "usage": {"input_tokens": 10, "output_tokens": 0, "speed": "fast"},
                     },
                 },
             ),
@@ -736,6 +759,13 @@ async def test_amessages_streams_beta_compaction_events() -> None:
         "message_delta",
         "message_stop",
     ]
+    message_start = collected[0]
+    assert isinstance(message_start, MessageStartEvent)
+    assert message_start.message.usage.speed == "fast"
+    assert message_start.message.container is not None
+    assert message_start.message.container.skills is not None
+    assert message_start.message.container.skills[0].skill_id == "pdf"
+
     content_start = collected[1]
     assert isinstance(content_start, ContentBlockStartEvent)
     assert content_start.content_block.type == "compaction"

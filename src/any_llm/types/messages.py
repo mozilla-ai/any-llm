@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from anthropic.types import ContentBlock as AnthropicContentBlock
 from anthropic.types import InputJSONDelta, RawContentBlockDelta, TextDelta, ThinkingDelta
@@ -17,6 +17,7 @@ from anthropic.types import Usage as AnthropicUsage
 from anthropic.types.beta import (
     BetaCompactionBlock,
     BetaCompactionContentBlockDelta,
+    BetaContainer,
     BetaContentBlock,
     BetaIterationsUsage,
     BetaStopReason,
@@ -79,6 +80,7 @@ StopReason = BetaStopReason
 
 class MessageUsage(AnthropicUsage):
     iterations: BetaIterationsUsage | None = None
+    speed: Literal["standard", "fast"] | None = None
 
 
 TextBlock = AnthropicTextBlock
@@ -94,7 +96,7 @@ CompactionBlock = BetaCompactionBlock
 CompactionDelta = BetaCompactionContentBlockDelta
 
 
-def _normalize_thinking_block(value: Any) -> Any:
+def _normalize_thinking_block(value: object) -> object:
     if isinstance(value, (AnthropicThinkingBlock, BetaThinkingBlock)) and not isinstance(value, ThinkingBlock):
         return ThinkingBlock.model_validate(value, from_attributes=True)
     return value
@@ -109,6 +111,7 @@ ContentBlock = MessageContentBlock
 
 
 class MessageResponse(AnthropicMessage):
+    container: BetaContainer | None = None  # type: ignore[assignment]
     content: list[MessageContentBlock]  # type: ignore[assignment]
     stop_reason: StopReason | None = None  # type: ignore[assignment]
     usage: MessageUsage

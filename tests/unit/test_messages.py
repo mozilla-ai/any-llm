@@ -1,12 +1,24 @@
 """Tests for messages()/amessages() SDK API."""
 
 from collections.abc import AsyncGenerator, AsyncIterator
+from inspect import signature
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from anthropic.types.beta import BetaCompactionIterationUsage, BetaIterationsUsage, BetaMessage, BetaStopReason
+from anthropic.types.beta import (
+    BetaCompactionIterationUsage,
+    BetaContainer,
+    BetaIterationsUsage,
+    BetaMessage,
+    BetaMessageDeltaUsage,
+    BetaSkill,
+    BetaStopReason,
+    BetaUsage,
+)
 from anthropic.types.beta.beta_context_management_response import BetaContextManagementResponse
+from anthropic.types.beta.parsed_beta_message import ParsedBetaTextBlock
+from pydantic import BaseModel
 
 from any_llm.any_llm import AnyLLM
 from any_llm.api import amessages, messages
@@ -188,8 +200,6 @@ def test_message_response_model() -> None:
 
 
 def test_message_usage_preserves_typed_beta_iterations() -> None:
-    from anthropic.types.beta.beta_usage import BetaUsage
-
     sdk_usage = BetaUsage.model_validate(
         {
             "input_tokens": 100,
@@ -215,8 +225,6 @@ def test_message_usage_preserves_typed_beta_iterations() -> None:
 
 
 def test_message_delta_usage_preserves_typed_beta_iterations() -> None:
-    from anthropic.types.beta.beta_message_delta_usage import BetaMessageDeltaUsage
-
     sdk_usage = BetaMessageDeltaUsage.model_validate(
         {
             "output_tokens": 20,
@@ -238,6 +246,34 @@ def test_message_delta_usage_preserves_typed_beta_iterations() -> None:
     assert usage.iterations is not None
     assert isinstance(usage.iterations[0], BetaCompactionIterationUsage)
     assert usage.model_dump()["iterations"][0]["type"] == "compaction"
+
+
+def test_message_response_preserves_beta_usage_speed_and_container_skills() -> None:
+    beta_message = BetaMessage.model_validate(
+        {
+            "id": "msg_beta",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-opus-5",
+            "stop_reason": "end_turn",
+            "stop_sequence": None,
+            "content": [],
+            "container": {
+                "id": "container_1",
+                "expires_at": "2026-08-05T00:00:00Z",
+                "skills": [{"skill_id": "pdf", "type": "anthropic", "version": "latest"}],
+            },
+            "usage": {"input_tokens": 10, "output_tokens": 1, "speed": "fast"},
+        }
+    )
+
+    response = MessageResponse.model_validate(beta_message, from_attributes=True)
+
+    assert response.usage.speed == "fast"
+    assert isinstance(response.container, BetaContainer)
+    assert response.container.skills is not None
+    assert isinstance(response.container.skills[0], BetaSkill)
+    assert response.container.skills[0].skill_id == "pdf"
 
 
 def test_message_response_preserves_typed_beta_telemetry() -> None:
@@ -461,8 +497,6 @@ async def test_amessages_parameter_capture() -> None:
 
 @pytest.mark.asyncio
 async def test_amessages_forwards_context_management_and_betas() -> None:
-    from inspect import signature
-
     assert "context_management" in signature(amessages).parameters
     assert "betas" in signature(amessages).parameters
     assert "context_management" in signature(AnyLLM.amessages).parameters
@@ -489,10 +523,6 @@ async def test_amessages_forwards_context_management_and_betas() -> None:
 
 
 def test_messages_returns_parsed_beta_message_without_treating_it_as_a_stream() -> None:
-    from anthropic.types.beta import BetaUsage
-    from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage, ParsedBetaTextBlock
-    from pydantic import BaseModel
-
     class Answer(BaseModel):
         value: str
 
@@ -528,8 +558,6 @@ def test_messages_returns_parsed_beta_message_without_treating_it_as_a_stream() 
 
 
 def test_messages_forwards_context_management_and_betas() -> None:
-    from inspect import signature
-
     assert "context_management" in signature(messages).parameters
     assert "betas" in signature(messages).parameters
     assert "context_management" in signature(AnyLLM.messages).parameters
