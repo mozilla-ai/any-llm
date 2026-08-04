@@ -44,10 +44,12 @@ _DEPRECATION_WARNING = (
 _ERROR_PATTERNS: tuple[tuple[str, type[AnyLLMError]], ...] = (
     (r"ratelimit|rate_limit|too many requests|rate limit|quota exceeded", RateLimitError),
     (
-        r"auth|permission|invalid api key|invalid key|unauthorized|authentication|"
-        r"permission denied|access denied|forbidden|invalid_api_key|api key not found|api key invalid|"
-        r"api key not valid|incorrect api key|not valid.*api key|"
-        r"api key.*invalid|invalid.*api key",
+        (
+            r"auth|permission|invalid api key|invalid key|unauthorized|authentication|"
+            r"permission denied|access denied|forbidden|invalid_api_key|api key not found|api key invalid|"
+            r"api key not valid|incorrect api key|not valid.*api key|"
+            r"api key.*invalid|invalid.*api key"
+        ),
         AuthenticationError,
     ),
     (r"context.*length|length.*context|token limit|maximum.*length", ContextLengthExceededError),

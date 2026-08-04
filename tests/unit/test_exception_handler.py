@@ -16,7 +16,12 @@ from any_llm.exceptions import (
     RateLimitError,
     UpstreamProviderError,
 )
-from any_llm.utils.exception_handler import _ERROR_PATTERNS, _handle_exception, convert_exception
+from any_llm.utils.exception_handler import (
+    _ERROR_PATTERNS,
+    _STATUS_ERROR_CLASSES,
+    _handle_exception,
+    convert_exception,
+)
 
 
 class _StatusError(Exception):
@@ -389,16 +394,20 @@ def test_convert_exception_classification_order_is_pinned(message: str, expected
     assert type(convert_exception(Exception(message), "openai")) is expected
 
 
-def test_every_pattern_class_accepts_the_metadata_keywords() -> None:
-    """Every class in the table must accept the structured metadata keywords.
+def test_every_classified_class_accepts_the_metadata_keywords() -> None:
+    """Every class either table can select must accept the structured metadata keywords.
 
     convert_exception constructs through a ``type[AnyLLMError]`` variable, so
     mypy checks the call against the base signature only. A subclass with an
     incompatible ``__init__`` (MissingApiKeyError, BatchNotCompleteError) would
     pass the type check and raise TypeError inside the exception handler,
-    masking the provider's original error.
+    masking the provider's original error. Both the message table and the status
+    table feed that construction site, so both are covered here.
     """
-    for _pattern, error_class in _ERROR_PATTERNS:
+    classified = {error_class for _pattern, error_class in _ERROR_PATTERNS}
+    classified.update(_STATUS_ERROR_CLASSES.values())
+    classified.update({InvalidRequestError, ProviderError})
+    for error_class in classified:
         error = error_class(
             message="boom",
             original_exception=ValueError("boom"),
