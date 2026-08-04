@@ -5,14 +5,18 @@ from pydantic import BaseModel, ValidationError
 
 from any_llm.exceptions import (
     AnyLLMError,
+    AuthenticationError,
+    ContentFilterError,
+    ContextLengthExceededError,
     GatewayTimeoutError,
     InsufficientFundsError,
     InvalidRequestError,
+    ModelNotFoundError,
     ProviderError,
     RateLimitError,
     UpstreamProviderError,
 )
-from any_llm.utils.exception_handler import _handle_exception, convert_exception
+from any_llm.utils.exception_handler import _ERROR_PATTERNS, _handle_exception, convert_exception
 
 
 class _StatusError(Exception):
@@ -291,3 +295,54 @@ def test_convert_exception_preserves_already_unified_error_untouched() -> None:
     assert result is original
     assert result.status_code == 400
     assert result.param == "reasoning_effort"
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Rate limit exceeded", RateLimitError),
+        ("Unauthorized", AuthenticationError),
+        ("This model's maximum context length is 8192 tokens", ContextLengthExceededError),
+        ("The model gpt-9 does not exist", ModelNotFoundError),
+        ("Your request was blocked by the content policy", ContentFilterError),
+        ("Invalid value for temperature", InvalidRequestError),
+        ("Payment required", InsufficientFundsError),
+        ("Bad gateway", UpstreamProviderError),
+        ("Gateway timeout", GatewayTimeoutError),
+        ("Connection reset by peer", ProviderError),
+        ("Wibble wobble", ProviderError),
+    ],
+)
+def test_convert_exception_classification_order_is_pinned(message: str, expected: type[AnyLLMError]) -> None:
+    """One representative message per entry in the ordered pattern table.
+
+    The table is matched first-hit-wins, so a reordering or a broadened pattern
+    silently re-routes failures to a different exception type. Pinning every
+    entry (including the unmatched fallback) makes that visible.
+    """
+    assert type(convert_exception(Exception(message), "openai")) is expected
+
+
+def test_every_pattern_class_accepts_the_metadata_keywords() -> None:
+    """Every class in the table must accept the structured metadata keywords.
+
+    convert_exception constructs through a ``type[AnyLLMError]`` variable, so
+    mypy checks the call against the base signature only. A subclass with an
+    incompatible ``__init__`` (MissingApiKeyError, BatchNotCompleteError) would
+    pass the type check and raise TypeError inside the exception handler,
+    masking the provider's original error.
+    """
+    for _pattern, error_class in _ERROR_PATTERNS:
+        error = error_class(
+            message="boom",
+            original_exception=ValueError("boom"),
+            provider_name="openai",
+            status_code=400,
+            code="unsupported_parameter",
+            param="reasoning_effort",
+            error_type="invalid_request_error",
+        )
+        assert error.status_code == 400
+        assert error.code == "unsupported_parameter"
+        assert error.param == "reasoning_effort"
+        assert error.error_type == "invalid_request_error"

@@ -328,6 +328,7 @@ except InvalidRequestError as e:
         print("Retry with reasoning_effort set to 'none'")
 ```
 
-These fields are populated best-effort from whatever the provider SDK exposed. Any
-field a provider does not report is `None`, and a non-HTTP failure such as a timeout
-or connection error reports `status_code=None`.
+These fields are populated best-effort from the shapes provider SDKs expose: an
+attribute on the exception, or the parsed response body. Coverage varies by provider,
+so treat every field as optional. Anything `any-llm` cannot recover is `None`,
+including `status_code` for a non-HTTP failure such as a timeout or connection error.
