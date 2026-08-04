@@ -271,6 +271,129 @@ def test_messages_betas_does_not_warn_for_recognized_edit(caplog: pytest.LogCapt
 
 
 @pytest.mark.asyncio
+async def test_amessages_merges_beta_extra_header_with_inferred_betas() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "msg_test",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-opus-5",
+                "stop_reason": "end_turn",
+                "stop_sequence": None,
+                "content": [{"type": "text", "text": "Done"}],
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        )
+
+    extra_headers = {
+        "Anthropic-Beta": "fast-mode-2026-02-01, compact-2026-01-12",
+        "x-custom-header": "custom-value",
+    }
+    original_extra_headers = extra_headers.copy()
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        context_management={"edits": [{"type": "compact_20260112"}]},
+    )
+
+    try:
+        await provider._amessages(params, extra_headers=extra_headers)
+    finally:
+        await http_client.aclose()
+
+    request = requests[0]
+    assert request.url.query == b"beta=true"
+    assert request.headers["anthropic-beta"] == "compact-2026-01-12,fast-mode-2026-02-01"
+    assert request.headers["x-custom-header"] == "custom-value"
+    assert extra_headers == original_extra_headers
+
+
+@pytest.mark.asyncio
+async def test_amessages_routes_beta_extra_header_through_beta_resource() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "msg_test",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-opus-5",
+                "stop_reason": "end_turn",
+                "stop_sequence": None,
+                "content": [{"type": "text", "text": "Done"}],
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+    )
+
+    try:
+        await provider._amessages(params, extra_headers={"anthropic-beta": "fast-mode-2026-02-01"})
+    finally:
+        await http_client.aclose()
+
+    assert requests[0].url.query == b"beta=true"
+    assert requests[0].headers["anthropic-beta"] == "fast-mode-2026-02-01"
+
+
+@pytest.mark.asyncio
+async def test_amessages_beta_extra_header_suppresses_unknown_edit_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "id": "msg_test",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-opus-5",
+                "stop_reason": "end_turn",
+                "stop_sequence": None,
+                "content": [{"type": "text", "text": "Done"}],
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        context_management={"edits": [{"type": "clear_future_thing_2027"}]},
+    )
+
+    try:
+        with caplog.at_level(logging.WARNING, logger="any_llm"):
+            await provider._amessages(
+                params,
+                extra_headers={"anthropic-beta": "future-context-management-2027-01-01"},
+            )
+    finally:
+        await http_client.aclose()
+
+    assert caplog.text == ""
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("context_management", "betas", "expected_betas"),
     [

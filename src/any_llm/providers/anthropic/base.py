@@ -69,27 +69,50 @@ def _get_context_edit_type(edit: Any) -> str | None:
     return edit_type if isinstance(edit_type, str) else None
 
 
-def _messages_betas(params: MessagesParams) -> list[str]:
+def _pop_anthropic_beta_header(kwargs: dict[str, Any]) -> list[str]:
+    extra_headers = kwargs.get("extra_headers")
+    if not isinstance(extra_headers, Mapping):
+        return []
+
+    header_betas: list[str] = []
+    remaining_headers: dict[Any, Any] = {}
+    found_beta_header = False
+    for name, value in extra_headers.items():
+        if isinstance(name, str) and name.lower() == "anthropic-beta":
+            found_beta_header = True
+            if isinstance(value, str):
+                header_betas.extend(beta.strip() for beta in value.split(",") if beta.strip())
+        else:
+            remaining_headers[name] = value
+
+    if found_beta_header:
+        kwargs["extra_headers"] = remaining_headers
+    return header_betas
+
+
+def _messages_betas(params: MessagesParams, header_betas: list[str] | None = None) -> list[str]:
     betas = list(params.betas or [])
-    has_explicit_betas = bool(params.betas)
-    if params.context_management is None:
-        return betas
+    has_explicit_betas = bool(params.betas or header_betas)
+    if params.context_management is not None:
+        for edit in params.context_management.get("edits", []):
+            edit_type = _get_context_edit_type(edit)
+            inferred_beta = None
+            if edit_type == "compact_20260112":
+                inferred_beta = _COMPACTION_BETA
+            elif edit_type in {"clear_tool_uses_20250919", "clear_thinking_20251015"}:
+                inferred_beta = _CONTEXT_MANAGEMENT_BETA
 
-    for edit in params.context_management.get("edits", []):
-        edit_type = _get_context_edit_type(edit)
-        inferred_beta = None
-        if edit_type == "compact_20260112":
-            inferred_beta = _COMPACTION_BETA
-        elif edit_type in {"clear_tool_uses_20250919", "clear_thinking_20251015"}:
-            inferred_beta = _CONTEXT_MANAGEMENT_BETA
+            if inferred_beta is not None and inferred_beta not in betas:
+                betas.append(inferred_beta)
+            elif inferred_beta is None and edit_type is not None and not has_explicit_betas:
+                logger.warning(
+                    "Cannot infer an Anthropic beta for context-management edit type %r; pass betas explicitly.",
+                    edit_type,
+                )
 
-        if inferred_beta is not None and inferred_beta not in betas:
-            betas.append(inferred_beta)
-        elif inferred_beta is None and edit_type is not None and not has_explicit_betas:
-            logger.warning(
-                "Cannot infer an Anthropic beta for context-management edit type %r; pass betas explicitly.",
-                edit_type,
-            )
+    for beta in header_betas or []:
+        if beta not in betas:
+            betas.append(beta)
     return betas
 
 
@@ -238,7 +261,8 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         ``messages.create(output_config=...)`` and returns a ``MessageResponse`` (the base layer
         then builds the matching ``ParsedMessage`` from its JSON text).
         """
-        betas = _messages_betas(params)
+        header_betas = _pop_anthropic_beta_header(kwargs)
+        betas = _messages_betas(params, header_betas)
         use_beta = params.context_management is not None or bool(betas)
         messages_resource: Any
 
