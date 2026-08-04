@@ -18,7 +18,8 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).parent
 DOCS_SRC = Path("docs")
 SITE_DIR = Path("site")
-SITE_IGNORE_PATTERNS = ("*.ipynb", ".gitignore")
+# AGENTS.md/CLAUDE.md are agent guidance for contributors, not published documentation.
+SITE_IGNORE_PATTERNS = ("*.ipynb", ".gitignore", "AGENTS.md", "CLAUDE.md")
 
 
 def run_generator(script_name: str) -> None:

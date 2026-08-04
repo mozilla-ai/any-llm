@@ -60,6 +60,8 @@ def test_main_writes_dynamic_cookbook_summary(monkeypatch: pytest.MonkeyPatch, t
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("# Placeholder\n", encoding="utf-8")
     (docs_dir / ".gitignore").write_text("cookbooks/*.md\n", encoding="utf-8")
+    (docs_dir / "AGENTS.md").write_text("# Documentation Guidelines\n", encoding="utf-8")
+    (docs_dir / "CLAUDE.md").symlink_to("AGENTS.md")
 
     _write_notebook(
         cookbooks_dir / "browser_use_with_any_llm.ipynb",
@@ -78,6 +80,8 @@ def test_main_writes_dynamic_cookbook_summary(monkeypatch: pytest.MonkeyPatch, t
     assert (site_dir / "cookbooks" / "browser-use-with-any-llm.md").exists()
     assert not (site_dir / "cookbooks" / "browser_use_with_any_llm.ipynb").exists()
     assert not (site_dir / ".gitignore").exists()
+    assert not (site_dir / "AGENTS.md").exists()
+    assert not (site_dir / "CLAUDE.md").exists()
 
 
 def test_build_summary_falls_back_when_no_cookbooks(monkeypatch: pytest.MonkeyPatch) -> None:
