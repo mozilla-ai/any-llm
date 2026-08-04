@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 openai = pytest.importorskip("openai")
@@ -167,3 +168,28 @@ def test_rate_limit_metadata_is_preserved_on_the_unified_error() -> None:
     assert result.status_code == 429
     assert result.code == "rate_limit_exceeded"
     assert result.error_type == "rate_limit_error"
+
+
+def test_retry_after_is_read_from_a_real_httpx_response() -> None:
+    """Pins the case-insensitive httpx.Headers lookup, not just a dict.
+
+    The SDK attaches a real httpx.Response, so the header arrives however the
+    provider capitalized it on the wire.
+    """
+    response = httpx.Response(
+        429,
+        request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions"),
+        headers={"Retry-After": "30"},
+    )
+
+    original = OpenAIRateLimitError(
+        message="Rate limit exceeded",
+        response=response,
+        body={"message": "Rate limit exceeded", "type": "rate_limit_error"},
+    )
+
+    result = convert_exception(original, "openai")
+
+    assert isinstance(result, RateLimitError)
+    assert result.status_code == 429
+    assert result.retry_after == "30"

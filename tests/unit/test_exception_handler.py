@@ -277,6 +277,58 @@ def test_convert_exception_leaves_metadata_none_for_non_http_failure() -> None:
     assert result.error_type is None
 
 
+def test_convert_exception_carries_retry_after_from_response_headers() -> None:
+    """RateLimitError.retry_after is filled from the Retry-After header."""
+    error = _ResponseStatusError(429, "Rate limit exceeded")
+    error.response.headers = {"retry-after": "30"}  # type: ignore[attr-defined]
+    result = convert_exception(error, "openai")
+    assert isinstance(result, RateLimitError)
+    assert result.retry_after == "30"
+
+
+def test_convert_exception_reads_retry_after_case_insensitively() -> None:
+    """A plain dict is case-sensitive, so the canonical header spelling is tried too."""
+    error = _ResponseStatusError(429, "Rate limit exceeded")
+    error.response.headers = {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}  # type: ignore[attr-defined]
+    result = convert_exception(error, "openai")
+    assert isinstance(result, RateLimitError)
+    assert result.retry_after == "Wed, 21 Oct 2026 07:28:00 GMT"
+
+
+def test_convert_exception_stringifies_numeric_retry_after() -> None:
+    """A header store holding an int still yields the declared str type."""
+    error = _ResponseStatusError(429, "Rate limit exceeded")
+    error.response.headers = {"retry-after": 30}  # type: ignore[attr-defined]
+    result = convert_exception(error, "openai")
+    assert isinstance(result, RateLimitError)
+    assert result.retry_after == "30"
+
+
+def test_convert_exception_retry_after_is_none_without_the_header() -> None:
+    error = _ResponseStatusError(429, "Rate limit exceeded")
+    error.response.headers = {}  # type: ignore[attr-defined]
+    result = convert_exception(error, "openai")
+    assert isinstance(result, RateLimitError)
+    assert result.retry_after is None
+
+
+def test_convert_exception_retry_after_is_none_without_usable_headers() -> None:
+    """A response with no headers mapping at all does not raise."""
+    error = _ResponseStatusError(429, "Rate limit exceeded")
+    result = convert_exception(error, "openai")
+    assert isinstance(result, RateLimitError)
+    assert result.retry_after is None
+
+
+def test_convert_exception_ignores_retry_after_on_non_rate_limit_errors() -> None:
+    """Only RateLimitError declares retry_after, so nothing else grows the field."""
+    error = _ResponseStatusError(400, "Invalid request")
+    error.response.headers = {"retry-after": "30"}  # type: ignore[attr-defined]
+    result = convert_exception(error, "openai")
+    assert isinstance(result, InvalidRequestError)
+    assert not hasattr(result, "retry_after")
+
+
 def test_convert_exception_carries_metadata_onto_rate_limit_error() -> None:
     """RateLimitError overrides ``__init__``, so it must forward the new fields."""
     error = _StatusError(429, "Rate limit exceeded", code="rate_limit_exceeded", type="rate_limit_error")

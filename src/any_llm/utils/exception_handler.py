@@ -140,6 +140,29 @@ def _extract_error_metadata(exception: Exception) -> _ErrorMetadata:
     )
 
 
+def _extract_retry_after(exception: Exception) -> str | None:
+    """Read the ``Retry-After`` header off the exception's attached response.
+
+    Returned verbatim, because the header is either a number of seconds or an
+    HTTP-date and normalizing it would throw away the caller's ability to tell
+    the two apart. ``httpx.Headers`` lookups are case-insensitive, but a plain
+    dict is not, so both spellings are tried.
+    """
+    headers = getattr(getattr(exception, "response", None), "headers", None)
+    get_header = getattr(headers, "get", None)
+    if not callable(get_header):
+        return None
+
+    for name in ("retry-after", "Retry-After"):
+        value = get_header(name)
+        if isinstance(value, str):
+            return value
+        if isinstance(value, int) and not isinstance(value, bool):
+            return str(value)
+
+    return None
+
+
 def convert_exception(
     exception: Exception,
     provider_name: str,
@@ -150,7 +173,9 @@ def convert_exception(
     and message content, converting it to the appropriate AnyLLMError subclass.
     Structured HTTP metadata the SDK exposed (``status_code``, ``code``,
     ``param``, ``type``) is carried onto the unified exception so consumers can
-    classify a failure without unwrapping ``original_exception``.
+    classify a failure without unwrapping ``original_exception``, and a
+    :class:`~any_llm.exceptions.RateLimitError` additionally carries the
+    ``Retry-After`` header when the provider sent one.
 
     Args:
         exception: The original exception from the SDK
@@ -172,7 +197,7 @@ def convert_exception(
             break
 
     metadata = _extract_error_metadata(exception)
-    return error_class(
+    error = error_class(
         message=str(exception),
         original_exception=exception,
         provider_name=provider_name,
@@ -181,6 +206,12 @@ def convert_exception(
         param=metadata.param,
         error_type=metadata.error_type,
     )
+    # Assigned after construction rather than passed in: retry_after exists only
+    # on RateLimitError, and the shared construction site above is typed against
+    # the base class. isinstance keeps the attribute access type-checked.
+    if isinstance(error, RateLimitError):
+        error.retry_after = _extract_retry_after(exception)
+    return error
 
 
 def _handle_exception(exception: Exception, provider_name: str) -> None:
