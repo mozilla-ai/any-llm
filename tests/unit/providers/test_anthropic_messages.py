@@ -2,12 +2,14 @@
 
 import json
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Any, Self
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import httpx
 import pytest
 from anthropic.types import Message, TextBlock, ThinkingBlock, ToolUseBlock, Usage
+from pydantic import BaseModel
 
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.base import BaseAnthropicProvider
@@ -22,6 +24,20 @@ from any_llm.types.messages import (
     MessageStartEvent,
     MessageStopEvent,
 )
+
+
+class _ContextEditModel(BaseModel):
+    type: str
+
+
+@dataclass
+class _ContextEditDataclass:
+    type: str
+
+
+@dataclass
+class _UnknownContextEdit:
+    value: str
 
 
 def _make_usage(**overrides: Any) -> Usage:
@@ -215,6 +231,21 @@ async def test_amessages_context_compaction_uses_beta_resource_and_preserves_res
             {"edits": [{"type": "clear_tool_uses_20250919"}]},
             None,
             "context-management-2025-06-27",
+        ),
+        (
+            {"edits": [_ContextEditModel(type="compact_20260112")]},
+            None,
+            "compact-2026-01-12",
+        ),
+        (
+            {"edits": [_ContextEditDataclass(type="compact_20260112")]},
+            None,
+            "compact-2026-01-12",
+        ),
+        (
+            {"edits": [_UnknownContextEdit(value="custom")]},
+            ["custom-beta"],
+            "custom-beta",
         ),
         (None, ["custom-beta"], "custom-beta"),
     ],

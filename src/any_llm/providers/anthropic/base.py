@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -63,13 +64,18 @@ _ANTHROPIC_TO_OPENAI_STATUS_MAP: dict[str, str] = {
 }
 
 
+def _get_context_edit_type(edit: Any) -> str | None:
+    edit_type = edit.get("type") if isinstance(edit, Mapping) else getattr(edit, "type", None)
+    return edit_type if isinstance(edit_type, str) else None
+
+
 def _messages_betas(params: MessagesParams) -> list[str]:
     betas = list(params.betas or [])
     if params.context_management is None:
         return betas
 
     for edit in params.context_management.get("edits", []):
-        edit_type = edit.get("type")
+        edit_type = _get_context_edit_type(edit)
         inferred_beta = None
         if edit_type == "compact_20260112":
             inferred_beta = _COMPACTION_BETA
