@@ -412,3 +412,86 @@ def test_every_pattern_class_accepts_the_metadata_keywords() -> None:
         assert error.code == "unsupported_parameter"
         assert error.param == "reasoning_effort"
         assert error.error_type == "invalid_request_error"
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected"),
+    [
+        (401, AuthenticationError),
+        (402, InsufficientFundsError),
+        (403, AuthenticationError),
+        (404, ModelNotFoundError),
+        (429, RateLimitError),
+        (502, UpstreamProviderError),
+        (504, GatewayTimeoutError),
+    ],
+)
+def test_unambiguous_status_wins_over_an_unhelpful_message(status_code: int, expected: type[AnyLLMError]) -> None:
+    """A provider that returns a generic body still classifies from its status.
+
+    Before, "Something went wrong" matched no pattern and fell through to
+    ProviderError regardless of the status, so a 429 or a 401 was indistinguishable
+    from an outage.
+    """
+    assert type(convert_exception(_StatusError(status_code, "Something went wrong"), "openai")) is expected
+
+
+@pytest.mark.parametrize("status_code", [401, 402, 404, 429, 502, 504])
+def test_unambiguous_status_wins_over_a_contradicting_message(status_code: int) -> None:
+    """The status is what the provider sent; a message coincidence cannot override it."""
+    error = _StatusError(status_code, "The response was filtered due to the content policy")
+    assert not isinstance(convert_exception(error, "openai"), ContentFilterError)
+
+
+@pytest.mark.parametrize("status_code", [500, 503, 529])
+def test_server_errors_are_provider_errors_regardless_of_message(status_code: int) -> None:
+    """The misclassification called out in #1190: a 5xx whose body mentions
+    "policy" is a provider fault, not a content-filter rejection."""
+    error = _StatusError(status_code, "Internal error while applying the content policy")
+    assert type(convert_exception(error, "openai")) is ProviderError
+
+
+@pytest.mark.parametrize("status_code", [400, 422])
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("This model's maximum context length is 8192 tokens", ContextLengthExceededError),
+        ("The response was filtered due to the content policy", ContentFilterError),
+        ("Incorrect API key provided", AuthenticationError),
+        ("The model gpt-9 does not exist", ModelNotFoundError),
+        ("Budget exceeded for this project", InsufficientFundsError),
+    ],
+)
+def test_rejected_request_keeps_the_specific_cause_from_the_message(
+    status_code: int, message: str, expected: type[AnyLLMError]
+) -> None:
+    """400/422 says the request was rejected but not why.
+
+    ContextLengthExceededError and ContentFilterError have no status of their own
+    (OpenAI returns 400 for both) and some providers report a bad key as a 400, so
+    the patterns still decide here. Keying 400 straight to InvalidRequestError would
+    make those classes unreachable for any provider that reports a status.
+    """
+    assert type(convert_exception(_StatusError(status_code, message), "openai")) is expected
+
+
+@pytest.mark.parametrize("status_code", [400, 422])
+def test_rejected_request_falls_back_to_invalid_request(status_code: int) -> None:
+    """With no specific cause in the message, a rejected request is the caller's
+    problem, so it lands on InvalidRequestError rather than ProviderError."""
+    error = _StatusError(status_code, "Something went wrong")
+    assert type(convert_exception(error, "openai")) is InvalidRequestError
+
+
+@pytest.mark.parametrize("status_code", [409, 413, 418, 302])
+def test_unmapped_status_defers_to_the_message_patterns(status_code: int) -> None:
+    """A status with no agreed meaning here leaves the patterns in charge."""
+    error = _StatusError(status_code, "This model's maximum context length is 8192 tokens")
+    assert type(convert_exception(error, "openai")) is ContextLengthExceededError
+
+
+def test_status_free_failures_still_use_the_message_patterns() -> None:
+    """The status-free path is unchanged, so a timeout or an SDK error carrying no
+    status classifies exactly as it did before."""
+    assert type(convert_exception(Exception("Rate limit reached"), "openai")) is RateLimitError
+    assert type(convert_exception(TimeoutError("request timed out"), "openai")) is ProviderError

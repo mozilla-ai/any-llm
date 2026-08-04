@@ -63,6 +63,65 @@ _ERROR_PATTERNS: tuple[tuple[str, type[AnyLLMError]], ...] = (
     (r"timeout|connection|network|server|internal|service|service unavailable", ProviderError),
 )
 
+# Statuses that identify the failure on their own. Checked before the message
+# patterns, because the status is what the provider actually returned while a
+# message match is a guess: a 500 whose body happens to mention "policy" is a
+# provider outage, not a content-filter rejection. The 402/502/504 entries also
+# align the code with what those exception docstrings already claim.
+_STATUS_ERROR_CLASSES: dict[int, type[AnyLLMError]] = {
+    401: AuthenticationError,
+    402: InsufficientFundsError,
+    403: AuthenticationError,
+    404: ModelNotFoundError,
+    429: RateLimitError,
+    502: UpstreamProviderError,
+    504: GatewayTimeoutError,
+}
+
+# "The request was rejected", where the status says that much but only the
+# message says why. ContextLengthExceededError and ContentFilterError have no
+# status of their own (OpenAI returns 400 for both), and some providers report a
+# bad API key as a 400, so the patterns still decide here. InvalidRequestError
+# is the floor when nothing more specific matches.
+_REJECTED_REQUEST_STATUSES = frozenset({400, 422})
+
+
+def _classify_by_message(exc_text: str) -> type[AnyLLMError]:
+    """First matching pattern in the ordered table, else ProviderError."""
+    for pattern, error_class in _ERROR_PATTERNS:
+        if re.search(pattern, exc_text):
+            return error_class
+    return ProviderError
+
+
+def _classify(exc_text: str, status_code: int | None) -> type[AnyLLMError]:
+    """Pick the unified exception class for a failure.
+
+    Prefers the HTTP status where it is unambiguous and falls back to the
+    message patterns otherwise, so a provider that returns an unhelpful body
+    still classifies correctly and a message coincidence cannot override a
+    status the provider actually sent.
+    """
+    if status_code is None:
+        return _classify_by_message(exc_text)
+
+    keyed = _STATUS_ERROR_CLASSES.get(status_code)
+    if keyed is not None:
+        return keyed
+
+    if status_code in _REJECTED_REQUEST_STATUSES:
+        by_message = _classify_by_message(exc_text)
+        # ProviderError is the table's "nothing matched" outcome. A rejected
+        # request is the caller's problem, not a provider fault.
+        return InvalidRequestError if by_message is ProviderError else by_message
+
+    if status_code >= 500:
+        return ProviderError
+
+    # Any other status (3xx, 409, 413, ...) carries no agreed meaning here, so
+    # the message patterns stay in charge.
+    return _classify_by_message(exc_text)
+
 
 class _ErrorMetadata(NamedTuple):
     """Structured HTTP fields recovered from a provider SDK exception."""
@@ -169,12 +228,12 @@ def convert_exception(
 ) -> AnyLLMError:
     """Convert a provider-specific exception to an AnyLLMError.
 
-    This function attempts to classify the exception based on its type name
-    and message content, converting it to the appropriate AnyLLMError subclass.
-    Structured HTTP metadata the SDK exposed (``status_code``, ``code``,
-    ``param``, ``type``) is carried onto the unified exception so consumers can
-    classify a failure without unwrapping ``original_exception``, and a
-    :class:`~any_llm.exceptions.RateLimitError` additionally carries the
+    Classifies by the HTTP status the provider returned where that is
+    unambiguous, falling back to the exception's type name and message content
+    otherwise. Structured HTTP metadata the SDK exposed (``status_code``,
+    ``code``, ``param``, ``type``) is carried onto the unified exception so
+    consumers can classify a failure without unwrapping ``original_exception``,
+    and a :class:`~any_llm.exceptions.RateLimitError` additionally carries the
     ``Retry-After`` header when the provider sent one.
 
     Args:
@@ -189,14 +248,9 @@ def convert_exception(
         return exception
 
     exc_text = f"{type(exception).__name__.lower()} {str(exception).lower()}"
-
-    error_class: type[AnyLLMError] = ProviderError
-    for pattern, candidate in _ERROR_PATTERNS:
-        if re.search(pattern, exc_text):
-            error_class = candidate
-            break
-
     metadata = _extract_error_metadata(exception)
+    error_class = _classify(exc_text, metadata.status_code)
+
     error = error_class(
         message=str(exception),
         original_exception=exception,
