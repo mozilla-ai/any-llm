@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.logging import logger
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
@@ -84,6 +85,28 @@ class OllamaProvider(AnyLLM):
         elif params.reasoning_effort is not None and params.reasoning_effort != "auto":
             converted_params["think"] = REASONING_EFFORT_TO_OLLAMA_THINK[params.reasoning_effort]
         converted_params.update(kwargs)
+
+        max_tokens = converted_params.pop("max_tokens", None)
+        max_completion_tokens = converted_params.pop("max_completion_tokens", None)
+        requested_max_tokens = max_completion_tokens if max_completion_tokens is not None else max_tokens
+        explicit_num_predict = converted_params.get("num_predict")
+        if explicit_num_predict is not None:
+            if requested_max_tokens is not None:
+                logger.warning(
+                    "Ignoring the requested output token limit (%s) because num_predict (%s) is set.",
+                    requested_max_tokens,
+                    explicit_num_predict,
+                )
+        else:
+            if max_tokens is not None and max_completion_tokens is not None:
+                logger.warning(
+                    "Ignoring max_tokens (%s) in favor of max_completion_tokens (%s).",
+                    max_tokens,
+                    max_completion_tokens,
+                )
+            if requested_max_tokens is not None:
+                converted_params["num_predict"] = requested_max_tokens
+
         converted_params["num_ctx"] = converted_params.get("num_ctx", 32000)
         return converted_params
 

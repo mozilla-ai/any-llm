@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
@@ -9,6 +10,104 @@ from ollama import Message as OllamaMessage
 from any_llm.providers.ollama.ollama import OllamaProvider
 from any_llm.providers.ollama.utils import _create_chat_completion_from_ollama_response
 from any_llm.types.completion import CompletionParams
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    ("max_tokens", "max_completion_tokens", "num_predict", "expected_num_predict"),
+    [
+        (None, None, None, None),
+        (101, None, None, 101),
+        (None, 202, None, 202),
+        (101, 202, None, 202),
+        (101, 202, 303, 303),
+    ],
+)
+async def test_completion_converts_output_token_limits_to_num_predict(
+    stream: bool,
+    max_tokens: int | None,
+    max_completion_tokens: int | None,
+    num_predict: int | None,
+    expected_num_predict: int | None,
+) -> None:
+    async def empty_async_iter() -> AsyncIterator[None]:
+        return
+        yield
+
+    provider_kwargs = {} if num_predict is None else {"num_predict": num_predict}
+    params = CompletionParams(
+        model_id="llama3.1",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=max_tokens,
+        max_completion_tokens=max_completion_tokens,
+        stream=stream,
+    )
+
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=empty_async_iter() if stream else Mock())
+
+        if stream:
+            result = await provider._acompletion(params, **provider_kwargs)
+            async for _ in result:  # type: ignore[union-attr]
+                pass
+        else:
+            with patch.object(OllamaProvider, "_convert_completion_response", return_value=Mock()):
+                await provider._acompletion(params, **provider_kwargs)
+
+        options = provider.client.chat.call_args.kwargs["options"]
+
+    if expected_num_predict is None:
+        assert "num_predict" not in options
+    else:
+        assert options["num_predict"] == expected_num_predict
+    assert "max_tokens" not in options
+    assert "max_completion_tokens" not in options
+
+
+@pytest.mark.parametrize(
+    ("max_tokens", "max_completion_tokens", "num_predict", "expected_num_predict", "expected_warning"),
+    [
+        (101, 202, None, 202, "Ignoring max_tokens (101) in favor of max_completion_tokens (202)."),
+        (101, 202, 303, 303, "Ignoring the requested output token limit (202) because num_predict (303) is set."),
+        (101, None, 303, 303, "Ignoring the requested output token limit (101) because num_predict (303) is set."),
+        (101, None, None, 101, None),
+        (None, 202, None, 202, None),
+        (None, None, 303, 303, None),
+    ],
+)
+def test_convert_completion_params_warns_about_ignored_token_limits(
+    max_tokens: int | None,
+    max_completion_tokens: int | None,
+    num_predict: int | None,
+    expected_num_predict: int,
+    expected_warning: str | None,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    params = CompletionParams(
+        model_id="llama3.1",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=max_tokens,
+        max_completion_tokens=max_completion_tokens,
+    )
+    provider_kwargs = {} if num_predict is None else {"num_predict": num_predict}
+
+    any_llm_logger = logging.getLogger("any_llm")
+    original_propagate = any_llm_logger.propagate
+    any_llm_logger.propagate = True
+    try:
+        with caplog.at_level(logging.WARNING, logger="any_llm"):
+            result = OllamaProvider._convert_completion_params(params, **provider_kwargs)
+    finally:
+        any_llm_logger.propagate = original_propagate
+
+    assert result["num_predict"] == expected_num_predict
+    if expected_warning is None:
+        assert caplog.text == ""
+    else:
+        assert expected_warning in caplog.text
 
 
 @pytest.mark.asyncio
