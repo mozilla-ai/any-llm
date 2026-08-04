@@ -36,7 +36,7 @@ AnyLLMError
 
 ## `AnyLLMError`
 
-Base exception for all any-llm errors.  All custom exceptions in any-llm inherit from this class. It preserves the original exception for debugging while providing a unified interface.
+Base exception for all any-llm errors.  All custom exceptions in any-llm inherit from this class. It preserves the original exception for debugging while providing a unified interface.  The structured HTTP fields are populated best-effort by :func:`any_llm.utils.exception_handler.convert_exception` from whatever the provider SDK exposed, so a consumer can classify a failure without reaching into ``original_exception`` and coupling to a specific SDK's attribute layout. Any field a provider does not report stays ``None``, and a non-HTTP failure (timeout, connection error) reports ``status_code=None``.
 
 ```
 def AnyLLMError(
@@ -44,6 +44,11 @@ def AnyLLMError(
     message: str | None = None,
     original_exception: Exception | None = None,
     provider_name: str | None = None,
+    *,
+    status_code: int | None = None,
+    code: str | None = None,
+    param: str | None = None,
+    error_type: str | None = None,
 ) -> None
 ```
 
@@ -52,8 +57,14 @@ def AnyLLMError(
 | `message` | `str` | Human-readable error message. |
 | `original_exception` | `Exception \| None` | The original SDK exception that triggered this error. |
 | `provider_name` | `str \| None` | Name of the provider that raised the error (if available). |
+| `status_code` | `int \| None` | HTTP status the provider returned. |
+| `code` | `str \| None` | Provider-specific error code from the response body. |
+| `param` | `str \| None` | Request field the provider flagged as the cause. |
+| `error_type` | `str \| None` | Provider-specific error category, such as `"invalid_request_error"`. |
 
 The string representation includes the provider name when available: `"[openai] Rate limit exceeded"`.
+
+Coverage of the four HTTP metadata fields varies by provider, so treat every one as optional.
 
 ## Provider Errors
 
@@ -185,11 +196,33 @@ The table below maps typical error conditions to the unified exception that `any
 | Input too long | `ContextLengthExceededError` | Exceeding the model's context window |
 | Malformed request parameters | `InvalidRequestError` | Invalid parameter values |
 | Content blocked by safety filter | `ContentFilterError` | Harmful or policy-violating content |
-| Provider internal / network error | `ProviderError` | 5xx responses, timeouts, connection errors |
+| Out of credits or quota | `InsufficientFundsError` | 402 responses |
+| Bad gateway upstream of the provider | `UpstreamProviderError` | 502 responses |
+| Provider timed out at its gateway | `GatewayTimeoutError` | 504 responses |
+| Provider internal / network error | `ProviderError` | Other 5xx responses, timeouts, connection errors |
 
 {% hint style="warning" %}
-Note that `ModelNotFoundError` and `InvalidRequestError` are **separate** subclasses of `AnyLLMError`. A model-not-found error will not be caught by `except InvalidRequestError`. Catch `ModelNotFoundError` explicitly if you need to handle it.
+Every exception above is a **separate** subclass of `AnyLLMError`, not of each other. A model-not-found error will not be caught by `except InvalidRequestError`, and `InsufficientFundsError`, `UpstreamProviderError`, and `GatewayTimeoutError` will not be caught by `except ProviderError`. Catch `AnyLLMError` if you want all of them.
 {% endhint %}
+
+## How the Exception Type Is Chosen
+
+`status_code` decides the type wherever it is unambiguous, because it is what the provider actually returned:
+
+| Status | Exception |
+|--------|-----------|
+| 401 | `AuthenticationError` |
+| 402 | `InsufficientFundsError` |
+| 403 | `AuthenticationError` |
+| 404 | `ModelNotFoundError` |
+| 429 | `RateLimitError` |
+| 502 | `UpstreamProviderError` |
+| 504 | `GatewayTimeoutError` |
+| other 5xx | `ProviderError` |
+
+A 400 or 422 means the request was rejected but not why, so the error message decides between the specific causes that carry no status of their own (`ContextLengthExceededError`, `ContentFilterError`, or a provider that reports a bad key as a 400), falling back to `InvalidRequestError`. When there is no status at all, or the status is not one of those listed above (for example 409 or 413), the message decides on its own.
+
+One consequence worth noting: a 5xx is always a provider fault, even when its body happens to mention something like a content policy.
 
 ## Usage
 
