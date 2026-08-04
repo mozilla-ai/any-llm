@@ -22,6 +22,8 @@ from any_llm.types.completion import (
 )
 from any_llm.types.messages import (
     BetaDiagnostics,
+    ContentBlock,
+    MessageContentBlock,
     MessageDeltaEvent,
     MessageDeltaUsage,
     MessageResponse,
@@ -39,8 +41,6 @@ def test_stop_reason_aliases_anthropic_beta_type() -> None:
 
 
 def test_content_block_alias_matches_message_content_block() -> None:
-    from any_llm.types.messages import ContentBlock, MessageContentBlock
-
     assert ContentBlock is MessageContentBlock
 
 
