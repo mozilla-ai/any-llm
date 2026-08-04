@@ -511,8 +511,23 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
 
 
 def _convert_models_list(models_list: list[AnthropicModelInfo]) -> list[Model]:
-    """Convert Anthropic models list to OpenAI format."""
+    """Convert Anthropic models list to OpenAI format.
+
+    ``created_at`` is required by ``ModelInfo``, but an Anthropic-compatible
+    proxy or gateway may serve ``/v1/models`` in the OpenAI shape, which carries
+    an integer ``created`` and no ``created_at``. The SDK constructs the model
+    without validation, so the field is present but ``None``, and calling
+    ``.timestamp()`` on it raises ``AttributeError: 'NoneType' object has no
+    attribute 'timestamp'`` for the whole listing. Fall back to ``0`` for that
+    entry instead, matching what ``_create_openai_completion_from_anthropic``
+    already does for a response missing the same field.
+    """
     return [
-        Model(id=model.id, object="model", created=int(model.created_at.timestamp()), owned_by="anthropic")
+        Model(
+            id=model.id,
+            object="model",
+            created=int(model.created_at.timestamp()) if model.created_at is not None else 0,
+            owned_by="anthropic",
+        )
         for model in models_list
     ]
