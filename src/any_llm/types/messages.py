@@ -1,4 +1,4 @@
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from anthropic.types import ContentBlock as AnthropicContentBlock
 from anthropic.types import InputJSONDelta, RawContentBlockDelta, TextDelta, ThinkingDelta
@@ -26,8 +26,23 @@ from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
 from anthropic.types.raw_message_delta_event import Delta as AnthropicMessageDelta
 from pydantic import BaseModel, ConfigDict
 
+if TYPE_CHECKING:
+    from anthropic.types.beta.beta_diagnostics import BetaDiagnostics
+else:
+    try:
+        from anthropic.types.beta.beta_diagnostics import BetaDiagnostics
+    except ModuleNotFoundError:
+        # BetaDiagnostics was added in anthropic 0.102.0, while any-llm supports 0.83.0.
+        class _BetaDiagnosticsFallback(BaseModel):
+            model_config = ConfigDict(extra="allow", from_attributes=True)
+
+            cache_miss_reason: dict[str, Any] | None = None
+
+        BetaDiagnostics = _BetaDiagnosticsFallback
+
 __all__ = [
     "BetaContextManagementResponse",
+    "BetaDiagnostics",
     "CompactionBlock",
     "CompactionDelta",
     "ContentBlock",
@@ -35,12 +50,10 @@ __all__ = [
     "ContentBlockStartEvent",
     "ContentBlockStopEvent",
     "InputJSONDelta",
-    "MessageCacheMissReason",
     "MessageContentBlock",
     "MessageDelta",
     "MessageDeltaEvent",
     "MessageDeltaUsage",
-    "MessageDiagnostics",
     "MessageResponse",
     "MessageStartEvent",
     "MessageStopEvent",
@@ -83,25 +96,12 @@ ContentBlock = TextBlock | ToolUseBlock | ThinkingBlock | CompactionBlock
 MessageContentBlock = AnthropicContentBlock | BetaContentBlock
 
 
-class MessageCacheMissReason(BaseModel):
-    model_config = ConfigDict(extra="allow", from_attributes=True)
-
-    type: str
-    cache_missed_input_tokens: int | None = None
-
-
-class MessageDiagnostics(BaseModel):
-    model_config = ConfigDict(extra="allow", from_attributes=True)
-
-    cache_miss_reason: MessageCacheMissReason | None = None
-
-
 class MessageResponse(AnthropicMessage):
     content: list[MessageContentBlock]  # type: ignore[assignment]
     stop_reason: StopReason | None = None  # type: ignore[assignment]
     usage: MessageUsage
     context_management: BetaContextManagementResponse | None = None
-    diagnostics: MessageDiagnostics | None = None
+    diagnostics: BetaDiagnostics | None = None
 
 
 class MessageDelta(AnthropicMessageDelta):

@@ -1,7 +1,7 @@
 """Tests for messages()/amessages() SDK API."""
 
 from collections.abc import AsyncGenerator, AsyncIterator
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -21,8 +21,8 @@ from any_llm.types.completion import (
     PromptTokensDetails,
 )
 from any_llm.types.messages import (
+    BetaDiagnostics,
     MessageDeltaEvent,
-    MessageDiagnostics,
     MessageResponse,
     MessagesParams,
     ParsedBetaMessage,
@@ -175,9 +175,16 @@ def test_message_response_model() -> None:
     assert isinstance(block, TextBlock)
     assert block.text == "Hello!"
     assert resp.usage.input_tokens == 10
+    assert resp.diagnostics is None
 
 
 def test_message_response_preserves_typed_beta_telemetry() -> None:
+    try:
+        from anthropic.types.beta import BetaCacheMissToolsChanged
+        from anthropic.types.beta.beta_diagnostics import BetaDiagnostics as AnthropicBetaDiagnostics
+    except ImportError:
+        pytest.skip("BetaDiagnostics requires anthropic 0.102.0 or newer")
+
     beta_message = BetaMessage.model_validate(
         {
             "id": "msg_beta",
@@ -199,7 +206,7 @@ def test_message_response_preserves_typed_beta_telemetry() -> None:
             },
             "diagnostics": {
                 "cache_miss_reason": {
-                    "type": "model_changed",
+                    "type": "tools_changed",
                     "cache_missed_input_tokens": 7,
                 }
             },
@@ -211,13 +218,35 @@ def test_message_response_preserves_typed_beta_telemetry() -> None:
     assert isinstance(response.context_management, BetaContextManagementResponse)
     applied_edit = response.context_management.applied_edits[0]
     assert applied_edit.cleared_input_tokens == 42
-    assert isinstance(response.diagnostics, MessageDiagnostics)
-    assert response.diagnostics.cache_miss_reason is not None
-    assert response.diagnostics.cache_miss_reason.type == "model_changed"
+    assert BetaDiagnostics is AnthropicBetaDiagnostics
+    assert isinstance(response.diagnostics, AnthropicBetaDiagnostics)
+    assert isinstance(response.diagnostics.cache_miss_reason, BetaCacheMissToolsChanged)
+    assert response.diagnostics.cache_miss_reason.type == "tools_changed"
     assert response.diagnostics.cache_miss_reason.cache_missed_input_tokens == 7
     dumped = response.model_dump()
     assert dumped["context_management"]["applied_edits"][0]["cleared_input_tokens"] == 42
     assert dumped["diagnostics"]["cache_miss_reason"]["cache_missed_input_tokens"] == 7
+
+
+def test_message_diagnostics_fallback_supports_the_anthropic_sdk_floor() -> None:
+    try:
+        from anthropic.types.beta.beta_diagnostics import BetaDiagnostics as AnthropicBetaDiagnostics
+    except ImportError:
+        diagnostics = BetaDiagnostics.model_validate(
+            {
+                "cache_miss_reason": {
+                    "type": "tools_changed",
+                    "cache_missed_input_tokens": 7,
+                    "future_field": "preserved",
+                }
+            }
+        )
+
+        reason = cast("dict[str, Any]", diagnostics.cache_miss_reason)
+        assert reason["cache_missed_input_tokens"] == 7
+        assert diagnostics.model_dump()["cache_miss_reason"]["future_field"] == "preserved"
+    else:
+        pytest.skip(f"SDK provides {AnthropicBetaDiagnostics.__name__}")
 
 
 def test_message_delta_event_preserves_typed_context_management() -> None:
