@@ -304,3 +304,34 @@ except RateLimitError as e:
     print(f"Provider: {e.provider_name}")
     print(f"Original exception: {type(e.original_exception)}")
 ```
+
+### Structured Error Metadata
+
+Unified exceptions also carry the structured HTTP fields the provider reported, so
+you can classify a failure without unwrapping `original_exception` and coupling to a
+specific SDK's attribute layout:
+
+| Attribute | Meaning |
+| --- | --- |
+| `status_code` | HTTP status the provider returned |
+| `code` | Provider-specific error code from the response body |
+| `param` | Request field the provider flagged as the cause |
+| `error_type` | Provider-specific error category, such as `"invalid_request_error"` |
+
+```python
+from any_llm.exceptions import InvalidRequestError
+
+try:
+    response = completion(model="gpt-4", provider="openai", messages=messages)
+except InvalidRequestError as e:
+    if e.status_code == 400 and e.param == "reasoning_effort":
+        print("Retry with reasoning_effort set to 'none'")
+```
+
+These fields are populated best-effort from the shapes provider SDKs expose: an
+attribute on the exception, or the parsed response body. Coverage varies by provider,
+so treat every field as optional. Anything `any-llm` cannot recover is `None`,
+including `status_code` for a non-HTTP failure such as a timeout or connection error.
+
+`status_code` also drives which exception type you get. See
+[Exceptions](api/exceptions.md) for the full status-to-type mapping.
