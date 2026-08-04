@@ -92,6 +92,30 @@ async def test_aresponses_parameter_capture() -> None:
 
 
 @pytest.mark.asyncio
+async def test_aresponses_context_management_parameter_capture() -> None:
+    mock_provider = Mock()
+    mock_provider.aresponses = AsyncMock(return_value=Mock())
+
+    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
+        mock_create.return_value = mock_provider
+        context_management = [{"type": "compaction", "compact_threshold": 200_000}]
+
+        await aresponses(
+            model="openai:gpt-5.3-codex",
+            input_data="Continue the coding task.",
+            context_management=context_management,
+            api_key="openai-key",
+        )
+
+        mock_create.assert_called_once_with(
+            LLMProvider.OPENAI,
+            api_key="openai-key",
+            api_base=None,
+        )
+        assert mock_provider.aresponses.call_args.kwargs["context_management"] == context_management
+
+
+@pytest.mark.asyncio
 async def test_completion_invalid_model_format_no_slash() -> None:
     """Test completion raises ValueError for model without separator."""
     with pytest.raises(

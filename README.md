@@ -194,6 +194,25 @@ result = responses(
 print(result.output_text)
 ```
 
+OpenAI Responses can compact long-running conversations on the server. Returned
+compaction items are preserved in `result.output` and can be replayed with the
+rest of the response output on the next stateless request.
+
+```python
+result = responses(
+    model="gpt-5.3-codex",
+    provider="openai",
+    input_data=conversation,
+    store=False,
+    context_management=[
+        {"type": "compaction", "compact_threshold": 200_000}
+    ],
+)
+```
+
+See [OpenAI's compaction guide](https://platform.openai.com/docs/guides/compaction)
+for conversation pruning and `previous_response_id` guidance.
+
 ### Finding the Right Model
 
 The `provider_id` should match our [supported provider names](https://docs.mozilla.ai/any-llm/providers/).

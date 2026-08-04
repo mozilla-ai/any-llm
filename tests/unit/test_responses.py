@@ -44,6 +44,14 @@ def test_explicit_parallel_tool_calls_preserved(value: bool) -> None:
     assert params.parallel_tool_calls is value
 
 
+def test_context_management_preserved() -> None:
+    context_management = [{"type": "compaction", "compact_threshold": 200_000}]
+    params = ResponsesParams(model="test", input="hello", context_management=context_management)
+
+    assert params.context_management == context_management
+    assert params.model_dump(exclude_none=True)["context_management"] == context_management
+
+
 def test_responses_params_preserves_codex_continuation_items() -> None:
     """Responses input accepts Codex items not yet represented by the SDK union."""
     input_data: list[dict[str, Any]] = [
