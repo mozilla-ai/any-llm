@@ -11,7 +11,7 @@ version = "0.0.0-dev" # There is a regex in the release.yaml file that looks for
 dependencies = [
   "pydantic>2,<3",
   "openai>=2.18.0",
-  "openresponses-types>=2.3.0.post1",
+  "openresponses-types>=2.4.0",
   "anthropic>=0.83.0",
   "rich",
   "httpx",

@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from openai.types.responses import ResponseCompactionItem, ResponseOutputMessage, ResponseOutputText
+from openresponses_types import CompactionBody, ResponseResource
 from pydantic import BaseModel
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
@@ -65,6 +66,58 @@ def _make_openai_compaction_response() -> Response:
         parallel_tool_calls=False,
         tool_choice="auto",
         tools=[],
+    )
+
+
+def _make_populated_openai_compaction_response() -> Response:
+    """A compaction response carrying every field ResponseResource requires.
+
+    Built from a wire-shape payload rather than SDK kwargs: ResponseResource
+    requires `store`, `presence_penalty` and `frequency_penalty`, which openai's
+    Response does not declare as fields and only carries as extras.
+
+    The sparse fixtures above leave optional scalars unset, so they fail
+    ResponseResource validation on those fields regardless of compaction support
+    and exercise the fallback path rather than the normalization path.
+    """
+    return Response.model_validate(
+        {
+            "id": "resp-compaction",
+            "created_at": 0,
+            "model": "gpt-5.3-codex",
+            "object": "response",
+            "output": [
+                {
+                    "id": "cmp-1",
+                    "type": "compaction",
+                    "encrypted_content": "opaque-compacted-context",
+                },
+                {
+                    "id": "msg-1",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [
+                        {"type": "output_text", "text": "Resumed.", "annotations": [], "logprobs": []},
+                    ],
+                },
+            ],
+            "parallel_tool_calls": False,
+            "tool_choice": "auto",
+            "tools": [],
+            "status": "completed",
+            "store": False,
+            "background": False,
+            "truncation": "disabled",
+            "metadata": {},
+            "temperature": 1.0,
+            "top_p": 1.0,
+            "top_logprobs": 0,
+            "presence_penalty": 0.0,
+            "frequency_penalty": 0.0,
+            "service_tier": "auto",
+            "text": {"format": {"type": "text"}},
+        }
     )
 
 
@@ -173,9 +226,35 @@ async def test_aresponses_context_management_preserves_compaction_item(mock_open
     )
 
     assert mock_client.responses.create.call_args.kwargs["context_management"] == context_management
+    # This fixture omits optional scalars (status, store, text, ...), so it fails
+    # ResponseResource validation on those and falls back to the raw Response.
+    # See test_aresponses_normalizes_compaction_item for the normalization path.
     assert isinstance(result, Response)
     assert isinstance(result.output[0], ResponseCompactionItem)
     assert result.output[0].encrypted_content == "opaque-compacted-context"
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.openai.base.AsyncOpenAI")
+async def test_aresponses_normalizes_compaction_item(mock_openai_class: MagicMock) -> None:
+    """A fully populated compaction response normalizes to a ResponseResource.
+
+    Requires openresponses-types >= 2.4.0, where ResponseResource.output accepts
+    CompactionBody. Against earlier releases the compaction item failed validation
+    and aresponses fell back to returning the raw OpenAI Response.
+    """
+    mock_client = AsyncMock()
+    mock_client.responses.create = AsyncMock(return_value=_make_populated_openai_compaction_response())
+    mock_openai_class.return_value = mock_client
+
+    provider = _ResponsesProvider(api_key="key")
+    result = await provider.aresponses(model="gpt-5.3-codex", input_data="Continue the coding task.")
+
+    assert isinstance(result, ResponseResource)
+    assert [item.type for item in result.output] == ["compaction", "message"]
+    compaction = result.output[0]
+    assert isinstance(compaction, CompactionBody)
+    assert compaction.encrypted_content == "opaque-compacted-context"
 
 
 @pytest.mark.asyncio
