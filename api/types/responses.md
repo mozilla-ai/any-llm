@@ -80,6 +80,7 @@ Normalized parameters for the Responses API, used internally to pass structured 
 | `presence_penalty` | `float \| None` | Penalizes new tokens based on whether they appear in the text so far. |
 | `frequency_penalty` | `float \| None` | Penalizes new tokens based on their frequency in the text so far. |
 | `truncation` | `str \| None` | Controls how the service truncates the input when it exceeds the model context window. |
+| `context_management` | `list[dict[str, Any]] \| None` | OpenAI Responses context management configuration. |
 | `store` | `bool \| None` | Whether to store the response so it can be retrieved later. |
 | `service_tier` | `str \| None` | The service tier to use for this request. |
 | `user` | `str \| None` | A unique identifier representing your end user. |

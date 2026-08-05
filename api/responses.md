@@ -40,6 +40,7 @@ def responses(
     presence_penalty: float | None = None,
     frequency_penalty: float | None = None,
     truncation: str | None = None,
+    context_management: list[dict[str, Any]] | None = None,
     store: bool | None = None,
     service_tier: str | None = None,
     user: str | None = None,
@@ -84,6 +85,7 @@ async def aresponses(
     presence_penalty: float | None = None,
     frequency_penalty: float | None = None,
     truncation: str | None = None,
+    context_management: list[dict[str, Any]] | None = None,
     store: bool | None = None,
     service_tier: str | None = None,
     user: str | None = None,
@@ -125,6 +127,7 @@ async def aresponses(
 | `presence_penalty` | `float \| None` | None | Penalizes new tokens based on whether they appear in the text so far. |
 | `frequency_penalty` | `float \| None` | None | Penalizes new tokens based on their frequency in the text so far. |
 | `truncation` | `str \| None` | None | Controls how the service truncates input when it exceeds the model context window. |
+| `context_management` | `list[dict[str, Any]] \| None` | None | OpenAI Responses context management configuration. Use a `compaction` entry with `compact_threshold` to enable server-side compaction; see [OpenAI's compaction documentation](https://platform.openai.com/docs/guides/compaction). |
 | `store` | `bool \| None` | None | Whether to store the response so it can be retrieved later. |
 | `service_tier` | `str \| None` | None | The service tier to use for this request. |
 | `user` | `str \| None` | None | A unique identifier representing your end user. |
