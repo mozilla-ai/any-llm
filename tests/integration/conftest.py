@@ -31,36 +31,6 @@ def _skip_unconfigured_gateway_providers(request: pytest.FixtureRequest) -> None
         pytest.skip(f"{provider.value} endpoint not configured (set {' or '.join(env_vars)}), skipping")
 
 
-# Providers whose CI account cannot currently serve requests for billing reasons. Every test for
-# them fails on the account, not on any-llm, which buries real regressions in the run summary.
-# Skip them until the account is funded; re-enable by deleting the entry here and adding the
-# provider back to expected_providers in .github/workflows/tests-integration.yaml. Listing the
-# provider in EXPECTED_PROVIDERS still forces a run, so a local check after topping up is
-# `EXPECTED_PROVIDERS=perplexity uv run pytest tests/integration -k perplexity`.
-_SUSPENDED_PROVIDERS: dict[LLMProvider, str] = {
-    LLMProvider.PERPLEXITY: (
-        "account quota exhausted: every request returns 401 insufficient_quota (https://www.perplexity.ai/settings/api)"
-    ),
-    LLMProvider.HUGGINGFACE: (
-        "account credits depleted: every request returns 402 Payment Required from router.huggingface.co"
-    ),
-}
-
-
-@pytest.fixture(autouse=True)
-def _skip_suspended_providers(request: pytest.FixtureRequest) -> None:
-    """Skip providers whose CI account is out of quota or credits."""
-    callspec = getattr(request.node, "callspec", None)
-    if callspec is None:
-        return
-    provider = callspec.params.get("provider")
-    if not isinstance(provider, LLMProvider) or provider in EXPECTED_PROVIDERS:
-        return
-    reason = _SUSPENDED_PROVIDERS.get(provider)
-    if reason:
-        pytest.skip(f"{provider.value}: {reason}")
-
-
 # The hosted otari test account only routes Anthropic completions, and a few response shapes
 # hit known bugs. These tests are skipped for otari so the e2e stays green on the capabilities
 # that work; each entry points at the tracking issue and should be removed once it is fixed.
