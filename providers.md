@@ -37,7 +37,7 @@ A provider can be verified whether it ships as a code folder or as a single conf
 | [`github`](https://docs.github.com/en/github-models) | 🤝 Community | GITHUB_TOKEN | GITHUB_MODELS_API_BASE | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ |
 | [`gmi`](https://docs.gmicloud.ai/inference-engine/api-reference/llm-api-reference) | 🤝 Community | GMI_API_KEY | GMI_API_BASE | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`groq`](https://groq.com/api) | ✅ Verified | GROQ_API_KEY | GROQ_BASE_URL | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
-| [`huggingface`](https://huggingface.co/docs/huggingface_hub/package_reference/inference_client) | ✅ Verified | HF_TOKEN | HUGGINGFACE_API_BASE | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| [`huggingface`](https://huggingface.co/docs/huggingface_hub/package_reference/inference_client) | 🤝 Community | HF_TOKEN | HUGGINGFACE_API_BASE | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | [`inception`](https://inceptionlabs.ai/) | ✅ Verified | INCEPTION_API_KEY | INCEPTION_API_BASE | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | [`kenari`](https://kenari.id/docs) | 🤝 Community | KENARI_API_KEY | KENARI_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`llama`](https://www.llama.com/products/llama-api/) | 🤝 Community | LLAMA_API_KEY | LLAMA_API_BASE | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
@@ -54,7 +54,7 @@ A provider can be verified whether it ships as a code folder or as a single conf
 | [`openai`](https://platform.openai.com/docs/api-reference) | ✅ Verified | OPENAI_API_KEY | OPENAI_BASE_URL | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ |
 | [`openrouter`](https://openrouter.ai/docs) | ✅ Verified | OPENROUTER_API_KEY | OPENROUTER_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`otari`](https://mozilla-ai.github.io/otari/) | ✅ Verified | OTARI_API_KEY | OTARI_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [`perplexity`](https://docs.perplexity.ai/) | ✅ Verified | PERPLEXITY_API_KEY | PERPLEXITY_BASE_URL | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| [`perplexity`](https://docs.perplexity.ai/) | 🤝 Community | PERPLEXITY_API_KEY | PERPLEXITY_BASE_URL | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | [`portkey`](https://portkey.ai/docs) | ✅ Verified | PORTKEY_API_KEY | PORTKEY_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
 | [`qiniu`](https://developer.qiniu.com/aitokenapi) | 🤝 Community | QINIU_API_KEY | QINIU_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`requesty`](https://docs.requesty.ai) | 🤝 Community | REQUESTY_API_KEY | REQUESTY_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
