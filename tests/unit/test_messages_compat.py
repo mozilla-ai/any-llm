@@ -20,6 +20,7 @@ from any_llm.types.messages import MessagesParams, MessageStartEvent
 from any_llm.utils.messages_compat import (
     StreamingState,
     _cached_tokens_from_usage,
+    _convert_system_to_openai,
     chat_completion_chunk_to_message_stream_events,
     chat_completion_to_message_response,
     messages_params_to_completion_params,
@@ -102,6 +103,109 @@ def test_system_message_prepended() -> None:
     result = messages_params_to_completion_params(params)
     assert result["messages"][0] == {"role": "system", "content": "You are helpful."}
     assert result["messages"][1]["role"] == "user"
+
+
+def test_system_string_unchanged() -> None:
+    """Test that a plain string system value is passed through unchanged."""
+    result = _convert_system_to_openai("You are helpful.")
+    assert result == "You are helpful."
+
+
+def test_system_block_list_flattened() -> None:
+    """Test that a list of system content blocks is flattened to a string."""
+    system = [{"type": "text", "text": "You are a helpful assistant."}]
+    result = _convert_system_to_openai(system)
+    assert result == "You are a helpful assistant."
+
+
+def test_system_block_list_with_cache_control_stripped() -> None:
+    """Test that cache_control markers are removed when flattening system blocks."""
+    system = [
+        {
+            "type": "text",
+            "text": "You are a helpful assistant.",
+            "cache_control": {"type": "ephemeral", "ttl": "1h"},
+        }
+    ]
+    result = _convert_system_to_openai(system)
+    assert result == "You are a helpful assistant."
+    assert "cache_control" not in str(result)
+
+
+def test_system_multiple_blocks_concatenated() -> None:
+    """Test that multiple text blocks in system are concatenated."""
+    system = [
+        {"type": "text", "text": "You are helpful. "},
+        {"type": "text", "text": "Be concise."},
+    ]
+    result = _convert_system_to_openai(system)
+    assert result == "You are helpful. Be concise."
+
+
+def test_system_mixed_block_types_text_extracted() -> None:
+    """Test that only text blocks are extracted, non-text blocks are ignored."""
+    system = [
+        {"type": "text", "text": "Be helpful. "},
+        {"type": "image", "source": "ignored"},
+        {"type": "text", "text": "Be concise."},
+    ]
+    result = _convert_system_to_openai(system)
+    assert result == "Be helpful. Be concise."
+
+
+def test_system_empty_block_list() -> None:
+    """Test that an empty system block list returns an empty string."""
+    system: list[dict[str, Any]] = []
+    result = _convert_system_to_openai(system)
+    assert result == ""
+
+
+def test_system_block_without_text_field() -> None:
+    """Test that blocks without a 'text' field contribute empty strings."""
+    system = [
+        {"type": "text", "text": "Hello"},
+        {"type": "text"},  # Missing 'text' field
+        {"type": "text", "text": " world"},
+    ]
+    result = _convert_system_to_openai(system)
+    assert result == "Hello world"
+
+
+def test_system_content_block_in_messages_params() -> None:
+    """Test converting MessagesParams with system content blocks."""
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        system=[
+            {
+                "type": "text",
+                "text": "You are a helpful assistant.",
+                "cache_control": {"type": "ephemeral", "ttl": "1h"},
+            }
+        ],
+    )
+    result = messages_params_to_completion_params(params)
+    assert result["messages"][0] == {
+        "role": "system",
+        "content": "You are a helpful assistant.",
+    }
+
+
+def test_system_no_cache_control_in_output() -> None:
+    """Test that cache_control never appears in the completion params output."""
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "test"}],
+        max_tokens=1024,
+        system=[
+            {"type": "text", "text": "System ", "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": "prompt", "cache_control": {"type": "ephemeral"}},
+        ],
+    )
+    result = messages_params_to_completion_params(params)
+    result_str = str(result)
+    assert "cache_control" not in result_str
 
 
 def test_tool_conversion_to_openai() -> None:
