@@ -1,6 +1,7 @@
 import pytest
 
 from any_llm import AnyLLM
+from any_llm.constants import LLMProvider
 from any_llm.providers.moonshot.moonshot import MoonshotProvider
 
 
@@ -35,7 +36,7 @@ def test_factory_integration() -> None:
 def test_model_provider_split() -> None:
     """Test that model string parsing works correctly."""
     provider_enum, model_name = AnyLLM.split_model_provider("moonshot:moonshot-v1-8k")
-    assert provider_enum.value == "moonshot"
+    assert provider_enum is LLMProvider.MOONSHOT
     assert model_name == "moonshot-v1-8k"
 
 
