@@ -116,7 +116,7 @@ Branch naming conventions:
 - `refactor/` - Code improvements without behavior changes
 
 ### 2. Make Changes
-Make your changes! Read our [Implementation Checklist](#2-implementation-checklist) if adding a new provider
+Make your changes! Read [Adding a New Provider](#adding-a-new-provider) first if that is what you are doing, since some providers need a config row rather than code, and some need no PR at all.
 
 ### 3. Write Tests
 
@@ -126,7 +126,7 @@ Make your changes! Read our [Implementation Checklist](#2-implementation-checkli
 
 - **New features**: Add tests covering happy path and error cases
 - **Bug fixes**: Add a test that reproduces the bug
-- **Provider integrations**: Comprehensive test suite required
+- **Provider integrations**: Comprehensive test suite required, except for config-only gateways added as a registry row, which are covered by the generic registry tests (see [2a](#2a-config-only-gateways-add-a-registry-row))
 - **Target**: Minimum 85% coverage for new code
 
 
@@ -171,7 +171,47 @@ git commit -m "wip"
 
 ## Adding a New Provider
 
-Adding provider support is a major contribution! Here's the complete process:
+Not every provider needs code, and some need no PR at all. Start here.
+
+### 0. Do You Need a Provider Entry?
+
+**If your endpoint speaks the OpenAI API, you are never blocked.** Point any-llm straight at it:
+
+```python
+from any_llm import AnyLLM
+
+llm = AnyLLM.create_openai_compatible(
+    name="mygateway",
+    api_base="https://mygateway.example/v1",
+    api_key="your-key",  # optional for keyless local servers
+)
+```
+
+The provider reports the name you give it rather than reporting itself as `openai`, and is used exactly like any other provider instance. See [Custom OpenAI-compatible Endpoints](docs/quickstart.md#custom-openai-compatible-endpoints). This is the right path for private gateways, self-hosted servers, and anything you do not need us to ship.
+
+Open a PR when you want the provider **listed in our docs and resolvable by name** for everyone else. Which path that PR takes depends on whether the provider needs code:
+
+| Your provider...                                                                                                     | Goes in                                            | See |
+| -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | --- |
+| speaks the OpenAI API and needs nothing beyond a base URL, an API key env var, and capability flags                   | a row in `src/any_llm/providers/registry.py`        | [2a](#2a-config-only-gateways-add-a-registry-row) |
+| needs custom auth, non-OpenAI request or response shapes, param translation, or model-list quirks                     | a folder under `src/any_llm/providers/`             | [2b](#2b-providers-that-need-code) |
+
+The deciding question is whether the protocol *requires* the code, judged by the reviewer. Shipping an official SDK is not by itself a reason for a folder, and adding an override that is not needed does not turn a config-only gateway into a code provider.
+
+### Provider Tiers
+
+Every listed provider sits in one of two tiers. The tier is a support promise, not a statement about code shape: a config-only provider we hold keys for stays verified.
+
+- **Verified**: we hold API keys, integration tests run in CI, and we fix breakage. These are the providers the README and docs promote.
+- **Community**: verified live by the contributor when the PR is opened, then maintained by the community. No CI key, so the provider is not in the CI provider list and its integration tests skip there.
+
+New third-party gateways land as **community** by default. CI cannot use repository secrets on fork PRs, so contribution-time live verification is the only bar we can actually enforce; we do not ask contributors for ongoing proof.
+
+Promotion to verified is a maintainer action, not something a PR can do: it takes a repository secret plus an entry in `EXPECTED_PROVIDERS` in `.github/workflows/tests-integration.yaml`, which forces the provider's integration tests to run rather than skip. Open an issue if you think a provider deserves it.
+
+**Removal.** A community entry is removed when the gateway shuts down, or when users report sustained breakage that nobody steps up to fix. Cheap addition is only sustainable if removal is equally cheap, so removal PRs are routine and do not need the original contributor's sign-off.
+
+Surfacing the tier in the generated provider docs is still in progress; see [#1197](https://github.com/mozilla-ai/any-llm/issues/1197) for the remaining rollout.
 
 ### 1. Check Requirements
 
@@ -179,17 +219,73 @@ Before requesting or implementing:
 
 - [ ] Provider has an official Python SDK **OR** well-documented REST API
 - [ ] Provider is actively maintained and supported
-- [ ] Provider has substantial user base or unique capabilities
 - [ ] Provider's interface is compatible with any-llm's design
 - [ ] No existing issue/PR for adding this provider
 
+A provider that needs a **code folder** must also clear a usage bar: a substantial user base or unique capabilities. A folder is the expensive category, in review attention now and in maintenance and eventual cleanup later, so it carries that bar in both tiers. Registry rows waive it because a row costs one line to add and one line to remove. Asking for the **verified** tier raises the bar further, since it commits us to holding a key and fixing breakage.
 
-### 2. Implementation Checklist
+### 2a. Config-only Gateways: Add a Registry Row
+
+Add one row to `PROVIDER_REGISTRY` in `src/any_llm/providers/registry.py`:
+
+```python
+"examplegw": OpenAICompatibleProviderConfig(
+    name="examplegw",
+    api_base="https://api.examplegw.test/v1",
+    env_api_key_name="EXAMPLEGW_API_KEY",
+    env_api_base_name="EXAMPLEGW_API_BASE",
+    provider_documentation_url="https://docs.examplegw.test",
+),
+```
+
+The row replaces the provider *class*, so there is no `BaseOpenAIProvider` subclass to write, no request or response code, and no dependency to add. Registering the name for everyone still touches a few files:
+
+- [ ] Add the row, setting capability flags for what the gateway actually supports. Flags default to the conservative baseline of completion, streaming, and model listing; everything else is opt-in. Do not set a flag you have not exercised against the live endpoint.
+- [ ] Add an `LLMProvider` member in `src/any_llm/constants.py`. A row resolves through `AnyLLM.create("examplegw")` without one, but the `"examplegw:model"` string form needs the member.
+- [ ] Add an empty extra to `pyproject.toml` (`examplegw = []`) and add the name to the `all` group. The extra stays empty because the registry uses the `openai` client, which is already a core dependency, but `tests/unit/test_provider_pyproject_options.py` asserts that every `LLMProvider` member has both, so omitting it fails CI.
+- [ ] Create `src/any_llm/providers/examplegw/__init__.py` re-exporting the generated class (full contents below).
+- [ ] Paste live verification output in the PR (see below).
+
+The package directory is required even though the row supplies all the behavior, because `tests/unit/test_provider.py` asserts a one-to-one mapping between `LLMProvider` members and directories under `src/any_llm/providers/`. The whole file is:
+
+```python
+from any_llm.providers.registry import get_registry_provider_class
+
+ExamplegwProvider = get_registry_provider_class("examplegw")
+
+__all__ = ["ExamplegwProvider"]
+```
+
+The registry providers already in the tree carry a second `<name>.py` module alongside this file. That is a compatibility shim preserving the deep-import path they had before they were migrated to rows, so a new provider does not need one.
+
+Whether you also add `tests/conftest.py` model maps depends on the tier rather than on the row: a **community** provider has no CI key, so its integration tests skip and the maps would go unused, while a **verified** provider needs entries in the maps that match the capabilities it actually supports (no embedding model for a gateway that does not do embeddings). Adding the `LLMProvider` member enrolls the name in the integration test parametrization either way; with no key configured those tests skip rather than fail.
+
+**Live verification.** Run the following against the real endpoint with your own key and paste the output into the PR, with the key redacted:
+
+```python
+from any_llm import AnyLLM
+
+llm = AnyLLM.create("examplegw", api_key="...")
+
+# completion
+print(llm.completion(model="<model>", messages=[{"role": "user", "content": "Say hi"}]).choices[0].message.content)
+
+# streaming
+for chunk in llm.completion(model="<model>", messages=[{"role": "user", "content": "Count to 3"}], stream=True):
+    print(chunk.choices[0].delta.content or "", end="")
+
+# model listing
+print([model.id for model in llm.list_models()][:5])
+```
+
+If the gateway does not support one of these, set the matching flag to `False` on the row (`supports_completion_streaming=False`, `supports_list_models=False`) and say so in the PR instead of pasting that call.
+
+### 2b. Providers That Need Code
 
 Implement the provider keeping this checklist in mind:
 
 ```
-any_llm/
+src/any_llm/
 ├── providers/
 │   ├── 📂 <your_provider>/
 │   │   ├── 📄 __init__.py
@@ -199,24 +295,24 @@ any_llm/
 
 **Required Implementation**:
 
-- [ ] Create provider module in `any_llm/providers/`<br>
-In `src/any_llm/provider.py`, add a field to `ProviderName` for your provider.
+- [ ] Create provider module in `src/any_llm/providers/`<br>
+In `src/any_llm/constants.py`, add a member to `LLMProvider` for your provider.
 - [ ] Handle provider-specific errors gracefully
 - [ ] Add type hints and docstrings
 - [ ] Use official SDK when available
-- [ ] Add to `pyproject.toml` optional dependencies
-- [ ] Add provider to `any_llm/__init__.py` <br>
+- [ ] Add an extra to `pyproject.toml` optional dependencies and add the name to the `all` group (`tests/unit/test_provider_pyproject_options.py` asserts both)
+- [ ] Export the provider class from your package's `__init__.py` <br>
 <p>
 
-At minimum, the `__init__.py` file should contain :
+At minimum, `src/any_llm/providers/your_provider/__init__.py` should contain:
 
 ```python
-from any_llm.your_provider.your_provider import YourProvider
+from .your_provider import YourProvider
 
 __all__ = ["YourProvider"]
 ```
 
-Providers must inherit from the `Provider` class found in `any_llm.provider`. All abstract methods must be implemented and class variables must be set.
+Providers must inherit from the `AnyLLM` class found in `any_llm.any_llm`. All abstract methods must be implemented and class variables must be set, including the `SUPPORTS_*` capability flags. When overriding a base-class method, use the `@override` decorator from `typing_extensions`.
 
 **Testing Requirements**:
 
@@ -227,7 +323,9 @@ Providers must inherit from the `Provider` class found in `any_llm.provider`. Al
 - [ ] Test suite in `tests/unit/providers`
 - [ ] Minimum 85% coverage for provider code
 
-Add your test config to the following in `tests/conftest.py`:
+Unit tests are required in both tiers. Integration tests depend on the tier. A **verified**-tier provider needs entries in the relevant `tests/conftest.py` maps below, so that it exercises the CI matrix, and only for the capabilities the provider actually supports. A **community**-tier provider has no CI key, so it skips those maps and pastes live verification output in the PR instead; use the commands in [2a](#2a-config-only-gateways-add-a-registry-row), substituting your provider name and dropping any operation the provider does not support.
+
+For verified providers, add your test config to the following in `tests/conftest.py`:
 
 | Variable                                                                                                                                           | Notes                                                                                                    |
 | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
