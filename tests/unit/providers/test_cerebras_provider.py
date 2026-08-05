@@ -2,6 +2,7 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from pydantic import BaseModel
 
 from any_llm.providers.cerebras.cerebras import CerebrasProvider
 from any_llm.providers.cerebras.utils import _convert_response, _create_openai_chunk_from_cerebras_chunk
@@ -188,7 +189,48 @@ async def test_completion_with_dataclass_response_format() -> None:
         assert call_kwargs["response_format"]["type"] == "json_schema"
         assert call_kwargs["response_format"]["json_schema"]["name"] == "response_schema"
         assert call_kwargs["response_format"]["json_schema"]["strict"] is True
-        assert "properties" in call_kwargs["response_format"]["json_schema"]["schema"]
+        schema = call_kwargs["response_format"]["json_schema"]["schema"]
+        assert "properties" in schema
+        assert schema["additionalProperties"] is False
+
+
+@pytest.mark.asyncio
+async def test_completion_response_format_schema_is_strict() -> None:
+    """Cerebras rejects strict=True unless every object sets additionalProperties: false."""
+
+    class Address(BaseModel):
+        city: str
+
+    class Person(BaseModel):
+        name: str
+        address: Address
+
+    with patch("any_llm.providers.cerebras.cerebras.cerebras") as mock_cerebras:
+        mock_client = Mock()
+        mock_cerebras.AsyncCerebras.return_value = mock_client
+
+        mock_response = Mock()
+        mock_response.model_dump.return_value = {
+            "id": "test-id",
+            "model": "llama-3.3-70b",
+            "created": 1234567890,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hi"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        provider = CerebrasProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="llama-3.3-70b",
+                messages=[{"role": "user", "content": "Hello"}],
+                response_format=Person,
+            ),
+        )
+
+        schema = mock_client.chat.completions.create.call_args[1]["response_format"]["json_schema"]["schema"]
+        assert schema["additionalProperties"] is False
+        assert schema["$defs"]["Address"]["additionalProperties"] is False
 
 
 @pytest.mark.asyncio

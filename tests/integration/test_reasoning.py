@@ -49,6 +49,10 @@ async def test_completion_reasoning(
                 # DeepSeek's V4 models default thinking mode to disabled for "auto" (matching the
                 # old deepseek-chat behavior); an explicit value is needed to enable it.
                 LLMProvider.DEEPSEEK,
+                # Mistral only applies the reasoning system prompt when prompt_mode="reasoning"
+                # is sent, which MistralProvider does for an explicit reasoning effort but not
+                # for "auto" (see _REASONING_EFFORT_TO_MISTRAL).
+                LLMProvider.MISTRAL,
             )
             else "auto",
             max_tokens=4096
@@ -112,6 +116,10 @@ async def test_completion_reasoning_streaming(
                 # DeepSeek's V4 models default thinking mode to disabled for "auto" (matching the
                 # old deepseek-chat behavior); an explicit value is needed to enable it.
                 LLMProvider.DEEPSEEK,
+                # Mistral only applies the reasoning system prompt when prompt_mode="reasoning"
+                # is sent, which MistralProvider does for an explicit reasoning effort but not
+                # for "auto" (see _REASONING_EFFORT_TO_MISTRAL).
+                LLMProvider.MISTRAL,
             )
             else "auto",
             max_tokens=4999
