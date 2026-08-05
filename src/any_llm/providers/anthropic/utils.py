@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from anthropic import transform_schema
@@ -372,7 +373,15 @@ def _convert_response(response: Message) -> ChatCompletion:
         message=message,
     )
 
-    created_ts = int(response.created_at.timestamp()) if hasattr(response, "created_at") else 0
+    # The Anthropic Messages API carries no timestamp, so ``created_at`` is absent on a
+    # spec-compliant response. ``Message`` does not declare the field either, so an
+    # Anthropic-compatible endpoint that sends it anyway has it kept as an unvalidated extra
+    # attribute holding the raw JSON value: None for an explicit null, but also int or str.
+    # A ``hasattr`` guard passes for all of those and ``.timestamp()`` then raises
+    # ``AttributeError: 'NoneType' object has no attribute 'timestamp'``, failing the whole
+    # completion, so only fall back to the timestamp when it really is a datetime.
+    created_at = getattr(response, "created_at", None)
+    created_ts = int(created_at.timestamp()) if isinstance(created_at, datetime) else 0
 
     return ChatCompletion(
         id=response.id,
@@ -519,8 +528,8 @@ def _convert_models_list(models_list: list[AnthropicModelInfo]) -> list[Model]:
     without validation, so the field is present but ``None``, and calling
     ``.timestamp()`` on it raises ``AttributeError: 'NoneType' object has no
     attribute 'timestamp'`` for the whole listing. Fall back to ``0`` for that
-    entry instead, matching what ``_create_openai_completion_from_anthropic``
-    already does for a response missing the same field.
+    entry instead, matching what ``_convert_response`` already does for a
+    response missing the same field.
     """
     return [
         Model(
