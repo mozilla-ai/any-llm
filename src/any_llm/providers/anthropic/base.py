@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -13,11 +14,15 @@ from any_llm.exceptions import BatchNotCompleteError
 from any_llm.logging import logger
 from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.messages import (
+    ContentBlockDeltaEvent,
     ContentBlockStartEvent,
+    ContentBlockStopEvent,
+    MessageDeltaEvent,
     MessageResponse,
     MessagesParams,
+    MessageStartEvent,
+    MessageStopEvent,
     MessageStreamEvent,
-    ThinkingBlock,
 )
 from any_llm.utils.structured_output import is_structured_output_type
 
@@ -39,6 +44,7 @@ if TYPE_CHECKING:
 
     from anthropic import AsyncAnthropic, AsyncAnthropicVertex
     from anthropic.types import Message
+    from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage
     from anthropic.types.messages.message_batch import MessageBatch
     from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
     from anthropic.types.parsed_message import ParsedMessage
@@ -47,12 +53,97 @@ if TYPE_CHECKING:
     from any_llm.types.model import Model
 
 
+_COMPACTION_BETA = "compact-2026-01-12"
+_COMPACTION_MIN_TRIGGER_TOKENS = 50_000
+_CONTEXT_MANAGEMENT_BETA = "context-management-2025-06-27"
+
 _ANTHROPIC_TO_OPENAI_STATUS_MAP: dict[str, str] = {
     "in_progress": "in_progress",
     "canceling": "cancelling",
     "canceled": "cancelled",
     "expired": "expired",
 }
+
+
+def _get_context_edit_value(edit: Any, field: str) -> Any:
+    return edit.get(field) if isinstance(edit, Mapping) else getattr(edit, field, None)
+
+
+def _get_context_edit_type(edit: Any) -> str | None:
+    edit_type = _get_context_edit_value(edit, "type")
+    return edit_type if isinstance(edit_type, str) else None
+
+
+def _validate_compaction_trigger(edit: Any) -> None:
+    trigger = _get_context_edit_value(edit, "trigger")
+    if trigger is None or _get_context_edit_value(trigger, "type") != "input_tokens":
+        return
+
+    value = _get_context_edit_value(trigger, "value")
+    if isinstance(value, bool) or not isinstance(value, int) or value < _COMPACTION_MIN_TRIGGER_TOKENS:
+        msg = "compact_20260112 input_tokens trigger value must be an integer greater than or equal to 50000"
+        raise ValueError(msg)
+
+
+def _pop_anthropic_beta_header(kwargs: dict[str, Any]) -> list[str]:
+    extra_headers = kwargs.get("extra_headers")
+    if not isinstance(extra_headers, Mapping):
+        return []
+
+    header_betas: list[str] = []
+    remaining_headers: dict[Any, Any] = {}
+    found_beta_header = False
+    for name, value in extra_headers.items():
+        if isinstance(name, str) and name.lower() == "anthropic-beta":
+            if isinstance(value, bytes):
+                try:
+                    value = value.decode()
+                except UnicodeDecodeError:
+                    remaining_headers[name] = value
+                    continue
+            if isinstance(value, str):
+                found_beta_header = True
+                header_betas.extend(beta.strip() for beta in value.split(",") if beta.strip())
+            else:
+                remaining_headers[name] = value
+        else:
+            remaining_headers[name] = value
+
+    if found_beta_header:
+        kwargs["extra_headers"] = remaining_headers
+    return header_betas
+
+
+def _messages_betas(params: MessagesParams, header_betas: list[str] | None = None) -> list[str]:
+    betas = list(params.betas or [])
+    has_explicit_betas = bool(params.betas or header_betas)
+    if params.context_management is not None:
+        edits = params.context_management.get("edits", [])
+        if not isinstance(edits, list):
+            msg = "context_management.edits must be a list"
+            raise ValueError(msg)
+
+        for edit in edits:
+            edit_type = _get_context_edit_type(edit)
+            inferred_beta = None
+            if edit_type == "compact_20260112":
+                _validate_compaction_trigger(edit)
+                inferred_beta = _COMPACTION_BETA
+            elif edit_type in {"clear_tool_uses_20250919", "clear_thinking_20251015"}:
+                inferred_beta = _CONTEXT_MANAGEMENT_BETA
+
+            if inferred_beta is not None and inferred_beta not in betas:
+                betas.append(inferred_beta)
+            elif inferred_beta is None and edit_type is not None and not has_explicit_betas:
+                logger.warning(
+                    "Cannot infer an Anthropic beta for context-management edit type %r; pass betas explicitly.",
+                    edit_type,
+                )
+
+    for beta in header_betas or []:
+        if beta not in betas:
+            betas.append(beta)
+    return betas
 
 
 def _convert_anthropic_batch_to_openai(batch: MessageBatch) -> Batch:
@@ -191,7 +282,7 @@ class BaseAnthropicProvider(AnyLLM, ABC):
     @override
     async def _amessages(
         self, params: MessagesParams, **kwargs: Any
-    ) -> MessageResponse | ParsedMessage[Any] | AsyncIterator[MessageStreamEvent]:
+    ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStreamEvent]:
         """Native Anthropic Messages API pass-through.
 
         When ``output_format`` is a structured-output type, uses native ``messages.parse``
@@ -200,67 +291,56 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         ``messages.create(output_config=...)`` and returns a ``MessageResponse`` (the base layer
         then builds the matching ``ParsedMessage`` from its JSON text).
         """
+        header_betas = _pop_anthropic_beta_header(kwargs)
+        betas = _messages_betas(params, header_betas)
+        use_beta = params.context_management is not None or bool(betas)
+        messages_resource: Any
+
         if params.output_format is not None:
-            native_kwargs = params.model_dump(exclude_none=True, exclude={"output_format", "stream"})
+            messages_resource = self.client.beta.messages if use_beta else self.client.messages
+            native_kwargs = params.model_dump(exclude_none=True, exclude={"output_format", "stream", "betas"})
+            if betas:
+                native_kwargs["betas"] = betas
             native_kwargs.update(kwargs)
             if is_structured_output_type(params.output_format):
-                return await self.client.messages.parse(output_format=params.output_format, **native_kwargs)
-            message = await self.client.messages.create(
-                output_config=cast("Any", params.output_format), **native_kwargs
-            )
+                parsed = await messages_resource.parse(output_format=params.output_format, **native_kwargs)
+                return cast("ParsedMessage[Any] | ParsedBetaMessage[Any]", parsed)
+            message = await messages_resource.create(output_config=cast("Any", params.output_format), **native_kwargs)
             return self._convert_native_message_to_response(message)
 
-        api_kwargs = params.model_dump(exclude_none=True)
+        api_kwargs = params.model_dump(exclude_none=True, exclude={"betas"})
         api_kwargs.pop("stream", None)
+        if betas:
+            api_kwargs["betas"] = betas
         api_kwargs.update(kwargs)
 
         if params.stream:
-            return self._stream_messages_async(**api_kwargs)
+            return self._stream_messages_async(use_beta=use_beta, **api_kwargs)
 
-        response: Message = await self.client.messages.create(**api_kwargs)
+        messages_resource = self.client.beta.messages if use_beta else self.client.messages
+        response: Message = await messages_resource.create(**api_kwargs)
         return self._convert_native_message_to_response(response)
 
-    async def _stream_messages_async(self, **kwargs: Any) -> AsyncIterator[MessageStreamEvent]:
+    async def _stream_messages_async(
+        self, *, use_beta: bool = False, **kwargs: Any
+    ) -> AsyncIterator[MessageStreamEvent]:
         """Stream Anthropic Messages API and yield SDK event types directly."""
-        from anthropic.types import (
-            RawContentBlockDeltaEvent,
-            RawContentBlockStartEvent,
-            RawContentBlockStopEvent,
-            RawMessageDeltaEvent,
-            RawMessageStartEvent,
-            RawMessageStopEvent,
-        )
-        from anthropic.types import (
-            ThinkingBlock as AnthropicThinkingBlock,
-        )
+        event_types: dict[str, type[MessageStreamEvent]] = {
+            "message_start": MessageStartEvent,
+            "message_delta": MessageDeltaEvent,
+            "message_stop": MessageStopEvent,
+            "content_block_start": ContentBlockStartEvent,
+            "content_block_delta": ContentBlockDeltaEvent,
+            "content_block_stop": ContentBlockStopEvent,
+        }
 
-        raw_types = (
-            RawMessageStartEvent,
-            RawMessageDeltaEvent,
-            RawMessageStopEvent,
-            RawContentBlockStartEvent,
-            RawContentBlockDeltaEvent,
-            RawContentBlockStopEvent,
-        )
+        messages_resource: Any = self.client.beta.messages if use_beta else self.client.messages
 
-        async with self.client.messages.stream(**kwargs) as stream:
+        async with messages_resource.stream(**kwargs) as stream:
             async for event in stream:
-                if not isinstance(event, raw_types):
-                    continue
-                if isinstance(event, RawContentBlockStartEvent) and isinstance(
-                    event.content_block, AnthropicThinkingBlock
-                ):
-                    yield ContentBlockStartEvent(
-                        type="content_block_start",
-                        index=event.index,
-                        content_block=ThinkingBlock(
-                            type="thinking",
-                            thinking=event.content_block.thinking,
-                            signature=event.content_block.signature,
-                        ),
-                    )
-                else:
-                    yield event
+                event_model = event_types.get(event.type)
+                if event_model is not None:
+                    yield event_model.model_validate(event, from_attributes=True)
 
     @staticmethod
     def _convert_native_message_to_response(message: Message) -> MessageResponse:

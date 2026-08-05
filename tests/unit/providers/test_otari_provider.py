@@ -31,6 +31,7 @@ from any_llm.types.messages import (
     MessagesParams,
     MessageStartEvent,
     MessageStopEvent,
+    ParsedBetaMessage,
     ParsedMessage,
     TextBlock,
 )
@@ -802,6 +803,30 @@ async def test_otari_amessages_delegates_to_native_endpoint_preserving_anthropic
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "unsupported_params",
+    [
+        {"context_management": {"edits": [{"type": "compact_20260112"}]}},
+        {"betas": ["compact-2026-01-12"]},
+    ],
+)
+async def test_otari_amessages_rejects_anthropic_beta_params(unsupported_params: dict[str, Any]) -> None:
+    client = _mock_otari_client()
+    provider = _build_provider(client)
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        **unsupported_params,
+    )
+
+    with pytest.raises(NotImplementedError, match="native Anthropic Messages"):
+        await provider._amessages(params)
+
+    client.message.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_otari_amessages_output_format_falls_back_to_bridge() -> None:
     """With output_format set, otari delegates to the Completions bridge, not /messages."""
     completion = ChatCompletion.model_validate(
@@ -893,7 +918,7 @@ async def test_otari_amessages_streaming_yields_typed_events_and_skips_unknown()
 
     result = await provider._amessages(params)
 
-    assert not isinstance(result, (MessageResponse, ParsedMessage))
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
     collected = [event async for event in result]
 
     # The unknown "ping" event is skipped; everything else is yielded in order.

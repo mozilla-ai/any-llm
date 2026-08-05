@@ -10,7 +10,7 @@ from typing import IO, TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, ove
 from openresponses_types import ResponseResource
 from pydantic import BaseModel
 
-from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider
+from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider, get_provider_tier
 from any_llm.exceptions import (
     ContentFilterFinishReasonError,
     LengthFinishReasonError,
@@ -36,6 +36,7 @@ from any_llm.types.messages import (
     MessagesParams,
     MessageStopEvent,
     MessageStreamEvent,
+    ParsedBetaMessage,
     ParsedMessage,
     StopReason,
 )
@@ -250,7 +251,9 @@ class AnyLLM(ABC):
         if registry_class is not None:
             return registry_class(api_key=api_key, api_base=api_base, **kwargs)
 
-        provider_key = LLMProvider.from_string(provider_key).value
+        # Resolve through the shared resolver so the unsupported-provider error lists
+        # registry gateways too, not just the enum.
+        provider_key = str(cls.resolve_provider_key(provider_key))
 
         provider_class_name = f"{provider_key.capitalize()}Provider"
         provider_module_name = f"{provider_key}"
@@ -296,7 +299,9 @@ class AnyLLM(ABC):
         if registry_class is not None:
             return registry_class
 
-        provider_key = LLMProvider.from_string(provider_key).value
+        # Resolve through the shared resolver so the unsupported-provider error lists
+        # registry gateways too, not just the enum.
+        provider_key = str(cls.resolve_provider_key(provider_key))
 
         provider_class_name = f"{provider_key.capitalize()}Provider"
         provider_module_name = f"{provider_key}"
@@ -312,10 +317,54 @@ class AnyLLM(ABC):
         provider_class: type[AnyLLM] = getattr(module, provider_class_name)
         return provider_class
 
+    @staticmethod
+    def get_registry_provider_names() -> list[str]:
+        """Names of config-only gateways that exist only as registry rows.
+
+        Registry rows do not need an ``LLMProvider`` member, so these names are
+        absent from the enum and have to be added to any enumeration of
+        providers explicitly.
+        """
+        from any_llm.providers.registry import PROVIDER_REGISTRY
+
+        enum_values = {provider.value for provider in LLMProvider}
+        return sorted(name for name in PROVIDER_REGISTRY if name not in enum_values)
+
     @classmethod
     def get_supported_providers(cls) -> list[str]:
-        """Get a list of supported provider keys."""
-        return [provider.value for provider in LLMProvider]
+        """Get a list of supported provider keys.
+
+        Includes registry-only gateways, which resolve by name without an
+        ``LLMProvider`` member.
+        """
+        return [provider.value for provider in LLMProvider] + cls.get_registry_provider_names()
+
+    @classmethod
+    def resolve_provider_key(cls, provider_key: str | LLMProvider) -> str | LLMProvider:
+        """Resolve a provider key to an ``LLMProvider`` member where one exists.
+
+        Registry-only gateways have no enum member, so their name is returned
+        unchanged. Everything downstream (``create``, ``get_provider_class``)
+        accepts either form.
+
+        Raises:
+            UnsupportedProviderError: The key is neither an enum member nor a
+                registry row.
+
+        """
+        if isinstance(provider_key, LLMProvider):
+            return provider_key
+        # Match LLMProvider.from_string's normalization so both resolution paths
+        # accept the same spellings.
+        normalized = provider_key.strip().lower()
+        try:
+            return LLMProvider(normalized)
+        except ValueError:
+            from any_llm.providers.registry import get_registry_config
+
+            if get_registry_config(normalized) is not None:
+                return normalized
+            raise UnsupportedProviderError(provider_key, cls.get_supported_providers()) from None
 
     @classmethod
     def get_all_provider_metadata(cls) -> list[ProviderMetadata]:
@@ -337,21 +386,29 @@ class AnyLLM(ABC):
 
     @classmethod
     def get_provider_enum(cls, provider_key: str) -> LLMProvider:
-        """Convert a string provider key to a ProviderName enum."""
+        """Convert a string provider key to a ProviderName enum.
+
+        Registry-only gateways have no enum member, so this raises for them even
+        though they are resolvable. Use ``resolve_provider_key`` to accept both.
+        """
         try:
             return LLMProvider(provider_key)
         except ValueError as e:
-            supported = [provider.value for provider in LLMProvider]
-            raise UnsupportedProviderError(provider_key, supported) from e
+            # Report everything resolvable, not just the enum, so the message does
+            # not omit registry-only gateways.
+            raise UnsupportedProviderError(provider_key, cls.get_supported_providers()) from e
 
     @classmethod
-    def split_model_provider(cls, model: str) -> tuple[LLMProvider, str]:
+    def split_model_provider(cls, model: str) -> tuple[str | LLMProvider, str]:
         """Extract the provider key from the model identifier.
 
         Supports both new format 'provider:model' (e.g., 'mistral:mistral-small')
         and legacy format 'provider/model' (e.g., 'mistral/mistral-small').
 
         The legacy format will be deprecated in version 1.0.
+
+        Returns an ``LLMProvider`` member when the provider has one, and the bare
+        name for registry-only gateways. Both forms are accepted by ``create``.
         """
         colon_index = model.find(":")
         slash_index = model.find("/")
@@ -376,7 +433,7 @@ class AnyLLM(ABC):
         if not provider or not model_name:
             msg = f"Invalid model format. Expected 'provider:model' or 'provider/model', got '{model}'"
             raise ValueError(msg)
-        return cls.get_provider_enum(provider), model_name
+        return cls.resolve_provider_key(provider), model_name
 
     @staticmethod
     @abstractmethod
@@ -435,6 +492,7 @@ class AnyLLM(ABC):
         """
         return ProviderMetadata(
             name=cls.PROVIDER_NAME,
+            tier=get_provider_tier(cls.PROVIDER_NAME),
             env_key=cls.ENV_API_KEY_NAME,
             env_api_base=cls.ENV_API_BASE_NAME,
             doc_url=cls.PROVIDER_DOCUMENTATION_URL,
@@ -722,16 +780,21 @@ class AnyLLM(ABC):
         self,
         *,
         allow_running_loop: bool | None = None,
+        context_management: dict[str, Any] | None = None,
+        betas: list[str] | None = None,
         **kwargs: Any,
-    ) -> MessageResponse | ParsedMessage[Any] | Iterator[MessageStreamEvent]:
+    ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | Iterator[MessageStreamEvent]:
         """Create a message using the Anthropic Messages API synchronously.
 
         See [AnyLLM.amessages][any_llm.any_llm.AnyLLM.amessages]
         """
         if allow_running_loop is None:
             allow_running_loop = INSIDE_NOTEBOOK
-        response = run_async_in_sync(self.amessages(**kwargs), allow_running_loop=allow_running_loop)
-        if isinstance(response, (MessageResponse, ParsedMessage)):
+        response = run_async_in_sync(
+            self.amessages(context_management=context_management, betas=betas, **kwargs),
+            allow_running_loop=allow_running_loop,
+        )
+        if isinstance(response, (MessageResponse, ParsedMessage, ParsedBetaMessage)):
             return response
         return async_iter_to_sync_iter(response)
 
@@ -753,9 +816,11 @@ class AnyLLM(ABC):
         metadata: dict[str, Any] | None = None,
         thinking: dict[str, Any] | None = None,
         cache_control: dict[str, Any] | None = None,
+        context_management: dict[str, Any] | None = None,
+        betas: list[str] | None = None,
         output_format: type | dict[str, Any] | None = None,
         **kwargs: Any,
-    ) -> MessageResponse | ParsedMessage[Any] | AsyncIterator[MessageStreamEvent]:
+    ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStreamEvent]:
         """Create a message using the Anthropic Messages API asynchronously.
 
         All providers support this via automatic conversion to/from Chat Completions.
@@ -776,6 +841,11 @@ class AnyLLM(ABC):
             metadata: Request metadata.
             thinking: Thinking/reasoning configuration.
             cache_control: Cache control configuration for prompt caching.
+            context_management: Anthropic context management configuration. The
+                `compact_20260112` strategy requires a supported model. Its `input_tokens`
+                trigger value must be at least 50,000 when provided; see
+                [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction).
+            betas: Anthropic beta identifiers.
             output_format: Structured output, mirroring Anthropic's ``messages.parse``/
                 ``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed
                 ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic
@@ -789,6 +859,8 @@ class AnyLLM(ABC):
 
         Raises:
             ValueError: If `output_format` is combined with `stream=True`.
+            NotImplementedError: If `context_management` or `betas` is used with a
+                provider that has no native Anthropic Messages API.
 
         """
         if output_format is not None and stream:
@@ -810,6 +882,8 @@ class AnyLLM(ABC):
             metadata=metadata,
             thinking=thinking,
             cache_control=cache_control,
+            context_management=context_management,
+            betas=betas,
             output_format=output_format,
         )
         result = await self._amessages(params, **kwargs)
@@ -824,12 +898,16 @@ class AnyLLM(ABC):
 
     async def _amessages(
         self, params: MessagesParams, **kwargs: Any
-    ) -> MessageResponse | ParsedMessage[Any] | AsyncIterator[MessageStreamEvent]:
+    ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStreamEvent]:
         """Default implementation: converts Messages ↔ Completions format.
 
         Providers with native Messages API support (e.g., Anthropic) override this
         for direct pass-through.
         """
+        if params.context_management is not None or params.betas:
+            msg = "context_management and betas require a provider with a native Anthropic Messages API"
+            raise NotImplementedError(msg)
+
         from any_llm.types.completion import CompletionParams
         from any_llm.utils.messages_compat import (
             StreamingState,

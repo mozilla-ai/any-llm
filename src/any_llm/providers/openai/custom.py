@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from typing_extensions import override
 
+from any_llm.constants import ProviderTier
 from any_llm.providers.openai.base import BaseOpenAIProvider
+
+if TYPE_CHECKING:
+    from any_llm.types.provider import ProviderMetadata
 
 
 class OpenAICompatibleProvider(BaseOpenAIProvider):
@@ -41,6 +45,15 @@ class OpenAICompatibleProvider(BaseOpenAIProvider):
         # than the (unset) class default.
         self.API_BASE = api_base
         super().__init__(api_key=api_key, api_base=api_base, **kwargs)
+
+    @classmethod
+    @override
+    def get_provider_metadata(cls) -> ProviderMetadata:
+        # A custom endpoint is an arbitrary URL, so it is never covered by our support
+        # promise, even when the caller names it after a provider we do hold a key for.
+        # Without this, create_openai_compatible(name="openai", api_base=<anything>)
+        # would report the verified tier, because the tier is derived from the name.
+        return super().get_provider_metadata().model_copy(update={"tier": ProviderTier.COMMUNITY})
 
     @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
