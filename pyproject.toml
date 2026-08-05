@@ -11,7 +11,7 @@ version = "0.0.0-dev" # There is a regex in the release.yaml file that looks for
 dependencies = [
   "pydantic>2,<3",
   "openai>=2.18.0",
-  "openresponses-types>=2.4.0",
+  "openresponses-types>=2.4.0,<3",
   "anthropic>=0.83.0",
   "rich",
   "httpx",
@@ -157,6 +157,9 @@ exclude-newer = "7 days"
 # Trade-off: uv.lock is gitignored and CI re-resolves on every run, so a broken release
 # reaches CI immediately with no pinned fallback. We accept that for these deps because
 # we control their publishing; the soak still applies to every other dependency.
+# Note that openresponses-types is a core dependency rather than an optional extra like
+# otari, so a bad release there breaks every install and every CI job, not just the
+# otari extra. The `<3` cap on it is what bounds that blast radius.
 exclude-newer-package = { otari = "2100-01-01", openresponses-types = "2100-01-01" }
 
 [tool.setuptools.package-data]
