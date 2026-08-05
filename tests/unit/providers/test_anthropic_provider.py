@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from anthropic import transform_schema
+from anthropic.types import Message
 from anthropic.types.model_info import ModelInfo
 from pydantic import BaseModel
 
@@ -1328,10 +1329,8 @@ def test_convert_models_list_mixed_created_at() -> None:
     assert [m.created for m in result] == [int(created_at.timestamp()), 0]
 
 
-def _anthropic_message(**extra: Any) -> Any:
+def _anthropic_message(**extra: Any) -> Message:
     """Build a spec-shaped Messages response, plus any extra fields an endpoint might send."""
-    from anthropic.types import Message
-
     return Message.model_validate(
         {
             "id": "msg_123",
