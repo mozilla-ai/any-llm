@@ -38,6 +38,7 @@ def test_omitted_parallel_tool_calls_stays_none() -> None:
 
 
 def test_omitted_context_management_stays_none() -> None:
+    """Omitted context_management should not appear in provider request."""
     params = ResponsesParams(model="test", input="hello")
 
     assert params.context_management is None
@@ -52,6 +53,7 @@ def test_explicit_parallel_tool_calls_preserved(value: bool) -> None:
 
 
 def test_context_management_preserved() -> None:
+    """An explicit context_management value is kept as-is for the provider request."""
     context_management = [{"type": "compaction", "compact_threshold": 200_000}]
     params = ResponsesParams(model="test", input="hello", context_management=context_management)
 

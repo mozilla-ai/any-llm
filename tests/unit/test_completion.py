@@ -68,6 +68,7 @@ async def test_aresponses_parameter_capture() -> None:
             stream=True,
             instructions="Be helpful",
             parallel_tool_calls=True,
+            context_management=[{"type": "compaction", "compact_threshold": 200_000}],
             api_key="mistral-key-456",
             api_base="https://custom-mistral.example.com/v1",
             another_custom_param="another_value",
@@ -88,34 +89,12 @@ async def test_aresponses_parameter_capture() -> None:
         assert call_args.kwargs["stream"] is True
         assert call_args.kwargs["instructions"] == "Be helpful"
         assert call_args.kwargs["parallel_tool_calls"] is True
+        assert call_args.kwargs["context_management"] == [{"type": "compaction", "compact_threshold": 200_000}]
         assert call_args.kwargs["another_custom_param"] == "another_value"
 
 
-@pytest.mark.asyncio
-async def test_aresponses_context_management_parameter_capture() -> None:
-    mock_provider = Mock()
-    mock_provider.aresponses = AsyncMock(return_value=Mock())
-
-    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
-        mock_create.return_value = mock_provider
-        context_management = [{"type": "compaction", "compact_threshold": 200_000}]
-
-        await aresponses(
-            model="openai:gpt-5.3-codex",
-            input_data="Continue the coding task.",
-            context_management=context_management,
-            api_key="openai-key",
-        )
-
-        mock_create.assert_called_once_with(
-            LLMProvider.OPENAI,
-            api_key="openai-key",
-            api_base=None,
-        )
-        assert mock_provider.aresponses.call_args.kwargs["context_management"] == context_management
-
-
 def test_responses_context_management_parameter_capture() -> None:
+    """Test that the synchronous responses wrapper forwards context_management."""
     mock_provider = Mock()
     mock_provider.responses = Mock(return_value=Mock())
 
