@@ -3,7 +3,9 @@ import pytest
 from any_llm.any_llm import AnyLLM
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import MissingApiKeyError
+from any_llm.providers.kenari import KenariProvider as PackageKenariProvider
 from any_llm.providers.kenari.kenari import KenariProvider
+from any_llm.providers.registry import get_registry_config, get_registry_provider_class
 
 
 def test_provider_metadata() -> None:
@@ -73,3 +75,9 @@ def test_registered_in_enum_and_loader() -> None:
     assert LLMProvider.from_string("kenari") is LLMProvider.KENARI
     assert AnyLLM.get_provider_class("kenari") is KenariProvider
     assert "kenari" in AnyLLM.get_supported_providers()
+
+
+def test_backed_by_a_registry_row_through_both_import_paths() -> None:
+    assert get_registry_config("kenari") is not None
+    assert KenariProvider is get_registry_provider_class("kenari")
+    assert PackageKenariProvider is KenariProvider

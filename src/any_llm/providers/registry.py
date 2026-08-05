@@ -95,6 +95,14 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         supports_embedding=True,
         supports_moderation=True,
     ),
+    "kenari": OpenAICompatibleProviderConfig(
+        name="kenari",
+        api_base="https://kenari.id/v1",
+        env_api_key_name="KENARI_API_KEY",
+        env_api_base_name="KENARI_API_BASE",
+        provider_documentation_url="https://kenari.id/docs",
+        supports_completion_reasoning=True,
+    ),
     "moonshot": OpenAICompatibleProviderConfig(
         name="moonshot",
         api_base="https://api.moonshot.ai/v1",
