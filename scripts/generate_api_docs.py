@@ -434,9 +434,15 @@ print(response.choices[0].message.content)
 | `model` | `str` | Combined identifier in `"provider:model"` format (e.g., `"openai:gpt-4.1-mini"`). The legacy `"provider/model"` format is also accepted but deprecated. |"""
     )
     parts.append("")
-    parts.append("**Returns:** A `(LLMProvider, model_name)` tuple.")
+    parts.append(
+        "**Returns:** A `(provider, model_name)` tuple. `provider` is an `LLMProvider` member "
+        "when the provider has one, and the bare name for a config-only registry gateway."
+    )
     parts.append("")
-    parts.append("**Raises:** `ValueError` if the string does not contain a `:` or `/` delimiter.")
+    parts.append(
+        "**Raises:** `ValueError` if the string does not contain a `:` or `/` delimiter, or "
+        "`UnsupportedProviderError` if the provider is not resolvable."
+    )
     parts.append("")
     parts.append(
         """```python

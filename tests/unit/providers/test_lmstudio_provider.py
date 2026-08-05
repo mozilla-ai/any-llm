@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from any_llm import AnyLLM
+from any_llm.constants import LLMProvider
 from any_llm.providers.lmstudio import utils
 from any_llm.providers.lmstudio.lmstudio import LmstudioProvider
 from any_llm.types.completion import (
@@ -118,7 +119,7 @@ def test_factory_integration() -> None:
 def test_model_provider_split() -> None:
     """Test that model string parsing works correctly."""
     provider_enum, model_name = AnyLLM.split_model_provider("lmstudio:google/gemma-3-4b")
-    assert provider_enum.value == "lmstudio"
+    assert provider_enum is LLMProvider.LMSTUDIO
     assert model_name == "google/gemma-3-4b"
 
 
