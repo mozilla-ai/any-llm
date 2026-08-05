@@ -11,7 +11,7 @@ version = "0.0.0-dev" # There is a regex in the release.yaml file that looks for
 dependencies = [
   "pydantic>2,<3",
   "openai>=2.18.0",
-  "openresponses-types>=2.3.0.post1",
+  "openresponses-types>=2.4.0,<3",
   "anthropic>=0.83.0",
   "rich",
   "httpx",
@@ -150,13 +150,17 @@ Source = "https://github.com/mozilla-ai/any-llm"
 
 [tool.uv]
 exclude-newer = "7 days"
-# otari is first-party (mozilla.ai owns it) and co-developed with any-llm, so we
-# intentionally exempt it from the global 7-day exclude-newer soak and always resolve the
-# latest published otari. The far-future date is a sentinel meaning "never soak otari".
-# Trade-off: uv.lock is gitignored and CI re-resolves on every run, so a broken otari
-# release reaches CI immediately with no pinned fallback. We accept that for this dep
-# because we control its publishing; the soak still applies to every other dependency.
-exclude-newer-package = { otari = "2100-01-01" }
+# otari and openresponses-types are first-party (mozilla.ai owns both) and co-developed
+# with any-llm, so we intentionally exempt them from the global 7-day exclude-newer soak
+# and always resolve the latest published version. The far-future date is a sentinel
+# meaning "never soak this package".
+# Trade-off: uv.lock is gitignored and CI re-resolves on every run, so a broken release
+# reaches CI immediately with no pinned fallback. We accept that for these deps because
+# we control their publishing; the soak still applies to every other dependency.
+# Note that openresponses-types is a core dependency rather than an optional extra like
+# otari, so a bad release there breaks every install and every CI job, not just the
+# otari extra. The `<3` cap on it is what bounds that blast radius.
+exclude-newer-package = { otari = "2100-01-01", openresponses-types = "2100-01-01" }
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
