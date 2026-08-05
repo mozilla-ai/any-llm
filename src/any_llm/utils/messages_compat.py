@@ -42,6 +42,19 @@ def _output_config_to_response_format(output_config: dict[str, Any]) -> dict[str
     return {"type": "json_schema", "json_schema": {"name": name, "schema": schema}}
 
 
+def _convert_system_to_openai(system: str | list[dict[str, Any]]) -> str:
+    """Flatten an Anthropic system value to a plain string.
+
+    Anthropic accepts a list of text blocks so callers can attach cache_control
+    breakpoints. OpenAI-compatible backends validate the system message as
+    str | list[content_part] and reject the extra cache_control key, so send
+    the concatenated text instead.
+    """
+    if isinstance(system, str):
+        return system
+    return "".join(b.get("text", "") for b in system if b.get("type") == "text")
+
+
 def messages_params_to_completion_params(params: MessagesParams) -> dict[str, Any]:
     """Convert MessagesParams (Anthropic format) to kwargs suitable for CompletionParams.
 
@@ -50,7 +63,7 @@ def messages_params_to_completion_params(params: MessagesParams) -> dict[str, An
     messages: list[dict[str, Any]] = []
 
     if params.system:
-        messages.append({"role": "system", "content": params.system})
+        messages.append({"role": "system", "content": _convert_system_to_openai(params.system)})
 
     for msg in params.messages:
         converted = _convert_message_to_openai(msg)
