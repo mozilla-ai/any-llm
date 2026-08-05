@@ -81,11 +81,6 @@ jobs:
     steps:
       - name: Set expected providers for integration tests
         id: set_providers
-        # huggingface and perplexity are dropped while their accounts are out of credit: every
-        # request returns 402 Payment Required and 401 insufficient_quota respectively, so their
-        # tests fail on billing rather than on any-llm. HF_TOKEN and PERPLEXITY_API_KEY are also
-        # removed from the test step below, which makes each test skip on MissingApiKeyError.
-        # Re-enable by restoring both here and re-adding the two secrets to that step.
         run: echo "expected_providers=anthropic,azureopenai,bedrock,cerebras,cohere,deepseek,fireworks,gemini,groq,inception,mistral,moonshot,nebius,openai,openrouter,otari,portkey,together,sambanova,voyage,xai,zai,minimax" >> $GITHUB_OUTPUT
 
       - name: Set expected providers for local integration tests
