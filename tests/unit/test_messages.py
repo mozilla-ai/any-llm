@@ -851,9 +851,13 @@ async def test_default_amessages_streaming_usage_from_trailing_chunk() -> None:
 
     events = [event async for event in result]
     delta = next(e for e in events if isinstance(e, MessageDeltaEvent))
-    assert delta.usage.input_tokens == 100
+    # Anthropic's input_tokens and cache_read_input_tokens are disjoint, so the cached
+    # count is subtracted out of the 100-token OpenAI prompt total rather than copied
+    # alongside it.
+    assert delta.usage.input_tokens == 20
     assert delta.usage.output_tokens == 50
     assert delta.usage.cache_read_input_tokens == 80
+    assert delta.usage.input_tokens + delta.usage.cache_read_input_tokens == 100
     assert delta.delta.stop_reason == "end_turn"
     assert events[-1].type == "message_stop"
 

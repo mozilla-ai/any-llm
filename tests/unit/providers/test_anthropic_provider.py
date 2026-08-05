@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from anthropic import transform_schema
+from anthropic.types import Message
 from anthropic.types.model_info import ModelInfo
 from pydantic import BaseModel
 
@@ -1326,3 +1327,60 @@ def test_convert_models_list_mixed_created_at() -> None:
 
     assert [m.id for m in result] == ["with", "without"]
     assert [m.created for m in result] == [int(created_at.timestamp()), 0]
+
+
+def _anthropic_message(**extra: Any) -> Message:
+    """Build a spec-shaped Messages response, plus any extra fields an endpoint might send."""
+    return Message.model_validate(
+        {
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-3-haiku",
+            "content": [{"type": "text", "text": "hello"}],
+            "stop_reason": "end_turn",
+            "stop_sequence": None,
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            **extra,
+        }
+    )
+
+
+def test_convert_response_without_created_at() -> None:
+    """The Anthropic Messages API carries no timestamp, so created falls back to 0."""
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    result = _convert_response(_anthropic_message())
+
+    assert result.created == 0
+    assert result.choices[0].message.content == "hello"
+
+
+def test_convert_response_with_created_at() -> None:
+    """When an endpoint does supply a datetime, it is used."""
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    created_at = datetime(2026, 2, 19, tzinfo=UTC)
+
+    result = _convert_response(_anthropic_message(created_at=created_at))
+
+    assert result.created == int(created_at.timestamp())
+
+
+@pytest.mark.parametrize("created_at", [None, 1750000000, "2026-01-01T00:00:00Z"])
+def test_convert_response_non_datetime_created_at(created_at: Any) -> None:
+    """Regression: a non-datetime created_at must not raise "'NoneType' object has no attribute 'timestamp'".
+
+    Message does not declare created_at, so an Anthropic-compatible endpoint that sends the
+    field anyway has it kept as an unvalidated extra attribute holding the raw JSON value.
+    A bare hasattr guard passed for these and crashed the whole completion on .timestamp().
+    """
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = _anthropic_message(created_at=created_at)
+    assert hasattr(response, "created_at")
+
+    result = _convert_response(response)
+
+    assert result.created == 0
+    assert result.choices[0].message.content == "hello"

@@ -16,12 +16,15 @@ from any_llm.types.completion import (
     PromptTokensDetails,
     Reasoning,
 )
-from any_llm.types.messages import MessagesParams, ThinkingBlock
+from any_llm.types.messages import MessagesParams, MessageStartEvent, ThinkingBlock
 from any_llm.utils.messages_compat import (
     StreamingState,
+    _cached_tokens_from_usage,
+    _convert_system_to_openai,
     chat_completion_chunk_to_message_stream_events,
     chat_completion_to_message_response,
     messages_params_to_completion_params,
+    split_cached_input_tokens,
 )
 
 
@@ -100,6 +103,109 @@ def test_system_message_prepended() -> None:
     result = messages_params_to_completion_params(params)
     assert result["messages"][0] == {"role": "system", "content": "You are helpful."}
     assert result["messages"][1]["role"] == "user"
+
+
+def test_system_string_unchanged() -> None:
+    """Test that a plain string system value is passed through unchanged."""
+    result = _convert_system_to_openai("You are helpful.")
+    assert result == "You are helpful."
+
+
+def test_system_block_list_flattened() -> None:
+    """Test that a list of system content blocks is flattened to a string."""
+    system = [{"type": "text", "text": "You are a helpful assistant."}]
+    result = _convert_system_to_openai(system)
+    assert result == "You are a helpful assistant."
+
+
+def test_system_block_list_with_cache_control_stripped() -> None:
+    """Test that cache_control markers are removed when flattening system blocks."""
+    system = [
+        {
+            "type": "text",
+            "text": "You are a helpful assistant.",
+            "cache_control": {"type": "ephemeral", "ttl": "1h"},
+        }
+    ]
+    result = _convert_system_to_openai(system)
+    assert result == "You are a helpful assistant."
+    assert "cache_control" not in str(result)
+
+
+def test_system_multiple_blocks_concatenated() -> None:
+    """Test that multiple text blocks in system are concatenated."""
+    system = [
+        {"type": "text", "text": "You are helpful. "},
+        {"type": "text", "text": "Be concise."},
+    ]
+    result = _convert_system_to_openai(system)
+    assert result == "You are helpful. Be concise."
+
+
+def test_system_mixed_block_types_text_extracted() -> None:
+    """Test that only text blocks are extracted, non-text blocks are ignored."""
+    system = [
+        {"type": "text", "text": "Be helpful. "},
+        {"type": "image", "source": "ignored"},
+        {"type": "text", "text": "Be concise."},
+    ]
+    result = _convert_system_to_openai(system)
+    assert result == "Be helpful. Be concise."
+
+
+def test_system_empty_block_list() -> None:
+    """Test that an empty system block list returns an empty string."""
+    system: list[dict[str, Any]] = []
+    result = _convert_system_to_openai(system)
+    assert result == ""
+
+
+def test_system_block_without_text_field() -> None:
+    """Test that blocks without a 'text' field contribute empty strings."""
+    system = [
+        {"type": "text", "text": "Hello"},
+        {"type": "text"},  # Missing 'text' field
+        {"type": "text", "text": " world"},
+    ]
+    result = _convert_system_to_openai(system)
+    assert result == "Hello world"
+
+
+def test_system_content_block_in_messages_params() -> None:
+    """Test converting MessagesParams with system content blocks."""
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        system=[
+            {
+                "type": "text",
+                "text": "You are a helpful assistant.",
+                "cache_control": {"type": "ephemeral", "ttl": "1h"},
+            }
+        ],
+    )
+    result = messages_params_to_completion_params(params)
+    assert result["messages"][0] == {
+        "role": "system",
+        "content": "You are a helpful assistant.",
+    }
+
+
+def test_system_no_cache_control_in_output() -> None:
+    """Test that cache_control never appears in the completion params output."""
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "test"}],
+        max_tokens=1024,
+        system=[
+            {"type": "text", "text": "System ", "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": "prompt", "cache_control": {"type": "ephemeral"}},
+        ],
+    )
+    result = messages_params_to_completion_params(params)
+    result_str = str(result)
+    assert "cache_control" not in result_str
 
 
 def test_tool_conversion_to_openai() -> None:
@@ -297,6 +403,157 @@ def test_chat_completion_text_response_to_message() -> None:
     assert result.content[0].text == "Hello!"
     assert result.usage.input_tokens == 10
     assert result.usage.output_tokens == 5
+
+
+def test_chat_completion_cached_tokens_mapped_disjointly() -> None:
+    """cached_tokens is reported as cache_read_input_tokens and subtracted out of input_tokens.
+
+    OpenAI's prompt_tokens is the whole prompt with cached_tokens a subset of it; Anthropic's
+    two fields are disjoint. Summing them must recover the original prompt total.
+    """
+    completion = ChatCompletion(
+        id="cmpl-1",
+        model="some-model",
+        created=0,
+        object="chat.completion",
+        choices=[Choice(index=0, finish_reason="stop", message=ChatCompletionMessage(role="assistant", content="hi"))],
+        usage=CompletionUsage(
+            prompt_tokens=10_000,
+            completion_tokens=50,
+            total_tokens=10_050,
+            prompt_tokens_details=PromptTokensDetails(cached_tokens=9_600),
+        ),
+    )
+    usage = chat_completion_to_message_response(completion).usage
+    assert usage.input_tokens == 400
+    assert usage.cache_read_input_tokens == 9_600
+    assert usage.input_tokens + usage.cache_read_input_tokens == 10_000
+    assert usage.output_tokens == 50
+
+
+def test_chat_completion_cache_creation_tokens_never_synthesized() -> None:
+    """Automatic prefix caching has no write step, so cache_creation_input_tokens stays unset."""
+    completion = ChatCompletion(
+        id="cmpl-1",
+        model="some-model",
+        created=0,
+        object="chat.completion",
+        choices=[Choice(index=0, finish_reason="stop", message=ChatCompletionMessage(role="assistant", content="hi"))],
+        usage=CompletionUsage(
+            prompt_tokens=100,
+            completion_tokens=5,
+            total_tokens=105,
+            prompt_tokens_details=PromptTokensDetails(cached_tokens=60),
+        ),
+    )
+    usage = chat_completion_to_message_response(completion).usage
+    assert usage.cache_creation_input_tokens is None
+
+
+def test_chat_completion_without_prompt_tokens_details_reports_full_input_tokens() -> None:
+    """A provider that reports no cache accounting is unchanged: input_tokens is the full prompt."""
+    completion = ChatCompletion(
+        id="cmpl-1",
+        model="some-model",
+        created=0,
+        object="chat.completion",
+        choices=[Choice(index=0, finish_reason="stop", message=ChatCompletionMessage(role="assistant", content="hi"))],
+        usage=CompletionUsage(prompt_tokens=10_000, completion_tokens=50, total_tokens=10_050),
+    )
+    usage = chat_completion_to_message_response(completion).usage
+    assert usage.input_tokens == 10_000
+    assert usage.cache_read_input_tokens is None
+
+
+def test_chat_completion_zero_cached_tokens_reports_full_input_tokens() -> None:
+    """A cache miss (cached_tokens=0) leaves input_tokens whole and cache_read unset."""
+    completion = ChatCompletion(
+        id="cmpl-1",
+        model="some-model",
+        created=0,
+        object="chat.completion",
+        choices=[Choice(index=0, finish_reason="stop", message=ChatCompletionMessage(role="assistant", content="hi"))],
+        usage=CompletionUsage(
+            prompt_tokens=10_000,
+            completion_tokens=50,
+            total_tokens=10_050,
+            prompt_tokens_details=PromptTokensDetails(cached_tokens=0),
+        ),
+    )
+    usage = chat_completion_to_message_response(completion).usage
+    assert usage.input_tokens == 10_000
+    assert usage.cache_read_input_tokens is None
+
+
+def test_split_cached_input_tokens_returns_none_for_zero_cache() -> None:
+    """The helper reports no-cache as None so the field is omitted rather than reported as 0."""
+    assert split_cached_input_tokens(100, 0) == (100, None)
+    assert split_cached_input_tokens(100, 80) == (20, 80)
+
+
+def test_split_cached_input_tokens_caps_cached_at_prompt_total() -> None:
+    """A cached count exceeding the prompt total is capped so input_tokens cannot go negative.
+
+    Capping the subtrahend keeps the sum invariant: the two values still add up to prompt_tokens.
+    """
+    input_tokens, cache_read = split_cached_input_tokens(100, 120)
+    assert input_tokens == 0
+    assert cache_read == 100
+    assert input_tokens + (cache_read or 0) == 100
+
+
+def test_split_cached_input_tokens_floors_negative_cached_at_zero() -> None:
+    """A negative cached count is floored, so input_tokens never exceeds the prompt total.
+
+    Left unclamped, subtracting a negative would report more fresh input than the whole prompt
+    and hand back a negative cache count.
+    """
+    input_tokens, cache_read = split_cached_input_tokens(100, -1)
+    assert input_tokens == 100
+    assert cache_read is None
+
+
+def test_streaming_message_start_cached_without_prompt_total_is_not_negative() -> None:
+    """A usage chunk carrying cached tokens but no prompt total must not yield negative input_tokens.
+
+    ``prompt_tokens`` is only recorded when truthy while the cached count is recorded independently,
+    so the two can go out of sync; Gemini's chunk converter defaults a missing prompt count to 0
+    while still reporting a cached count.
+    """
+    state = StreamingState()
+    chunk = ChatCompletionChunk(
+        id="chunk-1",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
+        usage=CompletionUsage(
+            prompt_tokens=0,
+            completion_tokens=5,
+            total_tokens=5,
+            prompt_tokens_details=PromptTokensDetails(cached_tokens=800),
+        ),
+    )
+    events = chat_completion_chunk_to_message_stream_events(chunk, state)
+    start = next(e for e in events if isinstance(e, MessageStartEvent))
+    assert start.message.usage.input_tokens == 0
+    assert start.message.usage.cache_read_input_tokens is None
+
+
+def test_cached_tokens_from_usage_defaults_to_zero() -> None:
+    """cached_tokens reads as 0 when details are absent or the field itself is None."""
+    assert _cached_tokens_from_usage(CompletionUsage(prompt_tokens=10, completion_tokens=1, total_tokens=11)) == 0
+    assert (
+        _cached_tokens_from_usage(
+            CompletionUsage(
+                prompt_tokens=10,
+                completion_tokens=1,
+                total_tokens=11,
+                prompt_tokens_details=PromptTokensDetails(),
+            )
+        )
+        == 0
+    )
 
 
 def test_chat_completion_tool_calls_response_to_message() -> None:
@@ -995,6 +1252,46 @@ def test_streaming_usage_cache_read_from_prompt_tokens_details() -> None:
     )
     chat_completion_chunk_to_message_stream_events(chunk, state)
     assert state.cache_read_input_tokens == 80
+
+
+def test_streaming_message_start_reports_cache_read_disjointly() -> None:
+    """When usage rides the first chunk, message_start splits it the same way the non-streamed path does."""
+    state = StreamingState()
+    chunk = ChatCompletionChunk(
+        id="chunk-1",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
+        usage=CompletionUsage(
+            prompt_tokens=100,
+            completion_tokens=20,
+            total_tokens=120,
+            prompt_tokens_details=PromptTokensDetails(cached_tokens=80),
+        ),
+    )
+    events = chat_completion_chunk_to_message_stream_events(chunk, state)
+    start = next(e for e in events if isinstance(e, MessageStartEvent))
+    assert start.message.usage.input_tokens == 20
+    assert start.message.usage.cache_read_input_tokens == 80
+    assert start.message.usage.input_tokens + start.message.usage.cache_read_input_tokens == 100
+
+
+def test_streaming_message_start_without_cache_reports_full_input_tokens() -> None:
+    """No cache accounting on the first chunk leaves message_start's input_tokens whole."""
+    state = StreamingState()
+    chunk = ChatCompletionChunk(
+        id="chunk-1",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
+        usage=CompletionUsage(prompt_tokens=100, completion_tokens=20, total_tokens=120),
+    )
+    events = chat_completion_chunk_to_message_stream_events(chunk, state)
+    start = next(e for e in events if isinstance(e, MessageStartEvent))
+    assert start.message.usage.input_tokens == 100
+    assert start.message.usage.cache_read_input_tokens is None
 
 
 def test_streaming_usage_zero_cached_tokens_leaves_cache_read_unset() -> None:

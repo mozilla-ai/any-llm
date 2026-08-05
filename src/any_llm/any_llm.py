@@ -857,6 +857,7 @@ class AnyLLM(ABC):
             chat_completion_chunk_to_message_stream_events,
             chat_completion_to_message_response,
             messages_params_to_completion_params,
+            split_cached_input_tokens,
         )
 
         completion_kwargs = messages_params_to_completion_params(params)
@@ -870,13 +871,14 @@ class AnyLLM(ABC):
             state = StreamingState()
 
             def usage_delta(stop_reason: StopReason | None) -> MessageDeltaEvent:
+                input_tokens, cache_read = split_cached_input_tokens(state.input_tokens, state.cache_read_input_tokens)
                 return MessageDeltaEvent(
                     type="message_delta",
                     delta=MessageDelta(stop_reason=stop_reason),
                     usage=MessageDeltaUsage(
                         output_tokens=state.output_tokens,
-                        input_tokens=state.input_tokens,
-                        cache_read_input_tokens=state.cache_read_input_tokens or None,
+                        input_tokens=input_tokens,
+                        cache_read_input_tokens=cache_read,
                     ),
                 )
 
@@ -1037,6 +1039,7 @@ class AnyLLM(ABC):
         presence_penalty: float | None = None,
         frequency_penalty: float | None = None,
         truncation: str | None = None,
+        context_management: list[dict[str, Any]] | None = None,
         store: bool | None = None,
         service_tier: str | None = None,
         user: str | None = None,
@@ -1081,6 +1084,9 @@ class AnyLLM(ABC):
             presence_penalty: Penalizes new tokens based on whether they appear in the text so far.
             frequency_penalty: Penalizes new tokens based on their frequency in the text so far.
             truncation: Controls how the service truncates input when it exceeds the model context window.
+            context_management: OpenAI Responses context management configuration. Use a
+                `compaction` entry with `compact_threshold` to enable server-side compaction;
+                see [OpenAI's compaction documentation](https://platform.openai.com/docs/guides/compaction).
             store: Whether to store the response so it can be retrieved later.
             service_tier: The service tier to use for this request.
             user: A unique identifier representing your end user.
@@ -1132,6 +1138,7 @@ class AnyLLM(ABC):
             presence_penalty=presence_penalty,
             frequency_penalty=frequency_penalty,
             truncation=truncation,
+            context_management=context_management,
             store=store,
             service_tier=service_tier,
             user=user,

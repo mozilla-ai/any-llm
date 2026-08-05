@@ -94,6 +94,9 @@ class ResponsesParams(BaseModel):
     truncation: str | None = None
     """Controls how the service truncates the input when it exceeds the model context window."""
 
+    context_management: list[dict[str, Any]] | None = None
+    """OpenAI Responses context management configuration."""
+
     store: bool | None = None
     """Whether to store the response so it can be retrieved later."""
 
