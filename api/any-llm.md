@@ -50,16 +50,16 @@ Parses a combined `"provider:model"` string into its components.
 ```
 def split_model_provider(
     model: str,
-) -> tuple[LLMProvider, str]
+) -> tuple[str | LLMProvider, str]
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `model` | `str` | Combined identifier in `"provider:model"` format (e.g., `"openai:gpt-4.1-mini"`). The legacy `"provider/model"` format is also accepted but deprecated. |
 
-**Returns:** A `(LLMProvider, model_name)` tuple.
+**Returns:** A `(provider, model_name)` tuple. `provider` is an `LLMProvider` member when the provider has one, and the bare name for a config-only registry gateway.
 
-**Raises:** `ValueError` if the string does not contain a `:` or `/` delimiter.
+**Raises:** `ValueError` if the string does not contain a `:` or `/` delimiter, or `UnsupportedProviderError` if the provider is not resolvable.
 
 ```python
 provider, model_name = AnyLLM.split_model_provider("anthropic:claude-sonnet-4-20250514")

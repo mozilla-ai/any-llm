@@ -14,6 +14,7 @@ A Pydantic `BaseModel` containing provider information and feature flags.
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | `str` |  |
+| `tier` | `ProviderTier` | Support tier. Defaults to community, so a provider is only advertised as verified once it is listed in VERIFIED_PROVIDERS. |
 | `env_key` | `str` |  |
 | `env_api_base` | `str \| None` |  |
 | `doc_url` | `str` |  |
