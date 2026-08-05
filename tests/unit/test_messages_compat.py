@@ -16,12 +16,14 @@ from any_llm.types.completion import (
     PromptTokensDetails,
     Reasoning,
 )
-from any_llm.types.messages import MessagesParams
+from any_llm.types.messages import MessagesParams, MessageStartEvent
 from any_llm.utils.messages_compat import (
     StreamingState,
+    _cached_tokens_from_usage,
     chat_completion_chunk_to_message_stream_events,
     chat_completion_to_message_response,
     messages_params_to_completion_params,
+    split_cached_input_tokens,
 )
 
 
@@ -381,16 +383,12 @@ def test_chat_completion_zero_cached_tokens_reports_full_input_tokens() -> None:
 
 def test_split_cached_input_tokens_returns_none_for_zero_cache() -> None:
     """The helper reports no-cache as None so the field is omitted rather than reported as 0."""
-    from any_llm.utils.messages_compat import split_cached_input_tokens
-
     assert split_cached_input_tokens(100, 0) == (100, None)
     assert split_cached_input_tokens(100, 80) == (20, 80)
 
 
 def test_cached_tokens_from_usage_defaults_to_zero() -> None:
     """cached_tokens reads as 0 when details are absent or the field itself is None."""
-    from any_llm.utils.messages_compat import _cached_tokens_from_usage
-
     assert _cached_tokens_from_usage(CompletionUsage(prompt_tokens=10, completion_tokens=1, total_tokens=11)) == 0
     assert (
         _cached_tokens_from_usage(
@@ -1104,8 +1102,6 @@ def test_streaming_usage_cache_read_from_prompt_tokens_details() -> None:
 
 def test_streaming_message_start_reports_cache_read_disjointly() -> None:
     """When usage rides the first chunk, message_start splits it the same way the non-streamed path does."""
-    from any_llm.types.messages import MessageStartEvent
-
     state = StreamingState()
     chunk = ChatCompletionChunk(
         id="chunk-1",
@@ -1129,8 +1125,6 @@ def test_streaming_message_start_reports_cache_read_disjointly() -> None:
 
 def test_streaming_message_start_without_cache_reports_full_input_tokens() -> None:
     """No cache accounting on the first chunk leaves message_start's input_tokens whole."""
-    from any_llm.types.messages import MessageStartEvent
-
     state = StreamingState()
     chunk = ChatCompletionChunk(
         id="chunk-1",
