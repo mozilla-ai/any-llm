@@ -25,12 +25,14 @@ def messages(
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
     cache_control: dict[str, Any] | None = None,
+    context_management: dict[str, Any] | None = None,
+    betas: list[str] | None = None,
     output_format: type | dict[str, Any] | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> MessageResponse | ParsedMessage[Any] | Iterator[RawMessageStartEvent | RawMessageDeltaEvent | RawMessageStopEvent | RawContentBlockStartEvent | RawContentBlockDeltaEvent | RawContentBlockStopEvent]
+) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | Iterator[MessageStartEvent | MessageDeltaEvent | MessageStopEvent | ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent]
 ```
 
 ## `any_llm.amessages()`
@@ -55,12 +57,14 @@ async def amessages(
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
     cache_control: dict[str, Any] | None = None,
+    context_management: dict[str, Any] | None = None,
+    betas: list[str] | None = None,
     output_format: type | dict[str, Any] | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> MessageResponse | ParsedMessage[Any] | AsyncIterator[RawMessageStartEvent | RawMessageDeltaEvent | RawMessageStopEvent | RawContentBlockStartEvent | RawContentBlockDeltaEvent | RawContentBlockStopEvent]
+) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStartEvent | MessageDeltaEvent | MessageStopEvent | ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent]
 ```
 
 ## Parameters
@@ -82,6 +86,8 @@ async def amessages(
 | `metadata` | `dict[str, Any] \| None` | None | Request metadata. |
 | `thinking` | `dict[str, Any] \| None` | None | Thinking/reasoning configuration. |
 | `cache_control` | `dict[str, Any] \| None` | None | Cache control configuration for prompt caching. |
+| `context_management` | `dict[str, Any] \| None` | None | Anthropic context management configuration. The `compact_20260112` strategy requires a supported model. Its `input_tokens` trigger value must be at least 50,000 when provided; see [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction). |
+| `betas` | `list[str] \| None` | None | Anthropic beta identifiers. |
 | `output_format` | `type \| dict[str, Any] \| None` | None | Structured output, mirroring Anthropic's ``messages.parse``/``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output`` holds the parsed JSON). The call returns Anthropic's ``ParsedMessage``. Not supported with streaming. |
 | `api_key` | `str \| None` | None | API key for the provider. |
 | `api_base` | `str \| None` | None | Base URL for the provider API. |

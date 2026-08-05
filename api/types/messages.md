@@ -13,6 +13,14 @@ Full response from the Messages API.
 
 **Import:** `from any_llm.types.messages import MessageResponse`
 
+| Field | Type | Description |
+|-------|------|-------------|
+| `container` | `BetaContainer \| None` |  |
+| `content` | `list[ThinkingBlock \| TextBlock \| ThinkingBlock \| RedactedThinkingBlock \| ToolUseBlock \| ServerToolUseBlock \| WebSearchToolResultBlock \| WebFetchToolResultBlock \| CodeExecutionToolResultBlock \| BashCodeExecutionToolResultBlock \| TextEditorCodeExecutionToolResultBlock \| ToolSearchToolResultBlock \| ContainerUploadBlock \| BetaTextBlock \| BetaThinkingBlock \| BetaRedactedThinkingBlock \| BetaToolUseBlock \| BetaServerToolUseBlock \| BetaWebSearchToolResultBlock \| BetaWebFetchToolResultBlock \| BetaAdvisorToolResultBlock \| BetaCodeExecutionToolResultBlock \| BetaBashCodeExecutionToolResultBlock \| BetaTextEditorCodeExecutionToolResultBlock \| BetaToolSearchToolResultBlock \| BetaMCPToolUseBlock \| BetaMCPToolResultBlock \| BetaContainerUploadBlock \| BetaCompactionBlock \| BetaFallbackBlock]` |  |
+| `stop_reason` | `Literal['end_turn', 'max_tokens', 'stop_sequence', 'tool_use', 'pause_turn', 'compaction', 'refusal', 'model_context_window_exceeded'] \| None` |  |
+| `usage` | `MessageUsage` |  |
+| `context_management` | `BetaContextManagementResponse \| None` |  |
+| `diagnostics` | `BetaDiagnostics \| None` |  |
 
 ### `MessageContentBlock`
 
@@ -29,26 +37,21 @@ Token usage information for Messages API.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `cache_creation` | `CacheCreation \| None` | Breakdown of cached tokens by TTL |
-| `cache_creation_input_tokens` | `int \| None` | The number of input tokens used to create the cache entry. |
-| `cache_read_input_tokens` | `int \| None` | The number of input tokens read from the cache. |
-| `inference_geo` | `str \| None` | The geographic region where inference was performed for this request. |
-| `input_tokens` | `int` | The number of input tokens which were used. |
-| `output_tokens` | `int` | The number of output tokens which were used. |
-| `output_tokens_details` | `OutputTokensDetails \| None` | Breakdown of output tokens by category. `output_tokens` remains the inclusive, authoritative total used for billing. This object provides a read-only decomposition for observability — for example, how many of the billed output tokens were spent on internal reasoning that may have been summarized before being returned to you. |
-| `server_tool_use` | `ServerToolUsage \| None` | The number of server tool requests. |
-| `service_tier` | `Literal['standard', 'priority', 'batch'] \| None` | If the request used the priority, standard, or batch tier. |
+| `iterations` | `list[BetaMessageIterationUsage \| BetaCompactionIterationUsage \| BetaAdvisorMessageIterationUsage \| BetaFallbackMessageIterationUsage] \| None` |  |
+| `speed` | `Literal['standard', 'fast'] \| None` |  |
 
 ### `MessageStreamEvent`
 
-Union of Anthropic SDK stream event types, re-exported from the `anthropic` package:
+Union of stream event types. Each one subclasses the matching Anthropic SDK `Raw*` event and widens it so beta responses (context management, compaction) round-trip without loss:
 
-- `MessageStartEvent` — `type: 'message_start'`, `message: Message`
-- `MessageDeltaEvent` — `type: 'message_delta'`, `delta: Delta`, `usage: MessageDeltaUsage`
-- `MessageStopEvent` — `type: 'message_stop'`
-- `ContentBlockStartEvent` — `type: 'content_block_start'`, `index: int`, `content_block: ContentBlock`
-- `ContentBlockDeltaEvent` — `type: 'content_block_delta'`, `index: int`, `delta: RawContentBlockDelta`
-- `ContentBlockStopEvent` — `type: 'content_block_stop'`, `index: int`
+- `MessageStartEvent`: `type: 'message_start'`, `message: MessageResponse`
+- `MessageDeltaEvent`: `type: 'message_delta'`, `delta: MessageDelta`, `usage: MessageDeltaUsage`, `context_management: BetaContextManagementResponse | None`
+- `MessageStopEvent`: `type: 'message_stop'`, `message: MessageResponse | None`
+- `ContentBlockStartEvent`: `type: 'content_block_start'`, `index: int`, `content_block: MessageContentBlock`
+- `ContentBlockDeltaEvent`: `type: 'content_block_delta'`, `index: int`, `delta: RawContentBlockDelta | CompactionDelta`
+- `ContentBlockStopEvent`: `type: 'content_block_stop'`, `index: int`, `content_block: MessageContentBlock | None`
+
+`message` on `MessageStopEvent` and `content_block` on `ContentBlockStopEvent` are populated only by providers with a native Anthropic Messages API; the Chat Completions bridge leaves them unset.
 
 **Import:** `from any_llm.types.messages import MessageStreamEvent`
 
@@ -77,4 +80,6 @@ Normalized parameters for the Anthropic Messages API, used internally to pass st
 | `metadata` | `dict[str, Any] \| None` | Request metadata |
 | `thinking` | `dict[str, Any] \| None` | Thinking/reasoning configuration |
 | `cache_control` | `dict[str, Any] \| None` | Cache control configuration for prompt caching |
+| `context_management` | `dict[str, Any] \| None` | Anthropic context management configuration |
+| `betas` | `list[str] \| None` | Anthropic beta identifiers |
 | `output_format` | `type \| dict[str, Any] \| None` |  |
