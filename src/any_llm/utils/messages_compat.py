@@ -23,10 +23,8 @@ from any_llm.types.messages import (
 from any_llm.utils.structured_output import is_structured_output_type
 
 if TYPE_CHECKING:
-    from anthropic.types import ContentBlock as SDKContentBlock
-
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionUsage
-    from any_llm.types.messages import MessagesParams
+    from any_llm.types.messages import MessageContentBlock, MessagesParams
 
 
 def _output_config_to_response_format(output_config: dict[str, Any]) -> dict[str, Any]:
@@ -287,7 +285,7 @@ def _cached_tokens_from_usage(usage: CompletionUsage) -> int:
 
 def chat_completion_to_message_response(completion: ChatCompletion) -> MessageResponse:
     """Convert an OpenAI ChatCompletion to an Anthropic MessageResponse."""
-    content_blocks: list[SDKContentBlock] = []
+    content_blocks: list[MessageContentBlock] = []
     stop_reason: StopReason = "end_turn"
 
     if completion.choices:

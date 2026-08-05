@@ -27,6 +27,7 @@ from any_llm.types.messages import (
     MessageResponse,
     MessageStartEvent,
     MessageStopEvent,
+    ParsedBetaMessage,
     ParsedMessage,
 )
 from any_llm.types.model import Model
@@ -336,7 +337,7 @@ class OtariProvider(BaseOpenAIProvider):
     @override
     async def _amessages(
         self, params: MessagesParams, **kwargs: Any
-    ) -> MessageResponse | ParsedMessage[Any] | AsyncIterator[MessageStreamEvent]:
+    ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStreamEvent]:
         """Native Anthropic Messages API pass-through via otari's /messages endpoint.
 
         The base implementation converts Messages to Chat Completions, which silently
@@ -344,6 +345,10 @@ class OtariProvider(BaseOpenAIProvider):
         config). otari's gateway serves /messages natively, so delegate to the otari
         SDK's ``message()`` to preserve them.
         """
+        if params.context_management is not None or params.betas:
+            msg = "context_management and betas require a provider with a native Anthropic Messages API"
+            raise NotImplementedError(msg)
+
         if params.output_format is not None:
             # Structured output is handled by the base Messages<->Completions bridge, which
             # routes output_format through otari's completion path. A follow-up could adopt
