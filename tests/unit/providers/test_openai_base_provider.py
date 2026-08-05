@@ -3,7 +3,7 @@ import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from openai.types.responses import ResponseOutputMessage, ResponseOutputText
+from openai.types.responses import ResponseCompactionItem, ResponseOutputMessage, ResponseOutputText
 from pydantic import BaseModel
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
@@ -44,6 +44,24 @@ def _make_openai_response(text: str) -> Response:
         model="test-model",
         object="response",
         output=[message],
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        tools=[],
+    )
+
+
+def _make_openai_compaction_response() -> Response:
+    compaction = ResponseCompactionItem(
+        id="cmp-1",
+        type="compaction",
+        encrypted_content="opaque-compacted-context",
+    )
+    return Response(
+        id="resp-compaction",
+        created_at=0,
+        model="gpt-5.3-codex",
+        object="response",
+        output=[compaction],
         parallel_tool_calls=False,
         tool_choice="auto",
         tools=[],
@@ -134,8 +152,45 @@ async def test_aresponses_without_response_format_returns_response(mock_openai_c
 
     mock_client.responses.parse.assert_not_called()
     assert "text" not in mock_client.responses.create.call_args.kwargs
+    assert "context_management" not in mock_client.responses.create.call_args.kwargs
     assert isinstance(result, Response)
     assert not isinstance(result, ParsedResponse)
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.openai.base.AsyncOpenAI")
+async def test_aresponses_context_management_preserves_compaction_item(mock_openai_class: MagicMock) -> None:
+    mock_client = AsyncMock()
+    mock_client.responses.create = AsyncMock(return_value=_make_openai_compaction_response())
+    mock_openai_class.return_value = mock_client
+
+    provider = _ResponsesProvider(api_key="key")
+    context_management = [{"type": "compaction", "compact_threshold": 200_000}]
+    result = await provider.aresponses(
+        model="gpt-5.3-codex",
+        input_data="Continue the coding task.",
+        context_management=context_management,
+    )
+
+    assert mock_client.responses.create.call_args.kwargs["context_management"] == context_management
+    assert isinstance(result, Response)
+    assert isinstance(result.output[0], ResponseCompactionItem)
+    assert result.output[0].encrypted_content == "opaque-compacted-context"
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.openai.base.AsyncOpenAI")
+async def test_aresponses_replays_compaction_item_unchanged(mock_openai_class: MagicMock) -> None:
+    mock_client = AsyncMock()
+    mock_client.responses.create = AsyncMock(return_value=_make_openai_response("Done"))
+    mock_openai_class.return_value = mock_client
+
+    provider = _ResponsesProvider(api_key="key")
+    compaction_input = _make_openai_compaction_response().output[0].model_dump(exclude_none=True)
+    input_data = [compaction_input, {"role": "user", "content": "Continue."}]
+    await provider.aresponses(model="gpt-5.3-codex", input_data=input_data)
+
+    assert mock_client.responses.create.call_args.kwargs["input"] == input_data
 
 
 @pytest.mark.asyncio
