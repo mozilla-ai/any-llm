@@ -232,22 +232,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-lmstudio-models-
 
-      - name: Setup Ollama
-        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
-        uses: ai-action/setup-ollama@v2
-
-      - name: Run ollama
-        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
-        run: |
-          ollama serve &
-          ollama pull llama3.2:1b
-          ollama pull qwen3:0.6b
-          ollama pull llava-phi3
-
-      - name: Wait for Ollama to be ready
-        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
-        run: |
-          timeout 60 bash -c 'until curl -s http://localhost:11434/api/tags >/dev/null; do sleep 1; done'
+      # llamafile/llamacpp and lmstudio/ollama run as two sequential groups, not all four at
+      # once, so their model servers never compete for RAM at the same time (see #1236: running
+      # all four together was OOM-killing the runner mid-suite, every run, at the same test).
 
       - name: Download and Run LlamaFile
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamafile')
@@ -273,12 +260,55 @@ jobs:
 
       - name : Download and Run LlamaCpp
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamacpp')
-        run: docker run -d -p 8090:8090 ghcr.io/ggml-org/llama.cpp:server -hf ggml-org/Qwen3-1.7B-GGUF --jinja --port 8090
+        run: |
+          cid=$(docker run -d -p 8090:8090 ghcr.io/ggml-org/llama.cpp:server -hf ggml-org/Qwen3-1.7B-GGUF --jinja --port 8090)
+          echo "$cid" > llamacpp.cid
 
       - name: Wait for LlamaCpp to be ready
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamacpp')
         run: |
           timeout 60 bash -c 'until curl -s http://localhost:8090/health >/dev/null; do sleep 1; done'
+
+      - name: Run LlamaFile and LlamaCpp integration tests
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamafile') || contains(github.event.inputs.filter, 'llamacpp')
+        env:
+          INCLUDE_LOCAL_PROVIDERS: "true"
+          INCLUDE_NON_LOCAL_PROVIDERS: "false"
+        run: |
+          if [ -n "${{ inputs.filter }}" ]; then
+            pytest tests/integration -v --cov --cov-report=xml -k "(llamafile or llamacpp) and (${{ inputs.filter }})" || [ $? -eq 5 ]
+          else
+            pytest tests/integration -v --cov --cov-report=xml -k "llamafile or llamacpp" || [ $? -eq 5 ]
+          fi
+
+      - name: Shut down LlamaFile and LlamaCpp
+        if: always()
+        run: |
+          if [ -f llamafile.pid ]; then
+            kill $(cat llamafile.pid) || true
+            rm llamafile.pid
+          fi
+          if [ -f llamacpp.cid ]; then
+            docker stop "$(cat llamacpp.cid)" || true
+            rm llamacpp.cid
+          fi
+
+      - name: Setup Ollama
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
+        uses: ai-action/setup-ollama@v2
+
+      - name: Run ollama
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
+        run: |
+          ollama serve &
+          ollama pull llama3.2:1b
+          ollama pull qwen3:0.6b
+          ollama pull llava-phi3
+
+      - name: Wait for Ollama to be ready
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
+        run: |
+          timeout 60 bash -c 'until curl -s http://localhost:11434/api/tags >/dev/null; do sleep 1; done'
 
       - name: Install LM Studio CLI
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio')
@@ -299,23 +329,16 @@ jobs:
         run: |
           timeout 120 bash -c 'until curl -s http://localhost:1234/v1/models >/dev/null; do sleep 1; done'
 
-      - name: Run Local Provider Integration tests
+      - name: Run LMStudio and Ollama integration tests
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio') || contains(github.event.inputs.filter, 'ollama')
         env:
           INCLUDE_LOCAL_PROVIDERS: "true"
           INCLUDE_NON_LOCAL_PROVIDERS: "false"
         run: |
           if [ -n "${{ inputs.filter }}" ]; then
-            pytest tests/integration -v --cov --cov-report=xml -k "${{ inputs.filter }}" || [ $? -eq 5 ]
+            pytest tests/integration -v --cov --cov-append --cov-report=xml -k "(lmstudio or ollama) and (${{ inputs.filter }})" || [ $? -eq 5 ]
           else
-            pytest tests/integration -v --cov --cov-report=xml || [ $? -eq 5 ]
-          fi
-
-      - name: Cleanup LlamaFile process
-        if: always()
-        run: |
-          if [ -f llamafile.pid ]; then
-            kill $(cat llamafile.pid) || true
-            rm llamafile.pid
+            pytest tests/integration -v --cov --cov-append --cov-report=xml -k "lmstudio or ollama" || [ $? -eq 5 ]
           fi
 
       - name: Upload coverage reports to Codecov
