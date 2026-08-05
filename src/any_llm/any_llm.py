@@ -836,6 +836,7 @@ class AnyLLM(ABC):
             chat_completion_chunk_to_message_stream_events,
             chat_completion_to_message_response,
             messages_params_to_completion_params,
+            split_cached_input_tokens,
         )
 
         completion_kwargs = messages_params_to_completion_params(params)
@@ -849,13 +850,14 @@ class AnyLLM(ABC):
             state = StreamingState()
 
             def usage_delta(stop_reason: StopReason | None) -> MessageDeltaEvent:
+                input_tokens, cache_read = split_cached_input_tokens(state.input_tokens, state.cache_read_input_tokens)
                 return MessageDeltaEvent(
                     type="message_delta",
                     delta=MessageDelta(stop_reason=stop_reason),
                     usage=MessageDeltaUsage(
                         output_tokens=state.output_tokens,
-                        input_tokens=state.input_tokens,
-                        cache_read_input_tokens=state.cache_read_input_tokens or None,
+                        input_tokens=input_tokens,
+                        cache_read_input_tokens=cache_read,
                     ),
                 )
 

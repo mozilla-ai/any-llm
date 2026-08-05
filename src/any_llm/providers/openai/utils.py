@@ -79,7 +79,7 @@ def _convert_chat_completion(response: OpenAIChatCompletion) -> ChatCompletion:
             type(response.created),
         )
         response.created = int(response.created)
-    normalized = _normalize_openai_dict_response(response.model_dump())
+    normalized = _normalize_openai_dict_response(response.model_dump(warnings=False))
     return ChatCompletion.model_validate(normalized)
 
 
