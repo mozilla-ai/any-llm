@@ -101,6 +101,97 @@ def test_patch_messages_with_multiple_valid_tool_calls() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    "reasoning",
+    ["thought hard", {"content": "thought hard"}],
+    ids=["serialized-string", "object-form"],
+)
+def test_patch_messages_rebuilds_thinking_chunk_for_replay(reasoning: Any) -> None:
+    """Reasoning normalized onto `reasoning` must be folded back into a Mistral ThinkChunk."""
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "u1"},
+        {"role": "assistant", "content": "the answer", "reasoning": reasoning},
+        {"role": "user", "content": "u2"},
+    ]
+    out = _patch_messages(messages)
+    assert out[1]["content"] == [
+        {"type": "thinking", "thinking": [{"type": "text", "text": "thought hard"}]},
+        {"type": "text", "text": "the answer"},
+    ]
+
+
+def test_patch_messages_replays_thinking_signature_from_extra_content() -> None:
+    """A signature captured off the response has to be replayed with the thinking block."""
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": "the answer",
+            "reasoning": "thought hard",
+            "extra_content": {"mistral": {"signature": "sig-abc"}},
+        },
+    ]
+    out = _patch_messages(messages)
+    assert out[0]["content"][0] == {
+        "type": "thinking",
+        "thinking": [{"type": "text", "text": "thought hard"}],
+        "signature": "sig-abc",
+    }
+
+
+def test_patch_messages_rebuilds_thinking_chunk_without_text_when_content_empty() -> None:
+    """A reasoning-only assistant turn yields a thinking chunk and no empty text chunk."""
+    messages: list[dict[str, Any]] = [{"role": "assistant", "content": None, "reasoning": "thought hard"}]
+    out = _patch_messages(messages)
+    assert out[0]["content"] == [{"type": "thinking", "thinking": [{"type": "text", "text": "thought hard"}]}]
+
+
+def test_patch_messages_leaves_prechunked_content_untouched() -> None:
+    """Caller-supplied provider-native chunks are trusted rather than merged into."""
+    prechunked = [{"type": "text", "text": "already chunked"}]
+    messages: list[dict[str, Any]] = [
+        {"role": "assistant", "content": prechunked, "reasoning": "thought hard"},
+    ]
+    out = _patch_messages(messages)
+    assert out[0]["content"] == prechunked
+
+
+def test_patch_messages_ignores_unusable_reasoning_shapes() -> None:
+    """An absent or malformed `reasoning` value leaves the message alone."""
+    messages: list[dict[str, Any]] = [
+        {"role": "assistant", "content": "a1"},
+        {"role": "assistant", "content": "a2", "reasoning": None},
+        {"role": "assistant", "content": "a3", "reasoning": {"nope": "wrong-key"}},
+        {"role": "assistant", "content": "a4", "reasoning": ""},
+    ]
+    out = _patch_messages(messages)
+    assert out == messages
+
+
+def test_patch_messages_does_not_mutate_input_messages() -> None:
+    """Rebuilding content must not write back into the caller's message dicts."""
+    messages: list[dict[str, Any]] = [
+        {"role": "assistant", "content": "the answer", "reasoning": "thought hard"},
+    ]
+    _patch_messages(messages)
+    assert messages == [{"role": "assistant", "content": "the answer", "reasoning": "thought hard"}]
+
+
+def test_patch_messages_rebuilds_thinking_and_still_inserts_assistant_ok() -> None:
+    """The thinking rebuild composes with the tool-message "OK" insertion."""
+    messages: list[dict[str, Any]] = [
+        {"role": "assistant", "content": "a1", "reasoning": "thought hard", "tool_calls": [{}]},
+        {"role": "tool", "content": "t1"},
+        {"role": "user", "content": "u1"},
+    ]
+    out = _patch_messages(messages)
+    assert out[0]["content"] == [
+        {"type": "thinking", "thinking": [{"type": "text", "text": "thought hard"}]},
+        {"type": "text", "text": "a1"},
+    ]
+    assert out[0]["tool_calls"] == [{}]
+    assert out[2] == {"role": "assistant", "content": "OK"}
+
+
 class StructuredOutput(BaseModel):
     foo: str
     bar: int
@@ -292,18 +383,16 @@ async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("reasoning_effort", "expected_effort"),
-    [
-        ("minimal", "minimal"),
-        ("low", "low"),
-        ("medium", "medium"),
-        ("high", "high"),
-        ("xhigh", "xhigh"),
-        ("max", "xhigh"),
-    ],
+    "reasoning_effort",
+    ["minimal", "low", "medium", "high", "xhigh", "max"],
 )
-async def test_explicit_reasoning_effort_enables_prompt_mode(reasoning_effort: str, expected_effort: str) -> None:
-    """An explicit reasoning effort must also send prompt_mode so Mistral emits a thinking block."""
+@pytest.mark.parametrize("model_id", ["mistral-medium-3-5", "magistral-medium-latest"])
+async def test_explicit_reasoning_effort_collapses_to_high(model_id: str, reasoning_effort: str) -> None:
+    """Mistral accepts only "high" or "none", so every explicit any_llm effort sends "high".
+
+    prompt_mode must never accompany it: Mistral rejects that param on every model, including
+    the magistral ones it was originally documented for.
+    """
     pytest.importorskip("mistralai")
     from any_llm.providers.mistral.mistral import MistralProvider
 
@@ -318,20 +407,20 @@ async def test_explicit_reasoning_effort_enables_prompt_mode(reasoning_effort: s
 
         await provider._acompletion(
             CompletionParams(
-                model_id="magistral-medium-latest",
+                model_id=model_id,
                 messages=[{"role": "user", "content": "Hello"}],
                 reasoning_effort=reasoning_effort,  # type: ignore[arg-type]
             ),
         )
 
         completion_call_kwargs = mocked_mistral.return_value.chat.complete_async.call_args[1]
-        assert completion_call_kwargs["reasoning_effort"] == expected_effort
-        assert completion_call_kwargs["prompt_mode"] == "reasoning"
+        assert completion_call_kwargs["reasoning_effort"] == "high"
+        assert "prompt_mode" not in completion_call_kwargs
 
 
 @pytest.mark.asyncio
-async def test_explicit_prompt_mode_kwarg_wins() -> None:
-    """A caller-supplied prompt_mode overrides the one derived from reasoning_effort."""
+async def test_explicit_prompt_mode_kwarg_passes_through() -> None:
+    """A caller-supplied prompt_mode still reaches the SDK, for callers on a model that takes it."""
     pytest.importorskip("mistralai")
     from any_llm.providers.mistral.mistral import MistralProvider
 
@@ -350,11 +439,11 @@ async def test_explicit_prompt_mode_kwarg_wins() -> None:
                 messages=[{"role": "user", "content": "Hello"}],
                 reasoning_effort="low",
             ),
-            prompt_mode=None,
+            prompt_mode="reasoning",
         )
 
         completion_call_kwargs = mocked_mistral.return_value.chat.complete_async.call_args[1]
-        assert completion_call_kwargs["prompt_mode"] is None
+        assert completion_call_kwargs["prompt_mode"] == "reasoning"
 
 
 @pytest.mark.asyncio
@@ -1110,3 +1199,90 @@ def test_create_mistral_completion_builds_chatcompletion_from_well_formed_respon
     assert completion.usage.prompt_tokens == 12
     assert completion.usage.completion_tokens == 7
     assert completion.usage.total_tokens == 19
+
+
+def test_create_mistral_completion_extracts_reasoning_and_signature() -> None:
+    """A ThinkChunk's text lands on `reasoning` and its signature on `extra_content`."""
+    pytest.importorskip("mistralai")
+    from mistralai.client.models import TextChunk, ThinkChunk
+
+    from any_llm.providers.mistral.utils import _create_mistral_completion_from_response
+
+    message = Mock()
+    message.content = [
+        ThinkChunk(thinking=[TextChunk(text="step one"), TextChunk(text="step two")], signature="sig-abc"),
+        TextChunk(text="the answer"),
+    ]
+    message.tool_calls = None
+
+    choice = Mock()
+    choice.message = message
+    choice.finish_reason = "stop"
+
+    response = Mock()
+    response.id = "chatcmpl-abc"
+    response.created = 1_700_000_000
+    response.choices = [choice]
+    response.usage = None
+
+    completion = _create_mistral_completion_from_response(response, model="mistral-medium-3-5")
+
+    assert completion.choices[0].message.content == "the answer"
+    assert completion.choices[0].message.reasoning is not None
+    assert completion.choices[0].message.reasoning.content == "step one\nstep two"
+    assert completion.choices[0].message.extra_content == {"mistral": {"signature": "sig-abc"}}
+
+
+def test_create_mistral_completion_omits_extra_content_without_signature() -> None:
+    """Mistral leaves the signature unset today, so extra_content stays absent."""
+    pytest.importorskip("mistralai")
+    from mistralai.client.models import TextChunk, ThinkChunk
+
+    from any_llm.providers.mistral.utils import _create_mistral_completion_from_response
+
+    message = Mock()
+    message.content = [ThinkChunk(thinking=[TextChunk(text="step one")]), TextChunk(text="the answer")]
+    message.tool_calls = None
+
+    choice = Mock()
+    choice.message = message
+    choice.finish_reason = "stop"
+
+    response = Mock()
+    response.id = "chatcmpl-abc"
+    response.created = 1_700_000_000
+    response.choices = [choice]
+    response.usage = None
+
+    completion = _create_mistral_completion_from_response(response, model="mistral-medium-3-5")
+
+    assert completion.choices[0].message.reasoning is not None
+    assert completion.choices[0].message.extra_content is None
+
+
+def test_create_openai_chunk_captures_thinking_signature() -> None:
+    """Streaming deltas surface the thinking signature the same way as non-streaming."""
+    pytest.importorskip("mistralai")
+    from mistralai.client.models import TextChunk, ThinkChunk
+
+    from any_llm.providers.mistral.utils import _create_openai_chunk_from_mistral_chunk
+
+    choice = Mock()
+    choice.index = 0
+    choice.delta.content = [ThinkChunk(thinking=[TextChunk(text="step one")], signature="sig-abc")]
+    choice.delta.role = "assistant"
+    choice.delta.tool_calls = None
+    choice.finish_reason = None
+
+    event = Mock()
+    event.data.id = "chatcmpl-abc"
+    event.data.created = 1_700_000_000
+    event.data.model = "mistral-medium-3-5"
+    event.data.choices = [choice]
+    event.data.usage = None
+
+    chunk = _create_openai_chunk_from_mistral_chunk(event)
+
+    assert chunk.choices[0].delta.reasoning is not None
+    assert chunk.choices[0].delta.reasoning.content == "step one"
+    assert chunk.choices[0].delta.extra_content == {"mistral": {"signature": "sig-abc"}}

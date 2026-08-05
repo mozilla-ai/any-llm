@@ -127,21 +127,25 @@ def _convert_mistral_streaming_tool_calls_to_any_llm(
 
 def _extract_mistral_content_and_reasoning(
     content_data: MistralAssistantMessageContent,
-) -> tuple[str | None, str | None]:
+) -> tuple[str | None, str | None, str | None]:
     """
-    Extract text content and reasoning from Mistral's content structure.
+    Extract text content, reasoning, and the thinking signature from Mistral's content structure.
 
     Mistral returns content as an array of objects, where reasoning is in a 'thinking' object.
+    The signature, when present, has to be replayed with the thinking block on later turns.
     """
 
     text_parts = []
     reasoning_content = None
+    thinking_signature = None
 
     for item in content_data:
         if isinstance(item, str):
             text_parts.append(item)
         else:
             if isinstance(item, MistralThinkChunk):
+                if isinstance(item.signature, str):
+                    thinking_signature = item.signature
                 thinking_data = item.thinking
                 if isinstance(thinking_data, list):
                     thinking_texts = []
@@ -161,7 +165,7 @@ def _extract_mistral_content_and_reasoning(
                 text_parts.append(item.text)
 
     content = "".join(text_parts) if text_parts else None
-    return content, reasoning_content
+    return content, reasoning_content, thinking_signature
 
 
 def _create_mistral_completion_from_response(
@@ -180,10 +184,13 @@ def _create_mistral_completion_from_response(
             raise ValueError(msg)
 
         if message_data.content:
-            content, reasoning_content = _extract_mistral_content_and_reasoning(message_data.content)
+            content, reasoning_content, thinking_signature = _extract_mistral_content_and_reasoning(
+                message_data.content
+            )
         else:
             content = None
             reasoning_content = None
+            thinking_signature = None
 
         tool_calls_list: list[dict[str, Any]] | None = None
         if message_data.tool_calls is not None and not isinstance(message_data.tool_calls, Unset):
@@ -225,6 +232,7 @@ def _create_mistral_completion_from_response(
             content=content,
             tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls_final),
             reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
+            extra_content={"mistral": {"signature": thinking_signature}} if thinking_signature else None,
         )
 
         choice = Choice(
@@ -263,6 +271,7 @@ def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompl
     for choice in chunk.choices:
         content = None
         reasoning_content = None
+        thinking_signature = None
 
         if choice.delta.content:
             if isinstance(choice.delta.content, str):
@@ -271,6 +280,8 @@ def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompl
                 text_parts = []
                 for part in choice.delta.content:
                     if isinstance(part, MistralThinkChunk):
+                        if isinstance(part.signature, str):
+                            thinking_signature = part.signature
                         thinking_data = part.thinking
                         thinking_texts = []
                         for thinking_item in thinking_data:
@@ -297,7 +308,12 @@ def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompl
         if reasoning_content:
             reasoning = Reasoning(content=reasoning_content)
 
-        delta = ChoiceDelta(content=content, role=role, reasoning=reasoning)
+        delta = ChoiceDelta(
+            content=content,
+            role=role,
+            reasoning=reasoning,
+            extra_content={"mistral": {"signature": thinking_signature}} if thinking_signature else None,
+        )
 
         delta.tool_calls = None
         if choice.delta.tool_calls is not None and not isinstance(choice.delta.tool_calls, Unset):
@@ -417,15 +433,76 @@ def _create_openai_moderation_response_from_mistral(
     )
 
 
+def _extract_reasoning_text(message: dict[str, Any]) -> str:
+    """Extract the plain-text reasoning content from a message, regardless of its shape.
+
+    ``reasoning`` may be a plain string (the OpenAI-wire-compatible serialized form) or a
+    ``{"content": str}`` dict, depending on how the caller constructed the message.
+    """
+    reasoning = message.get("reasoning")
+    if isinstance(reasoning, str):
+        return reasoning
+    if isinstance(reasoning, dict) and isinstance(content := reasoning.get("content"), str):
+        return content
+    return ""
+
+
+def _extract_mistral_thinking_signature(message: dict[str, Any]) -> str | None:
+    """Extract the thinking signature stored on a message's extra_content, if any."""
+    extra_content = message.get("extra_content")
+    if isinstance(extra_content, dict) and isinstance(mistral_extra := extra_content.get("mistral"), dict):
+        signature = mistral_extra.get("signature")
+        if isinstance(signature, str):
+            return signature
+    return None
+
+
+def _build_mistral_assistant_content(message: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Rebuild an assistant message's content with a ThinkChunk for replay across turns.
+
+    Mistral requires the full assistant message, thinking trace included, to be replayed on
+    subsequent turns; dropping the trace measurably degrades output quality. Since any-llm
+    normalizes the trace onto ``message.reasoning``, it has to be folded back into Mistral's
+    chunked content shape on the way out. See
+    https://docs.mistral.ai/studio-api/conversations/reasoning#multi-turn-conversations
+
+    Returns None when there is nothing to rebuild, leaving the message untouched.
+    """
+    reasoning_text = _extract_reasoning_text(message)
+    if not reasoning_text:
+        return None
+
+    content = message.get("content")
+    if content is not None and not isinstance(content, str):
+        # The caller already supplied provider-native content chunks; trust them as-is rather
+        # than guessing how to merge a thinking block into them.
+        return None
+
+    think_chunk: dict[str, Any] = {"type": "thinking", "thinking": [{"type": "text", "text": reasoning_text}]}
+    signature = _extract_mistral_thinking_signature(message)
+    if signature is not None:
+        think_chunk["signature"] = signature
+
+    chunks: list[dict[str, Any]] = [think_chunk]
+    if content:
+        chunks.append({"type": "text", "text": content})
+    return chunks
+
+
 def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Patches messages for Mistral API compatibility.
 
+    - Rebuilds assistant thinking blocks so reasoning traces survive multi-turn replay.
     - Inserts an assistant message with "OK" content between a tool message and a user message.
     - Validates the message sequence to ensure correctness.
     """
     processed_msg: list[dict[str, Any]] = []
     for i, msg in enumerate(messages):
+        if msg.get("role") == "assistant":
+            rebuilt_content = _build_mistral_assistant_content(msg)
+            if rebuilt_content is not None:
+                msg = {**msg, "content": rebuilt_content}
         processed_msg.append(msg)
         if msg.get("role") == "tool":
             if i + 1 < len(messages) and messages[i + 1].get("role") == "user":
