@@ -64,6 +64,25 @@ def test_zai_chunk_maps_model_context_window_exceeded_to_length() -> None:
     assert result.choices[0].finish_reason == "length"
 
 
+def test_zai_chunk_preserves_none_finish_reason() -> None:
+    """A non-final streaming chunk carries no finish reason and must pass through unchanged."""
+    openai_chunk = OpenAIChatCompletionChunk.model_construct(
+        id="test-id",
+        choices=[
+            {
+                "index": 0,
+                "delta": {"role": "assistant", "content": "partial"},
+                "finish_reason": None,
+            }
+        ],
+        created=1234567890,
+        model="glm-5",
+        object="chat.completion.chunk",
+    )
+    result = ZaiProvider._convert_completion_chunk_response(openai_chunk)
+    assert result.choices[0].finish_reason is None
+
+
 def test_zai_completion_maps_sensitive_to_content_filter() -> None:
     """GLM's sensitive stop reason is a safety interception, which maps to OpenAI's content_filter."""
     openai_response = OpenAIChatCompletion.model_construct(

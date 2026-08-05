@@ -26,11 +26,11 @@ def _normalize_finish_reason(response: Any) -> None:
     string survives to our stricter ``model_validate``. Values outside the table are
     left alone so unexpected stop reasons keep failing instead of being coerced.
     """
-    choices = getattr(response, "choices", None)
+    choices = response.choices
     if not choices:
         return
     for choice in choices:
-        finish_reason = getattr(choice, "finish_reason", None)
+        finish_reason = choice.finish_reason
         if not isinstance(finish_reason, str):
             continue
         mapped = _FINISH_REASON_MAP.get(finish_reason)
