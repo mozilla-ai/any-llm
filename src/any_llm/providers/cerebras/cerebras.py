@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, cast
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
+from any_llm.utils.structured_output import get_strict_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -120,13 +120,16 @@ class CerebrasProvider(AnyLLM):
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         if params.response_format:
-            # See https://inference-docs.cerebras.ai/capabilities/structured-outputs for guide to creating schema
+            # See https://inference-docs.cerebras.ai/capabilities/structured-outputs for guide to creating schema.
+            # Cerebras rejects a strict schema that omits additionalProperties with
+            # 400 "'additionalProperties' is required to be supplied and set to false", so the
+            # schema has to be the strict variant to match the strict=True we send alongside it.
             if is_structured_output_type(params.response_format):
                 params.response_format = {
                     "type": "json_schema",
                     "json_schema": {
                         "name": "response_schema",
-                        "schema": get_json_schema(params.response_format),
+                        "schema": get_strict_json_schema(params.response_format),
                         "strict": True,
                     },
                 }

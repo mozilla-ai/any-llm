@@ -287,6 +287,74 @@ async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
 
         completion_call_kwargs = mocked_mistral.return_value.chat.complete_async.call_args[1]
         assert "reasoning_effort" not in completion_call_kwargs
+        assert "prompt_mode" not in completion_call_kwargs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("reasoning_effort", "expected_effort"),
+    [
+        ("minimal", "minimal"),
+        ("low", "low"),
+        ("medium", "medium"),
+        ("high", "high"),
+        ("xhigh", "xhigh"),
+        ("max", "xhigh"),
+    ],
+)
+async def test_explicit_reasoning_effort_enables_prompt_mode(reasoning_effort: str, expected_effort: str) -> None:
+    """An explicit reasoning effort must also send prompt_mode so Mistral emits a thinking block."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    with (
+        patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral,
+        patch("any_llm.providers.mistral.mistral._create_mistral_completion_from_response") as mock_converter,
+    ):
+        provider = MistralProvider(api_key="test-api-key")
+
+        mocked_mistral.return_value.chat.complete_async = AsyncMock(return_value=Mock())
+        mock_converter.return_value = Mock()
+
+        await provider._acompletion(
+            CompletionParams(
+                model_id="magistral-medium-latest",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort=reasoning_effort,  # type: ignore[arg-type]
+            ),
+        )
+
+        completion_call_kwargs = mocked_mistral.return_value.chat.complete_async.call_args[1]
+        assert completion_call_kwargs["reasoning_effort"] == expected_effort
+        assert completion_call_kwargs["prompt_mode"] == "reasoning"
+
+
+@pytest.mark.asyncio
+async def test_explicit_prompt_mode_kwarg_wins() -> None:
+    """A caller-supplied prompt_mode overrides the one derived from reasoning_effort."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    with (
+        patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral,
+        patch("any_llm.providers.mistral.mistral._create_mistral_completion_from_response") as mock_converter,
+    ):
+        provider = MistralProvider(api_key="test-api-key")
+
+        mocked_mistral.return_value.chat.complete_async = AsyncMock(return_value=Mock())
+        mock_converter.return_value = Mock()
+
+        await provider._acompletion(
+            CompletionParams(
+                model_id="magistral-medium-latest",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort="low",
+            ),
+            prompt_mode=None,
+        )
+
+        completion_call_kwargs = mocked_mistral.return_value.chat.complete_async.call_args[1]
+        assert completion_call_kwargs["prompt_mode"] is None
 
 
 @pytest.mark.asyncio

@@ -81,7 +81,9 @@ jobs:
     steps:
       - name: Set expected providers for integration tests
         id: set_providers
-        run: echo "expected_providers=anthropic,azureopenai,bedrock,cerebras,cohere,deepseek,fireworks,gemini,groq,huggingface,inception,mistral,moonshot,nebius,openai,openrouter,otari,perplexity,portkey,together,sambanova,voyage,xai,zai,minimax" >> $GITHUB_OUTPUT
+        # huggingface and perplexity are omitted while their accounts are out of credit; see
+        # _SUSPENDED_PROVIDERS in tests/integration/conftest.py. Add them back here to re-enable.
+        run: echo "expected_providers=anthropic,azureopenai,bedrock,cerebras,cohere,deepseek,fireworks,gemini,groq,inception,mistral,moonshot,nebius,openai,openrouter,otari,portkey,together,sambanova,voyage,xai,zai,minimax" >> $GITHUB_OUTPUT
 
       - name: Set expected providers for local integration tests
         id: set_local_providers

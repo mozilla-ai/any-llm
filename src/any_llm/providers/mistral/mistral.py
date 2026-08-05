@@ -45,6 +45,19 @@ if TYPE_CHECKING:
     from any_llm.types.moderation import ModerationResponse
 
 
+# any_llm's ReasoningEffort vocabulary is a superset of Mistral's; "max" has no Mistral
+# equivalent, so it maps onto the strongest level Mistral accepts. "auto" and "none" are
+# handled separately because neither turns reasoning on.
+_REASONING_EFFORT_TO_MISTRAL: dict[str, str] = {
+    "minimal": "minimal",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "xhigh",
+    "max": "xhigh",
+}
+
+
 class MistralProvider(AnyLLM):
     """Mistral Provider using the new response conversion utilities."""
 
@@ -73,7 +86,6 @@ class MistralProvider(AnyLLM):
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Mistral API."""
-        # Mistral does not support providing reasoning effort
         converted_params = params.model_dump(
             exclude_none=True,
             exclude={"model_id", "messages", "response_format", "stream", "stream_options", "user"},
@@ -96,8 +108,15 @@ class MistralProvider(AnyLLM):
             elif isinstance(params.response_format, dict):
                 converted_params["response_format"] = ResponseFormat.model_validate(params.response_format)
 
-        if converted_params.get("reasoning_effort") in ("auto", "none"):
-            converted_params.pop("reasoning_effort")
+        # Mistral gates the reasoning system prompt behind prompt_mode. Without it a magistral
+        # model answers directly and never emits a `thinking` block, so an explicit reasoning
+        # effort has to set both. "auto" leaves the choice to Mistral (its current default is
+        # no reasoning prompt) and "none" asks for no reasoning, so neither sets prompt_mode.
+        reasoning_effort = converted_params.pop("reasoning_effort", None)
+        mistral_effort = _REASONING_EFFORT_TO_MISTRAL.get(reasoning_effort) if reasoning_effort else None
+        if mistral_effort is not None:
+            converted_params["reasoning_effort"] = mistral_effort
+            converted_params["prompt_mode"] = "reasoning"
 
         converted_params.update(kwargs)
         return converted_params
