@@ -138,7 +138,8 @@ class MessageDeltaEvent(AnthropicMessageDeltaEvent):
 
 
 class MessageStopEvent(AnthropicMessageStopEvent):
-    pass
+    message: MessageResponse | None = None
+    """Accumulated message, populated only by providers with a native Anthropic Messages API."""
 
 
 class ContentBlockStartEvent(AnthropicContentBlockStartEvent):

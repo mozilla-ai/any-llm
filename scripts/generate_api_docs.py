@@ -1737,14 +1737,22 @@ def generate_types_messages_page() -> str:
             "",
             "### `MessageStreamEvent`",
             "",
-            "Union of Anthropic SDK stream event types, re-exported from the `anthropic` package:",
+            "Union of stream event types. Each one subclasses the matching Anthropic SDK `Raw*` event and "
+            "widens it so beta responses (context management, compaction) round-trip without loss:",
             "",
-            "- `MessageStartEvent` — `type: 'message_start'`, `message: Message`",
-            "- `MessageDeltaEvent` — `type: 'message_delta'`, `delta: Delta`, `usage: MessageDeltaUsage`",
-            "- `MessageStopEvent` — `type: 'message_stop'`",
-            "- `ContentBlockStartEvent` — `type: 'content_block_start'`, `index: int`, `content_block: ContentBlock`",
-            "- `ContentBlockDeltaEvent` — `type: 'content_block_delta'`, `index: int`, `delta: RawContentBlockDelta`",
-            "- `ContentBlockStopEvent` — `type: 'content_block_stop'`, `index: int`",
+            "- `MessageStartEvent`: `type: 'message_start'`, `message: MessageResponse`",
+            "- `MessageDeltaEvent`: `type: 'message_delta'`, `delta: MessageDelta`, `usage: MessageDeltaUsage`, "
+            "`context_management: BetaContextManagementResponse | None`",
+            "- `MessageStopEvent`: `type: 'message_stop'`, `message: MessageResponse | None`",
+            "- `ContentBlockStartEvent`: `type: 'content_block_start'`, `index: int`, "
+            "`content_block: MessageContentBlock`",
+            "- `ContentBlockDeltaEvent`: `type: 'content_block_delta'`, `index: int`, "
+            "`delta: RawContentBlockDelta | CompactionDelta`",
+            "- `ContentBlockStopEvent`: `type: 'content_block_stop'`, `index: int`, "
+            "`content_block: MessageContentBlock | None`",
+            "",
+            "`message` on `MessageStopEvent` and `content_block` on `ContentBlockStopEvent` are populated only by "
+            "providers with a native Anthropic Messages API; the Chat Completions bridge leaves them unset.",
             "",
             "**Import:** `from any_llm.types.messages import MessageStreamEvent`",
             "",

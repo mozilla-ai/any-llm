@@ -1170,6 +1170,80 @@ async def test_stream_messages_async_emits_events() -> None:
 
 
 @pytest.mark.asyncio
+async def test_amessages_stream_preserves_accumulated_stop_event_payloads() -> None:
+    """The SDK's stream helper attaches the accumulated message and block to the stop events."""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.query == b""
+        events = [
+            (
+                "message_start",
+                {
+                    "type": "message_start",
+                    "message": {
+                        "id": "msg_accumulated",
+                        "type": "message",
+                        "role": "assistant",
+                        "model": "claude-opus-5",
+                        "stop_reason": None,
+                        "stop_sequence": None,
+                        "content": [],
+                        "usage": {"input_tokens": 4, "output_tokens": 0},
+                    },
+                },
+            ),
+            (
+                "content_block_start",
+                {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+            ),
+            (
+                "content_block_delta",
+                {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello!"}},
+            ),
+            ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+            (
+                "message_delta",
+                {
+                    "type": "message_delta",
+                    "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+                    "usage": {"output_tokens": 2},
+                },
+            ),
+            ("message_stop", {"type": "message_stop"}),
+        ]
+        body = "".join(f"event: {name}\ndata: {json.dumps(payload)}\n\n" for name, payload in events)
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body.encode())
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        stream=True,
+    )
+
+    collected: list[Any] = []
+    try:
+        stream = await provider._amessages(params)
+        assert isinstance(stream, AsyncIterator)
+        async for event in stream:
+            collected.append(event)
+    finally:
+        await http_client.aclose()
+
+    block_stop = next(e for e in collected if isinstance(e, ContentBlockStopEvent))
+    assert block_stop.content_block is not None
+    assert block_stop.content_block.type == "text"
+
+    message_stop = next(e for e in collected if isinstance(e, MessageStopEvent))
+    assert message_stop.message is not None
+    assert message_stop.message.id == "msg_accumulated"
+    assert message_stop.message.stop_reason == "end_turn"
+    assert message_stop.message.usage.output_tokens == 2
+
+
+@pytest.mark.asyncio
 async def test_amessages_kwargs_passthrough() -> None:
     """Test that extra kwargs are passed through to the API call."""
     mock_message = _make_message(content=[TextBlock(type="text", text="Hello!")])
