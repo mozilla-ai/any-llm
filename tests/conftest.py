@@ -45,7 +45,10 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.GROQ: "openai/gpt-oss-20b",
         LLMProvider.FIREWORKS: "accounts/fireworks/models/gpt-oss-20b",
         LLMProvider.OPENAI: "gpt-5-nano",
-        LLMProvider.MISTRAL: "magistral-medium-latest",
+        # magistral-medium-latest / magistral-small-latest (native reasoning models) are
+        # deprecated; mistral-medium-3-5 supports adjustable reasoning via reasoning_effort
+        # (high/none only, see MistralProvider._convert_completion_params).
+        LLMProvider.MISTRAL: "mistral-medium-3-5",
         LLMProvider.GMI: "zai-org/GLM-5-FP8",
         LLMProvider.XAI: "grok-3-mini-latest",
         LLMProvider.OLLAMA: "qwen3:0.6b",

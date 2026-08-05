@@ -45,17 +45,13 @@ if TYPE_CHECKING:
     from any_llm.types.moderation import ModerationResponse
 
 
-# any_llm's ReasoningEffort vocabulary is a superset of Mistral's; "max" has no Mistral
-# equivalent, so it maps onto the strongest level Mistral accepts. "auto" and "none" are
-# handled separately because neither turns reasoning on.
-_REASONING_EFFORT_TO_MISTRAL: dict[str, str] = {
-    "minimal": "minimal",
-    "low": "low",
-    "medium": "medium",
-    "high": "high",
-    "xhigh": "xhigh",
-    "max": "xhigh",
-}
+# Mistral's API accepts a reasoning_effort of only "high" or "none", regardless of the wider
+# set its SDK types allow (https://docs.mistral.ai/studio-api/conversations/reasoning). Any
+# other value is rejected with "reasoning_effort <value> is not supported for this model,
+# supported values: [high, none]". any_llm's ReasoningEffort vocabulary is more granular, so
+# every explicit level other than "auto"/"none" collapses onto "high" rather than surfacing a
+# 400 for an effort any_llm advertises.
+_MISTRAL_REASONING_EFFORT = "high"
 
 
 class MistralProvider(AnyLLM):
@@ -108,15 +104,15 @@ class MistralProvider(AnyLLM):
             elif isinstance(params.response_format, dict):
                 converted_params["response_format"] = ResponseFormat.model_validate(params.response_format)
 
-        # Mistral gates the reasoning system prompt behind prompt_mode. Without it a magistral
-        # model answers directly and never emits a `thinking` block, so an explicit reasoning
-        # effort has to set both. "auto" leaves the choice to Mistral (its current default is
-        # no reasoning prompt) and "none" asks for no reasoning, so neither sets prompt_mode.
+        # An explicit reasoning_effort is all Mistral needs to emit a `thinking` block; every
+        # model defaults to not reasoning, so "auto" (leave the choice to Mistral) and "none"
+        # both mean send nothing. Note that prompt_mode="reasoning" must not be sent alongside
+        # it: Mistral documents that param only for the deprecated native-reasoning magistral
+        # models and now rejects it on every model, magistral included, with "Reasoning prompt
+        # mode is not enabled for this model".
         reasoning_effort = converted_params.pop("reasoning_effort", None)
-        mistral_effort = _REASONING_EFFORT_TO_MISTRAL.get(reasoning_effort) if reasoning_effort else None
-        if mistral_effort is not None:
-            converted_params["reasoning_effort"] = mistral_effort
-            converted_params["prompt_mode"] = "reasoning"
+        if reasoning_effort is not None and reasoning_effort not in ("auto", "none"):
+            converted_params["reasoning_effort"] = _MISTRAL_REASONING_EFFORT
 
         converted_params.update(kwargs)
         return converted_params
