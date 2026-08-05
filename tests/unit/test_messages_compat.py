@@ -398,6 +398,17 @@ def test_split_cached_input_tokens_caps_cached_at_prompt_total() -> None:
     assert input_tokens + (cache_read or 0) == 100
 
 
+def test_split_cached_input_tokens_floors_negative_cached_at_zero() -> None:
+    """A negative cached count is floored, so input_tokens never exceeds the prompt total.
+
+    Left unclamped, subtracting a negative would report more fresh input than the whole prompt
+    and hand back a negative cache count.
+    """
+    input_tokens, cache_read = split_cached_input_tokens(100, -1)
+    assert input_tokens == 100
+    assert cache_read is None
+
+
 def test_streaming_message_start_cached_without_prompt_total_is_not_negative() -> None:
     """A usage chunk carrying cached tokens but no prompt total must not yield negative input_tokens.
 

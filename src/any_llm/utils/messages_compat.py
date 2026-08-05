@@ -256,11 +256,12 @@ def split_cached_input_tokens(prompt_tokens: int, cached_tokens: int) -> tuple[i
     in this repo populates ``prompt_tokens_details.cache_write_tokens``, which is the field a cache
     write would arrive on.
 
-    The cached count is capped at ``prompt_tokens`` so a provider that reports the two inconsistently
-    cannot produce a negative ``input_tokens``. Capping the subtrahend rather than flooring the result
-    keeps the sum invariant intact: the two returned values still add up to ``prompt_tokens``.
+    The cached count is clamped into ``[0, prompt_tokens]`` so a provider that reports the two
+    inconsistently cannot push ``input_tokens`` negative (cached above the total) or above the prompt
+    total (cached below zero). Clamping the subtrahend rather than flooring the result keeps the sum
+    invariant intact: the two returned values still add up to ``prompt_tokens``.
     """
-    cached = min(cached_tokens, prompt_tokens)
+    cached = min(max(cached_tokens, 0), prompt_tokens)
     return prompt_tokens - cached, cached or None
 
 
