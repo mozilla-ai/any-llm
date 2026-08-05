@@ -25,7 +25,7 @@ from any_llm.utils.structured_output import is_structured_output_type
 if TYPE_CHECKING:
     from anthropic.types import ContentBlock as SDKContentBlock
 
-    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionUsage
     from any_llm.types.messages import MessagesParams
 
 
@@ -241,6 +241,37 @@ def _budget_to_reasoning_effort(budget: int) -> str:
     return "xhigh"
 
 
+def split_cached_input_tokens(prompt_tokens: int, cached_tokens: int) -> tuple[int, int | None]:
+    """Split an OpenAI prompt-token total into disjoint Anthropic input/cache-read counts.
+
+    OpenAI reports ``prompt_tokens`` as the whole prompt with ``prompt_tokens_details.cached_tokens``
+    as a subset of it, while Anthropic's ``input_tokens`` and ``cache_read_input_tokens`` are disjoint
+    and sum to the prompt. Copying the cached count across without subtracting would make any consumer
+    that sums the fields over-count, and would bill cached tokens twice in a cost model that prices
+    the two at different rates.
+
+    The cached count comes back as ``None`` rather than 0 when there was no cache hit, so a response
+    from a provider that reports no cache accounting looks exactly as it did before this mapping
+    existed. ``cache_creation_input_tokens`` is left unset rather than synthesized because no provider
+    in this repo populates ``prompt_tokens_details.cache_write_tokens``, which is the field a cache
+    write would arrive on.
+
+    The cached count is clamped into ``[0, prompt_tokens]`` so a provider that reports the two
+    inconsistently cannot push ``input_tokens`` negative (cached above the total) or above the prompt
+    total (cached below zero). Clamping the subtrahend rather than flooring the result keeps the sum
+    invariant intact: the two returned values still add up to ``prompt_tokens``.
+    """
+    cached = min(max(cached_tokens, 0), prompt_tokens)
+    return prompt_tokens - cached, cached or None
+
+
+def _cached_tokens_from_usage(usage: CompletionUsage) -> int:
+    """Read ``prompt_tokens_details.cached_tokens`` off a usage object, defaulting to 0."""
+    if usage.prompt_tokens_details is None:
+        return 0
+    return usage.prompt_tokens_details.cached_tokens or 0
+
+
 def chat_completion_to_message_response(completion: ChatCompletion) -> MessageResponse:
     """Convert an OpenAI ChatCompletion to an Anthropic MessageResponse."""
     content_blocks: list[SDKContentBlock] = []
@@ -282,8 +313,13 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
 
     usage = MessageUsage(input_tokens=0, output_tokens=0)
     if completion.usage:
+        input_tokens, cache_read = split_cached_input_tokens(
+            completion.usage.prompt_tokens,
+            _cached_tokens_from_usage(completion.usage),
+        )
         usage = MessageUsage(
-            input_tokens=completion.usage.prompt_tokens,
+            input_tokens=input_tokens,
+            cache_read_input_tokens=cache_read,
             output_tokens=completion.usage.completion_tokens,
         )
 
@@ -344,13 +380,18 @@ def chat_completion_chunk_to_message_stream_events(
             state.input_tokens = chunk.usage.prompt_tokens
         if chunk.usage.completion_tokens:
             state.output_tokens = chunk.usage.completion_tokens
-        prompt_details = chunk.usage.prompt_tokens_details
-        if prompt_details and prompt_details.cached_tokens:
-            state.cache_read_input_tokens = prompt_details.cached_tokens
+        cached = _cached_tokens_from_usage(chunk.usage)
+        if cached:
+            state.cache_read_input_tokens = cached
 
     if not state.started:
         state.started = True
-        usage = MessageUsage(input_tokens=state.input_tokens, output_tokens=0)
+        input_tokens, cache_read = split_cached_input_tokens(state.input_tokens, state.cache_read_input_tokens)
+        usage = MessageUsage(
+            input_tokens=input_tokens,
+            cache_read_input_tokens=cache_read,
+            output_tokens=0,
+        )
         msg = MessageResponse(
             id=chunk.id,
             type="message",
