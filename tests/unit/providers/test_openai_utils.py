@@ -1,7 +1,6 @@
 import pytest
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
-from pydantic import ValidationError
 
 from any_llm.exceptions import ProviderError
 from any_llm.providers.openai.base import BaseOpenAIProvider
@@ -46,6 +45,8 @@ def test_convert_chat_completion_with_partial_none_response() -> None:
     # if isinstance(choices, list): ...
 
     # But ChatCompletion.model_validate(normalized) will fail because choices is required.
+    from pydantic import ValidationError
+
     with pytest.raises(ValidationError):
         _convert_chat_completion(openai_response)
 
@@ -130,80 +131,3 @@ def test_convert_chunk_response_with_nonstandard_service_tier() -> None:
     )
     result = BaseOpenAIProvider._convert_completion_chunk_response(openai_chunk)
     assert result.service_tier == "standard"
-
-
-def test_convert_chunk_response_maps_model_context_window_exceeded_to_length() -> None:
-    """z.ai's GLM models end a truncated stream with a finish reason outside the OpenAI literal set."""
-    openai_chunk = OpenAIChatCompletionChunk.model_construct(
-        id="test-id",
-        choices=[
-            {
-                "index": 0,
-                "delta": {"role": "assistant", "content": ""},
-                "finish_reason": "model_context_window_exceeded",
-            }
-        ],
-        created=1234567890,
-        model="glm-5",
-        object="chat.completion.chunk",
-    )
-    result = BaseOpenAIProvider._convert_completion_chunk_response(openai_chunk)
-    assert result.choices[0].finish_reason == "length"
-
-
-def test_convert_chat_completion_maps_model_context_window_exceeded_to_length() -> None:
-    """The non-streaming path shares the normalizer, so it must map the same finish reason."""
-    openai_response = OpenAIChatCompletion.model_construct(
-        id="test-id",
-        choices=[
-            {
-                "index": 0,
-                "finish_reason": "model_context_window_exceeded",
-                "message": {"role": "assistant", "content": "partial"},
-            }
-        ],
-        created=1234567890,
-        model="glm-5",
-        object="chat.completion",
-    )
-    result = _convert_chat_completion(openai_response)
-    assert result.choices[0].finish_reason == "length"
-
-
-@pytest.mark.parametrize("finish_reason", ["stop", "length", "tool_calls", "content_filter", "function_call"])
-def test_convert_chat_completion_preserves_standard_finish_reasons(finish_reason: str) -> None:
-    """Standard finish reasons must pass through the normalizer untouched."""
-    openai_response = OpenAIChatCompletion.model_construct(
-        id="test-id",
-        choices=[
-            {
-                "index": 0,
-                "finish_reason": finish_reason,
-                "message": {"role": "assistant", "content": "Hello"},
-            }
-        ],
-        created=1234567890,
-        model="test-model",
-        object="chat.completion",
-    )
-    result = _convert_chat_completion(openai_response)
-    assert result.choices[0].finish_reason == finish_reason
-
-
-def test_convert_chat_completion_still_rejects_unknown_finish_reason() -> None:
-    """Unmapped values keep failing loudly rather than being coerced into a wrong stop reason."""
-    openai_response = OpenAIChatCompletion.model_construct(
-        id="test-id",
-        choices=[
-            {
-                "index": 0,
-                "finish_reason": "some_unknown_reason",
-                "message": {"role": "assistant", "content": "Hello"},
-            }
-        ],
-        created=1234567890,
-        model="test-model",
-        object="chat.completion",
-    )
-    with pytest.raises(ValidationError):
-        _convert_chat_completion(openai_response)

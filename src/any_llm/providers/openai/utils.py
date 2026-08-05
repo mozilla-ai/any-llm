@@ -31,17 +31,8 @@ def _normalize_reasoning_on_message(message_dict: dict[str, Any]) -> None:
         message_dict["reasoning"] = {"content": str(value)}
 
 
-# Provider-specific finish_reason values mapped onto the OpenAI literal set.
-# z.ai GLM models report context-window truncation as "model_context_window_exceeded",
-# which OpenAI spells "length". Values not listed here still fail validation so that
-# unknown stop reasons are surfaced instead of being silently coerced.
-_FINISH_REASON_ALIASES: dict[str, str] = {
-    "model_context_window_exceeded": "length",
-}
-
-
 def _normalize_openai_dict_response(response_dict: dict[str, Any]) -> dict[str, Any]:
-    """Return a dict where non-standard reasoning fields and finish reasons are normalized.
+    """Return a dict where non-standard reasoning fields are normalized.
 
     - For non-streaming: response.choices[*].message
     - For streaming: chunk.choices[*].delta
@@ -49,20 +40,13 @@ def _normalize_openai_dict_response(response_dict: dict[str, Any]) -> dict[str, 
     choices = response_dict.get("choices")
     if isinstance(choices, list):
         for choice in choices:
-            if not isinstance(choice, dict):
-                continue
-
-            message = choice.get("message")
+            message = choice.get("message") if isinstance(choice, dict) else None
             if isinstance(message, dict):
                 _normalize_reasoning_on_message(message)
 
-            delta = choice.get("delta")
+            delta = choice.get("delta") if isinstance(choice, dict) else None
             if isinstance(delta, dict):
                 _normalize_reasoning_on_message(delta)
-
-            finish_reason = choice.get("finish_reason")
-            if isinstance(finish_reason, str) and finish_reason in _FINISH_REASON_ALIASES:
-                choice["finish_reason"] = _FINISH_REASON_ALIASES[finish_reason]
 
     return response_dict
 
