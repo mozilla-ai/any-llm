@@ -53,8 +53,8 @@ async def test_messages_bridge_cached_tokens_non_streaming(openai_model: str) ->
     if not result.usage.cache_read_input_tokens:
         pytest.skip("provider served no cached tokens: automatic prefix caching did not engage for this prompt")
 
-    # Disjointness: the two fields must still sum to the same prompt total the uncached call
-    # reported. Copying cached_tokens across without subtracting would inflate this sum.
+    # The two fields are disjoint, so they must still sum to the same prompt total the
+    # uncached call reported. Copying cached_tokens across without subtracting inflates this sum.
     assert result.usage.input_tokens + result.usage.cache_read_input_tokens == prompt_total
     # Most of this prompt is the cached prefix, so the fresh remainder must be the smaller of
     # the two. Reporting the whole prompt as input_tokens alongside the cache count fails here.
