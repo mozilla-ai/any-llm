@@ -252,10 +252,16 @@ def split_cached_input_tokens(prompt_tokens: int, cached_tokens: int) -> tuple[i
 
     The cached count comes back as ``None`` rather than 0 when there was no cache hit, so a response
     from a provider that reports no cache accounting looks exactly as it did before this mapping
-    existed. ``cache_creation_input_tokens`` has no OpenAI counterpart, since automatic prefix caching
-    has no write step to report, so it is left unset rather than synthesized.
+    existed. ``cache_creation_input_tokens`` is left unset rather than synthesized because no provider
+    in this repo populates ``prompt_tokens_details.cache_write_tokens``, which is the field a cache
+    write would arrive on.
+
+    The cached count is capped at ``prompt_tokens`` so a provider that reports the two inconsistently
+    cannot produce a negative ``input_tokens``. Capping the subtrahend rather than flooring the result
+    keeps the sum invariant intact: the two returned values still add up to ``prompt_tokens``.
     """
-    return prompt_tokens - cached_tokens, cached_tokens or None
+    cached = min(cached_tokens, prompt_tokens)
+    return prompt_tokens - cached, cached or None
 
 
 def _cached_tokens_from_usage(usage: CompletionUsage) -> int:

@@ -387,6 +387,44 @@ def test_split_cached_input_tokens_returns_none_for_zero_cache() -> None:
     assert split_cached_input_tokens(100, 80) == (20, 80)
 
 
+def test_split_cached_input_tokens_caps_cached_at_prompt_total() -> None:
+    """A cached count exceeding the prompt total is capped so input_tokens cannot go negative.
+
+    Capping the subtrahend keeps the sum invariant: the two values still add up to prompt_tokens.
+    """
+    input_tokens, cache_read = split_cached_input_tokens(100, 120)
+    assert input_tokens == 0
+    assert cache_read == 100
+    assert input_tokens + (cache_read or 0) == 100
+
+
+def test_streaming_message_start_cached_without_prompt_total_is_not_negative() -> None:
+    """A usage chunk carrying cached tokens but no prompt total must not yield negative input_tokens.
+
+    ``prompt_tokens`` is only recorded when truthy while the cached count is recorded independently,
+    so the two can go out of sync; Gemini's chunk converter defaults a missing prompt count to 0
+    while still reporting a cached count.
+    """
+    state = StreamingState()
+    chunk = ChatCompletionChunk(
+        id="chunk-1",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
+        usage=CompletionUsage(
+            prompt_tokens=0,
+            completion_tokens=5,
+            total_tokens=5,
+            prompt_tokens_details=PromptTokensDetails(cached_tokens=800),
+        ),
+    )
+    events = chat_completion_chunk_to_message_stream_events(chunk, state)
+    start = next(e for e in events if isinstance(e, MessageStartEvent))
+    assert start.message.usage.input_tokens == 0
+    assert start.message.usage.cache_read_input_tokens is None
+
+
 def test_cached_tokens_from_usage_defaults_to_zero() -> None:
     """cached_tokens reads as 0 when details are absent or the field itself is None."""
     assert _cached_tokens_from_usage(CompletionUsage(prompt_tokens=10, completion_tokens=1, total_tokens=11)) == 0
