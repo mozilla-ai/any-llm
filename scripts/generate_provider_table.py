@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from any_llm import AnyLLM
+from any_llm.constants import ProviderTier
 from any_llm.types.provider import ProviderMetadata
 
 DOCS_DIR = Path(__file__).parent.parent / "docs"
@@ -27,6 +28,15 @@ description: Complete list of LLM providers supported by any-llm including OpenA
 
 Is your endpoint OpenAI-compatible but not listed below? You are not blocked: use [`AnyLLM.create_openai_compatible`](quickstart.md#custom-openai-compatible-endpoints). Prefer it over pointing the `openai` provider at a custom `api_base`, which misreports the provider identity as `openai`, silently sends any `OPENAI_API_KEY` in your environment to the custom endpoint, and rejects keyless local servers.
 
+## Support tiers
+
+The **Tier** column is a support promise, not a statement about how the provider is implemented:
+
+- ✅ **Verified**: we hold an API key, integration tests run against the provider in CI, and we fix breakage.
+- 🤝 **Community**: verified live by the contributor when it was added, then community-maintained. No CI key, so its integration tests skip in CI. Report breakage by opening an issue.
+
+A provider can be verified whether it ships as a code folder or as a single config row, and a config-only gateway we hold a key for is verified.
+
 """
 
 
@@ -36,8 +46,8 @@ def generate_provider_table(providers: list[ProviderMetadata]) -> str:
         return "No providers found."
 
     table_lines = [
-        "| ID | Key | Base | Responses | Completion | Streaming<br>(Completions) | Reasoning<br>(Completions) | Image <br>(Completions) | Embedding | List Models | Batch |",
-        "|----|-----|------|-----------|------------|--------------------------|--------------------------|-----------|-----------|-------------|-------|",
+        "| ID | Tier | Key | Base | Responses | Completion | Streaming<br>(Completions) | Reasoning<br>(Completions) | Image <br>(Completions) | Embedding | List Models | Batch |",
+        "|----|------|-----|------|-----------|------------|--------------------------|--------------------------|-----------|-----------|-------------|-------|",
     ]
 
     for provider in providers:
@@ -56,10 +66,12 @@ def generate_provider_table(providers: list[ProviderMetadata]) -> str:
         list_models_supported = "✅" if provider.list_models else "❌"
         batch_supported = "✅" if provider.batch_completion else "❌"
 
+        tier_label = "✅ Verified" if provider.tier is ProviderTier.VERIFIED else "🤝 Community"
+
         row = (
-            f"| {provider_id_link} | {env_key} | {env_api_base} | {responses_supported} | {completion_supported} | "
-            f"{stream_supported} | {reasoning_supported} | {image_supported} | {embedding_supported} | "
-            f"{list_models_supported} | {batch_supported} |"
+            f"| {provider_id_link} | {tier_label} | {env_key} | {env_api_base} | {responses_supported} | "
+            f"{completion_supported} | {stream_supported} | {reasoning_supported} | {image_supported} | "
+            f"{embedding_supported} | {list_models_supported} | {batch_supported} |"
         )
         table_lines.append(row)
 

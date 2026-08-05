@@ -140,7 +140,10 @@ jobs:
 
       - name: Run Integration tests (parallel with xdist)
         env:
-          # When you add a new key, also add the provider name to the EXPECTED_PROVIDERS environment variable
+          # When you add a new key, also add the provider name to the EXPECTED_PROVIDERS environment
+          # variable and to VERIFIED_PROVIDERS in src/any_llm/constants.py, which is what labels the
+          # provider verified in the generated docs. tests/unit/test_provider_tiers.py asserts the two
+          # are equal, so changing only one fails the unit suite.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
