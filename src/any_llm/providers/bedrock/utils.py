@@ -25,8 +25,16 @@ from any_llm.types.completion import (
     Reasoning,
     Usage,
 )
+from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
+
+# Bedrock's Converse API has no native structured-output field. For Anthropic/Claude
+# models we emulate `response_format` by forcing a single synthetic tool call whose
+# input schema is the requested schema, then unwrapping that tool call's input back
+# into `message.content` in `_convert_response`. Other Bedrock model families (Nova,
+# Titan, Llama, ...) have no equivalent verified mechanism, so they keep raising.
+_STRUCTURED_OUTPUT_TOOL_NAME = "any_llm_structured_output"
 
 REASONING_EFFORT_TO_THINKING_BUDGETS = {
     "minimal": 1024,
@@ -38,19 +46,67 @@ REASONING_EFFORT_TO_THINKING_BUDGETS = {
 }
 
 
+def _is_anthropic_model(model_id: str) -> bool:
+    """Return True if the Bedrock model id refers to an Anthropic Claude model.
+
+    Matches both direct ids (``anthropic.claude-...``) and cross-region inference
+    profile ids (``us.anthropic.claude-...``, ``eu.anthropic.claude-...``).
+    """
+    return "anthropic." in model_id
+
+
+def _convert_response_format_to_tool_spec(response_format: dict[str, Any] | type, provider_name: str) -> dict[str, Any]:
+    """Convert an any-llm response_format into a synthetic Bedrock toolSpec.
+
+    Claude models on Bedrock have no native structured-output field, but reliably
+    support forcing a single tool call. Wrapping the requested JSON schema as a
+    tool's input schema lets us emulate `response_format` via `toolChoice`.
+    """
+    if is_structured_output_type(response_format):
+        schema = get_json_schema(response_format)
+    elif isinstance(response_format, dict):
+        if response_format.get("type") == "json_schema":
+            schema = response_format["json_schema"]["schema"]
+        elif response_format.get("type") == "json_object":
+            msg = "response_format with type 'json_object'"
+            raise UnsupportedParameterError(
+                msg,
+                provider_name,
+                "Use a Pydantic model or json_schema format instead.",
+            )
+        else:
+            msg = f"Unsupported response_format type: {response_format.get('type')}"
+            raise ValueError(msg)
+    else:
+        msg = f"Unsupported response_format: {response_format}"
+        raise ValueError(msg)
+
+    return {
+        "toolSpec": {
+            "name": _STRUCTURED_OUTPUT_TOOL_NAME,
+            "description": "Provide the response matching the required schema.",
+            "inputSchema": {"json": schema},
+        }
+    }
+
+
 def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[str, Any]:
     """Convert CompletionParams to kwargs for AWS API."""
     result_kwargs: dict[str, Any] = kwargs.copy()
 
     if params.response_format:
-        msg = "response_format"
-        raise UnsupportedParameterError(
-            msg,
-            "bedrock",
-            "Check the following links:\n- https://docs.aws.amazon.com/nova/latest/userguide/prompting-structured-output.html",
-        )
-
-    if params.tools:
+        if not _is_anthropic_model(params.model_id):
+            msg = "response_format"
+            raise UnsupportedParameterError(
+                msg,
+                "bedrock",
+                "Check the following links:\n- https://docs.aws.amazon.com/nova/latest/userguide/prompting-structured-output.html",
+            )
+        tool_config = _convert_tool_spec(params.tools, params.tool_choice) if params.tools else {"tools": []}
+        tool_config["tools"].append(_convert_response_format_to_tool_spec(params.response_format, "bedrock"))
+        tool_config["toolChoice"] = {"tool": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}
+        result_kwargs["toolConfig"] = tool_config
+    elif params.tools:
         result_kwargs["toolConfig"] = _convert_tool_spec(params.tools, params.tool_choice)
 
     reasoning_enabled = (
@@ -341,6 +397,34 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
                     },
                 }
             )
+
+    if (
+        response.get("stopReason") == "tool_use"
+        and len(tool_calls_list) == 1
+        and tool_calls_list[0]["function"]["name"] == _STRUCTURED_OUTPUT_TOOL_NAME
+    ):
+        # A `response_format` request was emulated via a forced synthetic tool call
+        # (see `_convert_params`). Unwrap its input back into `message.content` so it
+        # flows through the same auto-`.parsed` handling as every other provider.
+        message = ChatCompletionMessage(
+            role="assistant",
+            content=tool_calls_list[0]["function"]["arguments"],
+            reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
+            tool_calls=None,
+        )
+        choices_out.append(Choice(index=0, finish_reason="stop", message=message))
+
+        if "usage" in response:
+            usage = _extract_usage(response["usage"])
+
+        return ChatCompletion(
+            id=response.get("id", ""),
+            model=response.get("model", ""),
+            created=response.get("created", 0),
+            object="chat.completion",
+            choices=choices_out,
+            usage=usage,
+        )
 
     if response.get("stopReason") == "tool_use" and tool_calls_list:
         message = ChatCompletionMessage(
