@@ -14,6 +14,7 @@ from any_llm.types.completion import (
     ChunkChoice,
     Reasoning,
 )
+from any_llm.utils.reasoning import partial_reasoning_tag_suffix_len
 
 
 def _make_chunk(
@@ -217,3 +218,81 @@ async def test_wrap_chunks_thinking_tag() -> None:
 
     assert full_reasoning == "deep thought"
     assert full_content.strip() == "Result."
+
+
+def _accumulate(chunks: list[ChatCompletionChunk]) -> tuple[str, str]:
+    """Join the content and reasoning deltas of processed chunks."""
+    content = ""
+    reasoning = ""
+    for chunk in chunks:
+        if not chunk.choices:
+            continue
+        content += chunk.choices[0].delta.content or ""
+        if chunk.choices[0].delta.reasoning:
+            reasoning += chunk.choices[0].delta.reasoning.content
+    return content, reasoning
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("parts", "expected_content", "expected_reasoning"),
+    [
+        (["<think>reasoning</th", "ink>answer"], "answer", "reasoning"),
+        (["preface <th", "ink>reasoning</think>answer"], "preface answer", "reasoning"),
+        (["preface <thin", "king>reasoning</thinking>answer"], "preface answer", "reasoning"),
+        (["a<b <think>reasoning</thin", "k>answer"], "a<b answer", "reasoning"),
+        (["<think>a</think>mid <th", "ink>b</think>end"], "mid end", "ab"),
+    ],
+)
+async def test_wrap_chunks_handles_tags_split_after_content(
+    parts: list[str],
+    expected_content: str,
+    expected_reasoning: str,
+) -> None:
+    """Tags split across chunks are handled even when preceded by other text."""
+    chunks = [_make_chunk(content=part) for part in parts]
+    result = await _collect_chunks(wrap_chunks_with_xml_reasoning(_async_iter_chunks(chunks)))
+
+    assert _accumulate(result) == (expected_content, expected_reasoning)
+
+
+@pytest.mark.asyncio
+async def test_wrap_chunks_flushes_trailing_partial_opening_tag() -> None:
+    """A stream that ends on a partial opening tag still emits the held-back text."""
+    chunks = [_make_chunk(content="trailing partial <th")]
+    result = await _collect_chunks(wrap_chunks_with_xml_reasoning(_async_iter_chunks(chunks)))
+
+    assert _accumulate(result) == ("trailing partial <th", "")
+
+
+@pytest.mark.asyncio
+async def test_wrap_chunks_flushes_unterminated_reasoning() -> None:
+    """A reasoning block with no closing tag is emitted as reasoning, not dropped."""
+    chunks = [_make_chunk(content="<think>unterminated "), _make_chunk(content="reasoning")]
+    result = await _collect_chunks(wrap_chunks_with_xml_reasoning(_async_iter_chunks(chunks)))
+
+    assert _accumulate(result) == ("", "unterminated reasoning")
+
+
+@pytest.mark.asyncio
+async def test_wrap_chunks_empty_stream_yields_nothing() -> None:
+    """No chunks in means no chunks out, including no flush chunk."""
+    result = await _collect_chunks(wrap_chunks_with_xml_reasoning(_async_iter_chunks([])))
+
+    assert result == []
+
+
+@pytest.mark.parametrize(
+    ("text", "opening", "expected"),
+    [
+        ("<th", True, 3),
+        ("preface <th", True, 3),
+        ("reasoning</th", False, 4),
+        ("<think>", True, 0),
+        ("plain text", True, 0),
+        ("", True, 0),
+        ("a<b<thin", True, 5),
+    ],
+)
+def test_partial_reasoning_tag_suffix_len(text: str, opening: bool, expected: int) -> None:
+    assert partial_reasoning_tag_suffix_len(text, opening=opening) == expected
