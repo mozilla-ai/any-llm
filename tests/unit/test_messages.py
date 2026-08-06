@@ -23,7 +23,6 @@ from pydantic import BaseModel
 from any_llm.any_llm import AnyLLM
 from any_llm.api import amessages, messages
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.providers.bedrock.bedrock import BedrockProvider
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -72,6 +71,9 @@ def test_messages_params_exposes_prompt_cache_key_in_schema() -> None:
 
 @pytest.mark.asyncio
 async def test_amessages_rejects_prompt_cache_key_for_unsupported_provider() -> None:
+    pytest.importorskip("boto3")
+    from any_llm.providers.bedrock.bedrock import BedrockProvider
+
     client = Mock()
     provider = BedrockProvider(client=client)
 

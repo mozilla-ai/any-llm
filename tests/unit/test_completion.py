@@ -9,7 +9,6 @@ from any_llm import AnyLLM
 from any_llm.api import acompletion, aresponses, completion, responses
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.providers.bedrock.bedrock import BedrockProvider
 from any_llm.types.completion import CompletionParams
 
 _PYTHON_314_INCOMPATIBLE_PROVIDERS = {"voyage", "watsonx"}
@@ -29,9 +28,22 @@ def test_completion_params_exposes_prompt_cache_key() -> None:
     assert "prompt_cache_key" in signature(AnyLLM.completion).parameters
     assert "prompt_cache_key" in signature(AnyLLM.acompletion).parameters
 
+    mock_provider = Mock()
+    with patch("any_llm.any_llm.AnyLLM.create", return_value=mock_provider):
+        completion(
+            model="openai:gpt-5.6",
+            messages=[{"role": "user", "content": "Hello"}],
+            prompt_cache_key="tenant-1",
+        )
+
+    assert mock_provider.completion.call_args.kwargs["prompt_cache_key"] == "tenant-1"
+
 
 @pytest.mark.asyncio
 async def test_acompletion_rejects_prompt_cache_key_for_unsupported_provider() -> None:
+    pytest.importorskip("boto3")
+    from any_llm.providers.bedrock.bedrock import BedrockProvider
+
     client = Mock()
     provider = BedrockProvider(client=client)
 
