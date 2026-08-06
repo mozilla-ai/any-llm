@@ -815,13 +815,89 @@ async def test_control_client_does_not_use_runtime_endpoint() -> None:
     from any_llm.providers.bedrock.bedrock import BedrockProvider
 
     with patch("any_llm.providers.bedrock.bedrock.boto3") as mock_boto3:
-        mock_runtime = MagicMock()
-        mock_boto3.client.return_value = mock_runtime
         mock_boto3.Session.return_value.get_credentials.return_value = MagicMock()
 
         provider = BedrockProvider(api_base="https://bedrock-runtime.us-east-1.amazonaws.com")
 
-        mock_boto3.client.reset_mock()
+        mock_session_client = mock_boto3.Session.return_value.client
+        mock_session_client.reset_mock()
         provider._get_bedrock_control_client()
 
-        mock_boto3.client.assert_called_once_with("bedrock")
+        mock_session_client.assert_called_once()
+        call_args, call_kwargs = mock_session_client.call_args
+        assert call_args == ("bedrock",)
+        assert "endpoint_url" not in call_kwargs
+
+
+@pytest.mark.asyncio
+async def test_control_and_s3_client_overrides_bypass_shared_session() -> None:
+    """Test that explicit control_client=/s3_client= overrides are used as-is.
+
+    This lets callers who inject a custom runtime `client=` also inject matching
+    control-plane/S3 clients, instead of these being silently unoverridable.
+    """
+    pytest.importorskip("boto3")
+    from any_llm.providers.bedrock.bedrock import BedrockProvider
+
+    mock_runtime_client = MagicMock()
+    mock_control_client = MagicMock()
+    mock_s3_client = MagicMock()
+
+    provider = BedrockProvider(client=mock_runtime_client, control_client=mock_control_client, s3_client=mock_s3_client)
+
+    assert provider._get_bedrock_control_client() is mock_control_client
+    assert provider._get_s3_client() is mock_s3_client
+
+
+@pytest.mark.asyncio
+async def test_control_and_s3_client_fall_back_to_bare_boto3_with_custom_runtime_client() -> None:
+    """With a custom runtime `client=` and no control/S3 overrides, fall back to a bare boto3 client.
+
+    any-llm doesn't own the custom client's session, so it can't build a matching control-plane
+    or S3 client from it; this preserves the pre-existing behavior for that case.
+    """
+    pytest.importorskip("boto3")
+    from any_llm.providers.bedrock.bedrock import BedrockProvider
+
+    with patch("any_llm.providers.bedrock.bedrock.boto3") as mock_boto3:
+        provider = BedrockProvider(client=MagicMock(), region_name="us-west-2")
+
+        provider._get_bedrock_control_client()
+        provider._get_s3_client()
+
+        mock_boto3.client.assert_any_call("bedrock", region_name="us-west-2")
+        mock_boto3.client.assert_any_call("s3", region_name="us-west-2")
+
+
+@pytest.mark.asyncio
+async def test_control_client_inherits_bearer_session() -> None:
+    """The control-plane client is built from the same bearer-token-aware session as the runtime client."""
+    pytest.importorskip("boto3")
+    from any_llm.providers.bedrock.bedrock import BedrockProvider
+
+    with patch("any_llm.providers.bedrock.bedrock.boto3") as mock_boto3:
+        provider = BedrockProvider(api_key="test-token")
+
+        mock_session_client = mock_boto3.Session.return_value.client
+        mock_session_client.reset_mock()
+        provider._get_bedrock_control_client()
+
+        call_kwargs = mock_session_client.call_args[1]
+        assert call_kwargs["config"].signature_version == "bearer"
+
+
+@pytest.mark.asyncio
+async def test_s3_client_does_not_force_bearer_auth() -> None:
+    """S3 doesn't support Bedrock's bearer token auth, so no bearer config is applied to it."""
+    pytest.importorskip("boto3")
+    from any_llm.providers.bedrock.bedrock import BedrockProvider
+
+    with patch("any_llm.providers.bedrock.bedrock.boto3") as mock_boto3:
+        provider = BedrockProvider(api_key="test-token")
+
+        mock_session_client = mock_boto3.Session.return_value.client
+        mock_session_client.reset_mock()
+        provider._get_s3_client()
+
+        call_kwargs = mock_session_client.call_args[1]
+        assert "config" not in call_kwargs
