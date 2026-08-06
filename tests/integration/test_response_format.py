@@ -107,6 +107,13 @@ async def test_response_format_bedrock_claude(
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
         raise
+    except Exception as exc:
+        # boto3 can raise these directly (rather than any-llm's MissingApiKeyError) when
+        # ambient AWS credentials are missing/incomplete, e.g. in CI without the
+        # run-integration-tests label. Matched by name to avoid a hard botocore import.
+        if type(exc).__name__ in {"NoCredentialsError", "PartialCredentialsError", "NoRegionError"}:
+            pytest.skip(f"{provider.value} AWS credentials not available, skipping: {exc}")
+        raise
 
 
 @pytest.mark.asyncio

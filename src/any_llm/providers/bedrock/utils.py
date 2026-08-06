@@ -66,7 +66,11 @@ def _convert_response_format_to_tool_spec(response_format: dict[str, Any] | type
         schema = get_json_schema(response_format)
     elif isinstance(response_format, dict):
         if response_format.get("type") == "json_schema":
-            schema = response_format["json_schema"]["schema"]
+            json_schema = response_format.get("json_schema")
+            if not isinstance(json_schema, dict) or "schema" not in json_schema:
+                msg = "response_format with type 'json_schema' must include 'json_schema.schema'"
+                raise ValueError(msg)
+            schema = json_schema["schema"]
         elif response_format.get("type") == "json_object":
             msg = "response_format with type 'json_object'"
             raise UnsupportedParameterError(
@@ -90,9 +94,30 @@ def _convert_response_format_to_tool_spec(response_format: dict[str, Any] | type
     }
 
 
+def _check_no_reserved_tool_name_collision(tools: list[dict[str, Any]] | None) -> None:
+    """Guard against a user-defined tool shadowing the synthetic structured-output tool.
+
+    `_convert_response` unwraps a tool call named `_STRUCTURED_OUTPUT_TOOL_NAME` into
+    `message.content` instead of `tool_calls`. If a user's own tool happened to use that
+    same name, a genuine call to it would be silently misinterpreted as structured output
+    (and, when combined with `response_format`, would produce a duplicate tool spec).
+    """
+    if not tools:
+        return
+    for tool in tools:
+        if tool.get("function", {}).get("name") == _STRUCTURED_OUTPUT_TOOL_NAME:
+            msg = (
+                f"Tool name '{_STRUCTURED_OUTPUT_TOOL_NAME}' is reserved by any-llm for "
+                "emulating response_format on bedrock and cannot be used as a tool name."
+            )
+            raise InvalidRequestError(msg, provider_name="bedrock")
+
+
 def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[str, Any]:
     """Convert CompletionParams to kwargs for AWS API."""
     result_kwargs: dict[str, Any] = kwargs.copy()
+
+    _check_no_reserved_tool_name_collision(params.tools)
 
     if params.response_format:
         if not _is_anthropic_model(params.model_id):
@@ -101,6 +126,14 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
                 msg,
                 "bedrock",
                 "Check the following links:\n- https://docs.aws.amazon.com/nova/latest/userguide/prompting-structured-output.html",
+            )
+        if params.stream:
+            msg = "response_format with stream=True"
+            raise UnsupportedParameterError(
+                msg,
+                "bedrock",
+                "response_format is emulated via a forced tool call, which Bedrock's streaming API "
+                "surfaces as tool-call deltas rather than text content. Use stream=False instead.",
             )
         tool_config = _convert_tool_spec(params.tools, params.tool_choice) if params.tools else {"tools": []}
         tool_config["tools"].append(_convert_response_format_to_tool_spec(params.response_format, "bedrock"))

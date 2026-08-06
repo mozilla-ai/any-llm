@@ -1084,6 +1084,32 @@ def test_convert_params_response_format_json_schema_dict_forces_structured_outpu
     assert result["toolConfig"]["tools"][0]["toolSpec"]["inputSchema"]["json"] == schema
 
 
+def test_convert_params_response_format_json_schema_missing_schema_key_raises() -> None:
+    """A json_schema envelope without 'schema' must raise a controlled ValueError, not KeyError."""
+    with pytest.raises(ValueError, match=r"json_schema\.schema"):
+        _convert_params(
+            CompletionParams(
+                model_id="anthropic.claude-3-haiku-20240307-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format={"type": "json_schema", "json_schema": {}},
+            ),
+            {},
+        )
+
+
+def test_convert_params_response_format_json_schema_missing_envelope_raises() -> None:
+    """A json_schema type without a 'json_schema' key must also raise a controlled ValueError."""
+    with pytest.raises(ValueError, match=r"json_schema\.schema"):
+        _convert_params(
+            CompletionParams(
+                model_id="anthropic.claude-3-haiku-20240307-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format={"type": "json_schema"},
+            ),
+            {},
+        )
+
+
 def test_convert_params_response_format_json_object_raises() -> None:
     """json_object has no schema to build a tool from, so it must raise like the direct Anthropic provider."""
     with pytest.raises(UnsupportedParameterError):
@@ -1138,6 +1164,49 @@ def test_convert_params_response_format_combines_with_existing_tools() -> None:
     tool_names = {t["toolSpec"]["name"] for t in result["toolConfig"]["tools"]}
     assert tool_names == {"get_weather", _STRUCTURED_OUTPUT_TOOL_NAME}
     assert result["toolConfig"]["toolChoice"] == {"tool": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}
+
+
+def test_convert_params_response_format_with_streaming_raises() -> None:
+    """response_format + stream=True is rejected rather than silently emitting tool-call deltas."""
+    with pytest.raises(UnsupportedParameterError):
+        _convert_params(
+            CompletionParams(
+                model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format=_City,
+                stream=True,
+            ),
+            {},
+        )
+
+
+def test_convert_params_rejects_reserved_tool_name_with_response_format() -> None:
+    """A user tool named like the synthetic structured-output tool must not collide with it."""
+    with pytest.raises(InvalidRequestError, match=_STRUCTURED_OUTPUT_TOOL_NAME):
+        _convert_params(
+            CompletionParams(
+                model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format=_City,
+                tools=[{"type": "function", "function": {"name": _STRUCTURED_OUTPUT_TOOL_NAME, "parameters": None}}],
+            ),
+            {},
+        )
+
+
+def test_convert_params_rejects_reserved_tool_name_without_response_format() -> None:
+    """The reserved name is rejected even without response_format, since a genuine call to it
+    would otherwise be silently misinterpreted as structured output by `_convert_response`.
+    """
+    with pytest.raises(InvalidRequestError, match=_STRUCTURED_OUTPUT_TOOL_NAME):
+        _convert_params(
+            CompletionParams(
+                model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                tools=[{"type": "function", "function": {"name": _STRUCTURED_OUTPUT_TOOL_NAME, "parameters": None}}],
+            ),
+            {},
+        )
 
 
 def test_convert_response_structured_output_tool_call_becomes_content() -> None:
