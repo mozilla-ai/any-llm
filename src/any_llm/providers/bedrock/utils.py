@@ -67,8 +67,8 @@ def _convert_response_format_to_tool_spec(response_format: dict[str, Any] | type
     elif isinstance(response_format, dict):
         if response_format.get("type") == "json_schema":
             json_schema = response_format.get("json_schema")
-            if not isinstance(json_schema, dict) or "schema" not in json_schema:
-                msg = "response_format with type 'json_schema' must include 'json_schema.schema'"
+            if not isinstance(json_schema, dict) or not isinstance(json_schema.get("schema"), dict):
+                msg = "response_format with type 'json_schema' must include a dict-valued 'json_schema.schema'"
                 raise ValueError(msg)
             schema = json_schema["schema"]
         elif response_format.get("type") == "json_object":
@@ -119,6 +119,10 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
 
     _check_no_reserved_tool_name_collision(params.tools)
 
+    reasoning_enabled = (
+        params.reasoning_effort is not None and params.reasoning_effort != "auto" and params.reasoning_effort != "none"
+    )
+
     if params.response_format:
         if not _is_anthropic_model(params.model_id):
             msg = "response_format"
@@ -135,16 +139,24 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
                 "response_format is emulated via a forced tool call, which Bedrock's streaming API "
                 "surfaces as tool-call deltas rather than text content. Use stream=False instead.",
             )
+        if reasoning_enabled:
+            # Bedrock maps reasoning_effort to Anthropic's manual extended thinking
+            # (reasoning_config type "enabled" with budget_tokens), and forced tool use
+            # is rejected in that mode, which is how response_format is emulated here.
+            # https://platform.claude.com/docs/en/build-with-claude/thinking#thinking-with-tool-use
+            msg = "response_format with reasoning_effort"
+            raise UnsupportedParameterError(
+                msg,
+                "bedrock",
+                "response_format is emulated via a forced tool call, which Claude rejects when extended "
+                "thinking is enabled. Drop reasoning_effort (or set it to 'none') to use response_format.",
+            )
         tool_config = _convert_tool_spec(params.tools, params.tool_choice) if params.tools else {"tools": []}
         tool_config["tools"].append(_convert_response_format_to_tool_spec(params.response_format, "bedrock"))
         tool_config["toolChoice"] = {"tool": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}
         result_kwargs["toolConfig"] = tool_config
     elif params.tools:
         result_kwargs["toolConfig"] = _convert_tool_spec(params.tools, params.tool_choice)
-
-    reasoning_enabled = (
-        params.reasoning_effort is not None and params.reasoning_effort != "auto" and params.reasoning_effort != "none"
-    )
 
     inference_config: dict[str, Any] = {}
     if params.max_tokens:

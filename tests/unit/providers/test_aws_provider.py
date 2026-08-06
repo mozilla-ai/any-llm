@@ -1110,6 +1110,50 @@ def test_convert_params_response_format_json_schema_missing_envelope_raises() ->
         )
 
 
+def test_convert_params_response_format_json_schema_non_dict_schema_raises() -> None:
+    """A json_schema envelope whose 'schema' is not a dict must raise instead of building an invalid toolSpec."""
+    with pytest.raises(ValueError, match=r"json_schema\.schema"):
+        _convert_params(
+            CompletionParams(
+                model_id="anthropic.claude-3-haiku-20240307-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format={"type": "json_schema", "json_schema": {"schema": None}},
+            ),
+            {},
+        )
+
+
+def test_convert_params_response_format_with_reasoning_effort_raises() -> None:
+    """Claude rejects forced tool use while extended thinking is enabled, so the combination is refused."""
+    with pytest.raises(UnsupportedParameterError, match="reasoning_effort"):
+        _convert_params(
+            CompletionParams(
+                model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format=_City,
+                reasoning_effort="high",
+            ),
+            {},
+        )
+
+
+@pytest.mark.parametrize("reasoning_effort", ["none", "auto", None])
+def test_convert_params_response_format_allows_disabled_reasoning(reasoning_effort: Any) -> None:
+    """reasoning_effort values that do not enable extended thinking still allow response_format."""
+    result = _convert_params(
+        CompletionParams(
+            model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            messages=[{"role": "user", "content": "hi"}],
+            response_format=_City,
+            reasoning_effort=reasoning_effort,
+        ),
+        {},
+    )
+
+    assert result["toolConfig"]["toolChoice"] == {"tool": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}
+    assert "additionalModelRequestFields" not in result
+
+
 def test_convert_params_response_format_json_object_raises() -> None:
     """json_object has no schema to build a tool from, so it must raise like the direct Anthropic provider."""
     with pytest.raises(UnsupportedParameterError):
