@@ -50,6 +50,7 @@ def completion(
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
     reasoning_effort: ReasoningEffort | None = "auto",
+    prompt_cache_key: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
@@ -85,6 +86,7 @@ def completion(
         stream_options: Additional options controlling streaming behavior
         max_completion_tokens: Maximum number of tokens for the completion
         reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
+        prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
@@ -127,6 +129,7 @@ def completion(
         stream_options=stream_options,
         max_completion_tokens=max_completion_tokens,
         reasoning_effort=reasoning_effort,
+        prompt_cache_key=prompt_cache_key,
         **kwargs,
     )
 
@@ -159,6 +162,7 @@ async def acompletion(
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
     reasoning_effort: ReasoningEffort | None = "auto",
+    prompt_cache_key: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
@@ -194,6 +198,7 @@ async def acompletion(
         stream_options: Additional options controlling streaming behavior
         max_completion_tokens: Maximum number of tokens for the completion
         reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
+        prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
@@ -236,6 +241,7 @@ async def acompletion(
         stream_options=stream_options,
         max_completion_tokens=max_completion_tokens,
         reasoning_effort=reasoning_effort,
+        prompt_cache_key=prompt_cache_key,
         **kwargs,
     )
 
@@ -555,6 +561,7 @@ def messages(
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
     cache_control: dict[str, Any] | None = None,
+    prompt_cache_key: str | None = None,
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
     output_format: type | dict[str, Any] | None = None,
@@ -582,6 +589,7 @@ def messages(
         metadata: Request metadata.
         thinking: Thinking/reasoning configuration.
         cache_control: Cache control configuration for prompt caching.
+        prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
         context_management: Anthropic context management configuration. The `compact_20260112`
             strategy requires a supported model. Its `input_tokens` trigger value must be at
             least 50,000 when provided; see [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction).
@@ -623,6 +631,7 @@ def messages(
         metadata=metadata,
         thinking=thinking,
         cache_control=cache_control,
+        prompt_cache_key=prompt_cache_key,
         context_management=context_management,
         betas=betas,
         output_format=output_format,
@@ -647,6 +656,7 @@ async def amessages(
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
     cache_control: dict[str, Any] | None = None,
+    prompt_cache_key: str | None = None,
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
     output_format: type | dict[str, Any] | None = None,
@@ -674,6 +684,7 @@ async def amessages(
         metadata: Request metadata.
         thinking: Thinking/reasoning configuration.
         cache_control: Cache control configuration for prompt caching.
+        prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
         context_management: Anthropic context management configuration. The `compact_20260112`
             strategy requires a supported model. Its `input_tokens` trigger value must be at
             least 50,000 when provided; see [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction).
@@ -715,6 +726,7 @@ async def amessages(
         metadata=metadata,
         thinking=thinking,
         cache_control=cache_control,
+        prompt_cache_key=prompt_cache_key,
         context_management=context_management,
         betas=betas,
         output_format=output_format,

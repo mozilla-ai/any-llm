@@ -73,6 +73,8 @@ def messages_params_to_completion_params(params: MessagesParams) -> dict[str, An
         "max_tokens": params.max_tokens,
     }
 
+    if params.prompt_cache_key is not None:
+        result["prompt_cache_key"] = params.prompt_cache_key
     if params.temperature is not None:
         result["temperature"] = params.temperature
     if params.top_p is not None:

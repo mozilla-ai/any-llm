@@ -8,6 +8,7 @@ class OpenaiProvider(BaseOpenAIProvider):
     ENV_API_BASE_NAME = "OPENAI_BASE_URL"
     PROVIDER_NAME = "openai"
     PROVIDER_DOCUMENTATION_URL = "https://platform.openai.com/docs/api-reference"
+    PROMPT_CACHE_KEY_SUPPORT = "supported"
     SUPPORTS_RESPONSES = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True

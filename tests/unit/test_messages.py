@@ -22,6 +22,8 @@ from pydantic import BaseModel
 
 from any_llm.any_llm import AnyLLM
 from any_llm.api import amessages, messages
+from any_llm.exceptions import UnsupportedParameterError
+from any_llm.providers.bedrock.bedrock import BedrockProvider
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -54,6 +56,34 @@ def test_stop_reason_aliases_anthropic_beta_type() -> None:
 
 def test_content_block_alias_matches_message_content_block() -> None:
     assert ContentBlock is MessageContentBlock
+
+
+def test_messages_params_exposes_prompt_cache_key_in_schema() -> None:
+    params = MessagesParams(
+        model="gpt-5.6",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        prompt_cache_key="tenant-1",
+    )
+
+    assert params.prompt_cache_key == "tenant-1"
+    assert "prompt_cache_key" in MessagesParams.model_json_schema()["properties"]
+
+
+@pytest.mark.asyncio
+async def test_amessages_rejects_prompt_cache_key_for_unsupported_provider() -> None:
+    client = Mock()
+    provider = BedrockProvider(client=client)
+
+    with pytest.raises(UnsupportedParameterError, match="prompt_cache_key"):
+        await provider.amessages(
+            model="anthropic.claude-sonnet",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=100,
+            prompt_cache_key="tenant-1",
+        )
+
+    client.converse.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -467,6 +497,7 @@ async def test_amessages_parameter_capture() -> None:
             tool_choice={"type": "auto"},
             metadata={"user_id": "u1"},
             thinking={"type": "enabled", "budget_tokens": 4096},
+            prompt_cache_key="tenant-1",
             api_key="sk-test",
             api_base="https://custom.example.com",
         )
@@ -493,12 +524,15 @@ async def test_amessages_parameter_capture() -> None:
         assert call_args.kwargs["tool_choice"] == {"type": "auto"}
         assert call_args.kwargs["metadata"] == {"user_id": "u1"}
         assert call_args.kwargs["thinking"] == {"type": "enabled", "budget_tokens": 4096}
+        assert call_args.kwargs["prompt_cache_key"] == "tenant-1"
 
 
 @pytest.mark.asyncio
-async def test_amessages_forwards_context_management_and_betas() -> None:
+async def test_amessages_forwards_typed_messages_params() -> None:
+    assert "prompt_cache_key" in signature(amessages).parameters
     assert "context_management" in signature(amessages).parameters
     assert "betas" in signature(amessages).parameters
+    assert "prompt_cache_key" in signature(AnyLLM.amessages).parameters
     assert "context_management" in signature(AnyLLM.amessages).parameters
     assert "betas" in signature(AnyLLM.amessages).parameters
 
@@ -513,11 +547,13 @@ async def test_amessages_forwards_context_management_and_betas() -> None:
             provider="anthropic",
             messages=[{"role": "user", "content": "Hello"}],
             max_tokens=1024,
+            prompt_cache_key="tenant-1",
             context_management=context_management,
             betas=betas,
         )
 
     call_kwargs = mock_provider.amessages.await_args.kwargs
+    assert call_kwargs["prompt_cache_key"] == "tenant-1"
     assert call_kwargs["context_management"] == context_management
     assert call_kwargs["betas"] == betas
 
@@ -557,9 +593,11 @@ def test_messages_returns_parsed_beta_message_without_treating_it_as_a_stream() 
     assert parsed_message.parsed_output == Answer(value="ok")
 
 
-def test_messages_forwards_context_management_and_betas() -> None:
+def test_messages_forwards_typed_messages_params() -> None:
+    assert "prompt_cache_key" in signature(messages).parameters
     assert "context_management" in signature(messages).parameters
     assert "betas" in signature(messages).parameters
+    assert "prompt_cache_key" in signature(AnyLLM.messages).parameters
     assert "context_management" in signature(AnyLLM.messages).parameters
     assert "betas" in signature(AnyLLM.messages).parameters
 
@@ -574,11 +612,13 @@ def test_messages_forwards_context_management_and_betas() -> None:
             provider="anthropic",
             messages=[{"role": "user", "content": "Hello"}],
             max_tokens=1024,
+            prompt_cache_key="tenant-1",
             context_management=context_management,
             betas=betas,
         )
 
     call_kwargs = mock_provider.messages.call_args.kwargs
+    assert call_kwargs["prompt_cache_key"] == "tenant-1"
     assert call_kwargs["context_management"] == context_management
     assert call_kwargs["betas"] == betas
 
@@ -656,6 +696,7 @@ async def test_default_amessages_non_streaming() -> None:
         model="gpt-4",
         messages=[{"role": "user", "content": "Hello"}],
         max_tokens=100,
+        prompt_cache_key="tenant-1",
     )
     result = await AnyLLM._amessages(mock_provider, params)
     assert isinstance(result, MessageResponse)
@@ -664,6 +705,9 @@ async def test_default_amessages_non_streaming() -> None:
     assert result.content[0].text == "Hi!"
     assert result.stop_reason == "end_turn"
     assert result.usage.input_tokens == 10
+    completion_params = mock_provider._acompletion.await_args.args[0]
+    assert completion_params.prompt_cache_key == "tenant-1"
+    assert "prompt_cache_key" not in mock_provider._acompletion.await_args.kwargs
 
 
 @pytest.mark.asyncio
