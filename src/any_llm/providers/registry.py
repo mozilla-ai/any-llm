@@ -149,6 +149,14 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         supports_batch=True,
         supports_image_generation=True,
     ),
+    "orcarouter": OpenAICompatibleProviderConfig(
+        name="orcarouter",
+        api_base="https://api.orcarouter.ai/v1",
+        env_api_key_name="ORCAROUTER_API_KEY",
+        env_api_base_name="ORCAROUTER_API_BASE",
+        provider_documentation_url="https://docs.orcarouter.ai",
+        supports_completion_reasoning=True,
+    ),
     "perplexity": OpenAICompatibleProviderConfig(
         name="perplexity",
         api_base="https://api.perplexity.ai",
