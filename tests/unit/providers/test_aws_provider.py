@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from typing import Any, get_args
 from unittest.mock import Mock, patch
@@ -208,8 +209,6 @@ def test_timeout_client_creation_is_thread_safe() -> None:
     `_completion` runs on executor threads via `_acompletion`; without locking the cache-miss
     path, concurrent callers could each build (and leak) their own client for the same timeout.
     """
-    from concurrent.futures import ThreadPoolExecutor
-
     with mock_aws_provider() as mock_client_call:
         provider = BedrockProvider(api_key="test_key")
 
