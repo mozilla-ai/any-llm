@@ -75,6 +75,7 @@ async def process_streaming_reasoning_chunks(
     terminal_content_parts: list[str] = []
     terminal_reasoning_parts: list[str] = []
     held_chunks: list[T] = []
+    last_chunk_was_yielded = False
 
     async for original_chunk in chunks:
         content = get_content(original_chunk)
@@ -87,6 +88,7 @@ async def process_streaming_reasoning_chunks(
             continue
 
         last_chunk = original_chunk
+        last_chunk_was_yielded = False
         buffer += content
         content_parts = []
         reasoning_parts = []
@@ -139,10 +141,12 @@ async def process_streaming_reasoning_chunks(
             if reasoning_parts:
                 modified_chunk = set_reasoning(modified_chunk, "".join(reasoning_parts))
             yield modified_chunk
+            last_chunk_was_yielded = True
         elif not buffer:
             modified_chunk = original_chunk.model_copy(deep=True)  # type: ignore[attr-defined]
             modified_chunk = set_content(modified_chunk, None)
             yield modified_chunk
+            last_chunk_was_yielded = True
 
     if terminal_chunk is not None:
         final_chunk = terminal_chunk.model_copy(deep=True)  # type: ignore[attr-defined]
@@ -160,7 +164,9 @@ async def process_streaming_reasoning_chunks(
             final_chunk = set_reasoning(final_chunk, final_reasoning)
         yield final_chunk
     elif last_chunk is not None and (buffer or reasoning_buffer):
-        final_chunk = clear_stream_metadata(last_chunk.model_copy(deep=True))  # type: ignore[attr-defined]
+        final_chunk = last_chunk.model_copy(deep=True)  # type: ignore[attr-defined]
+        if last_chunk_was_yielded:
+            final_chunk = clear_stream_metadata(final_chunk)
         if current_tag is None:
             final_chunk = set_content(final_chunk, buffer)
         else:

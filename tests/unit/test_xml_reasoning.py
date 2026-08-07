@@ -271,6 +271,18 @@ async def test_wrap_chunks_flushes_trailing_partial_opening_tag() -> None:
 
 
 @pytest.mark.asyncio
+async def test_wrap_chunks_preserves_metadata_for_pure_partial_opening_tag() -> None:
+    """A source chunk held entirely for EOF flushing keeps its metadata."""
+    chunks = [_make_chunk(content="<th", extra_content={"source": "partial"})]
+    result = await _collect_chunks(wrap_chunks_with_xml_reasoning(_async_iter_chunks(chunks)))
+
+    assert _accumulate(result) == ("<th", "")
+    assert len(result) == 1
+    assert result[0].choices[0].delta.role == "assistant"
+    assert result[0].choices[0].delta.extra_content == {"source": "partial"}
+
+
+@pytest.mark.asyncio
 async def test_wrap_chunks_flushes_unterminated_reasoning() -> None:
     """A reasoning block with no closing tag is emitted as reasoning, not dropped."""
     chunks = [_make_chunk(content="<think>unterminated "), _make_chunk(content="reasoning")]
