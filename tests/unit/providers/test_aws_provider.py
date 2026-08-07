@@ -1280,6 +1280,47 @@ def test_convert_response_structured_output_tool_call_becomes_content() -> None:
     assert message.tool_calls is None
 
 
+def test_convert_response_structured_output_preserves_usage_and_reasoning() -> None:
+    """Usage and reasoning content must survive the structured-output unwrap, not just the JSON content."""
+    response: dict[str, Any] = {
+        "output": {
+            "message": {
+                "content": [
+                    {"reasoningContent": {"reasoningText": {"text": "The capital of France is Paris."}}},
+                    {
+                        "toolUse": {
+                            "toolUseId": "tool-123",
+                            "name": _STRUCTURED_OUTPUT_TOOL_NAME,
+                            "input": {"name": "Paris"},
+                        }
+                    },
+                ]
+            }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+            "inputTokens": 100,
+            "outputTokens": 50,
+            "totalTokens": 150,
+            "cacheReadInputTokens": 80,
+        },
+    }
+
+    result = _convert_response(response)
+
+    message = result.choices[0].message
+    assert result.choices[0].finish_reason == "stop"
+    assert message.content == json.dumps({"name": "Paris"})
+    assert message.tool_calls is None
+    assert message.reasoning is not None
+    assert message.reasoning.content == "The capital of France is Paris."
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 180  # 100 + 80
+    assert result.usage.completion_tokens == 50
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 80
+
+
 def test_convert_response_real_tool_call_not_treated_as_structured_output() -> None:
     """A genuine (non-sentinel) tool call must still take the normal tool_calls path."""
     response: dict[str, Any] = {

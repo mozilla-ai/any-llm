@@ -119,9 +119,7 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
 
     _check_no_reserved_tool_name_collision(params.tools)
 
-    reasoning_enabled = (
-        params.reasoning_effort is not None and params.reasoning_effort != "auto" and params.reasoning_effort != "none"
-    )
+    reasoning_enabled = params.reasoning_effort is not None and params.reasoning_effort not in ("auto", "none")
 
     if params.response_format:
         if not _is_anthropic_model(params.model_id):
