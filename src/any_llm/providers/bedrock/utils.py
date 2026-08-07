@@ -113,48 +113,60 @@ def _check_no_reserved_tool_name_collision(tools: list[dict[str, Any]] | None) -
             raise InvalidRequestError(msg, provider_name="bedrock")
 
 
+def _build_tool_config(params: CompletionParams) -> dict[str, Any] | None:
+    """Build the `toolConfig` kwarg for the Converse API, if tools or response_format were requested.
+
+    Handles both plain tool-calling and the `response_format`-as-forced-tool-call emulation
+    (see `_convert_response_format_to_tool_spec`), keeping that branching out of `_convert_params`.
+    """
+    _check_no_reserved_tool_name_collision(params.tools)
+
+    if params.response_format is None:
+        return _convert_tool_spec(params.tools, params.tool_choice) if params.tools else None
+
+    if not _is_anthropic_model(params.model_id):
+        msg = "response_format"
+        raise UnsupportedParameterError(
+            msg,
+            "bedrock",
+            "Check the following links:\n- https://docs.aws.amazon.com/nova/latest/userguide/prompting-structured-output.html",
+        )
+    if params.stream:
+        msg = "response_format with stream=True"
+        raise UnsupportedParameterError(
+            msg,
+            "bedrock",
+            "response_format is emulated via a forced tool call, which Bedrock's streaming API "
+            "surfaces as tool-call deltas rather than text content. Use stream=False instead.",
+        )
+    if params.reasoning_effort is not None and params.reasoning_effort not in ("auto", "none"):
+        # Bedrock maps reasoning_effort to Anthropic's manual extended thinking
+        # (reasoning_config type "enabled" with budget_tokens), and forced tool use
+        # is rejected in that mode, which is how response_format is emulated here.
+        # https://platform.claude.com/docs/en/build-with-claude/thinking#thinking-with-tool-use
+        msg = "response_format with reasoning_effort"
+        raise UnsupportedParameterError(
+            msg,
+            "bedrock",
+            "response_format is emulated via a forced tool call, which Claude rejects when extended "
+            "thinking is enabled. Drop reasoning_effort (or set it to 'none') to use response_format.",
+        )
+
+    tool_config = _convert_tool_spec(params.tools, params.tool_choice) if params.tools else {"tools": []}
+    tool_config["tools"].append(_convert_response_format_to_tool_spec(params.response_format, "bedrock"))
+    tool_config["toolChoice"] = {"tool": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}
+    return tool_config
+
+
 def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[str, Any]:
     """Convert CompletionParams to kwargs for AWS API."""
     result_kwargs: dict[str, Any] = kwargs.copy()
 
-    _check_no_reserved_tool_name_collision(params.tools)
+    tool_config = _build_tool_config(params)
+    if tool_config is not None:
+        result_kwargs["toolConfig"] = tool_config
 
     reasoning_enabled = params.reasoning_effort is not None and params.reasoning_effort not in ("auto", "none")
-
-    if params.response_format:
-        if not _is_anthropic_model(params.model_id):
-            msg = "response_format"
-            raise UnsupportedParameterError(
-                msg,
-                "bedrock",
-                "Check the following links:\n- https://docs.aws.amazon.com/nova/latest/userguide/prompting-structured-output.html",
-            )
-        if params.stream:
-            msg = "response_format with stream=True"
-            raise UnsupportedParameterError(
-                msg,
-                "bedrock",
-                "response_format is emulated via a forced tool call, which Bedrock's streaming API "
-                "surfaces as tool-call deltas rather than text content. Use stream=False instead.",
-            )
-        if reasoning_enabled:
-            # Bedrock maps reasoning_effort to Anthropic's manual extended thinking
-            # (reasoning_config type "enabled" with budget_tokens), and forced tool use
-            # is rejected in that mode, which is how response_format is emulated here.
-            # https://platform.claude.com/docs/en/build-with-claude/thinking#thinking-with-tool-use
-            msg = "response_format with reasoning_effort"
-            raise UnsupportedParameterError(
-                msg,
-                "bedrock",
-                "response_format is emulated via a forced tool call, which Claude rejects when extended "
-                "thinking is enabled. Drop reasoning_effort (or set it to 'none') to use response_format.",
-            )
-        tool_config = _convert_tool_spec(params.tools, params.tool_choice) if params.tools else {"tools": []}
-        tool_config["tools"].append(_convert_response_format_to_tool_spec(params.response_format, "bedrock"))
-        tool_config["toolChoice"] = {"tool": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}
-        result_kwargs["toolConfig"] = tool_config
-    elif params.tools:
-        result_kwargs["toolConfig"] = _convert_tool_spec(params.tools, params.tool_choice)
 
     inference_config: dict[str, Any] = {}
     if params.max_tokens:

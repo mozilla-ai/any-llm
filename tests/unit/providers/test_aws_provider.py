@@ -1167,6 +1167,19 @@ def test_convert_params_response_format_json_object_raises() -> None:
         )
 
 
+def test_convert_params_response_format_empty_dict_raises() -> None:
+    """An empty dict must not be treated as "no response_format" (it's falsy but not None)."""
+    with pytest.raises(ValueError, match="Unsupported response_format type"):
+        _convert_params(
+            CompletionParams(
+                model_id="anthropic.claude-3-haiku-20240307-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format={},
+            ),
+            {},
+        )
+
+
 def test_convert_response_format_to_tool_spec_unsupported_dict_type_raises() -> None:
     """A response_format dict whose type is neither json_schema nor json_object is rejected."""
     with pytest.raises(ValueError, match="Unsupported response_format type"):
