@@ -43,9 +43,10 @@ def _derive_anthropic_base(openai_base: str) -> str:
 
     Meta's OpenAI-compatible endpoints live under `.../v1` (the OpenAI SDK appends
     `/chat/completions`, `/responses`, etc. itself); the Anthropic SDK appends
-    `/v1/messages` itself, so it needs the bare host instead.
+    `/v1/messages` itself, so it needs the bare host instead. Trailing slashes are
+    normalized first so a `.../v1/` override still strips down to the bare host.
     """
-    return openai_base.removesuffix("/v1")
+    return openai_base.rstrip("/").removesuffix("/v1")
 
 
 class MetaProvider(BaseOpenAIProvider):
@@ -65,6 +66,10 @@ class MetaProvider(BaseOpenAIProvider):
     PROVIDER_DOCUMENTATION_URL = "https://dev.meta.ai/docs"
     PROMPT_CACHE_KEY_SUPPORT = "supported"
 
+    # Flags below are set from https://dev.meta.ai/docs; this is a community-tier provider
+    # (no repo-held MODEL_API_KEY), so none of these request paths have been exercised
+    # against the live endpoint yet. Whoever runs the live-verification snippet from
+    # CONTRIBUTING.md before merge should correct any flag that turns out to be wrong.
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = True
@@ -109,6 +114,12 @@ class MetaProvider(BaseOpenAIProvider):
             raise NotImplementedError(msg)
 
         if params.output_format is not None:
+            if params.stream:
+                # Belt-and-suspenders: the public `amessages()` entry point already rejects this
+                # combination before params reach here, but `_amessages` can be called directly
+                # (e.g. in tests), so guard here too rather than silently dropping `stream`.
+                msg = "stream is not supported for output_format"
+                raise ValueError(msg)
             native_kwargs = params.model_dump(
                 exclude_none=True, exclude={"output_format", "stream", "betas", "context_management"}
             )

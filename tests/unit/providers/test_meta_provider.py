@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from typing import Any, Self
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
@@ -30,7 +31,16 @@ from pydantic import BaseModel
 
 from any_llm.providers.meta.meta import MetaProvider, _derive_anthropic_base
 from any_llm.types.completion import CompletionParams
-from any_llm.types.messages import MessageResponse, MessagesParams
+from any_llm.types.messages import (
+    ContentBlockDeltaEvent,
+    ContentBlockStartEvent,
+    ContentBlockStopEvent,
+    MessageDeltaEvent,
+    MessageResponse,
+    MessagesParams,
+    MessageStartEvent,
+    MessageStopEvent,
+)
 
 
 def _build_provider(api_base: str | None = None) -> MetaProvider:
@@ -69,6 +79,11 @@ def test_derive_anthropic_base_leaves_bare_host_untouched() -> None:
 
 def test_derive_anthropic_base_preserves_custom_override() -> None:
     assert _derive_anthropic_base("https://staging.meta.example/v1") == "https://staging.meta.example"
+
+
+def test_derive_anthropic_base_strips_trailing_slash_before_v1() -> None:
+    """A `.../v1/` override must not leave a trailing slash that Anthropic would double up."""
+    assert _derive_anthropic_base("https://custom.meta.example/v1/") == "https://custom.meta.example"
 
 
 def test_init_client_uses_default_base_urls() -> None:
@@ -172,6 +187,27 @@ async def test_amessages_rejects_betas() -> None:
 
 
 @pytest.mark.asyncio
+async def test_amessages_output_format_rejects_stream() -> None:
+    """The public `amessages()` already blocks this combo before building params; `_amessages`
+    guards it too so a direct call (e.g. bypassing the public entry point) fails loudly instead
+    of silently dropping `stream` and returning a non-streaming result."""
+
+    class _Answer(BaseModel):
+        text: str
+
+    provider = _build_provider()
+    params = MessagesParams(
+        model="muse-spark-1.2",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=64,
+        output_format=_Answer,
+        stream=True,
+    )
+    with pytest.raises(ValueError, match="stream is not supported for output_format"):
+        await provider._amessages(params)
+
+
+@pytest.mark.asyncio
 async def test_amessages_streaming_delegates_to_stream_method() -> None:
     provider = _build_provider()
     provider._stream_messages_async = Mock(return_value=AsyncMock())  # type: ignore[method-assign]
@@ -201,6 +237,9 @@ async def test_stream_messages_async_emits_typed_events() -> None:
 
     events_list: list[Any] = [
         SDKMessageStartEvent(type="message_start", message=msg),
+        # Anthropic streams send periodic `ping` events with no any-llm equivalent; the
+        # generator must skip them rather than yield the raw SDK event or raise.
+        SimpleNamespace(type="ping"),
         SDKContentBlockStartEvent(type="content_block_start", index=0, content_block=TextBlock(type="text", text="")),
         SDKContentBlockDeltaEvent(
             type="content_block_delta", index=0, delta=TextDelta(type="text_delta", text="Hello!")
@@ -240,15 +279,19 @@ async def test_stream_messages_async_emits_typed_events() -> None:
         event async for event in provider._stream_messages_async(model="muse-spark-1.2", messages=[], max_tokens=64)
     ]
 
-    types = [event.type for event in collected]
-    assert types == [
-        "message_start",
-        "content_block_start",
-        "content_block_delta",
-        "content_block_stop",
-        "message_delta",
-        "message_stop",
-    ]
+    # The `ping` event has no any-llm equivalent and must be dropped, not yielded verbatim.
+    assert len(collected) == 6
+    assert isinstance(collected[0], MessageStartEvent)
+    assert collected[0].message.id == "msg_123"
+    assert isinstance(collected[1], ContentBlockStartEvent)
+    assert collected[1].content_block.type == "text"
+    assert isinstance(collected[2], ContentBlockDeltaEvent)
+    assert collected[2].delta.text == "Hello!"  # type: ignore[union-attr]
+    assert isinstance(collected[3], ContentBlockStopEvent)
+    assert isinstance(collected[4], MessageDeltaEvent)
+    assert collected[4].delta.stop_reason == "end_turn"
+    assert collected[4].usage.output_tokens == 5
+    assert isinstance(collected[5], MessageStopEvent)
 
 
 @pytest.mark.asyncio
