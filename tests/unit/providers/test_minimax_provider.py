@@ -138,6 +138,7 @@ async def test_stream_preserves_usage_only_chunk() -> None:
     result: list[ChatCompletionChunk] = [chunk async for chunk in converted]
     assert len(result) == 2
     assert result[0].choices[0].delta.content == "answer"
+    assert result[0].usage is None
     assert result[1].choices == []
     assert result[1].usage is not None
     assert result[1].usage.prompt_tokens == 11
