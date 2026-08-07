@@ -25,6 +25,7 @@ def messages(
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
     cache_control: dict[str, Any] | None = None,
+    prompt_cache_key: str | None = None,
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
     output_format: type | dict[str, Any] | None = None,
@@ -57,6 +58,7 @@ async def amessages(
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
     cache_control: dict[str, Any] | None = None,
+    prompt_cache_key: str | None = None,
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
     output_format: type | dict[str, Any] | None = None,
@@ -86,6 +88,7 @@ async def amessages(
 | `metadata` | `dict[str, Any] \| None` | None | Request metadata. |
 | `thinking` | `dict[str, Any] \| None` | None | Thinking/reasoning configuration. |
 | `cache_control` | `dict[str, Any] \| None` | None | Cache control configuration for prompt caching. |
+| `prompt_cache_key` | `str \| None` | None | A key to use when reading from or writing to a provider's prompt cache. |
 | `context_management` | `dict[str, Any] \| None` | None | Anthropic context management configuration. The `compact_20260112` strategy requires a supported model. Its `input_tokens` trigger value must be at least 50,000 when provided; see [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction). |
 | `betas` | `list[str] \| None` | None | Anthropic beta identifiers. |
 | `output_format` | `type \| dict[str, Any] \| None` | None | Structured output, mirroring Anthropic's ``messages.parse``/``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output`` holds the parsed JSON). The call returns Anthropic's ``ParsedMessage``. Not supported with streaming. |

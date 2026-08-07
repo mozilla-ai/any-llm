@@ -80,6 +80,7 @@ Normalized parameters for the Anthropic Messages API, used internally to pass st
 | `metadata` | `dict[str, Any] \| None` | Request metadata |
 | `thinking` | `dict[str, Any] \| None` | Thinking/reasoning configuration |
 | `cache_control` | `dict[str, Any] \| None` | Cache control configuration for prompt caching |
+| `prompt_cache_key` | `str \| None` | A key to use when reading from or writing to a provider's prompt cache. |
 | `context_management` | `dict[str, Any] \| None` | Anthropic context management configuration |
 | `betas` | `list[str] \| None` | Anthropic beta identifiers |
 | `output_format` | `type \| dict[str, Any] \| None` |  |

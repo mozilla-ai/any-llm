@@ -36,6 +36,7 @@ def completion(
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
     reasoning_effort: Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'] | None = "auto",
+    prompt_cache_key: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]
@@ -74,6 +75,7 @@ async def acompletion(
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
     reasoning_effort: Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'] | None = "auto",
+    prompt_cache_key: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]
@@ -109,6 +111,7 @@ async def acompletion(
 | `stream_options` | `dict[str, Any] \| None` | None | Additional options controlling streaming behavior |
 | `max_completion_tokens` | `int \| None` | None | Maximum number of tokens for the completion |
 | `reasoning_effort` | `Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'] \| None` | "auto" | Reasoning effort level for models that support it. "auto" will map to each provider's default. |
+| `prompt_cache_key` | `str \| None` | None | A key to use when reading from or writing to a provider's prompt cache. |
 | `client_args` | `dict[str, Any] \| None` | None | Additional provider-specific arguments that will be passed to the provider's client instantiation. |
 | `**kwargs` | `Any` | *required* | Additional provider-specific arguments that will be passed to the provider's API call. |
 

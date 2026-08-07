@@ -112,6 +112,7 @@ Normalized parameters for chat completions, used internally to pass structured p
 | `stream_options` | `dict[str, Any] \| None` | Additional options controlling streaming behavior |
 | `max_completion_tokens` | `int \| None` | Maximum number of tokens for the completion (provider-dependent) |
 | `reasoning_effort` | `Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'] \| None` |  |
+| `prompt_cache_key` | `str \| None` | A key to use when reading from or writing to a provider's prompt cache. |
 
 ## Additional Re-exports
 
