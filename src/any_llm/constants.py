@@ -54,6 +54,7 @@ class LLMProvider(StrEnum):
     LMSTUDIO = "lmstudio"
     LLAMAFILE = "llamafile"
     LLAMACPP = "llamacpp"
+    META = "meta"
     MISTRAL = "mistral"
     MOONSHOT = "moonshot"
     MZAI = "mzai"
