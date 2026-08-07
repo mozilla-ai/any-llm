@@ -29,6 +29,7 @@ from anthropic.types import (
 from anthropic.types.raw_message_delta_event import Delta as SDKDelta
 from pydantic import BaseModel
 
+from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.meta.meta import MetaProvider, _derive_anthropic_base
 from any_llm.types.completion import CompletionParams
 from any_llm.types.messages import (
@@ -184,6 +185,32 @@ async def test_amessages_rejects_betas() -> None:
     )
     with pytest.raises(NotImplementedError, match="betas"):
         await provider._amessages(params)
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("prompt_cache_key", "my-app"),
+        ("stop_sequences", ["STOP"]),
+        ("top_k", 5),
+    ],
+)
+@pytest.mark.asyncio
+async def test_amessages_rejects_unsupported_params(field_name: str, value: Any) -> None:
+    """Meta's Messages docs 400 on `stop_sequences`/`top_k`, and don't document
+    `prompt_cache_key` for Messages at all (only for Chat Completions/Responses); reject
+    all three client-side rather than forwarding them into the Anthropic SDK, where
+    `prompt_cache_key` isn't even a valid `messages.create` kwarg."""
+    provider = _build_provider()
+    params = MessagesParams(
+        model="muse-spark-1.2",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=64,
+        **{field_name: value},
+    )
+    with pytest.raises(UnsupportedParameterError, match=field_name):
+        await provider._amessages(params)
+    provider._anthropic_client.messages.create.assert_not_called()  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
