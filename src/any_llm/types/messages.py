@@ -212,6 +212,9 @@ class MessagesParams(BaseModel):
     cache_control: dict[str, Any] | None = None
     """Cache control configuration for prompt caching"""
 
+    prompt_cache_key: str | None = None
+    """A key to use when reading from or writing to a provider's prompt cache."""
+
     context_management: dict[str, Any] | None = None
     """Anthropic context management configuration"""
 

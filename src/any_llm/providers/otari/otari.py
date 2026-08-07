@@ -159,6 +159,7 @@ class OtariProvider(BaseOpenAIProvider):
     PROVIDER_NAME = "otari"
     PROVIDER_DOCUMENTATION_URL = "https://mozilla-ai.github.io/otari/"
     MISSING_PACKAGES_ERROR = _MISSING_PACKAGES_ERROR
+    PROMPT_CACHE_KEY_SUPPORT = "passthrough"
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True

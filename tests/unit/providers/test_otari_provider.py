@@ -42,6 +42,10 @@ def _build_provider(mocked_client: MagicMock) -> OtariProvider:
         return OtariProvider(api_base="https://otari.example.com")
 
 
+def test_otari_passes_prompt_cache_key_to_the_resolved_provider() -> None:
+    assert OtariProvider.PROMPT_CACHE_KEY_SUPPORT == "passthrough"
+
+
 def _mock_otari_client() -> MagicMock:
     client = MagicMock()
     client.platform_mode = False
@@ -603,12 +607,14 @@ async def test_otari_completion_sends_max_tokens_not_max_completion_tokens() -> 
         model_id="gpt-4",
         messages=[{"role": "user", "content": "Hello"}],
         max_tokens=42,
+        prompt_cache_key="tenant-1",
     )
 
     await provider._acompletion(params)
 
     call_kwargs = mocked_client.completion.call_args.kwargs
     assert call_kwargs["max_tokens"] == 42
+    assert call_kwargs["prompt_cache_key"] == "tenant-1"
     assert "max_completion_tokens" not in call_kwargs
 
 
@@ -781,6 +787,7 @@ async def test_otari_amessages_delegates_to_native_endpoint_preserving_anthropic
         max_tokens=100,
         system=[{"type": "text", "text": "You are helpful.", "cache_control": {"type": "ephemeral"}}],
         thinking={"type": "enabled", "budget_tokens": 1024},
+        prompt_cache_key="tenant-1",
     )
 
     result = await provider._amessages(params, metadata={"user_id": "u1"})
@@ -797,6 +804,7 @@ async def test_otari_amessages_delegates_to_native_endpoint_preserving_anthropic
     # cache_control on the system block and thinking config survive the pass-through.
     assert call_kwargs["system"][0]["cache_control"] == {"type": "ephemeral"}
     assert call_kwargs["thinking"] == {"type": "enabled", "budget_tokens": 1024}
+    assert call_kwargs["prompt_cache_key"] == "tenant-1"
     # Extra kwargs are forwarded; stream is not set for non-streaming calls.
     assert call_kwargs["metadata"] == {"user_id": "u1"}
     assert "stream" not in call_kwargs

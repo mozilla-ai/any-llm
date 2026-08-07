@@ -36,6 +36,7 @@ class OpenAICompatibleProvider(BaseOpenAIProvider):
     PROVIDER_NAME = "openai_compatible"
     PROVIDER_DOCUMENTATION_URL = "https://platform.openai.com/docs/api-reference"
     ENV_API_KEY_NAME = "OPENAI_COMPATIBLE_API_KEY"
+    PROMPT_CACHE_KEY_SUPPORT = "passthrough"
 
     def __init__(self, api_base: str, api_key: str | None = None, **kwargs: Any) -> None:
         if not api_base:

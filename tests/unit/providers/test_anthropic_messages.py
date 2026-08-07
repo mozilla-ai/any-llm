@@ -13,6 +13,7 @@ from anthropic.types import Message, TextBlock, ThinkingBlock, ToolUseBlock, Usa
 from anthropic.types.beta import BetaMCPToolUseBlock, BetaMessage, BetaThinkingBlock, BetaUsage
 from pydantic import BaseModel
 
+from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.base import BaseAnthropicProvider, _messages_betas, _pop_anthropic_beta_header
 from any_llm.types.messages import (
@@ -255,6 +256,53 @@ async def test_amessages_non_streaming() -> None:
     call_kwargs = mock_client.messages.create.call_args.kwargs
     assert call_kwargs["model"] == "claude-3-5-sonnet"
     assert call_kwargs["max_tokens"] == 1024
+
+
+@pytest.mark.asyncio
+async def test_amessages_rejects_prompt_cache_key_before_client_call() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(500)
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+    try:
+        with pytest.raises(UnsupportedParameterError, match="prompt_cache_key"):
+            await provider.amessages(
+                model="claude-opus-5",
+                messages=[{"role": "user", "content": "Hello"}],
+                max_tokens=1024,
+                prompt_cache_key="tenant-1",
+            )
+    finally:
+        await http_client.aclose()
+
+    assert requests == []
+
+
+@pytest.mark.asyncio
+async def test_acompletion_rejects_prompt_cache_key_before_client_call() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(500)
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+    try:
+        with pytest.raises(UnsupportedParameterError, match="prompt_cache_key"):
+            await provider.acompletion(
+                model="claude-opus-5",
+                messages=[{"role": "user", "content": "Hello"}],
+                prompt_cache_key="tenant-1",
+            )
+    finally:
+        await http_client.aclose()
+
+    assert requests == []
 
 
 @pytest.mark.asyncio

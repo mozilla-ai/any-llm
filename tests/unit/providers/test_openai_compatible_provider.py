@@ -67,6 +67,7 @@ def test_explicit_api_key_takes_precedence_over_env(monkeypatch: pytest.MonkeyPa
 
 def test_capability_flags_follow_openai_compatible_defaults() -> None:
     provider = AnyLLM.create_openai_compatible(name="mygateway", api_base="https://mygateway.example/v1")
+    assert provider.PROMPT_CACHE_KEY_SUPPORT == "passthrough"
     assert provider.SUPPORTS_COMPLETION
     assert provider.SUPPORTS_COMPLETION_STREAMING
     assert provider.SUPPORTS_LIST_MODELS

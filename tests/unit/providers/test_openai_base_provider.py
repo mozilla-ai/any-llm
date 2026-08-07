@@ -1,17 +1,65 @@
 import dataclasses
+import json
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from openai.types.responses import ResponseCompactionItem, ResponseOutputMessage, ResponseOutputText
 from openresponses_types import CompactionBody, ResponseResource
 from pydantic import BaseModel
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.providers.openai.openai import OpenaiProvider
 from any_llm.types.completion import CompletionParams
 from any_llm.types.model import Model
 from any_llm.types.responses import ParsedResponse, Response
 from any_llm.utils.structured_output import parse_responses_output
+
+
+def test_prompt_cache_key_capability_is_opt_in() -> None:
+    assert BaseOpenAIProvider.PROMPT_CACHE_KEY_SUPPORT == "unsupported"
+    assert OpenaiProvider.PROMPT_CACHE_KEY_SUPPORT == "supported"
+
+
+@pytest.mark.asyncio
+async def test_openai_messages_bridge_sends_typed_prompt_cache_key() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "gpt-5.6",
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": "ok", "refusal": None},
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenaiProvider(api_key="test-key", http_client=http_client)
+    try:
+        await provider.amessages(
+            model="gpt-5.6",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=100,
+            prompt_cache_key="tenant-1",
+        )
+    finally:
+        await http_client.aclose()
+
+    assert len(requests) == 1
+    assert json.loads(requests[0].content)["prompt_cache_key"] == "tenant-1"
 
 
 class _City(BaseModel):
