@@ -1,10 +1,14 @@
 import base64
 import json
+import logging
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from typing import Any, get_args
 from unittest.mock import Mock, patch
 
+import botocore.session
 import pytest
+from botocore.tokens import ScopedEnvTokenProvider
 
 from any_llm.exceptions import InvalidRequestError
 from any_llm.providers.bedrock import BedrockProvider
@@ -21,36 +25,223 @@ from any_llm.types.completion import CompletionParams, ReasoningEffort
 
 @contextmanager
 def mock_aws_provider():  # type: ignore[no-untyped-def]
+    """Mock boto3.Session so the provider builds its runtime client from a mocked session.
+
+    Yields the mocked ``session.client`` callable (the equivalent of the old bare
+    ``boto3.client`` mock), since BedrockProvider now builds a dedicated ``boto3.Session``
+    per instance instead of calling the module-level ``boto3.client`` directly.
+    """
     with (
         patch("any_llm.providers.bedrock.bedrock._convert_response"),
-        patch("boto3.Session"),
-        patch("boto3.client") as mock_boto3_client,
+        patch("boto3.Session") as mock_session_cls,
     ):
         mock_client = Mock()
-        mock_boto3_client.return_value = mock_client
+        mock_session_cls.return_value.client.return_value = mock_client
         mock_client.converse.return_value = {"output": {"message": {"content": [{"text": "response"}]}}}
-        yield mock_boto3_client
+        yield mock_session_cls.return_value.client
 
 
 def test_boto3_client_created_with_api_base() -> None:
-    """Test that boto3.client is created with api_base as endpoint_url when provided."""
+    """Test that the session's client is created with api_base as endpoint_url when provided."""
     custom_endpoint = "https://custom-bedrock-endpoint.amazonaws.com"
 
-    with mock_aws_provider() as mock_boto3_client:
+    with mock_aws_provider() as mock_client_call:
         provider = BedrockProvider(api_base=custom_endpoint, api_key="test_key")
         provider._completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
 
-        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=custom_endpoint)
+        mock_client_call.assert_called_once()
+        call_args, call_kwargs = mock_client_call.call_args
+        assert call_args == ("bedrock-runtime",)
+        assert call_kwargs["endpoint_url"] == custom_endpoint
+        # api_key was provided, so the client is configured to sign with the bearer token.
+        assert call_kwargs["config"].signature_version == "bearer"
 
 
 def test_boto3_client_created_without_api_base() -> None:
-    """Test that boto3.client is created with None endpoint_url when api_base is not provided."""
+    """Test that the session's client is created with None endpoint_url when api_base is not provided."""
 
-    with mock_aws_provider() as mock_boto3_client:
+    with mock_aws_provider() as mock_client_call:
         provider = BedrockProvider(api_key="test_key")
         provider._completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
 
-        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None)
+        mock_client_call.assert_called_once()
+        call_args, call_kwargs = mock_client_call.call_args
+        assert call_args == ("bedrock-runtime",)
+        assert call_kwargs["endpoint_url"] is None
+        assert call_kwargs["config"].signature_version == "bearer"
+
+
+def test_api_key_registers_scoped_bearer_token_provider() -> None:
+    """Test that api_key is forwarded as a bearer token via a per-instance token provider.
+
+    This is what actually makes api_key/AWS_BEARER_TOKEN_BEDROCK usable per-request/per-tenant,
+    instead of requiring a process-wide env var mutation.
+    """
+    with mock_aws_provider():
+        provider = BedrockProvider(api_key="my-bearer-token")
+
+    mock_session = provider._boto_session
+    assert mock_session is not None
+    mock_session._session.register_component.assert_called_once()
+    component_name, token_provider = mock_session._session.register_component.call_args[0]
+    assert component_name == "token_provider"
+    assert token_provider.environ == {"AWS_BEARER_TOKEN_BEDROCK": "my-bearer-token"}
+
+
+def test_scoped_token_provider_resolves_bearer_token_via_real_botocore_session() -> None:
+    """Test the registered token provider against the real botocore session contract.
+
+    Goes one level deeper than asserting `register_component` was called with the right
+    arguments: registers the provider on a real `botocore.session.Session` (no boto3/botocore
+    mocking at all) and confirms botocore's own `get_auth_token(signing_name="bedrock")` actually
+    resolves our token through it, exactly as it would when a real client is constructed.
+    """
+    real_session = botocore.session.Session()  # type: ignore[no-untyped-call]
+    real_session.register_component(  # type: ignore[no-untyped-call]
+        "token_provider",
+        ScopedEnvTokenProvider(  # type: ignore[no-untyped-call]
+            real_session, environ={"AWS_BEARER_TOKEN_BEDROCK": "my-bearer-token"}
+        ),
+    )
+
+    auth_token = real_session.get_auth_token(signing_name="bedrock")  # type: ignore[no-untyped-call]
+
+    assert auth_token is not None
+    assert auth_token.token == "my-bearer-token"  # noqa: S105
+
+
+def test_no_api_key_skips_bearer_token_setup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that no token provider is registered and no bearer config is forced without api_key."""
+    # Guard against a real AWS_BEARER_TOKEN_BEDROCK in the ambient environment, which would make
+    # the provider resolve a bearer token anyway and fail this test for unrelated reasons.
+    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+
+    with mock_aws_provider() as mock_client_call:
+        provider = BedrockProvider()
+        provider._completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
+
+    assert provider._boto_session is not None
+    provider._boto_session._session.register_component.assert_not_called()
+    assert "config" not in mock_client_call.call_args[1]
+
+
+def test_completion_with_timeout_builds_distinct_client_with_timeout_config() -> None:
+    """Test that a `timeout` kwarg is popped before reaching converse and applied via client config.
+
+    boto3's Converse API has no `timeout` parameter, so it must never be forwarded to it.
+    """
+    with mock_aws_provider() as mock_client_call:
+        provider = BedrockProvider(api_key="test_key")
+        provider._completion(
+            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]),
+            timeout=5,
+        )
+
+        # one call to build the base client, one to build the timeout-scoped client
+        assert mock_client_call.call_count == 2
+        timeout_call_kwargs = mock_client_call.call_args_list[1][1]
+        assert timeout_call_kwargs["config"].connect_timeout == 5
+        assert timeout_call_kwargs["config"].read_timeout == 5
+        # bearer auth (from api_key) must still be honored on the timeout-scoped client
+        assert timeout_call_kwargs["config"].signature_version == "bearer"
+
+        converse_call_kwargs = mock_client_call.return_value.converse.call_args[1]
+        assert "timeout" not in converse_call_kwargs
+
+
+def test_completion_with_timeout_and_no_api_key_uses_plain_timeout_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test the timeout-only branch (no bearer config to merge into) still works."""
+    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+
+    with mock_aws_provider() as mock_client_call:
+        provider = BedrockProvider()
+        provider._completion(
+            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]),
+            timeout=5,
+        )
+
+        timeout_call_kwargs = mock_client_call.call_args_list[1][1]
+        assert timeout_call_kwargs["config"].connect_timeout == 5
+        assert timeout_call_kwargs["config"].signature_version is None
+
+
+def test_user_supplied_config_is_merged_with_bearer_signature_version() -> None:
+    """A caller-supplied `config=` kwarg is preserved and merged with the forced bearer signature_version."""
+    from botocore.config import Config
+
+    user_config = Config(region_name="us-west-2")  # type: ignore[no-untyped-call]
+    with mock_aws_provider() as mock_client_call:
+        BedrockProvider(api_key="test_key", config=user_config)
+
+    call_kwargs = mock_client_call.call_args[1]
+    assert call_kwargs["config"].region_name == "us-west-2"
+    assert call_kwargs["config"].signature_version == "bearer"
+
+
+def test_completion_timeout_client_is_cached_per_timeout_value() -> None:
+    """Test that repeated calls with the same timeout reuse a single cached client."""
+    with mock_aws_provider() as mock_client_call:
+        provider = BedrockProvider(api_key="test_key")
+        params = CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}])
+
+        provider._completion(params, timeout=5)
+        provider._completion(params, timeout=5)
+
+        # base client + one timeout-scoped client, reused across both calls
+        assert mock_client_call.call_count == 2
+        assert len(provider._timeout_clients) == 1
+
+
+def test_timeout_client_cache_is_bounded() -> None:
+    """Test that the timeout-client cache evicts old entries instead of growing without limit."""
+    with mock_aws_provider():
+        provider = BedrockProvider(api_key="test_key")
+
+        for timeout in range(provider._MAX_TIMEOUT_CLIENTS + 5):
+            provider._client_for_timeout(float(timeout))
+
+        assert len(provider._timeout_clients) == provider._MAX_TIMEOUT_CLIENTS
+
+
+def test_timeout_client_creation_is_thread_safe() -> None:
+    """Test that concurrent calls with the same uncached timeout build exactly one client.
+
+    `_completion` runs on executor threads via `_acompletion`; without locking the cache-miss
+    path, concurrent callers could each build (and leak) their own client for the same timeout.
+    """
+    with mock_aws_provider() as mock_client_call:
+        provider = BedrockProvider(api_key="test_key")
+
+        with ThreadPoolExecutor(max_workers=16) as executor:
+            results = list(executor.map(lambda _: provider._client_for_timeout(5.0), range(16)))
+
+        assert len({id(client) for client in results}) == 1
+        # base client (built at construction) + exactly one timeout-scoped client
+        assert mock_client_call.call_count == 2
+
+
+def test_completion_timeout_with_custom_client_logs_warning_and_is_ignored(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test that `timeout` is dropped with a warning (not a crash) when a custom client is used.
+
+    any-llm doesn't own a custom client's construction, so it can't safely reconfigure its
+    connection timeouts.
+    """
+    custom_client = Mock()
+    custom_client.converse.return_value = {"output": {"message": {"content": [{"text": "response"}]}}}
+
+    with patch("any_llm.providers.bedrock.bedrock._convert_response"):
+        provider = BedrockProvider(client=custom_client)
+        with caplog.at_level(logging.WARNING, logger="any_llm"):
+            provider._completion(
+                CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]),
+                timeout=5,
+            )
+
+    custom_client.converse.assert_called_once()
+    assert "timeout" not in custom_client.converse.call_args[1]
+    assert "timeout" in caplog.text.lower()
 
 
 def test_custom_client_used_when_provided() -> None:
@@ -132,6 +323,34 @@ def test_completion_with_kwargs() -> None:
         )
 
 
+def test_completion_streaming_uses_converse_stream_on_resolved_client() -> None:
+    """Test that streaming completions call converse_stream on the client resolved for the call.
+
+    Guards against a regression where the timeout-aware client resolution (`_client_for_timeout`)
+    is only wired into the non-streaming `converse` call and not `converse_stream`. Uses distinct
+    base/timeout-scoped client mocks (rather than relying on `Mock().return_value` being the same
+    object for every construction call) so the assertion would actually fail if `converse_stream`
+    were called on the wrong client.
+    """
+    with mock_aws_provider() as mock_client_call:
+        base_client = Mock()
+        timeout_client = Mock()
+        timeout_client.converse_stream.return_value = {"stream": [{"messageStart": {"role": "assistant"}}]}
+        mock_client_call.side_effect = [base_client, timeout_client]
+
+        provider = BedrockProvider(api_key="test_key")
+        chunks = list(
+            provider._completion(
+                CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}], stream=True),
+                timeout=5,
+            )
+        )
+
+        timeout_client.converse_stream.assert_called_once()
+        base_client.converse_stream.assert_not_called()
+        assert len(chunks) == 1
+
+
 @pytest.mark.parametrize("reasoning_effort", [None, *get_args(ReasoningEffort)])
 def test_completion_with_custom_reasoning_effort(reasoning_effort: ReasoningEffort | None) -> None:
     """Test that reasoning_effort is correctly passed to Bedrock API."""
@@ -164,13 +383,10 @@ def test_completion_with_custom_reasoning_effort(reasoning_effort: ReasoningEffo
 @contextmanager
 def mock_aws_embedding_provider():  # type: ignore[no-untyped-def]
     """Mock AWS provider specifically for embedding tests."""
-    with (
-        patch("boto3.Session"),
-        patch("boto3.client") as mock_boto3_client,
-    ):
+    with patch("boto3.Session") as mock_session_cls:
         mock_client = Mock()
-        mock_boto3_client.return_value = mock_client
-        yield mock_boto3_client, mock_client
+        mock_session_cls.return_value.client.return_value = mock_client
+        yield mock_session_cls.return_value.client, mock_client
 
 
 def test_embedding_single_string() -> None:
@@ -180,13 +396,17 @@ def test_embedding_single_string() -> None:
 
     mock_response_body = {"embedding": [0.1, 0.2, 0.3], "inputTextTokenCount": 5}
 
-    with mock_aws_embedding_provider() as (mock_boto3_client, mock_client):
+    with mock_aws_embedding_provider() as (mock_client_call, mock_client):
         mock_client.invoke_model.return_value = {"body": Mock(read=Mock(return_value=json.dumps(mock_response_body)))}
 
         provider = BedrockProvider(api_key="test_key")
         response = provider._embedding(model_id, input_text)
 
-        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None)
+        mock_client_call.assert_called_once()
+        call_args, call_kwargs = mock_client_call.call_args
+        assert call_args == ("bedrock-runtime",)
+        assert call_kwargs["endpoint_url"] is None
+        assert call_kwargs["config"].signature_version == "bearer"
 
         expected_request_body = {"inputText": input_text}
         mock_client.invoke_model.assert_called_once_with(modelId=model_id, body=json.dumps(expected_request_body))
@@ -210,7 +430,7 @@ def test_embedding_list_of_strings() -> None:
         {"embedding": [0.4, 0.5, 0.6], "inputTextTokenCount": 6},
     ]
 
-    with mock_aws_embedding_provider() as (mock_boto3_client, mock_client):
+    with mock_aws_embedding_provider() as (mock_client_call, mock_client):
         mock_client.invoke_model.side_effect = [
             {"body": Mock(read=Mock(return_value=json.dumps(mock_response_bodies[0])))},
             {"body": Mock(read=Mock(return_value=json.dumps(mock_response_bodies[1])))},
@@ -219,7 +439,11 @@ def test_embedding_list_of_strings() -> None:
         provider = BedrockProvider(api_key="test_key")
         response = provider._embedding(model_id, input_texts)
 
-        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None)
+        mock_client_call.assert_called_once()
+        call_args, call_kwargs = mock_client_call.call_args
+        assert call_args == ("bedrock-runtime",)
+        assert call_kwargs["endpoint_url"] is None
+        assert call_kwargs["config"].signature_version == "bearer"
 
         assert mock_client.invoke_model.call_count == 2
         expected_calls = [({"inputText": "Hello world"}, model_id), ({"inputText": "Goodbye world"}, model_id)]
