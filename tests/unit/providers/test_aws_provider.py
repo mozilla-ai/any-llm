@@ -5,7 +5,9 @@ from contextlib import contextmanager
 from typing import Any, get_args
 from unittest.mock import Mock, patch
 
+import botocore.session
 import pytest
+from botocore.tokens import ScopedEnvTokenProvider
 
 from any_llm.exceptions import InvalidRequestError
 from any_llm.providers.bedrock import BedrockProvider
@@ -85,8 +87,34 @@ def test_api_key_registers_scoped_bearer_token_provider() -> None:
     assert token_provider.environ == {"AWS_BEARER_TOKEN_BEDROCK": "my-bearer-token"}
 
 
-def test_no_api_key_skips_bearer_token_setup() -> None:
+def test_scoped_token_provider_resolves_bearer_token_via_real_botocore_session() -> None:
+    """Test the registered token provider against the real botocore session contract.
+
+    Goes one level deeper than asserting `register_component` was called with the right
+    arguments: registers the provider on a real `botocore.session.Session` (no boto3/botocore
+    mocking at all) and confirms botocore's own `get_auth_token(signing_name="bedrock")` actually
+    resolves our token through it, exactly as it would when a real client is constructed.
+    """
+    real_session = botocore.session.Session()  # type: ignore[no-untyped-call]
+    real_session.register_component(  # type: ignore[no-untyped-call]
+        "token_provider",
+        ScopedEnvTokenProvider(  # type: ignore[no-untyped-call]
+            real_session, environ={"AWS_BEARER_TOKEN_BEDROCK": "my-bearer-token"}
+        ),
+    )
+
+    auth_token = real_session.get_auth_token(signing_name="bedrock")  # type: ignore[no-untyped-call]
+
+    assert auth_token is not None
+    assert auth_token.token == "my-bearer-token"  # noqa: S105
+
+
+def test_no_api_key_skips_bearer_token_setup(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that no token provider is registered and no bearer config is forced without api_key."""
+    # Guard against a real AWS_BEARER_TOKEN_BEDROCK in the ambient environment, which would make
+    # the provider resolve a bearer token anyway and fail this test for unrelated reasons.
+    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+
     with mock_aws_provider() as mock_client_call:
         provider = BedrockProvider()
         provider._completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
@@ -120,8 +148,10 @@ def test_completion_with_timeout_builds_distinct_client_with_timeout_config() ->
         assert "timeout" not in converse_call_kwargs
 
 
-def test_completion_with_timeout_and_no_api_key_uses_plain_timeout_config() -> None:
+def test_completion_with_timeout_and_no_api_key_uses_plain_timeout_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test the timeout-only branch (no bearer config to merge into) still works."""
+    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+
     with mock_aws_provider() as mock_client_call:
         provider = BedrockProvider()
         provider._completion(
@@ -159,6 +189,36 @@ def test_completion_timeout_client_is_cached_per_timeout_value() -> None:
         # base client + one timeout-scoped client, reused across both calls
         assert mock_client_call.call_count == 2
         assert len(provider._timeout_clients) == 1
+
+
+def test_timeout_client_cache_is_bounded() -> None:
+    """Test that the timeout-client cache evicts old entries instead of growing without limit."""
+    with mock_aws_provider():
+        provider = BedrockProvider(api_key="test_key")
+
+        for timeout in range(provider._MAX_TIMEOUT_CLIENTS + 5):
+            provider._client_for_timeout(float(timeout))
+
+        assert len(provider._timeout_clients) == provider._MAX_TIMEOUT_CLIENTS
+
+
+def test_timeout_client_creation_is_thread_safe() -> None:
+    """Test that concurrent calls with the same uncached timeout build exactly one client.
+
+    `_completion` runs on executor threads via `_acompletion`; without locking the cache-miss
+    path, concurrent callers could each build (and leak) their own client for the same timeout.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    with mock_aws_provider() as mock_client_call:
+        provider = BedrockProvider(api_key="test_key")
+
+        with ThreadPoolExecutor(max_workers=16) as executor:
+            results = list(executor.map(lambda _: provider._client_for_timeout(5.0), range(16)))
+
+        assert len({id(client) for client in results}) == 1
+        # base client (built at construction) + exactly one timeout-scoped client
+        assert mock_client_call.call_count == 2
 
 
 def test_completion_timeout_with_custom_client_logs_warning_and_is_ignored(
@@ -268,21 +328,27 @@ def test_completion_streaming_uses_converse_stream_on_resolved_client() -> None:
     """Test that streaming completions call converse_stream on the client resolved for the call.
 
     Guards against a regression where the timeout-aware client resolution (`_client_for_timeout`)
-    is only wired into the non-streaming `converse` call and not `converse_stream`.
+    is only wired into the non-streaming `converse` call and not `converse_stream`. Uses distinct
+    base/timeout-scoped client mocks (rather than relying on `Mock().return_value` being the same
+    object for every construction call) so the assertion would actually fail if `converse_stream`
+    were called on the wrong client.
     """
     with mock_aws_provider() as mock_client_call:
-        mock_client_call.return_value.converse_stream.return_value = {
-            "stream": [{"messageStart": {"role": "assistant"}}]
-        }
+        base_client = Mock()
+        timeout_client = Mock()
+        timeout_client.converse_stream.return_value = {"stream": [{"messageStart": {"role": "assistant"}}]}
+        mock_client_call.side_effect = [base_client, timeout_client]
 
         provider = BedrockProvider(api_key="test_key")
         chunks = list(
             provider._completion(
                 CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}], stream=True),
+                timeout=5,
             )
         )
 
-        mock_client_call.return_value.converse_stream.assert_called_once()
+        timeout_client.converse_stream.assert_called_once()
+        base_client.converse_stream.assert_not_called()
         assert len(chunks) == 1
 
 

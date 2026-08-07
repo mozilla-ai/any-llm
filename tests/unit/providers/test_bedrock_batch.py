@@ -901,3 +901,30 @@ async def test_s3_client_does_not_force_bearer_auth() -> None:
 
         call_kwargs = mock_session_client.call_args[1]
         assert "config" not in call_kwargs
+
+
+@pytest.mark.asyncio
+async def test_s3_client_strips_caller_supplied_bearer_signature_version() -> None:
+    """A caller-supplied `config=Config(signature_version="bearer")` must not leak into S3.
+
+    self.kwargs (the raw constructor kwargs) is forwarded as-is to the S3 client. If a caller
+    passed their own bearer config (e.g. matching what we force for Bedrock), every S3 call
+    would otherwise fail to authenticate.
+    """
+    pytest.importorskip("boto3")
+    from botocore.config import Config
+
+    from any_llm.providers.bedrock.bedrock import BedrockProvider
+
+    with patch("any_llm.providers.bedrock.bedrock.boto3") as mock_boto3:
+        provider = BedrockProvider(
+            api_key="test-token",
+            config=Config(signature_version="bearer"),  # type: ignore[no-untyped-call]
+        )
+
+        mock_session_client = mock_boto3.Session.return_value.client
+        mock_session_client.reset_mock()
+        provider._get_s3_client()
+
+        call_kwargs = mock_session_client.call_args[1]
+        assert call_kwargs["config"].signature_version is None

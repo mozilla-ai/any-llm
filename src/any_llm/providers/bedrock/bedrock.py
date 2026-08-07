@@ -5,6 +5,7 @@ import asyncio
 import functools
 import json
 import os
+import threading
 from typing import TYPE_CHECKING, Any
 
 from typing_extensions import override
@@ -59,6 +60,11 @@ class BedrockProvider(AnyLLM):
     SUPPORTS_RERANK = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
+
+    # Bounds the per-timeout client cache in `_client_for_timeout`, so callers deriving
+    # `timeout` from a remaining deadline (a different value on every call) can't grow it
+    # (and its underlying connection pools) without limit.
+    _MAX_TIMEOUT_CLIENTS = 8
 
     def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self._custom_client: Any = kwargs.pop("client", None)
@@ -121,6 +127,7 @@ class BedrockProvider(AnyLLM):
         self.kwargs = kwargs
         self._api_key = api_key
         self._timeout_clients: dict[float, Any] = {}
+        self._timeout_clients_lock = threading.Lock()
         if self._custom_client is not None:
             self.client = self._custom_client
             self._boto_session = None
@@ -244,6 +251,11 @@ class BedrockProvider(AnyLLM):
         client-construction time via ``botocore.config.Config``. When a custom client was
         supplied, any-llm doesn't own its construction, so `timeout` is dropped with a warning
         instead of being silently ignored or crashing.
+
+        ``_completion`` runs on executor threads (via ``_acompletion``), so the cache miss path
+        is locked: concurrent calls with the same not-yet-cached timeout must not each build and
+        leak their own client. The cache is also bounded, since a caller deriving `timeout` from
+        a remaining deadline would otherwise produce a new distinct value (and client) per call.
         """
         if timeout is None or self._boto_session is None:
             if timeout is not None:
@@ -253,16 +265,19 @@ class BedrockProvider(AnyLLM):
                 )
             return self.client
 
-        cached = self._timeout_clients.get(timeout)
-        if cached is None:
-            timeout_config = Config(connect_timeout=timeout, read_timeout=timeout)
-            client_kwargs = self._bedrock_client_kwargs(self.kwargs)
-            client_kwargs["config"] = (
-                client_kwargs["config"].merge(timeout_config) if "config" in client_kwargs else timeout_config
-            )
-            cached = self._boto_session.client("bedrock-runtime", endpoint_url=self.api_base, **client_kwargs)
-            self._timeout_clients[timeout] = cached
-        return cached
+        with self._timeout_clients_lock:
+            cached = self._timeout_clients.get(timeout)
+            if cached is None:
+                timeout_config = Config(connect_timeout=timeout, read_timeout=timeout)
+                client_kwargs = self._bedrock_client_kwargs(self.kwargs)
+                client_kwargs["config"] = (
+                    client_kwargs["config"].merge(timeout_config) if "config" in client_kwargs else timeout_config
+                )
+                cached = self._boto_session.client("bedrock-runtime", endpoint_url=self.api_base, **client_kwargs)
+                if len(self._timeout_clients) >= self._MAX_TIMEOUT_CLIENTS:
+                    self._timeout_clients.pop(next(iter(self._timeout_clients)))
+                self._timeout_clients[timeout] = cached
+            return cached
 
     @override
     async def _aembedding(
@@ -336,15 +351,26 @@ class BedrockProvider(AnyLLM):
     def _get_s3_client(self) -> Any:
         """Return an ``s3`` client for reading batch output files.
 
-        Built from the same session as the runtime client (S3 doesn't support Bedrock's bearer
-        token auth, so no bearer-specific config is applied here). An explicit ``s3_client=``
-        constructor kwarg always takes precedence.
+        Built from the same session as the runtime client. S3 doesn't support Bedrock's bearer
+        token auth, so any ``signature_version="bearer"`` (forced by us elsewhere, or present in
+        a caller-supplied ``config=``) is stripped before forwarding, otherwise every S3 call
+        would fail to authenticate. An explicit ``s3_client=`` constructor kwarg always takes
+        precedence.
         """
         if self._custom_s3_client is not None:
             return self._custom_s3_client
         if self._boto_session is not None:
-            return self._boto_session.client("s3", **self.kwargs)
+            return self._boto_session.client("s3", **self._non_bearer_client_kwargs(self.kwargs))
         return boto3.client("s3", **self.kwargs)
+
+    @staticmethod
+    def _non_bearer_client_kwargs(extra_kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Strip a ``signature_version="bearer"`` from a caller-supplied ``config=``, if present."""
+        call_kwargs = dict(extra_kwargs)
+        config = call_kwargs.get("config")
+        if config is not None and getattr(config, "signature_version", None) == "bearer":
+            call_kwargs["config"] = config.merge(Config(signature_version=None))
+        return call_kwargs
 
     @override
     async def _acreate_batch(
