@@ -1,5 +1,5 @@
 from collections.abc import AsyncIterator
-from typing import Literal
+from typing import Any, Literal
 
 import pytest
 
@@ -23,6 +23,7 @@ def _make_chunk(
     reasoning: Reasoning | None = None,
     finish_reason: Literal["stop", "length"] | None = None,
     role: Literal["assistant"] | None = "assistant",
+    extra_content: dict[str, Any] | None = None,
 ) -> ChatCompletionChunk:
     """Create a minimal ChatCompletionChunk for testing."""
     return ChatCompletionChunk(
@@ -35,6 +36,7 @@ def _make_chunk(
                     role=role,
                     content=content,
                     reasoning=reasoning,
+                    extra_content=extra_content,
                 ),
             )
         ],
@@ -290,13 +292,16 @@ async def test_wrap_chunks_flushes_partial_closing_tag() -> None:
 async def test_wrap_chunks_flushes_before_contentless_terminal_chunk() -> None:
     """Buffered content is emitted before a terminal chunk without content."""
     chunks = [
-        _make_chunk(content="prefix <th"),
+        _make_chunk(content="prefix <th", extra_content={"source": "content"}),
         _make_chunk(finish_reason="stop", role=None),
     ]
     result = await _collect_chunks(wrap_chunks_with_xml_reasoning(_async_iter_chunks(chunks)))
 
     assert _accumulate(result) == ("prefix <th", "")
-    assert [chunk.choices[0].finish_reason for chunk in result] == [None, "stop"]
+    assert result[-1].choices[0].finish_reason == "stop"
+    assert [chunk.choices[0].delta.extra_content for chunk in result if chunk.choices[0].delta.extra_content] == [
+        {"source": "content"}
+    ]
 
 
 @pytest.mark.asyncio
@@ -308,6 +313,19 @@ async def test_wrap_chunks_flushes_once_when_content_chunk_is_terminal() -> None
     assert _accumulate(result) == ("", "reasoning")
     assert len(result) == 1
     assert result[0].choices[0].finish_reason == "length"
+
+
+@pytest.mark.asyncio
+async def test_wrap_chunks_preserves_terminal_metadata_after_partial_tag() -> None:
+    """A terminal chunk completing an earlier partial tag keeps its finish reason."""
+    chunks = [
+        _make_chunk(content="prefix <th"),
+        _make_chunk(content="ink>reasoning</think>answer", finish_reason="stop", role=None),
+    ]
+    result = await _collect_chunks(wrap_chunks_with_xml_reasoning(_async_iter_chunks(chunks)))
+
+    assert _accumulate(result) == ("prefix answer", "reasoning")
+    assert [chunk.choices[0].finish_reason for chunk in result] == [None, "stop"]
 
 
 @pytest.mark.asyncio
