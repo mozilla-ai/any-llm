@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from typing import Literal
 
 import pytest
 
@@ -20,6 +21,8 @@ from any_llm.utils.reasoning import partial_reasoning_tag_suffix_len
 def _make_chunk(
     content: str | None = None,
     reasoning: Reasoning | None = None,
+    finish_reason: Literal["stop", "length"] | None = None,
+    role: Literal["assistant"] | None = "assistant",
 ) -> ChatCompletionChunk:
     """Create a minimal ChatCompletionChunk for testing."""
     return ChatCompletionChunk(
@@ -27,9 +30,9 @@ def _make_chunk(
         choices=[
             ChunkChoice(
                 index=0,
-                finish_reason=None,
+                finish_reason=finish_reason,
                 delta=ChoiceDelta(
-                    role="assistant",
+                    role=role,
                     content=content,
                     reasoning=reasoning,
                 ),
@@ -275,6 +278,39 @@ async def test_wrap_chunks_flushes_unterminated_reasoning() -> None:
 
 
 @pytest.mark.asyncio
+async def test_wrap_chunks_flushes_partial_closing_tag() -> None:
+    """A partial closing tag is retained as reasoning when the stream ends."""
+    chunks = [_make_chunk(content="<think>reasoning</th")]
+    result = await _collect_chunks(wrap_chunks_with_xml_reasoning(_async_iter_chunks(chunks)))
+
+    assert _accumulate(result) == ("", "reasoning</th")
+
+
+@pytest.mark.asyncio
+async def test_wrap_chunks_flushes_before_contentless_terminal_chunk() -> None:
+    """Buffered content is emitted before a terminal chunk without content."""
+    chunks = [
+        _make_chunk(content="prefix <th"),
+        _make_chunk(finish_reason="stop", role=None),
+    ]
+    result = await _collect_chunks(wrap_chunks_with_xml_reasoning(_async_iter_chunks(chunks)))
+
+    assert _accumulate(result) == ("prefix <th", "")
+    assert [chunk.choices[0].finish_reason for chunk in result] == [None, "stop"]
+
+
+@pytest.mark.asyncio
+async def test_wrap_chunks_flushes_once_when_content_chunk_is_terminal() -> None:
+    """A terminal content chunk keeps its metadata while its reasoning is flushed."""
+    chunks = [_make_chunk(content="<think>reasoning", finish_reason="length")]
+    result = await _collect_chunks(wrap_chunks_with_xml_reasoning(_async_iter_chunks(chunks)))
+
+    assert _accumulate(result) == ("", "reasoning")
+    assert len(result) == 1
+    assert result[0].choices[0].finish_reason == "length"
+
+
+@pytest.mark.asyncio
 async def test_wrap_chunks_empty_stream_yields_nothing() -> None:
     """No chunks in means no chunks out, including no flush chunk."""
     result = await _collect_chunks(wrap_chunks_with_xml_reasoning(_async_iter_chunks([])))
@@ -283,16 +319,20 @@ async def test_wrap_chunks_empty_stream_yields_nothing() -> None:
 
 
 @pytest.mark.parametrize(
-    ("text", "opening", "expected"),
+    ("text", "tag_kind", "expected"),
     [
-        ("<th", True, 3),
-        ("preface <th", True, 3),
-        ("reasoning</th", False, 4),
-        ("<think>", True, 0),
-        ("plain text", True, 0),
-        ("", True, 0),
-        ("a<b<thin", True, 5),
+        ("<th", "opening", 3),
+        ("preface <th", "opening", 3),
+        ("reasoning</th", "closing", 4),
+        ("<think>", "opening", 0),
+        ("plain text", "opening", 0),
+        ("", "opening", 0),
+        ("a<b<thin", "opening", 5),
     ],
 )
-def test_partial_reasoning_tag_suffix_len(text: str, opening: bool, expected: int) -> None:
-    assert partial_reasoning_tag_suffix_len(text, opening=opening) == expected
+def test_partial_reasoning_tag_suffix_len(
+    text: str,
+    tag_kind: Literal["opening", "closing"],
+    expected: int,
+) -> None:
+    assert partial_reasoning_tag_suffix_len(text, tag_kind=tag_kind) == expected
