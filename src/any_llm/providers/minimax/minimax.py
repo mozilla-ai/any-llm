@@ -44,10 +44,14 @@ class MinimaxProvider(XMLReasoningOpenAIProvider):
 
         async def chunk_iterator() -> AsyncIterator[ChatCompletionChunk]:
             async for chunk in response:
-                if isinstance(chunk, OpenAIChatCompletionChunk) and (
-                    (chunk.choices and chunk.choices[0].delta) or chunk.usage is not None
-                ):
+                if not isinstance(chunk, OpenAIChatCompletionChunk):
+                    continue
+                if chunk.choices and chunk.choices[0].delta:
                     yield self._convert_completion_chunk_response(chunk)
+                elif chunk.usage is not None:
+                    # Minimax can attach usage to a terminal chunk whose choice carries no delta,
+                    # which fails chunk validation. Keep the usage and drop the unusable choices.
+                    yield self._convert_completion_chunk_response(chunk.model_copy(update={"choices": []}))
 
         return wrap_chunks_with_xml_reasoning(chunk_iterator())
 
