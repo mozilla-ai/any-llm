@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, cast
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.exceptions import BatchNotCompleteError
+from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError
 from any_llm.logging import logger
 from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.messages import (
@@ -56,6 +56,12 @@ if TYPE_CHECKING:
 _COMPACTION_BETA = "compact-2026-01-12"
 _COMPACTION_MIN_TRIGGER_TOKENS = 50_000
 _CONTEXT_MANAGEMENT_BETA = "context-management-2025-06-27"
+
+# The SDK's client-side non-streaming guard raises a bare ValueError beginning with this text. It
+# is the only signal the SDK exposes for that condition (no error code or dedicated subtype), and
+# it has stayed stable across SDK versions. Kept as a single named constant so this is the one
+# documented point of coupling to the SDK's wording; the real-client test surfaces any future reword.
+_NONSTREAMING_TIMEOUT_GUARD_MARKER = "Streaming is required"
 
 _ANTHROPIC_TO_OPENAI_STATUS_MAP: dict[str, str] = {
     "in_progress": "in_progress",
@@ -275,7 +281,22 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         if converted_kwargs.pop("stream", False):
             return self._stream_completion_async(**converted_kwargs)
 
-        message = await self.client.messages.create(**converted_kwargs)
+        try:
+            message = await self.client.messages.create(**converted_kwargs)
+        except ValueError as exc:
+            # A bare ValueError here is the SDK's pre-flight non-streaming guard (it rejects a
+            # request whose max_tokens could exceed the time limit for a single response, before
+            # anything is sent). Translate it into an actionable any-llm error and leave any
+            # unrelated ValueError untouched.
+            if not str(exc).startswith(_NONSTREAMING_TIMEOUT_GUARD_MARKER):
+                raise
+            max_tokens = converted_kwargs.get("max_tokens")
+            msg = (
+                f"A non-streaming completion with max_tokens={max_tokens} can exceed the default "
+                "per-request time limit, so it needs an explicit timeout. "
+                "Pass a `timeout` (in seconds) or use `stream=True`."
+            )
+            raise InvalidRequestError(msg, original_exception=exc, provider_name=self.PROVIDER_NAME) from exc
 
         return self._convert_completion_response(message)
 
