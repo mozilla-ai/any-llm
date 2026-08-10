@@ -81,7 +81,7 @@ async def process_streaming_reasoning_chunks(
         content = get_content(original_chunk)
 
         if not content:
-            if buffer or reasoning_buffer:
+            if is_terminal(original_chunk) and (buffer or reasoning_buffer):
                 held_chunks.append(original_chunk)
             else:
                 yield original_chunk

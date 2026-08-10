@@ -24,10 +24,11 @@ def _make_chunk(
     finish_reason: Literal["stop", "length"] | None = None,
     role: Literal["assistant"] | None = "assistant",
     extra_content: dict[str, Any] | None = None,
+    chunk_id: str = "test-chunk",
 ) -> ChatCompletionChunk:
     """Create a minimal ChatCompletionChunk for testing."""
     return ChatCompletionChunk(
-        id="test-chunk",
+        id=chunk_id,
         choices=[
             ChunkChoice(
                 index=0,
@@ -338,6 +339,23 @@ async def test_wrap_chunks_preserves_terminal_metadata_after_partial_tag() -> No
 
     assert _accumulate(result) == ("prefix answer", "reasoning")
     assert [chunk.choices[0].finish_reason for chunk in result] == [None, "stop"]
+
+
+@pytest.mark.asyncio
+async def test_wrap_chunks_preserves_metadata_order_around_partial_tag() -> None:
+    """Metadata chunks stay in order while a partial tag is buffered."""
+    chunks = [
+        _make_chunk(content="<think", chunk_id="opening"),
+        _make_chunk(content=None, role=None, extra_content={"marker": "metadata"}, chunk_id="metadata"),
+        _make_chunk(content=">reasoning</think>answer", role=None, chunk_id="content"),
+        _make_chunk(content=None, finish_reason="stop", role=None, chunk_id="terminal"),
+    ]
+
+    result = await _collect_chunks(wrap_chunks_with_xml_reasoning(_async_iter_chunks(chunks)))
+
+    assert [chunk.id for chunk in result] == ["metadata", "content", "terminal"]
+    assert _accumulate(result) == ("answer", "reasoning")
+    assert result[0].choices[0].delta.extra_content == {"marker": "metadata"}
 
 
 @pytest.mark.asyncio
