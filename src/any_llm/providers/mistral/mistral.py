@@ -115,6 +115,12 @@ class MistralProvider(AnyLLM):
             converted_params["reasoning_effort"] = _MISTRAL_REASONING_EFFORT
 
         converted_params.update(kwargs)
+
+        # Mistral's SDK names its per-request timeout `timeout_ms`, so the seconds-based any-llm
+        # parameter has to be translated; forwarding it as `timeout` is an unexpected keyword.
+        if (timeout := converted_params.pop("timeout", None)) is not None:
+            converted_params["timeout_ms"] = int(timeout * 1000)
+
         return converted_params
 
     @staticmethod

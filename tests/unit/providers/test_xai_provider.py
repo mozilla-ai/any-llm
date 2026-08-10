@@ -162,3 +162,29 @@ def test_stream_options_filtered_out() -> None:
         )
     )
     assert "stream_options" not in result
+
+
+def test_timeout_is_dropped_with_a_warning() -> None:
+    """xAI sets timeouts on the gRPC client, so a per-request timeout cannot be honored."""
+    from any_llm.providers.xai.xai import XaiProvider
+
+    with patch("any_llm.providers.xai.xai.logger") as mock_logger:
+        result = XaiProvider._convert_completion_params(
+            CompletionParams(model_id="model", messages=[{"role": "user", "content": "Hello"}]),
+            timeout=600,
+        )
+
+    assert "timeout" not in result
+    mock_logger.warning.assert_called_once()
+    assert "client_args" in mock_logger.warning.call_args[0][0]
+
+
+def test_no_warning_when_timeout_not_requested() -> None:
+    from any_llm.providers.xai.xai import XaiProvider
+
+    with patch("any_llm.providers.xai.xai.logger") as mock_logger:
+        XaiProvider._convert_completion_params(
+            CompletionParams(model_id="model", messages=[{"role": "user", "content": "Hello"}])
+        )
+
+    mock_logger.warning.assert_not_called()
