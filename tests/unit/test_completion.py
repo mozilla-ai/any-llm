@@ -1,4 +1,5 @@
 import sys
+from collections.abc import AsyncIterator
 from inspect import signature
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
@@ -9,7 +10,7 @@ from any_llm import AnyLLM
 from any_llm.api import acompletion, aresponses, completion, responses
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.types.completion import CompletionParams
+from any_llm.types.completion import ChatCompletion, CompletionParams
 
 _PYTHON_314_INCOMPATIBLE_PROVIDERS = {"voyage", "watsonx"}
 
@@ -37,6 +38,61 @@ def test_completion_params_exposes_prompt_cache_key() -> None:
         )
 
     assert mock_provider.completion.call_args.kwargs["prompt_cache_key"] == "tenant-1"
+
+
+def test_completion_exposes_timeout_parameter() -> None:
+    assert "timeout" in signature(completion).parameters
+    assert "timeout" in signature(acompletion).parameters
+    assert "timeout" in signature(AnyLLM.completion).parameters
+    assert "timeout" in signature(AnyLLM.acompletion).parameters
+
+
+@pytest.mark.asyncio
+async def test_acompletion_forwards_timeout_to_provider() -> None:
+    # Through the public acompletion() helper: a set timeout reaches the provider, None is dropped.
+    provider = AnyLLM.create("openai", api_key="sk-test")
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider),
+        patch.object(provider, "_acompletion", new=AsyncMock(return_value=Mock(spec=ChatCompletion))) as mock_ac,
+    ):
+        await acompletion(model="openai:gpt-4", messages=[{"role": "user", "content": "Hi"}], timeout=600)
+        assert mock_ac.call_args.kwargs.get("timeout") == 600
+
+        mock_ac.reset_mock()
+        await acompletion(model="openai:gpt-4", messages=[{"role": "user", "content": "Hi"}], timeout=None)
+        assert "timeout" not in mock_ac.call_args.kwargs
+
+
+def test_completion_forwards_timeout_to_provider_sync() -> None:
+    # Through the public completion() helper on the synchronous non-streaming path.
+    provider = AnyLLM.create("openai", api_key="sk-test")
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider),
+        patch.object(provider, "_acompletion", new=AsyncMock(return_value=Mock(spec=ChatCompletion))) as mock_ac,
+    ):
+        completion(model="openai:gpt-4", messages=[{"role": "user", "content": "Hi"}], timeout=600, stream=False)
+
+    assert mock_ac.call_args.kwargs.get("timeout") == 600
+
+
+def test_completion_forwards_timeout_on_streaming_path() -> None:
+    # The synchronous streaming path forwards timeout too; consume the iterator to drive the call.
+    provider = AnyLLM.create("openai", api_key="sk-test")
+
+    async def _empty_stream() -> AsyncIterator[Any]:
+        if False:
+            yield None
+
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider),
+        patch.object(provider, "_acompletion", new=AsyncMock(return_value=_empty_stream())) as mock_ac,
+    ):
+        stream = completion(
+            model="openai:gpt-4", messages=[{"role": "user", "content": "Hi"}], timeout=600, stream=True
+        )
+        list(stream)
+
+    assert mock_ac.call_args.kwargs.get("timeout") == 600
 
 
 @pytest.mark.asyncio
