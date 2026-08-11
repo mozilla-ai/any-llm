@@ -62,6 +62,9 @@ class GroqProvider(AnyLLM):
     SUPPORTS_BATCH = False
     SUPPORTS_RERANK = False
 
+    # The Groq SDK accepts a per-request `timeout` on its client calls, so it forwards unchanged.
+    TIMEOUT_SUPPORT = "native"
+
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     client: AsyncGroq
