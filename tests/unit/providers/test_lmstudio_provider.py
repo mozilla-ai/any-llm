@@ -414,3 +414,16 @@ def test_map_stop_reason(stop_reason: str | None, expected: str) -> None:
 )
 def test_split_reasoning_from_content(content: str, expected_content: str, expected_reasoning: str | None) -> None:
     assert utils._split_reasoning_from_content(content) == (expected_content, expected_reasoning)
+
+
+def test_timeout_is_dropped_with_a_warning() -> None:
+    """LM Studio's prediction config has no per-request timeout, so it cannot be honored."""
+    with patch("any_llm.providers.lmstudio.lmstudio.logger") as mock_logger:
+        result = LmstudioProvider._convert_completion_params(
+            CompletionParams(model_id="model", messages=[{"role": "user", "content": "Hello"}]),
+            timeout=600,
+        )
+
+    assert "timeout" not in result
+    mock_logger.warning.assert_called_once()
+    assert "client_args" in mock_logger.warning.call_args[0][0]

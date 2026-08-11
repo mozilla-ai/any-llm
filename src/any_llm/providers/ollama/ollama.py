@@ -86,6 +86,14 @@ class OllamaProvider(AnyLLM):
             converted_params["think"] = REASONING_EFFORT_TO_OLLAMA_THINK[params.reasoning_effort]
         converted_params.update(kwargs)
 
+        # The Ollama client only accepts a timeout at construction, so a per-request `timeout`
+        # cannot be honored here and would reach the SDK as an unexpected keyword.
+        if converted_params.pop("timeout", None) is not None:
+            logger.warning(
+                "Ollama does not support a per-request 'timeout'; ignoring it. "
+                "Set it on the client via client_args instead."
+            )
+
         max_tokens = converted_params.pop("max_tokens", None)
         max_completion_tokens = converted_params.pop("max_completion_tokens", None)
         requested_max_tokens = max_completion_tokens if max_completion_tokens is not None else max_tokens

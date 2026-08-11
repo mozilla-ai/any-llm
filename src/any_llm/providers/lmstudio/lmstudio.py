@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, cast
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.logging import logger
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
@@ -139,6 +140,14 @@ class LmstudioProvider(AnyLLM):
         if params.stop is not None:
             config["stopStrings"] = [params.stop] if isinstance(params.stop, str) else params.stop
         config.update(kwargs)
+
+        # LM Studio folds this dict into the prediction config, which has no per-request timeout,
+        # so a `timeout` cannot be honored here.
+        if config.pop("timeout", None) is not None:
+            logger.warning(
+                "LM Studio does not support a per-request 'timeout'; ignoring it. "
+                "Set it on the client via client_args instead."
+            )
         return config
 
     @staticmethod
