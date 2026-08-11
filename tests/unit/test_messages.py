@@ -54,6 +54,7 @@ from any_llm.types.messages import (
     ParsedTextBlock,
     StopReason,
 )
+from any_llm.utils.aio import async_iter_to_sync_iter
 
 
 def test_stop_reason_aliases_anthropic_beta_type() -> None:
@@ -1320,12 +1321,15 @@ def test_sync_messages_streaming_consumes_response_on_a_single_event_loop() -> N
     assert text == "Hello world"
 
 
-def test_sync_messages_bridges_an_iterator_returned_without_stream() -> None:
+def test_sync_messages_bridges_an_iterator_and_forwards_allow_running_loop() -> None:
     """A provider that hands back an iterator without `stream` still bridges to a sync iterator.
 
-    The streaming branch keys off `kwargs["stream"]`, so this covers the fallback
-    that converts a non-streaming call's async iterator, mirroring the same
-    fallback in `completion()` and `responses()`.
+    The streaming branch keys off `kwargs["stream"]`, so this covers the fallback that
+    converts a non-streaming call's async iterator, mirroring the same fallback in
+    `completion()` and `responses()`. `allow_running_loop` is asserted on the bridge call
+    rather than through behavior: the fallback is only reachable with no running loop, so
+    the flag changes nothing observable there, and dropping it would silently leave the
+    bridge on its own default of True.
     """
 
     async def event_stream() -> AsyncIterator[MessageStreamEvent]:
@@ -1334,15 +1338,18 @@ def test_sync_messages_bridges_an_iterator_returned_without_stream() -> None:
     mock_provider = Mock(spec=AnyLLM)
     mock_provider.amessages = AsyncMock(return_value=event_stream())
 
-    result = AnyLLM.messages(
-        mock_provider,
-        model="gpt-5.6",
-        messages=[{"role": "user", "content": "Hello"}],
-        max_tokens=100,
-    )
+    with patch("any_llm.any_llm.async_iter_to_sync_iter", wraps=async_iter_to_sync_iter) as bridge:
+        result = AnyLLM.messages(
+            mock_provider,
+            model="gpt-5.6",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=100,
+            allow_running_loop=False,
+        )
+        events = list(cast("Iterator[MessageStreamEvent]", result))
 
-    events = list(cast("Iterator[MessageStreamEvent]", result))
     assert [event.type for event in events] == ["message_stop"]
+    assert bridge.call_args.kwargs["allow_running_loop"] is False
 
 
 @pytest.mark.asyncio
