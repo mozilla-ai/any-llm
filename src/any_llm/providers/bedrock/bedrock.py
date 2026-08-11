@@ -78,11 +78,19 @@ class BedrockProvider(AnyLLM):
         "botocore_session",
     )
 
+    @override
     def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self._custom_client: Any = kwargs.pop("client", None)
         self._custom_control_client: Any = kwargs.pop("control_client", None)
         self._custom_s3_client: Any = kwargs.pop("s3_client", None)
         self._session_credential_kwargs = {k: v for k, v in kwargs.items() if k in self._SESSION_CREDENTIAL_KWARGS}
+        # profile_name/botocore_session are boto3.Session-only parameters; Session.client() (used
+        # to build the runtime/control-plane/S3 clients below) doesn't accept them, so they must
+        # not remain in the kwargs forwarded to those calls. aws_access_key_id/
+        # aws_secret_access_key/aws_session_token/region_name are valid on both Session() and
+        # Session.client() and are left in kwargs unchanged.
+        kwargs.pop("profile_name", None)
+        kwargs.pop("botocore_session", None)
         super().__init__(api_key=api_key, api_base=api_base, **kwargs)
 
     @staticmethod
@@ -153,13 +161,17 @@ class BedrockProvider(AnyLLM):
     def _build_boto_session(self, api_key: str | None) -> Any:
         """Build a ``boto3.Session`` dedicated to this provider instance.
 
+        Built with the same explicit credential kwargs (``aws_access_key_id``, ``profile_name``,
+        etc) used for verification, so e.g. an explicit ``profile_name`` is actually honored by
+        the real session and not just by the verification check in ``_verify_and_set_api_key``.
+
         When ``api_key`` (an AWS Bedrock bearer token) is provided, a token provider scoped to
         this session's own in-memory environ mapping is registered on the underlying botocore
         session. This resolves the token per instance instead of requiring the process-wide
         ``AWS_BEARER_TOKEN_BEDROCK`` env var, which is unsafe to mutate under concurrent,
         multi-tenant use.
         """
-        session = boto3.Session()  # type: ignore[attr-defined]
+        session = boto3.Session(**self._session_credential_kwargs)  # type: ignore[attr-defined]
         if api_key:
             session._session.register_component(
                 "token_provider",
