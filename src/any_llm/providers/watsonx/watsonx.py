@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.logging import logger
 from any_llm.utils.structured_output import is_structured_output_type
 
 MISSING_PACKAGES_ERROR: ImportError | None = None
@@ -61,6 +60,10 @@ class WatsonxProvider(AnyLLM):
     SUPPORTS_BATCH = False
     SUPPORTS_RERANK = False
 
+    # watsonx merges completion kwargs into its chat payload as generation parameters, so a
+    # per-request `timeout` would be mis-sent as an invalid model field rather than honored.
+    TIMEOUT_SUPPORT = "unsupported"
+
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     @staticmethod
@@ -79,13 +82,6 @@ class WatsonxProvider(AnyLLM):
             converted_params.pop("reasoning_effort")
         converted_params.update(kwargs)
 
-        # watsonx merges this dict straight into its chat payload as generation parameters, so a
-        # per-request `timeout` cannot be honored here and would be sent as an invalid model field.
-        if converted_params.pop("timeout", None) is not None:
-            logger.warning(
-                "watsonx does not support a per-request 'timeout'; ignoring it. "
-                "Set it on the client via client_args instead."
-            )
         return converted_params
 
     @staticmethod
