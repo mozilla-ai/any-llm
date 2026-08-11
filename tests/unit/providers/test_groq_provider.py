@@ -291,6 +291,40 @@ def test_streaming_chunk_extracts_cached_tokens() -> None:
     }
 
 
+def test_streaming_chunk_without_timing_details() -> None:
+    """A streaming chunk whose usage omits timing keeps usage extras empty."""
+    from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
+
+    from any_llm.providers.groq.utils import _create_openai_chunk_from_groq_chunk
+
+    chunk = GroqChatCompletionChunk.model_validate(
+        {
+            "id": "chatcmpl-123",
+            "object": "chat.completion.chunk",
+            "created": 1234567890,
+            "model": "llama-3.3-70b-versatile",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": ""},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150,
+            },
+        }
+    )
+
+    result = _create_openai_chunk_from_groq_chunk(chunk)
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 100
+    assert result.usage.model_extra == {}
+
+
 def _make_openai_response(text: str):  # type: ignore[no-untyped-def]
     from openai.types.responses import ResponseOutputMessage, ResponseOutputText
 

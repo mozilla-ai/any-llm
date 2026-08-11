@@ -66,7 +66,7 @@ def _create_openai_embedding_response_from_ollama(
     )
 
 
-def _ollama_timing_details(response: OllamaChatResponse) -> dict[str, int]:
+def _extract_ollama_timing_details(response: OllamaChatResponse) -> dict[str, int]:
     """Return Ollama timing fields in nanoseconds, omitting the ones the provider did not report."""
     timing = {
         "total_duration": response.total_duration,
@@ -136,7 +136,7 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
     usage = None
     prompt_tokens = ollama_chunk.prompt_eval_count
     completion_tokens = ollama_chunk.eval_count
-    timing_details = _ollama_timing_details(ollama_chunk)
+    timing_details = _extract_ollama_timing_details(ollama_chunk)
     if prompt_tokens or completion_tokens or timing_details:
         usage = CompletionUsage.model_validate(
             {
@@ -173,7 +173,7 @@ def _create_chat_completion_from_ollama_response(response: OllamaChatResponse) -
 
     prompt_tokens = response.prompt_eval_count or 0
     completion_tokens = response.eval_count or 0
-    timing_details = _ollama_timing_details(response)
+    timing_details = _extract_ollama_timing_details(response)
 
     response_message: OllamaMessage = response.message
     if not response_message or not isinstance(response_message, OllamaMessage):
