@@ -46,6 +46,7 @@ from any_llm.types.messages import (
     MessageDeltaUsage,
     MessageResponse,
     MessagesParams,
+    MessageStopEvent,
     MessageStreamEvent,
     MessageUsage,
     ParsedBetaMessage,
@@ -1317,6 +1318,31 @@ def test_sync_messages_streaming_consumes_response_on_a_single_event_loop() -> N
         if isinstance(event, ContentBlockDeltaEvent) and event.delta.type == "text_delta"
     )
     assert text == "Hello world"
+
+
+def test_sync_messages_bridges_an_iterator_returned_without_stream() -> None:
+    """A provider that hands back an iterator without `stream` still bridges to a sync iterator.
+
+    The streaming branch keys off `kwargs["stream"]`, so this covers the fallback
+    that converts a non-streaming call's async iterator, mirroring the same
+    fallback in `completion()` and `responses()`.
+    """
+
+    async def event_stream() -> AsyncIterator[MessageStreamEvent]:
+        yield MessageStopEvent(type="message_stop")
+
+    mock_provider = Mock(spec=AnyLLM)
+    mock_provider.amessages = AsyncMock(return_value=event_stream())
+
+    result = AnyLLM.messages(
+        mock_provider,
+        model="gpt-5.6",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+    )
+
+    events = list(cast("Iterator[MessageStreamEvent]", result))
+    assert [event.type for event in events] == ["message_stop"]
 
 
 @pytest.mark.asyncio
