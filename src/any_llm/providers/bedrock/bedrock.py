@@ -385,17 +385,18 @@ class BedrockProvider(AnyLLM):
         constructor kwarg always takes precedence.
 
         When a custom ``client=`` was supplied (so there's no shared ``_boto_session`` to reuse),
-        a fresh session is still built from the caller's explicit credential kwargs rather than
-        falling back to a bare, ambient-only ``boto3.client(...)``: otherwise an explicit
-        ``profile_name``/``botocore_session`` would be silently dropped for this client.
+        a fresh session is still built via ``_build_boto_session``, from the caller's explicit
+        credential kwargs and with the same bearer-token scoping as the runtime client would have
+        had: a bare ``boto3.Session(...)`` here would silently drop an explicit
+        ``profile_name``/``botocore_session``, and would leave the bearer ``Config`` forced by
+        ``_bedrock_client_kwargs`` (whenever ``api_key`` was supplied) without a matching scoped
+        token provider, so the request would fall through to an ambient (or missing) token.
         """
         if self._custom_control_client is not None:
             return self._custom_control_client
         if self._boto_session is not None:
             return self._boto_session.client("bedrock", **self._bedrock_client_kwargs(self.kwargs))
-        return boto3.Session(**self._session_credential_kwargs).client(  # type: ignore[attr-defined]
-            "bedrock", **self._bedrock_client_kwargs(self.kwargs)
-        )
+        return self._build_boto_session(self._api_key).client("bedrock", **self._bedrock_client_kwargs(self.kwargs))
 
     def _get_s3_client(self) -> Any:
         """Return an ``s3`` client for reading batch output files.
@@ -406,17 +407,17 @@ class BedrockProvider(AnyLLM):
         would fail to authenticate. An explicit ``s3_client=`` constructor kwarg always takes
         precedence.
 
-        When a custom ``client=`` was supplied (so there's no shared ``_boto_session`` to reuse),
-        a fresh session is still built from the caller's explicit credential kwargs; see
-        ``_get_bedrock_control_client`` for why a bare ``boto3.client(...)`` isn't used instead.
+        When a custom ``client=`` was supplied (so there's no shared ``_boto_session`` to reuse), a
+        fresh session is still built via ``_build_boto_session``; see ``_get_bedrock_control_client``
+        for why a bare ``boto3.client(...)``/``boto3.Session(...)`` isn't used instead. The scoped
+        token provider registered by ``_build_boto_session`` is harmless here since
+        ``_non_bearer_client_kwargs`` already strips ``signature_version="bearer"`` for S3.
         """
         if self._custom_s3_client is not None:
             return self._custom_s3_client
         if self._boto_session is not None:
             return self._boto_session.client("s3", **self._non_bearer_client_kwargs(self.kwargs))
-        return boto3.Session(**self._session_credential_kwargs).client(  # type: ignore[attr-defined]
-            "s3", **self._non_bearer_client_kwargs(self.kwargs)
-        )
+        return self._build_boto_session(self._api_key).client("s3", **self._non_bearer_client_kwargs(self.kwargs))
 
     @staticmethod
     def _non_bearer_client_kwargs(extra_kwargs: dict[str, Any]) -> dict[str, Any]:
