@@ -66,14 +66,15 @@ def _create_openai_embedding_response_from_ollama(
     )
 
 
-def _ollama_timing_details(response: OllamaChatResponse) -> dict[str, int | float]:
-    """Return numeric Ollama timing fields without adding absent fields to usage extras."""
-    timing: dict[str, int | float] = {}
-    for field in ("total_duration", "load_duration", "prompt_eval_duration", "eval_duration"):
-        value = getattr(response, field, None)
-        if isinstance(value, (int, float)):
-            timing[field] = value
-    return timing
+def _ollama_timing_details(response: OllamaChatResponse) -> dict[str, int]:
+    """Return Ollama timing fields in nanoseconds, omitting the ones the provider did not report."""
+    timing = {
+        "total_duration": response.total_duration,
+        "load_duration": response.load_duration,
+        "prompt_eval_duration": response.prompt_eval_duration,
+        "eval_duration": response.eval_duration,
+    }
+    return {field: value for field, value in timing.items() if value is not None}
 
 
 def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> ChatCompletionChunk:

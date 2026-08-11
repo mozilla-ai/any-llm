@@ -130,6 +130,10 @@ async def test_create_chat_completion_extracts_think_content() -> None:
     mock_response.eval_count = 20
     mock_response.model = "llama3.1"
     mock_response.done_reason = "stop"
+    mock_response.total_duration = None
+    mock_response.load_duration = None
+    mock_response.prompt_eval_duration = None
+    mock_response.eval_duration = None
 
     result = _create_chat_completion_from_ollama_response(mock_response)
 
@@ -457,6 +461,10 @@ async def test_streaming_assigns_distinct_tool_call_indices() -> None:
         chunk.done_reason = None
         chunk.prompt_eval_count = None
         chunk.eval_count = None
+        chunk.total_duration = None
+        chunk.load_duration = None
+        chunk.prompt_eval_duration = None
+        chunk.eval_duration = None
         return chunk
 
     chunks = [

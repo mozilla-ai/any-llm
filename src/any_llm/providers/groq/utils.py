@@ -1,8 +1,9 @@
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from groq.types import ModelListResponse as GroqModelListResponse
 from groq.types.chat import ChatCompletion as GroqChatCompletion
 from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
+from groq.types.completion_usage import CompletionUsage as GroqCompletionUsage
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -35,14 +36,15 @@ if TYPE_CHECKING:
     )
 
 
-def _groq_timing_details(usage: Any) -> dict[str, int | float]:
-    """Return numeric provider timing fields without adding absent fields to usage extras."""
-    timing: dict[str, int | float] = {}
-    for field in ("queue_time", "prompt_time", "completion_time", "total_time"):
-        value = getattr(usage, field, None)
-        if isinstance(value, (int, float)):
-            timing[field] = value
-    return timing
+def _groq_timing_details(usage: GroqCompletionUsage) -> dict[str, float]:
+    """Return Groq timing fields in seconds, omitting the ones the provider did not report."""
+    timing = {
+        "queue_time": usage.queue_time,
+        "prompt_time": usage.prompt_time,
+        "completion_time": usage.completion_time,
+        "total_time": usage.total_time,
+    }
+    return {field: value for field, value in timing.items() if value is not None}
 
 
 def to_chat_completion(response: GroqChatCompletion) -> ChatCompletion:
