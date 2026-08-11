@@ -68,6 +68,10 @@ class OllamaProvider(AnyLLM):
     SUPPORTS_BATCH = False
     SUPPORTS_RERANK = False
 
+    # The Ollama client only accepts a timeout at construction, not per request, so a per-request
+    # `timeout` cannot be honored.
+    TIMEOUT_SUPPORT = "unsupported"
+
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     client: AsyncClient
@@ -85,14 +89,6 @@ class OllamaProvider(AnyLLM):
         elif params.reasoning_effort is not None and params.reasoning_effort != "auto":
             converted_params["think"] = REASONING_EFFORT_TO_OLLAMA_THINK[params.reasoning_effort]
         converted_params.update(kwargs)
-
-        # The Ollama client only accepts a timeout at construction, so a per-request `timeout`
-        # cannot be honored here and would reach the SDK as an unexpected keyword.
-        if converted_params.pop("timeout", None) is not None:
-            logger.warning(
-                "Ollama does not support a per-request 'timeout'; ignoring it. "
-                "Set it on the client via client_args instead."
-            )
 
         max_tokens = converted_params.pop("max_tokens", None)
         max_completion_tokens = converted_params.pop("max_completion_tokens", None)
