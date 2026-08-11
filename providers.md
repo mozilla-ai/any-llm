@@ -26,7 +26,7 @@ A provider can be verified whether it ships as a code folder or as a single conf
 | [`bedrock`](https://aws.amazon.com/bedrock/) | ✅ Verified | AWS_BEARER_TOKEN_BEDROCK | AWS_ENDPOINT_URL_BEDROCK_RUNTIME | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [`cascadia`](https://cascadia.to) | 🤝 Community | CASCADIA_API_KEY | CASCADIA_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`cerebras`](https://docs.cerebras.ai/) | ✅ Verified | CEREBRAS_API_KEY | CEREBRAS_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
-| [`cohere`](https://cohere.com/api) | ✅ Verified | COHERE_API_KEY | COHERE_BASE_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| [`cohere`](https://cohere.com/api) | 🤝 Community | COHERE_API_KEY | COHERE_BASE_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`dashscope`](https://bailian.console.aliyun.com/cn-beijing/?tab=api#/api) | 🤝 Community | DASHSCOPE_API_KEY | DASHSCOPE_API_BASE | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ |
 | [`databricks`](https://docs.databricks.com/) | 🤝 Community | DATABRICKS_TOKEN | DATABRICKS_HOST | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
 | [`deepinfra`](https://deepinfra.com/docs/openai_api) | 🤝 Community | DEEPINFRA_API_KEY | DEEPINFRA_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
