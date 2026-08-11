@@ -2,7 +2,7 @@
 
 import json
 import threading
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from inspect import signature
 from typing import Any, cast
@@ -22,6 +22,7 @@ from anthropic.types.beta import (
 from anthropic.types.beta.beta_context_management_response import BetaContextManagementResponse
 from anthropic.types.beta.parsed_beta_message import ParsedBetaTextBlock
 from pydantic import BaseModel
+from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.api import amessages, messages
@@ -39,11 +40,13 @@ from any_llm.types.completion import (
 from any_llm.types.messages import (
     BetaDiagnostics,
     ContentBlock,
+    ContentBlockDeltaEvent,
     MessageContentBlock,
     MessageDeltaEvent,
     MessageDeltaUsage,
     MessageResponse,
     MessagesParams,
+    MessageStreamEvent,
     MessageUsage,
     ParsedBetaMessage,
     ParsedMessage,
@@ -1234,9 +1237,7 @@ class _StreamingHandler(BaseHTTPRequestHandler):
                 "object": "chat.completion.chunk",
                 "created": 1234567890,
                 "model": "test-model",
-                "choices": [
-                    {"index": 0, "delta": {"role": "assistant", "content": "Hello"}, "finish_reason": None}
-                ],
+                "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hello"}, "finish_reason": None}],
             },
             {
                 "id": "chunk-2",
@@ -1265,7 +1266,8 @@ class _StreamingHandler(BaseHTTPRequestHandler):
         self.wfile.write(encoded)
         self.wfile.flush()
 
-    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+    @override
+    def log_message(self, format: str, *args: Any) -> None:
         return
 
 
@@ -1281,8 +1283,6 @@ def test_sync_messages_streaming_consumes_response_on_a_single_event_loop() -> N
     event loop`. This exercises the real OpenAI SDK, httpx, and anyio against a
     local server, with no live provider or API key required.
     """
-    from any_llm.any_llm import AnyLLM
-
     server = ThreadingHTTPServer(("127.0.0.1", 0), _StreamingHandler)
     server.daemon_threads = True
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -1292,14 +1292,16 @@ def test_sync_messages_streaming_consumes_response_on_a_single_event_loop() -> N
         api_base = f"http://127.0.0.1:{server.server_address[1]}/v1"
         provider = AnyLLM.create_openai_compatible(name="local-messages", api_base=api_base, api_key="test")
 
-        events = list(
+        stream = cast(
+            "Iterator[MessageStreamEvent]",
             provider.messages(
                 model="test-model",
                 messages=[{"role": "user", "content": "Hello"}],
                 max_tokens=32,
                 stream=True,
-            )
+            ),
         )
+        events = list(stream)
     finally:
         server.shutdown()
         server.server_close()
@@ -1307,7 +1309,14 @@ def test_sync_messages_streaming_consumes_response_on_a_single_event_loop() -> N
 
     types = [event.type for event in events]
     assert "content_block_delta" in types
-    assert "message_stop" in types
+    assert types[-1] == "message_stop"
+
+    text = "".join(
+        event.delta.text
+        for event in events
+        if isinstance(event, ContentBlockDeltaEvent) and event.delta.type == "text_delta"
+    )
+    assert text == "Hello world"
 
 
 @pytest.mark.asyncio
