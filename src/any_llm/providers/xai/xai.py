@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.logging import logger
 from any_llm.utils.structured_output import get_json_schema
 
 MISSING_PACKAGES_ERROR = None
@@ -52,6 +51,10 @@ class XaiProvider(AnyLLM):
     SUPPORTS_BATCH = False
     SUPPORTS_RERANK = False
 
+    # The xAI SDK sets timeouts on the gRPC client, not per request, so a per-request `timeout`
+    # cannot be honored.
+    TIMEOUT_SUPPORT = "unsupported"
+
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     client: XaiAsyncClient
@@ -78,14 +81,6 @@ class XaiProvider(AnyLLM):
         if converted_params.get("reasoning_effort") in ("auto", "none"):
             converted_params.pop("reasoning_effort")
         converted_params.update(kwargs)
-
-        # The xAI SDK sets timeouts on the gRPC client, not per request, so a per-request
-        # `timeout` cannot be honored here and would reach the SDK as an unexpected keyword.
-        if converted_params.pop("timeout", None) is not None:
-            logger.warning(
-                "xAI does not support a per-request 'timeout'; ignoring it. "
-                "Pass client_args={'timeout': seconds} to set it on the client instead."
-            )
 
         return converted_params
 
