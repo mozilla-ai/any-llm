@@ -540,3 +540,8 @@ async def test_streaming_completion_passes_think_level_top_level() -> None:
         assert call_kwargs["think"] == "medium"
         assert "think" not in call_kwargs.get("options", {})
         assert "reasoning_effort" not in call_kwargs.get("options", {})
+
+
+def test_per_request_timeout_is_declared_unsupported() -> None:
+    """Ollama only accepts a timeout at client construction, so the base class rejects a per-request one."""
+    assert OllamaProvider.TIMEOUT_SUPPORT == "unsupported"

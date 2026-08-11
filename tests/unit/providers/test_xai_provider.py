@@ -162,3 +162,10 @@ def test_stream_options_filtered_out() -> None:
         )
     )
     assert "stream_options" not in result
+
+
+def test_per_request_timeout_is_declared_unsupported() -> None:
+    """xAI sets timeouts on the gRPC client, so the base class rejects a per-request one."""
+    from any_llm.providers.xai.xai import XaiProvider
+
+    assert XaiProvider.TIMEOUT_SUPPORT == "unsupported"

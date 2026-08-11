@@ -414,3 +414,8 @@ def test_map_stop_reason(stop_reason: str | None, expected: str) -> None:
 )
 def test_split_reasoning_from_content(content: str, expected_content: str, expected_reasoning: str | None) -> None:
     assert utils._split_reasoning_from_content(content) == (expected_content, expected_reasoning)
+
+
+def test_per_request_timeout_is_declared_unsupported() -> None:
+    """LM Studio's prediction config has no per-request timeout, so the base class rejects one."""
+    assert LmstudioProvider.TIMEOUT_SUPPORT == "unsupported"

@@ -101,13 +101,15 @@ async def test_acompletion_rejects_timeout_for_unsupported_provider() -> None:
     # centrally, before the request is built.
     provider = AnyLLM.create("openai", api_key="sk-test")
     provider.TIMEOUT_SUPPORT = "unsupported"
-    with patch.object(provider, "_acompletion", new=AsyncMock()) as mock_ac:
-        with pytest.raises(UnsupportedParameterError, match="timeout"):
-            await provider.acompletion(
-                model="gpt-4",
-                messages=[{"role": "user", "content": "Hi"}],
-                timeout=5,
-            )
+    with (
+        patch.object(provider, "_acompletion", new=AsyncMock()) as mock_ac,
+        pytest.raises(UnsupportedParameterError, match="timeout"),
+    ):
+        await provider.acompletion(
+            model="gpt-4",
+            messages=[{"role": "user", "content": "Hi"}],
+            timeout=5,
+        )
 
     mock_ac.assert_not_called()
 

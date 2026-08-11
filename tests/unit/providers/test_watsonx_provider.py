@@ -337,3 +337,8 @@ def test_convert_streaming_chunk_empty_choices() -> None:
     result = _convert_streaming_chunk(chunk)
 
     assert result.choices == []
+
+
+def test_per_request_timeout_is_declared_unsupported() -> None:
+    """watsonx forwards these kwargs as generation parameters, so the base class rejects a timeout."""
+    assert WatsonxProvider.TIMEOUT_SUPPORT == "unsupported"

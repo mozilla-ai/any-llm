@@ -60,7 +60,7 @@ class BedrockProvider(AnyLLM):
     SUPPORTS_RERANK = False
 
     # boto3's Converse API has no per-request timeout, so it is translated into a per-timeout
-    # boto3 client in _convert_completion_params via _client_for_timeout.
+    # boto3 client in _completion via _client_for_timeout.
     TIMEOUT_SUPPORT = "mapped"
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR

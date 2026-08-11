@@ -732,7 +732,9 @@ class AnyLLM(ABC):
             prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
             timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
                 An explicit ``None`` is treated the same as omitting it (the provider's default
-                applies), so it cannot request an unbounded timeout.
+                applies), so it cannot request an unbounded timeout. Providers that have no
+                per-request timeout raise `UnsupportedParameterError`; set a timeout on their
+                client via `client_args` instead.
             **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
         Returns:

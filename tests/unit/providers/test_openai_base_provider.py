@@ -22,6 +22,12 @@ def test_prompt_cache_key_capability_is_opt_in() -> None:
     assert OpenaiProvider.PROMPT_CACHE_KEY_SUPPORT == "supported"
 
 
+def test_timeout_capability_is_native_for_openai_compatible_providers() -> None:
+    """The OpenAI SDK takes `timeout` on the request, so every OpenAI-compatible provider inherits it."""
+    assert BaseOpenAIProvider.TIMEOUT_SUPPORT == "native"
+    assert OpenaiProvider.TIMEOUT_SUPPORT == "native"
+
+
 @pytest.mark.asyncio
 async def test_openai_messages_bridge_sends_typed_prompt_cache_key() -> None:
     requests: list[httpx.Request] = []
