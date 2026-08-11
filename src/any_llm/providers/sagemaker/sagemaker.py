@@ -57,6 +57,13 @@ class SagemakerProvider(AnyLLM):
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for SageMaker API."""
+        # SageMaker serializes these kwargs into the request body, so a per-request `timeout`
+        # cannot be honored here and would be sent as a payload field.
+        if kwargs.pop("timeout", None) is not None:
+            logger.warning(
+                "SageMaker does not support a per-request 'timeout'; ignoring it. "
+                "Set it on the client via client_args instead."
+            )
         return _convert_params(params, kwargs)
 
     @staticmethod

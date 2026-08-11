@@ -540,3 +540,16 @@ async def test_streaming_completion_passes_think_level_top_level() -> None:
         assert call_kwargs["think"] == "medium"
         assert "think" not in call_kwargs.get("options", {})
         assert "reasoning_effort" not in call_kwargs.get("options", {})
+
+
+def test_timeout_is_dropped_with_a_warning() -> None:
+    """Ollama only accepts a timeout at client construction, not per request."""
+    with patch("any_llm.providers.ollama.ollama.logger") as mock_logger:
+        result = OllamaProvider._convert_completion_params(
+            CompletionParams(model_id="model", messages=[{"role": "user", "content": "Hello"}]),
+            timeout=600,
+        )
+
+    assert "timeout" not in result
+    mock_logger.warning.assert_called_once()
+    assert "client_args" in mock_logger.warning.call_args[0][0]

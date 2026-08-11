@@ -51,6 +51,7 @@ def completion(
     max_completion_tokens: int | None = None,
     reasoning_effort: ReasoningEffort | None = "auto",
     prompt_cache_key: str | None = None,
+    timeout: float | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
@@ -87,6 +88,9 @@ def completion(
         max_completion_tokens: Maximum number of tokens for the completion
         reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
         prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
+        timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
+            An explicit ``None`` is treated the same as omitting it (the provider's default
+            applies), so it cannot request an unbounded timeout.
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
@@ -130,6 +134,7 @@ def completion(
         max_completion_tokens=max_completion_tokens,
         reasoning_effort=reasoning_effort,
         prompt_cache_key=prompt_cache_key,
+        timeout=timeout,
         **kwargs,
     )
 
@@ -163,6 +168,7 @@ async def acompletion(
     max_completion_tokens: int | None = None,
     reasoning_effort: ReasoningEffort | None = "auto",
     prompt_cache_key: str | None = None,
+    timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
@@ -199,6 +205,9 @@ async def acompletion(
         max_completion_tokens: Maximum number of tokens for the completion
         reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
         prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
+        timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
+            An explicit ``None`` is treated the same as omitting it (the provider's default
+            applies), so it cannot request an unbounded timeout.
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
@@ -242,6 +251,7 @@ async def acompletion(
         max_completion_tokens=max_completion_tokens,
         reasoning_effort=reasoning_effort,
         prompt_cache_key=prompt_cache_key,
+        timeout=timeout,
         **kwargs,
     )
 

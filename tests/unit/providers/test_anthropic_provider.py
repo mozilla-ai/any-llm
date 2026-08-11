@@ -11,7 +11,7 @@ from anthropic.types import Message
 from anthropic.types.model_info import ModelInfo
 from pydantic import BaseModel
 
-from any_llm.exceptions import UnsupportedParameterError
+from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.utils import (
     DEFAULT_MAX_TOKENS,
@@ -120,6 +120,72 @@ async def test_completion_with_kwargs() -> None:
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model, messages=messages, max_tokens=100, temperature=0.5
         )
+
+
+@pytest.mark.asyncio
+async def test_completion_without_timeout_raises_clear_error() -> None:
+    """Reproduces issue #1251: without a timeout, a large-max_tokens non-streaming completion
+    surfaces an actionable any-llm error instead of the SDK's opaque pre-flight ValueError.
+
+    Uses a real ``AsyncAnthropic`` client so the SDK's client-side check runs; it raises before
+    any request is sent. The transport is patched to fail fast so the test stays hermetic even if
+    that guard ever changes. Goes through the public ``acompletion`` so the exception-handling
+    decorator is exercised too.
+    """
+    provider = AnthropicProvider(api_key="sk-test")
+
+    with (
+        patch.object(
+            provider.client, "post", new=AsyncMock(side_effect=AssertionError("network should not be reached"))
+        ),
+        pytest.raises(InvalidRequestError) as exc_info,
+    ):
+        await provider.acompletion(
+            model="claude-opus-5",
+            messages=[{"role": "user", "content": "Hi"}],
+            max_tokens=65536,
+            stream=False,
+        )
+
+    message = str(exc_info.value)
+    assert "timeout" in message
+    assert "stream=True" in message
+    assert isinstance(exc_info.value.original_exception, ValueError)
+
+
+@pytest.mark.asyncio
+async def test_completion_with_timeout_bypasses_nonstreaming_guard() -> None:
+    """An explicit timeout lifts the SDK pre-flight guard so the same large request reaches transport."""
+    provider = AnthropicProvider(api_key="sk-test")
+    params = CompletionParams(
+        model_id="claude-opus-5",
+        messages=[{"role": "user", "content": "Hi"}],
+        max_tokens=65536,
+        stream=False,
+    )
+
+    # The guard fires before the transport call, so reaching ``post`` proves it was skipped.
+    with (
+        patch.object(provider.client, "post", new=AsyncMock(side_effect=RuntimeError("reached transport"))),
+        pytest.raises(RuntimeError, match="reached transport"),
+    ):
+        await provider._acompletion(params, timeout=600)
+
+
+@pytest.mark.asyncio
+async def test_completion_reraises_unrelated_value_error() -> None:
+    """A ValueError that is not the SDK pre-flight guard propagates unchanged, not translated."""
+    unrelated = ValueError("some other problem")
+
+    with mock_anthropic_provider() as mock_anthropic:
+        mock_anthropic.return_value.messages.create = AsyncMock(side_effect=unrelated)
+        provider = AnthropicProvider(api_key="test-api-key")
+        with pytest.raises(ValueError, match="some other problem") as exc_info:
+            await provider._acompletion(
+                CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hi"}], max_tokens=100)
+            )
+
+    assert exc_info.value is unrelated
 
 
 @pytest.mark.asyncio

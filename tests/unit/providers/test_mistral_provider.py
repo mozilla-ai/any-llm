@@ -1,3 +1,4 @@
+from inspect import signature
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -1286,3 +1287,36 @@ def test_create_openai_chunk_captures_thinking_signature() -> None:
     assert chunk.choices[0].delta.reasoning is not None
     assert chunk.choices[0].delta.reasoning.content == "step one"
     assert chunk.choices[0].delta.extra_content == {"mistral": {"signature": "sig-abc"}}
+
+
+@pytest.mark.asyncio
+async def test_timeout_is_translated_to_timeout_ms() -> None:
+    """The seconds-based any-llm ``timeout`` must become the SDK's ``timeout_ms``.
+
+    Binds the produced kwargs against the real ``complete_async`` signature so a
+    forwarded-but-unsupported keyword fails here instead of at request time.
+    """
+    pytest.importorskip("mistralai")
+    from mistralai.client.chat import Chat
+
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    converted = MistralProvider._convert_completion_params(
+        CompletionParams(model_id="mistral-small-latest", messages=[{"role": "user", "content": "Hi"}]),
+        timeout=600,
+    )
+
+    assert converted["timeout_ms"] == 600_000
+    assert "timeout" not in converted
+    signature(Chat.complete_async).bind_partial(Mock(), model="mistral-small-latest", **converted)
+
+
+def test_timeout_absent_when_not_requested() -> None:
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    converted = MistralProvider._convert_completion_params(
+        CompletionParams(model_id="mistral-small-latest", messages=[{"role": "user", "content": "Hi"}])
+    )
+
+    assert "timeout_ms" not in converted

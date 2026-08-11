@@ -698,3 +698,38 @@ async def test_completion_with_image_content() -> None:
         user_msg = sent_messages[0]
         assert isinstance(user_msg["content"], list)
         assert user_msg["content"][1]["type"] == "image_url"
+
+
+def test_timeout_is_folded_into_request_options() -> None:
+    """Cohere carries a per-request timeout in ``request_options``, not as a top-level keyword."""
+    provider = _mk_provider()
+
+    converted = provider._convert_completion_params(
+        CompletionParams(model_id="command-a-03-2025", messages=[{"role": "user", "content": "Hi"}]),
+        timeout=600,
+    )
+
+    assert converted["request_options"] == {"timeout": 600}
+    assert "timeout" not in converted
+
+
+def test_timeout_does_not_override_explicit_request_options() -> None:
+    provider = _mk_provider()
+
+    converted = provider._convert_completion_params(
+        CompletionParams(model_id="command-a-03-2025", messages=[{"role": "user", "content": "Hi"}]),
+        timeout=600,
+        request_options={"timeout": 30, "max_retries": 2},
+    )
+
+    assert converted["request_options"] == {"timeout": 30, "max_retries": 2}
+
+
+def test_request_options_absent_when_timeout_not_requested() -> None:
+    provider = _mk_provider()
+
+    converted = provider._convert_completion_params(
+        CompletionParams(model_id="command-a-03-2025", messages=[{"role": "user", "content": "Hi"}])
+    )
+
+    assert "request_options" not in converted

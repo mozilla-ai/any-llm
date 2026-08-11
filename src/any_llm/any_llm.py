@@ -577,6 +577,7 @@ class AnyLLM(ABC):
         response_format: dict[str, Any] | type | None = None,
         stream: bool | None = None,
         prompt_cache_key: str | None = None,
+        timeout: float | None = None,
         allow_running_loop: bool | None = None,
         **kwargs: Any,
     ) -> ChatCompletion | Iterator[ChatCompletionChunk] | ParsedChatCompletion[Any]:
@@ -594,6 +595,7 @@ class AnyLLM(ABC):
                     response_format=response_format,
                     stream=stream,
                     prompt_cache_key=prompt_cache_key,
+                    timeout=timeout,
                     **kwargs,
                 ),
                 allow_running_loop=allow_running_loop,
@@ -606,6 +608,7 @@ class AnyLLM(ABC):
                 response_format=response_format,
                 stream=stream,
                 prompt_cache_key=prompt_cache_key,
+                timeout=timeout,
                 **kwargs,
             ),
             allow_running_loop=allow_running_loop,
@@ -687,6 +690,7 @@ class AnyLLM(ABC):
         max_completion_tokens: int | None = None,
         reasoning_effort: ReasoningEffort | None = "auto",
         prompt_cache_key: str | None = None,
+        timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk] | ParsedChatCompletion[Any]:
         """Create a chat completion asynchronously.
@@ -716,6 +720,9 @@ class AnyLLM(ABC):
             max_completion_tokens: Maximum number of tokens for the completion
             reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
             prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
+            timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
+                An explicit ``None`` is treated the same as omitting it (the provider's default
+                applies), so it cannot request an unbounded timeout.
             **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
         Returns:
@@ -761,6 +768,11 @@ class AnyLLM(ABC):
         )
 
         self._validate_prompt_cache_key(prompt_cache_key)
+        # timeout is forwarded through kwargs rather than carried on CompletionParams: providers
+        # apply it differently (per-request vs client-level), so each consumes it from kwargs.
+        # Forward it only when set, so the default path (and its provider behavior) is unchanged.
+        if timeout is not None:
+            kwargs["timeout"] = timeout
         result = await self._acompletion(params, **kwargs)
 
         if is_structured_output_type(response_format):
