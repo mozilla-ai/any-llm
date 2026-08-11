@@ -809,10 +809,32 @@ class AnyLLM(ABC):
     ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | Iterator[MessageStreamEvent]:
         """Create a message using the Anthropic Messages API synchronously.
 
+        With `stream=True` the request is opened lazily on the first iteration, so errors
+        raised while opening it (a rejected `output_format` combination, an unsupported
+        `context_management`/`betas` request, or a provider auth or connection failure)
+        surface from the first `next()` rather than from this call. This matches
+        [AnyLLM.completion][any_llm.any_llm.AnyLLM.completion] and
+        [AnyLLM.responses][any_llm.any_llm.AnyLLM.responses]; wrap the iteration rather
+        than the call to catch them.
+
         See [AnyLLM.amessages][any_llm.any_llm.AnyLLM.amessages]
         """
         if allow_running_loop is None:
             allow_running_loop = INSIDE_NOTEBOOK
+        if kwargs.get("stream"):
+            return async_coro_to_sync_iter(
+                cast(
+                    "Coroutine[Any, Any, AsyncIterator[MessageStreamEvent]]",
+                    self.amessages(
+                        prompt_cache_key=prompt_cache_key,
+                        context_management=context_management,
+                        betas=betas,
+                        **kwargs,
+                    ),
+                ),
+                allow_running_loop=allow_running_loop,
+            )
+
         response = run_async_in_sync(
             self.amessages(
                 prompt_cache_key=prompt_cache_key,
@@ -824,7 +846,7 @@ class AnyLLM(ABC):
         )
         if isinstance(response, (MessageResponse, ParsedMessage, ParsedBetaMessage)):
             return response
-        return async_iter_to_sync_iter(response)
+        return async_iter_to_sync_iter(response, allow_running_loop=allow_running_loop)
 
     @handle_exceptions(wrap_streaming=True)
     async def amessages(

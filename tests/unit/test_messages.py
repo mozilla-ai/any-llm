@@ -1,6 +1,9 @@
 """Tests for messages()/amessages() SDK API."""
 
-from collections.abc import AsyncGenerator, AsyncIterator
+import json
+import threading
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from inspect import signature
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
@@ -19,6 +22,7 @@ from anthropic.types.beta import (
 from anthropic.types.beta.beta_context_management_response import BetaContextManagementResponse
 from anthropic.types.beta.parsed_beta_message import ParsedBetaTextBlock
 from pydantic import BaseModel
+from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.api import amessages, messages
@@ -36,17 +40,21 @@ from any_llm.types.completion import (
 from any_llm.types.messages import (
     BetaDiagnostics,
     ContentBlock,
+    ContentBlockDeltaEvent,
     MessageContentBlock,
     MessageDeltaEvent,
     MessageDeltaUsage,
     MessageResponse,
     MessagesParams,
+    MessageStopEvent,
+    MessageStreamEvent,
     MessageUsage,
     ParsedBetaMessage,
     ParsedMessage,
     ParsedTextBlock,
     StopReason,
 )
+from any_llm.utils.aio import async_iter_to_sync_iter
 
 
 def test_stop_reason_aliases_anthropic_beta_type() -> None:
@@ -1214,6 +1222,134 @@ def test_sync_messages_returns_message_response() -> None:
 
     assert isinstance(result, MessageResponse)
     assert result.content[0].type == "text"
+
+
+class _StreamingHandler(BaseHTTPRequestHandler):
+    """Serves a fixed SSE chat-completion-chunk stream, like a real OpenAI-compatible endpoint."""
+
+    protocol_version = "HTTP/1.1"
+
+    def do_POST(self) -> None:
+        content_length = int(self.headers.get("Content-Length", "0"))
+        self.rfile.read(content_length)
+
+        events: list[dict[str, Any]] = [
+            {
+                "id": "chunk-1",
+                "object": "chat.completion.chunk",
+                "created": 1234567890,
+                "model": "test-model",
+                "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hello"}, "finish_reason": None}],
+            },
+            {
+                "id": "chunk-2",
+                "object": "chat.completion.chunk",
+                "created": 1234567890,
+                "model": "test-model",
+                "choices": [{"index": 0, "delta": {"content": " world"}, "finish_reason": None}],
+            },
+            {
+                "id": "chunk-3",
+                "object": "chat.completion.chunk",
+                "created": 1234567890,
+                "model": "test-model",
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            },
+        ]
+        body = "".join(f"data: {json.dumps(event)}\n\n" for event in events)
+        body += "data: [DONE]\n\n"
+        encoded = body.encode()
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(encoded)
+        self.wfile.flush()
+
+    @override
+    def log_message(self, format: str, *args: Any) -> None:
+        return
+
+
+def test_sync_messages_streaming_consumes_response_on_a_single_event_loop() -> None:
+    """Regression test for #1253.
+
+    The sync `messages(stream=True)` path used to open the async response with
+    `run_async_in_sync()` on one worker event loop and then hand the resulting
+    async iterator to `async_iter_to_sync_iter()`, which consumed it on a second,
+    unrelated event loop. httpx/anyio objects created by the OpenAI SDK are bound
+    to the loop that opened the stream, so reading them from a different loop
+    raised `RuntimeError: <asyncio.locks.Event object ...> is bound to a different
+    event loop`. This exercises the real OpenAI SDK, httpx, and anyio against a
+    local server, with no live provider or API key required.
+    """
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _StreamingHandler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        api_base = f"http://127.0.0.1:{server.server_address[1]}/v1"
+        provider = AnyLLM.create_openai_compatible(name="local-messages", api_base=api_base, api_key="test")
+
+        stream = cast(
+            "Iterator[MessageStreamEvent]",
+            provider.messages(
+                model="test-model",
+                messages=[{"role": "user", "content": "Hello"}],
+                max_tokens=32,
+                stream=True,
+            ),
+        )
+        events = list(stream)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+    types = [event.type for event in events]
+    assert "content_block_delta" in types
+    assert types[-1] == "message_stop"
+
+    text = "".join(
+        event.delta.text
+        for event in events
+        if isinstance(event, ContentBlockDeltaEvent) and event.delta.type == "text_delta"
+    )
+    assert text == "Hello world"
+
+
+def test_sync_messages_bridges_an_iterator_and_forwards_allow_running_loop() -> None:
+    """A provider that hands back an iterator without `stream` still bridges to a sync iterator.
+
+    The streaming branch keys off `kwargs["stream"]`, so this covers the fallback that
+    converts a non-streaming call's async iterator, mirroring the same fallback in
+    `completion()` and `responses()`. `allow_running_loop` is asserted on the bridge call
+    rather than through behavior: the fallback is only reachable with no running loop, so
+    the flag changes nothing observable there, and dropping it would silently leave the
+    bridge on its own default of True.
+    """
+
+    async def event_stream() -> AsyncIterator[MessageStreamEvent]:
+        yield MessageStopEvent(type="message_stop")
+
+    mock_provider = Mock(spec=AnyLLM)
+    mock_provider.amessages = AsyncMock(return_value=event_stream())
+
+    with patch("any_llm.any_llm.async_iter_to_sync_iter", wraps=async_iter_to_sync_iter) as bridge:
+        result = AnyLLM.messages(
+            mock_provider,
+            model="gpt-5.6",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=100,
+            allow_running_loop=False,
+        )
+        events = list(cast("Iterator[MessageStreamEvent]", result))
+
+    assert [event.type for event in events] == ["message_stop"]
+    assert bridge.call_args.kwargs["allow_running_loop"] is False
 
 
 @pytest.mark.asyncio
