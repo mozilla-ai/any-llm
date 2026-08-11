@@ -237,6 +237,9 @@ class BaseAnthropicProvider(AnyLLM, ABC):
     SUPPORTS_BATCH = True
     SUPPORTS_RERANK = False
 
+    # The Anthropic SDK accepts a per-request `timeout` on messages.create, so it forwards unchanged.
+    TIMEOUT_SUPPORT = "native"
+
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     client: AsyncAnthropic | AsyncAnthropicVertex

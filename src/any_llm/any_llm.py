@@ -136,6 +136,16 @@ class AnyLLM(ABC):
     PROMPT_CACHE_KEY_SUPPORT: Literal["unsupported", "supported", "passthrough"] = "unsupported"
     """Whether prompt_cache_key is supported, forwarded to a router, or rejected."""
 
+    TIMEOUT_SUPPORT: Literal["unsupported", "native", "mapped"] = "unsupported"
+    """How the provider honors a per-request ``timeout`` (in seconds).
+
+    ``native`` providers accept a ``timeout`` keyword on their SDK call and receive it unchanged.
+    ``mapped`` providers express timeout differently and translate it in their own conversion.
+    ``unsupported`` providers have no per-request timeout, so a caller-supplied value is rejected.
+    The default is ``unsupported`` so a new provider must opt in explicitly rather than silently
+    mis-send or drop the value.
+    """
+
     API_BASE: str | None = None
     """This is used to set the API base for the provider.
     It is not required but may prove useful for providers that have overridable api bases.
@@ -768,11 +778,7 @@ class AnyLLM(ABC):
         )
 
         self._validate_prompt_cache_key(prompt_cache_key)
-        # timeout is forwarded through kwargs rather than carried on CompletionParams: providers
-        # apply it differently (per-request vs client-level), so each consumes it from kwargs.
-        # Forward it only when set, so the default path (and its provider behavior) is unchanged.
-        if timeout is not None:
-            kwargs["timeout"] = timeout
+        self._validate_and_forward_timeout(timeout, kwargs)
         result = await self._acompletion(params, **kwargs)
 
         if is_structured_output_type(response_format):
@@ -800,6 +806,25 @@ class AnyLLM(ABC):
         if prompt_cache_key is not None and self.PROMPT_CACHE_KEY_SUPPORT == "unsupported":
             parameter_name = "prompt_cache_key"
             raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+
+    def _validate_and_forward_timeout(self, timeout: float | None, kwargs: dict[str, Any]) -> None:
+        """Route a per-request ``timeout`` (in seconds) to the provider, or reject it.
+
+        The timeout rides ``kwargs`` rather than ``CompletionParams`` because providers apply it
+        differently: ``native`` providers pass it to the SDK unchanged, and ``mapped`` providers
+        translate it in their own conversion.
+        An ``unsupported`` provider has no per-request timeout, so a caller-supplied value is
+        rejected rather than silently dropped or mis-sent into the request body.
+        An explicit ``None`` is treated as unset, leaving the provider default in place, so an
+        unbounded timeout is not expressible through this parameter.
+        """
+        if timeout is None:
+            return
+        if self.TIMEOUT_SUPPORT == "unsupported":
+            parameter_name = "timeout"
+            additional_message = "Set it on the client via client_args instead."
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME, additional_message)
+        kwargs["timeout"] = timeout
 
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any

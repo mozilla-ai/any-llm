@@ -96,6 +96,23 @@ def test_completion_forwards_timeout_on_streaming_path() -> None:
 
 
 @pytest.mark.asyncio
+async def test_acompletion_rejects_timeout_for_unsupported_provider() -> None:
+    # A provider that declares no per-request timeout support rejects a caller-supplied timeout
+    # centrally, before the request is built.
+    provider = AnyLLM.create("openai", api_key="sk-test")
+    provider.TIMEOUT_SUPPORT = "unsupported"
+    with patch.object(provider, "_acompletion", new=AsyncMock()) as mock_ac:
+        with pytest.raises(UnsupportedParameterError, match="timeout"):
+            await provider.acompletion(
+                model="gpt-4",
+                messages=[{"role": "user", "content": "Hi"}],
+                timeout=5,
+            )
+
+    mock_ac.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_acompletion_rejects_prompt_cache_key_for_unsupported_provider() -> None:
     pytest.importorskip("boto3")
     from any_llm.providers.bedrock.bedrock import BedrockProvider
