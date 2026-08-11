@@ -25,8 +25,16 @@ from any_llm.types.completion import (
     Reasoning,
     Usage,
 )
+from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
+
+# Bedrock's Converse API has no native structured-output field. For Anthropic/Claude
+# models we emulate `response_format` by forcing a single synthetic tool call whose
+# input schema is the requested schema, then unwrapping that tool call's input back
+# into `message.content` in `_convert_response`. Other Bedrock model families (Nova,
+# Titan, Llama, ...) have no equivalent verified mechanism, so they keep raising.
+_STRUCTURED_OUTPUT_TOOL_NAME = "any_llm_structured_output"
 
 REASONING_EFFORT_TO_THINKING_BUDGETS = {
     "minimal": 1024,
@@ -38,24 +46,127 @@ REASONING_EFFORT_TO_THINKING_BUDGETS = {
 }
 
 
-def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[str, Any]:
-    """Convert CompletionParams to kwargs for AWS API."""
-    result_kwargs: dict[str, Any] = kwargs.copy()
+def _is_anthropic_model(model_id: str) -> bool:
+    """Return True if the Bedrock model id refers to an Anthropic Claude model.
 
-    if params.response_format:
+    Matches both direct ids (``anthropic.claude-...``) and cross-region inference
+    profile ids (``us.anthropic.claude-...``, ``eu.anthropic.claude-...``).
+    """
+    return "anthropic." in model_id
+
+
+def _convert_response_format_to_tool_spec(response_format: dict[str, Any] | type, provider_name: str) -> dict[str, Any]:
+    """Convert an any-llm response_format into a synthetic Bedrock toolSpec.
+
+    Claude models on Bedrock have no native structured-output field, but reliably
+    support forcing a single tool call. Wrapping the requested JSON schema as a
+    tool's input schema lets us emulate `response_format` via `toolChoice`.
+    """
+    if is_structured_output_type(response_format):
+        schema = get_json_schema(response_format)
+    elif isinstance(response_format, dict):
+        if response_format.get("type") == "json_schema":
+            json_schema = response_format.get("json_schema")
+            if not isinstance(json_schema, dict) or not isinstance(json_schema.get("schema"), dict):
+                msg = "response_format with type 'json_schema' must include a dict-valued 'json_schema.schema'"
+                raise ValueError(msg)
+            schema = json_schema["schema"]
+        elif response_format.get("type") == "json_object":
+            msg = "response_format with type 'json_object'"
+            raise UnsupportedParameterError(
+                msg,
+                provider_name,
+                "Use a Pydantic model or json_schema format instead.",
+            )
+        else:
+            msg = f"Unsupported response_format type: {response_format.get('type')}"
+            raise ValueError(msg)
+    else:
+        msg = f"Unsupported response_format: {response_format}"
+        raise ValueError(msg)
+
+    return {
+        "toolSpec": {
+            "name": _STRUCTURED_OUTPUT_TOOL_NAME,
+            "description": "Provide the response matching the required schema.",
+            "inputSchema": {"json": schema},
+        }
+    }
+
+
+def _check_no_reserved_tool_name_collision(tools: list[dict[str, Any]] | None) -> None:
+    """Guard against a user-defined tool shadowing the synthetic structured-output tool.
+
+    `_convert_response` unwraps a tool call named `_STRUCTURED_OUTPUT_TOOL_NAME` into
+    `message.content` instead of `tool_calls`. If a user's own tool happened to use that
+    same name, a genuine call to it would be silently misinterpreted as structured output
+    (and, when combined with `response_format`, would produce a duplicate tool spec).
+    """
+    if not tools:
+        return
+    for tool in tools:
+        if tool.get("function", {}).get("name") == _STRUCTURED_OUTPUT_TOOL_NAME:
+            msg = (
+                f"Tool name '{_STRUCTURED_OUTPUT_TOOL_NAME}' is reserved by any-llm for "
+                "emulating response_format on bedrock and cannot be used as a tool name."
+            )
+            raise InvalidRequestError(msg, provider_name="bedrock")
+
+
+def _build_tool_config(params: CompletionParams) -> dict[str, Any] | None:
+    """Build the `toolConfig` kwarg for the Converse API, if tools or response_format were requested.
+
+    Handles both plain tool-calling and the `response_format`-as-forced-tool-call emulation
+    (see `_convert_response_format_to_tool_spec`), keeping that branching out of `_convert_params`.
+    """
+    _check_no_reserved_tool_name_collision(params.tools)
+
+    if params.response_format is None:
+        return _convert_tool_spec(params.tools, params.tool_choice) if params.tools else None
+
+    if not _is_anthropic_model(params.model_id):
         msg = "response_format"
         raise UnsupportedParameterError(
             msg,
             "bedrock",
             "Check the following links:\n- https://docs.aws.amazon.com/nova/latest/userguide/prompting-structured-output.html",
         )
+    if params.stream:
+        msg = "response_format with stream=True"
+        raise UnsupportedParameterError(
+            msg,
+            "bedrock",
+            "response_format is emulated via a forced tool call, which Bedrock's streaming API "
+            "surfaces as tool-call deltas rather than text content. Use stream=False instead.",
+        )
+    if params.reasoning_effort is not None and params.reasoning_effort not in ("auto", "none"):
+        # Bedrock maps reasoning_effort to Anthropic's manual extended thinking
+        # (reasoning_config type "enabled" with budget_tokens), and forced tool use
+        # is rejected in that mode, which is how response_format is emulated here.
+        # https://platform.claude.com/docs/en/build-with-claude/thinking#thinking-with-tool-use
+        msg = "response_format with reasoning_effort"
+        raise UnsupportedParameterError(
+            msg,
+            "bedrock",
+            "response_format is emulated via a forced tool call, which Claude rejects when extended "
+            "thinking is enabled. Drop reasoning_effort (or set it to 'none') to use response_format.",
+        )
 
-    if params.tools:
-        result_kwargs["toolConfig"] = _convert_tool_spec(params.tools, params.tool_choice)
+    tool_config = _convert_tool_spec(params.tools, params.tool_choice) if params.tools else {"tools": []}
+    tool_config["tools"].append(_convert_response_format_to_tool_spec(params.response_format, "bedrock"))
+    tool_config["toolChoice"] = {"tool": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}
+    return tool_config
 
-    reasoning_enabled = (
-        params.reasoning_effort is not None and params.reasoning_effort != "auto" and params.reasoning_effort != "none"
-    )
+
+def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Convert CompletionParams to kwargs for AWS API."""
+    result_kwargs: dict[str, Any] = kwargs.copy()
+
+    tool_config = _build_tool_config(params)
+    if tool_config is not None:
+        result_kwargs["toolConfig"] = tool_config
+
+    reasoning_enabled = params.reasoning_effort is not None and params.reasoning_effort not in ("auto", "none")
 
     inference_config: dict[str, Any] = {}
     if params.max_tokens:
@@ -341,6 +452,34 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
                     },
                 }
             )
+
+    if (
+        response.get("stopReason") == "tool_use"
+        and len(tool_calls_list) == 1
+        and tool_calls_list[0]["function"]["name"] == _STRUCTURED_OUTPUT_TOOL_NAME
+    ):
+        # A `response_format` request was emulated via a forced synthetic tool call
+        # (see `_convert_params`). Unwrap its input back into `message.content` so it
+        # flows through the same auto-`.parsed` handling as every other provider.
+        message = ChatCompletionMessage(
+            role="assistant",
+            content=tool_calls_list[0]["function"]["arguments"],
+            reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
+            tool_calls=None,
+        )
+        choices_out.append(Choice(index=0, finish_reason="stop", message=message))
+
+        if "usage" in response:
+            usage = _extract_usage(response["usage"])
+
+        return ChatCompletion(
+            id=response.get("id", ""),
+            model=response.get("model", ""),
+            created=response.get("created", 0),
+            object="chat.completion",
+            choices=choices_out,
+            usage=usage,
+        )
 
     if response.get("stopReason") == "tool_use" and tool_calls_list:
         message = ChatCompletionMessage(
