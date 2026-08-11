@@ -922,6 +922,32 @@ async def test_control_client_fallback_skips_bearer_setup_without_api_key() -> N
 
 
 @pytest.mark.asyncio
+async def test_s3_client_fallback_registers_token_provider_but_not_bearer_auth_with_custom_runtime_client() -> None:
+    """The S3-client fallback (custom `client=`, no `s3_client=`) still builds via `boto3.Session`.
+
+    A scoped token provider is still registered on it when an `api_key` is supplied (harmless,
+    since S3 doesn't support bearer auth), but `_non_bearer_client_kwargs` must ensure the S3
+    client call itself never receives `signature_version="bearer"`, unlike the control-plane
+    fallback.
+    """
+    pytest.importorskip("boto3")
+    from any_llm.providers.bedrock.bedrock import BedrockProvider
+
+    with patch("any_llm.providers.bedrock.bedrock.boto3") as mock_boto3:
+        provider = BedrockProvider(client=MagicMock(), api_key="test-token")
+
+        fallback_session = mock_boto3.Session.return_value
+        provider._get_s3_client()
+
+        component_name, token_provider = fallback_session._session.register_component.call_args[0]
+        assert component_name == "token_provider"
+        assert token_provider.environ == {"AWS_BEARER_TOKEN_BEDROCK": "test-token"}
+
+        call_kwargs = fallback_session.client.call_args[1]
+        assert "config" not in call_kwargs
+
+
+@pytest.mark.asyncio
 async def test_control_client_inherits_bearer_session() -> None:
     """The control-plane client is built from the same bearer-token-aware session as the runtime client."""
     pytest.importorskip("boto3")
