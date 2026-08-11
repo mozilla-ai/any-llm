@@ -12,7 +12,7 @@ import pytest
 from botocore.tokens import ScopedEnvTokenProvider
 from pydantic import BaseModel
 
-from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
+from any_llm.exceptions import InvalidRequestError, MissingApiKeyError, UnsupportedParameterError
 from any_llm.providers.bedrock import BedrockProvider
 from any_llm.providers.bedrock.utils import (
     _STRUCTURED_OUTPUT_TOOL_NAME,
@@ -128,6 +128,55 @@ def test_no_api_key_skips_bearer_token_setup(monkeypatch: pytest.MonkeyPatch) ->
     assert provider._boto_session is not None
     provider._boto_session._session.register_component.assert_not_called()
     assert "config" not in mock_client_call.call_args[1]
+
+
+def test_explicit_aws_credentials_satisfy_verification_without_ambient_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test that explicit AWS credential kwargs satisfy verification (regression test for #1183).
+
+    A bare `boto3.Session()` only resolves credentials from the ambient default chain (env vars,
+    `~/.aws/credentials`, instance role), so it must not be what verification relies on: it should
+    fail here since there are no ambient credentials, but verification must still succeed because
+    `aws_access_key_id`/`aws_secret_access_key`/`aws_session_token`/`region_name` were passed
+    explicitly to the constructor.
+    """
+    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+
+    def session_factory(**kwargs: Any) -> Mock:
+        session = Mock()
+        session.get_credentials.return_value = Mock() if kwargs else None
+        return session
+
+    with (
+        patch("boto3.Session", side_effect=session_factory) as mock_session_cls,
+        patch("any_llm.providers.bedrock.bedrock._convert_response"),
+    ):
+        BedrockProvider(
+            aws_access_key_id="AKIAEXAMPLE",
+            aws_secret_access_key="secret",  # noqa: S106
+            aws_session_token="token",  # noqa: S106
+            region_name="us-west-2",
+        )
+
+    verify_call_kwargs = mock_session_cls.call_args_list[0].kwargs
+    assert verify_call_kwargs == {
+        "aws_access_key_id": "AKIAEXAMPLE",
+        "aws_secret_access_key": "secret",
+        "aws_session_token": "token",
+        "region_name": "us-west-2",
+    }
+
+
+def test_no_credentials_and_no_api_key_raises_missing_api_key_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that MissingApiKeyError is still raised with neither credentials nor an api_key."""
+    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+
+    with patch("boto3.Session") as mock_session_cls:
+        mock_session_cls.return_value.get_credentials.return_value = None
+
+        with pytest.raises(MissingApiKeyError):
+            BedrockProvider()
 
 
 def test_completion_with_timeout_builds_distinct_client_with_timeout_config() -> None:

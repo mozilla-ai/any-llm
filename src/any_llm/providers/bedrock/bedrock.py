@@ -66,10 +66,23 @@ class BedrockProvider(AnyLLM):
     # (and its underlying connection pools) without limit.
     _MAX_TIMEOUT_CLIENTS = 8
 
+    # Keyword arguments that `boto3.Session(...)` itself accepts. Used to build the session in
+    # `_verify_and_set_api_key` with the same explicit credentials the real client is later
+    # built with, instead of a bare `boto3.Session()` that only sees ambient credentials.
+    _SESSION_CREDENTIAL_KWARGS = (
+        "aws_access_key_id",
+        "aws_secret_access_key",
+        "aws_session_token",
+        "region_name",
+        "profile_name",
+        "botocore_session",
+    )
+
     def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self._custom_client: Any = kwargs.pop("client", None)
         self._custom_control_client: Any = kwargs.pop("control_client", None)
         self._custom_s3_client: Any = kwargs.pop("s3_client", None)
+        self._session_credential_kwargs = {k: v for k, v in kwargs.items() if k in self._SESSION_CREDENTIAL_KWARGS}
         super().__init__(api_key=api_key, api_base=api_base, **kwargs)
 
     @staticmethod
@@ -178,7 +191,12 @@ class BedrockProvider(AnyLLM):
         if self._custom_client is not None:
             return api_key
 
-        session = boto3.Session()  # type: ignore[attr-defined]
+        # Bedrock supports two independent auth mechanisms: a bearer-token API key, or standard
+        # AWS credentials (aws_access_key_id/aws_secret_access_key/aws_session_token, IAM roles,
+        # SSO, etc). A bare boto3.Session() only resolves the *ambient* default credential chain
+        # and ignores explicit credential kwargs passed to AnyLLM.create(...), which made this
+        # check fail even when valid credentials were explicitly provided (see #1183).
+        session = boto3.Session(**self._session_credential_kwargs)  # type: ignore[attr-defined]
         credentials = session.get_credentials()
 
         api_key = api_key or os.getenv(self.ENV_API_KEY_NAME)
