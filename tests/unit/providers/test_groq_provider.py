@@ -149,6 +149,10 @@ def test_to_chat_completion_extracts_cached_tokens() -> None:
                 "completion_tokens": 1817,
                 "total_tokens": 6458,
                 "prompt_tokens_details": {"cached_tokens": 4608},
+                "queue_time": 0.01,
+                "prompt_time": 0.02,
+                "completion_time": 0.03,
+                "total_time": 0.04,
             },
         }
     )
@@ -161,6 +165,12 @@ def test_to_chat_completion_extracts_cached_tokens() -> None:
     assert result.usage.total_tokens == 6458
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 4608
+    assert result.usage.model_extra == {
+        "queue_time": 0.01,
+        "prompt_time": 0.02,
+        "completion_time": 0.03,
+        "total_time": 0.04,
+    }
 
 
 def test_to_chat_completion_without_cached_tokens() -> None:
@@ -197,6 +207,7 @@ def test_to_chat_completion_without_cached_tokens() -> None:
     assert result.usage.completion_tokens == 50
     assert result.usage.total_tokens == 150
     assert result.usage.prompt_tokens_details is None
+    assert result.usage.model_extra == {}
 
 
 @pytest.mark.asyncio
@@ -258,6 +269,10 @@ def test_streaming_chunk_extracts_cached_tokens() -> None:
                 "completion_tokens": 1817,
                 "total_tokens": 6458,
                 "prompt_tokens_details": {"cached_tokens": 4608},
+                "queue_time": 0,
+                "prompt_time": 0.02,
+                "completion_time": 0.03,
+                "total_time": 0.04,
             },
         }
     )
@@ -268,6 +283,12 @@ def test_streaming_chunk_extracts_cached_tokens() -> None:
     assert result.usage.prompt_tokens == 4641
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 4608
+    assert result.usage.model_extra == {
+        "queue_time": 0,
+        "prompt_time": 0.02,
+        "completion_time": 0.03,
+        "total_time": 0.04,
+    }
 
 
 def _make_openai_response(text: str):  # type: ignore[no-untyped-def]

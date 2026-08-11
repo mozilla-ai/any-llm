@@ -8,7 +8,10 @@ from ollama import ChatResponse as OllamaChatResponse
 from ollama import Message as OllamaMessage
 
 from any_llm.providers.ollama.ollama import OllamaProvider
-from any_llm.providers.ollama.utils import _create_chat_completion_from_ollama_response
+from any_llm.providers.ollama.utils import (
+    _create_chat_completion_from_ollama_response,
+    _create_openai_chunk_from_ollama_chunk,
+)
 from any_llm.types.completion import CompletionParams
 
 
@@ -134,6 +137,61 @@ async def test_create_chat_completion_extracts_think_content() -> None:
     assert result.choices[0].message.reasoning.content == "This is my reasoning process"
 
     assert result.choices[0].message.content == "This is the actual response"
+    assert result.usage is not None
+    assert result.usage.model_extra == {}
+
+
+def test_create_chat_completion_preserves_timing_details() -> None:
+    """Provider timing fields survive normalization as extra usage fields."""
+    response = OllamaChatResponse(
+        model="llama3.1",
+        created_at="2024-01-01T12:00:00.000000Z",
+        done=True,
+        done_reason="stop",
+        total_duration=1_000,
+        load_duration=2_000,
+        prompt_eval_count=10,
+        prompt_eval_duration=3_000,
+        eval_count=20,
+        eval_duration=4_000,
+        message=OllamaMessage(role="assistant", content="Hello"),
+    )
+
+    result = _create_chat_completion_from_ollama_response(response)
+
+    assert result.usage is not None
+    assert result.usage.model_extra == {
+        "total_duration": 1_000,
+        "load_duration": 2_000,
+        "prompt_eval_duration": 3_000,
+        "eval_duration": 4_000,
+    }
+
+
+def test_streaming_chunk_preserves_timing_details() -> None:
+    """Streaming usage keeps timing fields, including reported zero values."""
+    chunk = OllamaChatResponse(
+        model="llama3.1",
+        done=True,
+        done_reason="stop",
+        total_duration=0,
+        load_duration=1_000,
+        prompt_eval_count=0,
+        prompt_eval_duration=2_000,
+        eval_count=0,
+        eval_duration=3_000,
+        message=OllamaMessage(role="assistant", content=""),
+    )
+
+    result = _create_openai_chunk_from_ollama_chunk(chunk)
+
+    assert result.usage is not None
+    assert result.usage.model_extra == {
+        "total_duration": 0,
+        "load_duration": 1_000,
+        "prompt_eval_duration": 2_000,
+        "eval_duration": 3_000,
+    }
 
 
 @pytest.mark.asyncio

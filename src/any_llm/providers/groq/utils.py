@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from groq.types import ModelListResponse as GroqModelListResponse
 from groq.types.chat import ChatCompletion as GroqChatCompletion
@@ -35,6 +35,16 @@ if TYPE_CHECKING:
     )
 
 
+def _groq_timing_details(usage: Any) -> dict[str, int | float]:
+    """Return numeric provider timing fields without adding absent fields to usage extras."""
+    timing: dict[str, int | float] = {}
+    for field in ("queue_time", "prompt_time", "completion_time", "total_time"):
+        value = getattr(usage, field, None)
+        if isinstance(value, (int, float)):
+            timing[field] = value
+    return timing
+
+
 def to_chat_completion(response: GroqChatCompletion) -> ChatCompletion:
     """Convert Groq ChatCompletion into our ChatCompletion type directly."""
 
@@ -44,11 +54,15 @@ def to_chat_completion(response: GroqChatCompletion) -> ChatCompletion:
         # Reference: https://console.groq.com/docs/prompt-caching
         prompt_details = response.usage.prompt_tokens_details
         cached_tokens = prompt_details.cached_tokens if prompt_details else None
-        usage = CompletionUsage(
-            prompt_tokens=response.usage.prompt_tokens,
-            completion_tokens=response.usage.completion_tokens,
-            total_tokens=response.usage.total_tokens,
-            prompt_tokens_details=PromptTokensDetails(cached_tokens=cached_tokens) if cached_tokens else None,
+        timing_details = _groq_timing_details(response.usage)
+        usage = CompletionUsage.model_validate(
+            {
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+                "prompt_tokens_details": PromptTokensDetails(cached_tokens=cached_tokens) if cached_tokens else None,
+                **timing_details,
+            }
         )
 
     choices: list[Choice] = []
@@ -149,11 +163,15 @@ def _create_openai_chunk_from_groq_chunk(groq_chunk: GroqChatCompletionChunk) ->
         # Reference: https://console.groq.com/docs/prompt-caching
         prompt_details = usage_data.prompt_tokens_details
         cached_tokens = prompt_details.cached_tokens if prompt_details else None
-        usage = CompletionUsage(
-            prompt_tokens=usage_data.prompt_tokens,
-            completion_tokens=usage_data.completion_tokens,
-            total_tokens=usage_data.total_tokens,
-            prompt_tokens_details=PromptTokensDetails(cached_tokens=cached_tokens) if cached_tokens else None,
+        timing_details = _groq_timing_details(usage_data)
+        usage = CompletionUsage.model_validate(
+            {
+                "prompt_tokens": usage_data.prompt_tokens,
+                "completion_tokens": usage_data.completion_tokens,
+                "total_tokens": usage_data.total_tokens,
+                "prompt_tokens_details": PromptTokensDetails(cached_tokens=cached_tokens) if cached_tokens else None,
+                **timing_details,
+            }
         )
 
     return ChatCompletionChunk(
