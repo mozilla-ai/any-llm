@@ -813,6 +813,20 @@ class AnyLLM(ABC):
         """
         if allow_running_loop is None:
             allow_running_loop = INSIDE_NOTEBOOK
+        if kwargs.get("stream"):
+            return async_coro_to_sync_iter(
+                cast(
+                    "Coroutine[Any, Any, AsyncIterator[MessageStreamEvent]]",
+                    self.amessages(
+                        prompt_cache_key=prompt_cache_key,
+                        context_management=context_management,
+                        betas=betas,
+                        **kwargs,
+                    ),
+                ),
+                allow_running_loop=allow_running_loop,
+            )
+
         response = run_async_in_sync(
             self.amessages(
                 prompt_cache_key=prompt_cache_key,
@@ -824,7 +838,7 @@ class AnyLLM(ABC):
         )
         if isinstance(response, (MessageResponse, ParsedMessage, ParsedBetaMessage)):
             return response
-        return async_iter_to_sync_iter(response)
+        return async_iter_to_sync_iter(response, allow_running_loop=allow_running_loop)
 
     @handle_exceptions(wrap_streaming=True)
     async def amessages(
