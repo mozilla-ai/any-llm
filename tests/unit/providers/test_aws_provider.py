@@ -1,4 +1,5 @@
 import base64
+import dataclasses
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
@@ -9,18 +10,22 @@ from unittest.mock import Mock, patch
 import botocore.session
 import pytest
 from botocore.tokens import ScopedEnvTokenProvider
+from pydantic import BaseModel
 
-from any_llm.exceptions import InvalidRequestError
+from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.providers.bedrock import BedrockProvider
 from any_llm.providers.bedrock.utils import (
+    _STRUCTURED_OUTPUT_TOOL_NAME,
     REASONING_EFFORT_TO_THINKING_BUDGETS,
     _convert_images_for_bedrock,
     _convert_messages,
+    _convert_params,
     _convert_response,
+    _convert_response_format_to_tool_spec,
     _convert_tool_spec,
     _create_openai_chunk_from_aws_chunk,
 )
-from any_llm.types.completion import CompletionParams, ReasoningEffort
+from any_llm.types.completion import ChatCompletionMessageFunctionToolCall, CompletionParams, ReasoningEffort
 
 
 @contextmanager
@@ -1014,3 +1019,366 @@ def test_convert_tool_spec_empty_description() -> None:
         tool_choice=None,
     )
     assert tool_config["tools"][0]["toolSpec"]["description"] == " "
+
+
+class _City(BaseModel):
+    name: str
+
+
+@dataclasses.dataclass
+class _CityDataclass:
+    name: str
+
+
+ANTHROPIC_MODEL_IDS = [
+    "anthropic.claude-3-haiku-20240307-v1:0",
+    "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+]
+
+
+@pytest.mark.parametrize("model_id", ANTHROPIC_MODEL_IDS)
+def test_convert_params_response_format_pydantic_forces_structured_output_tool(model_id: str) -> None:
+    """response_format with a Pydantic model forces a single synthetic tool call for Claude models."""
+    result = _convert_params(
+        CompletionParams(model_id=model_id, messages=[{"role": "user", "content": "hi"}], response_format=_City),
+        {},
+    )
+
+    tool_config = result["toolConfig"]
+    assert len(tool_config["tools"]) == 1
+    tool_spec = tool_config["tools"][0]["toolSpec"]
+    assert tool_spec["name"] == _STRUCTURED_OUTPUT_TOOL_NAME
+    assert tool_spec["inputSchema"]["json"] == _City.model_json_schema()
+    assert tool_config["toolChoice"] == {"tool": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}
+
+
+def test_convert_params_response_format_dataclass_forces_structured_output_tool() -> None:
+    """response_format also supports plain dataclasses, not just Pydantic models."""
+    result = _convert_params(
+        CompletionParams(
+            model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            messages=[{"role": "user", "content": "hi"}],
+            response_format=_CityDataclass,
+        ),
+        {},
+    )
+
+    tool_spec = result["toolConfig"]["tools"][0]["toolSpec"]
+    assert tool_spec["name"] == _STRUCTURED_OUTPUT_TOOL_NAME
+    assert tool_spec["inputSchema"]["json"]["properties"]["name"]["type"] == "string"
+
+
+def test_convert_params_response_format_json_schema_dict_forces_structured_output_tool() -> None:
+    """response_format as an OpenAI-style json_schema dict is also supported."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}
+    result = _convert_params(
+        CompletionParams(
+            model_id="anthropic.claude-3-haiku-20240307-v1:0",
+            messages=[{"role": "user", "content": "hi"}],
+            response_format={"type": "json_schema", "json_schema": {"schema": schema}},
+        ),
+        {},
+    )
+
+    assert result["toolConfig"]["tools"][0]["toolSpec"]["inputSchema"]["json"] == schema
+
+
+def test_convert_params_response_format_json_schema_missing_schema_key_raises() -> None:
+    """A json_schema envelope without 'schema' must raise a controlled ValueError, not KeyError."""
+    with pytest.raises(ValueError, match=r"json_schema\.schema"):
+        _convert_params(
+            CompletionParams(
+                model_id="anthropic.claude-3-haiku-20240307-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format={"type": "json_schema", "json_schema": {}},
+            ),
+            {},
+        )
+
+
+def test_convert_params_response_format_json_schema_missing_envelope_raises() -> None:
+    """A json_schema type without a 'json_schema' key must also raise a controlled ValueError."""
+    with pytest.raises(ValueError, match=r"json_schema\.schema"):
+        _convert_params(
+            CompletionParams(
+                model_id="anthropic.claude-3-haiku-20240307-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format={"type": "json_schema"},
+            ),
+            {},
+        )
+
+
+def test_convert_params_response_format_json_schema_non_dict_schema_raises() -> None:
+    """A json_schema envelope whose 'schema' is not a dict must raise instead of building an invalid toolSpec."""
+    with pytest.raises(ValueError, match=r"json_schema\.schema"):
+        _convert_params(
+            CompletionParams(
+                model_id="anthropic.claude-3-haiku-20240307-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format={"type": "json_schema", "json_schema": {"schema": None}},
+            ),
+            {},
+        )
+
+
+def test_convert_params_response_format_with_reasoning_effort_raises() -> None:
+    """Claude rejects forced tool use while extended thinking is enabled, so the combination is refused."""
+    with pytest.raises(UnsupportedParameterError, match="reasoning_effort"):
+        _convert_params(
+            CompletionParams(
+                model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format=_City,
+                reasoning_effort="high",
+            ),
+            {},
+        )
+
+
+@pytest.mark.parametrize("reasoning_effort", ["none", "auto", None])
+def test_convert_params_response_format_allows_disabled_reasoning(reasoning_effort: Any) -> None:
+    """reasoning_effort values that do not enable extended thinking still allow response_format."""
+    result = _convert_params(
+        CompletionParams(
+            model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            messages=[{"role": "user", "content": "hi"}],
+            response_format=_City,
+            reasoning_effort=reasoning_effort,
+        ),
+        {},
+    )
+
+    assert result["toolConfig"]["toolChoice"] == {"tool": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}
+    assert "additionalModelRequestFields" not in result
+
+
+def test_convert_params_response_format_json_object_raises() -> None:
+    """json_object has no schema to build a tool from, so it must raise like the direct Anthropic provider."""
+    with pytest.raises(UnsupportedParameterError):
+        _convert_params(
+            CompletionParams(
+                model_id="anthropic.claude-3-haiku-20240307-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format={"type": "json_object"},
+            ),
+            {},
+        )
+
+
+def test_convert_params_response_format_empty_dict_raises() -> None:
+    """An empty dict must not be treated as "no response_format" (it's falsy but not None)."""
+    with pytest.raises(ValueError, match="Unsupported response_format type"):
+        _convert_params(
+            CompletionParams(
+                model_id="anthropic.claude-3-haiku-20240307-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format={},
+            ),
+            {},
+        )
+
+
+def test_convert_response_format_to_tool_spec_unsupported_dict_type_raises() -> None:
+    """A response_format dict whose type is neither json_schema nor json_object is rejected."""
+    with pytest.raises(ValueError, match="Unsupported response_format type"):
+        _convert_response_format_to_tool_spec({"type": "text"}, "bedrock")
+
+
+def test_convert_response_format_to_tool_spec_non_dict_non_type_raises() -> None:
+    """A response_format that is neither a structured-output type nor a dict is rejected."""
+    with pytest.raises(ValueError, match="Unsupported response_format"):
+        _convert_response_format_to_tool_spec("invalid", "bedrock")  # type: ignore[arg-type]
+
+
+def test_convert_params_response_format_non_anthropic_model_raises() -> None:
+    """Non-Claude Bedrock model families keep raising, unaffected by the Claude-specific fix."""
+    with pytest.raises(UnsupportedParameterError) as excinfo:
+        _convert_params(
+            CompletionParams(
+                model_id="amazon.nova-lite-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format=_City,
+            ),
+            {},
+        )
+    assert "nova" in str(excinfo.value).lower()
+
+
+def test_convert_params_response_format_combines_with_existing_tools() -> None:
+    """User-supplied tools are preserved alongside the synthetic structured-output tool."""
+    result = _convert_params(
+        CompletionParams(
+            model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            messages=[{"role": "user", "content": "hi"}],
+            response_format=_City,
+            tools=[{"type": "function", "function": {"name": "get_weather", "parameters": None}}],
+        ),
+        {},
+    )
+
+    tool_names = {t["toolSpec"]["name"] for t in result["toolConfig"]["tools"]}
+    assert tool_names == {"get_weather", _STRUCTURED_OUTPUT_TOOL_NAME}
+    assert result["toolConfig"]["toolChoice"] == {"tool": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}
+
+
+def test_convert_params_response_format_with_streaming_raises() -> None:
+    """response_format + stream=True is rejected rather than silently emitting tool-call deltas."""
+    with pytest.raises(UnsupportedParameterError):
+        _convert_params(
+            CompletionParams(
+                model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format=_City,
+                stream=True,
+            ),
+            {},
+        )
+
+
+def test_convert_params_rejects_reserved_tool_name_with_response_format() -> None:
+    """A user tool named like the synthetic structured-output tool must not collide with it."""
+    with pytest.raises(InvalidRequestError, match=_STRUCTURED_OUTPUT_TOOL_NAME):
+        _convert_params(
+            CompletionParams(
+                model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format=_City,
+                tools=[{"type": "function", "function": {"name": _STRUCTURED_OUTPUT_TOOL_NAME, "parameters": None}}],
+            ),
+            {},
+        )
+
+
+def test_convert_params_rejects_reserved_tool_name_without_response_format() -> None:
+    """The reserved name is rejected even without response_format, since a genuine call to it
+    would otherwise be silently misinterpreted as structured output by `_convert_response`.
+    """
+    with pytest.raises(InvalidRequestError, match=_STRUCTURED_OUTPUT_TOOL_NAME):
+        _convert_params(
+            CompletionParams(
+                model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                tools=[{"type": "function", "function": {"name": _STRUCTURED_OUTPUT_TOOL_NAME, "parameters": None}}],
+            ),
+            {},
+        )
+
+
+def test_convert_response_structured_output_tool_call_becomes_content() -> None:
+    """The synthetic structured-output tool call is unwrapped back into message.content."""
+    response: dict[str, Any] = {
+        "output": {
+            "message": {
+                "content": [
+                    {
+                        "toolUse": {
+                            "toolUseId": "tool-123",
+                            "name": _STRUCTURED_OUTPUT_TOOL_NAME,
+                            "input": {"name": "Paris"},
+                        }
+                    }
+                ]
+            }
+        },
+        "stopReason": "tool_use",
+    }
+
+    result = _convert_response(response)
+
+    message = result.choices[0].message
+    assert result.choices[0].finish_reason == "stop"
+    assert message.content == json.dumps({"name": "Paris"})
+    assert message.tool_calls is None
+
+
+def test_convert_response_structured_output_preserves_usage_and_reasoning() -> None:
+    """Usage and reasoning content must survive the structured-output unwrap, not just the JSON content."""
+    response: dict[str, Any] = {
+        "output": {
+            "message": {
+                "content": [
+                    {"reasoningContent": {"reasoningText": {"text": "The capital of France is Paris."}}},
+                    {
+                        "toolUse": {
+                            "toolUseId": "tool-123",
+                            "name": _STRUCTURED_OUTPUT_TOOL_NAME,
+                            "input": {"name": "Paris"},
+                        }
+                    },
+                ]
+            }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+            "inputTokens": 100,
+            "outputTokens": 50,
+            "totalTokens": 150,
+            "cacheReadInputTokens": 80,
+        },
+    }
+
+    result = _convert_response(response)
+
+    message = result.choices[0].message
+    assert result.choices[0].finish_reason == "stop"
+    assert message.content == json.dumps({"name": "Paris"})
+    assert message.tool_calls is None
+    assert message.reasoning is not None
+    assert message.reasoning.content == "The capital of France is Paris."
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 180  # 100 + 80
+    assert result.usage.completion_tokens == 50
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 80
+
+
+def test_convert_response_real_tool_call_not_treated_as_structured_output() -> None:
+    """A genuine (non-sentinel) tool call must still take the normal tool_calls path."""
+    response: dict[str, Any] = {
+        "output": {
+            "message": {
+                "content": [
+                    {
+                        "toolUse": {
+                            "toolUseId": "tool-123",
+                            "name": "get_weather",
+                            "input": {"location": "Paris"},
+                        }
+                    }
+                ]
+            }
+        },
+        "stopReason": "tool_use",
+    }
+
+    result = _convert_response(response)
+
+    assert result.choices[0].finish_reason == "tool_calls"
+    assert result.choices[0].message.content is None
+    assert result.choices[0].message.tool_calls is not None
+    tool_call = result.choices[0].message.tool_calls[0]
+    assert isinstance(tool_call, ChatCompletionMessageFunctionToolCall)
+    assert tool_call.function.name == "get_weather"
+
+
+def test_convert_response_multiple_tool_calls_not_treated_as_structured_output() -> None:
+    """Even if the sentinel name appears, more than one tool call must not be unwrapped as content."""
+    response: dict[str, Any] = {
+        "output": {
+            "message": {
+                "content": [
+                    {"toolUse": {"toolUseId": "t1", "name": _STRUCTURED_OUTPUT_TOOL_NAME, "input": {"name": "Paris"}}},
+                    {"toolUse": {"toolUseId": "t2", "name": "get_weather", "input": {"location": "Paris"}}},
+                ]
+            }
+        },
+        "stopReason": "tool_use",
+    }
+
+    result = _convert_response(response)
+
+    assert result.choices[0].finish_reason == "tool_calls"
+    assert result.choices[0].message.tool_calls is not None
+    assert len(result.choices[0].message.tool_calls) == 2
