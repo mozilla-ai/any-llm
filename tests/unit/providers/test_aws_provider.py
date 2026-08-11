@@ -4,11 +4,13 @@ import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, get_args
 from unittest.mock import Mock, patch
 
 import botocore.session
 import pytest
+from botocore.exceptions import ProfileNotFound
 from botocore.tokens import ScopedEnvTokenProvider
 from pydantic import BaseModel
 
@@ -177,7 +179,9 @@ def test_profile_name_and_botocore_session_go_to_session_not_client() -> None:
     """Test that profile_name/botocore_session reach boto3.Session but never Session.client().
 
     boto3.Session() accepts `profile_name`/`botocore_session`, but `Session.client()` does not;
-    if they leaked into the `.client()` call, real boto3 would raise a TypeError.
+    if they leaked into the `.client()` call, real boto3 would raise a TypeError. Checked for the
+    runtime client as well as the control-plane and S3 clients, which are built from the same
+    kwargs.
     """
     fake_botocore_session = Mock()
 
@@ -192,28 +196,39 @@ def test_profile_name_and_botocore_session_go_to_session_not_client() -> None:
         patch("any_llm.providers.bedrock.bedrock._convert_response"),
     ):
         provider = BedrockProvider(profile_name="my-profile", botocore_session=fake_botocore_session)
+        control_client = provider._get_bedrock_control_client()
+        s3_client = provider._get_s3_client()
 
     expected_session_kwargs = {"profile_name": "my-profile", "botocore_session": fake_botocore_session}
     for call in mock_session_cls.call_args_list:
         assert call.kwargs == expected_session_kwargs
 
     assert provider._boto_session is not None
-    client_call_kwargs = provider._boto_session.client.call_args.kwargs
-    assert "profile_name" not in client_call_kwargs
-    assert "botocore_session" not in client_call_kwargs
+    # The control-plane and S3 clients are built from the same shared `_boto_session`, so they
+    # share its `.client` mock; every call recorded on it (runtime, control, S3) must be free of
+    # session-only kwargs.
+    assert control_client is provider._boto_session.client.return_value
+    assert s3_client is provider._boto_session.client.return_value
+    for call_args in provider._boto_session.client.call_args_list:
+        assert "profile_name" not in call_args.kwargs
+        assert "botocore_session" not in call_args.kwargs
 
 
-def test_profile_name_without_resolvable_credentials_raises_missing_api_key_error(
-    monkeypatch: pytest.MonkeyPatch,
+def test_profile_name_resolution_uses_real_botocore_and_raises_profile_not_found(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Test that an unresolvable profile_name still raises MissingApiKeyError (no api_key either)."""
+    """Test that a nonexistent `profile_name` surfaces botocore's own `ProfileNotFound`.
+
+    Exercises real botocore profile resolution (no `boto3.Session` mocking), isolated from the
+    real environment via an empty, temporary AWS config/credentials directory, so a nonexistent
+    profile can't accidentally resolve to a real ambient one.
+    """
     monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "config"))
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(tmp_path / "credentials"))
 
-    with patch("boto3.Session") as mock_session_cls:
-        mock_session_cls.return_value.get_credentials.return_value = None
-
-        with pytest.raises(MissingApiKeyError):
-            BedrockProvider(profile_name="nonexistent-profile")
+    with pytest.raises(ProfileNotFound):
+        BedrockProvider(profile_name="nonexistent-profile")
 
 
 def test_no_credentials_and_no_api_key_raises_missing_api_key_error(monkeypatch: pytest.MonkeyPatch) -> None:

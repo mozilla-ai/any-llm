@@ -850,11 +850,13 @@ async def test_control_and_s3_client_overrides_bypass_shared_session() -> None:
 
 
 @pytest.mark.asyncio
-async def test_control_and_s3_client_fall_back_to_bare_boto3_with_custom_runtime_client() -> None:
-    """With a custom runtime `client=` and no control/S3 overrides, fall back to a bare boto3 client.
+async def test_control_and_s3_client_build_session_from_credentials_with_custom_runtime_client() -> None:
+    """With a custom runtime `client=` and no control/S3 overrides, still honor explicit credentials.
 
-    any-llm doesn't own the custom client's session, so it can't build a matching control-plane
-    or S3 client from it; this preserves the pre-existing behavior for that case.
+    any-llm doesn't own the custom client's session, so it can't reuse it for the control-plane or
+    S3 client, but it must still build them from a session constructed with the caller's explicit
+    credential kwargs (e.g. `region_name`, `profile_name`) rather than a bare, ambient-only
+    `boto3.client(...)`, which would silently drop those kwargs.
     """
     pytest.importorskip("boto3")
     from any_llm.providers.bedrock.bedrock import BedrockProvider
@@ -865,8 +867,10 @@ async def test_control_and_s3_client_fall_back_to_bare_boto3_with_custom_runtime
         provider._get_bedrock_control_client()
         provider._get_s3_client()
 
-        mock_boto3.client.assert_any_call("bedrock", region_name="us-west-2")
-        mock_boto3.client.assert_any_call("s3", region_name="us-west-2")
+        mock_boto3.Session.assert_any_call(region_name="us-west-2")
+        mock_session_client = mock_boto3.Session.return_value.client
+        mock_session_client.assert_any_call("bedrock", region_name="us-west-2")
+        mock_session_client.assert_any_call("s3", region_name="us-west-2")
 
 
 @pytest.mark.asyncio
