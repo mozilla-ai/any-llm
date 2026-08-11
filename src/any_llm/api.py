@@ -89,6 +89,8 @@ def completion(
         reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
         prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
         timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
+            An explicit ``None`` is treated the same as omitting it (the provider's default
+            applies), so it cannot request an unbounded timeout.
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
@@ -204,6 +206,8 @@ async def acompletion(
         reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
         prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
         timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
+            An explicit ``None`` is treated the same as omitting it (the provider's default
+            applies), so it cannot request an unbounded timeout.
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 

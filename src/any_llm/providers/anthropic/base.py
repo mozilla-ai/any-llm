@@ -4,6 +4,7 @@ import asyncio
 import json
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -40,7 +41,7 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Sequence
+    from collections.abc import AsyncIterator, Iterator, Sequence
 
     from anthropic import AsyncAnthropic, AsyncAnthropicVertex
     from anthropic.types import Message
@@ -62,6 +63,28 @@ _CONTEXT_MANAGEMENT_BETA = "context-management-2025-06-27"
 # it has stayed stable across SDK versions. Kept as a single named constant so this is the one
 # documented point of coupling to the SDK's wording; the real-client test surfaces any future reword.
 _NONSTREAMING_TIMEOUT_GUARD_MARKER = "Streaming is required"
+
+
+@contextmanager
+def _translating_nonstreaming_guard(provider: AnyLLM, max_tokens: int | None) -> Iterator[None]:
+    """Translate the SDK's client-side non-streaming guard into an actionable any-llm error.
+
+    The guard rejects a non-streaming request whose max_tokens could exceed the default
+    per-request time limit, raising a bare ValueError before anything is sent. Any unrelated
+    ValueError is left untouched.
+    """
+    try:
+        yield
+    except ValueError as exc:
+        if not str(exc).startswith(_NONSTREAMING_TIMEOUT_GUARD_MARKER):
+            raise
+        msg = (
+            f"A non-streaming request with max_tokens={max_tokens} can exceed the default "
+            "per-request time limit, so it needs an explicit timeout. "
+            "Pass a `timeout` (in seconds) or use `stream=True`."
+        )
+        raise InvalidRequestError(msg, original_exception=exc, provider_name=provider.PROVIDER_NAME) from exc
+
 
 _ANTHROPIC_TO_OPENAI_STATUS_MAP: dict[str, str] = {
     "in_progress": "in_progress",
@@ -281,22 +304,8 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         if converted_kwargs.pop("stream", False):
             return self._stream_completion_async(**converted_kwargs)
 
-        try:
+        with _translating_nonstreaming_guard(self, converted_kwargs.get("max_tokens")):
             message = await self.client.messages.create(**converted_kwargs)
-        except ValueError as exc:
-            # A bare ValueError here is the SDK's pre-flight non-streaming guard (it rejects a
-            # request whose max_tokens could exceed the time limit for a single response, before
-            # anything is sent). Translate it into an actionable any-llm error and leave any
-            # unrelated ValueError untouched.
-            if not str(exc).startswith(_NONSTREAMING_TIMEOUT_GUARD_MARKER):
-                raise
-            max_tokens = converted_kwargs.get("max_tokens")
-            msg = (
-                f"A non-streaming completion with max_tokens={max_tokens} can exceed the default "
-                "per-request time limit, so it needs an explicit timeout. "
-                "Pass a `timeout` (in seconds) or use `stream=True`."
-            )
-            raise InvalidRequestError(msg, original_exception=exc, provider_name=self.PROVIDER_NAME) from exc
 
         return self._convert_completion_response(message)
 
@@ -324,9 +333,13 @@ class BaseAnthropicProvider(AnyLLM, ABC):
                 native_kwargs["betas"] = betas
             native_kwargs.update(kwargs)
             if is_structured_output_type(params.output_format):
-                parsed = await messages_resource.parse(output_format=params.output_format, **native_kwargs)
+                with _translating_nonstreaming_guard(self, params.max_tokens):
+                    parsed = await messages_resource.parse(output_format=params.output_format, **native_kwargs)
                 return cast("ParsedMessage[Any] | ParsedBetaMessage[Any]", parsed)
-            message = await messages_resource.create(output_config=cast("Any", params.output_format), **native_kwargs)
+            with _translating_nonstreaming_guard(self, params.max_tokens):
+                message = await messages_resource.create(
+                    output_config=cast("Any", params.output_format), **native_kwargs
+                )
             return self._convert_native_message_to_response(message)
 
         api_kwargs = params.model_dump(exclude_none=True, exclude={"betas"})
@@ -339,7 +352,8 @@ class BaseAnthropicProvider(AnyLLM, ABC):
             return self._stream_messages_async(use_beta=use_beta, **api_kwargs)
 
         messages_resource = self.client.beta.messages if use_beta else self.client.messages
-        response: Message = await messages_resource.create(**api_kwargs)
+        with _translating_nonstreaming_guard(self, params.max_tokens):
+            response: Message = await messages_resource.create(**api_kwargs)
         return self._convert_native_message_to_response(response)
 
     async def _stream_messages_async(

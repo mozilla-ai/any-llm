@@ -5,7 +5,7 @@ import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Self, cast
-from unittest.mock import AsyncMock, MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import httpx
 import pytest
@@ -13,7 +13,7 @@ from anthropic.types import Message, TextBlock, ThinkingBlock, ToolUseBlock, Usa
 from anthropic.types.beta import BetaMCPToolUseBlock, BetaMessage, BetaThinkingBlock, BetaUsage
 from pydantic import BaseModel
 
-from any_llm.exceptions import UnsupportedParameterError
+from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.base import BaseAnthropicProvider, _messages_betas, _pop_anthropic_beta_header
 from any_llm.types.messages import (
@@ -1339,3 +1339,30 @@ async def test_amessages_system_list_form() -> None:
 
     call_kwargs = mock_client.messages.create.call_args.kwargs
     assert call_kwargs["system"] == system_blocks
+
+
+@pytest.mark.asyncio
+async def test_amessages_without_timeout_translates_nonstreaming_guard() -> None:
+    """The messages API surfaces the same actionable error as completions for the pre-flight guard.
+
+    Uses a real ``AsyncAnthropic`` client so the SDK guard runs; the transport is patched to fail
+    fast so the test stays hermetic if the guard ever changes.
+    """
+    provider = AnthropicProvider(api_key="sk-test")
+
+    with (
+        patch.object(
+            provider.client, "post", new=AsyncMock(side_effect=AssertionError("network should not be reached"))
+        ),
+        pytest.raises(InvalidRequestError) as exc_info,
+    ):
+        await provider.amessages(
+            model="claude-opus-5",
+            messages=[{"role": "user", "content": "Hi"}],
+            max_tokens=65536,
+            stream=False,
+        )
+
+    message = str(exc_info.value)
+    assert "timeout" in message
+    assert "stream=True" in message
