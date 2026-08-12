@@ -370,6 +370,53 @@ def test_streaming_chunk_extracts_x_groq_usage_without_choices() -> None:
     }
 
 
+def test_streaming_chunk_extracts_x_groq_usage_alongside_finish_reason() -> None:
+    """The wire shape any-llm actually sees: usage under x_groq on the finish_reason chunk.
+
+    groq 1.6.0's ``completions.create`` takes no ``stream_options``, so top-level
+    ``chunk.usage`` is never populated on this path and ``x_groq.usage`` is the only
+    source of streaming usage.
+    """
+    from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
+
+    from any_llm.providers.groq.utils import _create_openai_chunk_from_groq_chunk
+
+    chunk = GroqChatCompletionChunk.model_validate(
+        {
+            "id": "chatcmpl-123",
+            "object": "chat.completion.chunk",
+            "created": 1234567890,
+            "model": "llama-3.3-70b-versatile",
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            "x_groq": {
+                "id": "req_01hy",
+                "usage": {
+                    "prompt_tokens": 23,
+                    "completion_tokens": 19,
+                    "total_tokens": 42,
+                    "queue_time": 0.075,
+                    "prompt_time": 0.006,
+                    "completion_time": 0.022,
+                    "total_time": 0.028,
+                },
+            },
+        }
+    )
+
+    result = _create_openai_chunk_from_groq_chunk(chunk)
+
+    assert result.choices[0].finish_reason == "stop"
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 23
+    assert result.usage.completion_tokens == 19
+    assert result.usage.model_extra == {
+        "queue_time": 0.075,
+        "prompt_time": 0.006,
+        "completion_time": 0.022,
+        "total_time": 0.028,
+    }
+
+
 def _make_openai_response(text: str):  # type: ignore[no-untyped-def]
     from openai.types.responses import ResponseOutputMessage, ResponseOutputText
 
