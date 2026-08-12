@@ -37,6 +37,32 @@ if TYPE_CHECKING:
     )
     from any_llm.types.model import Model
 
+DEFAULT_SCHEMA_NAME = "response_schema"
+_SCHEMA_METADATA_KEYS = ("name", "description", "strict")
+
+
+def _convert_response_format(response_format: dict[str, Any]) -> dict[str, Any]:
+    """Convert a dict response_format to one of the two shapes Together documents.
+
+    Together accepts `{"type": "json_object"}` or
+    `{"type": "json_schema", "json_schema": {"name": ..., "schema": ...}}`, and rejects a
+    `json_schema` payload that has no `name`. Any other dict is passed through untouched.
+
+    See https://docs.together.ai/reference/chat-completions#body-response-format
+    """
+    if response_format.get("type") != "json_schema":
+        return response_format
+
+    json_schema: dict[str, Any] = dict(response_format.get("json_schema") or {})
+    if "schema" not in json_schema:
+        # Tolerate a bare schema supplied under "json_schema" or next to it at the top level,
+        # keeping any name/description/strict the caller left beside it.
+        metadata = {key: response_format[key] for key in _SCHEMA_METADATA_KEYS if key in response_format}
+        metadata.update({key: json_schema.pop(key) for key in _SCHEMA_METADATA_KEYS if key in json_schema})
+        json_schema = {**metadata, "schema": json_schema or response_format.get("schema") or {}}
+    json_schema.setdefault("name", DEFAULT_SCHEMA_NAME)
+    return {"type": "json_schema", "json_schema": json_schema}
+
 
 class TogetherProvider(AnyLLM):
     PROVIDER_NAME = "together"
@@ -75,21 +101,13 @@ class TogetherProvider(AnyLLM):
             if is_structured_output_type(params.response_format):
                 converted_params["response_format"] = {
                     "type": "json_schema",
-                    "schema": get_json_schema(params.response_format),
+                    "json_schema": {
+                        "name": params.response_format.__name__,
+                        "schema": get_json_schema(params.response_format),
+                    },
                 }
             elif isinstance(params.response_format, dict):
-                # Handle OpenAI-style dict format (e.g., {"type": "json_schema", "json_schema": {...}})
-                # Together expects {"type": "json_schema", "schema": {...}}
-                if params.response_format.get("type") == "json_schema":
-                    json_schema = params.response_format.get("json_schema", {})
-                    schema = json_schema.get("schema", json_schema)
-                    converted_params["response_format"] = {
-                        "type": "json_schema",
-                        "schema": schema,
-                    }
-                else:
-                    # Pass through other dict formats (e.g., {"type": "json_object"})
-                    converted_params["response_format"] = params.response_format
+                converted_params["response_format"] = _convert_response_format(params.response_format)
 
         converted_params.update(kwargs)
         return converted_params

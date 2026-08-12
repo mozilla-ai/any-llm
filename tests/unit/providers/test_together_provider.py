@@ -218,7 +218,7 @@ def test_create_openai_chunk_with_usage() -> None:
 
 
 def test_convert_completion_params_with_pydantic_response_format() -> None:
-    """Test that Pydantic model response_format is converted correctly."""
+    """Test that a Pydantic model is sent as Together's nested json_schema shape."""
     from pydantic import BaseModel
 
     from any_llm.providers.together.together import TogetherProvider
@@ -235,18 +235,21 @@ def test_convert_completion_params_with_pydantic_response_format() -> None:
 
     result = TogetherProvider._convert_completion_params(params)
 
-    assert "response_format" in result
-    assert result["response_format"]["type"] == "json_schema"
-    assert "schema" in result["response_format"]
-    assert result["response_format"]["schema"]["properties"]["name"]["type"] == "string"
-    assert result["response_format"]["schema"]["properties"]["value"]["type"] == "integer"
+    assert result["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "TestSchema", "schema": TestSchema.model_json_schema()},
+    }
+    schema = result["response_format"]["json_schema"]["schema"]
+    assert schema["properties"]["name"]["type"] == "string"
+    assert schema["properties"]["value"]["type"] == "integer"
 
 
 def test_convert_completion_params_with_dataclass_response_format() -> None:
-    """Test that dataclass response_format is converted correctly."""
+    """Test that a dataclass is sent as Together's nested json_schema shape."""
     from dataclasses import dataclass
 
     from any_llm.providers.together.together import TogetherProvider
+    from any_llm.utils.structured_output import get_json_schema
 
     @dataclass
     class TestSchema:
@@ -261,25 +264,23 @@ def test_convert_completion_params_with_dataclass_response_format() -> None:
 
     result = TogetherProvider._convert_completion_params(params)
 
-    assert "response_format" in result
-    assert result["response_format"]["type"] == "json_schema"
-    assert "schema" in result["response_format"]
-    assert "properties" in result["response_format"]["schema"]
-    assert "name" in result["response_format"]["schema"]["properties"]
-    assert "value" in result["response_format"]["schema"]["properties"]
+    assert result["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "TestSchema", "schema": get_json_schema(TestSchema)},
+    }
+    assert "name" in result["response_format"]["json_schema"]["schema"]["properties"]
+    assert "value" in result["response_format"]["json_schema"]["schema"]["properties"]
 
 
 def test_convert_completion_params_with_dict_json_schema_response_format() -> None:
-    """Test that OpenAI-style dict response_format with json_schema is converted correctly.
-
-    This tests the fix for issue #791: OpenAI-style dict format should be supported.
-    """
+    """Test that an OpenAI-style dict reaches Together unflattened, keeping every field."""
     from any_llm.providers.together.together import TogetherProvider
 
     openai_json_schema = {
         "type": "json_schema",
         "json_schema": {
             "name": "StructuredOutput",
+            "description": "An answer with a confidence score",
             "schema": {
                 "type": "object",
                 "properties": {
@@ -301,12 +302,92 @@ def test_convert_completion_params_with_dict_json_schema_response_format() -> No
 
     result = TogetherProvider._convert_completion_params(params)
 
-    assert "response_format" in result
-    assert result["response_format"]["type"] == "json_schema"
-    assert "schema" in result["response_format"]
-    assert result["response_format"]["schema"]["type"] == "object"
-    assert "answer" in result["response_format"]["schema"]["properties"]
-    assert "confidence" in result["response_format"]["schema"]["properties"]
+    assert result["response_format"] == openai_json_schema
+
+
+def test_convert_completion_params_dict_json_schema_without_name_gets_default() -> None:
+    """Together rejects a json_schema payload with no name, so one is filled in."""
+    from any_llm.providers.together.together import TogetherProvider
+
+    schema = {"type": "object", "properties": {"answer": {"type": "string"}}}
+
+    params = CompletionParams(
+        model_id="test-model",
+        messages=[{"role": "user", "content": "Hello"}],
+        response_format={"type": "json_schema", "json_schema": {"schema": schema}},
+    )
+
+    result = TogetherProvider._convert_completion_params(params)
+
+    assert result["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "response_schema", "schema": schema},
+    }
+
+
+def test_convert_completion_params_dict_json_schema_with_bare_schema() -> None:
+    """A bare schema, under json_schema or beside it, is wrapped into the documented shape."""
+    from any_llm.providers.together.together import TogetherProvider
+
+    schema = {"type": "object", "properties": {"answer": {"type": "string"}}}
+    expected = {"type": "json_schema", "json_schema": {"name": "response_schema", "schema": schema}}
+
+    for response_format in (
+        {"type": "json_schema", "json_schema": schema},
+        {"type": "json_schema", "schema": schema},
+    ):
+        params = CompletionParams(
+            model_id="test-model",
+            messages=[{"role": "user", "content": "Hello"}],
+            response_format=response_format,
+        )
+
+        assert TogetherProvider._convert_completion_params(params)["response_format"] == expected
+
+
+def test_convert_completion_params_dict_json_schema_bare_schema_keeps_metadata() -> None:
+    """Metadata left beside a bare schema survives the wrap instead of being dropped."""
+    from any_llm.providers.together.together import TogetherProvider
+
+    schema = {"type": "object", "properties": {"answer": {"type": "string"}}}
+    expected = {
+        "type": "json_schema",
+        "json_schema": {"name": "City", "description": "A city", "strict": True, "schema": schema},
+    }
+
+    for response_format in (
+        {"type": "json_schema", "name": "City", "description": "A city", "strict": True, "schema": schema},
+        {
+            "type": "json_schema",
+            "json_schema": {"name": "City", "description": "A city", "strict": True},
+            "schema": schema,
+        },
+    ):
+        params = CompletionParams(
+            model_id="test-model",
+            messages=[{"role": "user", "content": "Hello"}],
+            response_format=response_format,
+        )
+
+        assert TogetherProvider._convert_completion_params(params)["response_format"] == expected
+
+
+def test_convert_completion_params_dict_json_schema_empty_payload() -> None:
+    """A json_schema type with nothing to send still produces a well formed payload."""
+    from any_llm.providers.together.together import TogetherProvider
+
+    params = CompletionParams(
+        model_id="test-model",
+        messages=[{"role": "user", "content": "Hello"}],
+        response_format={"type": "json_schema"},
+    )
+
+    result = TogetherProvider._convert_completion_params(params)
+
+    assert result["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "response_schema", "schema": {}},
+    }
 
 
 def test_convert_completion_params_with_dict_json_object_response_format() -> None:
@@ -323,8 +404,41 @@ def test_convert_completion_params_with_dict_json_object_response_format() -> No
 
     result = TogetherProvider._convert_completion_params(params)
 
-    assert "response_format" in result
-    assert result["response_format"]["type"] == "json_object"
+    assert result["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_acompletion_sends_nested_json_schema_to_client() -> None:
+    """Test that the nested json_schema shape is what actually reaches the Together client."""
+    from pydantic import BaseModel
+
+    from any_llm.providers.together.together import TogetherProvider
+
+    class TestSchema(BaseModel):
+        city_name: str
+
+    with (
+        patch("together.AsyncTogether") as mock_together,
+        patch.object(TogetherProvider, "_convert_completion_response", return_value=Mock()),
+    ):
+        mock_client = Mock()
+        mock_together.return_value = mock_client
+        mock_client.chat.completions.create = AsyncMock(return_value=Mock())
+
+        provider = TogetherProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="test-model",
+                messages=[{"role": "user", "content": "Hello"}],
+                response_format=TestSchema,
+            ),
+        )
+
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert call_kwargs["response_format"] == {
+            "type": "json_schema",
+            "json_schema": {"name": "TestSchema", "schema": TestSchema.model_json_schema()},
+        }
 
 
 def test_convert_completion_params_without_response_format() -> None:

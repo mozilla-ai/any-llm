@@ -165,3 +165,37 @@ async def test_response_format_dataclass(
         if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise
+
+
+@pytest.mark.asyncio
+async def test_together_response_format_on_strict_model() -> None:
+    """Pin Together's documented nested json_schema shape against a strict model.
+
+    Together validates response_format per model. The model used by
+    ``provider_model_map`` accepts the undocumented flat ``{"type", "schema"}`` shape as
+    well as the documented nested one, so it cannot tell a correct provider from a
+    broken one. Kimi rejects anything but the nested shape with a 400.
+    """
+
+    class CityResponse(BaseModel):
+        city_name: str
+
+    try:
+        llm = AnyLLM.create(LLMProvider.TOGETHER)
+        result = await llm.acompletion(
+            model="moonshotai/Kimi-K3",
+            messages=[{"role": "user", "content": "What is the capital of France?"}],
+            response_format=CityResponse,
+            stream=False,
+        )
+    except MissingApiKeyError:
+        if LLMProvider.TOGETHER in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip("Together API key not provided, skipping")
+    except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
+        raise
+
+    assert isinstance(result, ParsedChatCompletion)
+    parsed = result.choices[0].message.parsed
+    assert isinstance(parsed, CityResponse)
+    assert "paris" in parsed.city_name.lower()
