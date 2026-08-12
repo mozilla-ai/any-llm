@@ -579,6 +579,7 @@ def messages(
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
     output_format: type | dict[str, Any] | None = None,
+    timeout: float | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
@@ -613,6 +614,11 @@ def messages(
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
             holds the parsed JSON). The call returns Anthropic's ``ParsedMessage``. Not supported
             with streaming.
+        timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
+            An explicit ``None`` is treated the same as omitting it (the provider's default
+            applies), so it cannot request an unbounded timeout. Providers that have no
+            per-request timeout raise `UnsupportedParameterError`; set a timeout on their
+            client via `client_args` instead.
         api_key: API key for the provider.
         api_base: Base URL for the provider API.
         client_args: Additional provider-specific arguments for client instantiation.
@@ -649,6 +655,7 @@ def messages(
         context_management=context_management,
         betas=betas,
         output_format=output_format,
+        timeout=timeout,
         **kwargs,
     )
 
@@ -674,6 +681,7 @@ async def amessages(
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
     output_format: type | dict[str, Any] | None = None,
+    timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
@@ -708,6 +716,11 @@ async def amessages(
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
             holds the parsed JSON). The call returns Anthropic's ``ParsedMessage``. Not supported
             with streaming.
+        timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
+            An explicit ``None`` is treated the same as omitting it (the provider's default
+            applies), so it cannot request an unbounded timeout. Providers that have no
+            per-request timeout raise `UnsupportedParameterError`; set a timeout on their
+            client via `client_args` instead.
         api_key: API key for the provider.
         api_base: Base URL for the provider API.
         client_args: Additional provider-specific arguments for client instantiation.
@@ -744,6 +757,7 @@ async def amessages(
         context_management=context_management,
         betas=betas,
         output_format=output_format,
+        timeout=timeout,
         **kwargs,
     )
 

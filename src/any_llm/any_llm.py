@@ -844,6 +844,7 @@ class AnyLLM(ABC):
         prompt_cache_key: str | None = None,
         context_management: dict[str, Any] | None = None,
         betas: list[str] | None = None,
+        timeout: float | None = None,
         **kwargs: Any,
     ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | Iterator[MessageStreamEvent]:
         """Create a message using the Anthropic Messages API synchronously.
@@ -868,6 +869,7 @@ class AnyLLM(ABC):
                         prompt_cache_key=prompt_cache_key,
                         context_management=context_management,
                         betas=betas,
+                        timeout=timeout,
                         **kwargs,
                     ),
                 ),
@@ -879,6 +881,7 @@ class AnyLLM(ABC):
                 prompt_cache_key=prompt_cache_key,
                 context_management=context_management,
                 betas=betas,
+                timeout=timeout,
                 **kwargs,
             ),
             allow_running_loop=allow_running_loop,
@@ -909,6 +912,7 @@ class AnyLLM(ABC):
         context_management: dict[str, Any] | None = None,
         betas: list[str] | None = None,
         output_format: type | dict[str, Any] | None = None,
+        timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
         **kwargs: Any,
     ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStreamEvent]:
         """Create a message using the Anthropic Messages API asynchronously.
@@ -942,6 +946,11 @@ class AnyLLM(ABC):
                 ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic
                 JSON schemas (``parsed_output`` holds the parsed JSON). The call returns
                 Anthropic's ``ParsedMessage``. Not supported with ``stream=True``.
+            timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
+                An explicit ``None`` is treated the same as omitting it (the provider's default
+                applies), so it cannot request an unbounded timeout. Providers that have no
+                per-request timeout raise `UnsupportedParameterError`; set a timeout on their
+                client via `client_args` instead.
             **kwargs: Additional provider-specific arguments.
 
         Returns:
@@ -979,6 +988,9 @@ class AnyLLM(ABC):
             output_format=output_format,
         )
         self._validate_prompt_cache_key(prompt_cache_key)
+        # The bridged path forwards these kwargs to _acompletion, so route timeout through the same
+        # capability check the completion API uses rather than letting it reach the provider SDK raw.
+        self._validate_and_forward_timeout(timeout, kwargs)
         result = await self._amessages(params, **kwargs)
 
         # The Anthropic provider already returns a ParsedMessage via native messages.parse (typed

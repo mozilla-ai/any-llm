@@ -97,6 +97,48 @@ async def test_amessages_rejects_prompt_cache_key_for_unsupported_provider() -> 
 
 
 @pytest.mark.asyncio
+async def test_amessages_rejects_timeout_for_unsupported_provider() -> None:
+    """The bridged messages path routes timeout through the same capability check as completions."""
+    pytest.importorskip("ollama")
+    from any_llm.providers.ollama.ollama import OllamaProvider
+
+    provider = OllamaProvider(api_base="http://localhost:11434")
+
+    with (
+        patch.object(provider, "_acompletion", new=AsyncMock()) as mock_acompletion,
+        pytest.raises(UnsupportedParameterError, match="timeout"),
+    ):
+        await provider.amessages(
+            model="llama3",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=100,
+            timeout=5,
+        )
+
+    mock_acompletion.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("requested_timeout", "expected"), [(5, 5), (None, None)])
+async def test_amessages_forwards_timeout_for_supported_provider(
+    requested_timeout: float | None, expected: float | None
+) -> None:
+    """A supported provider receives the timeout on the bridged call; an explicit None stays unset."""
+    provider = AnyLLM.create("openai", api_key="sk-test")
+
+    with patch.object(provider, "_acompletion", new=AsyncMock()) as mock_acompletion:
+        await provider.amessages(
+            model="gpt-4",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=100,
+            timeout=requested_timeout,
+        )
+
+    assert mock_acompletion.await_args is not None
+    assert mock_acompletion.await_args.kwargs.get("timeout") == expected
+
+
+@pytest.mark.asyncio
 async def test_messages_invalid_model_format_no_separator() -> None:
     """Test amessages raises ValueError for model without separator."""
     with pytest.raises(
@@ -542,9 +584,11 @@ async def test_amessages_forwards_typed_messages_params() -> None:
     assert "prompt_cache_key" in signature(amessages).parameters
     assert "context_management" in signature(amessages).parameters
     assert "betas" in signature(amessages).parameters
+    assert "timeout" in signature(amessages).parameters
     assert "prompt_cache_key" in signature(AnyLLM.amessages).parameters
     assert "context_management" in signature(AnyLLM.amessages).parameters
     assert "betas" in signature(AnyLLM.amessages).parameters
+    assert "timeout" in signature(AnyLLM.amessages).parameters
 
     mock_provider = Mock()
     mock_provider.amessages = AsyncMock(return_value=Mock())
@@ -560,12 +604,14 @@ async def test_amessages_forwards_typed_messages_params() -> None:
             prompt_cache_key="tenant-1",
             context_management=context_management,
             betas=betas,
+            timeout=30,
         )
 
     call_kwargs = mock_provider.amessages.await_args.kwargs
     assert call_kwargs["prompt_cache_key"] == "tenant-1"
     assert call_kwargs["context_management"] == context_management
     assert call_kwargs["betas"] == betas
+    assert call_kwargs["timeout"] == 30
 
 
 def test_messages_returns_parsed_beta_message_without_treating_it_as_a_stream() -> None:
@@ -607,9 +653,11 @@ def test_messages_forwards_typed_messages_params() -> None:
     assert "prompt_cache_key" in signature(messages).parameters
     assert "context_management" in signature(messages).parameters
     assert "betas" in signature(messages).parameters
+    assert "timeout" in signature(messages).parameters
     assert "prompt_cache_key" in signature(AnyLLM.messages).parameters
     assert "context_management" in signature(AnyLLM.messages).parameters
     assert "betas" in signature(AnyLLM.messages).parameters
+    assert "timeout" in signature(AnyLLM.messages).parameters
 
     mock_provider = Mock()
     mock_provider.messages = Mock(return_value=Mock())
@@ -625,12 +673,14 @@ def test_messages_forwards_typed_messages_params() -> None:
             prompt_cache_key="tenant-1",
             context_management=context_management,
             betas=betas,
+            timeout=30,
         )
 
     call_kwargs = mock_provider.messages.call_args.kwargs
     assert call_kwargs["prompt_cache_key"] == "tenant-1"
     assert call_kwargs["context_management"] == context_management
     assert call_kwargs["betas"] == betas
+    assert call_kwargs["timeout"] == 30
 
 
 @pytest.mark.asyncio
