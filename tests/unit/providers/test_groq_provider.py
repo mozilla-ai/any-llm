@@ -149,6 +149,10 @@ def test_to_chat_completion_extracts_cached_tokens() -> None:
                 "completion_tokens": 1817,
                 "total_tokens": 6458,
                 "prompt_tokens_details": {"cached_tokens": 4608},
+                "queue_time": 0.01,
+                "prompt_time": 0.02,
+                "completion_time": 0.03,
+                "total_time": 0.04,
             },
         }
     )
@@ -161,6 +165,12 @@ def test_to_chat_completion_extracts_cached_tokens() -> None:
     assert result.usage.total_tokens == 6458
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 4608
+    assert result.usage.model_extra == {
+        "queue_time": 0.01,
+        "prompt_time": 0.02,
+        "completion_time": 0.03,
+        "total_time": 0.04,
+    }
 
 
 def test_to_chat_completion_without_cached_tokens() -> None:
@@ -197,6 +207,7 @@ def test_to_chat_completion_without_cached_tokens() -> None:
     assert result.usage.completion_tokens == 50
     assert result.usage.total_tokens == 150
     assert result.usage.prompt_tokens_details is None
+    assert result.usage.model_extra == {}
 
 
 @pytest.mark.asyncio
@@ -258,6 +269,10 @@ def test_streaming_chunk_extracts_cached_tokens() -> None:
                 "completion_tokens": 1817,
                 "total_tokens": 6458,
                 "prompt_tokens_details": {"cached_tokens": 4608},
+                "queue_time": 0,
+                "prompt_time": 0.02,
+                "completion_time": 0.03,
+                "total_time": 0.04,
             },
         }
     )
@@ -268,6 +283,138 @@ def test_streaming_chunk_extracts_cached_tokens() -> None:
     assert result.usage.prompt_tokens == 4641
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 4608
+    assert result.usage.model_extra == {
+        "queue_time": 0,
+        "prompt_time": 0.02,
+        "completion_time": 0.03,
+        "total_time": 0.04,
+    }
+
+
+def test_streaming_chunk_without_timing_details() -> None:
+    """A streaming chunk whose usage omits timing keeps usage extras empty."""
+    from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
+
+    from any_llm.providers.groq.utils import _create_openai_chunk_from_groq_chunk
+
+    chunk = GroqChatCompletionChunk.model_validate(
+        {
+            "id": "chatcmpl-123",
+            "object": "chat.completion.chunk",
+            "created": 1234567890,
+            "model": "llama-3.3-70b-versatile",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": ""},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150,
+            },
+        }
+    )
+
+    result = _create_openai_chunk_from_groq_chunk(chunk)
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 100
+    assert result.usage.model_extra == {}
+
+
+def test_streaming_chunk_extracts_x_groq_usage_without_choices() -> None:
+    """Extract usage from Groq's final usage-only chunk."""
+    from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
+
+    from any_llm.providers.groq.utils import _create_openai_chunk_from_groq_chunk
+
+    chunk = GroqChatCompletionChunk.model_validate(
+        {
+            "id": "chatcmpl-123",
+            "object": "chat.completion.chunk",
+            "created": 1234567890,
+            "model": "llama-3.3-70b-versatile",
+            "choices": [],
+            "x_groq": {
+                "usage": {
+                    "prompt_tokens": 4641,
+                    "completion_tokens": 1817,
+                    "total_tokens": 6458,
+                    "prompt_tokens_details": {"cached_tokens": 4608},
+                    "queue_time": 0,
+                    "prompt_time": 0.02,
+                    "completion_time": 0.03,
+                    "total_time": 0.04,
+                }
+            },
+        }
+    )
+
+    result = _create_openai_chunk_from_groq_chunk(chunk)
+
+    assert result.choices == []
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 4641
+    assert result.usage.completion_tokens == 1817
+    assert result.usage.total_tokens == 6458
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 4608
+    assert result.usage.model_extra == {
+        "queue_time": 0,
+        "prompt_time": 0.02,
+        "completion_time": 0.03,
+        "total_time": 0.04,
+    }
+
+
+def test_streaming_chunk_extracts_x_groq_usage_alongside_finish_reason() -> None:
+    """The wire shape any-llm actually sees: usage under x_groq on the finish_reason chunk.
+
+    groq 1.6.0's ``completions.create`` takes no ``stream_options``, so top-level
+    ``chunk.usage`` is never populated on this path and ``x_groq.usage`` is the only
+    source of streaming usage.
+    """
+    from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
+
+    from any_llm.providers.groq.utils import _create_openai_chunk_from_groq_chunk
+
+    chunk = GroqChatCompletionChunk.model_validate(
+        {
+            "id": "chatcmpl-123",
+            "object": "chat.completion.chunk",
+            "created": 1234567890,
+            "model": "llama-3.3-70b-versatile",
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            "x_groq": {
+                "id": "req_01hy",
+                "usage": {
+                    "prompt_tokens": 23,
+                    "completion_tokens": 19,
+                    "total_tokens": 42,
+                    "queue_time": 0.075,
+                    "prompt_time": 0.006,
+                    "completion_time": 0.022,
+                    "total_time": 0.028,
+                },
+            },
+        }
+    )
+
+    result = _create_openai_chunk_from_groq_chunk(chunk)
+
+    assert result.choices[0].finish_reason == "stop"
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 23
+    assert result.usage.completion_tokens == 19
+    assert result.usage.model_extra == {
+        "queue_time": 0.075,
+        "prompt_time": 0.006,
+        "completion_time": 0.022,
+        "total_time": 0.028,
+    }
 
 
 def _make_openai_response(text: str):  # type: ignore[no-untyped-def]
