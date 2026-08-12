@@ -21,6 +21,7 @@ from any_llm.providers.gemini.utils import (
     _convert_response_to_response_dict,
     _convert_tool_spec,
     _create_openai_chunk_from_google_chunk,
+    _has_additional_properties,
     _map_finish_reason,
 )
 from any_llm.types.completion import ChatCompletion, CompletionParams, PromptTokensDetails, ReasoningEffort
@@ -37,6 +38,10 @@ class StrictStructuredAnswer(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     answer: str
+
+
+class NestedStrictStructuredAnswer(BaseModel):
+    nested: StrictStructuredAnswer
 
 
 def _make_gemini_response(
@@ -324,6 +329,20 @@ async def test_completion_with_dataclass_response_format() -> None:
         assert "value" in generation_config.response_schema["properties"]
 
 
+@pytest.mark.parametrize(
+    ("schema", "expected"),
+    [
+        ({"type": "object", "additionalProperties": False}, True),
+        ({"type": "object", "properties": {"a": {"type": "object", "additionalProperties": False}}}, True),
+        ({"anyOf": [{"type": "null"}, {"type": "object", "additionalProperties": False}]}, True),
+        ({"type": "object", "properties": {"a": {"type": "string"}}}, False),
+        ("not-a-schema", False),
+    ],
+)
+def test_has_additional_properties(schema: Any, expected: bool) -> None:
+    assert _has_additional_properties(schema) is expected
+
+
 @pytest.mark.asyncio
 async def test_completion_with_strict_pydantic_response_format_uses_json_schema() -> None:
     api_key = "test-api-key"
@@ -346,6 +365,32 @@ async def test_completion_with_strict_pydantic_response_format_uses_json_schema(
         assert generation_config.response_mime_type == "application/json"
         assert generation_config.response_schema is None
         assert generation_config.response_json_schema["additionalProperties"] is False
+
+
+@pytest.mark.asyncio
+async def test_completion_with_nested_strict_pydantic_response_format_uses_json_schema() -> None:
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key=api_key)
+        await provider._acompletion(
+            CompletionParams(
+                model_id=model,
+                messages=messages,
+                response_format=NestedStrictStructuredAnswer,
+            )
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+
+        assert generation_config.response_mime_type == "application/json"
+        assert generation_config.response_schema is None
+        assert (
+            generation_config.response_json_schema["$defs"]["StrictStructuredAnswer"]["additionalProperties"] is False
+        )
 
 
 @pytest.mark.asyncio
