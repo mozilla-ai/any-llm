@@ -162,7 +162,7 @@ class GoogleProvider(AnyLLM):
             response_type = response_format.get("type")
             if response_type == "json_schema":
                 kwargs["response_mime_type"] = "application/json"
-                kwargs["response_schema"] = response_format["json_schema"]["schema"]
+                kwargs["response_json_schema"] = response_format["json_schema"]["schema"]
             elif response_type == "json_object":
                 kwargs["response_mime_type"] = "application/json"
             elif response_type == "text":
