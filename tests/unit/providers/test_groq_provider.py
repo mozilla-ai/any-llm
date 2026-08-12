@@ -325,6 +325,51 @@ def test_streaming_chunk_without_timing_details() -> None:
     assert result.usage.model_extra == {}
 
 
+def test_streaming_chunk_extracts_x_groq_usage_without_choices() -> None:
+    """Extract usage from Groq's final usage-only chunk."""
+    from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
+
+    from any_llm.providers.groq.utils import _create_openai_chunk_from_groq_chunk
+
+    chunk = GroqChatCompletionChunk.model_validate(
+        {
+            "id": "chatcmpl-123",
+            "object": "chat.completion.chunk",
+            "created": 1234567890,
+            "model": "llama-3.3-70b-versatile",
+            "choices": [],
+            "x_groq": {
+                "usage": {
+                    "prompt_tokens": 4641,
+                    "completion_tokens": 1817,
+                    "total_tokens": 6458,
+                    "prompt_tokens_details": {"cached_tokens": 4608},
+                    "queue_time": 0,
+                    "prompt_time": 0.02,
+                    "completion_time": 0.03,
+                    "total_time": 0.04,
+                }
+            },
+        }
+    )
+
+    result = _create_openai_chunk_from_groq_chunk(chunk)
+
+    assert result.choices == []
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 4641
+    assert result.usage.completion_tokens == 1817
+    assert result.usage.total_tokens == 6458
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 4608
+    assert result.usage.model_extra == {
+        "queue_time": 0,
+        "prompt_time": 0.02,
+        "completion_time": 0.03,
+        "total_time": 0.04,
+    }
+
+
 def _make_openai_response(text: str):  # type: ignore[no-untyped-def]
     from openai.types.responses import ResponseOutputMessage, ResponseOutputText
 
