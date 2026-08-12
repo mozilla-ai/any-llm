@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from google.genai import types
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from any_llm.exceptions import (
     ContentFilterFinishReasonError,
@@ -30,6 +30,12 @@ TEST_PDF_BYTES = b"%PDF-1.4\ntest"
 
 
 class StructuredAnswer(BaseModel):
+    answer: str
+
+
+class StrictStructuredAnswer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     answer: str
 
 
@@ -316,6 +322,30 @@ async def test_completion_with_dataclass_response_format() -> None:
         assert "properties" in generation_config.response_schema
         assert "name" in generation_config.response_schema["properties"]
         assert "value" in generation_config.response_schema["properties"]
+
+
+@pytest.mark.asyncio
+async def test_completion_with_strict_pydantic_response_format_uses_json_schema() -> None:
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key=api_key)
+        await provider._acompletion(
+            CompletionParams(
+                model_id=model,
+                messages=messages,
+                response_format=StrictStructuredAnswer,
+            )
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+
+        assert generation_config.response_mime_type == "application/json"
+        assert generation_config.response_schema is None
+        assert generation_config.response_json_schema["additionalProperties"] is False
 
 
 @pytest.mark.asyncio
