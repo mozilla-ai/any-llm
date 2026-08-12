@@ -235,3 +235,6 @@ class CompletionParams(BaseModel):
 
     prompt_cache_key: str | None = None
     """A key to use when reading from or writing to a provider's prompt cache."""
+
+    service_tier: str | None = None
+    """The service tier to use for this request."""

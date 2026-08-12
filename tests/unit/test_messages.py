@@ -77,6 +77,18 @@ def test_messages_params_exposes_prompt_cache_key_in_schema() -> None:
     assert "prompt_cache_key" in MessagesParams.model_json_schema()["properties"]
 
 
+def test_messages_params_exposes_service_tier_in_schema() -> None:
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        service_tier="standard_only",
+    )
+
+    assert params.service_tier == "standard_only"
+    assert "service_tier" in MessagesParams.model_json_schema()["properties"]
+
+
 @pytest.mark.asyncio
 async def test_amessages_rejects_prompt_cache_key_for_unsupported_provider() -> None:
     pytest.importorskip("boto3")
@@ -550,6 +562,7 @@ async def test_amessages_parameter_capture() -> None:
             metadata={"user_id": "u1"},
             thinking={"type": "enabled", "budget_tokens": 4096},
             prompt_cache_key="tenant-1",
+            service_tier="standard_only",
             api_key="sk-test",
             api_base="https://custom.example.com",
         )
@@ -577,15 +590,18 @@ async def test_amessages_parameter_capture() -> None:
         assert call_args.kwargs["metadata"] == {"user_id": "u1"}
         assert call_args.kwargs["thinking"] == {"type": "enabled", "budget_tokens": 4096}
         assert call_args.kwargs["prompt_cache_key"] == "tenant-1"
+        assert call_args.kwargs["service_tier"] == "standard_only"
 
 
 @pytest.mark.asyncio
 async def test_amessages_forwards_typed_messages_params() -> None:
     assert "prompt_cache_key" in signature(amessages).parameters
+    assert "service_tier" in signature(amessages).parameters
     assert "context_management" in signature(amessages).parameters
     assert "betas" in signature(amessages).parameters
     assert "timeout" in signature(amessages).parameters
     assert "prompt_cache_key" in signature(AnyLLM.amessages).parameters
+    assert "service_tier" in signature(AnyLLM.amessages).parameters
     assert "context_management" in signature(AnyLLM.amessages).parameters
     assert "betas" in signature(AnyLLM.amessages).parameters
     assert "timeout" in signature(AnyLLM.amessages).parameters
@@ -602,6 +618,7 @@ async def test_amessages_forwards_typed_messages_params() -> None:
             messages=[{"role": "user", "content": "Hello"}],
             max_tokens=1024,
             prompt_cache_key="tenant-1",
+            service_tier="standard_only",
             context_management=context_management,
             betas=betas,
             timeout=30,
@@ -609,6 +626,7 @@ async def test_amessages_forwards_typed_messages_params() -> None:
 
     call_kwargs = mock_provider.amessages.await_args.kwargs
     assert call_kwargs["prompt_cache_key"] == "tenant-1"
+    assert call_kwargs["service_tier"] == "standard_only"
     assert call_kwargs["context_management"] == context_management
     assert call_kwargs["betas"] == betas
     assert call_kwargs["timeout"] == 30
@@ -651,10 +669,12 @@ def test_messages_returns_parsed_beta_message_without_treating_it_as_a_stream() 
 
 def test_messages_forwards_typed_messages_params() -> None:
     assert "prompt_cache_key" in signature(messages).parameters
+    assert "service_tier" in signature(messages).parameters
     assert "context_management" in signature(messages).parameters
     assert "betas" in signature(messages).parameters
     assert "timeout" in signature(messages).parameters
     assert "prompt_cache_key" in signature(AnyLLM.messages).parameters
+    assert "service_tier" in signature(AnyLLM.messages).parameters
     assert "context_management" in signature(AnyLLM.messages).parameters
     assert "betas" in signature(AnyLLM.messages).parameters
     assert "timeout" in signature(AnyLLM.messages).parameters
@@ -671,6 +691,7 @@ def test_messages_forwards_typed_messages_params() -> None:
             messages=[{"role": "user", "content": "Hello"}],
             max_tokens=1024,
             prompt_cache_key="tenant-1",
+            service_tier="standard_only",
             context_management=context_management,
             betas=betas,
             timeout=30,
@@ -678,6 +699,7 @@ def test_messages_forwards_typed_messages_params() -> None:
 
     call_kwargs = mock_provider.messages.call_args.kwargs
     assert call_kwargs["prompt_cache_key"] == "tenant-1"
+    assert call_kwargs["service_tier"] == "standard_only"
     assert call_kwargs["context_management"] == context_management
     assert call_kwargs["betas"] == betas
     assert call_kwargs["timeout"] == 30
@@ -757,6 +779,7 @@ async def test_default_amessages_non_streaming() -> None:
         messages=[{"role": "user", "content": "Hello"}],
         max_tokens=100,
         prompt_cache_key="tenant-1",
+        service_tier="standard_only",
     )
     result = await AnyLLM._amessages(mock_provider, params)
     assert isinstance(result, MessageResponse)
@@ -767,7 +790,9 @@ async def test_default_amessages_non_streaming() -> None:
     assert result.usage.input_tokens == 10
     completion_params = mock_provider._acompletion.await_args.args[0]
     assert completion_params.prompt_cache_key == "tenant-1"
+    assert completion_params.service_tier == "standard_only"
     assert "prompt_cache_key" not in mock_provider._acompletion.await_args.kwargs
+    assert "service_tier" not in mock_provider._acompletion.await_args.kwargs
 
 
 @pytest.mark.asyncio

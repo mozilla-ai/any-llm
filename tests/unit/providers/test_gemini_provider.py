@@ -2093,3 +2093,32 @@ async def test_acompletion_raises_content_filter_error_for_filtered_structured_o
                 messages=[{"role": "user", "content": "Hello"}],
                 response_format=StructuredAnswer,
             )
+
+
+@pytest.mark.asyncio
+async def test_service_tier_is_forwarded_to_generate_content_config() -> None:
+    """A typed service_tier must still reach GenerateContentConfig, which models it natively."""
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="gemini-pro",
+                messages=[{"role": "user", "content": "Hello"}],
+                service_tier="flex",
+            ),
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        assert call_kwargs["config"].service_tier == types.ServiceTier.FLEX
+
+
+@pytest.mark.asyncio
+async def test_service_tier_omitted_when_not_requested() -> None:
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-key")
+        await provider._acompletion(
+            CompletionParams(model_id="gemini-pro", messages=[{"role": "user", "content": "Hello"}]),
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        assert call_kwargs["config"].service_tier is None

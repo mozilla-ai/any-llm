@@ -75,6 +75,8 @@ def messages_params_to_completion_params(params: MessagesParams) -> dict[str, An
 
     if params.prompt_cache_key is not None:
         result["prompt_cache_key"] = params.prompt_cache_key
+    if params.service_tier is not None:
+        result["service_tier"] = params.service_tier
     if params.temperature is not None:
         result["temperature"] = params.temperature
     if params.top_p is not None:

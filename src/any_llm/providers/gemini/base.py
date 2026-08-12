@@ -145,6 +145,8 @@ class GoogleProvider(AnyLLM):
                 )
         if params.seed is not None:
             kwargs["seed"] = params.seed
+        if params.service_tier is not None:
+            kwargs["service_tier"] = params.service_tier
         if params.temperature is not None:
             kwargs["temperature"] = params.temperature
         if params.tools is not None:
