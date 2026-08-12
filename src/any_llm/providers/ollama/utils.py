@@ -41,6 +41,21 @@ if TYPE_CHECKING:
     )
 
 
+def _convert_tool_calls(tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert OpenAI tool calls to the shape Ollama expects.
+
+    Ollama takes `arguments` as a mapping, while OpenAI serializes it to a JSON string.
+    """
+    converted = []
+    for tool_call in tool_calls:
+        function = tool_call["function"]
+        arguments = function.get("arguments") or {}
+        if isinstance(arguments, str):
+            arguments = json.loads(arguments) if arguments.strip() else {}
+        converted.append({"function": {"name": function["name"], "arguments": arguments}})
+    return converted
+
+
 def _create_openai_embedding_response_from_ollama(
     ollama_response: EmbedResponse,
 ) -> CreateEmbeddingResponse:

@@ -611,3 +611,153 @@ async def test_streaming_completion_passes_think_level_top_level() -> None:
 def test_per_request_timeout_is_declared_unsupported() -> None:
     """Ollama only accepts a timeout at client construction, so the base class rejects a per-request one."""
     assert OllamaProvider.TIMEOUT_SUPPORT == "unsupported"
+
+
+async def _sent_messages(messages: list[dict[str, Any]], stream: bool) -> list[dict[str, Any]]:
+    """Run a completion against a mocked client and return the messages it received."""
+
+    async def empty_async_iter() -> AsyncIterator[None]:
+        return
+        yield
+
+    params = CompletionParams(model_id="qwen3:0.6b", messages=messages, stream=stream)
+
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=empty_async_iter() if stream else Mock())
+
+        if stream:
+            result = await provider._acompletion(params)
+            async for _ in result:  # type: ignore[union-attr]
+                pass
+        else:
+            with patch.object(OllamaProvider, "_convert_completion_response", return_value=Mock()):
+                await provider._acompletion(params)
+
+    sent: list[dict[str, Any]] = provider.client.chat.call_args.kwargs["messages"]
+    return sent
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_tool_history_is_forwarded_in_native_ollama_format(stream: bool) -> None:
+    """Ollama takes tool results and assistant tool calls natively.
+
+    Flattening them into assistant text shows the model a transcript of itself answering with
+    raw JSON, which smaller models copy instead of emitting a real tool call.
+    """
+    sent = await _sent_messages(
+        [
+            {"role": "user", "content": "What's the weather in Paris?"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_abc",
+                        "type": "function",
+                        "function": {"name": "get_weather", "arguments": '{"location": "Paris"}'},
+                    }
+                ],
+            },
+            {"role": "tool", "content": "15C and sunny", "tool_call_id": "call_abc"},
+        ],
+        stream,
+    )
+
+    assert sent[1] == {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [{"function": {"name": "get_weather", "arguments": {"location": "Paris"}}}],
+    }
+    assert sent[2] == {"role": "tool", "content": "15C and sunny", "tool_name": "get_weather"}
+
+
+@pytest.mark.asyncio
+async def test_assistant_message_without_tool_calls_is_left_untouched() -> None:
+    """An empty tool_calls list must not leak into the assistant's content."""
+    sent = await _sent_messages(
+        [
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hello!", "tool_calls": []},
+            {"role": "user", "content": "How are you?"},
+        ],
+        stream=False,
+    )
+
+    assert sent[1]["content"] == "Hello!"
+
+
+@pytest.mark.asyncio
+async def test_tool_message_name_falls_back_to_explicit_name_field() -> None:
+    """Clients that label the tool result directly should not need the matching assistant turn."""
+    sent = await _sent_messages(
+        [
+            {"role": "user", "content": "What time is it?"},
+            {"role": "tool", "content": "12:30", "tool_call_id": "call_missing", "name": "get_time"},
+        ],
+        stream=False,
+    )
+
+    assert sent[1] == {"role": "tool", "content": "12:30", "tool_name": "get_time"}
+
+
+@pytest.mark.asyncio
+async def test_tool_message_without_a_resolvable_name_omits_tool_name() -> None:
+    sent = await _sent_messages(
+        [
+            {"role": "user", "content": "What time is it?"},
+            {"role": "tool", "content": "12:30", "tool_call_id": "call_unknown"},
+        ],
+        stream=False,
+    )
+
+    assert sent[1] == {"role": "tool", "content": "12:30"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("assistant_message", [{"role": "assistant"}, {"role": "assistant", "content": None}])
+async def test_missing_or_null_content_is_normalized(assistant_message: dict[str, Any]) -> None:
+    """`model_dump(exclude_none=True)` drops `content`, which used to raise on the tool-call path."""
+    sent = await _sent_messages(
+        [
+            {"role": "user", "content": "What time is it?"},
+            {
+                **assistant_message,
+                "tool_calls": [{"id": "call_1", "function": {"name": "get_time", "arguments": "{}"}}],
+            },
+            {"role": "tool", "tool_call_id": "call_1"},
+        ],
+        stream=False,
+    )
+
+    assert sent[1]["content"] == ""
+    assert sent[2] == {"role": "tool", "content": "", "tool_name": "get_time"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        ('{"location": "Paris"}', {"location": "Paris"}),
+        ({"location": "Paris"}, {"location": "Paris"}),
+        ("", {}),
+        ("  ", {}),
+        (None, {}),
+    ],
+)
+async def test_tool_call_arguments_are_converted_to_a_mapping(arguments: Any, expected: dict[str, Any]) -> None:
+    """Ollama takes arguments as a mapping, while OpenAI serializes them to a JSON string."""
+    sent = await _sent_messages(
+        [
+            {"role": "user", "content": "Hi"},
+            {
+                "role": "assistant",
+                "tool_calls": [{"id": "call_1", "function": {"name": "get_weather", "arguments": arguments}}],
+            },
+        ],
+        stream=False,
+    )
+
+    assert sent[1]["tool_calls"] == [{"function": {"name": "get_weather", "arguments": expected}}]

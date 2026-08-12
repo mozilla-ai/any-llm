@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING, Any, Literal
 
 from typing_extensions import override
@@ -15,6 +14,7 @@ try:
 
     from .utils import (
         _convert_models_list,
+        _convert_tool_calls,
         _create_chat_completion_from_ollama_response,
         _create_openai_chunk_from_ollama_chunk,
         _create_openai_embedding_response_from_ollama,
@@ -259,19 +259,33 @@ class OllamaProvider(AnyLLM):
 
         output_format = self._convert_response_format(params.response_format)
 
-        # (https://www.reddit.com/r/ollama/comments/1ked8x2/feeding_tool_output_back_to_llm/)
+        # Ollama accepts `tool` role messages and assistant `tool_calls` natively, so both are
+        # forwarded as-is. Flattening them into assistant text shows the model a transcript of
+        # itself answering with raw JSON, which smaller models copy instead of emitting a real
+        # tool call. (https://docs.ollama.com/capabilities/tool-calling)
+        tool_names_by_call_id: dict[str, str] = {}
         cleaned_messages = []
         for input_message in params.messages:
             if input_message["role"] == "tool":
                 cleaned_message: dict[str, Any] = {
-                    "role": "user",
-                    "content": json.dumps(input_message["content"]),
+                    "role": "tool",
+                    "content": input_message.get("content") or "",
                 }
-            elif input_message["role"] == "assistant" and "tool_calls" in input_message:
-                content = input_message["content"] + "\n" + json.dumps(input_message["tool_calls"])
+                # OpenAI identifies a tool result by call id, Ollama by tool name.
+                tool_name = input_message.get("name") or tool_names_by_call_id.get(
+                    input_message.get("tool_call_id", "")
+                )
+                if tool_name:
+                    cleaned_message["tool_name"] = tool_name
+            elif input_message["role"] == "assistant" and input_message.get("tool_calls"):
+                tool_calls: list[dict[str, Any]] = input_message["tool_calls"]
+                for tool_call in tool_calls:
+                    if tool_call.get("id"):
+                        tool_names_by_call_id[tool_call["id"]] = tool_call["function"]["name"]
                 cleaned_message = {
                     "role": "assistant",
-                    "content": content,
+                    "content": input_message.get("content") or "",
+                    "tool_calls": _convert_tool_calls(tool_calls),
                 }
             else:
                 cleaned_message = input_message.copy()
