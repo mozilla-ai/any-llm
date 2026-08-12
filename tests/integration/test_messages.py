@@ -105,6 +105,15 @@ def test_messages_streaming_sync(
             max_tokens=64,
             stream=True,
         )
+        assert isinstance(result, Iterator)
+
+        # The sync bridge opens the connection lazily: request/auth/connection
+        # errors surface from the first next() here, not from the messages() call
+        # above, so the skip guards must cover this loop too.
+        event_types: list[str] = []
+        for event in result:
+            assert isinstance(event, MessageStreamEvent)
+            event_types.append(event.type)
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:
             raise
@@ -113,13 +122,6 @@ def test_messages_streaming_sync(
         if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise
-
-    assert isinstance(result, Iterator)
-
-    event_types: list[str] = []
-    for event in result:
-        assert isinstance(event, MessageStreamEvent)
-        event_types.append(event.type)
 
     assert "message_start" in event_types
     assert "message_stop" in event_types
