@@ -53,7 +53,7 @@ A provider can be verified whether it ships as a code folder or as a single conf
 | [`neosantara`](https://docs.neosantara.xyz) | 🤝 Community | NEOSANTARA_API_KEY | NEOSANTARA_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [`ollama`](https://github.com/ollama/ollama) | ✅ Verified | None | OLLAMA_HOST | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`openai`](https://platform.openai.com/docs/api-reference) | ✅ Verified | OPENAI_API_KEY | OPENAI_BASE_URL | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ |
-| [`openrouter`](https://openrouter.ai/docs) | ✅ Verified | OPENROUTER_API_KEY | OPENROUTER_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| [`openrouter`](https://openrouter.ai/docs) | ✅ Verified | OPENROUTER_API_KEY | OPENROUTER_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`otari`](https://mozilla-ai.github.io/otari/) | ✅ Verified | OTARI_API_KEY | OTARI_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [`perplexity`](https://docs.perplexity.ai/) | 🤝 Community | PERPLEXITY_API_KEY | PERPLEXITY_BASE_URL | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | [`portkey`](https://portkey.ai/docs) | ✅ Verified | PORTKEY_API_KEY | PORTKEY_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
