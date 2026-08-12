@@ -36,6 +36,7 @@ def completion(
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
     reasoning_effort: Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'] | None = "auto",
+    service_tier: str | None = None,
     prompt_cache_key: str | None = None,
     timeout: float | None = None,
     client_args: dict[str, Any] | None = None,
@@ -76,6 +77,7 @@ async def acompletion(
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
     reasoning_effort: Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'] | None = "auto",
+    service_tier: str | None = None,
     prompt_cache_key: str | None = None,
     timeout: float | None = None,
     client_args: dict[str, Any] | None = None,
@@ -113,6 +115,7 @@ async def acompletion(
 | `stream_options` | `dict[str, Any] \| None` | None | Additional options controlling streaming behavior |
 | `max_completion_tokens` | `int \| None` | None | Maximum number of tokens for the completion |
 | `reasoning_effort` | `Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'] \| None` | "auto" | Reasoning effort level for models that support it. "auto" will map to each provider's default. |
+| `service_tier` | `str \| None` | None | The service tier to use for this request. |
 | `prompt_cache_key` | `str \| None` | None | A key to use when reading from or writing to a provider's prompt cache. |
 | `timeout` | `float \| None` | None | Per-request timeout in seconds, passed through to the provider's client/SDK. An explicit ``None`` is treated the same as omitting it (the provider's default applies), so it cannot request an unbounded timeout. Providers that have no per-request timeout raise `UnsupportedParameterError`; set a timeout on their client via `client_args` instead. |
 | `client_args` | `dict[str, Any] \| None` | None | Additional provider-specific arguments that will be passed to the provider's client instantiation. |
