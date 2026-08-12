@@ -130,6 +130,7 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.AZUREOPENAI: "gpt-4.1-nano",  # Not an embedding model but it's the only one we have deployed in Azure OpenAI
         LLMProvider.OPENROUTER: "qwen/qwen3-embedding-8b",
         LLMProvider.DEEPINFRA: "BAAI/bge-base-en-v1.5",
+        LLMProvider.TOGETHER: "intfloat/multilingual-e5-large-instruct",
     }
 
 

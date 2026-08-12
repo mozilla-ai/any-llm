@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.exceptions import BatchNotCompleteError, ProviderError, UnsupportedParameterError
+from any_llm.logging import logger
+from any_llm.types.batch import BatchResult, BatchResultError, BatchResultItem
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
@@ -12,9 +17,11 @@ try:
     import together
 
     from .utils import (
+        _convert_batch_job_to_openai,
         _convert_models_list,
         _convert_together_response_to_chat_completion,
         _create_openai_chunk_from_together_chunk,
+        _create_openai_embedding_response_from_together,
     )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
@@ -29,6 +36,7 @@ if TYPE_CHECKING:
         ChatCompletionResponse as TogetherChatCompletion,
     )
 
+    from any_llm.types.batch import Batch
     from any_llm.types.completion import (
         ChatCompletion,
         ChatCompletionChunk,
@@ -50,9 +58,9 @@ class TogetherProvider(AnyLLM):
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_COMPLETION_IMAGE = True
     SUPPORTS_COMPLETION_PDF = False
-    SUPPORTS_EMBEDDING = False
+    SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
-    SUPPORTS_BATCH = False
+    SUPPORTS_BATCH = True
     SUPPORTS_RERANK = False
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
@@ -109,15 +117,15 @@ class TogetherProvider(AnyLLM):
     @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Convert embedding parameters for Together."""
-        msg = "Together does not support embeddings"
-        raise NotImplementedError(msg)
+        converted_params = {"input": params}
+        converted_params.update(kwargs)
+        return converted_params
 
     @staticmethod
     @override
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         """Convert Together embedding response to OpenAI format."""
-        msg = "Together does not support embeddings"
-        raise NotImplementedError(msg)
+        return _create_openai_embedding_response_from_together(response)
 
     @staticmethod
     @override
@@ -183,6 +191,148 @@ class TogetherProvider(AnyLLM):
         return self._convert_completion_response(response.model_dump())
 
     @override
+    async def _aembedding(
+        self,
+        model: str,
+        inputs: str | list[str],
+        **kwargs: Any,
+    ) -> CreateEmbeddingResponse:
+        embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
+        response = await self.client.embeddings.create(model=model, **embedding_kwargs)
+        return self._convert_embedding_response(response)
+
+    @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(models_list)
+
+    @override
+    async def _acreate_batch(
+        self,
+        input_file_path: str,
+        endpoint: str,
+        completion_window: str = "24h",
+        metadata: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> Batch:
+        """Create a batch job using the Together Batch API.
+
+        This method uploads the input file before creating the batch.
+
+        Together does not accept batch metadata, so a ``metadata`` argument is ignored.
+
+        Optional keyword arguments:
+            model_id: Model to use for all requests in the batch.
+            priority: Scheduling priority for the batch.
+        """
+        if metadata:
+            logger.warning("Together batch API does not support metadata, ignoring it.")
+
+        # Together validates uploads against the fine-tuning format unless the check is
+        # disabled, and batch JSONL does not satisfy it.
+        uploaded_file = await self.client.files.upload(
+            file=Path(input_file_path),
+            purpose="batch-api",
+            check=False,
+        )
+
+        created = await self.client.batches.create(
+            endpoint=cast("Any", endpoint),
+            input_file_id=uploaded_file.id,
+            completion_window=completion_window,
+            **kwargs,
+        )
+
+        if created.job is None:
+            msg = f"Together did not return a batch job. Warning: {created.warning or 'none'}"
+            raise ProviderError(msg, provider_name=self.PROVIDER_NAME)
+
+        if created.warning:
+            logger.warning("Together returned a warning for the created batch: %s", created.warning)
+
+        return _convert_batch_job_to_openai(created.job)
+
+    @override
+    async def _aretrieve_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Retrieve a batch job using the Together Batch API."""
+        batch_job = await self.client.batches.retrieve(batch_id, **kwargs)
+        return _convert_batch_job_to_openai(batch_job)
+
+    @override
+    async def _acancel_batch(self, batch_id: str, **kwargs: Any) -> Batch:
+        """Cancel a batch job using the Together Batch API."""
+        batch_job = await self.client.batches.cancel(batch_id, **kwargs)
+        return _convert_batch_job_to_openai(batch_job)
+
+    @override
+    async def _alist_batches(
+        self,
+        after: str | None = None,
+        limit: int | None = None,
+        **kwargs: Any,
+    ) -> Sequence[Batch]:
+        """List batch jobs using the Together Batch API.
+
+        Together returns every batch in one unpaginated response.
+
+        Args:
+            after: Not supported for Together. Raises UnsupportedParameterError if provided.
+            limit: Applied client-side to the full response, so it truncates rather than pages.
+            **kwargs: Additional provider-specific arguments.
+
+        Returns:
+            Sequence of Batch objects, newest first as returned by Together.
+
+        Raises:
+            UnsupportedParameterError: If `after` is provided.
+        """
+        if after is not None:
+            msg = "after"
+            raise UnsupportedParameterError(
+                msg,
+                self.PROVIDER_NAME,
+                "Together's batch listing is not paginated, so there is no cursor to resume from.",
+            )
+
+        batch_jobs = await self.client.batches.list(**kwargs)
+        if not batch_jobs:
+            return []
+
+        batches = [_convert_batch_job_to_openai(batch_job) for batch_job in batch_jobs]
+        return batches[:limit] if limit is not None else batches
+
+    @override
+    async def _aretrieve_batch_results(self, batch_id: str, **kwargs: Any) -> BatchResult:
+        """Retrieve the results of a completed batch job using the Together Batch API."""
+        batch_job = await self.client.batches.retrieve(batch_id, **kwargs)
+        converted = _convert_batch_job_to_openai(batch_job)
+        if converted.status != "completed":
+            raise BatchNotCompleteError(
+                batch_id=batch_id,
+                status=converted.status or "unknown",
+                provider_name=self.PROVIDER_NAME,
+            )
+
+        if not batch_job.output_file_id:
+            return BatchResult(results=[])
+
+        content = await self.client.files.content(batch_job.output_file_id)
+        text = (await content.read()).decode("utf-8")
+
+        results: list[BatchResultItem] = []
+        for line in text.strip().split("\n"):
+            if not line.strip():
+                continue
+            entry = json.loads(line)
+            item = BatchResultItem(custom_id=entry["custom_id"])
+            if entry.get("response") and entry["response"].get("status_code") == 200:
+                item.result = self._convert_completion_response(entry["response"]["body"])
+            elif entry.get("error"):
+                item.error = BatchResultError(
+                    code=entry["error"].get("code", "unknown"),
+                    message=entry["error"].get("message", "Unknown error"),
+                )
+            else:
+                item.error = BatchResultError(code="unknown", message="Unexpected response format")
+            results.append(item)
+        return BatchResult(results=results)
