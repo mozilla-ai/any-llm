@@ -345,6 +345,33 @@ def test_convert_completion_params_dict_json_schema_with_bare_schema() -> None:
         assert TogetherProvider._convert_completion_params(params)["response_format"] == expected
 
 
+def test_convert_completion_params_dict_json_schema_bare_schema_keeps_metadata() -> None:
+    """Metadata left beside a bare schema survives the wrap instead of being dropped."""
+    from any_llm.providers.together.together import TogetherProvider
+
+    schema = {"type": "object", "properties": {"answer": {"type": "string"}}}
+    expected = {
+        "type": "json_schema",
+        "json_schema": {"name": "City", "description": "A city", "strict": True, "schema": schema},
+    }
+
+    for response_format in (
+        {"type": "json_schema", "name": "City", "description": "A city", "strict": True, "schema": schema},
+        {
+            "type": "json_schema",
+            "json_schema": {"name": "City", "description": "A city", "strict": True},
+            "schema": schema,
+        },
+    ):
+        params = CompletionParams(
+            model_id="test-model",
+            messages=[{"role": "user", "content": "Hello"}],
+            response_format=response_format,
+        )
+
+        assert TogetherProvider._convert_completion_params(params)["response_format"] == expected
+
+
 def test_convert_completion_params_dict_json_schema_empty_payload() -> None:
     """A json_schema type with nothing to send still produces a well formed payload."""
     from any_llm.providers.together.together import TogetherProvider

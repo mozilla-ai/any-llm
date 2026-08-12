@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from any_llm.types.model import Model
 
 DEFAULT_SCHEMA_NAME = "response_schema"
+_SCHEMA_METADATA_KEYS = ("name", "description", "strict")
 
 
 def _convert_response_format(response_format: dict[str, Any]) -> dict[str, Any]:
@@ -54,8 +55,11 @@ def _convert_response_format(response_format: dict[str, Any]) -> dict[str, Any]:
 
     json_schema: dict[str, Any] = dict(response_format.get("json_schema") or {})
     if "schema" not in json_schema:
-        # Tolerate a bare schema supplied under "json_schema" or next to it at the top level.
-        json_schema = {"schema": json_schema or response_format.get("schema") or {}}
+        # Tolerate a bare schema supplied under "json_schema" or next to it at the top level,
+        # keeping any name/description/strict the caller left beside it.
+        metadata = {key: response_format[key] for key in _SCHEMA_METADATA_KEYS if key in response_format}
+        metadata.update({key: json_schema.pop(key) for key in _SCHEMA_METADATA_KEYS if key in json_schema})
+        json_schema = {**metadata, "schema": json_schema or response_format.get("schema") or {}}
     json_schema.setdefault("name", DEFAULT_SCHEMA_NAME)
     return {"type": "json_schema", "json_schema": json_schema}
 
