@@ -34,7 +34,10 @@ def pytest_configure(config: pytest.Config) -> None:
 def provider_reasoning_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.ANTHROPIC: "claude-sonnet-4-6",
-        LLMProvider.GEMINI: "gemini-2.5-flash",
+        # gemini-2.5-flash is closed to new API keys (404 "no longer available to new users"),
+        # so reasoning runs on the same Gemini 3 model the rest of the suite uses. thinking_budget
+        # stays supported there for backward compatibility, so the provider needs no change.
+        LLMProvider.GEMINI: "gemini-3-flash-preview",
         # No anthropic model via otari surfaces reasoning content (tested haiku/sonnet/opus, even
         # with reasoning_effort set: OpenAI reasoning_effort is not mapped to Anthropic extended
         # thinking). gpt-oss-120b does emit reasoning, which needs the otari SDK reasoning-string
