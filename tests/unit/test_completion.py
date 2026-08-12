@@ -40,6 +40,31 @@ def test_completion_params_exposes_prompt_cache_key() -> None:
     assert mock_provider.completion.call_args.kwargs["prompt_cache_key"] == "tenant-1"
 
 
+def test_completion_params_exposes_service_tier() -> None:
+    params = CompletionParams(
+        model_id="gpt-5.6",
+        messages=[{"role": "user", "content": "Hello"}],
+        service_tier="flex",
+    )
+
+    assert params.service_tier == "flex"
+    assert "service_tier" in CompletionParams.model_json_schema()["properties"]
+    assert "service_tier" in signature(completion).parameters
+    assert "service_tier" in signature(acompletion).parameters
+    assert "service_tier" in signature(AnyLLM.completion).parameters
+    assert "service_tier" in signature(AnyLLM.acompletion).parameters
+
+    mock_provider = Mock()
+    with patch("any_llm.any_llm.AnyLLM.create", return_value=mock_provider):
+        completion(
+            model="openai:gpt-5.6",
+            messages=[{"role": "user", "content": "Hello"}],
+            service_tier="flex",
+        )
+
+    assert mock_provider.completion.call_args.kwargs["service_tier"] == "flex"
+
+
 def test_completion_exposes_timeout_parameter() -> None:
     assert "timeout" in signature(completion).parameters
     assert "timeout" in signature(acompletion).parameters
@@ -130,6 +155,7 @@ async def test_acompletion_parameter_capture() -> None:
             max_tokens=100,
             stream=False,
             reasoning_effort="high",
+            service_tier="flex",
             prompt_cache_key="tenant-1",
             api_key="sk-test-key-123",
             api_base="https://custom-openai.example.com/v1",
@@ -151,6 +177,7 @@ async def test_acompletion_parameter_capture() -> None:
         assert call_args.kwargs["max_tokens"] == 100
         assert call_args.kwargs["stream"] is False
         assert call_args.kwargs["reasoning_effort"] == "high"
+        assert call_args.kwargs["service_tier"] == "flex"
         assert call_args.kwargs["prompt_cache_key"] == "tenant-1"
         assert call_args.kwargs["custom_param"] == "custom_value"
 

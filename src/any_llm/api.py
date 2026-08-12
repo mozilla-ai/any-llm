@@ -50,6 +50,7 @@ def completion(
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
     reasoning_effort: ReasoningEffort | None = "auto",
+    service_tier: str | None = None,
     prompt_cache_key: str | None = None,
     timeout: float | None = None,
     client_args: dict[str, Any] | None = None,
@@ -87,6 +88,7 @@ def completion(
         stream_options: Additional options controlling streaming behavior
         max_completion_tokens: Maximum number of tokens for the completion
         reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
+        service_tier: The service tier to use for this request.
         prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
         timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
             An explicit ``None`` is treated the same as omitting it (the provider's default
@@ -133,6 +135,7 @@ def completion(
         stream_options=stream_options,
         max_completion_tokens=max_completion_tokens,
         reasoning_effort=reasoning_effort,
+        service_tier=service_tier,
         prompt_cache_key=prompt_cache_key,
         timeout=timeout,
         **kwargs,
@@ -167,6 +170,7 @@ async def acompletion(
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
     reasoning_effort: ReasoningEffort | None = "auto",
+    service_tier: str | None = None,
     prompt_cache_key: str | None = None,
     timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
     client_args: dict[str, Any] | None = None,
@@ -204,6 +208,7 @@ async def acompletion(
         stream_options: Additional options controlling streaming behavior
         max_completion_tokens: Maximum number of tokens for the completion
         reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
+        service_tier: The service tier to use for this request.
         prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
         timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
             An explicit ``None`` is treated the same as omitting it (the provider's default
@@ -250,6 +255,7 @@ async def acompletion(
         stream_options=stream_options,
         max_completion_tokens=max_completion_tokens,
         reasoning_effort=reasoning_effort,
+        service_tier=service_tier,
         prompt_cache_key=prompt_cache_key,
         timeout=timeout,
         **kwargs,
@@ -572,6 +578,7 @@ def messages(
     thinking: dict[str, Any] | None = None,
     cache_control: dict[str, Any] | None = None,
     prompt_cache_key: str | None = None,
+    service_tier: str | None = None,
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
     output_format: type | dict[str, Any] | None = None,
@@ -600,6 +607,7 @@ def messages(
         thinking: Thinking/reasoning configuration.
         cache_control: Cache control configuration for prompt caching.
         prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
+        service_tier: The service tier to use for this request.
         context_management: Anthropic context management configuration. The `compact_20260112`
             strategy requires a supported model. Its `input_tokens` trigger value must be at
             least 50,000 when provided; see [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction).
@@ -642,6 +650,7 @@ def messages(
         thinking=thinking,
         cache_control=cache_control,
         prompt_cache_key=prompt_cache_key,
+        service_tier=service_tier,
         context_management=context_management,
         betas=betas,
         output_format=output_format,
@@ -667,6 +676,7 @@ async def amessages(
     thinking: dict[str, Any] | None = None,
     cache_control: dict[str, Any] | None = None,
     prompt_cache_key: str | None = None,
+    service_tier: str | None = None,
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
     output_format: type | dict[str, Any] | None = None,
@@ -695,6 +705,7 @@ async def amessages(
         thinking: Thinking/reasoning configuration.
         cache_control: Cache control configuration for prompt caching.
         prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
+        service_tier: The service tier to use for this request.
         context_management: Anthropic context management configuration. The `compact_20260112`
             strategy requires a supported model. Its `input_tokens` trigger value must be at
             least 50,000 when provided; see [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction).
@@ -737,6 +748,7 @@ async def amessages(
         thinking=thinking,
         cache_control=cache_control,
         prompt_cache_key=prompt_cache_key,
+        service_tier=service_tier,
         context_management=context_management,
         betas=betas,
         output_format=output_format,
