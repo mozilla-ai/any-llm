@@ -58,3 +58,53 @@ async def test_streaming_completion_async(
         if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
             pytest.skip("Local Model host is not set up, skipping")
         raise
+
+
+def test_streaming_completion_sync(
+    provider: LLMProvider,
+    provider_model_map: dict[LLMProvider, str],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
+) -> None:
+    """Test that the sync streaming completion path works for supported providers.
+
+    Mirrors test_streaming_completion_async, but drives the sync `completion()`
+    wrapper instead of `acompletion()`. The sync streaming bridge (opening the
+    response and consuming it on the same worker event loop) has no dedicated
+    integration coverage otherwise; see #1253/#1260.
+    """
+    try:
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
+        if not llm.SUPPORTS_COMPLETION_STREAMING:
+            pytest.skip(f"{provider.value} does not support streaming completion")
+        model_id = provider_model_map[provider]
+        output = ""
+        reasoning = ""
+        num_chunks = 0
+        stream = llm.completion(
+            model=model_id,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that exactly follows the user request."},
+                {"role": "user", "content": "Say the exact phrase:'Hello World' with no fancy formatting"},
+            ],
+            stream=True,
+        )
+
+        for result in stream:
+            num_chunks += 1
+            assert isinstance(result, ChatCompletionChunk)
+            if len(result.choices) > 0:
+                output += result.choices[0].delta.content or ""
+                if result.choices[0].delta.reasoning:
+                    reasoning += result.choices[0].delta.reasoning.content or ""
+        assert num_chunks >= 1, f"Expected at least 1 chunk, got {num_chunks}"
+        assert "hello world" in output.lower()
+    except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} API key not provided, skipping")
+    except UnsupportedParameterError:
+        pytest.skip(f"Streaming is not supported for {provider.value}")
+    except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
+            pytest.skip("Local Model host is not set up, skipping")
+        raise
