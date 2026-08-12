@@ -37,6 +37,7 @@ try:
         _convert_tool_spec,
         _create_openai_chunk_from_google_chunk,
         _create_openai_embedding_response_from_google,
+        _has_additional_properties,
     )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
@@ -161,12 +162,16 @@ class GoogleProvider(AnyLLM):
         response_format = params.response_format
         if is_structured_output_type(response_format):
             kwargs["response_mime_type"] = "application/json"
-            kwargs["response_schema"] = get_json_schema(response_format)
+            schema = get_json_schema(response_format)
+            if _has_additional_properties(schema):
+                kwargs["response_json_schema"] = schema
+            else:
+                kwargs["response_schema"] = schema
         elif isinstance(response_format, dict):
             response_type = response_format.get("type")
             if response_type == "json_schema":
                 kwargs["response_mime_type"] = "application/json"
-                kwargs["response_schema"] = response_format["json_schema"]["schema"]
+                kwargs["response_json_schema"] = response_format["json_schema"]["schema"]
             elif response_type == "json_object":
                 kwargs["response_mime_type"] = "application/json"
             elif response_type == "text":
