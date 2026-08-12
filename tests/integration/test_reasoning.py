@@ -32,7 +32,11 @@ async def test_completion_reasoning(
 
         result = await llm.acompletion(
             model=model_id,
-            messages=[{"role": "user", "content": "Please say hello! Think very briefly before you respond."}],
+            # Not "think very briefly": Gemini returns a thought block with a signature and no
+            # summary text when a request is simple enough that it barely reasons, which makes the
+            # reasoning assertion below fail. See the thought summaries section of
+            # https://ai.google.dev/gemini-api/docs/thinking
+            messages=[{"role": "user", "content": "Please say hello! Think before you respond."}],
             reasoning_effort="low"
             if provider
             in (
