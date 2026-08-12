@@ -66,6 +66,9 @@ class BaseOpenAIProvider(AnyLLM):
     SUPPORTS_IMAGE_GENERATION = False
     SUPPORTS_RERANK = False
 
+    # The OpenAI SDK accepts a per-request `timeout` on its client calls, so it forwards unchanged.
+    TIMEOUT_SUPPORT = "native"
+
     _DEFAULT_REASONING_EFFORT: ReasoningEffort | None = None
 
     client: AsyncOpenAI

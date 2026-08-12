@@ -84,6 +84,10 @@ class GoogleProvider(AnyLLM):
     SUPPORTS_BATCH = True
     SUPPORTS_RERANK = False
 
+    # The genai SDK carries timeout on http_options (in milliseconds), not as a request keyword,
+    # so it is translated in _convert_completion_params via _merge_timeout_into_http_options.
+    TIMEOUT_SUPPORT = "mapped"
+
     BUILT_IN_TOOLS: ClassVar[list[Any] | None] = [types.Tool]
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR

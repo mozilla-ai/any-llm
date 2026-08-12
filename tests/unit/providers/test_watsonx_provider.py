@@ -339,14 +339,6 @@ def test_convert_streaming_chunk_empty_choices() -> None:
     assert result.choices == []
 
 
-def test_timeout_is_dropped_with_a_warning() -> None:
-    """watsonx forwards these kwargs as generation parameters, so a per-request timeout can't be honored."""
-    with patch("any_llm.providers.watsonx.watsonx.logger") as mock_logger:
-        result = WatsonxProvider._convert_completion_params(
-            CompletionParams(model_id="model", messages=[{"role": "user", "content": "Hello"}]),
-            timeout=600,
-        )
-
-    assert "timeout" not in result
-    mock_logger.warning.assert_called_once()
-    assert "client_args" in mock_logger.warning.call_args[0][0]
+def test_per_request_timeout_is_declared_unsupported() -> None:
+    """watsonx forwards these kwargs as generation parameters, so the base class rejects a timeout."""
+    assert WatsonxProvider.TIMEOUT_SUPPORT == "unsupported"

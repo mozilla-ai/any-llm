@@ -74,6 +74,10 @@ class MistralProvider(AnyLLM):
     SUPPORTS_BATCH = True
     SUPPORTS_RERANK = False
 
+    # The Mistral SDK names its per-request timeout `timeout_ms`, so the seconds-based value is
+    # translated in _convert_completion_params.
+    TIMEOUT_SUPPORT = "mapped"
+
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     client: Mistral

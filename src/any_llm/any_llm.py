@@ -136,6 +136,16 @@ class AnyLLM(ABC):
     PROMPT_CACHE_KEY_SUPPORT: Literal["unsupported", "supported", "passthrough"] = "unsupported"
     """Whether prompt_cache_key is supported, forwarded to a router, or rejected."""
 
+    TIMEOUT_SUPPORT: Literal["unsupported", "native", "mapped"] = "unsupported"
+    """How the provider honors a per-request ``timeout`` (in seconds).
+
+    ``native`` providers accept a ``timeout`` keyword on their SDK call and receive it unchanged.
+    ``mapped`` providers express timeout differently and translate it in their own conversion.
+    ``unsupported`` providers have no per-request timeout, so a caller-supplied value is rejected.
+    The default is ``unsupported`` so a new provider must opt in explicitly rather than silently
+    mis-send or drop the value.
+    """
+
     API_BASE: str | None = None
     """This is used to set the API base for the provider.
     It is not required but may prove useful for providers that have overridable api bases.
@@ -722,7 +732,9 @@ class AnyLLM(ABC):
             prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
             timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
                 An explicit ``None`` is treated the same as omitting it (the provider's default
-                applies), so it cannot request an unbounded timeout.
+                applies), so it cannot request an unbounded timeout. Providers that have no
+                per-request timeout raise `UnsupportedParameterError`; set a timeout on their
+                client via `client_args` instead.
             **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
         Returns:
@@ -768,11 +780,7 @@ class AnyLLM(ABC):
         )
 
         self._validate_prompt_cache_key(prompt_cache_key)
-        # timeout is forwarded through kwargs rather than carried on CompletionParams: providers
-        # apply it differently (per-request vs client-level), so each consumes it from kwargs.
-        # Forward it only when set, so the default path (and its provider behavior) is unchanged.
-        if timeout is not None:
-            kwargs["timeout"] = timeout
+        self._validate_and_forward_timeout(timeout, kwargs)
         result = await self._acompletion(params, **kwargs)
 
         if is_structured_output_type(response_format):
@@ -801,6 +809,25 @@ class AnyLLM(ABC):
             parameter_name = "prompt_cache_key"
             raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
 
+    def _validate_and_forward_timeout(self, timeout: float | None, kwargs: dict[str, Any]) -> None:
+        """Route a per-request ``timeout`` (in seconds) to the provider, or reject it.
+
+        The timeout rides ``kwargs`` rather than ``CompletionParams`` because providers apply it
+        differently: ``native`` providers pass it to the SDK unchanged, and ``mapped`` providers
+        translate it in their own conversion.
+        An ``unsupported`` provider has no per-request timeout, so a caller-supplied value is
+        rejected rather than silently dropped or mis-sent into the request body.
+        An explicit ``None`` is treated as unset, leaving the provider default in place, so an
+        unbounded timeout is not expressible through this parameter.
+        """
+        if timeout is None:
+            return
+        if self.TIMEOUT_SUPPORT == "unsupported":
+            parameter_name = "timeout"
+            additional_message = "Set it on the client via client_args instead."
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME, additional_message)
+        kwargs["timeout"] = timeout
+
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
@@ -817,6 +844,7 @@ class AnyLLM(ABC):
         prompt_cache_key: str | None = None,
         context_management: dict[str, Any] | None = None,
         betas: list[str] | None = None,
+        timeout: float | None = None,
         **kwargs: Any,
     ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | Iterator[MessageStreamEvent]:
         """Create a message using the Anthropic Messages API synchronously.
@@ -841,6 +869,7 @@ class AnyLLM(ABC):
                         prompt_cache_key=prompt_cache_key,
                         context_management=context_management,
                         betas=betas,
+                        timeout=timeout,
                         **kwargs,
                     ),
                 ),
@@ -852,6 +881,7 @@ class AnyLLM(ABC):
                 prompt_cache_key=prompt_cache_key,
                 context_management=context_management,
                 betas=betas,
+                timeout=timeout,
                 **kwargs,
             ),
             allow_running_loop=allow_running_loop,
@@ -882,6 +912,7 @@ class AnyLLM(ABC):
         context_management: dict[str, Any] | None = None,
         betas: list[str] | None = None,
         output_format: type | dict[str, Any] | None = None,
+        timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
         **kwargs: Any,
     ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStreamEvent]:
         """Create a message using the Anthropic Messages API asynchronously.
@@ -915,6 +946,11 @@ class AnyLLM(ABC):
                 ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic
                 JSON schemas (``parsed_output`` holds the parsed JSON). The call returns
                 Anthropic's ``ParsedMessage``. Not supported with ``stream=True``.
+            timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
+                An explicit ``None`` is treated the same as omitting it (the provider's default
+                applies), so it cannot request an unbounded timeout. Providers that have no
+                per-request timeout raise `UnsupportedParameterError`; set a timeout on their
+                client via `client_args` instead.
             **kwargs: Additional provider-specific arguments.
 
         Returns:
@@ -952,6 +988,9 @@ class AnyLLM(ABC):
             output_format=output_format,
         )
         self._validate_prompt_cache_key(prompt_cache_key)
+        # The bridged path forwards these kwargs to _acompletion, so route timeout through the same
+        # capability check the completion API uses rather than letting it reach the provider SDK raw.
+        self._validate_and_forward_timeout(timeout, kwargs)
         result = await self._amessages(params, **kwargs)
 
         # The Anthropic provider already returns a ParsedMessage via native messages.parse (typed

@@ -86,6 +86,10 @@ class HuggingfaceProvider(AnyLLM):
     SUPPORTS_BATCH = False
     SUPPORTS_RERANK = False
 
+    # The HuggingFace client only accepts a timeout at construction, not on the per-request
+    # chat_completion call, so a per-request `timeout` cannot be honored.
+    TIMEOUT_SUPPORT = "unsupported"
+
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     client: AsyncInferenceClient

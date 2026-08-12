@@ -61,6 +61,10 @@ class CohereProvider(AnyLLM):
     SUPPORTS_BATCH = False
     SUPPORTS_RERANK = True
 
+    # The Cohere SDK carries a per-request timeout inside `request_options`, not as a top-level
+    # keyword, so it is translated in _convert_completion_params.
+    TIMEOUT_SUPPORT = "mapped"
+
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     client: cohere.AsyncClientV2

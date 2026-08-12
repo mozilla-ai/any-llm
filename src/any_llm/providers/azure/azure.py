@@ -63,6 +63,12 @@ class AzureProvider(AnyLLM):
     SUPPORTS_BATCH = False
     SUPPORTS_RERANK = False
 
+    # The Azure AI Inference SDK forwards unknown kwargs down azure-core's pipeline, where a
+    # `timeout` is swallowed by the retry policy as an absolute retry budget and does not bound a
+    # slow response, so it is left unsupported until a real per-request mapping is confirmed.
+    # Set timeouts on the client via client_args instead.
+    TIMEOUT_SUPPORT = "unsupported"
+
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     chat_client: aio.ChatCompletionsClient
