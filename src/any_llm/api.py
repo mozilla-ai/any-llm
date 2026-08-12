@@ -15,11 +15,11 @@ from any_llm.types.completion import (
     ReasoningEffort,
 )
 from any_llm.types.image import ImageGenerationParams, ImagesResponse
-from any_llm.types.messages import MessageResponse, MessageStreamEvent
+from any_llm.types.messages import MessageResponse, MessageStreamEvent, ParsedBetaMessage, ParsedMessage
 from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
 from any_llm.types.rerank import RerankResponse
-from any_llm.types.responses import Response, ResponseInputParam, ResponseStreamEvent
+from any_llm.types.responses import ParsedResponse, Response, ResponseInput, ResponseStreamEvent
 
 
 def completion(
@@ -50,6 +50,8 @@ def completion(
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
     reasoning_effort: ReasoningEffort | None = "auto",
+    prompt_cache_key: str | None = None,
+    timeout: float | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
@@ -85,6 +87,10 @@ def completion(
         stream_options: Additional options controlling streaming behavior
         max_completion_tokens: Maximum number of tokens for the completion
         reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
+        prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
+        timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
+            An explicit ``None`` is treated the same as omitting it (the provider's default
+            applies), so it cannot request an unbounded timeout.
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
@@ -95,7 +101,7 @@ def completion(
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_id = model
 
     llm = AnyLLM.create(
@@ -127,6 +133,8 @@ def completion(
         stream_options=stream_options,
         max_completion_tokens=max_completion_tokens,
         reasoning_effort=reasoning_effort,
+        prompt_cache_key=prompt_cache_key,
+        timeout=timeout,
         **kwargs,
     )
 
@@ -159,6 +167,8 @@ async def acompletion(
     stream_options: dict[str, Any] | None = None,
     max_completion_tokens: int | None = None,
     reasoning_effort: ReasoningEffort | None = "auto",
+    prompt_cache_key: str | None = None,
+    timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
@@ -194,6 +204,10 @@ async def acompletion(
         stream_options: Additional options controlling streaming behavior
         max_completion_tokens: Maximum number of tokens for the completion
         reasoning_effort: Reasoning effort level for models that support it. "auto" will map to each provider's default.
+        prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
+        timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
+            An explicit ``None`` is treated the same as omitting it (the provider's default
+            applies), so it cannot request an unbounded timeout.
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
@@ -204,7 +218,7 @@ async def acompletion(
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_id = model
 
     llm = AnyLLM.create(
@@ -236,13 +250,15 @@ async def acompletion(
         stream_options=stream_options,
         max_completion_tokens=max_completion_tokens,
         reasoning_effort=reasoning_effort,
+        prompt_cache_key=prompt_cache_key,
+        timeout=timeout,
         **kwargs,
     )
 
 
 def responses(
     model: str,
-    input_data: str | ResponseInputParam,
+    input_data: ResponseInput,
     *,
     provider: str | LLMProvider | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
@@ -258,9 +274,11 @@ def responses(
     parallel_tool_calls: bool | None = None,
     reasoning: Any | None = None,
     text: Any | None = None,
+    response_format: dict[str, Any] | type | None = None,
     presence_penalty: float | None = None,
     frequency_penalty: float | None = None,
     truncation: str | None = None,
+    context_management: list[dict[str, Any]] | None = None,
     store: bool | None = None,
     service_tier: str | None = None,
     user: str | None = None,
@@ -272,14 +290,16 @@ def responses(
     prompt_cache_key: str | None = None,
     prompt_cache_retention: str | None = None,
     conversation: str | dict[str, Any] | None = None,
+    extra_body: dict[str, Any] | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> ResponseResource | Response | Iterator[ResponseStreamEvent]:
+) -> ResponseResource | Response | ParsedResponse[Any] | Iterator[ResponseStreamEvent]:
     """Create a response using the OpenResponses API.
 
     This implements the OpenResponses specification and returns either
     `openresponses_types.ResponseResource` (for OpenResponses-compliant providers)
     or `openai.types.responses.Response` (for providers using OpenAI's native API).
+    If a structured `response_format` type is given, a `ParsedResponse` (with `output_parsed`) is returned.
     If `stream=True`, an iterator of `any_llm.types.responses.ResponseStreamEvent` items is returned.
 
     Args:
@@ -288,9 +308,9 @@ def responses(
             Legacy format 'provider/model' is also supported but deprecated.
         provider: **Recommended**: Provider name to use for the request (e.g., 'openai', 'mistral').
             When provided, the model parameter should contain only the model name.
-        input_data: The input payload accepted by provider's Responses API.
-            For OpenAI-compatible providers, this is typically a list mixing
-            text, images, and tool instructions, or a dict per OpenAI spec.
+        input_data: Input text or a list of wire-format Responses items.
+            Items are passed through unchanged so prior response output and
+            reasoning items can be replayed in a stateless conversation.
         tools: Optional tools for tool calling (Python callables or OpenAI tool dicts)
         tool_choice: Controls which tools the model can call
         max_output_tokens: Maximum number of output tokens to generate
@@ -304,9 +324,15 @@ def responses(
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
         reasoning: Configuration options for reasoning models.
         text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
+        response_format: Structured-output type. A Pydantic ``BaseModel`` or dataclass returns a ``ParsedResponse``
+            with the parsed object in ``output_parsed`` (the analogue of ``client.responses.parse``); a raw
+            ``text.format`` dict is passed through unparsed.
         presence_penalty: Penalizes new tokens based on whether they appear in the text so far.
         frequency_penalty: Penalizes new tokens based on their frequency in the text so far.
         truncation: Controls how the service truncates input when it exceeds the model context window.
+        context_management: OpenAI Responses context management configuration. Use a
+            `compaction` entry with `compact_threshold` to enable server-side compaction;
+            see [OpenAI's compaction documentation](https://platform.openai.com/docs/guides/compaction).
         store: Whether to store the response so it can be retrieved later.
         service_tier: The service tier to use for this request.
         user: A unique identifier representing your end user.
@@ -318,13 +344,15 @@ def responses(
         prompt_cache_key: A key to use when reading from or writing to the prompt cache.
         prompt_cache_retention: How long to retain a prompt cache entry created by this request.
         conversation: The conversation to associate this response with (ID string or ConversationParam object).
+        extra_body: Additional fields to merge into an OpenAI-compatible Responses request body.
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
     Returns:
         Either a `ResponseResource` object (OpenResponses-compliant providers),
-        a `Response` object (non-compliant providers), or an iterator of
-        `ResponseStreamEvent` (streaming).
+        a `Response` object (non-compliant providers), a `ParsedResponse` (with
+        `output_parsed`) when a structured `response_format` type is given, or an
+        iterator of `ResponseStreamEvent` (streaming).
 
     Raises:
         NotImplementedError: If the selected provider does not support the Responses API.
@@ -333,7 +361,7 @@ def responses(
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_id = model
 
     llm = AnyLLM.create(
@@ -356,9 +384,11 @@ def responses(
         parallel_tool_calls=parallel_tool_calls,
         reasoning=reasoning,
         text=text,
+        response_format=response_format,
         presence_penalty=presence_penalty,
         frequency_penalty=frequency_penalty,
         truncation=truncation,
+        context_management=context_management,
         store=store,
         service_tier=service_tier,
         user=user,
@@ -370,13 +400,14 @@ def responses(
         prompt_cache_key=prompt_cache_key,
         prompt_cache_retention=prompt_cache_retention,
         conversation=conversation,
+        extra_body=extra_body,
         **kwargs,
     )
 
 
 async def aresponses(
     model: str,
-    input_data: str | ResponseInputParam,
+    input_data: ResponseInput,
     *,
     provider: str | LLMProvider | None = None,
     tools: list[dict[str, Any] | Callable[..., Any]] | None = None,
@@ -392,9 +423,11 @@ async def aresponses(
     parallel_tool_calls: bool | None = None,
     reasoning: Any | None = None,
     text: Any | None = None,
+    response_format: dict[str, Any] | type | None = None,
     presence_penalty: float | None = None,
     frequency_penalty: float | None = None,
     truncation: str | None = None,
+    context_management: list[dict[str, Any]] | None = None,
     store: bool | None = None,
     service_tier: str | None = None,
     user: str | None = None,
@@ -406,14 +439,16 @@ async def aresponses(
     prompt_cache_key: str | None = None,
     prompt_cache_retention: str | None = None,
     conversation: str | dict[str, Any] | None = None,
+    extra_body: dict[str, Any] | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+) -> ResponseResource | Response | ParsedResponse[Any] | AsyncIterator[ResponseStreamEvent]:
     """Create a response using the OpenResponses API.
 
     This implements the OpenResponses specification and returns either
     `openresponses_types.ResponseResource` (for OpenResponses-compliant providers)
     or `openai.types.responses.Response` (for providers using OpenAI's native API).
+    If a structured `response_format` type is given, a `ParsedResponse` (with `output_parsed`) is returned.
     If `stream=True`, an iterator of `any_llm.types.responses.ResponseStreamEvent` items is returned.
 
     Args:
@@ -422,9 +457,9 @@ async def aresponses(
             Legacy format 'provider/model' is also supported but deprecated.
         provider: **Recommended**: Provider name to use for the request (e.g., 'openai', 'mistral').
             When provided, the model parameter should contain only the model name.
-        input_data: The input payload accepted by provider's Responses API.
-            For OpenAI-compatible providers, this is typically a list mixing
-            text, images, and tool instructions, or a dict per OpenAI spec.
+        input_data: Input text or a list of wire-format Responses items.
+            Items are passed through unchanged so prior response output and
+            reasoning items can be replayed in a stateless conversation.
         tools: Optional tools for tool calling (Python callables or OpenAI tool dicts)
         tool_choice: Controls which tools the model can call
         max_output_tokens: Maximum number of output tokens to generate
@@ -438,9 +473,15 @@ async def aresponses(
         parallel_tool_calls: Whether to allow the model to run tool calls in parallel.
         reasoning: Configuration options for reasoning models.
         text: Configuration options for a text response from the model. Can be plain text or structured JSON data.
+        response_format: Structured-output type. A Pydantic ``BaseModel`` or dataclass returns a ``ParsedResponse``
+            with the parsed object in ``output_parsed`` (the analogue of ``client.responses.parse``); a raw
+            ``text.format`` dict is passed through unparsed.
         presence_penalty: Penalizes new tokens based on whether they appear in the text so far.
         frequency_penalty: Penalizes new tokens based on their frequency in the text so far.
         truncation: Controls how the service truncates input when it exceeds the model context window.
+        context_management: OpenAI Responses context management configuration. Use a
+            `compaction` entry with `compact_threshold` to enable server-side compaction;
+            see [OpenAI's compaction documentation](https://platform.openai.com/docs/guides/compaction).
         store: Whether to store the response so it can be retrieved later.
         service_tier: The service tier to use for this request.
         user: A unique identifier representing your end user.
@@ -452,13 +493,15 @@ async def aresponses(
         prompt_cache_key: A key to use when reading from or writing to the prompt cache.
         prompt_cache_retention: How long to retain a prompt cache entry created by this request.
         conversation: The conversation to associate this response with (ID string or ConversationParam object).
+        extra_body: Additional fields to merge into an OpenAI-compatible Responses request body.
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
     Returns:
         Either a `ResponseResource` object (OpenResponses-compliant providers),
-        a `Response` object (non-compliant providers), or an iterator of
-        `ResponseStreamEvent` (streaming).
+        a `Response` object (non-compliant providers), a `ParsedResponse` (with
+        `output_parsed`) when a structured `response_format` type is given, or an
+        iterator of `ResponseStreamEvent` (streaming).
 
     Raises:
         NotImplementedError: If the selected provider does not support the Responses API.
@@ -467,7 +510,7 @@ async def aresponses(
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_id = model
 
     llm = AnyLLM.create(
@@ -490,9 +533,11 @@ async def aresponses(
         parallel_tool_calls=parallel_tool_calls,
         reasoning=reasoning,
         text=text,
+        response_format=response_format,
         presence_penalty=presence_penalty,
         frequency_penalty=frequency_penalty,
         truncation=truncation,
+        context_management=context_management,
         store=store,
         service_tier=service_tier,
         user=user,
@@ -504,6 +549,7 @@ async def aresponses(
         prompt_cache_key=prompt_cache_key,
         prompt_cache_retention=prompt_cache_retention,
         conversation=conversation,
+        extra_body=extra_body,
         **kwargs,
     )
 
@@ -525,11 +571,15 @@ def messages(
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
     cache_control: dict[str, Any] | None = None,
+    prompt_cache_key: str | None = None,
+    context_management: dict[str, Any] | None = None,
+    betas: list[str] | None = None,
+    output_format: type | dict[str, Any] | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> MessageResponse | Iterator[MessageStreamEvent]:
+) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | Iterator[MessageStreamEvent]:
     """Create a message using the Anthropic Messages API.
 
     Args:
@@ -549,19 +599,30 @@ def messages(
         metadata: Request metadata.
         thinking: Thinking/reasoning configuration.
         cache_control: Cache control configuration for prompt caching.
+        prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
+        context_management: Anthropic context management configuration. The `compact_20260112`
+            strategy requires a supported model. Its `input_tokens` trigger value must be at
+            least 50,000 when provided; see [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction).
+        betas: Anthropic beta identifiers.
+        output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
+            Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
+            Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
+            holds the parsed JSON). The call returns Anthropic's ``ParsedMessage``. Not supported
+            with streaming.
         api_key: API key for the provider.
         api_base: Base URL for the provider API.
         client_args: Additional provider-specific arguments for client instantiation.
         **kwargs: Additional provider-specific arguments.
 
     Returns:
-        MessageResponse or an iterator of MessageStreamEvent (if streaming).
+        MessageResponse (or ParsedMessage when `output_format` is given), or an iterator of
+        MessageStreamEvent (if streaming).
 
     """
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_id = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -580,6 +641,10 @@ def messages(
         metadata=metadata,
         thinking=thinking,
         cache_control=cache_control,
+        prompt_cache_key=prompt_cache_key,
+        context_management=context_management,
+        betas=betas,
+        output_format=output_format,
         **kwargs,
     )
 
@@ -601,11 +666,15 @@ async def amessages(
     metadata: dict[str, Any] | None = None,
     thinking: dict[str, Any] | None = None,
     cache_control: dict[str, Any] | None = None,
+    prompt_cache_key: str | None = None,
+    context_management: dict[str, Any] | None = None,
+    betas: list[str] | None = None,
+    output_format: type | dict[str, Any] | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> MessageResponse | AsyncIterator[MessageStreamEvent]:
+) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStreamEvent]:
     """Create a message using the Anthropic Messages API asynchronously.
 
     Args:
@@ -625,19 +694,30 @@ async def amessages(
         metadata: Request metadata.
         thinking: Thinking/reasoning configuration.
         cache_control: Cache control configuration for prompt caching.
+        prompt_cache_key: A key to use when reading from or writing to a provider's prompt cache.
+        context_management: Anthropic context management configuration. The `compact_20260112`
+            strategy requires a supported model. Its `input_tokens` trigger value must be at
+            least 50,000 when provided; see [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction).
+        betas: Anthropic beta identifiers.
+        output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
+            Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
+            Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
+            holds the parsed JSON). The call returns Anthropic's ``ParsedMessage``. Not supported
+            with streaming.
         api_key: API key for the provider.
         api_base: Base URL for the provider API.
         client_args: Additional provider-specific arguments for client instantiation.
         **kwargs: Additional provider-specific arguments.
 
     Returns:
-        MessageResponse or an async iterator of MessageStreamEvent (if streaming).
+        MessageResponse (or ParsedMessage when `output_format` is given), or an async iterator
+        of MessageStreamEvent (if streaming).
 
     """
     if provider is None:
         provider_key, model_id = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_id = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -656,6 +736,10 @@ async def amessages(
         metadata=metadata,
         thinking=thinking,
         cache_control=cache_control,
+        prompt_cache_key=prompt_cache_key,
+        context_management=context_management,
+        betas=betas,
+        output_format=output_format,
         **kwargs,
     )
 
@@ -691,7 +775,7 @@ def embedding(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -729,7 +813,7 @@ async def aembedding(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -777,7 +861,7 @@ def image_generation(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -835,7 +919,7 @@ async def aimage_generation(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -896,7 +980,7 @@ def transcription(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -954,7 +1038,7 @@ async def atranscription(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -1010,7 +1094,7 @@ def speech(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -1063,7 +1147,7 @@ async def aspeech(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -1117,7 +1201,7 @@ def moderation(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -1138,7 +1222,7 @@ async def amoderation(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
@@ -1158,7 +1242,7 @@ def _resolve_rerank_target(
     if provider is None:
         provider_key, model_name = AnyLLM.split_model_provider(model)
     else:
-        provider_key = LLMProvider.from_string(provider)
+        provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
     if top_n is not None:
@@ -1241,7 +1325,7 @@ def list_models(
     **kwargs: Any,
 ) -> Sequence[Model]:
     """List available models for a provider."""
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return llm.list_models(**kwargs)
 
 
@@ -1253,7 +1337,7 @@ async def alist_models(
     **kwargs: Any,
 ) -> Sequence[Model]:
     """List available models for a provider asynchronously."""
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return await llm.alist_models(**kwargs)
 
 
@@ -1286,7 +1370,7 @@ def create_batch(
         The created batch object
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return llm.create_batch(
         input_file_path=input_file_path,
         endpoint=endpoint,
@@ -1325,7 +1409,7 @@ async def acreate_batch(
         The created batch object
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return await llm.acreate_batch(
         input_file_path=input_file_path,
         endpoint=endpoint,
@@ -1358,7 +1442,7 @@ def retrieve_batch(
         The batch object
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return llm.retrieve_batch(batch_id, **kwargs)
 
 
@@ -1385,7 +1469,7 @@ async def aretrieve_batch(
         The batch object
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return await llm.aretrieve_batch(batch_id, **kwargs)
 
 
@@ -1412,7 +1496,7 @@ def cancel_batch(
         The cancelled batch object
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return llm.cancel_batch(batch_id, **kwargs)
 
 
@@ -1439,7 +1523,7 @@ async def acancel_batch(
         The cancelled batch object
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return await llm.acancel_batch(batch_id, **kwargs)
 
 
@@ -1468,7 +1552,7 @@ def list_batches(
         A list of batch objects
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return llm.list_batches(after=after, limit=limit, **kwargs)
 
 
@@ -1497,7 +1581,7 @@ async def alist_batches(
         A list of batch objects
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return await llm.alist_batches(after=after, limit=limit, **kwargs)
 
 
@@ -1524,7 +1608,7 @@ def retrieve_batch_results(
         The batch results containing per-request outcomes.
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return llm.retrieve_batch_results(batch_id, **kwargs)
 
 
@@ -1551,5 +1635,5 @@ async def aretrieve_batch_results(
         The batch results containing per-request outcomes.
 
     """
-    llm = AnyLLM.create(LLMProvider.from_string(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return await llm.aretrieve_batch_results(batch_id, **kwargs)

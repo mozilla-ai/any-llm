@@ -1,6 +1,6 @@
 import re
-from collections.abc import AsyncIterator
-from typing import Any, TypeVar
+from collections.abc import AsyncIterator, Callable
+from typing import Any, Literal, TypeVar
 
 from any_llm.constants import REASONING_FIELD_NAMES
 
@@ -25,21 +25,30 @@ def find_reasoning_tag(text: str, opening: bool = True) -> tuple[int, str] | Non
     return (earliest_pos, earliest_tag) if earliest_tag else None
 
 
-def is_partial_reasoning_tag(text: str, opening: bool = True) -> bool:
-    """Check if text could be the start of any reasoning tag."""
+def partial_reasoning_tag_suffix_len(text: str, *, tag_kind: Literal["opening", "closing"]) -> int:
+    """Length of the longest suffix of text that is a proper prefix of a reasoning tag.
+
+    A non-zero result means the tail of ``text`` may become a complete reasoning tag once
+    more content arrives, so it has to stay buffered instead of being flushed downstream.
+    Returns 0 when no suffix could grow into a tag.
+    """
+    longest = 0
     for tag_name in REASONING_FIELD_NAMES:
-        tag = f"<{tag_name}>" if opening else f"</{tag_name}>"
-        for i in range(1, len(tag) + 1):
-            if text.startswith(tag[:i]):
-                return True
-    return False
+        tag = f"<{tag_name}>" if tag_kind == "opening" else f"</{tag_name}>"
+        for i in range(min(len(text), len(tag) - 1), 0, -1):
+            if text.endswith(tag[:i]):
+                longest = max(longest, i)
+                break
+    return longest
 
 
 async def process_streaming_reasoning_chunks(
     chunks: AsyncIterator[T],
-    get_content: Any,
-    set_content: Any,
-    set_reasoning: Any,
+    get_content: Callable[[T], str | None],
+    set_content: Callable[[T, str | None], T],
+    set_reasoning: Callable[[T, str], T],
+    is_terminal: Callable[[T], bool],
+    clear_stream_metadata: Callable[[T], T],
 ) -> AsyncIterator[T]:
     """Process streaming chunks to extract reasoning from XML tags.
 
@@ -51,6 +60,8 @@ async def process_streaming_reasoning_chunks(
         get_content: Callable that extracts content string from a chunk (returns str | None)
         set_content: Callable that sets content on a chunk copy (chunk, content) -> chunk
         set_reasoning: Callable that sets reasoning on a chunk copy (chunk, reasoning) -> chunk
+        is_terminal: Callable that reports whether a chunk carries a finish reason
+        clear_stream_metadata: Callable that removes metadata from a synthetic flush chunk
 
     Yields:
         Processed chunks with reasoning extracted and separated from content
@@ -59,14 +70,25 @@ async def process_streaming_reasoning_chunks(
     buffer = ""
     current_tag = None
     reasoning_buffer = ""
+    last_chunk: T | None = None
+    terminal_chunk: T | None = None
+    terminal_content_parts: list[str] = []
+    terminal_reasoning_parts: list[str] = []
+    held_chunks: list[T] = []
+    last_chunk_was_yielded = False
 
     async for original_chunk in chunks:
         content = get_content(original_chunk)
 
         if not content:
-            yield original_chunk
+            if is_terminal(original_chunk) and (buffer or reasoning_buffer):
+                held_chunks.append(original_chunk)
+            else:
+                yield original_chunk
             continue
 
+        last_chunk = original_chunk
+        last_chunk_was_yielded = False
         buffer += content
         content_parts = []
         reasoning_parts = []
@@ -81,9 +103,13 @@ async def process_streaming_reasoning_chunks(
                     tag_full = f"<{tag_name}>"
                     buffer = buffer[tag_start + len(tag_full) :]
                     current_tag = tag_name
-                elif is_partial_reasoning_tag(buffer, opening=True):
-                    break
                 else:
+                    partial_len = partial_reasoning_tag_suffix_len(buffer, tag_kind="opening")
+                    if partial_len:
+                        if partial_len < len(buffer):
+                            content_parts.append(buffer[:-partial_len])
+                        buffer = buffer[len(buffer) - partial_len :]
+                        break
                     content_parts.append(buffer)
                     buffer = ""
             else:
@@ -94,13 +120,20 @@ async def process_streaming_reasoning_chunks(
                     reasoning_buffer = ""
                     buffer = buffer[tag_end + len(tag_close) :]
                     current_tag = None
-                elif is_partial_reasoning_tag(buffer, opening=False):
-                    reasoning_buffer += buffer
-                    buffer = ""
-                    break
                 else:
+                    partial_len = partial_reasoning_tag_suffix_len(buffer, tag_kind="closing")
+                    if partial_len:
+                        reasoning_buffer += buffer[: len(buffer) - partial_len]
+                        buffer = buffer[len(buffer) - partial_len :]
+                        break
                     reasoning_buffer += buffer
                     buffer = ""
+
+        if is_terminal(original_chunk) and (buffer or reasoning_buffer):
+            terminal_chunk = original_chunk
+            terminal_content_parts.extend(content_parts)
+            terminal_reasoning_parts.extend(reasoning_parts)
+            continue
 
         if content_parts or reasoning_parts:
             modified_chunk = original_chunk.model_copy(deep=True)  # type: ignore[attr-defined]
@@ -108,10 +141,41 @@ async def process_streaming_reasoning_chunks(
             if reasoning_parts:
                 modified_chunk = set_reasoning(modified_chunk, "".join(reasoning_parts))
             yield modified_chunk
+            last_chunk_was_yielded = True
         elif not buffer:
             modified_chunk = original_chunk.model_copy(deep=True)  # type: ignore[attr-defined]
             modified_chunk = set_content(modified_chunk, None)
             yield modified_chunk
+            last_chunk_was_yielded = True
+
+    if terminal_chunk is not None:
+        final_chunk = terminal_chunk.model_copy(deep=True)  # type: ignore[attr-defined]
+        final_content = "".join(terminal_content_parts)
+        final_reasoning = "".join(terminal_reasoning_parts)
+        if current_tag is None:
+            final_content += buffer
+        else:
+            final_reasoning += reasoning_buffer + buffer
+        final_chunk = set_content(
+            final_chunk,
+            final_content or None,
+        )
+        if final_reasoning:
+            final_chunk = set_reasoning(final_chunk, final_reasoning)
+        yield final_chunk
+    elif last_chunk is not None and (buffer or reasoning_buffer):
+        final_chunk = last_chunk.model_copy(deep=True)  # type: ignore[attr-defined]
+        if last_chunk_was_yielded:
+            final_chunk = clear_stream_metadata(final_chunk)
+        if current_tag is None:
+            final_chunk = set_content(final_chunk, buffer)
+        else:
+            final_chunk = set_content(final_chunk, None)
+            final_chunk = set_reasoning(final_chunk, reasoning_buffer + buffer)
+        yield final_chunk
+
+    for held_chunk in held_chunks:
+        yield held_chunk
 
 
 def normalize_reasoning_from_provider_fields_and_xml_tags(message_dict: dict[str, Any]) -> None:

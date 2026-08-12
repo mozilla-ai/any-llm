@@ -53,6 +53,7 @@ from any_llm.exceptions import (
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription, TranscriptionVerbose
 from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.completion import ParsedChatCompletion, ParsedChatCompletionMessage, ParsedChoice
+from any_llm.types.responses import ParsedResponse
 
 try:
     __version__ = version("any-llm-sdk")
@@ -83,6 +84,7 @@ __all__ = [
     "ParsedChatCompletion",
     "ParsedChatCompletionMessage",
     "ParsedChoice",
+    "ParsedResponse",
     "ProviderError",
     "RateLimitError",
     "Transcription",

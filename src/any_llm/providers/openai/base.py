@@ -7,7 +7,7 @@ from typing import Any, Literal, cast
 
 from openai import AsyncOpenAI
 from openai._streaming import AsyncStream
-from openai._types import NOT_GIVEN, Omit
+from openai._types import Omit
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from openai.types.chat.parsed_chat_completion import ParsedChatCompletion as OpenAIParsedChatCompletion
@@ -36,8 +36,12 @@ from any_llm.types.completion import (
 from any_llm.types.image import ImageGenerationParams, ImagesResponse
 from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
-from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
-from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
+from any_llm.types.responses import ParsedResponse, Response, ResponsesParams, ResponseStreamEvent
+from any_llm.utils.structured_output import (
+    build_responses_text_format,
+    get_json_schema,
+    is_structured_output_type,
+)
 
 
 class BaseOpenAIProvider(AnyLLM):
@@ -75,18 +79,21 @@ class BaseOpenAIProvider(AnyLLM):
         current OpenAI spec.  Providers whose API does not accept
         ``max_completion_tokens`` should override this method to remap back.
 
-        Plain dataclasses are converted to JSON schema dicts since the
-        OpenAI SDK's ``.parse()`` only supports Pydantic BaseModel types.
+        Structured-output types are converted to JSON schema dicts when streaming, or
+        when using plain dataclasses, since the OpenAI SDK's ``.parse()`` helper only
+        supports non-streaming calls and Pydantic BaseModel types.
         """
-        if is_structured_output_type(params.response_format) and not issubclass(params.response_format, BaseModel):
-            params.response_format = {
+        converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
+        if is_structured_output_type(params.response_format) and (
+            params.stream or not issubclass(params.response_format, BaseModel)
+        ):
+            converted_params["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {
                     "name": params.response_format.__name__,
                     "schema": get_json_schema(params.response_format),
                 },
             }
-        converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
         converted_params.update(kwargs)
 
         if "max_tokens" in converted_params:
@@ -198,10 +205,7 @@ class BaseOpenAIProvider(AnyLLM):
         response_format = completion_kwargs.get("response_format")
         use_parse = is_structured_output_type(response_format)
 
-        if response_format:
-            if params.stream:
-                msg = "stream is not supported for response_format"
-                raise ValueError(msg)
+        if response_format and not params.stream:
             completion_kwargs.pop("stream", None)
 
         if use_parse:
@@ -223,13 +227,34 @@ class BaseOpenAIProvider(AnyLLM):
     @override
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
-    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+    ) -> ResponseResource | Response | ParsedResponse[Any] | AsyncIterator[ResponseStreamEvent]:
         """Call OpenAI Responses API"""
-        response = await self.client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
+        response_format = params.response_format
+        create_kwargs = params.model_dump(exclude_none=True, exclude={"response_format"})
+
+        if is_structured_output_type(response_format):
+            # Pydantic models use the native parse() helper (mirrors chat.completions.parse);
+            # dataclasses request schema-conformant JSON via text.format and are parsed by the base layer.
+            create_kwargs.pop("text", None)
+            if issubclass(response_format, BaseModel):
+                return await self.client.responses.parse(
+                    text_format=response_format,
+                    **create_kwargs,
+                    **kwargs,
+                )
+            create_kwargs["text"] = build_responses_text_format(response_format)
+        elif isinstance(response_format, dict):
+            create_kwargs["text"] = {"format": response_format}
+
+        response = await self.client.responses.create(**create_kwargs, **kwargs)
 
         if not isinstance(response, Response | AsyncStream):
             msg = f"Responses API returned an unexpected type: {type(response)}"
             raise ValueError(msg)
+        # When a structured response_format was requested, return the raw Response so the base
+        # layer can parse it into a ParsedResponse (do not collapse it to a ResponseResource).
+        if is_structured_output_type(response_format):
+            return response
         # if it's a Response, try to convert it to a ResponseResource. If that fails, return the Response
         if isinstance(response, Response):
             try:
@@ -254,11 +279,15 @@ class BaseOpenAIProvider(AnyLLM):
             msg = "This provider does not support embeddings."
             raise NotImplementedError(msg)
 
+        # `_convert_embedding_params` already folds `dimensions` (and any other
+        # caller kwargs) into the dict, so spread it straight through — mirroring
+        # `_acompletion`, which names only `model`/`messages` and spreads the
+        # rest. Forwarding `dimensions` explicitly *as well* passed it twice and
+        # raised "got multiple values for keyword argument 'dimensions'".
         embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
         return self._convert_embedding_response(
             await self.client.embeddings.create(
                 model=model,
-                dimensions=kwargs.get("dimensions", NOT_GIVEN),
                 **embedding_kwargs,
             )
         )

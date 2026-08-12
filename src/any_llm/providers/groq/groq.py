@@ -3,12 +3,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from openai import AsyncOpenAI, AsyncStream
+from pydantic import BaseModel
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
-from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
+from any_llm.types.responses import ParsedResponse, Response, ResponsesParams, ResponseStreamEvent
+from any_llm.utils.structured_output import (
+    build_responses_text_format,
+    get_json_schema,
+    is_structured_output_type,
+)
 
 if TYPE_CHECKING:
     from openresponses_types import ResponseResource
@@ -66,8 +71,10 @@ class GroqProvider(AnyLLM):
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Groq API."""
-        # Groq does not support providing reasoning effort
-        converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
+        # Groq does not support providing reasoning effort.
+        # stream_options is an OpenAI-only knob (the Messages bridge sets it to
+        # request streaming usage); the Groq SDK rejects it, so drop it here.
+        converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "stream_options"})
         if converted_params.get("reasoning_effort") in ("auto", "none"):
             converted_params.pop("reasoning_effort")
         converted_params.update(kwargs)
@@ -114,6 +121,8 @@ class GroqProvider(AnyLLM):
     async def _stream_async_completion(
         self, params: CompletionParams, **kwargs: Any
     ) -> AsyncIterator[ChatCompletionChunk]:
+        # Groq does not currently support streaming structured outputs.
+        # See https://console.groq.com/docs/structured-outputs
         if params.stream and params.response_format:
             msg = "stream and response_format"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
@@ -165,7 +174,7 @@ class GroqProvider(AnyLLM):
     @override
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
-    ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
+    ) -> ResponseResource | Response | ParsedResponse[Any] | AsyncIterator[ResponseStreamEvent]:
         """Call Groq Responses API and normalize into ChatCompletion/Chunks."""
         # Python SDK doesn't yet support it: https://community.groq.com/feature-requests-6/groq-python-sdk-support-for-responses-api-262
 
@@ -179,7 +188,18 @@ class GroqProvider(AnyLLM):
             **self.kwargs,
         )
 
-        response = await client.responses.create(**params.model_dump(exclude_none=True), **kwargs)
+        response_format = params.response_format
+        create_kwargs = params.model_dump(exclude_none=True, exclude={"response_format"})
+
+        if is_structured_output_type(response_format):
+            create_kwargs.pop("text", None)
+            if issubclass(response_format, BaseModel):
+                return await client.responses.parse(text_format=response_format, **create_kwargs, **kwargs)
+            create_kwargs["text"] = build_responses_text_format(response_format)
+        elif isinstance(response_format, dict):
+            create_kwargs["text"] = {"format": response_format}
+
+        response = await client.responses.create(**create_kwargs, **kwargs)
 
         if not isinstance(response, Response | AsyncStream):
             msg = f"Responses API returned an unexpected type: {type(response)}"

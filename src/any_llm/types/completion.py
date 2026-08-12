@@ -22,19 +22,51 @@ from openai.types.completion_usage import CompletionUsage as OpenAICompletionUsa
 from openai.types.completion_usage import PromptTokensDetails as OpenAIPromptTokensDetails
 from openai.types.create_embedding_response import Usage as OpenAIUsage
 from openai.types.embedding import Embedding as OpenAIEmbedding
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_serializer, model_validator
 
 # See https://github.com/mozilla-ai/any-llm/issues/95:
 # OpenAI Completion API doesn't include reasoning information, so we need to extend the openai type
 
 
 class Reasoning(BaseModel):
+    """Reasoning content emitted by a model.
+
+    Serializes as a plain JSON string so that responses are compatible with
+    OpenAI-style clients that expect ``delta.reasoning`` / ``message.reasoning``
+    to be a string. The Python attribute ``content`` remains available for
+    typed access (e.g. ``message.reasoning.content``).
+    """
+
     content: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_input(cls, value: Any) -> Any:
+        """Accept either a plain string or the ``{"content": str}`` object form."""
+        if isinstance(value, str):
+            return {"content": value}
+        if isinstance(value, dict) and "content" in value and value["content"] is not None:
+            return {"content": str(value["content"])}
+        return value
+
+    @model_serializer
+    def _serialize(self) -> str:
+        """Serialize as a plain string for OpenAI-compatible wire format."""
+        return self.content
 
 
 class ChatCompletionMessage(OpenAIChatCompletionMessage):
     reasoning: Reasoning | None = None
     annotations: list[dict[str, Any]] | None = None  # type: ignore[assignment]
+    extra_content: dict[str, Any] | None = None
+    """Provider-specific metadata that needs to be preserved across multi-turn conversations.
+
+    For example, Anthropic's extended thinking requires the encrypted ``signature`` of a
+    ``thinking`` block to be passed back unmodified alongside subsequent tool calls.
+
+    Example extra_content structure for Anthropic:
+        {"anthropic": {"signature": "<encrypted-signature>"}}
+    """
 
 
 class Choice(OpenAIChoice):
@@ -61,8 +93,26 @@ class ParsedChatCompletion(ChatCompletion, Generic[ContentType]):
     choices: list[ParsedChoice[ContentType]]  # type: ignore[assignment]
 
 
+class ChoiceDeltaToolCall(OpenAIChoiceDeltaToolCall):
+    """Streaming counterpart of ``ChatCompletionMessageFunctionToolCall``.
+
+    Adds the same ``extra_content`` field so provider-specific tool-call metadata (e.g.
+    Gemini's ``thought_signature``) can be carried on streaming deltas, not just on the
+    final non-streaming tool call.
+    """
+
+    extra_content: dict[str, Any] | None = None
+
+
 class ChoiceDelta(OpenAIChoiceDelta):
     reasoning: Reasoning | None = None
+    tool_calls: list[ChoiceDeltaToolCall] | None = None  # type: ignore[assignment]
+    extra_content: dict[str, Any] | None = None
+    """Streaming counterpart of ``ChatCompletionMessage.extra_content``.
+
+    Carries provider-specific metadata (e.g. Anthropic's thinking block ``signature``)
+    that arrives as part of a streaming delta rather than the final message.
+    """
 
 
 class ChunkChoice(OpenAIChunkChoice):
@@ -95,10 +145,9 @@ PromptTokensDetails = OpenAIPromptTokensDetails
 CreateEmbeddingResponse = OpenAICreateEmbeddingResponse
 Embedding = OpenAIEmbedding
 Usage = OpenAIUsage
-ChoiceDeltaToolCall = OpenAIChoiceDeltaToolCall
 ChoiceDeltaToolCallFunction = OpenAIChoiceDeltaToolCallFunction
 
-ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "auto"]
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max", "auto"]
 
 
 class CompletionParams(BaseModel):
@@ -183,3 +232,6 @@ class CompletionParams(BaseModel):
 
     reasoning_effort: ReasoningEffort | None = "auto"
     """Reasoning effort level for models that support it. "auto" will map to each provider's default."""
+
+    prompt_cache_key: str | None = None
+    """A key to use when reading from or writing to a provider's prompt cache."""

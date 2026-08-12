@@ -96,6 +96,28 @@ print(response.choices[0].message.content)
 
 **Finding model names:** Check the [providers page](providers.md) for provider IDs, or use the [`list_models`](api/list-models.md) API to see available models for your provider.
 
+## Custom OpenAI-compatible Endpoints
+
+If your gateway or server speaks the OpenAI API but is not one of the [supported providers](providers.md), point any-llm at it directly with `AnyLLM.create_openai_compatible`. The provider reports the name you give it rather than reporting itself as `openai`, and is used exactly like any other provider instance:
+
+```python
+from any_llm import AnyLLM
+
+llm = AnyLLM.create_openai_compatible(
+    name="mygateway",
+    api_base="https://mygateway.example/v1",
+    api_key="your-key",  # optional for keyless local servers
+)
+
+response = llm.completion(
+    model="some-model",
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(response.choices[0].message.content)
+```
+
+Capability flags follow the OpenAI-compatible defaults. A capability the endpoint does not implement fails either locally with `NotImplementedError` (for flag-gated capabilities such as batch) or with the endpoint's own error for calls that any-llm forwards. Use this whenever you need an OpenAI-compatible endpoint that any-llm does not ship a dedicated provider for.
+
 ## Streaming
 
 For the [providers that support streaming](providers.md), you can enable it by passing `stream=True`:
@@ -282,3 +304,34 @@ except RateLimitError as e:
     print(f"Provider: {e.provider_name}")
     print(f"Original exception: {type(e.original_exception)}")
 ```
+
+### Structured Error Metadata
+
+Unified exceptions also carry the structured HTTP fields the provider reported, so
+you can classify a failure without unwrapping `original_exception` and coupling to a
+specific SDK's attribute layout:
+
+| Attribute | Meaning |
+| --- | --- |
+| `status_code` | HTTP status the provider returned |
+| `code` | Provider-specific error code from the response body |
+| `param` | Request field the provider flagged as the cause |
+| `error_type` | Provider-specific error category, such as `"invalid_request_error"` |
+
+```python
+from any_llm.exceptions import InvalidRequestError
+
+try:
+    response = completion(model="gpt-4", provider="openai", messages=messages)
+except InvalidRequestError as e:
+    if e.status_code == 400 and e.param == "reasoning_effort":
+        print("Retry with reasoning_effort set to 'none'")
+```
+
+These fields are populated best-effort from the shapes provider SDKs expose: an
+attribute on the exception, or the parsed response body. Coverage varies by provider,
+so treat every field as optional. Anything `any-llm` cannot recover is `None`,
+including `status_code` for a non-HTTP failure such as a timeout or connection error.
+
+`status_code` also drives which exception type you get. See
+[Exceptions](api/exceptions.md) for the full status-to-type mapping.

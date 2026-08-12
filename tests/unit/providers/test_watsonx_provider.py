@@ -176,6 +176,20 @@ def test_convert_completion_params_filters_reasoning_effort(reasoning_effort: st
     assert "reasoning_effort" not in result
 
 
+def test_convert_completion_params_drops_stream_options() -> None:
+    """stream_options is an OpenAI-only knob (set by the Messages bridge for
+    streaming usage). Watsonx merges the params dict straight into its chat
+    payload, so it must be dropped rather than forwarded as an unsupported field."""
+    params = CompletionParams(
+        model_id="test-model",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=True,
+        stream_options={"include_usage": True},
+    )
+    result = WatsonxProvider._convert_completion_params(params)
+    assert "stream_options" not in result
+
+
 def test_convert_streaming_chunk_with_tool_calls() -> None:
     """Test streaming chunk conversion with tool calls."""
     chunk = {
@@ -323,3 +337,16 @@ def test_convert_streaming_chunk_empty_choices() -> None:
     result = _convert_streaming_chunk(chunk)
 
     assert result.choices == []
+
+
+def test_timeout_is_dropped_with_a_warning() -> None:
+    """watsonx forwards these kwargs as generation parameters, so a per-request timeout can't be honored."""
+    with patch("any_llm.providers.watsonx.watsonx.logger") as mock_logger:
+        result = WatsonxProvider._convert_completion_params(
+            CompletionParams(model_id="model", messages=[{"role": "user", "content": "Hello"}]),
+            timeout=600,
+        )
+
+    assert "timeout" not in result
+    mock_logger.warning.assert_called_once()
+    assert "client_args" in mock_logger.warning.call_args[0][0]

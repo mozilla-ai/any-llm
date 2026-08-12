@@ -1,19 +1,11 @@
-from any_llm.providers.openai.base import BaseOpenAIProvider
+"""Import shim: this provider migrated to the config registry.
 
+The provider is now a row in ``any_llm.providers.registry``; this module keeps
+the historical deep-import path working.
+"""
 
-class PerplexityProvider(BaseOpenAIProvider):
-    """Perplexity provider for accessing LLMs through Perplexity's OpenAI-compatible API."""
+from any_llm.providers.registry import get_registry_provider_class
 
-    API_BASE = "https://api.perplexity.ai"
-    ENV_API_KEY_NAME = "PERPLEXITY_API_KEY"
-    ENV_API_BASE_NAME = "PERPLEXITY_BASE_URL"
-    PROVIDER_NAME = "perplexity"
-    PROVIDER_DOCUMENTATION_URL = "https://docs.perplexity.ai/"
+PerplexityProvider = get_registry_provider_class("perplexity")
 
-    SUPPORTS_COMPLETION_STREAMING = True
-    SUPPORTS_COMPLETION = True
-    SUPPORTS_RESPONSES = False
-    SUPPORTS_COMPLETION_REASONING = False
-    SUPPORTS_COMPLETION_PDF = False
-    SUPPORTS_EMBEDDING = False
-    SUPPORTS_LIST_MODELS = False
+__all__ = ["PerplexityProvider"]

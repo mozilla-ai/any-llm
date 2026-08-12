@@ -180,7 +180,12 @@ class AzureProvider(AnyLLM):
         if params.response_format:
             azure_response_format = _convert_response_format(params.response_format)
 
-        call_kwargs = params.model_dump(exclude_none=True, exclude={"model_id", "messages", "response_format"})
+        # stream_options is an OpenAI-only knob (the Messages bridge sets it to
+        # request streaming usage); the Azure AI Inference SDK does not model it
+        # and forwards unknown kwargs to the transport, which rejects it.
+        call_kwargs = params.model_dump(
+            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream_options"}
+        )
         if azure_response_format:
             call_kwargs["response_format"] = azure_response_format
 

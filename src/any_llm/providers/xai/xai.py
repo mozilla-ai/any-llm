@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.logging import logger
 from any_llm.utils.structured_output import get_json_schema
 
 MISSING_PACKAGES_ERROR = None
@@ -59,13 +60,16 @@ class XaiProvider(AnyLLM):
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for xAI API."""
-        # xAI does not support providing reasoning effort
+        # xAI does not support providing reasoning effort.
+        # stream_options is an OpenAI-only knob (the Messages bridge sets it to
+        # request streaming usage); the xAI SDK rejects it, so drop it here.
         converted_params = params.model_dump(
             exclude_none=True,
             exclude={
                 "model_id",
                 "messages",
                 "stream",
+                "stream_options",
                 "response_format",
                 "tools",
                 "tool_choice",
@@ -74,6 +78,15 @@ class XaiProvider(AnyLLM):
         if converted_params.get("reasoning_effort") in ("auto", "none"):
             converted_params.pop("reasoning_effort")
         converted_params.update(kwargs)
+
+        # The xAI SDK sets timeouts on the gRPC client, not per request, so a per-request
+        # `timeout` cannot be honored here and would reach the SDK as an unexpected keyword.
+        if converted_params.pop("timeout", None) is not None:
+            logger.warning(
+                "xAI does not support a per-request 'timeout'; ignoring it. "
+                "Pass client_args={'timeout': seconds} to set it on the client instead."
+            )
+
         return converted_params
 
     @staticmethod

@@ -1,6 +1,7 @@
 import pytest
 
 from any_llm import AnyLLM
+from any_llm.constants import LLMProvider
 from any_llm.providers.databricks.databricks import DatabricksProvider
 
 
@@ -37,7 +38,7 @@ def test_factory_integration() -> None:
 def test_model_provider_split() -> None:
     """Test that model string parsing works correctly."""
     provider_enum, model_name = AnyLLM.split_model_provider("databricks:databricks-meta-llama-3-70b-instruct")
-    assert provider_enum.value == "databricks"
+    assert provider_enum is LLMProvider.DATABRICKS
     assert model_name == "databricks-meta-llama-3-70b-instruct"
 
 

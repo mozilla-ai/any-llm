@@ -1,12 +1,11 @@
-from any_llm.providers.openai.base import BaseOpenAIProvider
+"""Import shim: this provider migrated to the config registry.
 
+The provider is now a row in ``any_llm.providers.registry``; this module keeps
+the historical deep-import path working.
+"""
 
-class NebiusProvider(BaseOpenAIProvider):
-    API_BASE = "https://api.studio.nebius.ai/v1"
-    ENV_API_KEY_NAME = "NEBIUS_API_KEY"
-    ENV_API_BASE_NAME = "NEBIUS_API_BASE"
-    PROVIDER_NAME = "nebius"
-    PROVIDER_DOCUMENTATION_URL = "https://studio.nebius.ai/"
+from any_llm.providers.registry import get_registry_provider_class
 
-    SUPPORTS_COMPLETION_PDF = False
-    SUPPORTS_COMPLETION_REASONING = True
+NebiusProvider = get_registry_provider_class("nebius")
+
+__all__ = ["NebiusProvider"]

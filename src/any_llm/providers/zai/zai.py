@@ -4,7 +4,8 @@ from typing_extensions import override
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.types.completion import CompletionParams
+from any_llm.providers.zai.utils import _normalize_finish_reason
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 
 
 class ZaiProvider(BaseOpenAIProvider):
@@ -38,3 +39,15 @@ class ZaiProvider(BaseOpenAIProvider):
             param = "response_format"
             raise UnsupportedParameterError(param, "zai")
         return BaseOpenAIProvider._convert_completion_params(params, **kwargs)
+
+    @staticmethod
+    @override
+    def _convert_completion_response(response: Any) -> ChatCompletion:
+        _normalize_finish_reason(response)
+        return BaseOpenAIProvider._convert_completion_response(response)
+
+    @staticmethod
+    @override
+    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        _normalize_finish_reason(response)
+        return BaseOpenAIProvider._convert_completion_chunk_response(response, **kwargs)

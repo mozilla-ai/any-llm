@@ -1,15 +1,11 @@
-from any_llm.providers.openai.base import BaseOpenAIProvider
+"""Import shim: this provider migrated to the config registry.
 
+The provider is now a row in ``any_llm.providers.registry``; this module keeps
+the historical deep-import path working.
+"""
 
-class DatabricksProvider(BaseOpenAIProvider):
-    """Databricks Provider using the new response conversion utilities."""
+from any_llm.providers.registry import get_registry_provider_class
 
-    ENV_API_KEY_NAME = "DATABRICKS_TOKEN"
-    ENV_API_BASE_NAME = "DATABRICKS_HOST"
-    PROVIDER_NAME = "databricks"
-    PROVIDER_DOCUMENTATION_URL = "https://docs.databricks.com/"
+DatabricksProvider = get_registry_provider_class("databricks")
 
-    SUPPORTS_COMPLETION_IMAGE = False
-    SUPPORTS_COMPLETION_PDF = False
-    SUPPORTS_LIST_MODELS = False
-    SUPPORTS_COMPLETION_REASONING = True
+__all__ = ["DatabricksProvider"]

@@ -41,18 +41,31 @@ def test_preprocess_response_format() -> None:
 
 
 @pytest.mark.asyncio
-async def test_stream_and_response_format_combination_raises() -> None:
+async def test_stream_with_response_format_passes_to_chat_stream() -> None:
+    response_format = {"type": "json_object"}
     provider = _mk_provider()
 
-    with pytest.raises(UnsupportedParameterError):
-        await provider._acompletion(
-            CompletionParams(
-                model_id="model-id",
-                messages=[{"role": "user", "content": "Hello"}],
-                stream=True,
-                response_format={"type": "json_object"},
-            )
+    async def _stream() -> Any:
+        if False:
+            yield None
+
+    provider.client.chat_stream = Mock(return_value=_stream())
+    result = await provider._acompletion(
+        CompletionParams(
+            model_id="model-id",
+            messages=[{"role": "user", "content": "Hello"}],
+            stream=True,
+            response_format=response_format,
         )
+    )
+    collected = [chunk async for chunk in result]
+
+    assert collected == []
+    provider.client.chat_stream.assert_called_once_with(
+        model="model-id",
+        messages=[{"role": "user", "content": "Hello"}],
+        response_format=response_format,
+    )
 
 
 @pytest.mark.asyncio
@@ -218,6 +231,7 @@ def test_preprocess_response_format_unsupported_raises() -> None:
         ("medium", {"type": "enabled", "token_budget": 8192}),
         ("high", {"type": "enabled", "token_budget": 24576}),
         ("xhigh", {"type": "enabled", "token_budget": 32768}),
+        ("max", {"type": "enabled", "token_budget": 32768}),
     ],
 )
 async def test_reasoning_effort_mapped_to_thinking(
@@ -431,6 +445,20 @@ def test_convert_cohere_embedding_response_no_meta() -> None:
     assert result.usage.prompt_tokens == 0
     assert result.usage.total_tokens == 0
     assert len(result.data) == 1
+
+
+def test_convert_cohere_embedding_response_uses_billed_units_when_tokens_absent() -> None:
+    """embed-v4.0 reports usage under meta.billed_units; meta.tokens is null, so fall back to it."""
+    vectors = [[0.1, 0.2, 0.3]]
+    mock_response = _mock_embed_by_type_response(vectors)
+    mock_response.meta.tokens = None
+    mock_response.meta.billed_units = Mock()
+    mock_response.meta.billed_units.input_tokens = 7
+
+    result = _convert_cohere_embedding_response("embed-v4.0", mock_response)
+
+    assert result.usage.prompt_tokens == 7
+    assert result.usage.total_tokens == 7
 
 
 def test_convert_cohere_embedding_response_empty_vectors() -> None:
@@ -670,3 +698,38 @@ async def test_completion_with_image_content() -> None:
         user_msg = sent_messages[0]
         assert isinstance(user_msg["content"], list)
         assert user_msg["content"][1]["type"] == "image_url"
+
+
+def test_timeout_is_folded_into_request_options() -> None:
+    """Cohere carries a per-request timeout in ``request_options``, not as a top-level keyword."""
+    provider = _mk_provider()
+
+    converted = provider._convert_completion_params(
+        CompletionParams(model_id="command-a-03-2025", messages=[{"role": "user", "content": "Hi"}]),
+        timeout=600,
+    )
+
+    assert converted["request_options"] == {"timeout": 600}
+    assert "timeout" not in converted
+
+
+def test_timeout_does_not_override_explicit_request_options() -> None:
+    provider = _mk_provider()
+
+    converted = provider._convert_completion_params(
+        CompletionParams(model_id="command-a-03-2025", messages=[{"role": "user", "content": "Hi"}]),
+        timeout=600,
+        request_options={"timeout": 30, "max_retries": 2},
+    )
+
+    assert converted["request_options"] == {"timeout": 30, "max_retries": 2}
+
+
+def test_request_options_absent_when_timeout_not_requested() -> None:
+    provider = _mk_provider()
+
+    converted = provider._convert_completion_params(
+        CompletionParams(model_id="command-a-03-2025", messages=[{"role": "user", "content": "Hi"}])
+    )
+
+    assert "request_options" not in converted

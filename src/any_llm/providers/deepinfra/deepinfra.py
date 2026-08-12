@@ -1,12 +1,11 @@
-from any_llm.providers.openai.base import BaseOpenAIProvider
+"""Import shim: this provider migrated to the config registry.
 
+The provider is now a row in ``any_llm.providers.registry``; this module keeps
+the historical deep-import path working.
+"""
 
-class DeepinfraProvider(BaseOpenAIProvider):
-    API_BASE = "https://api.deepinfra.com/v1/openai"
-    ENV_API_KEY_NAME = "DEEPINFRA_API_KEY"
-    ENV_API_BASE_NAME = "DEEPINFRA_API_BASE"
-    PROVIDER_NAME = "deepinfra"
-    PROVIDER_DOCUMENTATION_URL = "https://deepinfra.com/docs/openai_api"
+from any_llm.providers.registry import get_registry_provider_class
 
-    SUPPORTS_COMPLETION_REASONING = True
-    SUPPORTS_COMPLETION_PDF = False
+DeepinfraProvider = get_registry_provider_class("deepinfra")
+
+__all__ = ["DeepinfraProvider"]

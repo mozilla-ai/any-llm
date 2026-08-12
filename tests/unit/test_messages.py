@@ -1,12 +1,99 @@
 """Tests for messages()/amessages() SDK API."""
 
-from typing import Any
+import json
+import threading
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from inspect import signature
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from anthropic.types.beta import (
+    BetaCompactionIterationUsage,
+    BetaContainer,
+    BetaIterationsUsage,
+    BetaMessage,
+    BetaMessageDeltaUsage,
+    BetaSkill,
+    BetaStopReason,
+    BetaUsage,
+)
+from anthropic.types.beta.beta_context_management_response import BetaContextManagementResponse
+from anthropic.types.beta.parsed_beta_message import ParsedBetaTextBlock
+from pydantic import BaseModel
+from typing_extensions import override
 
-from any_llm.api import amessages
-from any_llm.types.messages import MessageResponse
+from any_llm.any_llm import AnyLLM
+from any_llm.api import amessages, messages
+from any_llm.exceptions import UnsupportedParameterError
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    Choice,
+    ChoiceDelta,
+    ChunkChoice,
+    CompletionUsage,
+    PromptTokensDetails,
+)
+from any_llm.types.messages import (
+    BetaDiagnostics,
+    ContentBlock,
+    ContentBlockDeltaEvent,
+    MessageContentBlock,
+    MessageDeltaEvent,
+    MessageDeltaUsage,
+    MessageResponse,
+    MessagesParams,
+    MessageStopEvent,
+    MessageStreamEvent,
+    MessageUsage,
+    ParsedBetaMessage,
+    ParsedMessage,
+    ParsedTextBlock,
+    StopReason,
+)
+from any_llm.utils.aio import async_iter_to_sync_iter
+
+
+def test_stop_reason_aliases_anthropic_beta_type() -> None:
+    assert StopReason is BetaStopReason
+
+
+def test_content_block_alias_matches_message_content_block() -> None:
+    assert ContentBlock is MessageContentBlock
+
+
+def test_messages_params_exposes_prompt_cache_key_in_schema() -> None:
+    params = MessagesParams(
+        model="gpt-5.6",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        prompt_cache_key="tenant-1",
+    )
+
+    assert params.prompt_cache_key == "tenant-1"
+    assert "prompt_cache_key" in MessagesParams.model_json_schema()["properties"]
+
+
+@pytest.mark.asyncio
+async def test_amessages_rejects_prompt_cache_key_for_unsupported_provider() -> None:
+    pytest.importorskip("boto3")
+    from any_llm.providers.bedrock.bedrock import BedrockProvider
+
+    client = Mock()
+    provider = BedrockProvider(client=client)
+
+    with pytest.raises(UnsupportedParameterError, match="prompt_cache_key"):
+        await provider.amessages(
+            model="anthropic.claude-sonnet",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=100,
+            prompt_cache_key="tenant-1",
+        )
+
+    client.converse.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -99,6 +186,22 @@ def test_messages_params_with_all_fields() -> None:
     assert len(params.tools) == 1
 
 
+def test_messages_params_accepts_context_management_and_betas() -> None:
+    context_management = {"edits": [{"type": "compact_20260112"}]}
+    betas = ["compact-2026-01-12"]
+
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        context_management=context_management,
+        betas=betas,
+    )
+
+    assert params.context_management == context_management
+    assert params.betas == betas
+
+
 def test_messages_params_rejects_extra_fields() -> None:
     """Test MessagesParams rejects unknown fields (extra='forbid')."""
     from pydantic import ValidationError
@@ -132,6 +235,178 @@ def test_message_response_model() -> None:
     assert isinstance(block, TextBlock)
     assert block.text == "Hello!"
     assert resp.usage.input_tokens == 10
+    assert resp.usage.iterations is None
+    assert resp.diagnostics is None
+
+
+def test_message_usage_preserves_typed_beta_iterations() -> None:
+    sdk_usage = BetaUsage.model_validate(
+        {
+            "input_tokens": 100,
+            "output_tokens": 20,
+            "iterations": [
+                {
+                    "type": "compaction",
+                    "input_tokens": 90,
+                    "output_tokens": 10,
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": 0,
+                }
+            ],
+        }
+    )
+
+    usage = MessageUsage.model_validate(sdk_usage, from_attributes=True)
+
+    assert MessageUsage.model_fields["iterations"].annotation == BetaIterationsUsage | None
+    assert usage.iterations is not None
+    assert isinstance(usage.iterations[0], BetaCompactionIterationUsage)
+    assert usage.model_dump()["iterations"][0]["type"] == "compaction"
+
+
+def test_message_delta_usage_preserves_typed_beta_iterations() -> None:
+    sdk_usage = BetaMessageDeltaUsage.model_validate(
+        {
+            "output_tokens": 20,
+            "iterations": [
+                {
+                    "type": "compaction",
+                    "input_tokens": 90,
+                    "output_tokens": 10,
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": 0,
+                }
+            ],
+        }
+    )
+
+    usage = MessageDeltaUsage.model_validate(sdk_usage, from_attributes=True)
+
+    assert MessageDeltaUsage.model_fields["iterations"].annotation == BetaIterationsUsage | None
+    assert usage.iterations is not None
+    assert isinstance(usage.iterations[0], BetaCompactionIterationUsage)
+    assert usage.model_dump()["iterations"][0]["type"] == "compaction"
+
+
+def test_message_response_preserves_beta_usage_speed_and_container_skills() -> None:
+    beta_message = BetaMessage.model_validate(
+        {
+            "id": "msg_beta",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-opus-5",
+            "stop_reason": "end_turn",
+            "stop_sequence": None,
+            "content": [],
+            "container": {
+                "id": "container_1",
+                "expires_at": "2026-08-05T00:00:00Z",
+                "skills": [{"skill_id": "pdf", "type": "anthropic", "version": "latest"}],
+            },
+            "usage": {"input_tokens": 10, "output_tokens": 1, "speed": "fast"},
+        }
+    )
+
+    response = MessageResponse.model_validate(beta_message, from_attributes=True)
+
+    assert response.usage.speed == "fast"
+    assert isinstance(response.container, BetaContainer)
+    assert response.container.skills is not None
+    assert isinstance(response.container.skills[0], BetaSkill)
+    assert response.container.skills[0].skill_id == "pdf"
+
+
+def test_message_response_preserves_typed_beta_telemetry() -> None:
+    try:
+        from anthropic.types.beta import BetaCacheMissToolsChanged
+        from anthropic.types.beta.beta_diagnostics import BetaDiagnostics as AnthropicBetaDiagnostics
+    except ImportError:
+        pytest.skip("BetaDiagnostics requires anthropic 0.102.0 or newer")
+
+    beta_message = BetaMessage.model_validate(
+        {
+            "id": "msg_beta",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-6",
+            "stop_reason": "end_turn",
+            "stop_sequence": None,
+            "content": [{"type": "text", "text": "Done"}],
+            "usage": {"input_tokens": 10, "output_tokens": 1},
+            "context_management": {
+                "applied_edits": [
+                    {
+                        "type": "clear_tool_uses_20250919",
+                        "cleared_input_tokens": 42,
+                        "cleared_tool_uses": 2,
+                    }
+                ]
+            },
+            "diagnostics": {
+                "cache_miss_reason": {
+                    "type": "tools_changed",
+                    "cache_missed_input_tokens": 7,
+                }
+            },
+        }
+    )
+
+    response = MessageResponse.model_validate(beta_message, from_attributes=True)
+
+    assert isinstance(response.context_management, BetaContextManagementResponse)
+    applied_edit = response.context_management.applied_edits[0]
+    assert applied_edit.cleared_input_tokens == 42
+    assert BetaDiagnostics is AnthropicBetaDiagnostics
+    assert isinstance(response.diagnostics, AnthropicBetaDiagnostics)
+    assert isinstance(response.diagnostics.cache_miss_reason, BetaCacheMissToolsChanged)
+    assert response.diagnostics.cache_miss_reason.type == "tools_changed"
+    assert response.diagnostics.cache_miss_reason.cache_missed_input_tokens == 7
+    dumped = response.model_dump()
+    assert dumped["context_management"]["applied_edits"][0]["cleared_input_tokens"] == 42
+    assert dumped["diagnostics"]["cache_miss_reason"]["cache_missed_input_tokens"] == 7
+
+
+def test_message_diagnostics_fallback_supports_the_anthropic_sdk_floor() -> None:
+    try:
+        from anthropic.types.beta.beta_diagnostics import BetaDiagnostics as AnthropicBetaDiagnostics
+    except ImportError:
+        diagnostics = BetaDiagnostics.model_validate(
+            {
+                "cache_miss_reason": {
+                    "type": "tools_changed",
+                    "cache_missed_input_tokens": 7,
+                    "future_field": "preserved",
+                }
+            }
+        )
+
+        reason = cast("dict[str, Any]", diagnostics.cache_miss_reason)
+        assert reason["cache_missed_input_tokens"] == 7
+        assert diagnostics.model_dump()["cache_miss_reason"]["future_field"] == "preserved"
+    else:
+        pytest.skip(f"SDK provides {AnthropicBetaDiagnostics.__name__}")
+
+
+def test_message_delta_event_preserves_typed_context_management() -> None:
+    event = MessageDeltaEvent.model_validate(
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": None, "stop_sequence": None},
+            "usage": {"output_tokens": 1},
+            "context_management": {
+                "applied_edits": [
+                    {
+                        "type": "clear_thinking_20251015",
+                        "cleared_input_tokens": 21,
+                        "cleared_thinking_turns": 1,
+                    }
+                ]
+            },
+        }
+    )
+
+    assert isinstance(event.context_management, BetaContextManagementResponse)
+    assert event.context_management.applied_edits[0].cleared_input_tokens == 21
 
 
 def test_message_stream_event_types() -> None:
@@ -232,6 +507,7 @@ async def test_amessages_parameter_capture() -> None:
             tool_choice={"type": "auto"},
             metadata={"user_id": "u1"},
             thinking={"type": "enabled", "budget_tokens": 4096},
+            prompt_cache_key="tenant-1",
             api_key="sk-test",
             api_base="https://custom.example.com",
         )
@@ -258,6 +534,103 @@ async def test_amessages_parameter_capture() -> None:
         assert call_args.kwargs["tool_choice"] == {"type": "auto"}
         assert call_args.kwargs["metadata"] == {"user_id": "u1"}
         assert call_args.kwargs["thinking"] == {"type": "enabled", "budget_tokens": 4096}
+        assert call_args.kwargs["prompt_cache_key"] == "tenant-1"
+
+
+@pytest.mark.asyncio
+async def test_amessages_forwards_typed_messages_params() -> None:
+    assert "prompt_cache_key" in signature(amessages).parameters
+    assert "context_management" in signature(amessages).parameters
+    assert "betas" in signature(amessages).parameters
+    assert "prompt_cache_key" in signature(AnyLLM.amessages).parameters
+    assert "context_management" in signature(AnyLLM.amessages).parameters
+    assert "betas" in signature(AnyLLM.amessages).parameters
+
+    mock_provider = Mock()
+    mock_provider.amessages = AsyncMock(return_value=Mock())
+    context_management = {"edits": [{"type": "compact_20260112"}]}
+    betas = ["compact-2026-01-12"]
+
+    with patch("any_llm.any_llm.AnyLLM.create", return_value=mock_provider):
+        await amessages(
+            model="claude-opus-5",
+            provider="anthropic",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            prompt_cache_key="tenant-1",
+            context_management=context_management,
+            betas=betas,
+        )
+
+    call_kwargs = mock_provider.amessages.await_args.kwargs
+    assert call_kwargs["prompt_cache_key"] == "tenant-1"
+    assert call_kwargs["context_management"] == context_management
+    assert call_kwargs["betas"] == betas
+
+
+def test_messages_returns_parsed_beta_message_without_treating_it_as_a_stream() -> None:
+    class Answer(BaseModel):
+        value: str
+
+    parsed_message = ParsedBetaMessage[Answer](
+        id="msg_beta_parse",
+        type="message",
+        role="assistant",
+        model="claude-opus-5",
+        stop_reason="end_turn",
+        content=[
+            ParsedBetaTextBlock[Answer](
+                type="text",
+                text='{"value":"ok"}',
+                parsed_output=Answer(value="ok"),
+            )
+        ],
+        usage=BetaUsage(input_tokens=1, output_tokens=1),
+    )
+    mock_provider = Mock(spec=AnyLLM)
+    mock_provider.amessages = AsyncMock(return_value=parsed_message)
+
+    result = AnyLLM.messages(
+        mock_provider,
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        context_management={"edits": [{"type": "compact_20260112"}]},
+        output_format=Answer,
+    )
+
+    assert result is parsed_message
+    assert parsed_message.parsed_output == Answer(value="ok")
+
+
+def test_messages_forwards_typed_messages_params() -> None:
+    assert "prompt_cache_key" in signature(messages).parameters
+    assert "context_management" in signature(messages).parameters
+    assert "betas" in signature(messages).parameters
+    assert "prompt_cache_key" in signature(AnyLLM.messages).parameters
+    assert "context_management" in signature(AnyLLM.messages).parameters
+    assert "betas" in signature(AnyLLM.messages).parameters
+
+    mock_provider = Mock()
+    mock_provider.messages = Mock(return_value=Mock())
+    context_management = {"edits": [{"type": "compact_20260112"}]}
+    betas = ["compact-2026-01-12"]
+
+    with patch("any_llm.any_llm.AnyLLM.create", return_value=mock_provider):
+        messages(
+            model="claude-opus-5",
+            provider="anthropic",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            prompt_cache_key="tenant-1",
+            context_management=context_management,
+            betas=betas,
+        )
+
+    call_kwargs = mock_provider.messages.call_args.kwargs
+    assert call_kwargs["prompt_cache_key"] == "tenant-1"
+    assert call_kwargs["context_management"] == context_management
+    assert call_kwargs["betas"] == betas
 
 
 @pytest.mark.asyncio
@@ -333,6 +706,7 @@ async def test_default_amessages_non_streaming() -> None:
         model="gpt-4",
         messages=[{"role": "user", "content": "Hello"}],
         max_tokens=100,
+        prompt_cache_key="tenant-1",
     )
     result = await AnyLLM._amessages(mock_provider, params)
     assert isinstance(result, MessageResponse)
@@ -341,6 +715,29 @@ async def test_default_amessages_non_streaming() -> None:
     assert result.content[0].text == "Hi!"
     assert result.stop_reason == "end_turn"
     assert result.usage.input_tokens == 10
+    completion_params = mock_provider._acompletion.await_args.args[0]
+    assert completion_params.prompt_cache_key == "tenant-1"
+    assert "prompt_cache_key" not in mock_provider._acompletion.await_args.kwargs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "unsupported_params",
+    [
+        {"context_management": {"edits": [{"type": "compact_20260112"}]}},
+        {"betas": ["compact-2026-01-12"]},
+    ],
+)
+async def test_default_amessages_rejects_anthropic_beta_params(unsupported_params: dict[str, Any]) -> None:
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        **unsupported_params,
+    )
+
+    with pytest.raises(NotImplementedError, match="native Anthropic Messages"):
+        await AnyLLM._amessages(Mock(), params)
 
 
 @pytest.mark.asyncio
@@ -381,7 +778,7 @@ async def test_default_amessages_streaming() -> None:
         stream=True,
     )
     result = await AnyLLM._amessages(mock_provider, params)
-    assert not isinstance(result, MessageResponse)
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
 
     events = []
     async for event in result:
@@ -394,6 +791,398 @@ async def test_default_amessages_streaming() -> None:
     assert "content_block_stop" in types
     assert "message_delta" in types
     assert "message_stop" in types
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_requests_include_usage() -> None:
+    """Streaming through the bridge must ask the backend for usage, otherwise
+    OpenAI-compatible providers emit no usage-only chunk and the trailing-chunk
+    capture has nothing to report."""
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        yield ChatCompletionChunk(
+            id="chunk-1",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(), finish_reason="stop")],
+        )
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+    async for _ in result:  # drive the generator so _acompletion is invoked
+        pass
+
+    completion_params = mock_provider._acompletion.call_args.args[0]
+    assert completion_params.stream is True
+    assert completion_params.stream_options == {"include_usage": True}
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_non_streaming_omits_include_usage() -> None:
+    """A non-streaming bridge call has no usage-only chunk to request."""
+    mock_completion = ChatCompletion(
+        id="c",
+        model="gpt-4",
+        created=0,
+        object="chat.completion",
+        choices=[
+            Choice(
+                index=0,
+                message=ChatCompletionMessage(role="assistant", content="hi"),
+                finish_reason="stop",
+            )
+        ],
+    )
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_completion)
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=False,
+    )
+    await AnyLLM._amessages(mock_provider, params)
+
+    completion_params = mock_provider._acompletion.call_args.args[0]
+    assert completion_params.stream_options is None
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_usage_from_trailing_chunk() -> None:
+    """Usage (incl. cache) from a trailing usage-only chunk after finish_reason is reported in message_delta."""
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        yield ChatCompletionChunk(
+            id="chunk-1",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hello"), finish_reason=None)],
+        )
+        yield ChatCompletionChunk(
+            id="chunk-2",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(), finish_reason="stop")],
+        )
+        yield ChatCompletionChunk(
+            id="chunk-3",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[],
+            usage=CompletionUsage(
+                prompt_tokens=100,
+                completion_tokens=50,
+                total_tokens=150,
+                prompt_tokens_details=PromptTokensDetails(cached_tokens=80),
+            ),
+        )
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+
+    events = [event async for event in result]
+    delta = next(e for e in events if isinstance(e, MessageDeltaEvent))
+    # Anthropic's input_tokens and cache_read_input_tokens are disjoint, so the cached
+    # count is subtracted out of the 100-token OpenAI prompt total rather than copied
+    # alongside it.
+    assert delta.usage.input_tokens == 20
+    assert delta.usage.output_tokens == 50
+    assert delta.usage.cache_read_input_tokens == 80
+    assert delta.usage.input_tokens + delta.usage.cache_read_input_tokens == 100
+    assert delta.delta.stop_reason == "end_turn"
+    assert events[-1].type == "message_stop"
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_flushes_usage_when_stream_fails() -> None:
+    """A stream that raises mid-iteration still emits a message_delta with the accumulated usage."""
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        yield ChatCompletionChunk(
+            id="chunk-1",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
+            usage=CompletionUsage(prompt_tokens=100, completion_tokens=10, total_tokens=110),
+        )
+        msg = "provider stream dropped"
+        raise RuntimeError(msg)
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+
+    seen: list[Any] = []
+
+    async def consume() -> None:
+        async for event in result:
+            seen.append(event)
+
+    with pytest.raises(RuntimeError, match="provider stream dropped"):
+        await consume()
+
+    delta = next(e for e in seen if isinstance(e, MessageDeltaEvent))
+    assert delta.usage.input_tokens == 100
+    assert delta.usage.output_tokens == 10
+    assert delta.delta.stop_reason is None
+    assert all(e.type not in ("message_stop", "content_block_stop") for e in seen)
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_failure_after_finish_reason_reports_no_stop_reason() -> None:
+    """A stream that emits finish_reason and then fails must not report a completion stop_reason."""
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        yield ChatCompletionChunk(
+            id="chunk-1",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
+            usage=CompletionUsage(prompt_tokens=100, completion_tokens=10, total_tokens=110),
+        )
+        yield ChatCompletionChunk(
+            id="chunk-2",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(), finish_reason="stop")],
+        )
+        # The trailing usage-only chunk never arrives; the provider stream drops instead.
+        msg = "provider stream dropped"
+        raise RuntimeError(msg)
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+
+    seen: list[Any] = []
+
+    async def consume() -> None:
+        async for event in result:
+            seen.append(event)
+
+    with pytest.raises(RuntimeError, match="provider stream dropped"):
+        await consume()
+
+    delta = next(e for e in seen if isinstance(e, MessageDeltaEvent))
+    assert delta.usage.input_tokens == 100
+    assert delta.usage.output_tokens == 10
+    # Even though finish_reason="stop" was seen, the failure path must report stop_reason=None
+    # so consumers cannot mistake the flushed delta for a successful completion.
+    assert delta.delta.stop_reason is None
+    # message_stop stays reserved for clean completion; it must never appear on the failure path.
+    # (content_block_stop legitimately appears here: the content block was closed when finish_reason arrived.)
+    assert all(e.type != "message_stop" for e in seen)
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_failure_before_first_chunk_emits_nothing() -> None:
+    """A stream that fails before producing any chunk emits no events, only the exception."""
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        msg = "connect failed"
+        raise RuntimeError(msg)
+        yield  # unreachable, makes this function an async generator
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+
+    seen: list[Any] = []
+
+    async def consume() -> None:
+        async for event in result:
+            seen.append(event)
+
+    with pytest.raises(RuntimeError, match="connect failed"):
+        await consume()
+    assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_early_close_is_clean() -> None:
+    """Closing the event stream before it is exhausted does not raise from the cleanup path."""
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        yield ChatCompletionChunk(
+            id="chunk-1",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hello"), finish_reason=None)],
+        )
+        yield ChatCompletionChunk(
+            id="chunk-2",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content=" world"), finish_reason=None)],
+        )
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert isinstance(result, AsyncGenerator)
+
+    first = await anext(result)
+    assert first.type == "message_start"
+    await result.aclose()
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_close_after_failure_flush_is_clean() -> None:
+    """Closing the stream at the failure-path usage flush does not raise from the cleanup path."""
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        yield ChatCompletionChunk(
+            id="chunk-1",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
+            usage=CompletionUsage(prompt_tokens=100, completion_tokens=10, total_tokens=110),
+        )
+        msg = "provider stream dropped"
+        raise RuntimeError(msg)
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert isinstance(result, AsyncGenerator)
+
+    delta: MessageDeltaEvent | None = None
+    async for event in result:
+        if isinstance(event, MessageDeltaEvent):
+            delta = event
+            break
+    assert delta is not None
+    assert delta.usage.input_tokens == 100
+    await result.aclose()
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_no_finish_reason_closes_open_block() -> None:
+    """A stream that ends without finish_reason still closes the open block and defaults to end_turn."""
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        yield ChatCompletionChunk(
+            id="chunk-1",
+            model="gpt-4",
+            created=0,
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hello"), finish_reason=None)],
+        )
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+
+    events = [event async for event in result]
+    assert [e.type for e in events] == [
+        "message_start",
+        "content_block_start",
+        "content_block_delta",
+        "content_block_stop",
+        "message_delta",
+        "message_stop",
+    ]
+    delta = next(e for e in events if isinstance(e, MessageDeltaEvent))
+    assert delta.delta.stop_reason == "end_turn"
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_empty_stream_emits_nothing() -> None:
+    """A stream that ends without producing any chunks emits no events."""
+
+    async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
+        return
+        yield  # unreachable, makes this function an async generator
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=mock_stream())
+
+    params = MessagesParams(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+
+    events = [event async for event in result]
+    assert events == []
 
 
 def test_supports_messages_flag() -> None:
@@ -435,6 +1224,134 @@ def test_sync_messages_returns_message_response() -> None:
     assert result.content[0].type == "text"
 
 
+class _StreamingHandler(BaseHTTPRequestHandler):
+    """Serves a fixed SSE chat-completion-chunk stream, like a real OpenAI-compatible endpoint."""
+
+    protocol_version = "HTTP/1.1"
+
+    def do_POST(self) -> None:
+        content_length = int(self.headers.get("Content-Length", "0"))
+        self.rfile.read(content_length)
+
+        events: list[dict[str, Any]] = [
+            {
+                "id": "chunk-1",
+                "object": "chat.completion.chunk",
+                "created": 1234567890,
+                "model": "test-model",
+                "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hello"}, "finish_reason": None}],
+            },
+            {
+                "id": "chunk-2",
+                "object": "chat.completion.chunk",
+                "created": 1234567890,
+                "model": "test-model",
+                "choices": [{"index": 0, "delta": {"content": " world"}, "finish_reason": None}],
+            },
+            {
+                "id": "chunk-3",
+                "object": "chat.completion.chunk",
+                "created": 1234567890,
+                "model": "test-model",
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            },
+        ]
+        body = "".join(f"data: {json.dumps(event)}\n\n" for event in events)
+        body += "data: [DONE]\n\n"
+        encoded = body.encode()
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(encoded)
+        self.wfile.flush()
+
+    @override
+    def log_message(self, format: str, *args: Any) -> None:
+        return
+
+
+def test_sync_messages_streaming_consumes_response_on_a_single_event_loop() -> None:
+    """Regression test for #1253.
+
+    The sync `messages(stream=True)` path used to open the async response with
+    `run_async_in_sync()` on one worker event loop and then hand the resulting
+    async iterator to `async_iter_to_sync_iter()`, which consumed it on a second,
+    unrelated event loop. httpx/anyio objects created by the OpenAI SDK are bound
+    to the loop that opened the stream, so reading them from a different loop
+    raised `RuntimeError: <asyncio.locks.Event object ...> is bound to a different
+    event loop`. This exercises the real OpenAI SDK, httpx, and anyio against a
+    local server, with no live provider or API key required.
+    """
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _StreamingHandler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        api_base = f"http://127.0.0.1:{server.server_address[1]}/v1"
+        provider = AnyLLM.create_openai_compatible(name="local-messages", api_base=api_base, api_key="test")
+
+        stream = cast(
+            "Iterator[MessageStreamEvent]",
+            provider.messages(
+                model="test-model",
+                messages=[{"role": "user", "content": "Hello"}],
+                max_tokens=32,
+                stream=True,
+            ),
+        )
+        events = list(stream)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+    types = [event.type for event in events]
+    assert "content_block_delta" in types
+    assert types[-1] == "message_stop"
+
+    text = "".join(
+        event.delta.text
+        for event in events
+        if isinstance(event, ContentBlockDeltaEvent) and event.delta.type == "text_delta"
+    )
+    assert text == "Hello world"
+
+
+def test_sync_messages_bridges_an_iterator_and_forwards_allow_running_loop() -> None:
+    """A provider that hands back an iterator without `stream` still bridges to a sync iterator.
+
+    The streaming branch keys off `kwargs["stream"]`, so this covers the fallback that
+    converts a non-streaming call's async iterator, mirroring the same fallback in
+    `completion()` and `responses()`. `allow_running_loop` is asserted on the bridge call
+    rather than through behavior: the fallback is only reachable with no running loop, so
+    the flag changes nothing observable there, and dropping it would silently leave the
+    bridge on its own default of True.
+    """
+
+    async def event_stream() -> AsyncIterator[MessageStreamEvent]:
+        yield MessageStopEvent(type="message_stop")
+
+    mock_provider = Mock(spec=AnyLLM)
+    mock_provider.amessages = AsyncMock(return_value=event_stream())
+
+    with patch("any_llm.any_llm.async_iter_to_sync_iter", wraps=async_iter_to_sync_iter) as bridge:
+        result = AnyLLM.messages(
+            mock_provider,
+            model="gpt-5.6",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=100,
+            allow_running_loop=False,
+        )
+        events = list(cast("Iterator[MessageStreamEvent]", result))
+
+    assert [event.type for event in events] == ["message_stop"]
+    assert bridge.call_args.kwargs["allow_running_loop"] is False
+
+
 @pytest.mark.asyncio
 async def test_amessages_constructs_params_correctly() -> None:
     """Test that AnyLLM.amessages builds MessagesParams and delegates to _amessages."""
@@ -462,3 +1379,169 @@ async def test_amessages_constructs_params_correctly() -> None:
     assert params.max_tokens == 512
     assert params.system == "Be helpful"
     assert params.temperature == 0.5
+
+
+def _json_completion(content: str = '{"city_name": "Paris"}') -> Any:
+    from any_llm.types.completion import ChatCompletion
+
+    return ChatCompletion.model_validate(
+        {
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": content}}],
+        }
+    )
+
+
+def _openai_provider() -> Any:
+    from any_llm import AnyLLM
+
+    with patch("any_llm.providers.openai.base.AsyncOpenAI"):
+        return AnyLLM.create("openai", api_key="test-key")
+
+
+@pytest.mark.asyncio
+async def test_amessages_output_format_returns_parsed_message() -> None:
+    """A Pydantic output_format returns Anthropic's ParsedMessage via the completion bridge."""
+    from pydantic import BaseModel
+
+    class City(BaseModel):
+        city_name: str
+
+    provider = _openai_provider()
+    provider._acompletion = AsyncMock(return_value=_json_completion())
+
+    result = await provider.amessages(
+        model="test-model",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=128,
+        output_format=City,
+    )
+
+    assert isinstance(result, ParsedMessage)
+    assert isinstance(result.parsed_output, City)
+    assert result.parsed_output.city_name == "Paris"
+    block = result.content[0]
+    assert isinstance(block, ParsedTextBlock)
+    assert block.parsed_output == result.parsed_output
+
+    # output_format is bridged to the completion call as response_format.
+    completion_params = provider._acompletion.call_args.args[0]
+    assert completion_params.response_format is City
+
+
+@pytest.mark.asyncio
+async def test_amessages_output_format_dataclass() -> None:
+    """A dataclass output_format is parsed into a ParsedMessage too."""
+    import dataclasses
+
+    @dataclasses.dataclass
+    class City:
+        city_name: str
+
+    provider = _openai_provider()
+    provider._acompletion = AsyncMock(return_value=_json_completion())
+
+    result = await provider.amessages(
+        model="test-model",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=128,
+        output_format=City,
+    )
+
+    assert isinstance(result, ParsedMessage)
+    assert isinstance(result.parsed_output, City)
+    assert result.parsed_output.city_name == "Paris"
+
+
+@pytest.mark.asyncio
+async def test_amessages_output_format_empty_content_leaves_parsed_none() -> None:
+    """When the completion returns no text, parsed_output stays None rather than erroring."""
+    from pydantic import BaseModel
+
+    class City(BaseModel):
+        city_name: str
+
+    provider = _openai_provider()
+    provider._acompletion = AsyncMock(return_value=_json_completion(content=""))
+
+    result = await provider.amessages(
+        model="test-model",
+        messages=[{"role": "user", "content": "Hi"}],
+        max_tokens=128,
+        output_format=City,
+    )
+
+    assert isinstance(result, ParsedMessage)
+    assert result.parsed_output is None
+
+
+@pytest.mark.asyncio
+async def test_amessages_output_format_rejects_streaming() -> None:
+    """output_format combined with stream=True raises ValueError."""
+    from pydantic import BaseModel
+
+    class City(BaseModel):
+        city_name: str
+
+    provider = _openai_provider()
+    provider._acompletion = AsyncMock(return_value=_json_completion())
+
+    with pytest.raises(ValueError, match="stream is not supported for output_format"):
+        await provider.amessages(
+            model="test-model",
+            messages=[{"role": "user", "content": "Hi"}],
+            max_tokens=128,
+            output_format=City,
+            stream=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_amessages_output_config_dict_returns_parsed_message() -> None:
+    """A raw output_config dict yields a ParsedMessage with plain-JSON parsed_output via the bridge."""
+    output_config = {"format": {"type": "json_schema", "schema": {"type": "object", "title": "City"}}}
+
+    provider = _openai_provider()
+    provider._acompletion = AsyncMock(return_value=_json_completion())
+
+    result = await provider.amessages(
+        model="test-model",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=128,
+        output_format=output_config,
+    )
+
+    assert isinstance(result, ParsedMessage)
+    # No Python type: parsed_output is the JSON-loaded object.
+    assert result.parsed_output == {"city_name": "Paris"}
+    block = result.content[0]
+    assert isinstance(block, ParsedTextBlock)
+    assert block.parsed_output == {"city_name": "Paris"}
+
+    # The output_config schema is bridged as an OpenAI json_schema response_format.
+    completion_params = provider._acompletion.call_args.args[0]
+    assert completion_params.response_format == {
+        "type": "json_schema",
+        "json_schema": {"name": "City", "schema": {"type": "object", "title": "City"}},
+    }
+
+
+@pytest.mark.asyncio
+async def test_amessages_output_config_dict_rejects_streaming() -> None:
+    """A raw output_config dict combined with stream=True also raises ValueError."""
+    output_config = {"format": {"type": "json_schema", "schema": {"type": "object"}}}
+
+    provider = _openai_provider()
+    provider._acompletion = AsyncMock(return_value=_json_completion())
+
+    with pytest.raises(ValueError, match="stream is not supported for output_format"):
+        await provider.amessages(
+            model="test-model",
+            messages=[{"role": "user", "content": "Hi"}],
+            max_tokens=128,
+            output_format=output_config,
+            stream=True,
+        )

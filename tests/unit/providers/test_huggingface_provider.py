@@ -4,6 +4,9 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from openai.types.chat.chat_completion_message_function_tool_call import (
+    ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
+)
 
 from any_llm.providers.huggingface.huggingface import HuggingfaceProvider
 from any_llm.providers.huggingface.utils import _create_openai_chunk_from_huggingface_chunk
@@ -290,3 +293,171 @@ def test_create_openai_chunk_without_usage() -> None:
 
     assert result.usage is None
     assert result.choices[0].delta.content == "Hello"
+
+
+def _make_openai_response(text: str):  # type: ignore[no-untyped-def]
+    from openai.types.responses import ResponseOutputMessage, ResponseOutputText
+
+    from any_llm.types.responses import Response
+
+    message = ResponseOutputMessage(
+        id="msg-1",
+        type="message",
+        role="assistant",
+        status="completed",
+        content=[ResponseOutputText(type="output_text", text=text, annotations=[])],
+    )
+    return Response(
+        id="resp-1",
+        created_at=0,
+        model="test-model",
+        object="response",
+        output=[message],
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        tools=[],
+    )
+
+
+@pytest.mark.asyncio
+async def test_huggingface_aresponses_basemodel_uses_parse() -> None:
+    from pydantic import BaseModel
+
+    from any_llm.types.responses import ParsedResponse
+    from any_llm.utils.structured_output import parse_responses_output
+
+    class City(BaseModel):
+        city_name: str
+
+    parsed = parse_responses_output(_make_openai_response('{"city_name": "Paris"}'), City)
+
+    with (
+        patch("any_llm.providers.huggingface.huggingface.AsyncInferenceClient"),
+        patch("any_llm.providers.huggingface.huggingface.AsyncOpenAI") as mock_openai,
+    ):
+        client = AsyncMock()
+        client.responses.parse = AsyncMock(return_value=parsed)
+        client.responses.create = AsyncMock()
+        mock_openai.return_value = client
+
+        provider = HuggingfaceProvider(api_key="test-api-key")
+        result = await provider.aresponses("model", "capital of France?", response_format=City)
+
+    client.responses.parse.assert_awaited_once()
+    assert client.responses.parse.call_args.kwargs["text_format"] is City
+    client.responses.create.assert_not_called()
+    assert isinstance(result, ParsedResponse)
+    assert result.output_parsed is not None
+    assert result.output_parsed.city_name == "Paris"
+
+
+@pytest.mark.asyncio
+async def test_huggingface_aresponses_dataclass_uses_create_and_is_parsed() -> None:
+    import dataclasses
+
+    from any_llm.types.responses import ParsedResponse
+
+    @dataclasses.dataclass
+    class City:
+        city_name: str
+
+    with (
+        patch("any_llm.providers.huggingface.huggingface.AsyncInferenceClient"),
+        patch("any_llm.providers.huggingface.huggingface.AsyncOpenAI") as mock_openai,
+    ):
+        client = AsyncMock()
+        client.responses.create = AsyncMock(return_value=_make_openai_response('{"city_name": "Paris"}'))
+        client.responses.parse = AsyncMock()
+        mock_openai.return_value = client
+
+        provider = HuggingfaceProvider(api_key="test-api-key")
+        result = await provider.aresponses("model", "capital of France?", response_format=City)
+
+    client.responses.parse.assert_not_called()
+    assert client.responses.create.call_args.kwargs["text"]["format"]["type"] == "json_schema"
+    assert isinstance(result, ParsedResponse)
+    assert result.output_parsed is not None
+    assert result.output_parsed.city_name == "Paris"
+
+
+@pytest.mark.asyncio
+async def test_huggingface_aresponses_dict_passthrough_sets_text_format() -> None:
+    with (
+        patch("any_llm.providers.huggingface.huggingface.AsyncInferenceClient"),
+        patch("any_llm.providers.huggingface.huggingface.AsyncOpenAI") as mock_openai,
+        patch("any_llm.providers.huggingface.huggingface.ResponseResource") as mock_resource,
+    ):
+        client = AsyncMock()
+        client.responses.create = AsyncMock(return_value=_make_openai_response("{}"))
+        mock_openai.return_value = client
+        sentinel = object()
+        mock_resource.model_validate.return_value = sentinel
+
+        provider = HuggingfaceProvider(api_key="test-api-key")
+        response_format = {"type": "json_schema", "name": "City", "schema": {"type": "object"}}
+        result = await provider.aresponses("model", "hi", response_format=response_format)
+
+    assert client.responses.create.call_args.kwargs["text"] == {"format": response_format}
+    # Non-structured dict path converts the OpenAI Response into a ResponseResource.
+    assert result is sentinel
+
+
+@pytest.mark.asyncio
+async def test_huggingface_aresponses_without_response_format() -> None:
+    with (
+        patch("any_llm.providers.huggingface.huggingface.AsyncInferenceClient"),
+        patch("any_llm.providers.huggingface.huggingface.AsyncOpenAI") as mock_openai,
+        patch("any_llm.providers.huggingface.huggingface.ResponseResource") as mock_resource,
+    ):
+        client = AsyncMock()
+        client.responses.create = AsyncMock(return_value=_make_openai_response("{}"))
+        mock_openai.return_value = client
+        mock_resource.model_validate.return_value = object()
+
+        provider = HuggingfaceProvider(api_key="test-api-key")
+        await provider.aresponses("model", "hi")
+
+    client.responses.parse.assert_not_called()
+    assert "text" not in client.responses.create.call_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_huggingface_tool_call_with_null_arguments() -> None:
+    """HF returns arguments=None for no-arg tool calls; coerce to a string so parsing succeeds.
+
+    Regression for the agent-loop failure where ChatCompletionMessage validation rejected
+    a tool call whose function.arguments was null.
+    """
+    messages = [{"role": "user", "content": "What is the date?"}]
+
+    with mock_huggingface_provider() as mock_huggingface:
+        mock_huggingface.return_value.chat_completion.return_value = {
+            "id": "hf-response-id",
+            "created": 0,
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call-1",
+                                "type": "function",
+                                "function": {"name": "get_current_date", "arguments": None},
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
+        provider = HuggingfaceProvider(api_key="test-api-key")
+        result = await provider._acompletion(CompletionParams(model_id="model-id", messages=messages))
+
+    assert isinstance(result, ChatCompletion)
+    tool_calls = result.choices[0].message.tool_calls
+    assert tool_calls is not None
+    tool_call = tool_calls[0]
+    assert isinstance(tool_call, OpenAIChatCompletionMessageFunctionToolCall)
+    assert tool_call.function.arguments == "{}"

@@ -5,15 +5,39 @@ import json
 import os
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
+from pydantic import BaseModel
 from typing_extensions import override
 
 from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.openai.utils import _convert_moderation_response_from_openai
 from any_llm.types.batch import Batch, BatchResult, BatchResultError, BatchResultItem
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    CompletionParams,
+    CreateEmbeddingResponse,
+    ParsedChatCompletion,
+)
+from any_llm.types.messages import (
+    ContentBlockDeltaEvent,
+    ContentBlockStartEvent,
+    ContentBlockStopEvent,
+    MessageDeltaEvent,
+    MessageResponse,
+    MessageStartEvent,
+    MessageStopEvent,
+    ParsedBetaMessage,
+    ParsedMessage,
+)
 from any_llm.types.model import Model
 from any_llm.types.rerank import RerankResponse
+from any_llm.utils.structured_output import (
+    build_responses_text_format,
+    get_json_schema,
+    is_structured_output_type,
+    parse_json_content,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
@@ -22,6 +46,7 @@ if TYPE_CHECKING:
 
     from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
     from any_llm.types.image import ImageGenerationParams, ImagesResponse
+    from any_llm.types.messages import MessagesParams, MessageStreamEvent
     from any_llm.types.moderation import ModerationResponse
     from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
@@ -41,12 +66,16 @@ class ListBatchesOptions(TypedDict, total=False):
 _MISSING_PACKAGES_ERROR: ImportError | None = None
 _OTARI_BATCH_NOT_COMPLETE_ERROR: Any = None
 try:
-    OtariClient = importlib.import_module("otari").OtariClient
+    AsyncOtariClient = importlib.import_module("otari").AsyncOtariClient
     _OTARI_BATCH_NOT_COMPLETE_ERROR = importlib.import_module("otari.errors").BatchNotCompleteError
 except ImportError as e:  # pragma: no cover - exercised through MISSING_PACKAGES_ERROR checks
     _MISSING_PACKAGES_ERROR = e
 
 
+# Platform-token env vars, sent as Authorization: Bearer to otari's hosted gateway. otari.ai
+# documents OTARI_API_KEY (ENV_API_KEY_NAME) as this token, so it is the primary source; the
+# others are accepted aliases. The self-hosted virtual-key path uses GATEWAY_API_KEY (Otari-Key).
+OTARI_AI_TOKEN_ENV = "OTARI_AI_TOKEN"  # noqa: S105
 OTARI_PLATFORM_TOKEN_ENV = "OTARI_PLATFORM_TOKEN"  # noqa: S105
 GATEWAY_PLATFORM_TOKEN_ENV = "GATEWAY_PLATFORM_TOKEN"  # noqa: S105
 OTARI_HEADER_NAME = "Otari-Key"
@@ -54,6 +83,25 @@ LEGACY_GATEWAY_HEADER_NAME = "AnyLLM-Key"
 
 LEGACY_GATEWAY_API_KEY_ENV = "GATEWAY_API_KEY"
 LEGACY_GATEWAY_API_BASE_ENV = "GATEWAY_API_BASE"
+
+
+def _as_plain_dict(response: Any) -> Any:
+    """Normalize an otari-native pydantic response into a plain dict.
+
+    otari 0.1.0's async client returns its own typed pydantic models rather than
+    OpenAI types. The generated models use oneOf/anyOf unions for some fields (e.g.
+    ``tool_calls`` and Messages content blocks); their ``to_dict()`` unwraps each union
+    to the actual instance, whereas Pydantic's ``model_dump()`` leaks the union wrapper
+    (``actual_instance`` / ``anyof_schema_*``) and fails any-llm's validation. Prefer
+    ``to_dict()``, falling back to ``model_dump()`` for plain pydantic models. Non-model
+    inputs (e.g. dicts in unit tests) are returned unchanged.
+    """
+    if isinstance(response, BaseModel):
+        to_dict = getattr(response, "to_dict", None)
+        if callable(to_dict):
+            return to_dict()
+        return response.model_dump()
+    return response
 
 
 def _parse_jsonl_to_requests(file_path: str) -> list[dict[str, Any]]:
@@ -80,12 +128,38 @@ def _extract_model_from_requests(requests: list[dict[str, Any]]) -> str | None:
     return None
 
 
+# otari's /messages stream yields raw Anthropic SSE event dicts (the SDK has no
+# single typed model for them). Map each by its ``type`` field to the matching
+# any-llm event model; unknown types (e.g. ``ping``) are skipped.
+_MESSAGE_STREAM_EVENT_TYPES: dict[str, type[BaseModel]] = {
+    "message_start": MessageStartEvent,
+    "message_delta": MessageDeltaEvent,
+    "message_stop": MessageStopEvent,
+    "content_block_start": ContentBlockStartEvent,
+    "content_block_delta": ContentBlockDeltaEvent,
+    "content_block_stop": ContentBlockStopEvent,
+}
+
+
+def _message_stream_event_from_dict(event: dict[str, Any]) -> MessageStreamEvent | None:
+    """Validate a raw otari message SSE event dict into a typed MessageStreamEvent.
+
+    Returns ``None`` for event types any-llm does not surface (e.g. ``ping``).
+    """
+    event_type = event.get("type")
+    model = _MESSAGE_STREAM_EVENT_TYPES.get(event_type) if isinstance(event_type, str) else None
+    if model is None:
+        return None
+    return cast("MessageStreamEvent", model.model_validate(event))
+
+
 class OtariProvider(BaseOpenAIProvider):
     ENV_API_KEY_NAME = "OTARI_API_KEY"
     ENV_API_BASE_NAME = "OTARI_API_BASE"
     PROVIDER_NAME = "otari"
     PROVIDER_DOCUMENTATION_URL = "https://mozilla-ai.github.io/otari/"
     MISSING_PACKAGES_ERROR = _MISSING_PACKAGES_ERROR
+    PROMPT_CACHE_KEY_SUPPORT = "passthrough"
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
@@ -108,13 +182,20 @@ class OtariProvider(BaseOpenAIProvider):
     def _resolve_env_api_base(cls) -> str | None:
         return os.getenv(cls.ENV_API_BASE_NAME) or os.getenv(LEGACY_GATEWAY_API_BASE_ENV)
 
-    @classmethod
-    def _resolve_env_api_key(cls) -> str | None:
-        return os.getenv(cls.ENV_API_KEY_NAME) or os.getenv(LEGACY_GATEWAY_API_KEY_ENV)
-
     @staticmethod
-    def _resolve_platform_token() -> str | None:
-        return os.getenv(OTARI_PLATFORM_TOKEN_ENV) or os.getenv(GATEWAY_PLATFORM_TOKEN_ENV)
+    def _resolve_gateway_api_key() -> str | None:
+        """Resolve the self-hosted gateway virtual key (Otari-Key header)."""
+        return os.getenv(LEGACY_GATEWAY_API_KEY_ENV)
+
+    @classmethod
+    def _resolve_platform_token(cls) -> str | None:
+        """Return the hosted-platform bearer token (primarily OTARI_API_KEY), or None if unset."""
+        return (
+            os.getenv(cls.ENV_API_KEY_NAME)
+            or os.getenv(OTARI_AI_TOKEN_ENV)
+            or os.getenv(OTARI_PLATFORM_TOKEN_ENV)
+            or os.getenv(GATEWAY_PLATFORM_TOKEN_ENV)
+        )
 
     @override
     def _resolve_api_base(self, api_base: str | None = None) -> str | None:
@@ -124,7 +205,10 @@ class OtariProvider(BaseOpenAIProvider):
 
     @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str:
-        return api_key or self._resolve_env_api_key() or "no-key-required"
+        # Capture only the explicit key; env credentials (platform token or self-hosted gateway
+        # key) are resolved in _init_client. otari allows keyless self-hosted access, so a missing
+        # key is not an error here.
+        return api_key or "no-key-required"
 
     @staticmethod
     def _normalize_placeholder_api_key(api_key: str | None) -> str | None:
@@ -132,67 +216,176 @@ class OtariProvider(BaseOpenAIProvider):
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
-        resolved_api_base = self._resolve_api_base(api_base)
-        if not resolved_api_base:
-            msg = (
-                "For any-llm otari, api_base is required "
-                f"(set via parameter or {self.ENV_API_BASE_NAME}/{LEGACY_GATEWAY_API_BASE_ENV} env vars)"
-            )
-            raise ValueError(msg)
-
         platform_mode = kwargs.pop("platform_mode", None)
         default_headers = kwargs.pop("default_headers", None)
 
-        normalized_api_key = self._normalize_placeholder_api_key(api_key)
-        resolved_api_key = normalized_api_key or self._resolve_env_api_key()
+        resolved_api_base = self._resolve_api_base(api_base)
+        explicit_api_key = self._normalize_placeholder_api_key(api_key)
         resolved_platform_token = self._resolve_platform_token()
+        resolved_gateway_key = self._resolve_gateway_api_key()
 
-        client_kwargs: dict[str, Any] = {
-            "api_base": resolved_api_base,
-            "default_headers": default_headers,
-            "openai_options": kwargs or None,
-        }
+        client_kwargs: dict[str, Any] = {"default_headers": default_headers}
+        if resolved_api_base:
+            client_kwargs["api_base"] = resolved_api_base
 
+        # The generic credential (explicit api_key param or OTARI_API_KEY) is otari.ai's platform
+        # token (Authorization: Bearer). In auto mode it routes to platform mode, where otari
+        # defaults api_base to its hosted gateway, so api_base is optional. The self-hosted
+        # virtual-key path (Otari-Key header) is reached via GATEWAY_API_KEY or platform_mode=False.
+        using_platform_token = False
         if platform_mode is True:
-            token = normalized_api_key or resolved_platform_token
+            token = explicit_api_key or resolved_platform_token
             if not token:
                 msg = (
-                    "Platform mode requires a user token "
-                    f"(pass api_key or set {OTARI_PLATFORM_TOKEN_ENV}/{GATEWAY_PLATFORM_TOKEN_ENV})"
+                    "Platform mode requires a user token (pass api_key or set "
+                    f"{self.ENV_API_KEY_NAME}/{OTARI_AI_TOKEN_ENV})"
                 )
                 raise ValueError(msg)
             client_kwargs["platform_token"] = token
+            using_platform_token = True
         elif platform_mode is False:
-            client_kwargs["api_key"] = resolved_api_key
-        else:
-            if normalized_api_key:
-                client_kwargs["api_key"] = normalized_api_key
-            elif resolved_platform_token:
-                client_kwargs["platform_token"] = resolved_platform_token
-            elif resolved_api_key:
-                client_kwargs["api_key"] = resolved_api_key
+            client_kwargs["api_key"] = explicit_api_key or resolved_gateway_key
+        elif explicit_api_key:
+            client_kwargs["platform_token"] = explicit_api_key
+            using_platform_token = True
+        elif resolved_platform_token:
+            client_kwargs["platform_token"] = resolved_platform_token
+            using_platform_token = True
+        elif resolved_gateway_key:
+            client_kwargs["api_key"] = resolved_gateway_key
 
-        self.otari_client = OtariClient(**client_kwargs)
-        self.client = self.otari_client.openai
+        if not resolved_api_base and not using_platform_token:
+            msg = (
+                "For any-llm otari, api_base is required unless a platform token is provided "
+                f"(set via parameter or {self.ENV_API_BASE_NAME}/{LEGACY_GATEWAY_API_BASE_ENV} env vars). "
+                "With a platform token, otari defaults to its hosted gateway."
+            )
+            raise ValueError(msg)
+
+        self.otari_client = AsyncOtariClient(**client_kwargs)
+        # otari 0.1.0's async client has no embedded OpenAI passthrough; every base
+        # client-based method is overridden below, so self.client is never used for I/O.
+        self.client = self.otari_client
         self.platform_mode = self.otari_client.platform_mode
+
+    @staticmethod
+    @override
+    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert completion params for the otari gateway.
+
+        The base OpenAI layer remaps ``max_tokens`` to ``max_completion_tokens`` to follow
+        the current OpenAI spec, but the otari gateway accepts only ``max_tokens`` and errors
+        on ``max_completion_tokens``. Remap it back so the token limit reaches the upstream
+        provider instead of producing an upstream error.
+
+        The base also leaves a Pydantic ``response_format`` as the model class (the OpenAI SDK
+        consumes it via ``parse()``); otari has no ``parse()`` helper, so send it as a
+        json_schema dict instead. The parsed object is reconstructed in ``_acompletion``.
+        """
+        converted = BaseOpenAIProvider._convert_completion_params(params, **kwargs)
+        if "max_completion_tokens" in converted:
+            converted["max_tokens"] = converted.pop("max_completion_tokens")
+        response_format = converted.get("response_format")
+        if is_structured_output_type(response_format):
+            converted["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": response_format.__name__, "schema": get_json_schema(response_format)},
+            }
+        return converted
+
+    @staticmethod
+    def _to_parsed_completion(completion: ChatCompletion, response_format: type) -> ParsedChatCompletion[Any]:
+        """Wrap a completion as a ParsedChatCompletion, parsing each message's JSON content."""
+        parsed: ParsedChatCompletion[Any] = ParsedChatCompletion.model_validate(completion, from_attributes=True)
+        for choice in parsed.choices:
+            if choice.message.content is not None:
+                choice.message.parsed = parse_json_content(response_format, choice.message.content)
+        return parsed
 
     @override
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        # Capture the original response_format before _convert_completion_params rewrites it,
+        # so the JSON content can be parsed back into the requested type.
+        response_format = params.response_format
+        wants_structured = is_structured_output_type(response_format)
         completion_kwargs = self._convert_completion_params(params, **kwargs)
+        if wants_structured and not params.stream:
+            completion_kwargs.pop("stream", None)
+
         response = await self.otari_client.completion(
             model=params.model_id,
             messages=params.messages,
             **completion_kwargs,
         )
-        return self._convert_completion_response_async(response)
+        # otari returns its own typed ChatCompletion (non-stream) or an async iterator
+        # of typed chunks (stream); normalize both to any-llm types.
+        if hasattr(response, "__aiter__"):
+
+            async def _chunk_iterator() -> AsyncIterator[ChatCompletionChunk]:
+                async for chunk in response:
+                    yield self._convert_completion_chunk_response(_as_plain_dict(chunk))
+
+            return _chunk_iterator()
+        completion = self._convert_completion_response(_as_plain_dict(response))
+        # Re-check inline (rather than reusing ``wants_structured``) so the TypeGuard narrows
+        # response_format to ``type`` for _to_parsed_completion.
+        if is_structured_output_type(response_format):
+            return self._to_parsed_completion(completion, response_format)
+        return completion
+
+    @override
+    async def _amessages(
+        self, params: MessagesParams, **kwargs: Any
+    ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStreamEvent]:
+        """Native Anthropic Messages API pass-through via otari's /messages endpoint.
+
+        The base implementation converts Messages to Chat Completions, which silently
+        drops Anthropic-only features (``cache_control`` on system blocks, ``thinking``
+        config). otari's gateway serves /messages natively, so delegate to the otari
+        SDK's ``message()`` to preserve them.
+        """
+        if params.context_management is not None or params.betas:
+            msg = "context_management and betas require a provider with a native Anthropic Messages API"
+            raise NotImplementedError(msg)
+
+        if params.output_format is not None:
+            # Structured output is handled by the base Messages<->Completions bridge, which
+            # routes output_format through otari's completion path. A follow-up could adopt
+            # otari's native /messages structured-output support directly.
+            return await super()._amessages(params, **kwargs)
+
+        api_kwargs = params.model_dump(exclude_none=True)
+        api_kwargs.update(kwargs)
+        api_kwargs.pop("stream", None)
+
+        if params.stream:
+            return self._stream_messages_async(**api_kwargs)
+
+        response = await self.otari_client.message(**api_kwargs)
+        return MessageResponse.model_validate(_as_plain_dict(response))
+
+    async def _stream_messages_async(self, **api_kwargs: Any) -> AsyncIterator[MessageStreamEvent]:
+        """Stream otari's /messages endpoint, yielding typed any-llm event models."""
+        stream = await self.otari_client.message(stream=True, **api_kwargs)
+        async for event in stream:
+            converted = _message_stream_event_from_dict(_as_plain_dict(event))
+            if converted is not None:
+                yield converted
 
     @override
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
     ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent]:
-        response_kwargs = params.model_dump(exclude_none=True, exclude={"model", "input"})
+        response_format = params.response_format
+        response_kwargs = params.model_dump(exclude_none=True, exclude={"model", "input", "response_format"})
+        # Otari has no parse() helper: request schema-conformant JSON via text.format and let the
+        # base layer parse the result into a ParsedResponse.
+        if is_structured_output_type(response_format):
+            response_kwargs["text"] = build_responses_text_format(response_format)
+        elif isinstance(response_format, dict):
+            response_kwargs["text"] = {"format": response_format}
         response_kwargs.update(kwargs)
         result = await self.otari_client.response(model=params.model, input=params.input, **response_kwargs)
         return cast("ResponseResource | Response | AsyncIterator[ResponseStreamEvent]", result)
@@ -205,35 +398,52 @@ class OtariProvider(BaseOpenAIProvider):
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         result = await self.otari_client.embedding(model=model, input=inputs, **kwargs)
-        return self._convert_embedding_response(result)
+        return self._convert_embedding_response(_as_plain_dict(result))
 
     @override
     async def _aimage_generation(self, params: ImageGenerationParams, **kwargs: Any) -> ImagesResponse:
+        from any_llm.types.image import ImagesResponse
+
         api_kwargs = params.to_api_kwargs()
         api_kwargs.update(kwargs)
-        return await self.otari_client.openai.images.generate(model=params.model_id, **api_kwargs)  # type: ignore[no-any-return]
+        prompt = api_kwargs.pop("prompt")
+        result = await self.otari_client.image_generation(
+            model=params.model_id,
+            prompt=prompt,
+            **api_kwargs,
+        )
+        return ImagesResponse.model_validate(_as_plain_dict(result))
 
     @override
     async def _atranscription(self, params: AudioTranscriptionParams, **kwargs: Any) -> Transcription:
+        from any_llm.types.audio import Transcription
+
         api_kwargs = params.to_api_kwargs()
         api_kwargs.update(kwargs)
-        return await self.otari_client.openai.audio.transcriptions.create(  # type: ignore[no-any-return]
+        file_bytes = params.file if isinstance(params.file, bytes) else params.file.read()
+        result = await self.otari_client.transcription(
             model=params.model_id,
-            file=params.file,
+            file=file_bytes,
             **api_kwargs,
         )
+        # otari wraps the response: ``json`` for JSON formats, ``text`` for text/srt/vtt.
+        if result.json is not None:
+            return Transcription.model_validate(result.json)
+        return Transcription(text=result.text)
 
     @override
     async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
         api_kwargs = params.to_api_kwargs()
         api_kwargs.update(kwargs)
-        response = await self.otari_client.openai.audio.speech.create(
-            model=params.model_id,
-            input=params.input,
-            voice=params.voice,
-            **api_kwargs,
+        return cast(
+            "bytes",
+            await self.otari_client.speech(
+                model=params.model_id,
+                input=params.input,
+                voice=params.voice,
+                **api_kwargs,
+            ),
         )
-        return cast("bytes", response.content)
 
     @override
     async def _amoderation(
@@ -244,7 +454,7 @@ class OtariProvider(BaseOpenAIProvider):
     ) -> ModerationResponse:
         include_raw = kwargs.pop("include_raw", False)
         model_name = model or "omni-moderation-latest"
-        raw = await self.otari_client.openai.moderations.create(
+        raw = await self.otari_client.moderation(
             model=model_name,
             input=cast("Any", input),
             **kwargs,
@@ -254,7 +464,7 @@ class OtariProvider(BaseOpenAIProvider):
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models = await self.otari_client.list_models()
-        return [Model.model_validate(model) if not isinstance(model, Model) else model for model in models]
+        return [model if isinstance(model, Model) else Model.model_validate(_as_plain_dict(model)) for model in models]
 
     @override
     async def _acreate_batch(
@@ -387,9 +597,5 @@ class OtariProvider(BaseOpenAIProvider):
         documents: list[str],
         **kwargs: Any,
     ) -> RerankResponse:
-        if not hasattr(self.otari_client, "rerank"):
-            msg = "Installed otari SDK does not expose rerank(). Upgrade otari to use rerank support."
-            raise NotImplementedError(msg)
-        rerank_fn = cast("Any", self.otari_client).rerank
-        result = await rerank_fn(model=model, query=query, documents=documents, **kwargs)
-        return RerankResponse.model_validate(result)
+        result = await self.otari_client.rerank(model=model, query=query, documents=documents, **kwargs)
+        return RerankResponse.model_validate(_as_plain_dict(result))

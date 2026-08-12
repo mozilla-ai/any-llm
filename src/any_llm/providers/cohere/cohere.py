@@ -38,6 +38,7 @@ REASONING_EFFORT_TO_THINKING_BUDGETS = {
     "medium": 8192,
     "high": 24576,
     "xhigh": 32768,
+    "max": 32768,
 }
 
 
@@ -81,6 +82,14 @@ class CohereProvider(AnyLLM):
                     "token_budget": REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort],
                 }
         converted_params.update(kwargs)
+
+        # Cohere's SDK carries a per-request timeout inside `request_options` rather than as a
+        # top-level keyword, so the seconds-based any-llm parameter has to be folded in there.
+        if (timeout := converted_params.pop("timeout", None)) is not None:
+            request_options = dict(converted_params.get("request_options") or {})
+            request_options.setdefault("timeout", timeout)
+            converted_params["request_options"] = request_options
+
         return converted_params
 
     @staticmethod
@@ -196,9 +205,6 @@ class CohereProvider(AnyLLM):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         if params.response_format is not None:
             kwargs["response_format"] = self._preprocess_response_format(params.response_format)
-        if params.stream and params.response_format is not None:
-            msg = "stream and response_format"
-            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
         if params.parallel_tool_calls is not None:
             msg = "parallel_tool_calls"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)

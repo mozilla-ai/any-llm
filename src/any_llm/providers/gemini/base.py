@@ -59,7 +59,14 @@ if TYPE_CHECKING:
         OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
     )
 
-REASONING_EFFORT_TO_THINKING_BUDGETS = {"minimal": 256, "low": 1024, "medium": 8192, "high": 24576, "xhigh": 32768}
+REASONING_EFFORT_TO_THINKING_BUDGETS = {
+    "minimal": 256,
+    "low": 1024,
+    "medium": 8192,
+    "high": 24576,
+    "xhigh": 32768,
+    "max": 32768,
+}
 _SUPPORTED_BATCH_ENDPOINTS = frozenset({"/v1/chat/completions"})
 
 
@@ -116,9 +123,6 @@ class GoogleProvider(AnyLLM):
 
         if params.parallel_tool_calls is not None:
             error_message = "parallel_tool_calls"
-            raise UnsupportedParameterError(error_message, provider_name)
-        if params.stream and params.response_format is not None:
-            error_message = "stream and response_format"
             raise UnsupportedParameterError(error_message, provider_name)
 
         if params.frequency_penalty is not None:
@@ -246,7 +250,8 @@ class GoogleProvider(AnyLLM):
     @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert Google chunk response to OpenAI format."""
-        return _create_openai_chunk_from_google_chunk(response)
+        tool_call_counter = kwargs.get("tool_call_counter")
+        return _create_openai_chunk_from_google_chunk(response, tool_call_counter)
 
     @staticmethod
     @override
@@ -299,8 +304,9 @@ class GoogleProvider(AnyLLM):
             response_stream = await self.client.aio.models.generate_content_stream(**converted_kwargs)
 
             async def _stream() -> AsyncIterator[ChatCompletionChunk]:
+                tool_call_counter: list[int] = [0]
                 async for chunk in response_stream:
-                    yield self._convert_completion_chunk_response(chunk)
+                    yield self._convert_completion_chunk_response(chunk, tool_call_counter=tool_call_counter)
 
             return _stream()
 
@@ -411,7 +417,9 @@ class GoogleProvider(AnyLLM):
     ) -> Sequence[Batch]:
         """List batch jobs using the Google GenAI Batch API."""
         config_kwargs: dict[str, Any] = {}
-        if limit:
+        if limit is not None:
+            if limit <= 0:
+                return []
             config_kwargs["page_size"] = limit
         if after:
             config_kwargs["page_token"] = after
@@ -421,6 +429,10 @@ class GoogleProvider(AnyLLM):
         batches: list[Batch] = []
         async for job in pager:
             batches.append(_convert_google_batch_job_to_openai_batch(job))
+            # page_size only caps results per page; the pager auto-follows every page,
+            # so enforce limit as a total cap to stop once we have enough.
+            if limit is not None and len(batches) >= limit:
+                break
         return batches
 
     @override

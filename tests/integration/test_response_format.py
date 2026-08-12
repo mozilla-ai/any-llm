@@ -64,6 +64,59 @@ async def test_response_format(
 
 
 @pytest.mark.asyncio
+async def test_response_format_bedrock_claude(
+    provider: LLMProvider,
+    provider_reasoning_model_map: dict[LLMProvider, str],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
+) -> None:
+    """Regression test for https://github.com/mozilla-ai/any-llm/issues/1184.
+
+    `test_response_format` above exercises Bedrock with an Amazon Nova model (via
+    `provider_model_map`), which still correctly raises `UnsupportedParameterError`.
+    This test targets a Claude model on Bedrock specifically, since that's the model
+    family #1184 adds `response_format` support for (emulated via a forced tool call,
+    see `any_llm.providers.bedrock.utils._convert_response_format_to_tool_spec`).
+    """
+    if provider != LLMProvider.BEDROCK:
+        pytest.skip("This test only targets Claude models on Bedrock, see issue #1184")
+
+    class ResponseFormat(BaseModel):
+        city_name: str
+
+    prompt = "What is the capital of France?"
+    try:
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
+        model_id = provider_reasoning_model_map[provider]
+
+        result = await llm.acompletion(
+            model=model_id,
+            messages=[{"role": "user", "content": prompt}],
+            response_format=ResponseFormat,
+            stream=False,
+        )
+        assert isinstance(result, ParsedChatCompletion)
+        assert result.choices[0].message.content is not None
+        output = ResponseFormat.model_validate_json(result.choices[0].message.content)
+        assert "paris" in output.city_name.lower()
+        parsed = result.choices[0].message.parsed
+        assert isinstance(parsed, ResponseFormat)
+        assert "paris" in parsed.city_name.lower()
+    except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} API key not provided, skipping")
+    except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
+        raise
+    except Exception as exc:
+        # boto3 can raise these directly (rather than any-llm's MissingApiKeyError) when
+        # ambient AWS credentials are missing/incomplete, e.g. in CI without the
+        # run-integration-tests label. Matched by name to avoid a hard botocore import.
+        if type(exc).__name__ in {"NoCredentialsError", "PartialCredentialsError", "NoRegionError"}:
+            pytest.skip(f"{provider.value} AWS credentials not available, skipping: {exc}")
+        raise
+
+
+@pytest.mark.asyncio
 async def test_response_format_dataclass(
     provider: LLMProvider,
     provider_model_map: dict[LLMProvider, str],
