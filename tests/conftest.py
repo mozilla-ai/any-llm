@@ -34,9 +34,11 @@ def pytest_configure(config: pytest.Config) -> None:
 def provider_reasoning_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.ANTHROPIC: "claude-sonnet-4-6",
-        # gemini-2.5-flash is closed to new API keys (404 "no longer available to new users"),
-        # so reasoning runs on the same Gemini 3 model the rest of the suite uses. thinking_budget
-        # stays supported there for backward compatibility, so the provider needs no change.
+        # gemini-2.5-flash is closed to new API keys (404 "no longer available to new users"), so
+        # reasoning runs on the same Gemini 3 model the rest of the suite uses. thinking_budget,
+        # which is what GoogleProvider sends for reasoning_effort, is still supported on Gemini 3.0
+        # for backward compatibility. Google has signalled it goes away for 3.5+, so the provider
+        # will need to send thinking_level before this can point at a newer model.
         LLMProvider.GEMINI: "gemini-3-flash-preview",
         # No anthropic model via otari surfaces reasoning content (tested haiku/sonnet/opus, even
         # with reasoning_effort set: OpenAI reasoning_effort is not mapped to Anthropic extended
