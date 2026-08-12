@@ -1,11 +1,46 @@
+import warnings
+
 import pytest
+from openai.lib._parsing._completions import parse_chat_completion
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
+from pydantic import BaseModel
 
 from any_llm.exceptions import ProviderError
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.providers.openai.utils import _convert_chat_completion
+from any_llm.providers.openai.utils import _convert_chat_completion, _convert_parsed_chat_completion
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+
+
+class Answer(BaseModel):
+    answer: str
+
+
+def test_convert_parsed_chat_completion_does_not_emit_serializer_warning() -> None:
+    """The SDK's parsed response path must not warn while preserving parsed data."""
+    raw = OpenAIChatCompletion.model_validate(
+        {
+            "id": "chatcmpl-offline",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "gpt-4o-mini",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": '{"answer":"Earth"}'},
+                }
+            ],
+        }
+    )
+    parsed = parse_chat_completion(response_format=Answer, input_tools=[], chat_completion=raw)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        converted = _convert_parsed_chat_completion(parsed)
+
+    assert not any("Pydantic serializer warnings" in str(item.message) for item in caught)
+    assert converted.choices[0].message.parsed == Answer(answer="Earth")
 
 
 def test_convert_chat_completion_with_empty_response() -> None:

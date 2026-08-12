@@ -111,3 +111,28 @@ def test_api_error_with_500_status() -> None:
     assert isinstance(result, ProviderError)
     assert result.provider_name == "anthropic"
     assert result.original_exception is original
+
+
+def test_status_code_and_type_are_preserved_on_the_unified_error() -> None:
+    """Anthropic reports status_code and type; it has no param/code equivalent.
+
+    The SDK sets ``type`` from the nested ``body["error"]["type"]``, and the
+    fields it does not report stay None rather than raising.
+    """
+    mock_response = MagicMock()
+    mock_response.status_code = 400
+    mock_response.headers = {}
+
+    original = AnthropicBadRequestError(
+        message="Invalid request",
+        response=mock_response,
+        body={"type": "error", "error": {"type": "invalid_request_error", "message": "Invalid request"}},
+    )
+
+    result = convert_exception(original, "anthropic")
+
+    assert isinstance(result, InvalidRequestError)
+    assert result.status_code == 400
+    assert result.error_type == "invalid_request_error"
+    assert result.param is None
+    assert result.code is None

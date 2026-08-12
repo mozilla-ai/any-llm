@@ -1,21 +1,53 @@
-from typing import Any
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from anthropic.types import InputJSONDelta, MessageDeltaUsage, StopReason, TextDelta, ThinkingDelta
+from anthropic.types import ContentBlock as AnthropicContentBlock
+from anthropic.types import InputJSONDelta, RawContentBlockDelta, TextDelta, ThinkingDelta
 from anthropic.types import Message as AnthropicMessage
-from anthropic.types import RawContentBlockDeltaEvent as ContentBlockDeltaEvent
-from anthropic.types import RawContentBlockStartEvent as ContentBlockStartEvent
-from anthropic.types import RawContentBlockStopEvent as ContentBlockStopEvent
-from anthropic.types import RawMessageDeltaEvent as MessageDeltaEvent
-from anthropic.types import RawMessageStartEvent as MessageStartEvent
-from anthropic.types import RawMessageStopEvent as MessageStopEvent
+from anthropic.types import MessageDeltaUsage as AnthropicMessageDeltaUsage
+from anthropic.types import RawContentBlockDeltaEvent as AnthropicContentBlockDeltaEvent
+from anthropic.types import RawContentBlockStartEvent as AnthropicContentBlockStartEvent
+from anthropic.types import RawContentBlockStopEvent as AnthropicContentBlockStopEvent
+from anthropic.types import RawMessageDeltaEvent as AnthropicMessageDeltaEvent
+from anthropic.types import RawMessageStartEvent as AnthropicMessageStartEvent
+from anthropic.types import RawMessageStopEvent as AnthropicMessageStopEvent
 from anthropic.types import TextBlock as AnthropicTextBlock
 from anthropic.types import ThinkingBlock as AnthropicThinkingBlock
 from anthropic.types import ToolUseBlock as AnthropicToolUseBlock
 from anthropic.types import Usage as AnthropicUsage
-from anthropic.types.raw_message_delta_event import Delta as MessageDelta
-from pydantic import BaseModel, ConfigDict
+from anthropic.types.beta import (
+    BetaCompactionBlock,
+    BetaCompactionContentBlockDelta,
+    BetaContainer,
+    BetaContentBlock,
+    BetaIterationsUsage,
+    BetaStopReason,
+    BetaThinkingBlock,
+)
+from anthropic.types.beta.beta_context_management_response import BetaContextManagementResponse
+from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage, ParsedBetaTextBlock
+from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
+from anthropic.types.raw_message_delta_event import Delta as AnthropicMessageDelta
+from pydantic import BaseModel, BeforeValidator, ConfigDict
+
+if TYPE_CHECKING:
+    from anthropic.types.beta.beta_diagnostics import BetaDiagnostics
+else:
+    try:
+        from anthropic.types.beta.beta_diagnostics import BetaDiagnostics
+    except ModuleNotFoundError:
+        # BetaDiagnostics was added in anthropic 0.102.0, while any-llm supports 0.83.0.
+        class _BetaDiagnosticsFallback(BaseModel):
+            model_config = ConfigDict(extra="allow", from_attributes=True)
+
+            cache_miss_reason: dict[str, Any] | None = None
+
+        BetaDiagnostics = _BetaDiagnosticsFallback
 
 __all__ = [
+    "BetaContextManagementResponse",
+    "BetaDiagnostics",
+    "CompactionBlock",
+    "CompactionDelta",
     "ContentBlock",
     "ContentBlockDeltaEvent",
     "ContentBlockStartEvent",
@@ -31,6 +63,10 @@ __all__ = [
     "MessageStreamEvent",
     "MessageUsage",
     "MessagesParams",
+    "ParsedBetaMessage",
+    "ParsedBetaTextBlock",
+    "ParsedMessage",
+    "ParsedTextBlock",
     "StopReason",
     "TextBlock",
     "TextDelta",
@@ -39,7 +75,13 @@ __all__ = [
     "ToolUseBlock",
 ]
 
-MessageUsage = AnthropicUsage
+StopReason = BetaStopReason
+
+
+class MessageUsage(AnthropicUsage):
+    iterations: BetaIterationsUsage | None = None
+    speed: Literal["standard", "fast"] | None = None
+
 
 TextBlock = AnthropicTextBlock
 
@@ -50,13 +92,67 @@ class ThinkingBlock(AnthropicThinkingBlock):
     signature: str = ""
 
 
-ContentBlock = TextBlock | ToolUseBlock | ThinkingBlock
+CompactionBlock = BetaCompactionBlock
+CompactionDelta = BetaCompactionContentBlockDelta
 
-MessageContentBlock = ContentBlock
+
+def _normalize_thinking_block(value: object) -> object:
+    if isinstance(value, (AnthropicThinkingBlock, BetaThinkingBlock)) and not isinstance(value, ThinkingBlock):
+        return ThinkingBlock.model_validate(value, from_attributes=True)
+    return value
+
+
+MessageContentBlock = Annotated[
+    ThinkingBlock | AnthropicContentBlock | BetaContentBlock,
+    BeforeValidator(_normalize_thinking_block),
+]
+
+ContentBlock = MessageContentBlock
 
 
 class MessageResponse(AnthropicMessage):
-    pass
+    container: BetaContainer | None = None  # type: ignore[assignment]
+    content: list[MessageContentBlock]  # type: ignore[assignment]
+    stop_reason: StopReason | None = None  # type: ignore[assignment]
+    usage: MessageUsage
+    context_management: BetaContextManagementResponse | None = None
+    diagnostics: BetaDiagnostics | None = None
+
+
+class MessageDelta(AnthropicMessageDelta):
+    stop_reason: StopReason | None = None  # type: ignore[assignment]
+
+
+class MessageDeltaUsage(AnthropicMessageDeltaUsage):
+    iterations: BetaIterationsUsage | None = None
+
+
+class MessageStartEvent(AnthropicMessageStartEvent):
+    message: MessageResponse
+
+
+class MessageDeltaEvent(AnthropicMessageDeltaEvent):
+    delta: MessageDelta
+    usage: MessageDeltaUsage
+    context_management: BetaContextManagementResponse | None = None
+
+
+class MessageStopEvent(AnthropicMessageStopEvent):
+    message: MessageResponse | None = None
+    """Accumulated message, populated only by providers with a native Anthropic Messages API."""
+
+
+class ContentBlockStartEvent(AnthropicContentBlockStartEvent):
+    content_block: MessageContentBlock  # type: ignore[assignment]
+
+
+class ContentBlockDeltaEvent(AnthropicContentBlockDeltaEvent):
+    delta: RawContentBlockDelta | CompactionDelta  # type: ignore[assignment]
+
+
+class ContentBlockStopEvent(AnthropicContentBlockStopEvent):
+    content_block: MessageContentBlock | None = None
+    """Completed block, populated only by providers with a native Anthropic Messages API."""
 
 
 MessageStreamEvent = (
@@ -115,3 +211,24 @@ class MessagesParams(BaseModel):
 
     cache_control: dict[str, Any] | None = None
     """Cache control configuration for prompt caching"""
+
+    prompt_cache_key: str | None = None
+    """A key to use when reading from or writing to a provider's prompt cache."""
+
+    context_management: dict[str, Any] | None = None
+    """Anthropic context management configuration"""
+
+    betas: list[str] | None = None
+    """Anthropic beta identifiers"""
+
+    output_format: type | dict[str, Any] | None = None
+    """Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
+
+    Either a Pydantic ``BaseModel`` subclass or dataclass **type**, or a raw Anthropic
+    ``output_config`` **dict** (e.g. ``{"format": {"type": "json_schema", "schema": {...}}}``)
+    for non-Pydantic JSON schemas. A type goes to native ``messages.parse`` on Anthropic; a
+    dict is passed through to native ``messages.create(output_config=...)``. Other providers
+    route either form through the completion bridge. The result is Anthropic's ``ParsedMessage``:
+    its ``parsed_output`` holds the typed object for a type, or the parsed JSON (plain
+    ``dict``/``list``) for a raw schema.
+    """

@@ -1,12 +1,33 @@
+import logging
 import os
 from collections import defaultdict
 from collections.abc import Generator
 from typing import Any
 
 import pytest
+from typing_extensions import override
 
 from any_llm.constants import LLMProvider
 from tests.constants import CI_EXCLUDED_PROVIDERS, INCLUDE_LOCAL_PROVIDERS, INCLUDE_NON_LOCAL_PROVIDERS, LOCAL_PROVIDERS
+
+
+class _IgnoreEventLoopClosedFilter(logging.Filter):
+    """Drop the noisy ``Event loop is closed`` records asyncio logs during teardown.
+
+    pytest-asyncio uses a function-scoped event loop, so the loop is closed at the end of
+    each async test. httpx ``AsyncClient`` instances held by providers are finalized
+    afterwards and schedule ``aclose()`` on the already-closed loop, which asyncio reports
+    through its logger as ``RuntimeError: Event loop is closed``. These are teardown
+    artifacts, not real failures; every other asyncio record passes through untouched.
+    """
+
+    @override
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "Event loop is closed" not in record.getMessage()
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    logging.getLogger("asyncio").addFilter(_IgnoreEventLoopClosedFilter())
 
 
 @pytest.fixture
@@ -14,28 +35,44 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.ANTHROPIC: "claude-sonnet-4-6",
         LLMProvider.GEMINI: "gemini-2.5-flash",
-        LLMProvider.GATEWAY: "gpt-5-nano",
-        LLMProvider.OTARI: "gpt-5-nano",
+        # No anthropic model via otari surfaces reasoning content (tested haiku/sonnet/opus, even
+        # with reasoning_effort set: OpenAI reasoning_effort is not mapped to Anthropic extended
+        # thinking). gpt-oss-120b does emit reasoning, which needs the otari SDK reasoning-string
+        # fix (mozilla-ai/otari#145) to deserialize.
+        LLMProvider.OTARI: "mzai:openai/gpt-oss-120b",
         LLMProvider.VERTEXAI: "gemini-2.5-flash",
         LLMProvider.GITHUB: "openai/gpt-4.1-nano",
         LLMProvider.GROQ: "openai/gpt-oss-20b",
         LLMProvider.FIREWORKS: "accounts/fireworks/models/gpt-oss-20b",
         LLMProvider.OPENAI: "gpt-5-nano",
-        LLMProvider.MISTRAL: "magistral-medium-latest",
+        # magistral-medium-latest / magistral-small-latest (native reasoning models) are
+        # deprecated; mistral-medium-3-5 supports adjustable reasoning via reasoning_effort
+        # (high/none only, see MistralProvider._convert_completion_params).
+        LLMProvider.MISTRAL: "mistral-medium-3-5",
+        LLMProvider.GMI: "zai-org/GLM-5-FP8",
         LLMProvider.XAI: "grok-3-mini-latest",
         LLMProvider.OLLAMA: "qwen3:0.6b",
         LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
         LLMProvider.LLAMAFILE: "N/A",
         LLMProvider.LLAMACPP: "N/A",
         LLMProvider.VLLM: "N/A",
+        LLMProvider.CASCADIA: "N/A",
+        LLMProvider.ATLASCLOUD: "deepseek-ai/deepseek-v4-flash",
+        LLMProvider.KENARI: "deepseek-v4-flash",
         LLMProvider.LMSTUDIO: "qwen3-0.6b",
         LLMProvider.AZUREOPENAI: "gpt-4.1-nano",
         LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.COHERE: "command-a-reasoning-08-2025",
-        LLMProvider.DEEPSEEK: "deepseek-reasoner",
-        LLMProvider.MOONSHOT: "kimi-k2-thinking",
+        # deepseek-reasoner is discontinued 2026-07-24 in favor of deepseek-v4-flash, where
+        # thinking mode is now a request-level toggle (see DeepseekProvider._convert_completion_params)
+        # rather than a dedicated model name.
+        LLMProvider.DEEPSEEK: "deepseek-v4-flash",
+        # kimi-k2-thinking and kimi-thinking-preview are discontinued; kimi-k2.6 is the
+        # current reasoning-capable model (thinking mode, native multimodal).
+        LLMProvider.MOONSHOT: "kimi-k2.6",
         LLMProvider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         LLMProvider.HUGGINGFACE: "Qwen/Qwen2.5-72B-Instruct",
+        LLMProvider.NEOSANTARA: "deepseek-v4-flash",
         LLMProvider.NEBIUS: "openai/gpt-oss-120b",
         LLMProvider.SAMBANOVA: "gpt-oss-120b",
         LLMProvider.TOGETHER: "openai/gpt-oss-20b",
@@ -43,6 +80,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.MINIMAX: "MiniMax-M2",
         LLMProvider.ZAI: "glm-4.5-flash",
         LLMProvider.DEEPINFRA: "deepseek-ai/DeepSeek-R1",
+        LLMProvider.TELNYX: "moonshotai/Kimi-K2.6",
     }
 
 
@@ -52,11 +90,15 @@ def provider_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.MISTRAL: "mistral-small-latest",
         LLMProvider.ANTHROPIC: "claude-haiku-4-5",
-        LLMProvider.DEEPSEEK: "deepseek-chat",
+        # deepseek-chat is discontinued 2026-07-24 in favor of deepseek-v4-flash; thinking mode
+        # defaults to disabled for it unless reasoning_effort is set (see
+        # DeepseekProvider._convert_completion_params), matching the old deepseek-chat behavior.
+        LLMProvider.DEEPSEEK: "deepseek-v4-flash",
         LLMProvider.OPENAI: "gpt-5-nano",
-        LLMProvider.GATEWAY: "gpt-5-nano",
-        LLMProvider.OTARI: "gpt-5-nano",
+        # otari routes provider:model; anthropic is the only upstream the test account serves reliably.
+        LLMProvider.OTARI: "anthropic:claude-haiku-4-5",
         LLMProvider.GEMINI: "gemini-3-flash-preview",
+        LLMProvider.GMI: "zai-org/GLM-5-FP8",
         LLMProvider.GITHUB: "openai/gpt-4.1-nano",
         LLMProvider.VERTEXAI: "gemini-3-flash-preview",
         LLMProvider.MOONSHOT: "moonshot-v1-8k",
@@ -64,13 +106,17 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.TOGETHER: "openai/gpt-oss-20b",
         LLMProvider.XAI: "grok-3-mini-latest",
         LLMProvider.INCEPTION: "mercury",
+        LLMProvider.NEOSANTARA: "gemini-3-flash-preview",
         LLMProvider.NEBIUS: "openai/gpt-oss-120b",
         LLMProvider.OLLAMA: "llama3.2:1b",
         LLMProvider.LLAMAFILE: "N/A",
-        LLMProvider.LMSTUDIO: "google/gemma-3-4b",  # You must have LM Studio running and the server enabled
+        LLMProvider.LMSTUDIO: "qwen/qwen3-1.7b",  # small model keeps the LM Studio cache under the 10GB Actions limit; you must have LM Studio running and the server enabled
         LLMProvider.VLLM: "Qwen/Qwen2.5-0.5B-Instruct",
+        LLMProvider.CASCADIA: "Qwen/Qwen2.5-0.5B-Instruct",
+        LLMProvider.ATLASCLOUD: "deepseek-v3",
+        LLMProvider.KENARI: "deepseek-v4-flash",
         LLMProvider.COHERE: "command-a-03-2025",
-        LLMProvider.CEREBRAS: "llama3.1-8b",
+        LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.HUGGINGFACE: "Qwen/Qwen2.5-72B-Instruct",
         LLMProvider.BEDROCK: "amazon.nova-lite-v1:0",
         LLMProvider.SAGEMAKER: "<sagemaker_endpoint_name>",
@@ -87,6 +133,8 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.MINIMAX: "MiniMax-M2",
         LLMProvider.ZAI: "glm-4-32b-0414-128k",
         LLMProvider.DEEPINFRA: "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        LLMProvider.EDENAI: "openai/gpt-4o-mini",
+        LLMProvider.TELNYX: "meta-llama/Meta-Llama-3.1-8B-Instruct",
     }
 
 
@@ -96,12 +144,14 @@ def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict
         **provider_model_map,
         LLMProvider.OPENAI: "gpt-5-mini",  # Slightly more powerful so that it doesn't get caught in a loop of logic
         LLMProvider.WATSONX: "meta-llama/llama-guard-3-11b-vision",
-        LLMProvider.SAMBANOVA: "Llama-4-Maverick-17B-128E-Instruct",
+        LLMProvider.SAMBANOVA: "gemma-4-31B-it",
         LLMProvider.NEBIUS: "Qwen/Qwen2.5-VL-72B-Instruct",
         LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
+        LLMProvider.COHERE: "command-a-vision-07-2025",  # command-a-03-2025 rejects image content
         LLMProvider.OLLAMA: "llava-phi3",  # Fast vision model compatible with OpenAI format
-        LLMProvider.FIREWORKS: "accounts/fireworks/models/kimi-k2p5",
+        LLMProvider.FIREWORKS: "accounts/fireworks/models/kimi-k2p6",
         LLMProvider.BEDROCK: "anthropic.claude-3-haiku-20240307-v1:0",  # Claude 3 Haiku with vision support
+        LLMProvider.NEOSANTARA: "gemini-3-flash-preview",  # Vision model compatible with OpenAI format
     }
 
 
@@ -110,6 +160,7 @@ def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict
 def embedding_provider_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.OPENAI: "text-embedding-ada-002",
+        LLMProvider.NEOSANTARA: "text-embedding-3-small",
         LLMProvider.NEBIUS: "Qwen/Qwen3-Embedding-8B",
         LLMProvider.SAMBANOVA: "Meta-Llama-3.1-8B-Instruct",
         LLMProvider.MISTRAL: "mistral-embed",
@@ -125,11 +176,12 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.AZURE: "openai/text-embedding-3-small",
         LLMProvider.VOYAGE: "voyage-3.5-lite",
         LLMProvider.LLAMACPP: "N/A",
-        LLMProvider.GATEWAY: "text-embedding-ada-002",
-        LLMProvider.OTARI: "text-embedding-ada-002",
+        # otari intentionally omitted: the test account has no embedding model (see otari-ai #1036),
+        # so test_embedding skips otari.
         LLMProvider.AZUREOPENAI: "gpt-4.1-nano",  # Not an embedding model but it's the only one we have deployed in Azure OpenAI
         LLMProvider.OPENROUTER: "qwen/qwen3-embedding-8b",
         LLMProvider.DEEPINFRA: "BAAI/bge-base-en-v1.5",
+        LLMProvider.EDENAI: "openai/text-embedding-3-small",
     }
 
 
@@ -143,12 +195,15 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.BEDROCK: {"region_name": "us-east-1"},
         LLMProvider.CEREBRAS: {"timeout": 10},
         LLMProvider.COHERE: {"timeout": 10},
-        LLMProvider.GATEWAY: {"api_base": "http://127.0.0.1:3000", "timeout": 1},
-        LLMProvider.OTARI: {"api_base": "http://127.0.0.1:3000", "timeout": 1},
+        # otari omits a default api_base: the provider resolves the hosted endpoint from
+        # OTARI_AI_TOKEN (platform mode), and is skipped when unconfigured (see
+        # tests/integration/conftest.py).
         LLMProvider.GROQ: {"timeout": 10},
         LLMProvider.LLAMACPP: {"api_base": "http://127.0.0.1:8090/v1"},
         LLMProvider.VLLM: {"api_base": "http://127.0.0.1:8080/v1"},
+        LLMProvider.CASCADIA: {"api_base": "http://localhost:9090/v1"},
         LLMProvider.MISTRAL: {"timeout_ms": 100000},
+        LLMProvider.NEOSANTARA: {"timeout": 10},
         LLMProvider.NEBIUS: {"api_base": "https://api.studio.nebius.com/v1/"},
         LLMProvider.OPENAI: {"timeout": 10},
         LLMProvider.TOGETHER: {"timeout": 10},

@@ -1,18 +1,22 @@
 import dataclasses
-from contextlib import contextmanager
-from datetime import UTC
-from typing import Any, get_args
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, contextmanager
+from datetime import UTC, datetime
+from typing import Any, cast, get_args
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from anthropic import transform_schema
+from anthropic.types import Message
+from anthropic.types.model_info import ModelInfo
 from pydantic import BaseModel
 
-from any_llm.exceptions import UnsupportedParameterError
+from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.utils import (
     DEFAULT_MAX_TOKENS,
     REASONING_EFFORT_TO_ANTHROPIC_EFFORT,
+    _convert_models_list,
     _convert_response_format,
     _convert_tool_spec,
 )
@@ -116,6 +120,72 @@ async def test_completion_with_kwargs() -> None:
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model, messages=messages, max_tokens=100, temperature=0.5
         )
+
+
+@pytest.mark.asyncio
+async def test_completion_without_timeout_raises_clear_error() -> None:
+    """Reproduces issue #1251: without a timeout, a large-max_tokens non-streaming completion
+    surfaces an actionable any-llm error instead of the SDK's opaque pre-flight ValueError.
+
+    Uses a real ``AsyncAnthropic`` client so the SDK's client-side check runs; it raises before
+    any request is sent. The transport is patched to fail fast so the test stays hermetic even if
+    that guard ever changes. Goes through the public ``acompletion`` so the exception-handling
+    decorator is exercised too.
+    """
+    provider = AnthropicProvider(api_key="sk-test")
+
+    with (
+        patch.object(
+            provider.client, "post", new=AsyncMock(side_effect=AssertionError("network should not be reached"))
+        ),
+        pytest.raises(InvalidRequestError) as exc_info,
+    ):
+        await provider.acompletion(
+            model="claude-opus-5",
+            messages=[{"role": "user", "content": "Hi"}],
+            max_tokens=65536,
+            stream=False,
+        )
+
+    message = str(exc_info.value)
+    assert "timeout" in message
+    assert "stream=True" in message
+    assert isinstance(exc_info.value.original_exception, ValueError)
+
+
+@pytest.mark.asyncio
+async def test_completion_with_timeout_bypasses_nonstreaming_guard() -> None:
+    """An explicit timeout lifts the SDK pre-flight guard so the same large request reaches transport."""
+    provider = AnthropicProvider(api_key="sk-test")
+    params = CompletionParams(
+        model_id="claude-opus-5",
+        messages=[{"role": "user", "content": "Hi"}],
+        max_tokens=65536,
+        stream=False,
+    )
+
+    # The guard fires before the transport call, so reaching ``post`` proves it was skipped.
+    with (
+        patch.object(provider.client, "post", new=AsyncMock(side_effect=RuntimeError("reached transport"))),
+        pytest.raises(RuntimeError, match="reached transport"),
+    ):
+        await provider._acompletion(params, timeout=600)
+
+
+@pytest.mark.asyncio
+async def test_completion_reraises_unrelated_value_error() -> None:
+    """A ValueError that is not the SDK pre-flight guard propagates unchanged, not translated."""
+    unrelated = ValueError("some other problem")
+
+    with mock_anthropic_provider() as mock_anthropic:
+        mock_anthropic.return_value.messages.create = AsyncMock(side_effect=unrelated)
+        provider = AnthropicProvider(api_key="test-api-key")
+        with pytest.raises(ValueError, match="some other problem") as exc_info:
+            await provider._acompletion(
+                CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hi"}], max_tokens=100)
+            )
+
+    assert exc_info.value is unrelated
 
 
 @pytest.mark.asyncio
@@ -286,6 +356,39 @@ async def test_completion_with_custom_reasoning_effort(reasoning_effort: Reasoni
         else:
             assert call_kwargs["thinking"] == {"type": "adaptive"}
             assert call_kwargs["output_config"] == {"effort": REASONING_EFFORT_TO_ANTHROPIC_EFFORT[reasoning_effort]}
+
+
+@pytest.mark.parametrize(
+    ("reasoning_effort", "expected_effort"),
+    [
+        ("minimal", "low"),
+        ("low", "low"),
+        ("medium", "medium"),
+        ("high", "high"),
+        ("xhigh", "xhigh"),
+        ("max", "max"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_reasoning_effort_maps_to_distinct_anthropic_effort(
+    reasoning_effort: ReasoningEffort, expected_effort: str
+) -> None:
+    """Guard against mapping canonical xhigh onto Anthropic's max (see issue #1107).
+
+    Anthropic exposes low < medium < high < xhigh < max as distinct levels, so each
+    canonical effort must map to its intended Anthropic level rather than silently
+    escalating xhigh to max.
+    """
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(model_id="model-id", messages=messages, reasoning_effort=reasoning_effort)
+        )
+
+        call_kwargs = mock_anthropic.return_value.messages.create.call_args[1]
+        assert call_kwargs["output_config"] == {"effort": expected_effort}
 
 
 @pytest.mark.asyncio
@@ -593,22 +696,49 @@ async def test_completion_with_response_format_dict_json_object_raises() -> None
 
 
 @pytest.mark.asyncio
-async def test_stream_with_response_format_raises() -> None:
+async def test_stream_with_response_format_passes_output_config() -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
+    schema = {"type": "object", "properties": {"city_name": {"type": "string"}}, "required": ["city_name"]}
+    response_format: dict[str, Any] = {
+        "type": "json_schema",
+        "json_schema": {"name": "Foo", "schema": schema},
+    }
 
-    provider = AnthropicProvider(api_key=api_key)
+    async def empty_events() -> AsyncIterator[Any]:
+        if False:
+            yield None
 
-    with pytest.raises(UnsupportedParameterError, match="stream and response_format"):
-        await provider._acompletion(
-            CompletionParams(
-                model_id=model,
-                messages=messages,
-                response_format={"type": "json_schema", "json_schema": {"name": "Foo", "schema": {}}},
-                stream=True,
-            )
+    @asynccontextmanager
+    async def empty_stream() -> AsyncIterator[AsyncIterator[Any]]:
+        yield empty_events()
+
+    with mock_anthropic_provider() as mock_anthropic:
+        mock_anthropic.return_value.messages.stream = Mock(return_value=empty_stream())
+        provider = AnthropicProvider(api_key=api_key)
+        stream = cast(
+            "AsyncIterator[Any]",
+            await provider._acompletion(
+                CompletionParams(
+                    model_id=model,
+                    messages=messages,
+                    response_format=response_format,
+                    stream=True,
+                )
+            ),
         )
+
+        async for _ in stream:
+            pass
+
+        expected_output_config = {"format": {"type": "json_schema", "schema": transform_schema(schema)}}
+        mock_anthropic.return_value.messages.stream.assert_called_once()
+        call_kwargs = mock_anthropic.return_value.messages.stream.call_args.kwargs
+        assert call_kwargs["model"] == model
+        assert call_kwargs["messages"] == messages
+        assert call_kwargs["max_tokens"] == DEFAULT_MAX_TOKENS
+        assert call_kwargs["output_config"] == expected_output_config
 
 
 @pytest.mark.asyncio
@@ -876,6 +1006,40 @@ def test_streaming_tool_chunks_preserve_parallel_tool_index() -> None:
     assert delta_result.choices[0].delta.tool_calls[0].function.arguments == '{"city":"Rome"}'
 
 
+def test_streaming_thinking_signature_delta_sets_extra_content() -> None:
+    """The encrypted thinking signature must be surfaced on the streaming delta's extra_content."""
+    from anthropic.types import ContentBlockDeltaEvent, SignatureDelta
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    delta_chunk = ContentBlockDeltaEvent(
+        type="content_block_delta",
+        index=0,
+        delta=SignatureDelta(type="signature_delta", signature="sig-12345"),
+    )
+    result = _create_openai_chunk_from_anthropic_chunk(delta_chunk, "claude-3-haiku")
+
+    assert result.choices[0].delta.extra_content == {"anthropic": {"signature": "sig-12345"}}
+
+
+def test_streaming_thinking_delta_does_not_set_extra_content() -> None:
+    """A plain thinking_delta (no signature yet) should not set extra_content."""
+    from anthropic.types import ContentBlockDeltaEvent, ThinkingDelta
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    delta_chunk = ContentBlockDeltaEvent(
+        type="content_block_delta",
+        index=0,
+        delta=ThinkingDelta(type="thinking_delta", thinking="Let me think..."),
+    )
+    result = _create_openai_chunk_from_anthropic_chunk(delta_chunk, "claude-3-haiku")
+
+    assert result.choices[0].delta.extra_content is None
+    assert result.choices[0].delta.reasoning is not None
+    assert result.choices[0].delta.reasoning.content == "Let me think..."
+
+
 def test_non_streaming_response_preserves_multiple_tool_calls() -> None:
     from anthropic.types import Message, ToolUseBlock, Usage
 
@@ -909,6 +1073,267 @@ def test_non_streaming_response_preserves_multiple_tool_calls() -> None:
     assert result.choices[0].message.tool_calls[1].function.name == "get_time"
 
 
+def test_non_streaming_response_preserves_thinking_signature() -> None:
+    """The encrypted thinking signature must be surfaced on the message's extra_content."""
+    from anthropic.types import Message, ThinkingBlock, ToolUseBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason="tool_use",
+        content=[
+            ThinkingBlock(type="thinking", thinking="Let me reason...", signature="sig-12345"),
+            ToolUseBlock(type="tool_use", id="toolu_1", name="get_weather", input={"city": "Rome"}),
+        ],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].message.reasoning is not None
+    assert result.choices[0].message.reasoning.content == "Let me reason..."
+    assert result.choices[0].message.extra_content == {"anthropic": {"signature": "sig-12345"}}
+
+
+def test_non_streaming_response_without_thinking_has_no_extra_content() -> None:
+    from anthropic.types import Message, TextBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason="end_turn",
+        content=[TextBlock(type="text", text="Hello")],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].message.extra_content is None
+
+
+def test_non_streaming_response_empty_thinking_signature_has_no_extra_content() -> None:
+    """An empty (falsy) signature, e.g. display='omitted' before the signature streams in, should not be stored."""
+    from anthropic.types import Message, ThinkingBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason="end_turn",
+        content=[ThinkingBlock(type="thinking", thinking="", signature="")],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].message.extra_content is None
+
+
+def test_convert_messages_replays_thinking_block_with_tool_call() -> None:
+    """Anthropic requires the unmodified thinking block (with signature) to be replayed
+    alongside the tool_use block when continuing a turn that used extended thinking."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "What's the weather in Paris?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "reasoning": "Let me check the weather tool.",
+            "extra_content": {"anthropic": {"signature": "sig-12345"}},
+            "tool_calls": [
+                {
+                    "id": "toolu_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "toolu_1", "content": '{"temp": "20C"}'},
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assistant_message = converted[1]
+    assert assistant_message["role"] == "assistant"
+    assert assistant_message["content"][0] == {
+        "type": "thinking",
+        "thinking": "Let me check the weather tool.",
+        "signature": "sig-12345",
+    }
+    assert assistant_message["content"][1] == {
+        "type": "tool_use",
+        "id": "toolu_1",
+        "name": "get_weather",
+        "input": {"city": "Paris"},
+    }
+
+
+def test_convert_messages_replays_thinking_block_with_text() -> None:
+    """A plain-text assistant message that carries a thinking signature should also replay it.
+
+    Also covers the dict-shaped ``{"content": str}`` form of ``reasoning``, as opposed to the
+    plain string form used in test_convert_messages_replays_thinking_block_with_tool_call.
+    """
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "What is 2 + 2?"},
+        {
+            "role": "assistant",
+            "content": "The answer is 4.",
+            "reasoning": {"content": "2 + 2 = 4."},
+            "extra_content": {"anthropic": {"signature": "sig-67890"}},
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assistant_message = converted[1]
+    assert assistant_message["content"] == [
+        {"type": "thinking", "thinking": "2 + 2 = 4.", "signature": "sig-67890"},
+        {"type": "text", "text": "The answer is 4."},
+    ]
+
+
+def test_convert_messages_replays_thinking_block_with_list_content() -> None:
+    """An assistant message whose content is already a list of blocks (not a plain string) should
+    have the thinking block prepended to the existing blocks, not replace them."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Describe this image."},
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "It's a cat."}],
+            "reasoning": "Looking at the image.",
+            "extra_content": {"anthropic": {"signature": "sig-list"}},
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assistant_message = converted[1]
+    assert assistant_message["content"] == [
+        {"type": "thinking", "thinking": "Looking at the image.", "signature": "sig-list"},
+        {"type": "text", "text": "It's a cat."},
+    ]
+
+
+def test_extract_anthropic_thinking_signature_ignores_non_string_signature() -> None:
+    """A malformed signature (non-string) should be treated as absent, not crash."""
+    from any_llm.providers.anthropic.utils import _extract_anthropic_thinking_signature
+
+    message = {"extra_content": {"anthropic": {"signature": 12345}}}
+
+    assert _extract_anthropic_thinking_signature(message) is None
+
+
+def test_build_anthropic_thinking_block_defaults_to_empty_thinking_text() -> None:
+    """When a signature is present but reasoning is missing or malformed, thinking text defaults to ''."""
+    from any_llm.providers.anthropic.utils import _build_anthropic_thinking_block
+
+    message = {"extra_content": {"anthropic": {"signature": "sig-no-reasoning"}}}
+
+    assert _build_anthropic_thinking_block(message) == {
+        "type": "thinking",
+        "thinking": "",
+        "signature": "sig-no-reasoning",
+    }
+
+
+def test_convert_messages_without_thinking_signature_unchanged() -> None:
+    """Without a signature, assistant messages should be forwarded unchanged (no thinking block)."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Hi"},
+        {"role": "assistant", "content": "Hello there!"},
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assert converted[1] == {"role": "assistant", "content": "Hello there!"}
+
+
+def test_convert_messages_ignores_unrelated_extra_content() -> None:
+    """An extra_content dict without an 'anthropic' key (e.g. from a different provider) should be a no-op."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Hi"},
+        {
+            "role": "assistant",
+            "content": "Hello there!",
+            "reasoning": "Greeting the user.",
+            "extra_content": {"google": {"thought_signature": "unrelated"}},
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assert converted[1] == {"role": "assistant", "content": "Hello there!"}
+
+
+def test_convert_messages_replays_thinking_block_with_none_content() -> None:
+    """A reasoning-only assistant turn (content=None, no tool_calls) must not crash on replay.
+
+    Regression test: message.get("content") can be explicitly None rather than a string or
+    list, e.g. for a turn that only produced reasoning and no visible text or tool call.
+    """
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Just think about it, don't answer."},
+        {
+            "role": "assistant",
+            "content": None,
+            "reasoning": "Thinking without responding.",
+            "extra_content": {"anthropic": {"signature": "sig-none-content"}},
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assistant_message = converted[1]
+    assert assistant_message["content"] == [
+        {"type": "thinking", "thinking": "Thinking without responding.", "signature": "sig-none-content"},
+    ]
+
+
+def test_convert_messages_replays_thinking_block_with_empty_string_content() -> None:
+    """An empty string content (as opposed to None) should behave the same: only the thinking block is kept."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Just think about it, don't answer."},
+        {
+            "role": "assistant",
+            "content": "",
+            "reasoning": "Thinking without responding.",
+            "extra_content": {"anthropic": {"signature": "sig-empty-content"}},
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assistant_message = converted[1]
+    assert assistant_message["content"] == [
+        {"type": "thinking", "thinking": "Thinking without responding.", "signature": "sig-empty-content"},
+    ]
+
+
 def test_convert_tool_spec_none_parameters() -> None:
     """Regression: parameters=None must not raise 'NoneType' object is not subscriptable."""
     tools = _convert_tool_spec([{"type": "function", "function": {"name": "ping", "parameters": None}}])
@@ -923,3 +1348,105 @@ def test_convert_tool_spec_parameters_missing_properties() -> None:
     tools = _convert_tool_spec([{"type": "function", "function": {"name": "ping", "parameters": {"type": "object"}}}])
     assert len(tools) == 1
     assert tools[0]["input_schema"]["properties"] == {}
+
+
+def test_convert_models_list_uses_created_at() -> None:
+    """The normal path: a real Anthropic listing carries created_at."""
+    created_at = datetime(2026, 2, 19, tzinfo=UTC)
+    model = ModelInfo.construct(id="claude-opus-4-5", type="model", display_name="Opus", created_at=created_at)
+
+    result = _convert_models_list([model])
+
+    assert len(result) == 1
+    assert result[0].id == "claude-opus-4-5"
+    assert result[0].created == int(created_at.timestamp())
+    assert result[0].owned_by == "anthropic"
+
+
+def test_convert_models_list_missing_created_at() -> None:
+    """Regression: created_at=None must not raise "'NoneType' object has no attribute 'timestamp'".
+
+    ModelInfo requires created_at, but an Anthropic-compatible gateway may serve
+    /v1/models in the OpenAI shape, which has an integer "created" and no
+    "created_at". The SDK constructs the model without validating, so the
+    attribute exists and is None, and the whole listing used to fail.
+    """
+    model = ModelInfo.construct(id="gateway-alias:some-model", type="model", display_name="Alias", created_at=None)
+
+    result = _convert_models_list([model])
+
+    assert len(result) == 1
+    assert result[0].id == "gateway-alias:some-model"
+    assert result[0].created == 0
+    assert result[0].owned_by == "anthropic"
+
+
+def test_convert_models_list_mixed_created_at() -> None:
+    """One entry missing created_at must not discard the entries that have it."""
+    created_at = datetime(2026, 2, 19, tzinfo=UTC)
+    models = [
+        ModelInfo.construct(id="with", type="model", display_name="With", created_at=created_at),
+        ModelInfo.construct(id="without", type="model", display_name="Without", created_at=None),
+    ]
+
+    result = _convert_models_list(models)
+
+    assert [m.id for m in result] == ["with", "without"]
+    assert [m.created for m in result] == [int(created_at.timestamp()), 0]
+
+
+def _anthropic_message(**extra: Any) -> Message:
+    """Build a spec-shaped Messages response, plus any extra fields an endpoint might send."""
+    return Message.model_validate(
+        {
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-3-haiku",
+            "content": [{"type": "text", "text": "hello"}],
+            "stop_reason": "end_turn",
+            "stop_sequence": None,
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            **extra,
+        }
+    )
+
+
+def test_convert_response_without_created_at() -> None:
+    """The Anthropic Messages API carries no timestamp, so created falls back to 0."""
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    result = _convert_response(_anthropic_message())
+
+    assert result.created == 0
+    assert result.choices[0].message.content == "hello"
+
+
+def test_convert_response_with_created_at() -> None:
+    """When an endpoint does supply a datetime, it is used."""
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    created_at = datetime(2026, 2, 19, tzinfo=UTC)
+
+    result = _convert_response(_anthropic_message(created_at=created_at))
+
+    assert result.created == int(created_at.timestamp())
+
+
+@pytest.mark.parametrize("created_at", [None, 1750000000, "2026-01-01T00:00:00Z"])
+def test_convert_response_non_datetime_created_at(created_at: Any) -> None:
+    """Regression: a non-datetime created_at must not raise "'NoneType' object has no attribute 'timestamp'".
+
+    Message does not declare created_at, so an Anthropic-compatible endpoint that sends the
+    field anyway has it kept as an unvalidated extra attribute holding the raw JSON value.
+    A bare hasattr guard passed for these and crashed the whole completion on .timestamp().
+    """
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = _anthropic_message(created_at=created_at)
+    assert hasattr(response, "created_at")
+
+    result = _convert_response(response)
+
+    assert result.created == 0
+    assert result.choices[0].message.content == "hello"

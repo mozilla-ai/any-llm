@@ -1,34 +1,20 @@
 # Repository Guidelines
 
-`CLAUDE.md` is a symlink to this file. Always edit `AGENTS.md` directly; never modify `CLAUDE.md`.
+Every `CLAUDE.md` in this repo is a symlink to the `AGENTS.md` beside it. Always edit `AGENTS.md` directly; never modify a `CLAUDE.md`, and never create one that holds content.
 
 ## Where to Look First
 
-- [README.md](README.md): high-level usage overview.
 - [CONTRIBUTING.md](CONTRIBUTING.md): canonical dev setup, test matrix, and contribution workflow.
-- [pyproject.toml](pyproject.toml) and [.pre-commit-config.yaml](.pre-commit-config.yaml): formatting/lint/typecheck configuration.
-- [docs/](docs/): GitBook documentation sources (flat markdown layout). CI builds to `site/` and pushes to the `gitbook-docs` branch that GitBook watches.
-
-## Project Structure & Module Organization
-
-- `src/any_llm/`: Python SDK source (providers in `src/any_llm/providers/`, shared types in `src/any_llm/types/`).
-- `tests/`: `unit/`, `integration/`, plus shared fixtures in `tests/conftest.py`.
-- `docs/`: Hand-authored GitBook documentation (flat markdown layout). Generated files (`api/`, `providers.md`, `cookbooks/any-llm-getting-started.md`) are build artifacts produced by `scripts/convert_to_gitbook.py` and are not committed to the repository. The final publish artifact is `site/`, built by CI and pushed to the `gitbook-docs` branch.
 
 ## Build, Test, and Development Commands
 
 This repo uses `uv` for local dev (Python 3.11+). For the full, up-to-date command set, follow [CONTRIBUTING.md](CONTRIBUTING.md).
 
 - Create env + install dev deps: `uv venv && source .venv/bin/activate && uv sync --all-extras -U`
-- Run all checks (preferred): `uv run pre-commit run --all-files --verbose`
-- Unit tests: `uv run pytest -v tests/unit`
 - Integration tests (often require API keys): `uv run pytest -v tests/integration -n auto`
-- Build GitBook site locally: `uv run python scripts/convert_to_gitbook.py` (output in `site/`)
 
 ## Coding Style & Naming Conventions
 
-- Python indentation: 4 spaces; formatting/linting via `ruff` (line length 120) and `pre-commit`.
-- Type hints: required; `mypy` runs in strict mode for library code (see `pyproject.toml`).
 - Provider code lives under `src/any_llm/providers/<provider>/` (keep provider-specific behavior isolated there).
 - **Override decorator**: When overriding methods from base classes (like `AnyLLM`), always use the `@override` decorator from `typing_extensions`. This is enforced by mypy's `explicit-override` error code. For static methods, the order is `@staticmethod` followed by `@override`.
 - Prefer direct attribute access (e.g., `obj.field`) over `getattr(obj, "field")` when the field is typed. This enables `ruff` and `mypy` to catch errors at lint time. Only use `getattr`/`setattr` when working with truly dynamic attributes or when type information is unavailable.
@@ -37,17 +23,27 @@ This repo uses `uv` for local dev (Python 3.11+). For the full, up-to-date comma
 
 ## Testing Guidelines
 
-- Framework: `pytest` (+ `pytest-asyncio`, `pytest-xdist`).
 - Add/adjust tests with every change (happy path + error cases). Integration tests should `pytest.skip(...)` when credentials/services aren’t available.
 - New code should target ~85%+ coverage (see `CONTRIBUTING.md`). Write tests for every branch in new code, including error/raise paths and edge cases, so that patch coverage passes in CI.
 - Do not use class-based test grouping (`class TestFoo:`). All tests should be standalone functions.
 - Do not add decorative section-separator comments (e.g., `# -----------` banners). Well-named test functions and natural file ordering are sufficient.
 - Place imports at the top of test files unless the import is for an optional dependency that may not be installed (e.g., provider-specific SDKs like `mistralai`, `cohere`). In that case, inline imports inside the test function are acceptable to avoid breaking the entire file.
+- When the integration suite is red, follow the `integration-test-triage` skill (`.claude/skills/integration-test-triage/SKILL.md`) before assuming a regression.
+- The dataclass/dict structured-output path (`parse_responses_output`) is separate from the Pydantic `responses.parse()` path; a bug can hit one and not the other, so test both.
 
 ## Commit & Pull Request Guidelines
 
 - Commits follow the project’s history: Conventional Commits such as `feat(scope): ...`, `fix: ...`, `chore(deps): ...`, `tests: ...`.
 - PRs should follow [.github/pull_request_template.md](.github/pull_request_template.md): clear description, linked issues (e.g., `Fixes #123`), completed checklist, and AI-usage disclosure when applicable.
+
+## Definition of done
+
+Before requesting review, every PR must clear:
+
+1. **`uv run pre-commit run --all-files`** clean (ruff lint + format, `mypy` strict). Don't drop `# type: ignore` based on local mypy; CI `run-linter` is authoritative.
+2. **`uv run pytest tests/unit`** green, with tests for every branch in changed code (~85% patch coverage; Codecov gates it).
+3. **Integration tests for any provider/feature you touched**, run with real keys locally or via the `run-integration-tests` label on the PR. Don't claim a provider works without running it.
+4. **Every skip and fix is root-caused**, with a concrete reason (HTTP status, deprecated model, missing CI infra), never "flaky" or "does not reliably support".
 
 ## Mypy and Provider SDKs
 

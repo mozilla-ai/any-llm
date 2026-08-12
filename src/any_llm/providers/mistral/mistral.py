@@ -45,6 +45,15 @@ if TYPE_CHECKING:
     from any_llm.types.moderation import ModerationResponse
 
 
+# Mistral's API accepts a reasoning_effort of only "high" or "none", regardless of the wider
+# set its SDK types allow (https://docs.mistral.ai/studio-api/conversations/reasoning). Any
+# other value is rejected with "reasoning_effort <value> is not supported for this model,
+# supported values: [high, none]". any_llm's ReasoningEffort vocabulary is more granular, so
+# every explicit level other than "auto"/"none" collapses onto "high" rather than surfacing a
+# 400 for an effort any_llm advertises.
+_MISTRAL_REASONING_EFFORT = "high"
+
+
 class MistralProvider(AnyLLM):
     """Mistral Provider using the new response conversion utilities."""
 
@@ -73,7 +82,6 @@ class MistralProvider(AnyLLM):
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Mistral API."""
-        # Mistral does not support providing reasoning effort
         converted_params = params.model_dump(
             exclude_none=True,
             exclude={"model_id", "messages", "response_format", "stream", "stream_options", "user"},
@@ -96,10 +104,23 @@ class MistralProvider(AnyLLM):
             elif isinstance(params.response_format, dict):
                 converted_params["response_format"] = ResponseFormat.model_validate(params.response_format)
 
-        if converted_params.get("reasoning_effort") in ("auto", "none"):
-            converted_params.pop("reasoning_effort")
+        # An explicit reasoning_effort is all Mistral needs to emit a `thinking` block; every
+        # model defaults to not reasoning, so "auto" (leave the choice to Mistral) and "none"
+        # both mean send nothing. Note that prompt_mode="reasoning" must not be sent alongside
+        # it: Mistral documents that param only for the deprecated native-reasoning magistral
+        # models and now rejects it on every model, magistral included, with "Reasoning prompt
+        # mode is not enabled for this model".
+        reasoning_effort = converted_params.pop("reasoning_effort", None)
+        if reasoning_effort is not None and reasoning_effort not in ("auto", "none"):
+            converted_params["reasoning_effort"] = _MISTRAL_REASONING_EFFORT
 
         converted_params.update(kwargs)
+
+        # Mistral's SDK names its per-request timeout `timeout_ms`, so the seconds-based any-llm
+        # parameter has to be translated; forwarding it as `timeout` is an unexpected keyword.
+        if (timeout := converted_params.pop("timeout", None)) is not None:
+            converted_params["timeout_ms"] = int(timeout * 1000)
+
         return converted_params
 
     @staticmethod

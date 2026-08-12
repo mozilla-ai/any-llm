@@ -3,19 +3,15 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from any_llm.types.messages import (
     ContentBlockDeltaEvent,
     ContentBlockStartEvent,
     ContentBlockStopEvent,
     InputJSONDelta,
-    MessageDelta,
-    MessageDeltaEvent,
-    MessageDeltaUsage,
     MessageResponse,
     MessageStartEvent,
-    MessageStopEvent,
     MessageUsage,
     StopReason,
     TextBlock,
@@ -24,12 +20,37 @@ from any_llm.types.messages import (
     ThinkingDelta,
     ToolUseBlock,
 )
+from any_llm.utils.structured_output import is_structured_output_type
 
 if TYPE_CHECKING:
-    from anthropic.types import ContentBlock as SDKContentBlock
+    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionUsage
+    from any_llm.types.messages import MessageContentBlock, MessagesParams
 
-    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
-    from any_llm.types.messages import MessagesParams
+
+def _output_config_to_response_format(output_config: dict[str, Any]) -> dict[str, Any]:
+    """Translate a raw Anthropic ``output_config`` dict into a completion ``response_format``.
+
+    Lets the bridge carry a non-Pydantic JSON schema to non-Anthropic providers: the schema
+    under ``output_config["format"]["schema"]`` is rewrapped as the OpenAI ``json_schema``
+    response format. The name falls back to the schema's ``title`` (or ``"structured_output"``).
+    """
+    fmt = output_config.get("format") or {}
+    schema = fmt.get("schema") or {}
+    name = schema.get("title", "structured_output")
+    return {"type": "json_schema", "json_schema": {"name": name, "schema": schema}}
+
+
+def _convert_system_to_openai(system: str | list[dict[str, Any]]) -> str:
+    """Flatten an Anthropic system value to a plain string.
+
+    Anthropic accepts a list of text blocks so callers can attach cache_control
+    breakpoints. OpenAI-compatible backends validate the system message as
+    str | list[content_part] and reject the extra cache_control key, so send
+    the concatenated text instead.
+    """
+    if isinstance(system, str):
+        return system
+    return "".join(b.get("text", "") for b in system if b.get("type") == "text")
 
 
 def messages_params_to_completion_params(params: MessagesParams) -> dict[str, Any]:
@@ -40,7 +61,7 @@ def messages_params_to_completion_params(params: MessagesParams) -> dict[str, An
     messages: list[dict[str, Any]] = []
 
     if params.system:
-        messages.append({"role": "system", "content": params.system})
+        messages.append({"role": "system", "content": _convert_system_to_openai(params.system)})
 
     for msg in params.messages:
         converted = _convert_message_to_openai(msg)
@@ -52,6 +73,8 @@ def messages_params_to_completion_params(params: MessagesParams) -> dict[str, An
         "max_tokens": params.max_tokens,
     }
 
+    if params.prompt_cache_key is not None:
+        result["prompt_cache_key"] = params.prompt_cache_key
     if params.temperature is not None:
         result["temperature"] = params.temperature
     if params.top_p is not None:
@@ -60,6 +83,21 @@ def messages_params_to_completion_params(params: MessagesParams) -> dict[str, An
         result["stop"] = params.stop_sequences
     if params.stream is not None:
         result["stream"] = params.stream
+        if params.stream:
+            # OpenAI-compatible backends omit token usage from streamed chunks
+            # unless asked for it, so the streamed Messages bridge would report
+            # zero tokens. Request the trailing usage-only chunk that the
+            # streaming wrapper flushes into the closing ``message_delta``.
+            # Providers that don't support ``stream_options`` strip it in their
+            # own param conversion, and the native Anthropic provider never
+            # reaches this bridge (it overrides ``_amessages``).
+            result["stream_options"] = {"include_usage": True}
+
+    if params.output_format is not None:
+        if is_structured_output_type(params.output_format):
+            result["response_format"] = params.output_format
+        else:
+            result["response_format"] = _output_config_to_response_format(cast("dict[str, Any]", params.output_format))
 
     if params.tools:
         result["tools"] = _convert_tools_to_openai(params.tools)
@@ -216,9 +254,40 @@ def _budget_to_reasoning_effort(budget: int) -> str:
     return "xhigh"
 
 
+def split_cached_input_tokens(prompt_tokens: int, cached_tokens: int) -> tuple[int, int | None]:
+    """Split an OpenAI prompt-token total into disjoint Anthropic input/cache-read counts.
+
+    OpenAI reports ``prompt_tokens`` as the whole prompt with ``prompt_tokens_details.cached_tokens``
+    as a subset of it, while Anthropic's ``input_tokens`` and ``cache_read_input_tokens`` are disjoint
+    and sum to the prompt. Copying the cached count across without subtracting would make any consumer
+    that sums the fields over-count, and would bill cached tokens twice in a cost model that prices
+    the two at different rates.
+
+    The cached count comes back as ``None`` rather than 0 when there was no cache hit, so a response
+    from a provider that reports no cache accounting looks exactly as it did before this mapping
+    existed. ``cache_creation_input_tokens`` is left unset rather than synthesized because no provider
+    in this repo populates ``prompt_tokens_details.cache_write_tokens``, which is the field a cache
+    write would arrive on.
+
+    The cached count is clamped into ``[0, prompt_tokens]`` so a provider that reports the two
+    inconsistently cannot push ``input_tokens`` negative (cached above the total) or above the prompt
+    total (cached below zero). Clamping the subtrahend rather than flooring the result keeps the sum
+    invariant intact: the two returned values still add up to ``prompt_tokens``.
+    """
+    cached = min(max(cached_tokens, 0), prompt_tokens)
+    return prompt_tokens - cached, cached or None
+
+
+def _cached_tokens_from_usage(usage: CompletionUsage) -> int:
+    """Read ``prompt_tokens_details.cached_tokens`` off a usage object, defaulting to 0."""
+    if usage.prompt_tokens_details is None:
+        return 0
+    return usage.prompt_tokens_details.cached_tokens or 0
+
+
 def chat_completion_to_message_response(completion: ChatCompletion) -> MessageResponse:
     """Convert an OpenAI ChatCompletion to an Anthropic MessageResponse."""
-    content_blocks: list[SDKContentBlock] = []
+    content_blocks: list[MessageContentBlock] = []
     stop_reason: StopReason = "end_turn"
 
     if completion.choices:
@@ -257,8 +326,13 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
 
     usage = MessageUsage(input_tokens=0, output_tokens=0)
     if completion.usage:
+        input_tokens, cache_read = split_cached_input_tokens(
+            completion.usage.prompt_tokens,
+            _cached_tokens_from_usage(completion.usage),
+        )
         usage = MessageUsage(
-            input_tokens=completion.usage.prompt_tokens,
+            input_tokens=input_tokens,
+            cache_read_input_tokens=cache_read,
             output_tokens=completion.usage.completion_tokens,
         )
 
@@ -296,6 +370,8 @@ class StreamingState:
         self.model = "unknown"
         self.input_tokens = 0
         self.output_tokens = 0
+        self.cache_read_input_tokens = 0
+        self.stop_reason: StopReason | None = None
         self.tool_call_id: str | None = None
         self.tool_call_name: str | None = None
 
@@ -303,27 +379,13 @@ class StreamingState:
 def chat_completion_chunk_to_message_stream_events(
     chunk: ChatCompletionChunk,
     state: StreamingState,
-) -> list[
-    MessageStartEvent
-    | MessageDeltaEvent
-    | MessageStopEvent
-    | ContentBlockStartEvent
-    | ContentBlockDeltaEvent
-    | ContentBlockStopEvent
-]:
+) -> list[MessageStartEvent | ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent]:
     """Convert a ChatCompletionChunk to a list of MessageStreamEvents.
 
     This is stateful: it tracks the current content block index and type to emit
     the correct lifecycle events (start/delta/stop).
     """
-    events: list[
-        MessageStartEvent
-        | MessageDeltaEvent
-        | MessageStopEvent
-        | ContentBlockStartEvent
-        | ContentBlockDeltaEvent
-        | ContentBlockStopEvent
-    ] = []
+    events: list[MessageStartEvent | ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent] = []
     state.model = chunk.model
 
     if chunk.usage:
@@ -331,10 +393,18 @@ def chat_completion_chunk_to_message_stream_events(
             state.input_tokens = chunk.usage.prompt_tokens
         if chunk.usage.completion_tokens:
             state.output_tokens = chunk.usage.completion_tokens
+        cached = _cached_tokens_from_usage(chunk.usage)
+        if cached:
+            state.cache_read_input_tokens = cached
 
     if not state.started:
         state.started = True
-        usage = MessageUsage(input_tokens=state.input_tokens, output_tokens=0)
+        input_tokens, cache_read = split_cached_input_tokens(state.input_tokens, state.cache_read_input_tokens)
+        usage = MessageUsage(
+            input_tokens=input_tokens,
+            cache_read_input_tokens=cache_read,
+            output_tokens=0,
+        )
         msg = MessageResponse(
             id=chunk.id,
             type="message",
@@ -424,29 +494,14 @@ def chat_completion_chunk_to_message_stream_events(
 
     if choice.finish_reason:
         _close_current_block(state, events)
-        stop_reason = _finish_reason_to_stop_reason(choice.finish_reason)
-        events.append(
-            MessageDeltaEvent(
-                type="message_delta",
-                delta=MessageDelta(stop_reason=stop_reason),
-                usage=MessageDeltaUsage(output_tokens=state.output_tokens, input_tokens=state.input_tokens),
-            )
-        )
-        events.append(MessageStopEvent(type="message_stop"))
+        state.stop_reason = _finish_reason_to_stop_reason(choice.finish_reason)
 
     return events
 
 
 def _close_current_block(
     state: StreamingState,
-    events: list[
-        MessageStartEvent
-        | MessageDeltaEvent
-        | MessageStopEvent
-        | ContentBlockStartEvent
-        | ContentBlockDeltaEvent
-        | ContentBlockStopEvent
-    ],
+    events: list[MessageStartEvent | ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent],
 ) -> None:
     """Emit a content_block_stop event for the current block if one is open."""
     if state.current_block_type is not None:

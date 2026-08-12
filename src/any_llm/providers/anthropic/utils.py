@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from anthropic import transform_schema
@@ -47,13 +48,53 @@ REASONING_EFFORT_TO_ANTHROPIC_EFFORT = {
     "low": "low",
     "medium": "medium",
     "high": "high",
-    "xhigh": "max",
+    "xhigh": "xhigh",
+    "max": "max",
 }
 
 
 def _is_tool_call(message: dict[str, Any]) -> bool:
     """Check if the message is a tool call message."""
     return message["role"] == "assistant" and message.get("tool_calls") is not None
+
+
+def _extract_anthropic_thinking_signature(message: dict[str, Any]) -> str | None:
+    """Extract the encrypted thinking signature stored on a message's extra_content, if any."""
+    extra_content = message.get("extra_content")
+    if isinstance(extra_content, dict) and isinstance(anthropic_extra := extra_content.get("anthropic"), dict):
+        signature = anthropic_extra.get("signature")
+        if isinstance(signature, str):
+            return signature
+    return None
+
+
+def _extract_reasoning_text(message: dict[str, Any]) -> str:
+    """Extract the plain-text reasoning content from a message, regardless of its shape.
+
+    ``reasoning`` may be a plain string (the OpenAI-wire-compatible serialized form) or a
+    ``{"content": str}`` dict, depending on how the caller constructed the message.
+    """
+    reasoning = message.get("reasoning")
+    if isinstance(reasoning, str):
+        return reasoning
+    if isinstance(reasoning, dict) and isinstance(content := reasoning.get("content"), str):
+        return content
+    return ""
+
+
+def _build_anthropic_thinking_block(message: dict[str, Any]) -> dict[str, Any] | None:
+    """Reconstruct an Anthropic ``thinking`` content block for replay across turns.
+
+    When extended thinking is enabled, Anthropic requires the ``thinking`` block (including
+    its encrypted ``signature``) to be passed back unmodified on subsequent turns, e.g.
+    alongside tool results. Without it, the model loses its original reasoning trace, which
+    can lead to degraded or repeated reasoning. See
+    https://docs.claude.com/en/docs/build-with-claude/extended-thinking#preserving-thinking-blocks
+    """
+    signature = _extract_anthropic_thinking_signature(message)
+    if signature is None:
+        return None
+    return {"type": "thinking", "thinking": _extract_reasoning_text(message), "signature": signature}
 
 
 def _convert_content_for_anthropic(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -121,9 +162,11 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
             # See https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview#tool-use-examples
             if _is_tool_call(message):
                 # Convert ALL tool calls from the assistant message
-                tool_use_blocks = []
+                content_blocks: list[dict[str, Any]] = []
+                if thinking_block := _build_anthropic_thinking_block(message):
+                    content_blocks.append(thinking_block)
                 for tool_call in message["tool_calls"]:
-                    tool_use_blocks.append(
+                    content_blocks.append(
                         {
                             "type": "tool_use",
                             "id": tool_call["id"],
@@ -133,7 +176,7 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
                     )
                 message = {
                     "role": "assistant",
-                    "content": tool_use_blocks,
+                    "content": content_blocks,
                 }
             elif message["role"] == "tool":
                 # Use tool_call_id from the message itself
@@ -155,6 +198,20 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
                 message = {
                     "role": "user",
                     "content": [tool_result],
+                }
+            elif message["role"] == "assistant" and (thinking_block := _build_anthropic_thinking_block(message)):
+                # existing_content may be None (a reasoning-only turn with no text/tool_calls),
+                # a plain string, or a list of content blocks.
+                existing_content = message.get("content")
+                content_blocks = [thinking_block]
+                if isinstance(existing_content, str):
+                    if existing_content:
+                        content_blocks.append({"type": "text", "text": existing_content})
+                elif isinstance(existing_content, list):
+                    content_blocks.extend(existing_content)
+                message = {
+                    "role": "assistant",
+                    "content": content_blocks,
                 }
 
             if "content" in message and isinstance(message["content"], list):
@@ -211,6 +268,11 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
             }
         elif chunk.delta.type == "thinking_delta":
             delta = {"reasoning": {"content": chunk.delta.thinking}}
+        elif chunk.delta.type == "signature_delta":
+            # The encrypted signature of the thinking block. Must be preserved unmodified
+            # and passed back to Anthropic on subsequent turns (e.g. alongside tool results)
+            # to maintain reasoning continuity. See https://docs.claude.com/en/docs/build-with-claude/extended-thinking
+            delta = {"extra_content": {"anthropic": {"signature": chunk.delta.signature}}}
 
     elif isinstance(chunk, ContentBlockStopEvent):
         if hasattr(chunk, "content_block") and chunk.content_block.type == "tool_use":
@@ -253,6 +315,7 @@ def _convert_response(response: Message) -> ChatCompletion:
     content_parts: list[str] = []
     tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
     reasoning_content: str | None = None
+    thinking_signature: str | None = None
     for content_block in response.content:
         if content_block.type == "text":
             content_parts.append(content_block.text)
@@ -272,6 +335,11 @@ def _convert_response(response: Message) -> ChatCompletion:
                 reasoning_content = content_block.thinking
             else:
                 reasoning_content += content_block.thinking
+            # The encrypted signature must be preserved and replayed unmodified on
+            # subsequent turns (e.g. alongside tool results) to maintain reasoning
+            # continuity. See https://docs.claude.com/en/docs/build-with-claude/extended-thinking
+            if content_block.signature:
+                thinking_signature = content_block.signature
         else:
             msg = f"Unsupported content block type: {content_block.type}"
             raise ValueError(msg)
@@ -281,6 +349,7 @@ def _convert_response(response: Message) -> ChatCompletion:
         content="".join(content_parts),
         reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
         tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls or None),
+        extra_content={"anthropic": {"signature": thinking_signature}} if thinking_signature else None,
     )
 
     cache_read = response.usage.cache_read_input_tokens or 0
@@ -304,7 +373,15 @@ def _convert_response(response: Message) -> ChatCompletion:
         message=message,
     )
 
-    created_ts = int(response.created_at.timestamp()) if hasattr(response, "created_at") else 0
+    # The Anthropic Messages API carries no timestamp, so ``created_at`` is absent on a
+    # spec-compliant response. ``Message`` does not declare the field either, so an
+    # Anthropic-compatible endpoint that sends it anyway has it kept as an unvalidated extra
+    # attribute holding the raw JSON value: None for an explicit null, but also int or str.
+    # A ``hasattr`` guard passes for all of those and ``.timestamp()`` then raises
+    # ``AttributeError: 'NoneType' object has no attribute 'timestamp'``, failing the whole
+    # completion, so only fall back to the timestamp when it really is a datetime.
+    created_at = getattr(response, "created_at", None)
+    created_ts = int(created_at.timestamp()) if isinstance(created_at, datetime) else 0
 
     return ChatCompletion(
         id=response.id,
@@ -334,13 +411,14 @@ def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[dict[str, Any
 
     anthropic_tools = []
     for tool in generic_tools:
+        params: dict[str, Any] = tool["parameters"] or {}
         anthropic_tool = {
             "name": tool["name"],
             "description": tool["description"],
             "input_schema": {
                 "type": "object",
-                "properties": tool["parameters"].get("properties") or {},
-                "required": tool["parameters"].get("required", []),
+                "properties": params.get("properties") or {},
+                "required": params.get("required", []),
             },
         }
         anthropic_tools.append(anthropic_tool)
@@ -394,9 +472,6 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
     result_kwargs: dict[str, Any] = kwargs.copy()
 
     if params.response_format:
-        if params.stream:
-            msg = "stream and response_format"
-            raise UnsupportedParameterError(msg, provider_name)
         result_kwargs["output_config"] = _convert_response_format(params.response_format, provider_name)
     if params.max_tokens is None:
         logger.warning(f"max_tokens is required for Anthropic, setting to {DEFAULT_MAX_TOKENS}")
@@ -445,8 +520,23 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
 
 
 def _convert_models_list(models_list: list[AnthropicModelInfo]) -> list[Model]:
-    """Convert Anthropic models list to OpenAI format."""
+    """Convert Anthropic models list to OpenAI format.
+
+    ``created_at`` is required by ``ModelInfo``, but an Anthropic-compatible
+    proxy or gateway may serve ``/v1/models`` in the OpenAI shape, which carries
+    an integer ``created`` and no ``created_at``. The SDK constructs the model
+    without validation, so the field is present but ``None``, and calling
+    ``.timestamp()`` on it raises ``AttributeError: 'NoneType' object has no
+    attribute 'timestamp'`` for the whole listing. Fall back to ``0`` for that
+    entry instead, matching what ``_convert_response`` already does for a
+    response missing the same field.
+    """
     return [
-        Model(id=model.id, object="model", created=int(model.created_at.timestamp()), owned_by="anthropic")
+        Model(
+            id=model.id,
+            object="model",
+            created=int(model.created_at.timestamp()) if model.created_at is not None else 0,
+            owned_by="anthropic",
+        )
         for model in models_list
     ]

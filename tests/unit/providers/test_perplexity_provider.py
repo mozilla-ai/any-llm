@@ -1,6 +1,7 @@
 import pytest
 
 from any_llm import AnyLLM
+from any_llm.constants import LLMProvider
 from any_llm.providers.perplexity import PerplexityProvider
 
 
@@ -35,7 +36,7 @@ def test_factory_integration() -> None:
 def test_model_provider_split() -> None:
     """Test that model string parsing works correctly."""
     provider_enum, model_name = AnyLLM.split_model_provider("perplexity/llama-3.1-sonar-small-128k-chat")
-    assert provider_enum.value == "perplexity"
+    assert provider_enum is LLMProvider.PERPLEXITY
     assert model_name == "llama-3.1-sonar-small-128k-chat"
 
 

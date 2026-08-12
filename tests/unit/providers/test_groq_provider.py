@@ -108,6 +108,23 @@ async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
         assert "reasoning_effort" not in call_kwargs
 
 
+def test_stream_options_filtered_out() -> None:
+    """stream_options is an OpenAI-only knob (set by the Messages bridge for
+    streaming usage); the Groq SDK rejects it, so it must be dropped."""
+    pytest.importorskip("groq")
+    from any_llm.providers.groq.groq import GroqProvider
+
+    result = GroqProvider._convert_completion_params(
+        CompletionParams(
+            model_id="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": "Hello"}],
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+    )
+    assert "stream_options" not in result
+
+
 def test_to_chat_completion_extracts_cached_tokens() -> None:
     """Test that cached tokens from Groq usage are extracted into prompt_tokens_details."""
     from groq.types.chat import ChatCompletion as GroqChatCompletion
@@ -251,3 +268,121 @@ def test_streaming_chunk_extracts_cached_tokens() -> None:
     assert result.usage.prompt_tokens == 4641
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 4608
+
+
+def _make_openai_response(text: str):  # type: ignore[no-untyped-def]
+    from openai.types.responses import ResponseOutputMessage, ResponseOutputText
+
+    from any_llm.types.responses import Response
+
+    message = ResponseOutputMessage(
+        id="msg-1",
+        type="message",
+        role="assistant",
+        status="completed",
+        content=[ResponseOutputText(type="output_text", text=text, annotations=[])],
+    )
+    return Response(
+        id="resp-1",
+        created_at=0,
+        model="test-model",
+        object="response",
+        output=[message],
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        tools=[],
+    )
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.groq.groq.AsyncOpenAI")
+async def test_groq_aresponses_basemodel_uses_parse(mock_openai_class: Mock) -> None:
+    from any_llm.providers.groq.groq import GroqProvider
+    from any_llm.types.responses import ParsedResponse
+    from any_llm.utils.structured_output import parse_responses_output
+
+    class City(BaseModel):
+        city_name: str
+
+    parsed = parse_responses_output(_make_openai_response('{"city_name": "Paris"}'), City)
+
+    client = AsyncMock()
+    client.responses.parse = AsyncMock(return_value=parsed)
+    client.responses.create = AsyncMock()
+    mock_openai_class.return_value = client
+
+    provider = GroqProvider(api_key="test-api-key")
+    result = await provider.aresponses("openai/gpt-oss-20b", "capital of France?", response_format=City)
+
+    client.responses.parse.assert_awaited_once()
+    assert client.responses.parse.call_args.kwargs["text_format"] is City
+    client.responses.create.assert_not_called()
+    assert isinstance(result, ParsedResponse)
+    assert result.output_parsed is not None
+    assert result.output_parsed.city_name == "Paris"
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.groq.groq.AsyncOpenAI")
+async def test_groq_aresponses_dataclass_uses_create_and_is_parsed(mock_openai_class: Mock) -> None:
+    import dataclasses
+
+    from any_llm.providers.groq.groq import GroqProvider
+    from any_llm.types.responses import ParsedResponse
+
+    @dataclasses.dataclass
+    class City:
+        city_name: str
+
+    client = AsyncMock()
+    client.responses.create = AsyncMock(return_value=_make_openai_response('{"city_name": "Paris"}'))
+    client.responses.parse = AsyncMock()
+    mock_openai_class.return_value = client
+
+    provider = GroqProvider(api_key="test-api-key")
+    result = await provider.aresponses("openai/gpt-oss-20b", "capital of France?", response_format=City)
+
+    client.responses.parse.assert_not_called()
+    assert client.responses.create.call_args.kwargs["text"]["format"]["type"] == "json_schema"
+    assert isinstance(result, ParsedResponse)
+    assert result.output_parsed is not None
+    assert result.output_parsed.city_name == "Paris"
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.groq.groq.AsyncOpenAI")
+async def test_groq_aresponses_dict_response_format_sets_text_format(mock_openai_class: Mock) -> None:
+    from any_llm.providers.groq.groq import GroqProvider
+    from any_llm.types.responses import ParsedResponse
+
+    client = AsyncMock()
+    client.responses.create = AsyncMock(return_value=_make_openai_response("{}"))
+    client.responses.parse = AsyncMock()
+    mock_openai_class.return_value = client
+
+    response_format = {"type": "json_schema", "name": "City", "schema": {"type": "object"}}
+
+    provider = GroqProvider(api_key="test-api-key")
+    result = await provider.aresponses("openai/gpt-oss-20b", "hi", response_format=response_format)
+
+    client.responses.parse.assert_not_called()
+    assert client.responses.create.call_args.kwargs["text"] == {"format": response_format}
+    # A raw dict response_format is passed through unparsed.
+    assert not isinstance(result, ParsedResponse)
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.groq.groq.AsyncOpenAI")
+async def test_groq_aresponses_without_response_format(mock_openai_class: Mock) -> None:
+    from any_llm.providers.groq.groq import GroqProvider
+
+    client = AsyncMock()
+    client.responses.create = AsyncMock(return_value=_make_openai_response("{}"))
+    client.responses.parse = AsyncMock()
+    mock_openai_class.return_value = client
+
+    provider = GroqProvider(api_key="test-api-key")
+    await provider.aresponses("openai/gpt-oss-20b", "hi")
+
+    client.responses.parse.assert_not_called()
+    assert "text" not in client.responses.create.call_args.kwargs

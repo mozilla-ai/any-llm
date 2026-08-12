@@ -1,4 +1,5 @@
 import dataclasses
+from typing import Any
 
 import pytest
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
@@ -6,7 +7,7 @@ from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenA
 from pydantic import BaseModel
 
 from any_llm.providers.deepseek.deepseek import DeepseekProvider
-from any_llm.providers.deepseek.utils import _preprocess_messages
+from any_llm.providers.deepseek.utils import _preprocess_messages, _reinject_reasoning_content
 from any_llm.types.completion import CompletionParams
 
 
@@ -248,3 +249,186 @@ def test_deepseek_no_max_tokens_when_neither_set() -> None:
     result = DeepseekProvider._convert_completion_params(params)
     assert "max_tokens" not in result
     assert "max_completion_tokens" not in result
+
+
+def test_deepseek_thinking_disabled_by_default_for_v4_model() -> None:
+    """V4 model ids without reasoning_effort should default to thinking disabled."""
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        reasoning_effort=None,
+    )
+    result = DeepseekProvider._convert_completion_params(params)
+    assert result["extra_body"]["thinking"] == {"type": "disabled"}
+
+
+def test_deepseek_thinking_disabled_for_none_reasoning_effort_value() -> None:
+    """reasoning_effort="none" is also treated as "no reasoning requested"."""
+    params = CompletionParams(
+        model_id="deepseek-v4-pro",
+        messages=[{"role": "user", "content": "hi"}],
+        reasoning_effort="none",
+    )
+    result = DeepseekProvider._convert_completion_params(params)
+    assert result["extra_body"]["thinking"] == {"type": "disabled"}
+
+
+def test_deepseek_thinking_disabled_for_auto_reasoning_effort_value() -> None:
+    """reasoning_effort="auto" (the default) is treated as "no reasoning requested"."""
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        reasoning_effort="auto",
+    )
+    result = DeepseekProvider._convert_completion_params(params)
+    assert result["extra_body"]["thinking"] == {"type": "disabled"}
+
+
+def test_deepseek_thinking_enabled_when_reasoning_effort_set() -> None:
+    """An explicit reasoning_effort should enable thinking mode and be passed through."""
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        reasoning_effort="high",
+    )
+    result = DeepseekProvider._convert_completion_params(params)
+    assert result["extra_body"]["thinking"] == {"type": "enabled"}
+    assert result["reasoning_effort"] == "high"
+
+
+def test_deepseek_thinking_untouched_for_legacy_model_ids() -> None:
+    """Legacy deepseek-chat/deepseek-reasoner ids must not get the thinking toggle injected."""
+    for model_id in ("deepseek-chat", "deepseek-reasoner"):
+        params = CompletionParams(
+            model_id=model_id,
+            messages=[{"role": "user", "content": "hi"}],
+            reasoning_effort="high",
+        )
+        result = DeepseekProvider._convert_completion_params(params)
+        assert "extra_body" not in result
+
+
+def test_deepseek_thinking_respects_explicit_extra_body_override() -> None:
+    """A caller-supplied extra_body/thinking value should not be clobbered by the default."""
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        reasoning_effort=None,
+    )
+    result = DeepseekProvider._convert_completion_params(params, extra_body={"thinking": {"type": "enabled"}})
+    assert result["extra_body"]["thinking"] == {"type": "enabled"}
+
+
+def test_convert_completion_response_stashes_reasoning_into_extra_content() -> None:
+    """reasoning_content on the raw response should be mirrored into message.extra_content."""
+    response = OpenAIChatCompletion.model_validate(
+        {
+            "id": "chatcmpl-123",
+            "object": "chat.completion",
+            "created": 1234567890,
+            "model": "deepseek-v4-flash",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "Hello!",
+                        "reasoning_content": "Thinking about hello...",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+        }
+    )
+
+    result = DeepseekProvider._convert_completion_response(response)
+
+    message = result.choices[0].message
+    assert message.reasoning is not None
+    assert message.reasoning.content == "Thinking about hello..."
+    assert message.extra_content == {"deepseek": {"reasoning_content": "Thinking about hello..."}}
+
+
+def test_convert_completion_response_no_extra_content_without_reasoning() -> None:
+    """No reasoning present → extra_content should not be populated."""
+    response = OpenAIChatCompletion.model_validate(
+        {
+            "id": "chatcmpl-123",
+            "object": "chat.completion",
+            "created": 1234567890,
+            "model": "deepseek-v4-flash",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "Hello!"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+        }
+    )
+
+    result = DeepseekProvider._convert_completion_response(response)
+
+    assert result.choices[0].message.extra_content is None
+
+
+def test_reinject_reasoning_content_on_tool_call_message() -> None:
+    """A replayed assistant message with tool_calls should get reasoning_content restored."""
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "What's the weather?"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}}
+            ],
+            "extra_content": {"deepseek": {"reasoning_content": "I should call get_weather."}},
+        },
+        {"role": "tool", "tool_call_id": "call_1", "content": "Sunny"},
+    ]
+
+    result = _reinject_reasoning_content(messages)
+
+    assert result[1]["reasoning_content"] == "I should call get_weather."
+    # The any_llm-internal extra_content must not be forwarded to DeepSeek's API.
+    assert "extra_content" not in result[1]
+    # Original message dict must not be mutated in place.
+    assert "reasoning_content" not in messages[1]
+    assert "extra_content" in messages[1]
+
+
+def test_reinject_reasoning_content_skips_non_tool_call_message() -> None:
+    """Assistant messages without tool_calls should be left untouched."""
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "hi"},
+        {
+            "role": "assistant",
+            "content": "hello",
+            "extra_content": {"deepseek": {"reasoning_content": "greeting"}},
+        },
+    ]
+
+    result = _reinject_reasoning_content(messages)
+
+    assert "reasoning_content" not in result[1]
+    # extra_content is any_llm-internal and is stripped even when reasoning is not reinjected.
+    assert "extra_content" not in result[1]
+
+
+def test_reinject_reasoning_content_handles_missing_extra_content() -> None:
+    """A tool-call message with no extra_content should pass through unchanged."""
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}}
+            ],
+        },
+    ]
+
+    result = _reinject_reasoning_content(messages)
+
+    assert "reasoning_content" not in result[0]

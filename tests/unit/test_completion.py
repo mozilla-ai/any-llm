@@ -1,14 +1,116 @@
 import sys
+from collections.abc import AsyncIterator
+from inspect import signature
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 from any_llm import AnyLLM
-from any_llm.api import acompletion, aresponses
+from any_llm.api import acompletion, aresponses, completion, responses
 from any_llm.constants import LLMProvider
+from any_llm.exceptions import UnsupportedParameterError
+from any_llm.types.completion import ChatCompletion, CompletionParams
 
 _PYTHON_314_INCOMPATIBLE_PROVIDERS = {"voyage", "watsonx"}
+
+
+def test_completion_params_exposes_prompt_cache_key() -> None:
+    params = CompletionParams(
+        model_id="gpt-5.6",
+        messages=[{"role": "user", "content": "Hello"}],
+        prompt_cache_key="tenant-1",
+    )
+
+    assert params.prompt_cache_key == "tenant-1"
+    assert "prompt_cache_key" in CompletionParams.model_json_schema()["properties"]
+    assert "prompt_cache_key" in signature(completion).parameters
+    assert "prompt_cache_key" in signature(acompletion).parameters
+    assert "prompt_cache_key" in signature(AnyLLM.completion).parameters
+    assert "prompt_cache_key" in signature(AnyLLM.acompletion).parameters
+
+    mock_provider = Mock()
+    with patch("any_llm.any_llm.AnyLLM.create", return_value=mock_provider):
+        completion(
+            model="openai:gpt-5.6",
+            messages=[{"role": "user", "content": "Hello"}],
+            prompt_cache_key="tenant-1",
+        )
+
+    assert mock_provider.completion.call_args.kwargs["prompt_cache_key"] == "tenant-1"
+
+
+def test_completion_exposes_timeout_parameter() -> None:
+    assert "timeout" in signature(completion).parameters
+    assert "timeout" in signature(acompletion).parameters
+    assert "timeout" in signature(AnyLLM.completion).parameters
+    assert "timeout" in signature(AnyLLM.acompletion).parameters
+
+
+@pytest.mark.asyncio
+async def test_acompletion_forwards_timeout_to_provider() -> None:
+    # Through the public acompletion() helper: a set timeout reaches the provider, None is dropped.
+    provider = AnyLLM.create("openai", api_key="sk-test")
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider),
+        patch.object(provider, "_acompletion", new=AsyncMock(return_value=Mock(spec=ChatCompletion))) as mock_ac,
+    ):
+        await acompletion(model="openai:gpt-4", messages=[{"role": "user", "content": "Hi"}], timeout=600)
+        assert mock_ac.call_args.kwargs.get("timeout") == 600
+
+        mock_ac.reset_mock()
+        await acompletion(model="openai:gpt-4", messages=[{"role": "user", "content": "Hi"}], timeout=None)
+        assert "timeout" not in mock_ac.call_args.kwargs
+
+
+def test_completion_forwards_timeout_to_provider_sync() -> None:
+    # Through the public completion() helper on the synchronous non-streaming path.
+    provider = AnyLLM.create("openai", api_key="sk-test")
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider),
+        patch.object(provider, "_acompletion", new=AsyncMock(return_value=Mock(spec=ChatCompletion))) as mock_ac,
+    ):
+        completion(model="openai:gpt-4", messages=[{"role": "user", "content": "Hi"}], timeout=600, stream=False)
+
+    assert mock_ac.call_args.kwargs.get("timeout") == 600
+
+
+def test_completion_forwards_timeout_on_streaming_path() -> None:
+    # The synchronous streaming path forwards timeout too; consume the iterator to drive the call.
+    provider = AnyLLM.create("openai", api_key="sk-test")
+
+    async def _empty_stream() -> AsyncIterator[Any]:
+        if False:
+            yield None
+
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider),
+        patch.object(provider, "_acompletion", new=AsyncMock(return_value=_empty_stream())) as mock_ac,
+    ):
+        stream = completion(
+            model="openai:gpt-4", messages=[{"role": "user", "content": "Hi"}], timeout=600, stream=True
+        )
+        list(stream)
+
+    assert mock_ac.call_args.kwargs.get("timeout") == 600
+
+
+@pytest.mark.asyncio
+async def test_acompletion_rejects_prompt_cache_key_for_unsupported_provider() -> None:
+    pytest.importorskip("boto3")
+    from any_llm.providers.bedrock.bedrock import BedrockProvider
+
+    client = Mock()
+    provider = BedrockProvider(client=client)
+
+    with pytest.raises(UnsupportedParameterError, match="prompt_cache_key"):
+        await provider.acompletion(
+            model="anthropic.claude-sonnet",
+            messages=[{"role": "user", "content": "Hello"}],
+            prompt_cache_key="tenant-1",
+        )
+
+    client.converse.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -28,6 +130,7 @@ async def test_acompletion_parameter_capture() -> None:
             max_tokens=100,
             stream=False,
             reasoning_effort="high",
+            prompt_cache_key="tenant-1",
             api_key="sk-test-key-123",
             api_base="https://custom-openai.example.com/v1",
             custom_param="custom_value",
@@ -48,6 +151,7 @@ async def test_acompletion_parameter_capture() -> None:
         assert call_args.kwargs["max_tokens"] == 100
         assert call_args.kwargs["stream"] is False
         assert call_args.kwargs["reasoning_effort"] == "high"
+        assert call_args.kwargs["prompt_cache_key"] == "tenant-1"
         assert call_args.kwargs["custom_param"] == "custom_value"
 
 
@@ -68,6 +172,7 @@ async def test_aresponses_parameter_capture() -> None:
             stream=True,
             instructions="Be helpful",
             parallel_tool_calls=True,
+            context_management=[{"type": "compaction", "compact_threshold": 200_000}],
             api_key="mistral-key-456",
             api_base="https://custom-mistral.example.com/v1",
             another_custom_param="another_value",
@@ -88,7 +193,32 @@ async def test_aresponses_parameter_capture() -> None:
         assert call_args.kwargs["stream"] is True
         assert call_args.kwargs["instructions"] == "Be helpful"
         assert call_args.kwargs["parallel_tool_calls"] is True
+        assert call_args.kwargs["context_management"] == [{"type": "compaction", "compact_threshold": 200_000}]
         assert call_args.kwargs["another_custom_param"] == "another_value"
+
+
+def test_responses_context_management_parameter_capture() -> None:
+    """Test that the synchronous responses wrapper forwards context_management."""
+    mock_provider = Mock()
+    mock_provider.responses = Mock(return_value=Mock())
+
+    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
+        mock_create.return_value = mock_provider
+        context_management = [{"type": "compaction", "compact_threshold": 200_000}]
+
+        responses(
+            model="openai:gpt-5.3-codex",
+            input_data="Continue the coding task.",
+            context_management=context_management,
+            api_key="openai-key",
+        )
+
+        mock_create.assert_called_once_with(
+            LLMProvider.OPENAI,
+            api_key="openai-key",
+            api_base=None,
+        )
+        assert mock_provider.responses.call_args.kwargs["context_management"] == context_management
 
 
 @pytest.mark.asyncio
@@ -159,7 +289,7 @@ async def test_all_providers_can_be_loaded(provider: str) -> None:
     if provider == "vertexai":
         kwargs["project"] = "test-project"
         kwargs["location"] = "test-location"
-    if provider in ("gateway", "otari"):
+    if provider == "otari":
         kwargs["api_base"] = "http://127.0.0.1:8080/v1"
 
     provider_instance = AnyLLM.create(provider, **kwargs)
@@ -217,7 +347,7 @@ async def test_provider_factory_can_create_all_supported_providers() -> None:
             continue
         if sys.version_info >= (3, 14) and provider_name in _PYTHON_314_INCOMPATIBLE_PROVIDERS:
             continue
-        if provider_name in ("gateway", "otari"):
+        if provider_name == "otari":
             kwargs["api_base"] = "http://127.0.0.1:8080/v1"
         provider_instance = AnyLLM.create(provider_name, **kwargs)
 

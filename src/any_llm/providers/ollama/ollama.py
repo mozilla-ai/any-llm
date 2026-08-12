@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.logging import logger
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
@@ -29,6 +30,18 @@ if TYPE_CHECKING:
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
+
+
+# Ollama's `think` parameter accepts only low/medium/high levels (plus booleans)
+# Reasoning_effort scale is collapsed at the extremes.
+REASONING_EFFORT_TO_OLLAMA_THINK: dict[str, str] = {
+    "minimal": "low",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "high",
+    "max": "high",
+}
 
 
 class OllamaProvider(AnyLLM):
@@ -63,13 +76,45 @@ class OllamaProvider(AnyLLM):
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Ollama API."""
-        # Ollama does not support providing reasoning effort
         converted_params = params.model_dump(
-            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream", "stream_options"}
+            exclude_none=True,
+            exclude={"model_id", "messages", "reasoning_effort", "response_format", "stream", "stream_options"},
         )
-        if converted_params.get("reasoning_effort") in ("auto", "none"):
-            converted_params.pop("reasoning_effort")
+        if params.reasoning_effort == "none":
+            converted_params["think"] = False
+        elif params.reasoning_effort is not None and params.reasoning_effort != "auto":
+            converted_params["think"] = REASONING_EFFORT_TO_OLLAMA_THINK[params.reasoning_effort]
         converted_params.update(kwargs)
+
+        # The Ollama client only accepts a timeout at construction, so a per-request `timeout`
+        # cannot be honored here and would reach the SDK as an unexpected keyword.
+        if converted_params.pop("timeout", None) is not None:
+            logger.warning(
+                "Ollama does not support a per-request 'timeout'; ignoring it. "
+                "Set it on the client via client_args instead."
+            )
+
+        max_tokens = converted_params.pop("max_tokens", None)
+        max_completion_tokens = converted_params.pop("max_completion_tokens", None)
+        requested_max_tokens = max_completion_tokens if max_completion_tokens is not None else max_tokens
+        explicit_num_predict = converted_params.get("num_predict")
+        if explicit_num_predict is not None:
+            if requested_max_tokens is not None:
+                logger.warning(
+                    "Ignoring the requested output token limit (%s) because num_predict (%s) is set.",
+                    requested_max_tokens,
+                    explicit_num_predict,
+                )
+        else:
+            if max_tokens is not None and max_completion_tokens is not None:
+                logger.warning(
+                    "Ignoring max_tokens (%s) in favor of max_completion_tokens (%s).",
+                    max_tokens,
+                    max_completion_tokens,
+                )
+            if requested_max_tokens is not None:
+                converted_params["num_predict"] = requested_max_tokens
+
         converted_params["num_ctx"] = converted_params.get("num_ctx", 32000)
         return converted_params
 
@@ -104,6 +149,37 @@ class OllamaProvider(AnyLLM):
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Ollama list models response to OpenAI format."""
         return _convert_models_list(response)
+
+    @staticmethod
+    def _convert_response_format(
+        response_format: dict[str, Any] | type | None,
+    ) -> Literal["json"] | dict[str, Any] | None:
+        """Convert a `response_format` into Ollama's `format` argument.
+
+        Ollama's `format` accepts either the string "json" (unconstrained JSON mode) or a raw
+        JSON schema dict (https://docs.ollama.com/capabilities/structured-outputs). OpenAI-style
+        dicts (`json_object`, `json_schema`, `text`) are translated accordingly; any other dict
+        is assumed to already be a raw schema and passed through unchanged.
+        """
+        if response_format is None:
+            return None
+        if is_structured_output_type(response_format):
+            return get_json_schema(response_format)
+        if isinstance(response_format, dict):
+            response_type = response_format.get("type")
+            if response_type == "json_schema":
+                json_schema = response_format.get("json_schema")
+                if json_schema is None or "schema" not in json_schema:
+                    msg = "json_schema response_format must include 'json_schema.schema'"
+                    raise ValueError(msg)
+                schema: dict[str, Any] = json_schema["schema"]
+                return schema
+            if response_type == "json_object":
+                return "json"
+            if response_type == "text":
+                return None
+            return response_format
+        return None
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
@@ -146,6 +222,7 @@ class OllamaProvider(AnyLLM):
         self,
         model: str,
         messages: list[dict[str, Any]],
+        output_format: Literal["json"] | dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[ChatCompletionChunk]:
         """Handle streaming completion - extracted to avoid generator issues."""
@@ -153,12 +230,28 @@ class OllamaProvider(AnyLLM):
         response: AsyncIterator[OllamaChatResponse] = await self.client.chat(
             model=model,
             messages=messages,
+            tools=kwargs.pop("tools", None),
             think=kwargs.pop("think", None),
+            format=output_format,
             stream=True,
             options=kwargs,
         )
+        # Ollama streams each tool call in its own chunk, and the chunk
+        # converter (_create_openai_chunk_from_ollama_chunk) stamps every
+        # tool-call delta with index=0. A consumer that accumulates streaming
+        # deltas by index then concatenates the arguments of distinct tool calls
+        # into a single, invalid JSON string. Assign a stream-global,
+        # monotonically increasing index so each tool call stays in its own slot.
+        tool_call_index = 0
         async for chunk in response:
-            yield self._convert_completion_chunk_response(chunk)
+            converted = self._convert_completion_chunk_response(chunk)
+            for choice in converted.choices:
+                delta = choice.delta
+                if delta is not None and delta.tool_calls:
+                    for tool_call in delta.tool_calls:
+                        tool_call.index = tool_call_index
+                        tool_call_index += 1
+            yield converted
 
     @override
     async def _acompletion(
@@ -168,12 +261,7 @@ class OllamaProvider(AnyLLM):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Create a chat completion using Ollama."""
 
-        output_format: dict[str, Any] | None = None
-        if params.response_format is not None:
-            if is_structured_output_type(params.response_format):
-                output_format = get_json_schema(params.response_format)
-            elif isinstance(params.response_format, dict):
-                output_format = params.response_format
+        output_format = self._convert_response_format(params.response_format)
 
         # (https://www.reddit.com/r/ollama/comments/1ked8x2/feeding_tool_output_back_to_llm/)
         cleaned_messages = []
@@ -203,11 +291,10 @@ class OllamaProvider(AnyLLM):
 
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 
-        if completion_kwargs.get("reasoning_effort") is not None:
-            completion_kwargs["think"] = True
-
         if params.stream:
-            return self._stream_completion_async(params.model_id, cleaned_messages, **completion_kwargs)
+            return self._stream_completion_async(
+                params.model_id, cleaned_messages, output_format=output_format, **completion_kwargs
+            )
 
         response: OllamaChatResponse = await self.client.chat(
             model=params.model_id,

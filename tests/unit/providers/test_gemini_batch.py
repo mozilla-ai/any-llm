@@ -671,6 +671,41 @@ async def test_alist_batches_with_pagination() -> None:
 
 
 @pytest.mark.asyncio
+async def test_alist_batches_limit_caps_total_results() -> None:
+    """The pager auto-follows pages, so limit must cap the total returned count.
+
+    Regression for the integration failure where ``page_size`` only bounded the
+    per-page size and the full pager (e.g. 109 jobs) was returned despite limit=5.
+    """
+    pytest.importorskip("google.genai")
+
+    provider, mock_client = _create_provider_with_mock_client()
+
+    mock_jobs = [_make_mock_batch_job(name=f"batches/job{i}") for i in range(20)]
+    mock_client.aio.batches.list = AsyncMock(return_value=_MockAsyncPager(mock_jobs))
+
+    result = await provider._alist_batches(limit=5)
+
+    assert len(result) == 5
+
+
+@pytest.mark.asyncio
+async def test_alist_batches_limit_zero_returns_empty() -> None:
+    """limit=0 must return an empty list without iterating the pager."""
+    pytest.importorskip("google.genai")
+
+    provider, mock_client = _create_provider_with_mock_client()
+
+    mock_jobs = [_make_mock_batch_job(name=f"batches/job{i}") for i in range(3)]
+    mock_client.aio.batches.list = AsyncMock(return_value=_MockAsyncPager(mock_jobs))
+
+    result = await provider._alist_batches(limit=0)
+
+    assert result == []
+    mock_client.aio.batches.list.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_aretrieve_batch_results_not_completed() -> None:
     """Test that BatchNotCompleteError is raised for incomplete batch."""
     pytest.importorskip("google.genai")

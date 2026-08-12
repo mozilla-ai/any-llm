@@ -1,56 +1,364 @@
 import base64
+import dataclasses
 import json
+import logging
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, get_args
 from unittest.mock import Mock, patch
 
+import botocore.session
 import pytest
+from botocore.exceptions import ProfileNotFound
+from botocore.tokens import ScopedEnvTokenProvider
+from pydantic import BaseModel
 
-from any_llm.exceptions import InvalidRequestError
+from any_llm.exceptions import InvalidRequestError, MissingApiKeyError, UnsupportedParameterError
 from any_llm.providers.bedrock import BedrockProvider
 from any_llm.providers.bedrock.utils import (
+    _STRUCTURED_OUTPUT_TOOL_NAME,
     REASONING_EFFORT_TO_THINKING_BUDGETS,
     _convert_images_for_bedrock,
     _convert_messages,
+    _convert_params,
     _convert_response,
+    _convert_response_format_to_tool_spec,
     _convert_tool_spec,
     _create_openai_chunk_from_aws_chunk,
 )
-from any_llm.types.completion import CompletionParams, ReasoningEffort
+from any_llm.types.completion import ChatCompletionMessageFunctionToolCall, CompletionParams, ReasoningEffort
 
 
 @contextmanager
 def mock_aws_provider():  # type: ignore[no-untyped-def]
+    """Mock boto3.Session so the provider builds its runtime client from a mocked session.
+
+    Yields the mocked ``session.client`` callable (the equivalent of the old bare
+    ``boto3.client`` mock), since BedrockProvider now builds a dedicated ``boto3.Session``
+    per instance instead of calling the module-level ``boto3.client`` directly.
+    """
     with (
         patch("any_llm.providers.bedrock.bedrock._convert_response"),
-        patch("boto3.Session"),
-        patch("boto3.client") as mock_boto3_client,
+        patch("boto3.Session") as mock_session_cls,
     ):
         mock_client = Mock()
-        mock_boto3_client.return_value = mock_client
+        mock_session_cls.return_value.client.return_value = mock_client
         mock_client.converse.return_value = {"output": {"message": {"content": [{"text": "response"}]}}}
-        yield mock_boto3_client
+        yield mock_session_cls.return_value.client
 
 
 def test_boto3_client_created_with_api_base() -> None:
-    """Test that boto3.client is created with api_base as endpoint_url when provided."""
+    """Test that the session's client is created with api_base as endpoint_url when provided."""
     custom_endpoint = "https://custom-bedrock-endpoint.amazonaws.com"
 
-    with mock_aws_provider() as mock_boto3_client:
+    with mock_aws_provider() as mock_client_call:
         provider = BedrockProvider(api_base=custom_endpoint, api_key="test_key")
         provider._completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
 
-        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=custom_endpoint)
+        mock_client_call.assert_called_once()
+        call_args, call_kwargs = mock_client_call.call_args
+        assert call_args == ("bedrock-runtime",)
+        assert call_kwargs["endpoint_url"] == custom_endpoint
+        # api_key was provided, so the client is configured to sign with the bearer token.
+        assert call_kwargs["config"].signature_version == "bearer"
 
 
 def test_boto3_client_created_without_api_base() -> None:
-    """Test that boto3.client is created with None endpoint_url when api_base is not provided."""
+    """Test that the session's client is created with None endpoint_url when api_base is not provided."""
 
-    with mock_aws_provider() as mock_boto3_client:
+    with mock_aws_provider() as mock_client_call:
         provider = BedrockProvider(api_key="test_key")
         provider._completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
 
-        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None)
+        mock_client_call.assert_called_once()
+        call_args, call_kwargs = mock_client_call.call_args
+        assert call_args == ("bedrock-runtime",)
+        assert call_kwargs["endpoint_url"] is None
+        assert call_kwargs["config"].signature_version == "bearer"
+
+
+def test_api_key_registers_scoped_bearer_token_provider() -> None:
+    """Test that api_key is forwarded as a bearer token via a per-instance token provider.
+
+    This is what actually makes api_key/AWS_BEARER_TOKEN_BEDROCK usable per-request/per-tenant,
+    instead of requiring a process-wide env var mutation.
+    """
+    with mock_aws_provider():
+        provider = BedrockProvider(api_key="my-bearer-token")
+
+    mock_session = provider._boto_session
+    assert mock_session is not None
+    mock_session._session.register_component.assert_called_once()
+    component_name, token_provider = mock_session._session.register_component.call_args[0]
+    assert component_name == "token_provider"
+    assert token_provider.environ == {"AWS_BEARER_TOKEN_BEDROCK": "my-bearer-token"}
+
+
+def test_scoped_token_provider_resolves_bearer_token_via_real_botocore_session() -> None:
+    """Test the registered token provider against the real botocore session contract.
+
+    Goes one level deeper than asserting `register_component` was called with the right
+    arguments: registers the provider on a real `botocore.session.Session` (no boto3/botocore
+    mocking at all) and confirms botocore's own `get_auth_token(signing_name="bedrock")` actually
+    resolves our token through it, exactly as it would when a real client is constructed.
+    """
+    real_session = botocore.session.Session()  # type: ignore[no-untyped-call]
+    real_session.register_component(  # type: ignore[no-untyped-call]
+        "token_provider",
+        ScopedEnvTokenProvider(  # type: ignore[no-untyped-call]
+            real_session, environ={"AWS_BEARER_TOKEN_BEDROCK": "my-bearer-token"}
+        ),
+    )
+
+    auth_token = real_session.get_auth_token(signing_name="bedrock")  # type: ignore[no-untyped-call]
+
+    assert auth_token is not None
+    assert auth_token.token == "my-bearer-token"  # noqa: S105
+
+
+def test_no_api_key_skips_bearer_token_setup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that no token provider is registered and no bearer config is forced without api_key."""
+    # Guard against a real AWS_BEARER_TOKEN_BEDROCK in the ambient environment, which would make
+    # the provider resolve a bearer token anyway and fail this test for unrelated reasons.
+    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+
+    with mock_aws_provider() as mock_client_call:
+        provider = BedrockProvider()
+        provider._completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
+
+    assert provider._boto_session is not None
+    provider._boto_session._session.register_component.assert_not_called()
+    assert "config" not in mock_client_call.call_args[1]
+
+
+def test_explicit_aws_credentials_satisfy_verification_without_ambient_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test that explicit AWS credential kwargs satisfy verification (regression test for #1183).
+
+    A bare `boto3.Session()` only resolves credentials from the ambient default chain (env vars,
+    `~/.aws/credentials`, instance role), so it must not be what verification relies on: it should
+    fail here since there are no ambient credentials, but verification must still succeed because
+    `aws_access_key_id`/`aws_secret_access_key`/`aws_session_token`/`region_name` were passed
+    explicitly to the constructor. The same explicit kwargs must also be used to build the real
+    session the runtime client is constructed from, not just the verification session.
+    """
+    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+
+    def session_factory(**kwargs: Any) -> Mock:
+        session = Mock()
+        session.get_credentials.return_value = Mock() if kwargs else None
+        session.client.return_value = Mock()
+        return session
+
+    with (
+        patch("boto3.Session", side_effect=session_factory) as mock_session_cls,
+        patch("any_llm.providers.bedrock.bedrock._convert_response"),
+    ):
+        BedrockProvider(
+            aws_access_key_id="AKIAEXAMPLE",
+            aws_secret_access_key="secret",  # noqa: S106
+            aws_session_token="token",  # noqa: S106
+            region_name="us-west-2",
+        )
+
+    expected_session_kwargs = {
+        "aws_access_key_id": "AKIAEXAMPLE",
+        "aws_secret_access_key": "secret",
+        "aws_session_token": "token",
+        "region_name": "us-west-2",
+    }
+    # The verification session (first call, in _verify_and_set_api_key) and the runtime session
+    # (second call, in _build_boto_session) must both be built with the explicit kwargs.
+    assert mock_session_cls.call_args_list[0].kwargs == expected_session_kwargs
+    assert mock_session_cls.call_args_list[1].kwargs == expected_session_kwargs
+
+
+def test_profile_name_and_botocore_session_go_to_session_not_client() -> None:
+    """Test that profile_name/botocore_session reach boto3.Session but never Session.client().
+
+    boto3.Session() accepts `profile_name`/`botocore_session`, but `Session.client()` does not;
+    if they leaked into the `.client()` call, real boto3 would raise a TypeError. Checked for the
+    runtime client as well as the control-plane and S3 clients, which are built from the same
+    kwargs.
+    """
+    fake_botocore_session = Mock()
+
+    def session_factory(**kwargs: Any) -> Mock:
+        session = Mock()
+        session.get_credentials.return_value = Mock()
+        session.client.return_value = Mock()
+        return session
+
+    with (
+        patch("boto3.Session", side_effect=session_factory) as mock_session_cls,
+        patch("any_llm.providers.bedrock.bedrock._convert_response"),
+    ):
+        provider = BedrockProvider(profile_name="my-profile", botocore_session=fake_botocore_session)
+        control_client = provider._get_bedrock_control_client()
+        s3_client = provider._get_s3_client()
+
+    expected_session_kwargs = {"profile_name": "my-profile", "botocore_session": fake_botocore_session}
+    for call in mock_session_cls.call_args_list:
+        assert call.kwargs == expected_session_kwargs
+
+    assert provider._boto_session is not None
+    # The control-plane and S3 clients are built from the same shared `_boto_session`, so they
+    # share its `.client` mock; every call recorded on it (runtime, control, S3) must be free of
+    # session-only kwargs.
+    assert control_client is provider._boto_session.client.return_value
+    assert s3_client is provider._boto_session.client.return_value
+    for call_args in provider._boto_session.client.call_args_list:
+        assert "profile_name" not in call_args.kwargs
+        assert "botocore_session" not in call_args.kwargs
+
+
+def test_profile_name_resolution_uses_real_botocore_and_raises_profile_not_found(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Test that a nonexistent `profile_name` surfaces botocore's own `ProfileNotFound`.
+
+    Exercises real botocore profile resolution (no `boto3.Session` mocking), isolated from the
+    real environment via an empty, temporary AWS config/credentials directory, so a nonexistent
+    profile can't accidentally resolve to a real ambient one.
+    """
+    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "config"))
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(tmp_path / "credentials"))
+
+    with pytest.raises(ProfileNotFound):
+        BedrockProvider(profile_name="nonexistent-profile")
+
+
+def test_no_credentials_and_no_api_key_raises_missing_api_key_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that MissingApiKeyError is still raised with neither credentials nor an api_key."""
+    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+
+    with patch("boto3.Session") as mock_session_cls:
+        mock_session_cls.return_value.get_credentials.return_value = None
+
+        with pytest.raises(MissingApiKeyError):
+            BedrockProvider()
+
+
+def test_completion_with_timeout_builds_distinct_client_with_timeout_config() -> None:
+    """Test that a `timeout` kwarg is popped before reaching converse and applied via client config.
+
+    boto3's Converse API has no `timeout` parameter, so it must never be forwarded to it.
+    """
+    with mock_aws_provider() as mock_client_call:
+        provider = BedrockProvider(api_key="test_key")
+        provider._completion(
+            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]),
+            timeout=5,
+        )
+
+        # one call to build the base client, one to build the timeout-scoped client
+        assert mock_client_call.call_count == 2
+        timeout_call_kwargs = mock_client_call.call_args_list[1][1]
+        assert timeout_call_kwargs["config"].connect_timeout == 5
+        assert timeout_call_kwargs["config"].read_timeout == 5
+        # bearer auth (from api_key) must still be honored on the timeout-scoped client
+        assert timeout_call_kwargs["config"].signature_version == "bearer"
+
+        converse_call_kwargs = mock_client_call.return_value.converse.call_args[1]
+        assert "timeout" not in converse_call_kwargs
+
+
+def test_completion_with_timeout_and_no_api_key_uses_plain_timeout_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test the timeout-only branch (no bearer config to merge into) still works."""
+    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+
+    with mock_aws_provider() as mock_client_call:
+        provider = BedrockProvider()
+        provider._completion(
+            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]),
+            timeout=5,
+        )
+
+        timeout_call_kwargs = mock_client_call.call_args_list[1][1]
+        assert timeout_call_kwargs["config"].connect_timeout == 5
+        assert timeout_call_kwargs["config"].signature_version is None
+
+
+def test_user_supplied_config_is_merged_with_bearer_signature_version() -> None:
+    """A caller-supplied `config=` kwarg is preserved and merged with the forced bearer signature_version."""
+    from botocore.config import Config
+
+    user_config = Config(region_name="us-west-2")  # type: ignore[no-untyped-call]
+    with mock_aws_provider() as mock_client_call:
+        BedrockProvider(api_key="test_key", config=user_config)
+
+    call_kwargs = mock_client_call.call_args[1]
+    assert call_kwargs["config"].region_name == "us-west-2"
+    assert call_kwargs["config"].signature_version == "bearer"
+
+
+def test_completion_timeout_client_is_cached_per_timeout_value() -> None:
+    """Test that repeated calls with the same timeout reuse a single cached client."""
+    with mock_aws_provider() as mock_client_call:
+        provider = BedrockProvider(api_key="test_key")
+        params = CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}])
+
+        provider._completion(params, timeout=5)
+        provider._completion(params, timeout=5)
+
+        # base client + one timeout-scoped client, reused across both calls
+        assert mock_client_call.call_count == 2
+        assert len(provider._timeout_clients) == 1
+
+
+def test_timeout_client_cache_is_bounded() -> None:
+    """Test that the timeout-client cache evicts old entries instead of growing without limit."""
+    with mock_aws_provider():
+        provider = BedrockProvider(api_key="test_key")
+
+        for timeout in range(provider._MAX_TIMEOUT_CLIENTS + 5):
+            provider._client_for_timeout(float(timeout))
+
+        assert len(provider._timeout_clients) == provider._MAX_TIMEOUT_CLIENTS
+
+
+def test_timeout_client_creation_is_thread_safe() -> None:
+    """Test that concurrent calls with the same uncached timeout build exactly one client.
+
+    `_completion` runs on executor threads via `_acompletion`; without locking the cache-miss
+    path, concurrent callers could each build (and leak) their own client for the same timeout.
+    """
+    with mock_aws_provider() as mock_client_call:
+        provider = BedrockProvider(api_key="test_key")
+
+        with ThreadPoolExecutor(max_workers=16) as executor:
+            results = list(executor.map(lambda _: provider._client_for_timeout(5.0), range(16)))
+
+        assert len({id(client) for client in results}) == 1
+        # base client (built at construction) + exactly one timeout-scoped client
+        assert mock_client_call.call_count == 2
+
+
+def test_completion_timeout_with_custom_client_logs_warning_and_is_ignored(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test that `timeout` is dropped with a warning (not a crash) when a custom client is used.
+
+    any-llm doesn't own a custom client's construction, so it can't safely reconfigure its
+    connection timeouts.
+    """
+    custom_client = Mock()
+    custom_client.converse.return_value = {"output": {"message": {"content": [{"text": "response"}]}}}
+
+    with patch("any_llm.providers.bedrock.bedrock._convert_response"):
+        provider = BedrockProvider(client=custom_client)
+        with caplog.at_level(logging.WARNING, logger="any_llm"):
+            provider._completion(
+                CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]),
+                timeout=5,
+            )
+
+    custom_client.converse.assert_called_once()
+    assert "timeout" not in custom_client.converse.call_args[1]
+    assert "timeout" in caplog.text.lower()
 
 
 def test_custom_client_used_when_provided() -> None:
@@ -132,6 +440,34 @@ def test_completion_with_kwargs() -> None:
         )
 
 
+def test_completion_streaming_uses_converse_stream_on_resolved_client() -> None:
+    """Test that streaming completions call converse_stream on the client resolved for the call.
+
+    Guards against a regression where the timeout-aware client resolution (`_client_for_timeout`)
+    is only wired into the non-streaming `converse` call and not `converse_stream`. Uses distinct
+    base/timeout-scoped client mocks (rather than relying on `Mock().return_value` being the same
+    object for every construction call) so the assertion would actually fail if `converse_stream`
+    were called on the wrong client.
+    """
+    with mock_aws_provider() as mock_client_call:
+        base_client = Mock()
+        timeout_client = Mock()
+        timeout_client.converse_stream.return_value = {"stream": [{"messageStart": {"role": "assistant"}}]}
+        mock_client_call.side_effect = [base_client, timeout_client]
+
+        provider = BedrockProvider(api_key="test_key")
+        chunks = list(
+            provider._completion(
+                CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}], stream=True),
+                timeout=5,
+            )
+        )
+
+        timeout_client.converse_stream.assert_called_once()
+        base_client.converse_stream.assert_not_called()
+        assert len(chunks) == 1
+
+
 @pytest.mark.parametrize("reasoning_effort", [None, *get_args(ReasoningEffort)])
 def test_completion_with_custom_reasoning_effort(reasoning_effort: ReasoningEffort | None) -> None:
     """Test that reasoning_effort is correctly passed to Bedrock API."""
@@ -164,13 +500,10 @@ def test_completion_with_custom_reasoning_effort(reasoning_effort: ReasoningEffo
 @contextmanager
 def mock_aws_embedding_provider():  # type: ignore[no-untyped-def]
     """Mock AWS provider specifically for embedding tests."""
-    with (
-        patch("boto3.Session"),
-        patch("boto3.client") as mock_boto3_client,
-    ):
+    with patch("boto3.Session") as mock_session_cls:
         mock_client = Mock()
-        mock_boto3_client.return_value = mock_client
-        yield mock_boto3_client, mock_client
+        mock_session_cls.return_value.client.return_value = mock_client
+        yield mock_session_cls.return_value.client, mock_client
 
 
 def test_embedding_single_string() -> None:
@@ -180,13 +513,17 @@ def test_embedding_single_string() -> None:
 
     mock_response_body = {"embedding": [0.1, 0.2, 0.3], "inputTextTokenCount": 5}
 
-    with mock_aws_embedding_provider() as (mock_boto3_client, mock_client):
+    with mock_aws_embedding_provider() as (mock_client_call, mock_client):
         mock_client.invoke_model.return_value = {"body": Mock(read=Mock(return_value=json.dumps(mock_response_body)))}
 
         provider = BedrockProvider(api_key="test_key")
         response = provider._embedding(model_id, input_text)
 
-        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None)
+        mock_client_call.assert_called_once()
+        call_args, call_kwargs = mock_client_call.call_args
+        assert call_args == ("bedrock-runtime",)
+        assert call_kwargs["endpoint_url"] is None
+        assert call_kwargs["config"].signature_version == "bearer"
 
         expected_request_body = {"inputText": input_text}
         mock_client.invoke_model.assert_called_once_with(modelId=model_id, body=json.dumps(expected_request_body))
@@ -210,7 +547,7 @@ def test_embedding_list_of_strings() -> None:
         {"embedding": [0.4, 0.5, 0.6], "inputTextTokenCount": 6},
     ]
 
-    with mock_aws_embedding_provider() as (mock_boto3_client, mock_client):
+    with mock_aws_embedding_provider() as (mock_client_call, mock_client):
         mock_client.invoke_model.side_effect = [
             {"body": Mock(read=Mock(return_value=json.dumps(mock_response_bodies[0])))},
             {"body": Mock(read=Mock(return_value=json.dumps(mock_response_bodies[1])))},
@@ -219,7 +556,11 @@ def test_embedding_list_of_strings() -> None:
         provider = BedrockProvider(api_key="test_key")
         response = provider._embedding(model_id, input_texts)
 
-        mock_boto3_client.assert_called_once_with("bedrock-runtime", endpoint_url=None)
+        mock_client_call.assert_called_once()
+        call_args, call_kwargs = mock_client_call.call_args
+        assert call_args == ("bedrock-runtime",)
+        assert call_kwargs["endpoint_url"] is None
+        assert call_kwargs["config"].signature_version == "bearer"
 
         assert mock_client.invoke_model.call_count == 2
         expected_calls = [({"inputText": "Hello world"}, model_id), ({"inputText": "Goodbye world"}, model_id)]
@@ -790,3 +1131,366 @@ def test_convert_tool_spec_empty_description() -> None:
         tool_choice=None,
     )
     assert tool_config["tools"][0]["toolSpec"]["description"] == " "
+
+
+class _City(BaseModel):
+    name: str
+
+
+@dataclasses.dataclass
+class _CityDataclass:
+    name: str
+
+
+ANTHROPIC_MODEL_IDS = [
+    "anthropic.claude-3-haiku-20240307-v1:0",
+    "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+]
+
+
+@pytest.mark.parametrize("model_id", ANTHROPIC_MODEL_IDS)
+def test_convert_params_response_format_pydantic_forces_structured_output_tool(model_id: str) -> None:
+    """response_format with a Pydantic model forces a single synthetic tool call for Claude models."""
+    result = _convert_params(
+        CompletionParams(model_id=model_id, messages=[{"role": "user", "content": "hi"}], response_format=_City),
+        {},
+    )
+
+    tool_config = result["toolConfig"]
+    assert len(tool_config["tools"]) == 1
+    tool_spec = tool_config["tools"][0]["toolSpec"]
+    assert tool_spec["name"] == _STRUCTURED_OUTPUT_TOOL_NAME
+    assert tool_spec["inputSchema"]["json"] == _City.model_json_schema()
+    assert tool_config["toolChoice"] == {"tool": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}
+
+
+def test_convert_params_response_format_dataclass_forces_structured_output_tool() -> None:
+    """response_format also supports plain dataclasses, not just Pydantic models."""
+    result = _convert_params(
+        CompletionParams(
+            model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            messages=[{"role": "user", "content": "hi"}],
+            response_format=_CityDataclass,
+        ),
+        {},
+    )
+
+    tool_spec = result["toolConfig"]["tools"][0]["toolSpec"]
+    assert tool_spec["name"] == _STRUCTURED_OUTPUT_TOOL_NAME
+    assert tool_spec["inputSchema"]["json"]["properties"]["name"]["type"] == "string"
+
+
+def test_convert_params_response_format_json_schema_dict_forces_structured_output_tool() -> None:
+    """response_format as an OpenAI-style json_schema dict is also supported."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}
+    result = _convert_params(
+        CompletionParams(
+            model_id="anthropic.claude-3-haiku-20240307-v1:0",
+            messages=[{"role": "user", "content": "hi"}],
+            response_format={"type": "json_schema", "json_schema": {"schema": schema}},
+        ),
+        {},
+    )
+
+    assert result["toolConfig"]["tools"][0]["toolSpec"]["inputSchema"]["json"] == schema
+
+
+def test_convert_params_response_format_json_schema_missing_schema_key_raises() -> None:
+    """A json_schema envelope without 'schema' must raise a controlled ValueError, not KeyError."""
+    with pytest.raises(ValueError, match=r"json_schema\.schema"):
+        _convert_params(
+            CompletionParams(
+                model_id="anthropic.claude-3-haiku-20240307-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format={"type": "json_schema", "json_schema": {}},
+            ),
+            {},
+        )
+
+
+def test_convert_params_response_format_json_schema_missing_envelope_raises() -> None:
+    """A json_schema type without a 'json_schema' key must also raise a controlled ValueError."""
+    with pytest.raises(ValueError, match=r"json_schema\.schema"):
+        _convert_params(
+            CompletionParams(
+                model_id="anthropic.claude-3-haiku-20240307-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format={"type": "json_schema"},
+            ),
+            {},
+        )
+
+
+def test_convert_params_response_format_json_schema_non_dict_schema_raises() -> None:
+    """A json_schema envelope whose 'schema' is not a dict must raise instead of building an invalid toolSpec."""
+    with pytest.raises(ValueError, match=r"json_schema\.schema"):
+        _convert_params(
+            CompletionParams(
+                model_id="anthropic.claude-3-haiku-20240307-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format={"type": "json_schema", "json_schema": {"schema": None}},
+            ),
+            {},
+        )
+
+
+def test_convert_params_response_format_with_reasoning_effort_raises() -> None:
+    """Claude rejects forced tool use while extended thinking is enabled, so the combination is refused."""
+    with pytest.raises(UnsupportedParameterError, match="reasoning_effort"):
+        _convert_params(
+            CompletionParams(
+                model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format=_City,
+                reasoning_effort="high",
+            ),
+            {},
+        )
+
+
+@pytest.mark.parametrize("reasoning_effort", ["none", "auto", None])
+def test_convert_params_response_format_allows_disabled_reasoning(reasoning_effort: Any) -> None:
+    """reasoning_effort values that do not enable extended thinking still allow response_format."""
+    result = _convert_params(
+        CompletionParams(
+            model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            messages=[{"role": "user", "content": "hi"}],
+            response_format=_City,
+            reasoning_effort=reasoning_effort,
+        ),
+        {},
+    )
+
+    assert result["toolConfig"]["toolChoice"] == {"tool": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}
+    assert "additionalModelRequestFields" not in result
+
+
+def test_convert_params_response_format_json_object_raises() -> None:
+    """json_object has no schema to build a tool from, so it must raise like the direct Anthropic provider."""
+    with pytest.raises(UnsupportedParameterError):
+        _convert_params(
+            CompletionParams(
+                model_id="anthropic.claude-3-haiku-20240307-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format={"type": "json_object"},
+            ),
+            {},
+        )
+
+
+def test_convert_params_response_format_empty_dict_raises() -> None:
+    """An empty dict must not be treated as "no response_format" (it's falsy but not None)."""
+    with pytest.raises(ValueError, match="Unsupported response_format type"):
+        _convert_params(
+            CompletionParams(
+                model_id="anthropic.claude-3-haiku-20240307-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format={},
+            ),
+            {},
+        )
+
+
+def test_convert_response_format_to_tool_spec_unsupported_dict_type_raises() -> None:
+    """A response_format dict whose type is neither json_schema nor json_object is rejected."""
+    with pytest.raises(ValueError, match="Unsupported response_format type"):
+        _convert_response_format_to_tool_spec({"type": "text"}, "bedrock")
+
+
+def test_convert_response_format_to_tool_spec_non_dict_non_type_raises() -> None:
+    """A response_format that is neither a structured-output type nor a dict is rejected."""
+    with pytest.raises(ValueError, match="Unsupported response_format"):
+        _convert_response_format_to_tool_spec("invalid", "bedrock")  # type: ignore[arg-type]
+
+
+def test_convert_params_response_format_non_anthropic_model_raises() -> None:
+    """Non-Claude Bedrock model families keep raising, unaffected by the Claude-specific fix."""
+    with pytest.raises(UnsupportedParameterError) as excinfo:
+        _convert_params(
+            CompletionParams(
+                model_id="amazon.nova-lite-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format=_City,
+            ),
+            {},
+        )
+    assert "nova" in str(excinfo.value).lower()
+
+
+def test_convert_params_response_format_combines_with_existing_tools() -> None:
+    """User-supplied tools are preserved alongside the synthetic structured-output tool."""
+    result = _convert_params(
+        CompletionParams(
+            model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            messages=[{"role": "user", "content": "hi"}],
+            response_format=_City,
+            tools=[{"type": "function", "function": {"name": "get_weather", "parameters": None}}],
+        ),
+        {},
+    )
+
+    tool_names = {t["toolSpec"]["name"] for t in result["toolConfig"]["tools"]}
+    assert tool_names == {"get_weather", _STRUCTURED_OUTPUT_TOOL_NAME}
+    assert result["toolConfig"]["toolChoice"] == {"tool": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}
+
+
+def test_convert_params_response_format_with_streaming_raises() -> None:
+    """response_format + stream=True is rejected rather than silently emitting tool-call deltas."""
+    with pytest.raises(UnsupportedParameterError):
+        _convert_params(
+            CompletionParams(
+                model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format=_City,
+                stream=True,
+            ),
+            {},
+        )
+
+
+def test_convert_params_rejects_reserved_tool_name_with_response_format() -> None:
+    """A user tool named like the synthetic structured-output tool must not collide with it."""
+    with pytest.raises(InvalidRequestError, match=_STRUCTURED_OUTPUT_TOOL_NAME):
+        _convert_params(
+            CompletionParams(
+                model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format=_City,
+                tools=[{"type": "function", "function": {"name": _STRUCTURED_OUTPUT_TOOL_NAME, "parameters": None}}],
+            ),
+            {},
+        )
+
+
+def test_convert_params_rejects_reserved_tool_name_without_response_format() -> None:
+    """The reserved name is rejected even without response_format, since a genuine call to it
+    would otherwise be silently misinterpreted as structured output by `_convert_response`.
+    """
+    with pytest.raises(InvalidRequestError, match=_STRUCTURED_OUTPUT_TOOL_NAME):
+        _convert_params(
+            CompletionParams(
+                model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                tools=[{"type": "function", "function": {"name": _STRUCTURED_OUTPUT_TOOL_NAME, "parameters": None}}],
+            ),
+            {},
+        )
+
+
+def test_convert_response_structured_output_tool_call_becomes_content() -> None:
+    """The synthetic structured-output tool call is unwrapped back into message.content."""
+    response: dict[str, Any] = {
+        "output": {
+            "message": {
+                "content": [
+                    {
+                        "toolUse": {
+                            "toolUseId": "tool-123",
+                            "name": _STRUCTURED_OUTPUT_TOOL_NAME,
+                            "input": {"name": "Paris"},
+                        }
+                    }
+                ]
+            }
+        },
+        "stopReason": "tool_use",
+    }
+
+    result = _convert_response(response)
+
+    message = result.choices[0].message
+    assert result.choices[0].finish_reason == "stop"
+    assert message.content == json.dumps({"name": "Paris"})
+    assert message.tool_calls is None
+
+
+def test_convert_response_structured_output_preserves_usage_and_reasoning() -> None:
+    """Usage and reasoning content must survive the structured-output unwrap, not just the JSON content."""
+    response: dict[str, Any] = {
+        "output": {
+            "message": {
+                "content": [
+                    {"reasoningContent": {"reasoningText": {"text": "The capital of France is Paris."}}},
+                    {
+                        "toolUse": {
+                            "toolUseId": "tool-123",
+                            "name": _STRUCTURED_OUTPUT_TOOL_NAME,
+                            "input": {"name": "Paris"},
+                        }
+                    },
+                ]
+            }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+            "inputTokens": 100,
+            "outputTokens": 50,
+            "totalTokens": 150,
+            "cacheReadInputTokens": 80,
+        },
+    }
+
+    result = _convert_response(response)
+
+    message = result.choices[0].message
+    assert result.choices[0].finish_reason == "stop"
+    assert message.content == json.dumps({"name": "Paris"})
+    assert message.tool_calls is None
+    assert message.reasoning is not None
+    assert message.reasoning.content == "The capital of France is Paris."
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 180  # 100 + 80
+    assert result.usage.completion_tokens == 50
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 80
+
+
+def test_convert_response_real_tool_call_not_treated_as_structured_output() -> None:
+    """A genuine (non-sentinel) tool call must still take the normal tool_calls path."""
+    response: dict[str, Any] = {
+        "output": {
+            "message": {
+                "content": [
+                    {
+                        "toolUse": {
+                            "toolUseId": "tool-123",
+                            "name": "get_weather",
+                            "input": {"location": "Paris"},
+                        }
+                    }
+                ]
+            }
+        },
+        "stopReason": "tool_use",
+    }
+
+    result = _convert_response(response)
+
+    assert result.choices[0].finish_reason == "tool_calls"
+    assert result.choices[0].message.content is None
+    assert result.choices[0].message.tool_calls is not None
+    tool_call = result.choices[0].message.tool_calls[0]
+    assert isinstance(tool_call, ChatCompletionMessageFunctionToolCall)
+    assert tool_call.function.name == "get_weather"
+
+
+def test_convert_response_multiple_tool_calls_not_treated_as_structured_output() -> None:
+    """Even if the sentinel name appears, more than one tool call must not be unwrapped as content."""
+    response: dict[str, Any] = {
+        "output": {
+            "message": {
+                "content": [
+                    {"toolUse": {"toolUseId": "t1", "name": _STRUCTURED_OUTPUT_TOOL_NAME, "input": {"name": "Paris"}}},
+                    {"toolUse": {"toolUseId": "t2", "name": "get_weather", "input": {"location": "Paris"}}},
+                ]
+            }
+        },
+        "stopReason": "tool_use",
+    }
+
+    result = _convert_response(response)
+
+    assert result.choices[0].finish_reason == "tool_calls"
+    assert result.choices[0].message.tool_calls is not None
+    assert len(result.choices[0].message.tool_calls) == 2

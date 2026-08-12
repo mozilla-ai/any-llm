@@ -1,5 +1,6 @@
 from typing import Any
 
+from openai.types.responses import ParsedResponse as OpenAIParsedResponse
 from openai.types.responses import Response as OpenAIResponse
 from openai.types.responses import ResponseInputParam as OpenAIResponseInputParam
 from openai.types.responses import ResponseOutputMessage as OpenAIResponseOutputMessage
@@ -7,9 +8,16 @@ from openai.types.responses import ResponseStreamEvent as OpenAIResponseStreamEv
 from pydantic import BaseModel, ConfigDict
 
 Response = OpenAIResponse
+ParsedResponse = OpenAIParsedResponse
 ResponseStreamEvent = OpenAIResponseStreamEvent
 ResponseOutputMessage = OpenAIResponseOutputMessage
 ResponseInputParam = OpenAIResponseInputParam
+
+# Public APIs retain the SDK's generated union for typed caller compatibility.
+# Runtime validation uses the wire shape so valid replayed history can contain
+# Responses items whose exact shape is not represented by that union.
+ResponseInputPayload = str | list[dict[str, Any]]
+ResponseInput = ResponseInputParam | ResponseInputPayload
 
 
 class ResponsesParams(BaseModel):
@@ -25,10 +33,13 @@ class ResponsesParams(BaseModel):
     model: str
     """Model identifier (e.g., 'mistral-small-latest')"""
 
-    input: str | ResponseInputParam
-    """The input payload accepted by provider's Responses API.
-        For OpenAI-compatible providers, this is typically a list mixing
-        text, images, and tool instructions, or a dict per OpenAI spec.
+    input: ResponseInputPayload
+    """Input text or wire-format Responses items.
+
+    The outer request is validated, but input items are passed through without
+    schema validation. The API permits replaying provider response and
+    reasoning items whose context-dependent shapes can exceed the SDK's
+    generated ``ResponseInputParam`` union.
     """
 
     instructions: str | None = None
@@ -52,8 +63,12 @@ class ResponsesParams(BaseModel):
     max_output_tokens: int | None = None
     """Maximum number of tokens to generate"""
 
-    response_format: dict[str, Any] | type[BaseModel] | None = None
-    """Format specification for the response"""
+    response_format: dict[str, Any] | type | None = None
+    """Structured-output format for the response.
+
+    Accepts a Pydantic ``BaseModel`` subclass or a dataclass type (parsed into
+    ``ParsedResponse.output_parsed``), or a raw OpenAI ``text.format`` dict.
+    """
 
     stream: bool | None = None
     """Whether to stream the response"""
@@ -78,6 +93,9 @@ class ResponsesParams(BaseModel):
 
     truncation: str | None = None
     """Controls how the service truncates the input when it exceeds the model context window."""
+
+    context_management: list[dict[str, Any]] | None = None
+    """OpenAI Responses context management configuration."""
 
     store: bool | None = None
     """Whether to store the response so it can be retrieved later."""

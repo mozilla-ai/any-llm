@@ -1,12 +1,19 @@
 import base64
+from collections.abc import AsyncIterator
 from contextlib import contextmanager
 from typing import Any, get_args
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from google.genai import types
+from pydantic import BaseModel
 
-from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
+from any_llm.exceptions import (
+    ContentFilterFinishReasonError,
+    InvalidRequestError,
+    LengthFinishReasonError,
+    UnsupportedParameterError,
+)
 from any_llm.providers.gemini import GeminiProvider
 from any_llm.providers.gemini.base import REASONING_EFFORT_TO_THINKING_BUDGETS, GoogleProvider
 from any_llm.providers.gemini.utils import (
@@ -14,11 +21,29 @@ from any_llm.providers.gemini.utils import (
     _convert_response_to_response_dict,
     _convert_tool_spec,
     _create_openai_chunk_from_google_chunk,
+    _map_finish_reason,
 )
-from any_llm.types.completion import CompletionParams, PromptTokensDetails, ReasoningEffort
+from any_llm.types.completion import ChatCompletion, CompletionParams, PromptTokensDetails, ReasoningEffort
 
 TEST_IMAGE_BYTES = b"test-image-bytes"
 TEST_PDF_BYTES = b"%PDF-1.4\ntest"
+
+
+class StructuredAnswer(BaseModel):
+    answer: str
+
+
+def _make_gemini_response(
+    parts: list[types.Part] | None, finish_reason: types.FinishReason | None
+) -> types.GenerateContentResponse:
+    return types.GenerateContentResponse(
+        candidates=[
+            types.Candidate(
+                content=types.Content(parts=parts, role="model") if parts is not None else None,
+                finish_reason=finish_reason,
+            )
+        ]
+    )
 
 
 @contextmanager
@@ -392,22 +417,44 @@ async def test_completion_with_unsupported_dict_response_format_raises() -> None
 
 
 @pytest.mark.asyncio
-async def test_completion_with_stream_and_response_format_raises() -> None:
+async def test_stream_with_response_format_passes_generation_config() -> None:
     api_key = "test-api-key"
     model = "gemini-pro"
     messages = [{"role": "user", "content": "Hello"}]
+    expected_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "value": {"type": "integer"},
+        },
+        "required": ["name", "value"],
+    }
+    response_format: dict[str, Any] = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "TestOutput",
+            "schema": expected_schema,
+        },
+    }
 
-    with mock_gemini_provider():
+    with mock_gemini_provider() as mock_genai:
+        mock_genai.return_value.aio.models.generate_content_stream = AsyncMock()
         provider = GeminiProvider(api_key=api_key)
-        with pytest.raises(UnsupportedParameterError):
-            await provider._acompletion(
-                CompletionParams(
-                    model_id=model,
-                    messages=messages,
-                    stream=True,
-                    response_format={"type": "json_object"},
-                )
+        await provider._acompletion(
+            CompletionParams(
+                model_id=model,
+                messages=messages,
+                stream=True,
+                response_format=response_format,
             )
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content_stream.call_args
+        generation_config = call_kwargs["config"]
+
+    assert call_kwargs["model"] == model
+    assert generation_config.response_mime_type == "application/json"
+    assert generation_config.response_schema == expected_schema
 
 
 @pytest.mark.asyncio
@@ -600,6 +647,106 @@ def test_convert_response_multiple_parallel_tool_calls() -> None:
 
     tool_call_ids = [tc["id"] for tc in tool_calls]
     assert len(set(tool_call_ids)) == 3
+
+
+@pytest.mark.parametrize(
+    ("gemini_finish_reason", "expected_mapped_reason"),
+    [
+        (types.FinishReason.STOP, "stop"),
+        (types.FinishReason.MAX_TOKENS, "length"),
+        (types.FinishReason.SAFETY, "content_filter"),
+        (types.FinishReason.RECITATION, "content_filter"),
+        (types.FinishReason.PROHIBITED_CONTENT, "content_filter"),
+        (types.FinishReason.BLOCKLIST, "content_filter"),
+        (types.FinishReason.SPII, "content_filter"),
+        (types.FinishReason.IMAGE_SAFETY, "content_filter"),
+        (types.FinishReason.IMAGE_PROHIBITED_CONTENT, "content_filter"),
+        (types.FinishReason.IMAGE_RECITATION, "content_filter"),
+        (types.FinishReason.OTHER, None),
+        (None, None),
+    ],
+)
+def test_map_finish_reason(gemini_finish_reason: types.FinishReason | None, expected_mapped_reason: str | None) -> None:
+    assert _map_finish_reason(gemini_finish_reason) == expected_mapped_reason
+
+
+@pytest.mark.parametrize(
+    ("gemini_finish_reason", "expected_finish_reason"),
+    [
+        (types.FinishReason.STOP, "stop"),
+        (types.FinishReason.MAX_TOKENS, "length"),
+        (types.FinishReason.SAFETY, "content_filter"),
+        (types.FinishReason.OTHER, "stop"),
+        (None, "stop"),
+    ],
+)
+def test_convert_response_maps_finish_reason(
+    gemini_finish_reason: types.FinishReason | None, expected_finish_reason: str
+) -> None:
+    response = _make_gemini_response([types.Part(text="Hello")], gemini_finish_reason)
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert len(response_dict["choices"]) == 1
+    choice = response_dict["choices"][0]
+    assert choice["finish_reason"] == expected_finish_reason
+    assert choice["message"]["content"] == "Hello"
+
+
+@pytest.mark.parametrize(
+    ("gemini_finish_reason", "expected_finish_reason"),
+    [
+        (types.FinishReason.MAX_TOKENS, "length"),
+        (types.FinishReason.SAFETY, "content_filter"),
+        (types.FinishReason.STOP, "tool_calls"),
+        (None, "tool_calls"),
+    ],
+)
+def test_convert_response_truncation_and_filtering_override_tool_calls(
+    gemini_finish_reason: types.FinishReason | None, expected_finish_reason: str
+) -> None:
+    response = _make_gemini_response(
+        [types.Part(function_call=types.FunctionCall(name="search_web", args={"query": "test"}))],
+        gemini_finish_reason,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert len(response_dict["choices"]) == 1
+    choice = response_dict["choices"][0]
+    assert choice["finish_reason"] == expected_finish_reason
+    assert len(choice["message"]["tool_calls"]) == 1
+
+
+def test_convert_response_emits_choice_for_reasoning_only_truncation() -> None:
+    """A thinking model can spend the whole max_output_tokens budget on reasoning; the terminal
+    reason must still be visible to callers instead of an empty choices list."""
+    response = _make_gemini_response(
+        [types.Part(text="internal reasoning", thought=True)], types.FinishReason.MAX_TOKENS
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert len(response_dict["choices"]) == 1
+    choice = response_dict["choices"][0]
+    assert choice["finish_reason"] == "length"
+    assert choice["message"]["content"] is None
+    assert choice["message"]["reasoning"] == "internal reasoning"
+
+
+def test_convert_response_emits_choice_for_filtered_response_without_content() -> None:
+    response_dict = _convert_response_to_response_dict(_make_gemini_response(None, types.FinishReason.SAFETY))
+
+    assert len(response_dict["choices"]) == 1
+    choice = response_dict["choices"][0]
+    assert choice["finish_reason"] == "content_filter"
+    assert choice["message"]["content"] is None
+
+
+def test_convert_response_without_content_and_terminal_reason_has_no_choices() -> None:
+    response_dict = _convert_response_to_response_dict(_make_gemini_response(None, types.FinishReason.STOP))
+
+    assert response_dict["choices"] == []
 
 
 def test_convert_tool_spec_basic_mapping() -> None:
@@ -798,8 +945,7 @@ async def test_streaming_completion_includes_usage_data() -> None:
     mock_response.candidates[0].content.parts[0].text = "Hello"
     mock_response.candidates[0].content.parts[0].thought = None
     mock_response.candidates[0].content.parts[0].function_call = None
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
 
     mock_response.usage_metadata = Mock()
@@ -858,8 +1004,7 @@ def test_streaming_completion_with_tool_call() -> None:
     mock_part.text = None
 
     mock_response.candidates[0].content.parts = [mock_part]
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
     mock_response.usage_metadata = None
 
@@ -871,6 +1016,68 @@ def test_streaming_completion_with_tool_call() -> None:
     assert tool_call.function is not None
     assert tool_call.function.name == "get_weather"
     assert tool_call.function.arguments == '{"location": "Paris"}'
+
+
+def test_streaming_completion_with_tool_call_preserves_thought_signature() -> None:
+    """Streaming tool call deltas should carry thought_signature in extra_content, like non-streaming."""
+    from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
+
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_function_call = Mock()
+    mock_function_call.name = "get_weather"
+    mock_function_call.args = {"location": "Paris"}
+
+    original_bytes = b"test-signature-bytes"
+    mock_part = Mock()
+    mock_part.function_call = mock_function_call
+    mock_part.thought = None
+    mock_part.text = None
+    mock_part.thought_signature = original_bytes
+
+    mock_response.candidates[0].content.parts = [mock_part]
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
+    mock_response.model_version = "gemini-2.5-flash"
+    mock_response.usage_metadata = None
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    assert chunk.choices[0].delta.tool_calls is not None
+    tool_call = chunk.choices[0].delta.tool_calls[0]
+    assert tool_call.extra_content is not None
+    assert tool_call.extra_content["google"]["thought_signature"] == base64.b64encode(original_bytes).decode("utf-8")
+
+
+def test_streaming_completion_with_tool_call_no_thought_signature() -> None:
+    """Streaming tool call deltas should not set extra_content when no thought_signature is present."""
+    from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
+
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_function_call = Mock()
+    mock_function_call.name = "get_weather"
+    mock_function_call.args = {"location": "Paris"}
+
+    mock_part = Mock()
+    mock_part.function_call = mock_function_call
+    mock_part.thought = None
+    mock_part.text = None
+    mock_part.thought_signature = None
+
+    mock_response.candidates[0].content.parts = [mock_part]
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
+    mock_response.model_version = "gemini-2.5-flash"
+    mock_response.usage_metadata = None
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    assert chunk.choices[0].delta.tool_calls is not None
+    tool_call = chunk.choices[0].delta.tool_calls[0]
+    assert tool_call.extra_content is None
 
 
 def test_streaming_completion_with_multiple_tool_calls() -> None:
@@ -900,8 +1107,7 @@ def test_streaming_completion_with_multiple_tool_calls() -> None:
     mock_part_2.text = None
 
     mock_response.candidates[0].content.parts = [mock_part_1, mock_part_2]
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
     mock_response.usage_metadata = None
 
@@ -913,6 +1119,142 @@ def test_streaming_completion_with_multiple_tool_calls() -> None:
     assert chunk.choices[0].delta.tool_calls[0].function.name == "get_weather"
     assert chunk.choices[0].delta.tool_calls[1].function is not None
     assert chunk.choices[0].delta.tool_calls[1].function.name == "get_weather"
+
+
+def _make_single_tool_call_chunk(name: str, args: dict[str, Any]) -> Mock:
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_function_call = Mock()
+    mock_function_call.name = name
+    mock_function_call.args = args
+
+    mock_part = Mock()
+    mock_part.function_call = mock_function_call
+    mock_part.thought = None
+    mock_part.text = None
+
+    mock_response.candidates[0].content.parts = [mock_part]
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
+    mock_response.model_version = "gemini-2.5-flash"
+    mock_response.usage_metadata = None
+    return mock_response
+
+
+def test_streaming_completion_tool_call_index_stable_across_chunks() -> None:
+    """Tool call index/id must not reset to 0 for every chunk of the same stream.
+
+    Regression test for https://github.com/mozilla-ai/any-llm/issues/1148: each
+    chunk in a Gemini stream used to be converted independently, so repeated calls
+    to the same function across different chunks (e.g. three separate `read_file`
+    calls) all received index=0 and an identical tool call id.
+    """
+    tool_call_counter: list[int] = [0]
+
+    chunk_1 = _create_openai_chunk_from_google_chunk(
+        _make_single_tool_call_chunk("read_file", {"path": "src/index.ts"}), tool_call_counter
+    )
+    chunk_2 = _create_openai_chunk_from_google_chunk(
+        _make_single_tool_call_chunk("read_file", {"path": "src/page.ts"}), tool_call_counter
+    )
+    chunk_3 = _create_openai_chunk_from_google_chunk(
+        _make_single_tool_call_chunk("read_file", {"path": "src/router.ts"}), tool_call_counter
+    )
+
+    tool_calls = []
+    for chunk in (chunk_1, chunk_2, chunk_3):
+        assert chunk.choices[0].delta.tool_calls is not None
+        assert len(chunk.choices[0].delta.tool_calls) == 1
+        tool_calls.append(chunk.choices[0].delta.tool_calls[0])
+
+    assert [tc.index for tc in tool_calls] == [0, 1, 2]
+    assert len({tc.id for tc in tool_calls}) == 3, "Each streamed tool call must have a unique id"
+
+
+def test_streaming_completion_multiple_tool_calls_within_chunk_after_prior_chunks() -> None:
+    """Indices for parallel tool calls within a chunk continue from prior chunks in the stream."""
+    tool_call_counter: list[int] = [0]
+
+    first_chunk = _create_openai_chunk_from_google_chunk(
+        _make_single_tool_call_chunk("read_file", {"path": "src/index.ts"}), tool_call_counter
+    )
+    assert first_chunk.choices[0].delta.tool_calls is not None
+    assert first_chunk.choices[0].delta.tool_calls[0].index == 0
+
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_function_call_1 = Mock()
+    mock_function_call_1.name = "get_weather"
+    mock_function_call_1.args = {"location": "Paris"}
+
+    mock_function_call_2 = Mock()
+    mock_function_call_2.name = "get_weather"
+    mock_function_call_2.args = {"location": "London"}
+
+    mock_part_1 = Mock()
+    mock_part_1.function_call = mock_function_call_1
+    mock_part_1.thought = None
+    mock_part_1.text = None
+
+    mock_part_2 = Mock()
+    mock_part_2.function_call = mock_function_call_2
+    mock_part_2.thought = None
+    mock_part_2.text = None
+
+    mock_response.candidates[0].content.parts = [mock_part_1, mock_part_2]
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
+    mock_response.model_version = "gemini-2.5-flash"
+    mock_response.usage_metadata = None
+
+    second_chunk = _create_openai_chunk_from_google_chunk(mock_response, tool_call_counter)
+
+    assert second_chunk.choices[0].delta.tool_calls is not None
+    assert [tc.index for tc in second_chunk.choices[0].delta.tool_calls] == [1, 2]
+
+
+async def _async_iter_chunks(items: list[Mock]) -> AsyncIterator[Mock]:
+    for item in items:
+        yield item
+
+
+@pytest.mark.asyncio
+async def test_streaming_via_acompletion_keeps_tool_call_index_stable_across_chunks() -> None:
+    """End-to-end regression test for #1148 through GoogleProvider._acompletion.
+
+    Exercises the actual streaming plumbing (not just the pure conversion
+    helper) to make sure the `tool_call_counter` created in the `_stream()`
+    closure is correctly forwarded through `_convert_completion_chunk_response`'s
+    `**kwargs` for every chunk of the stream, so indices/ids stay stable across
+    chunks rather than resetting.
+    """
+    api_key = "test-api-key"
+    model = "gemini-pro"
+    messages = [{"role": "user", "content": "Read three files"}]
+
+    raw_chunks = [
+        _make_single_tool_call_chunk("read_file", {"path": "src/index.ts"}),
+        _make_single_tool_call_chunk("read_file", {"path": "src/page.ts"}),
+        _make_single_tool_call_chunk("read_file", {"path": "src/router.ts"}),
+    ]
+
+    with mock_gemini_provider() as mock_genai:
+        mock_client = mock_genai.return_value
+        mock_client.aio.models.generate_content_stream = AsyncMock(return_value=_async_iter_chunks(raw_chunks))
+
+        provider = GeminiProvider(api_key=api_key)
+        result = await provider._acompletion(CompletionParams(model_id=model, messages=messages, stream=True))
+
+        tool_calls = []
+        assert not isinstance(result, ChatCompletion)
+        async for chunk in result:
+            assert chunk.choices[0].delta.tool_calls is not None
+            tool_calls.extend(chunk.choices[0].delta.tool_calls)
+
+    assert [tc.index for tc in tool_calls] == [0, 1, 2]
+    assert len({tc.id for tc in tool_calls}) == 3, "Each streamed tool call must have a unique id"
 
 
 def test_convert_response_preserves_thought_signature() -> None:
@@ -1303,8 +1645,7 @@ def test_streaming_completion_with_reasoning_content() -> None:
     mock_text_part.function_call = None
 
     mock_response.candidates[0].content.parts = [mock_thought_part, mock_text_part]
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
     mock_response.usage_metadata = None
 
@@ -1330,8 +1671,7 @@ def test_streaming_completion_with_function_call_none() -> None:
     mock_part.text = "Just text content"
 
     mock_response.candidates[0].content.parts = [mock_part]
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
     mock_response.usage_metadata = None
 
@@ -1403,8 +1743,7 @@ def test_streaming_chunk_extracts_cached_tokens() -> None:
     mock_part.function_call = None
     mock_part.text = "Hello!"
     mock_response.candidates[0].content.parts = [mock_part]
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
 
     mock_response.usage_metadata = Mock()
@@ -1433,8 +1772,7 @@ def test_streaming_chunk_without_cached_tokens() -> None:
     mock_part.function_call = None
     mock_part.text = "Hello!"
     mock_response.candidates[0].content.parts = [mock_part]
-    mock_response.candidates[0].finish_reason = Mock()
-    mock_response.candidates[0].finish_reason.value = "STOP"
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
 
     mock_response.usage_metadata = Mock()
@@ -1591,3 +1929,88 @@ def test_timeout_in_client_args_does_not_override_explicit_http_options() -> Non
         mock_client.assert_called_once()
         call_kwargs = mock_client.call_args[1]
         assert call_kwargs["http_options"].timeout == 10_000
+
+
+@pytest.mark.parametrize(
+    ("gemini_finish_reason", "expected_finish_reason"),
+    [
+        (types.FinishReason.STOP, "stop"),
+        (types.FinishReason.MAX_TOKENS, "length"),
+        (types.FinishReason.SAFETY, "content_filter"),
+        (types.FinishReason.OTHER, None),
+        (None, None),
+    ],
+)
+def test_streaming_chunk_maps_finish_reason(
+    gemini_finish_reason: types.FinishReason | None, expected_finish_reason: str | None
+) -> None:
+    chunk = _create_openai_chunk_from_google_chunk(
+        _make_gemini_response([types.Part(text="Hello")], gemini_finish_reason)
+    )
+
+    assert chunk.choices[0].finish_reason == expected_finish_reason
+    assert chunk.choices[0].delta.content == "Hello"
+
+
+def test_streaming_chunk_emits_finish_reason_for_filtered_chunk_without_content() -> None:
+    chunk = _create_openai_chunk_from_google_chunk(_make_gemini_response(None, types.FinishReason.SAFETY))
+
+    assert chunk.choices[0].finish_reason == "content_filter"
+    assert chunk.choices[0].delta.content is None
+
+
+@pytest.mark.parametrize(
+    ("gemini_finish_reason", "expected_finish_reason"),
+    [
+        (types.FinishReason.MAX_TOKENS, "length"),
+        (types.FinishReason.SAFETY, "content_filter"),
+        (types.FinishReason.STOP, "tool_calls"),
+        (None, "tool_calls"),
+    ],
+)
+def test_streaming_chunk_truncation_and_filtering_override_tool_calls(
+    gemini_finish_reason: types.FinishReason | None, expected_finish_reason: str
+) -> None:
+    response = _make_gemini_response(
+        [types.Part(function_call=types.FunctionCall(name="search_web", args={"query": "test"}))],
+        gemini_finish_reason,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    assert chunk.choices[0].finish_reason == expected_finish_reason
+    assert chunk.choices[0].delta.tool_calls is not None
+
+
+@pytest.mark.asyncio
+async def test_acompletion_raises_length_error_for_truncated_structured_output() -> None:
+    """Regression test for #1196: Gemini truncation must raise LengthFinishReasonError instead of
+    surfacing as a malformed JSON ValidationError from structured output parsing."""
+    truncated_response = _make_gemini_response([types.Part(text='{"answer": "trunca')], types.FinishReason.MAX_TOKENS)
+
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_genai:
+        mock_genai.return_value.aio.models.generate_content = AsyncMock(return_value=truncated_response)
+        provider = GeminiProvider(api_key="test-api-key")
+
+        with pytest.raises(LengthFinishReasonError):
+            await provider.acompletion(
+                model="gemini-2.5-flash",
+                messages=[{"role": "user", "content": "Hello"}],
+                response_format=StructuredAnswer,
+            )
+
+
+@pytest.mark.asyncio
+async def test_acompletion_raises_content_filter_error_for_filtered_structured_output() -> None:
+    filtered_response = _make_gemini_response(None, types.FinishReason.SAFETY)
+
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_genai:
+        mock_genai.return_value.aio.models.generate_content = AsyncMock(return_value=filtered_response)
+        provider = GeminiProvider(api_key="test-api-key")
+
+        with pytest.raises(ContentFilterFinishReasonError):
+            await provider.acompletion(
+                model="gemini-2.5-flash",
+                messages=[{"role": "user", "content": "Hello"}],
+                response_format=StructuredAnswer,
+            )

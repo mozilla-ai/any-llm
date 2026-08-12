@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.logging import logger
 from any_llm.utils.structured_output import is_structured_output_type
 
 MISSING_PACKAGES_ERROR: ImportError | None = None
@@ -66,13 +67,25 @@ class WatsonxProvider(AnyLLM):
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Watsonx API."""
-        # Watsonx does not support providing reasoning effort
+        # Watsonx does not support providing reasoning effort.
+        # stream_options is an OpenAI-only knob (the Messages bridge sets it to
+        # request streaming usage); Watsonx merges the params dict straight into
+        # its chat payload, so drop it here as the OpenAI-incompatible providers
+        # already do, rather than forward an unsupported field.
         converted_params = params.model_dump(
-            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream"}
+            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream", "stream_options"}
         )
         if converted_params.get("reasoning_effort") in ("auto", "none"):
             converted_params.pop("reasoning_effort")
         converted_params.update(kwargs)
+
+        # watsonx merges this dict straight into its chat payload as generation parameters, so a
+        # per-request `timeout` cannot be honored here and would be sent as an invalid model field.
+        if converted_params.pop("timeout", None) is not None:
+            logger.warning(
+                "watsonx does not support a per-request 'timeout'; ignoring it. "
+                "Set it on the client via client_args instead."
+            )
         return converted_params
 
     @staticmethod

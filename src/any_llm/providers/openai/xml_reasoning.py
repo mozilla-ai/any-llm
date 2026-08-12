@@ -34,6 +34,32 @@ def set_chunk_reasoning(chunk: ChatCompletionChunk, reasoning: str) -> ChatCompl
     return chunk
 
 
+def is_terminal_chunk(chunk: ChatCompletionChunk) -> bool:
+    """Return whether a chunk carries a terminal finish reason."""
+    return bool(chunk.choices and chunk.choices[0].finish_reason)
+
+
+def clear_chunk_stream_metadata(chunk: ChatCompletionChunk) -> ChatCompletionChunk:
+    """Remove metadata that must not be repeated on a synthetic flush chunk."""
+    if not chunk.choices:
+        return chunk
+
+    choice = chunk.choices[0]
+    choice.finish_reason = None
+    choice.logprobs = None
+    choice.delta.function_call = None
+    choice.delta.refusal = None
+    choice.delta.reasoning = None
+    choice.delta.role = None
+    choice.delta.tool_calls = None
+    choice.delta.extra_content = None
+    chunk.moderation = None
+    chunk.service_tier = None
+    chunk.system_fingerprint = None
+    chunk.usage = None
+    return chunk
+
+
 def wrap_chunks_with_xml_reasoning(
     chunks: AsyncIterator[ChatCompletionChunk],
 ) -> AsyncIterator[ChatCompletionChunk]:
@@ -53,6 +79,8 @@ def wrap_chunks_with_xml_reasoning(
         get_content=get_chunk_content,
         set_content=set_chunk_content,
         set_reasoning=set_chunk_reasoning,
+        is_terminal=is_terminal_chunk,
+        clear_stream_metadata=clear_chunk_stream_metadata,
     )
 
 

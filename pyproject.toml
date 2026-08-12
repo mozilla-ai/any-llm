@@ -10,8 +10,8 @@ requires-python = ">=3.11"
 version = "0.0.0-dev" # There is a regex in the release.yaml file that looks for this version string to set the version in the pyproject.toml file. Do not change this version string without updating the regex.
 dependencies = [
   "pydantic>2,<3",
-  "openai>=1.99.3",
-  "openresponses-types>=2.3.0.post1",
+  "openai>=2.18.0",
+  "openresponses-types>=2.4.0,<3",
   "anthropic>=0.83.0",
   "rich",
   "httpx",
@@ -21,7 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 
 all = [
-  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,vertexaianthropic,cohere,cerebras,fireworks,groq,bedrock,azure,azureanthropic,azureopenai,watsonx,together,sambanova,ollama,moonshot,nebius,xai,databricks,deepseek,inception,openai,otari,openrouter,portkey,qiniu,lmstudio,llama,voyage,perplexity,platform,llamafile,llamacpp,sagemaker,gateway,github,zai,minimax,mzai,vllm,dashscope,deepinfra]"
+  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,vertexaianthropic,cohere,cerebras,fireworks,gmi,groq,bedrock,azure,azureanthropic,azureopenai,cascadia,watsonx,together,sambanova,ollama,moonshot,neosantara,nebius,xai,databricks,deepseek,inception,openai,otari,openrouter,portkey,qiniu,requesty,lmstudio,llama,voyage,perplexity,platform,llamafile,llamacpp,sagemaker,github,zai,minimax,mzai,vllm,dashscope,deepinfra,atlascloud,telnyx,edenai,kenari,meta]"
 ]
 
 platform = [
@@ -89,7 +89,7 @@ together = [
 ]
 
 ollama = [
-  "ollama>=0.5.1"
+  "ollama>=0.6.0"
 ]
 
 voyage = [
@@ -104,30 +104,36 @@ sagemaker = [
   "boto3",
 ]
 
+lmstudio = [
+  "lmstudio>=1.5.0",
+]
 
 # These providers don't require any additional dependencies, but are included for completeness.
+atlascloud = []
 azureopenai = []
+cascadia = []
 databricks = []
 deepseek = []
 fireworks = []
-gateway = [
-  "otari>=0.0.1",
-]
+gmi = []
 otari = [
-  "otari>=0.0.1",
+  "otari>=0.2.0",
 ]
 github = []
 inception = []
+kenari = []
 llama = []
 llamacpp = []
 llamafile = []
-lmstudio = []
+meta = []
 moonshot = []
 nebius = []
+neosantara = []
 openai = []
 openrouter = []
 portkey = []
 qiniu = []
+requesty = []
 sambanova = []
 minimax = []
 mzai = []
@@ -135,6 +141,8 @@ vllm = []
 zai = []
 dashscope = []
 deepinfra = []
+edenai = []
+telnyx = []
 
 [project.urls]
 Documentation = "https://docs.mozilla.ai/any-llm/"
@@ -143,6 +151,17 @@ Source = "https://github.com/mozilla-ai/any-llm"
 
 [tool.uv]
 exclude-newer = "7 days"
+# otari and openresponses-types are first-party (mozilla.ai owns both) and co-developed
+# with any-llm, so we intentionally exempt them from the global 7-day exclude-newer soak
+# and always resolve the latest published version. The far-future date is a sentinel
+# meaning "never soak this package".
+# Trade-off: uv.lock is gitignored and CI re-resolves on every run, so a broken release
+# reaches CI immediately with no pinned fallback. We accept that for these deps because
+# we control their publishing; the soak still applies to every other dependency.
+# Note that openresponses-types is a core dependency rather than an optional extra like
+# otari, so a bad release there breaks every install and every CI job, not just the
+# otari extra. The `<3` cap on it is what bounds that blast radius.
+exclude-newer-package = { otari = "2100-01-01", openresponses-types = "2100-01-01" }
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
@@ -255,8 +274,8 @@ docs = [
 
 
 lint = [
-  "pre-commit==4.6.0",
-  "pre-commit-uv==4.2.1",
+  "pre-commit==4.6.1",
+  "pre-commit-uv==4.3.0",
   "mypy",
   "types-aiofiles",
   "types-pyyaml",

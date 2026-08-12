@@ -1,4 +1,7 @@
+from typing import Any, cast
+
 import pytest
+from pydantic import ValidationError
 
 from any_llm.api import aresponses
 from any_llm.types.responses import ResponsesParams
@@ -34,8 +37,54 @@ def test_omitted_parallel_tool_calls_stays_none() -> None:
     assert "parallel_tool_calls" not in params.model_dump(exclude_none=True)
 
 
+def test_omitted_context_management_stays_none() -> None:
+    """Omitted context_management should not appear in provider request."""
+    params = ResponsesParams(model="test", input="hello")
+
+    assert params.context_management is None
+    assert "context_management" not in params.model_dump(exclude_none=True)
+
+
 @pytest.mark.parametrize("value", [True, False])
 def test_explicit_parallel_tool_calls_preserved(value: bool) -> None:
     """Explicit True/False should be kept as-is."""
     params = ResponsesParams(model="test", input="hello", parallel_tool_calls=value)
     assert params.parallel_tool_calls is value
+
+
+def test_context_management_preserved() -> None:
+    """An explicit context_management value is kept as-is for the provider request."""
+    context_management = [{"type": "compaction", "compact_threshold": 200_000}]
+    params = ResponsesParams(model="test", input="hello", context_management=context_management)
+
+    assert params.context_management == context_management
+    assert params.model_dump(exclude_none=True)["context_management"] == context_management
+
+
+def test_responses_params_preserves_codex_continuation_items() -> None:
+    """Responses input accepts Codex items not yet represented by the SDK union."""
+    input_data: list[dict[str, Any]] = [
+        {"type": "reasoning", "summary": [], "encrypted_content": "opaque"},
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "commentary"}],
+            "phase": "commentary",
+        },
+    ]
+
+    params = ResponsesParams(model="test", input=input_data)
+
+    assert params.input == input_data
+
+
+def test_responses_params_rejects_non_dictionary_input_items() -> None:
+    """Responses input items must be dictionaries."""
+    with pytest.raises(ValidationError):
+        ResponsesParams(model="test", input=cast("Any", ["hello"]))
+
+
+def test_responses_params_rejects_top_level_dictionary_input() -> None:
+    """Responses input must be text or a list of dictionaries."""
+    with pytest.raises(ValidationError):
+        ResponsesParams(model="test", input=cast("Any", {"role": "user", "content": "hello"}))

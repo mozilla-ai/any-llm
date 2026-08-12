@@ -16,14 +16,48 @@ on:
         description: the arg you want to pass to pytest filter (-k)
         type: string
 
+# Why the checkout steps below set allow-unsafe-pr-checkout: true
+#
+# This workflow runs on pull_request_target and checks out the PR head, so on a fork PR it
+# executes contributor code with this repository's secrets (the provider API keys). That is the
+# "pwn request" shape, and actions/checkout v7 blocks it by default (actions/checkout#2454,
+# released in v7.0.0). Opting back in is deliberate, and safe here only because of the gate:
+#
+#   1. pull_request_target fires on types: [labeled], and every job is gated on the label being
+#      run-integration-tests, so nothing runs until a repository member applies it. An outside
+#      contributor cannot label their own PR. Applying the label means "I have read this diff
+#      and I am willing to run it against our keys", so treat it as a credential-trust decision,
+#      not just a request for CI minutes.
+#   2. remove-label strips the label immediately, so each run needs a fresh, deliberate act. A
+#      later push to the same PR cannot silently reuse an earlier approval.
+#   3. The jobs that execute fork code hold only contents: read (see below), and check out with
+#      persist-credentials: false so the token is not left in .git/config for that code to read.
+#
+# Residual risks the gate does NOT cover:
+#   - The provider API keys are readable by whatever code runs. Read the diff, with attention to
+#     tests/ and conftest.py, before applying the label.
+#   - The gate is "any member who can label", not "write access". GitHub's triage role can apply
+#     and dismiss labels without write access, so anyone at triage or above can start a run. This
+#     workflow does not verify the labeler's permission level; if triage is ever granted to
+#     someone who should not reach the provider keys, add an explicit check on the label author.
+#   - determine-jobs-to-run runs ./.github/actions/determine-jobs from the checked-out tree, so
+#     that composite action is fork-controlled too. It is not a safe place to put trusted logic.
+#
+# Do not drop the `ref:` inputs to dodge the check. Without them checkout takes the base branch,
+# which would silently test main instead of the PR and make a green run meaningless.
+
+# Default to read-only. Only remove-label needs pull-requests: write, and it is granted
+# there instead of workflow-wide so the jobs that execute fork code cannot use it.
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   remove-label:
     if: github.event_name == 'pull_request_target' && github.event.label.name == 'run-integration-tests'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - name: Remove run-integration-tests label
         uses: actions/github-script@v9
@@ -47,7 +81,7 @@ jobs:
     steps:
       - name: Set expected providers for integration tests
         id: set_providers
-        run: echo "expected_providers=anthropic,azureopenai,bedrock,cerebras,cohere,deepseek,fireworks,gemini,groq,huggingface,inception,mistral,moonshot,nebius,openai,openrouter,perplexity,portkey,together,sambanova,voyage,xai,zai,minimax" >> $GITHUB_OUTPUT
+        run: echo "expected_providers=anthropic,azureopenai,bedrock,cerebras,deepseek,fireworks,gemini,groq,inception,mistral,moonshot,nebius,openai,openrouter,otari,portkey,together,sambanova,voyage,xai,zai,minimax" >> $GITHUB_OUTPUT
 
       - name: Set expected providers for local integration tests
         id: set_local_providers
@@ -60,9 +94,15 @@ jobs:
       should_run_integration: ${{ steps.determine.outputs.should_run_integration }}
       should_run_local: ${{ steps.determine.outputs.should_run_local }}
     steps:
-      - uses: actions/checkout@v6
+      # Runs fork code with our secrets on a labeled fork PR; gated on the
+      # run-integration-tests label. See the note at the top of this file before changing.
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          allow-unsafe-pr-checkout: true
+          # Do not leave the token in .git/config where the fork code we are about to run
+          # could read it. Nothing in these jobs uses git after checkout.
+          persist-credentials: false
 
       - name: Determine which jobs should run based on filter
         id: determine
@@ -79,9 +119,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      # Runs fork code with our secrets on a labeled fork PR; gated on the
+      # run-integration-tests label. See the note at the top of this file before changing.
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          allow-unsafe-pr-checkout: true
+          # Do not leave the token in .git/config where the fork code we are about to run
+          # could read it. Nothing in these jobs uses git after checkout.
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@v7
         with:
@@ -94,24 +140,24 @@ jobs:
 
       - name: Run Integration tests (parallel with xdist)
         env:
-          # When you add a new key, also add the provider name to the EXPECTED_PROVIDERS environment variable
+          # When you add a new key, also add the provider name to the EXPECTED_PROVIDERS environment
+          # variable and to VERIFIED_PROVIDERS in src/any_llm/constants.py, which is what labels the
+          # provider verified in the generated docs. tests/unit/test_provider_tiers.py asserts the two
+          # are equal, so changing only one fails the unit suite.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
-          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           INCEPTION_API_KEY: ${{ secrets.INCEPTION_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
           NEBIUS_API_KEY: ${{ secrets.NEBIUS_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
           PORTKEY_API_KEY: ${{ secrets.PORTKEY_API_KEY }}
           SAMBANOVA_API_KEY: ${{ secrets.SAMBANOVA_API_KEY }}
           TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
@@ -119,6 +165,8 @@ jobs:
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
           MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          # otari is the hosted gateway (api.otari.ai); it authenticates with a platform token.
+          OTARI_AI_TOKEN: ${{ secrets.OTARI_AI_TOKEN }}
           EXPECTED_PROVIDERS: ${{ needs.expected-providers.outputs.providers }}
           INCLUDE_LOCAL_PROVIDERS: "false"
         run: |
@@ -130,7 +178,7 @@ jobs:
 
       - name: Upload coverage reports to Codecov
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
 
@@ -141,9 +189,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      # Runs fork code with our secrets on a labeled fork PR; gated on the
+      # run-integration-tests label. See the note at the top of this file before changing.
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          allow-unsafe-pr-checkout: true
+          # Do not leave the token in .git/config where the fork code we are about to run
+          # could read it. Nothing in these jobs uses git after checkout.
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@v7
         with:
@@ -154,7 +208,7 @@ jobs:
         run: |
           uv sync --group tests --extra all
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
         with:
           path: ~/.ollama
@@ -162,14 +216,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ollama-models-
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: ~/.llamafile
           key: ${{ runner.os }}-llamafile-${{ hashFiles('tests/conftest.py') }}
           restore-keys: |
             ${{ runner.os }}-llamafile-
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio')
         with:
           path: ~/.lmstudio
@@ -177,22 +231,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-lmstudio-models-
 
-      - name: Setup Ollama
-        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
-        uses: ai-action/setup-ollama@v2
-
-      - name: Run ollama
-        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
-        run: |
-          ollama serve &
-          ollama pull llama3.2:1b
-          ollama pull qwen3:0.6b
-          ollama pull llava-phi3
-
-      - name: Wait for Ollama to be ready
-        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
-        run: |
-          timeout 60 bash -c 'until curl -s http://localhost:11434/api/tags >/dev/null; do sleep 1; done'
+      # llamafile/llamacpp and lmstudio/ollama run as two sequential groups, not all four at
+      # once, so their model servers never compete for RAM at the same time (see #1236: running
+      # all four together was OOM-killing the runner mid-suite, every run, at the same test).
 
       - name: Download and Run LlamaFile
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamafile')
@@ -218,12 +259,55 @@ jobs:
 
       - name : Download and Run LlamaCpp
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamacpp')
-        run: docker run -d -p 8090:8090 ghcr.io/ggml-org/llama.cpp:server -hf ggml-org/Qwen3-1.7B-GGUF --jinja --port 8090
+        run: |
+          cid=$(docker run -d -p 8090:8090 ghcr.io/ggml-org/llama.cpp:server -hf ggml-org/Qwen3-1.7B-GGUF --jinja --port 8090)
+          echo "$cid" > llamacpp.cid
 
       - name: Wait for LlamaCpp to be ready
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamacpp')
         run: |
           timeout 60 bash -c 'until curl -s http://localhost:8090/health >/dev/null; do sleep 1; done'
+
+      - name: Run LlamaFile and LlamaCpp integration tests
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamafile') || contains(github.event.inputs.filter, 'llamacpp')
+        env:
+          INCLUDE_LOCAL_PROVIDERS: "true"
+          INCLUDE_NON_LOCAL_PROVIDERS: "false"
+        run: |
+          if [ -n "${{ inputs.filter }}" ]; then
+            pytest tests/integration -v --cov --cov-report=xml -k "(llamafile or llamacpp) and (${{ inputs.filter }})" || [ $? -eq 5 ]
+          else
+            pytest tests/integration -v --cov --cov-report=xml -k "llamafile or llamacpp" || [ $? -eq 5 ]
+          fi
+
+      - name: Shut down LlamaFile and LlamaCpp
+        if: always()
+        run: |
+          if [ -f llamafile.pid ]; then
+            kill $(cat llamafile.pid) || true
+            rm llamafile.pid
+          fi
+          if [ -f llamacpp.cid ]; then
+            docker stop "$(cat llamacpp.cid)" || true
+            rm llamacpp.cid
+          fi
+
+      - name: Setup Ollama
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
+        uses: ai-action/setup-ollama@v2
+
+      - name: Run ollama
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
+        run: |
+          ollama serve &
+          ollama pull llama3.2:1b
+          ollama pull qwen3:0.6b
+          ollama pull llava-phi3
+
+      - name: Wait for Ollama to be ready
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
+        run: |
+          timeout 60 bash -c 'until curl -s http://localhost:11434/api/tags >/dev/null; do sleep 1; done'
 
       - name: Install LM Studio CLI
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio')
@@ -231,12 +315,12 @@ jobs:
 
       - name: Download LM Studio model
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio')
-        run: lms get google/gemma-3-4b --yes
+        run: lms get qwen/qwen3-1.7b --yes
 
       - name: Load model and start LM Studio server
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio')
         run: |
-          lms load google/gemma-3-4b --yes &
+          lms load qwen/qwen3-1.7b --yes &
           lms server start
 
       - name: Wait for LM Studio to be ready
@@ -244,27 +328,20 @@ jobs:
         run: |
           timeout 120 bash -c 'until curl -s http://localhost:1234/v1/models >/dev/null; do sleep 1; done'
 
-      - name: Run Local Provider Integration tests
+      - name: Run LMStudio and Ollama integration tests
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio') || contains(github.event.inputs.filter, 'ollama')
         env:
           INCLUDE_LOCAL_PROVIDERS: "true"
           INCLUDE_NON_LOCAL_PROVIDERS: "false"
         run: |
           if [ -n "${{ inputs.filter }}" ]; then
-            pytest tests/integration -v --cov --cov-report=xml -k "${{ inputs.filter }}" || [ $? -eq 5 ]
+            pytest tests/integration -v --cov --cov-append --cov-report=xml -k "(lmstudio or ollama) and (${{ inputs.filter }})" || [ $? -eq 5 ]
           else
-            pytest tests/integration -v --cov --cov-report=xml || [ $? -eq 5 ]
-          fi
-
-      - name: Cleanup LlamaFile process
-        if: always()
-        run: |
-          if [ -f llamafile.pid ]; then
-            kill $(cat llamafile.pid) || true
-            rm llamafile.pid
+            pytest tests/integration -v --cov --cov-append --cov-report=xml -k "lmstudio or ollama" || [ $? -eq 5 ]
           fi
 
       - name: Upload coverage reports to Codecov
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
