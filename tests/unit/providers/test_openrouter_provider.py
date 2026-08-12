@@ -338,6 +338,24 @@ async def test_aresponses_forwards_store_when_explicitly_set() -> None:
         assert call_kwargs["store"] is True
 
 
+@pytest.mark.asyncio
+async def test_aresponses_forwards_previous_response_id_when_explicitly_set() -> None:
+    """A caller who explicitly opts into previous_response_id still has it forwarded as-is.
+
+    OpenRouter will reject this upstream (stateless API); any-llm does not add bespoke
+    validation for it, matching how other unsupported-parameter cases are handled.
+    """
+    with patch("any_llm.providers.openai.base.AsyncOpenAI") as mock_client_class:
+        mock_client = mock_client_class.return_value
+        mock_client.responses.create = AsyncMock(return_value=_make_response("Paris"))
+
+        provider = OpenrouterProvider(api_key="sk-test")
+        await provider.aresponses("openai/gpt-5-nano", "hi", previous_response_id="resp-0")
+
+        call_kwargs = mock_client.responses.create.call_args.kwargs
+        assert call_kwargs["previous_response_id"] == "resp-0"
+
+
 def test_openrouter_remaps_max_tokens_to_max_completion_tokens() -> None:
     params = CompletionParams(model_id="openai/gpt-4", messages=[{"role": "user", "content": "Hello"}], max_tokens=8192)
     result = OpenrouterProvider._convert_completion_params(params)
