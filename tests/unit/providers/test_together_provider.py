@@ -7,7 +7,7 @@ import pytest
 from together.types import ChatCompletionChunk as TogetherChatCompletionChunk
 
 from any_llm.providers.together.utils import _create_openai_chunk_from_together_chunk
-from any_llm.types.completion import ChatCompletionChunk, CompletionParams
+from any_llm.types.completion import ChatCompletionChunk, CompletionParams, Usage
 from any_llm.types.model import Model
 
 
@@ -519,3 +519,78 @@ def test_together_list_models_calls_client_and_passes_kwargs(mock_together_class
     assert isinstance(result[0], Model)
     assert result[0].id == "Qwen/Qwen2.5-72B-Instruct-Turbo"
     assert result[0].owned_by == "Qwen"
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.together.together.together.AsyncTogether")
+async def test_together_aembedding_converts_response(mock_together_class: MagicMock) -> None:
+    from together.types import Embedding as TogetherEmbedding
+
+    from any_llm.providers.together.together import TogetherProvider
+
+    mock_client = AsyncMock()
+    # Together returns token usage even though its Embedding model does not declare it.
+    mock_client.embeddings.create.return_value = TogetherEmbedding.construct(
+        object="list",
+        model="intfloat/multilingual-e5-large-instruct",
+        data=[
+            SimpleNamespace(embedding=[0.1, 0.2], index=0, object="embedding"),
+            SimpleNamespace(embedding=[0.3, 0.4], index=1, object="embedding"),
+        ],
+        usage={"prompt_tokens": 9, "total_tokens": 9},
+    )
+    mock_together_class.return_value = mock_client
+
+    provider = TogetherProvider(api_key="test-api-key")
+    result = await provider.aembedding(model="intfloat/multilingual-e5-large-instruct", inputs=["a", "b"])
+
+    mock_client.embeddings.create.assert_called_once_with(
+        model="intfloat/multilingual-e5-large-instruct", input=["a", "b"]
+    )
+    assert result.model == "intfloat/multilingual-e5-large-instruct"
+    assert [entry.embedding for entry in result.data] == [[0.1, 0.2], [0.3, 0.4]]
+    assert [entry.index for entry in result.data] == [0, 1]
+    assert result.usage.prompt_tokens == 9
+    assert result.usage.total_tokens == 9
+
+
+def test_together_embedding_response_without_usage_zero_fills() -> None:
+    from together.types import Embedding as TogetherEmbedding
+
+    from any_llm.providers.together.together import TogetherProvider
+
+    response = TogetherEmbedding.construct(
+        object="list",
+        model="intfloat/multilingual-e5-large-instruct",
+        data=[SimpleNamespace(embedding=[0.1], index=0, object="embedding")],
+    )
+
+    result = TogetherProvider._convert_embedding_response(response)
+
+    assert result.usage.prompt_tokens == 0
+    assert result.usage.total_tokens == 0
+
+
+def test_together_embedding_response_accepts_model_shaped_usage() -> None:
+    """Together sends usage as a pydantic extra today, but a declared field must also work."""
+    from together.types import Embedding as TogetherEmbedding
+
+    from any_llm.providers.together.together import TogetherProvider
+
+    response = TogetherEmbedding.construct(
+        object="list",
+        model="intfloat/multilingual-e5-large-instruct",
+        data=[SimpleNamespace(embedding=[0.1], index=0, object="embedding")],
+        usage=Usage(prompt_tokens=4, total_tokens=4),
+    )
+
+    result = TogetherProvider._convert_embedding_response(response)
+
+    assert result.usage.prompt_tokens == 4
+    assert result.usage.total_tokens == 4
+
+
+def test_together_convert_embedding_params_forwards_kwargs() -> None:
+    from any_llm.providers.together.together import TogetherProvider
+
+    assert TogetherProvider._convert_embedding_params("hello", timeout=5) == {"input": "hello", "timeout": 5}

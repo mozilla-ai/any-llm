@@ -1,10 +1,11 @@
 import uuid
 from datetime import datetime
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from together.types import ChatCompletionChunk as TogetherChatCompletionChunk
 
 from any_llm.logging import logger
+from any_llm.types.batch import Batch
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -15,10 +16,30 @@ from any_llm.types.completion import (
     ChoiceDeltaToolCallFunction,
     ChunkChoice,
     CompletionUsage,
+    CreateEmbeddingResponse,
+    Embedding,
     Reasoning,
+    Usage,
 )
 from any_llm.types.model import Model
 from any_llm.utils.reasoning import normalize_reasoning_from_provider_fields_and_xml_tags
+
+if TYPE_CHECKING:
+    from together.types import BatchJob as TogetherBatchJob
+    from together.types import Embedding as TogetherEmbedding
+
+DEFAULT_COMPLETION_WINDOW = "24h"
+
+_TOGETHER_TO_OPENAI_BATCH_STATUS: dict[str, str] = {
+    "VALIDATING": "validating",
+    "IN_PROGRESS": "in_progress",
+    "COMPLETED": "completed",
+    "FAILED": "failed",
+    "EXPIRED": "expired",
+    "CANCELING": "cancelling",
+    "CANCELLING": "cancelling",
+    "CANCELLED": "cancelled",
+}
 
 
 def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatCompletionChunk) -> ChatCompletionChunk:
@@ -160,3 +181,73 @@ def _convert_models_list(response: Any) -> list[Model]:
         converted_models.append(Model.model_validate(data))
 
     return converted_models
+
+
+def _create_openai_embedding_response_from_together(
+    response: "TogetherEmbedding",
+) -> CreateEmbeddingResponse:
+    """Convert a Together Embedding response to OpenAI CreateEmbeddingResponse format."""
+    embeddings = [
+        Embedding(embedding=list(entry.embedding), index=entry.index, object="embedding") for entry in response.data
+    ]
+
+    # Together returns token usage but the SDK model does not declare the field, so it
+    # arrives as a pydantic extra rather than a typed attribute.
+    raw_usage: Any = getattr(response, "usage", None)
+    if hasattr(raw_usage, "model_dump"):
+        raw_usage = raw_usage.model_dump()
+    usage_data = raw_usage if isinstance(raw_usage, dict) else {}
+    usage = Usage(
+        prompt_tokens=usage_data.get("prompt_tokens") or 0,
+        total_tokens=usage_data.get("total_tokens") or 0,
+    )
+
+    return CreateEmbeddingResponse(
+        data=embeddings,
+        model=response.model,
+        object="list",
+        usage=usage,
+    )
+
+
+def _datetime_to_epoch(value: datetime | None) -> int | None:
+    """Convert a Together timestamp to the integer epoch seconds OpenAI's Batch uses."""
+    if value is None:
+        return None
+    return int(value.timestamp())
+
+
+def _derive_completion_window(batch_job: "TogetherBatchJob") -> str:
+    """Recover the completion window from the job deadline."""
+    if batch_job.created_at is None or batch_job.job_deadline is None:
+        return DEFAULT_COMPLETION_WINDOW
+    hours = round((batch_job.job_deadline - batch_job.created_at).total_seconds() / 3600)
+    if hours <= 0:
+        return DEFAULT_COMPLETION_WINDOW
+    return f"{hours}h"
+
+
+def _convert_batch_job_to_openai(batch_job: "TogetherBatchJob") -> Batch:
+    """Convert a Together BatchJob to OpenAI Batch format."""
+    status = _TOGETHER_TO_OPENAI_BATCH_STATUS.get(str(batch_job.status).upper())
+    if status is None:
+        logger.warning("Unknown Together batch status: %s, defaulting to 'in_progress'", batch_job.status)
+        status = "in_progress"
+
+    return Batch(
+        id=batch_job.id or "",
+        object="batch",
+        endpoint=batch_job.endpoint or "",
+        input_file_id=batch_job.input_file_id or "",
+        completion_window=_derive_completion_window(batch_job),
+        status=cast(
+            "Literal['validating', 'failed', 'in_progress', 'finalizing', 'completed', 'expired', 'cancelling', 'cancelled']",
+            status,
+        ),
+        created_at=_datetime_to_epoch(batch_job.created_at) or 0,
+        completed_at=_datetime_to_epoch(batch_job.completed_at),
+        expires_at=_datetime_to_epoch(batch_job.job_deadline),
+        output_file_id=batch_job.output_file_id,
+        error_file_id=batch_job.error_file_id,
+        model=batch_job.x_model_id,
+    )
