@@ -18,7 +18,12 @@ class OpenrouterProvider(BaseOpenAIProvider):
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
-    SUPPORTS_RESPONSES = False
+    # OpenRouter serves a native, OpenAI-compatible /responses endpoint, so the inherited
+    # BaseOpenAIProvider._aresponses passthrough works as-is (no override needed here). One
+    # caveat: OpenRouter's Responses API is stateless, so it rejects requests where the caller
+    # explicitly passes store=True or previous_response_id. Those fields default to None and are
+    # omitted from the request otherwise, so this only surfaces for callers who opt into them.
+    SUPPORTS_RESPONSES = True
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_EMBEDDING = True
     # OpenRouter does not expose a moderation endpoint.

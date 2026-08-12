@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from openai.types.responses import ResponseOutputMessage, ResponseOutputText
 
 from any_llm.providers.openrouter import OpenrouterProvider
 from any_llm.providers.openrouter.utils import _convert_models_list
@@ -13,6 +14,27 @@ from any_llm.types.completion import (
     Reasoning,
 )
 from any_llm.types.model import Model
+from any_llm.types.responses import Response
+
+
+def _make_response(text: str) -> Response:
+    message = ResponseOutputMessage(
+        id="msg-1",
+        type="message",
+        role="assistant",
+        status="completed",
+        content=[ResponseOutputText(type="output_text", text=text, annotations=[])],
+    )
+    return Response(
+        id="resp-1",
+        created_at=0,
+        model="test-model",
+        object="response",
+        output=[message],
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        tools=[],
+    )
 
 
 @pytest.mark.asyncio
@@ -255,6 +277,65 @@ async def test_streaming_with_reasoning() -> None:
         assert call_args.kwargs["stream"] is True
         assert "extra_body" in call_args.kwargs
         assert call_args.kwargs["extra_body"]["reasoning"]["effort"] == "high"
+
+
+def test_openrouter_supports_responses() -> None:
+    """OpenRouter now serves a native /responses endpoint, so the flag should be enabled."""
+    assert OpenrouterProvider.SUPPORTS_RESPONSES is True
+
+
+@pytest.mark.asyncio
+async def test_aresponses_calls_native_responses_endpoint() -> None:
+    """aresponses() reaches OpenRouter's native client.responses.create, not a conversion shim."""
+    with patch("any_llm.providers.openai.base.AsyncOpenAI") as mock_client_class:
+        mock_client = mock_client_class.return_value
+        mock_client.responses.create = AsyncMock(return_value=_make_response("Paris"))
+
+        provider = OpenrouterProvider(api_key="sk-test")
+        result = await provider.aresponses("openai/gpt-5-nano", "What is the capital of France?")
+
+        mock_client.responses.create.assert_awaited_once()
+        call_kwargs = mock_client.responses.create.call_args.kwargs
+        assert call_kwargs["model"] == "openai/gpt-5-nano"
+        assert call_kwargs["input"] == "What is the capital of France?"
+        assert isinstance(result, Response)
+
+
+@pytest.mark.asyncio
+async def test_aresponses_omits_store_and_previous_response_id_when_not_passed() -> None:
+    """OpenRouter's Responses API is stateless and rejects store/previous_response_id.
+
+    Both fields default to None and are excluded from the request unless the caller opts in,
+    so the common case must not send them.
+    """
+    with patch("any_llm.providers.openai.base.AsyncOpenAI") as mock_client_class:
+        mock_client = mock_client_class.return_value
+        mock_client.responses.create = AsyncMock(return_value=_make_response("Paris"))
+
+        provider = OpenrouterProvider(api_key="sk-test")
+        await provider.aresponses("openai/gpt-5-nano", "hi")
+
+        call_kwargs = mock_client.responses.create.call_args.kwargs
+        assert "store" not in call_kwargs
+        assert "previous_response_id" not in call_kwargs
+
+
+@pytest.mark.asyncio
+async def test_aresponses_forwards_store_when_explicitly_set() -> None:
+    """A caller who explicitly opts into store=True still has it forwarded as-is.
+
+    OpenRouter will reject this upstream (stateless API); any-llm does not add bespoke
+    validation for it, matching how other unsupported-parameter cases are handled.
+    """
+    with patch("any_llm.providers.openai.base.AsyncOpenAI") as mock_client_class:
+        mock_client = mock_client_class.return_value
+        mock_client.responses.create = AsyncMock(return_value=_make_response("Paris"))
+
+        provider = OpenrouterProvider(api_key="sk-test")
+        await provider.aresponses("openai/gpt-5-nano", "hi", store=True)
+
+        call_kwargs = mock_client.responses.create.call_args.kwargs
+        assert call_kwargs["store"] is True
 
 
 def test_openrouter_remaps_max_tokens_to_max_completion_tokens() -> None:
