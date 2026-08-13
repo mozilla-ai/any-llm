@@ -830,6 +830,24 @@ def test_convert_response_accumulates_multiple_reasoning_parts() -> None:
     assert message["content"] == "The answer."
 
 
+def test_convert_response_keeps_reasoning_none_for_textless_thought_part() -> None:
+    """A thought part can carry only a thought_signature; that must not turn reasoning into an
+    empty Reasoning object, matching the streaming converter."""
+    response = _make_gemini_response(
+        [
+            types.Part(thought=True, thought_signature=b"sig"),
+            types.Part(text="The answer."),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    message = response_dict["choices"][0]["message"]
+    assert message["reasoning"] is None
+    assert message["content"] == "The answer."
+
+
 def test_convert_response_emits_choice_for_filtered_response_without_content() -> None:
     response_dict = _convert_response_to_response_dict(_make_gemini_response(None, types.FinishReason.SAFETY))
 

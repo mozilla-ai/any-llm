@@ -396,7 +396,7 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                     "message": {
                         "role": "assistant",
                         "content": None if tool_calls_list else text_content,
-                        "reasoning": reasoning,
+                        "reasoning": reasoning or None,
                         "tool_calls": tool_calls_list or None,
                     },
                     "finish_reason": _resolve_finish_reason(mapped_finish_reason, bool(tool_calls_list)) or "stop",
