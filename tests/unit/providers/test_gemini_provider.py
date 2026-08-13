@@ -598,6 +598,52 @@ async def test_completion_with_custom_reasoning_effort(reasoning_effort: Reasoni
             )
 
 
+@pytest.mark.parametrize(
+    ("model_id", "reasoning_effort", "expected_level"),
+    [
+        ("gemini-3.5-flash", "xhigh", types.ThinkingLevel.HIGH),
+        ("gemini-3.5-flash", "max", types.ThinkingLevel.HIGH),
+        ("gemini-3.5-pro", "low", types.ThinkingLevel.LOW),
+        ("models/gemini-3.5-flash", "medium", types.ThinkingLevel.MEDIUM),
+        ("gemini-3.10-flash", "minimal", types.ThinkingLevel.MINIMAL),
+        ("gemini-4-pro", "high", types.ThinkingLevel.HIGH),
+    ],
+)
+def test_new_gemini_models_use_thinking_level(
+    model_id: str, reasoning_effort: ReasoningEffort, expected_level: types.ThinkingLevel
+) -> None:
+    result = GoogleProvider._convert_completion_params(
+        CompletionParams(
+            model_id=model_id, messages=[{"role": "user", "content": "Hello"}], reasoning_effort=reasoning_effort
+        ),
+        provider_name="gemini",
+    )
+
+    assert result["config"].thinking_config == types.ThinkingConfig(
+        include_thoughts=True, thinking_level=expected_level
+    )
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "gemini-3.0-flash",
+        "gemini-3.4-flash",
+        "gemini-3-pro-preview",
+        "gemini-2.5-flash",
+        "gemini-pro",
+        "projects/p/locations/l/publishers/google/models/gemini-3-pro",
+    ],
+)
+def test_older_gemini_models_keep_thinking_budget(model_id: str) -> None:
+    result = GoogleProvider._convert_completion_params(
+        CompletionParams(model_id=model_id, messages=[{"role": "user", "content": "Hello"}], reasoning_effort="high"),
+        provider_name="gemini",
+    )
+
+    assert result["config"].thinking_config == types.ThinkingConfig(include_thoughts=True, thinking_budget=24576)
+
+
 @pytest.mark.asyncio
 async def test_completion_with_max_tokens_conversion() -> None:
     """Test that max_tokens parameter gets converted to max_output_tokens."""

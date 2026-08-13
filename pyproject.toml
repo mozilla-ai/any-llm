@@ -39,12 +39,12 @@ mistral = [
 anthropic = []
 
 gemini = [
-  "google-genai",
+  "google-genai>=1.51.0",
   "google-cloud-storage",
 ]
 
 vertexai = [
-  "google-genai",
+  "google-genai>=1.51.0",
   "google-cloud-storage",
 ]
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from typing_extensions import override
@@ -68,7 +69,26 @@ REASONING_EFFORT_TO_THINKING_BUDGETS = {
     "xhigh": 32768,
     "max": 32768,
 }
+REASONING_EFFORT_TO_THINKING_LEVELS = {
+    "minimal": types.ThinkingLevel.MINIMAL,
+    "low": types.ThinkingLevel.LOW,
+    "medium": types.ThinkingLevel.MEDIUM,
+    "high": types.ThinkingLevel.HIGH,
+    "xhigh": types.ThinkingLevel.HIGH,
+    "max": types.ThinkingLevel.HIGH,
+}
 _SUPPORTED_BATCH_ENDPOINTS = frozenset({"/v1/chat/completions"})
+_THINKING_LEVEL_MIN_GEMINI_VERSION = (3, 5)
+_GEMINI_VERSION_PATTERN = re.compile(r"(?:^|/)gemini-(\d+)(?:\.(\d+))?")
+
+
+def _uses_thinking_level(model_id: str) -> bool:
+    """Gemini 3.5 and newer reject `thinking_budget` and expect `thinking_level` instead."""
+    match = _GEMINI_VERSION_PATTERN.search(model_id.lower())
+    if match is None:
+        return False
+    major, minor = int(match.group(1)), int(match.group(2) or 0)
+    return (major, minor) >= _THINKING_LEVEL_MIN_GEMINI_VERSION
 
 
 class GoogleProvider(AnyLLM):
@@ -139,6 +159,10 @@ class GoogleProvider(AnyLLM):
         if params.reasoning_effort != "auto":
             if params.reasoning_effort is None or params.reasoning_effort == "none":
                 kwargs["thinking_config"] = types.ThinkingConfig(include_thoughts=False)
+            elif _uses_thinking_level(params.model_id):
+                kwargs["thinking_config"] = types.ThinkingConfig(
+                    include_thoughts=True, thinking_level=REASONING_EFFORT_TO_THINKING_LEVELS[params.reasoning_effort]
+                )
             else:
                 kwargs["thinking_config"] = types.ThinkingConfig(
                     include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort]
