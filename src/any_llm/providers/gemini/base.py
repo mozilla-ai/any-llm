@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from typing_extensions import override
@@ -77,6 +78,17 @@ REASONING_EFFORT_TO_THINKING_LEVELS = {
     "max": "HIGH",
 }
 _SUPPORTED_BATCH_ENDPOINTS = frozenset({"/v1/chat/completions"})
+_THINKING_LEVEL_MIN_GEMINI_VERSION = (3, 5)
+_GEMINI_VERSION_PATTERN = re.compile(r"gemini-(\d+)(?:\.(\d+))?")
+
+
+def _uses_thinking_level(model_id: str) -> bool:
+    """Gemini 3.5 and newer reject `thinking_budget` and expect `thinking_level` instead."""
+    match = _GEMINI_VERSION_PATTERN.search(model_id.lower())
+    if match is None:
+        return False
+    major, minor = int(match.group(1)), int(match.group(2) or 0)
+    return (major, minor) >= _THINKING_LEVEL_MIN_GEMINI_VERSION
 
 
 class GoogleProvider(AnyLLM):
@@ -147,17 +159,15 @@ class GoogleProvider(AnyLLM):
         if params.reasoning_effort != "auto":
             if params.reasoning_effort is None or params.reasoning_effort == "none":
                 kwargs["thinking_config"] = types.ThinkingConfig(include_thoughts=False)
+            elif _uses_thinking_level(params.model_id) and "thinking_level" in types.ThinkingConfig.model_fields:
+                kwargs["thinking_config"] = types.ThinkingConfig(
+                    include_thoughts=True,
+                    thinking_level=types.ThinkingLevel(REASONING_EFFORT_TO_THINKING_LEVELS[params.reasoning_effort]),
+                )
             else:
-                reasoning_effort = params.reasoning_effort
-                model_fields = getattr(types.ThinkingConfig, "model_fields", {})
-                supports_thinking_level = "thinking_level" in model_fields
-                is_new_gemini_model = params.model_id.lower().startswith(("gemini-3.5", "gemini-4"))
-                thinking_kwargs: dict[str, Any] = {"include_thoughts": True}
-                if is_new_gemini_model and supports_thinking_level:
-                    thinking_kwargs["thinking_level"] = REASONING_EFFORT_TO_THINKING_LEVELS[reasoning_effort]
-                else:
-                    thinking_kwargs["thinking_budget"] = REASONING_EFFORT_TO_THINKING_BUDGETS[reasoning_effort]
-                kwargs["thinking_config"] = types.ThinkingConfig(**thinking_kwargs)
+                kwargs["thinking_config"] = types.ThinkingConfig(
+                    include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort]
+                )
         if params.seed is not None:
             kwargs["seed"] = params.seed
         if params.service_tier is not None:
