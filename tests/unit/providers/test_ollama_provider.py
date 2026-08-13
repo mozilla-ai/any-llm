@@ -717,6 +717,25 @@ async def test_tool_message_without_a_resolvable_name_omits_tool_name() -> None:
 
 
 @pytest.mark.asyncio
+async def test_tool_message_content_parts_are_flattened_to_text() -> None:
+    """OpenAI allows a tool result as content parts, which Ollama rejects as a non-string content."""
+    sent = await _sent_messages(
+        [
+            {"role": "user", "content": "What time is it?"},
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "content": [{"type": "text", "text": "12:30"}],
+                "name": "get_time",
+            },
+        ],
+        stream=False,
+    )
+
+    assert sent[1] == {"role": "tool", "content": "12:30", "tool_name": "get_time"}
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("assistant_message", [{"role": "assistant"}, {"role": "assistant", "content": None}])
 async def test_missing_or_null_content_is_normalized(assistant_message: dict[str, Any]) -> None:
     """`model_dump(exclude_none=True)` drops `content`, which used to raise on the tool-call path."""
