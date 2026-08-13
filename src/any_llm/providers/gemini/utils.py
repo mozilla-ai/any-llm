@@ -363,7 +363,7 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
 
         for part in parts or []:
             if getattr(part, "thought", None):
-                reasoning = part.text
+                reasoning = (reasoning or "") + (part.text or "")
             elif function_call := getattr(part, "function_call", None):
                 args_dict = {}
                 if args := getattr(function_call, "args", None):
@@ -384,8 +384,8 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                     tool_call_dict["extra_content"] = extra_content
 
                 tool_calls_list.append(tool_call_dict)
-            elif getattr(part, "text", None):
-                text_content = part.text
+            elif part_text := getattr(part, "text", None):
+                text_content = (text_content or "") + part_text
 
         # Truncated or filtered responses produce a choice even without content or tool
         # calls, e.g. a thinking model that spent the whole max_output_tokens budget on
@@ -396,7 +396,7 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                     "message": {
                         "role": "assistant",
                         "content": None if tool_calls_list else text_content,
-                        "reasoning": reasoning,
+                        "reasoning": reasoning or None,
                         "tool_calls": tool_calls_list or None,
                     },
                     "finish_reason": _resolve_finish_reason(mapped_finish_reason, bool(tool_calls_list)) or "stop",

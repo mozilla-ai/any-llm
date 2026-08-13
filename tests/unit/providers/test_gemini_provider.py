@@ -813,6 +813,72 @@ def test_convert_response_emits_choice_for_reasoning_only_truncation() -> None:
     assert choice["message"]["reasoning"] == "internal reasoning"
 
 
+def test_convert_response_accumulates_multiple_reasoning_parts() -> None:
+    response = _make_gemini_response(
+        [
+            types.Part(text="First thought. ", thought=True),
+            types.Part(text="Second thought.", thought=True),
+            types.Part(text="The answer."),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    message = response_dict["choices"][0]["message"]
+    assert message["reasoning"] == "First thought. Second thought."
+    assert message["content"] == "The answer."
+
+
+def test_convert_response_keeps_reasoning_none_for_textless_thought_part() -> None:
+    """A thought part can carry only a thought_signature; that must not turn reasoning into an
+    empty Reasoning object, matching the streaming converter."""
+    response = _make_gemini_response(
+        [
+            types.Part(thought=True, thought_signature=b"sig"),
+            types.Part(text="The answer."),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    message = response_dict["choices"][0]["message"]
+    assert message["reasoning"] is None
+    assert message["content"] == "The answer."
+
+
+def test_convert_response_accumulates_multiple_text_parts() -> None:
+    response = _make_gemini_response(
+        [types.Part(text="Hello "), types.Part(text="world.")],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    message = response_dict["choices"][0]["message"]
+    assert message["content"] == "Hello world."
+    assert message["reasoning"] is None
+
+
+def test_convert_response_skips_parts_without_text_or_function_call() -> None:
+    """A candidate can mix in parts that carry neither text nor a tool call, e.g. inline image
+    data; those must not disturb the accumulated text."""
+    response = _make_gemini_response(
+        [
+            types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG")),
+            types.Part(text="Described."),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    message = response_dict["choices"][0]["message"]
+    assert message["content"] == "Described."
+    assert message["tool_calls"] is None
+
+
 def test_convert_response_emits_choice_for_filtered_response_without_content() -> None:
     response_dict = _convert_response_to_response_dict(_make_gemini_response(None, types.FinishReason.SAFETY))
 
