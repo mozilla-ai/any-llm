@@ -811,27 +811,64 @@ async def test_otari_amessages_delegates_to_native_endpoint_preserving_anthropic
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "unsupported_params",
-    [
-        {"context_management": {"edits": [{"type": "compact_20260112"}]}},
-        {"betas": ["compact-2026-01-12"]},
-    ],
-)
-async def test_otari_amessages_rejects_anthropic_beta_params(unsupported_params: dict[str, Any]) -> None:
+async def test_otari_amessages_forwards_anthropic_beta_params() -> None:
     client = _mock_otari_client()
+    client.message.return_value = _message_response_payload()
     provider = _build_provider(client)
+    context_management = {
+        "edits": [
+            {
+                "type": "compact_20260112",
+                "trigger": {"type": "input_tokens", "value": 50_000},
+            }
+        ]
+    }
+    betas = ["compact-2026-01-12"]
     params = MessagesParams(
         model="claude-sonnet-4-5",
         messages=[{"role": "user", "content": "Hello"}],
         max_tokens=100,
-        **unsupported_params,
+        context_management=context_management,
+        betas=betas,
     )
 
-    with pytest.raises(NotImplementedError, match="native Anthropic Messages"):
-        await provider._amessages(params)
+    result = await provider._amessages(params)
 
-    client.message.assert_not_called()
+    assert isinstance(result, MessageResponse)
+    call_kwargs = client.message.call_args.kwargs
+    assert call_kwargs["context_management"] == context_management
+    assert call_kwargs["betas"] == betas
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_streaming_forwards_anthropic_beta_params() -> None:
+    async def _aiter() -> Any:
+        yield {"type": "message_stop"}
+
+    client = _mock_otari_client()
+    client.message.return_value = _aiter()
+    provider = _build_provider(client)
+    context_management = {"edits": [{"type": "compact_20260112"}]}
+    betas = ["compact-2026-01-12"]
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+        context_management=context_management,
+        betas=betas,
+    )
+
+    result = await provider._amessages(params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+    collected = [event async for event in result]
+
+    assert len(collected) == 1
+    assert isinstance(collected[0], MessageStopEvent)
+    call_kwargs = client.message.call_args.kwargs
+    assert call_kwargs["stream"] is True
+    assert call_kwargs["context_management"] == context_management
+    assert call_kwargs["betas"] == betas
 
 
 @pytest.mark.asyncio
