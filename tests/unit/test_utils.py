@@ -1,5 +1,6 @@
 import asyncio
 import contextvars
+import threading
 import time
 from collections.abc import AsyncIterator, Generator
 from typing import Any, cast
@@ -32,6 +33,35 @@ def test_run_async_in_sync_fails_with_background_task_state() -> None:
         assert task_completed["value"] is True
 
     asyncio.run(test_in_streamlit_context())
+
+
+def test_run_async_in_sync_cleans_up_background_tasks_without_running_loop() -> None:
+    task_completed = {"value": False}
+    result: list[str] = []
+    errors: list[BaseException] = []
+
+    async def operation_with_background_task() -> str:
+        async def background_work() -> None:
+            await asyncio.sleep(0)
+            task_completed["value"] = True
+
+        task = asyncio.create_task(background_work())
+        assert task is not None
+        return "operation_started"
+
+    def run_in_thread() -> None:
+        try:
+            result.append(run_async_in_sync(operation_with_background_task()))
+        except BaseException as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=run_in_thread)
+    thread.start()
+    thread.join()
+
+    assert errors == []
+    assert result == ["operation_started"]
+    assert task_completed["value"] is True
 
 
 def test_async_iter_to_sync_iter_preserves_contextvars() -> None:
