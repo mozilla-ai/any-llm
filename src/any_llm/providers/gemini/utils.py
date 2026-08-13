@@ -363,7 +363,7 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
 
         for part in parts or []:
             if getattr(part, "thought", None):
-                reasoning = part.text
+                reasoning = (reasoning or "") + (part.text or "")
             elif function_call := getattr(part, "function_call", None):
                 args_dict = {}
                 if args := getattr(function_call, "args", None):
