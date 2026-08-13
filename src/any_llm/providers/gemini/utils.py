@@ -384,8 +384,8 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                     tool_call_dict["extra_content"] = extra_content
 
                 tool_calls_list.append(tool_call_dict)
-            elif getattr(part, "text", None):
-                text_content = part.text
+            elif part_text := getattr(part, "text", None):
+                text_content = (text_content or "") + part_text
 
         # Truncated or filtered responses produce a choice even without content or tool
         # calls, e.g. a thinking model that spent the whole max_output_tokens budget on

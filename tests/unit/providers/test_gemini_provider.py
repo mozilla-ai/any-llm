@@ -848,6 +848,19 @@ def test_convert_response_keeps_reasoning_none_for_textless_thought_part() -> No
     assert message["content"] == "The answer."
 
 
+def test_convert_response_accumulates_multiple_text_parts() -> None:
+    response = _make_gemini_response(
+        [types.Part(text="Hello "), types.Part(text="world.")],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    message = response_dict["choices"][0]["message"]
+    assert message["content"] == "Hello world."
+    assert message["reasoning"] is None
+
+
 def test_convert_response_emits_choice_for_filtered_response_without_content() -> None:
     response_dict = _convert_response_to_response_dict(_make_gemini_response(None, types.FinishReason.SAFETY))
 
