@@ -172,19 +172,14 @@ def test_per_request_timeout_is_declared_unsupported() -> None:
     assert XaiProvider.TIMEOUT_SUPPORT == "unsupported"
 
 
-def test_client_construction_survives_a_closed_event_loop_on_this_thread() -> None:
-    """Constructing the provider synchronously, after a prior asyncio.run() has
-    closed this thread's event loop, must not raise.
+def test_construction_outside_a_running_loop_does_not_raise() -> None:
+    """Constructing the provider synchronously, after a prior asyncio.run() closed this
+    thread's loop, must not raise.
 
-    grpc.aio's channel construction binds to "the current event loop" for the
-    calling thread via asyncio.get_event_loop(). On Python's default policy that
-    call raises RuntimeError once a previously-created loop on this thread has
-    been closed and no new one has been set - exactly what happens when a sync
-    caller constructs XaiProvider directly (e.g. AnyLLM.create("xai", ...)
-    outside of any active event loop, as any-llm's own sync integration tests do
-    after an earlier async test has run on the same worker). This deliberately
-    does not mock XaiAsyncClient: the bug is in the real grpc.aio channel
-    construction, and a mock would hide it.
+    This deliberately does not mock XaiAsyncClient. Building the real grpc.aio channel here
+    is what used to fail: grpc resolves "the current event loop" for the calling thread at
+    channel construction, and that raises once a previous loop has been created and closed.
+    Nothing loop-bound is built at construction now, so the state is harmless.
     """
     from any_llm.providers.xai.xai import XaiProvider
 
@@ -193,5 +188,86 @@ def test_client_construction_survives_a_closed_event_loop_on_this_thread() -> No
 
     asyncio.run(_noop())
 
+    XaiProvider(api_key="test-api-key")
+
+
+def test_client_is_built_on_the_loop_that_will_drive_it() -> None:
+    """The client must be constructed on the loop that will run the RPC, not on whatever
+    loop happened to be around at provider construction.
+
+    grpc binds a channel to the loop that is current when it is built, so building it
+    anywhere else fails at the first call with "attached to a different loop". That is what
+    broke every sync xAI request, since the sync bridge runs each one on a fresh worker loop.
+    """
+    from any_llm.providers.xai.xai import XaiProvider
+
+    construction_loops: list[asyncio.AbstractEventLoop] = []
+
+    def _record(**_: Any) -> MagicMock:
+        construction_loops.append(asyncio.get_running_loop())
+        return MagicMock()
+
+    with patch("any_llm.providers.xai.xai.XaiAsyncClient", side_effect=_record):
+        provider = XaiProvider(api_key="test-api-key")
+        assert construction_loops == []
+
+        async def _use() -> None:
+            _ = provider.client
+            assert construction_loops == [asyncio.get_running_loop()]
+
+        asyncio.run(_use())
+
+
+def test_each_event_loop_gets_its_own_client() -> None:
+    """A provider reused across sync calls sees a new worker loop each time, so it needs a
+    new client each time; within one loop it must reuse the channel rather than rebuild it.
+    """
+    from any_llm.providers.xai.xai import XaiProvider
+
     provider = XaiProvider(api_key="test-api-key")
-    assert provider.client is not None
+    clients = []
+
+    async def _collect() -> None:
+        clients.append(provider.client)
+        assert provider.client is clients[-1]
+
+    asyncio.run(_collect())
+    asyncio.run(_collect())
+
+    assert clients[0] is not clients[1]
+
+
+def test_clients_for_closed_loops_are_dropped_and_closed() -> None:
+    """Sync callers get a throwaway loop per request, so the per-loop cache has to shed the
+    dead ones. Left alone it would hold a live grpc channel, and its socket, per call made
+    for the whole life of the provider.
+    """
+    from any_llm.providers.xai.xai import XaiProvider
+
+    built: list[MagicMock] = []
+
+    def _build(**_: Any) -> MagicMock:
+        built.append(MagicMock())
+        return built[-1]
+
+    with patch("any_llm.providers.xai.xai.XaiAsyncClient", side_effect=_build):
+        provider = XaiProvider(api_key="test-api-key")
+
+        async def _use() -> None:
+            _ = provider.client
+
+        asyncio.run(_use())
+        asyncio.run(_use())
+
+        assert len(built) == 2
+        assert len(provider._clients_by_loop) == 1
+        built[0]._api_channel._channel.close.assert_called_once()
+
+
+def test_client_outside_async_code_raises_a_clear_error() -> None:
+    from any_llm.providers.xai.xai import XaiProvider
+
+    provider = XaiProvider(api_key="test-api-key")
+
+    with pytest.raises(RuntimeError, match="bound to the running event loop"):
+        _ = provider.client

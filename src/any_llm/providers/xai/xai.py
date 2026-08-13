@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import json
 from typing import TYPE_CHECKING, Any
@@ -34,6 +35,20 @@ if TYPE_CHECKING:
     from any_llm.types.model import Model
 
 
+def _close_client(client: XaiAsyncClient) -> None:
+    """Release the grpc sockets held by a client whose event loop has already closed.
+
+    XaiAsyncClient.close() is a coroutine and its channels belong to a loop that is gone, so
+    there is nothing left to await it on; the cygrpc channel underneath is what actually
+    holds the socket and closes synchronously. Cleanup must never break a request, so if
+    either library moves these internals this degrades to the previous behavior, an idle
+    socket held until the process exits, rather than raising.
+    """
+    for channel in (client._api_channel, client._management_channel):
+        with contextlib.suppress(Exception):
+            channel._channel.close()  # type: ignore[union-attr]
+
+
 class XaiProvider(AnyLLM):
     API_BASE = "https://api.x.ai/v1"
     ENV_API_KEY_NAME = "XAI_API_KEY"
@@ -57,8 +72,6 @@ class XaiProvider(AnyLLM):
     TIMEOUT_SUPPORT = "unsupported"
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
-
-    client: XaiAsyncClient
 
     @staticmethod
     @override
@@ -119,16 +132,49 @@ class XaiProvider(AnyLLM):
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
-        # grpc.aio's channel construction binds to "the current event loop" for this
-        # thread via asyncio.get_event_loop(). That call raises once a previous loop
-        # (e.g. from an earlier asyncio.run()) has been created and closed on this
-        # thread, which _init_client can hit when constructed synchronously and
-        # outside of any active event loop.
+        # The xAI SDK builds its grpc.aio channels eagerly, and grpc binds a channel to
+        # whatever event loop is current in the constructing thread. The sync API runs each
+        # request on a fresh worker loop (see any_llm.utils.aio), so a client built here
+        # would always belong to a different loop than the one driving the RPC, and every
+        # call would fail with "attached to a different loop". Defer construction instead,
+        # keyed by loop, so the channel always belongs to the loop that will use it.
+        self._client_kwargs: dict[str, Any] = {"api_key": api_key, **kwargs}
+        self._clients_by_loop: dict[asyncio.AbstractEventLoop, XaiAsyncClient] = {}
+
+    @property
+    def client(self) -> XaiAsyncClient:
+        """The xAI client for the running event loop, built on first use.
+
+        Accessing this outside of async code raises: the grpc channel underneath can only
+        be driven by the loop it was created on, so there is no correct client to hand back
+        when no loop is running.
+        """
         try:
-            asyncio.get_event_loop()
-        except RuntimeError:
-            asyncio.set_event_loop(asyncio.new_event_loop())
-        self.client = XaiAsyncClient(api_key=api_key, **kwargs)
+            loop = asyncio.get_running_loop()
+        except RuntimeError as exc:
+            msg = (
+                "XaiProvider.client is bound to the running event loop, so it is only available from async code. "
+                "Use the sync API (completion, list_models) or await the async one instead of touching the client."
+            )
+            raise RuntimeError(msg) from exc
+
+        self._discard_clients_for_closed_loops()
+
+        client = self._clients_by_loop.get(loop)
+        if client is None:
+            client = XaiAsyncClient(**self._client_kwargs)
+            self._clients_by_loop[loop] = client
+        return client
+
+    def _discard_clients_for_closed_loops(self) -> None:
+        """Drop clients whose loop has been closed, releasing their grpc socket.
+
+        The sync API gives every request a throwaway loop, so a provider used from sync code
+        would otherwise accumulate one live channel per call for its whole life. A closed
+        loop can never serve another request, so its client is dead weight.
+        """
+        for loop in [loop for loop in self._clients_by_loop if loop.is_closed()]:
+            _close_client(self._clients_by_loop.pop(loop))
 
     @override
     async def _acompletion(
