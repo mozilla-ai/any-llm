@@ -628,6 +628,7 @@ def test_new_gemini_models_use_thinking_level(
     "model_id",
     [
         "gemini-3.0-flash",
+        "gemini-3.4-flash",
         "gemini-3-pro-preview",
         "gemini-2.5-flash",
         "gemini-pro",
