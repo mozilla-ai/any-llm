@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import json
 from typing import TYPE_CHECKING, Any
@@ -118,6 +119,15 @@ class XaiProvider(AnyLLM):
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        # grpc.aio's channel construction binds to "the current event loop" for this
+        # thread via asyncio.get_event_loop(). That call raises once a previous loop
+        # (e.g. from an earlier asyncio.run()) has been created and closed on this
+        # thread, which _init_client can hit when constructed synchronously and
+        # outside of any active event loop.
+        try:
+            asyncio.get_event_loop()
+        except RuntimeError:
+            asyncio.set_event_loop(asyncio.new_event_loop())
         self.client = XaiAsyncClient(api_key=api_key, **kwargs)
 
     @override

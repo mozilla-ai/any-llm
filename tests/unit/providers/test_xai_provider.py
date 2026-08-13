@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -169,3 +170,28 @@ def test_per_request_timeout_is_declared_unsupported() -> None:
     from any_llm.providers.xai.xai import XaiProvider
 
     assert XaiProvider.TIMEOUT_SUPPORT == "unsupported"
+
+
+def test_client_construction_survives_a_closed_event_loop_on_this_thread() -> None:
+    """Constructing the provider synchronously, after a prior asyncio.run() has
+    closed this thread's event loop, must not raise.
+
+    grpc.aio's channel construction binds to "the current event loop" for the
+    calling thread via asyncio.get_event_loop(). On Python's default policy that
+    call raises RuntimeError once a previously-created loop on this thread has
+    been closed and no new one has been set - exactly what happens when a sync
+    caller constructs XaiProvider directly (e.g. AnyLLM.create("xai", ...)
+    outside of any active event loop, as any-llm's own sync integration tests do
+    after an earlier async test has run on the same worker). This deliberately
+    does not mock XaiAsyncClient: the bug is in the real grpc.aio channel
+    construction, and a mock would hide it.
+    """
+    from any_llm.providers.xai.xai import XaiProvider
+
+    async def _noop() -> None:
+        return None
+
+    asyncio.run(_noop())
+
+    provider = XaiProvider(api_key="test-api-key")
+    assert provider.client is not None
