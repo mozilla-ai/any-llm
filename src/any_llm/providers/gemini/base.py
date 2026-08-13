@@ -68,6 +68,14 @@ REASONING_EFFORT_TO_THINKING_BUDGETS = {
     "xhigh": 32768,
     "max": 32768,
 }
+REASONING_EFFORT_TO_THINKING_LEVELS = {
+    "minimal": "MINIMAL",
+    "low": "LOW",
+    "medium": "MEDIUM",
+    "high": "HIGH",
+    "xhigh": "HIGH",
+    "max": "HIGH",
+}
 _SUPPORTED_BATCH_ENDPOINTS = frozenset({"/v1/chat/completions"})
 
 
@@ -140,9 +148,16 @@ class GoogleProvider(AnyLLM):
             if params.reasoning_effort is None or params.reasoning_effort == "none":
                 kwargs["thinking_config"] = types.ThinkingConfig(include_thoughts=False)
             else:
-                kwargs["thinking_config"] = types.ThinkingConfig(
-                    include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort]
-                )
+                reasoning_effort = params.reasoning_effort
+                model_fields = getattr(types.ThinkingConfig, "model_fields", {})
+                supports_thinking_level = "thinking_level" in model_fields
+                is_new_gemini_model = params.model_id.lower().startswith(("gemini-3.5", "gemini-4"))
+                thinking_kwargs: dict[str, Any] = {"include_thoughts": True}
+                if is_new_gemini_model and supports_thinking_level:
+                    thinking_kwargs["thinking_level"] = REASONING_EFFORT_TO_THINKING_LEVELS[reasoning_effort]
+                else:
+                    thinking_kwargs["thinking_budget"] = REASONING_EFFORT_TO_THINKING_BUDGETS[reasoning_effort]
+                kwargs["thinking_config"] = types.ThinkingConfig(**thinking_kwargs)
         if params.seed is not None:
             kwargs["seed"] = params.seed
         if params.service_tier is not None:

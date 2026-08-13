@@ -1,7 +1,7 @@
 import base64
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
-from typing import Any, get_args
+from typing import Any, ClassVar, get_args
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -596,6 +596,32 @@ async def test_completion_with_custom_reasoning_effort(reasoning_effort: Reasoni
             assert thinking_config == types.ThinkingConfig(
                 include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[reasoning_effort]
             )
+
+
+def test_new_gemini_models_use_thinking_level_when_supported(monkeypatch: pytest.MonkeyPatch) -> None:
+    class ThinkingConfig:
+        model_fields: ClassVar[dict[str, object]] = {"include_thoughts": object(), "thinking_level": object()}
+
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+    monkeypatch.setattr("any_llm.providers.gemini.base.types.ThinkingConfig", ThinkingConfig)
+
+    result = GoogleProvider._convert_completion_params(
+        CompletionParams(model_id="gemini-3.5-flash", messages=[], reasoning_effort="xhigh"),
+        provider_name="gemini",
+    )
+
+    assert result["thinking_config"].kwargs == {"include_thoughts": True, "thinking_level": "HIGH"}
+
+
+def test_older_gemini_models_keep_thinking_budget() -> None:
+    result = GoogleProvider._convert_completion_params(
+        CompletionParams(model_id="gemini-3.0-flash", messages=[], reasoning_effort="high"),
+        provider_name="gemini",
+    )
+
+    assert result["thinking_config"] == types.ThinkingConfig(include_thoughts=True, thinking_budget=24576)
 
 
 @pytest.mark.asyncio
