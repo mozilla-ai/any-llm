@@ -83,7 +83,9 @@ def run_async_in_sync(coro: Coroutine[Any, Any, T], allow_running_loop: bool = T
         if loop.is_closed():
             return asyncio.run(run_with_cleanup())
 
-        return loop.run_until_complete(run_with_cleanup())
+        # A reused loop belongs to the caller and stays open, so tasks on it are not ours to cancel
+        # or wait on, and there is no loop closure for background tasks to race with.
+        return loop.run_until_complete(coro)
 
 
 def _async_source_to_sync_iter(
