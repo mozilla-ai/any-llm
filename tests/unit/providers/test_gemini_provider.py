@@ -861,6 +861,24 @@ def test_convert_response_accumulates_multiple_text_parts() -> None:
     assert message["reasoning"] is None
 
 
+def test_convert_response_skips_parts_without_text_or_function_call() -> None:
+    """A candidate can mix in parts that carry neither text nor a tool call, e.g. inline image
+    data; those must not disturb the accumulated text."""
+    response = _make_gemini_response(
+        [
+            types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG")),
+            types.Part(text="Described."),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    message = response_dict["choices"][0]["message"]
+    assert message["content"] == "Described."
+    assert message["tool_calls"] is None
+
+
 def test_convert_response_emits_choice_for_filtered_response_without_content() -> None:
     response_dict = _convert_response_to_response_dict(_make_gemini_response(None, types.FinishReason.SAFETY))
 
