@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 import httpx
@@ -76,6 +76,52 @@ async def test_messages_streaming(
     async for event in result:
         assert isinstance(event, MessageStreamEvent)
         event_types.append(event.type)
+
+    assert "message_start" in event_types
+    assert "message_stop" in event_types
+
+
+def test_messages_streaming_sync(
+    provider: LLMProvider,
+    provider_model_map: dict[LLMProvider, str],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
+) -> None:
+    """Test that the sync Messages streaming path works for supported providers.
+
+    Mirrors test_messages_streaming, but drives the sync `messages()` wrapper
+    instead of `amessages()`. This is the path that regressed in #1253 (the
+    response was opened and consumed on two different event loops); see #1260.
+    """
+    try:
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
+        if not llm.SUPPORTS_COMPLETION:
+            pytest.skip(f"{provider.value} does not support completion, skipping")
+        if not llm.SUPPORTS_COMPLETION_STREAMING:
+            pytest.skip(f"{provider.value} does not support streaming")
+        model_id = provider_model_map[provider]
+        result = llm.messages(
+            model=model_id,
+            messages=[{"role": "user", "content": "Say hello in exactly one word."}],
+            max_tokens=64,
+            stream=True,
+        )
+        assert isinstance(result, Iterator)
+
+        # The sync bridge opens the connection lazily: request/auth/connection
+        # errors surface from the first next() here, not from the messages() call
+        # above, so the skip guards must cover this loop too.
+        event_types: list[str] = []
+        for event in result:
+            assert isinstance(event, MessageStreamEvent)
+            event_types.append(event.type)
+    except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} API key not provided, skipping")
+    except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
+            pytest.skip("Local Model host is not set up, skipping")
+        raise
 
     assert "message_start" in event_types
     assert "message_stop" in event_types

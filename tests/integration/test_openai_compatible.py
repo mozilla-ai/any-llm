@@ -55,6 +55,26 @@ async def test_custom_path_streaming() -> None:
     assert content
 
 
+def test_custom_path_streaming_sync() -> None:
+    """Mirrors test_custom_path_streaming, but drives the sync `completion()` wrapper.
+
+    This is the custom/OpenAI-compatible path where #1253 actually manifested: the
+    sync streaming bridge opened the response on one worker event loop and consumed
+    it on another, which httpx/anyio's loop-bound objects don't tolerate.
+    """
+    llm = _create_custom_provider()
+    chunks = []
+    for chunk in llm.completion(
+        model=MODEL_ID,
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=True,
+    ):
+        assert isinstance(chunk, ChatCompletionChunk)
+        chunks.append(chunk)
+    content = "".join(chunk.choices[0].delta.content or "" for chunk in chunks if chunk.choices)
+    assert content
+
+
 @pytest.mark.asyncio
 async def test_custom_path_list_models() -> None:
     llm = _create_custom_provider()
