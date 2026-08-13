@@ -70,12 +70,12 @@ REASONING_EFFORT_TO_THINKING_BUDGETS = {
     "max": 32768,
 }
 REASONING_EFFORT_TO_THINKING_LEVELS = {
-    "minimal": "MINIMAL",
-    "low": "LOW",
-    "medium": "MEDIUM",
-    "high": "HIGH",
-    "xhigh": "HIGH",
-    "max": "HIGH",
+    "minimal": types.ThinkingLevel.MINIMAL,
+    "low": types.ThinkingLevel.LOW,
+    "medium": types.ThinkingLevel.MEDIUM,
+    "high": types.ThinkingLevel.HIGH,
+    "xhigh": types.ThinkingLevel.HIGH,
+    "max": types.ThinkingLevel.HIGH,
 }
 _SUPPORTED_BATCH_ENDPOINTS = frozenset({"/v1/chat/completions"})
 
@@ -152,7 +152,7 @@ class GoogleProvider(AnyLLM):
                 reasoning_effort = params.reasoning_effort
                 model_fields = getattr(types.ThinkingConfig, "model_fields", {})
                 supports_thinking_level = "thinking_level" in model_fields
-                model_match = re.match(r"^gemini-(\d+)(?:\.(\d+))?", params.model_id.lower())
+                model_match = re.search(r"(?:^|/)gemini-(\d+)(?:\.(\d+))?", params.model_id.lower())
                 model_version = (
                     (
                         int(model_match.group(1)),

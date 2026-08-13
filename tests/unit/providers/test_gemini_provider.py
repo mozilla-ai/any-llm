@@ -606,6 +606,10 @@ def test_new_gemini_models_use_thinking_level_when_supported(monkeypatch: pytest
             self.kwargs = kwargs
 
     monkeypatch.setattr("any_llm.providers.gemini.base.types.ThinkingConfig", ThinkingConfig)
+    monkeypatch.setattr(
+        "any_llm.providers.gemini.base.types.GenerateContentConfig",
+        lambda **kwargs: Mock(thinking_config=kwargs["thinking_config"]),
+    )
 
     result = GoogleProvider._convert_completion_params(
         CompletionParams(
@@ -614,9 +618,10 @@ def test_new_gemini_models_use_thinking_level_when_supported(monkeypatch: pytest
         provider_name="gemini",
     )
 
-    thinking_config = result["config"].thinking_config
-    assert thinking_config.include_thoughts is True
-    assert thinking_config.thinking_level == types.ThinkingLevel.HIGH
+    assert result["config"].thinking_config.kwargs == {
+        "include_thoughts": True,
+        "thinking_level": types.ThinkingLevel.HIGH,
+    }
 
 
 def test_new_gemini_models_use_thinking_budget_when_sdk_lacks_thinking_level(
@@ -629,6 +634,10 @@ def test_new_gemini_models_use_thinking_budget_when_sdk_lacks_thinking_level(
             self.kwargs = kwargs
 
     monkeypatch.setattr("any_llm.providers.gemini.base.types.ThinkingConfig", ThinkingConfig)
+    monkeypatch.setattr(
+        "any_llm.providers.gemini.base.types.GenerateContentConfig",
+        lambda **kwargs: Mock(thinking_config=kwargs["thinking_config"]),
+    )
 
     result = GoogleProvider._convert_completion_params(
         CompletionParams(
@@ -637,9 +646,7 @@ def test_new_gemini_models_use_thinking_budget_when_sdk_lacks_thinking_level(
         provider_name="gemini",
     )
 
-    thinking_config = result["config"].thinking_config
-    assert thinking_config.include_thoughts is True
-    assert thinking_config.thinking_budget == 24576
+    assert result["config"].thinking_config.kwargs == {"include_thoughts": True, "thinking_budget": 24576}
 
 
 def test_older_gemini_models_keep_thinking_budget() -> None:
