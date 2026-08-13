@@ -188,6 +188,19 @@ jobs:
     timeout-minutes: 45
     runs-on: ubuntu-latest
 
+    # Model identifiers live here so the download URL and the cache key cannot drift apart. The
+    # cache keys below are derived from these values rather than from hashFiles('tests/conftest.py'),
+    # which had nothing to do with which model file gets downloaded.
+    env:
+      # This is the file `-hf ggml-org/Qwen3-1.7B-GGUF` already resolved to: that repo's `latest`
+      # and `Q4_K_M` manifests point at the same 1.28 GB layer. Naming it explicitly lets us
+      # download it once to a cached host directory and mount it, instead of re-fetching it
+      # inside the container on every run.
+      LLAMACPP_MODEL_FILE: Qwen3-1.7B-Q4_K_M.gguf
+      LLAMACPP_MODEL_REPO: ggml-org/Qwen3-1.7B-GGUF
+      LLAMAFILE_NAME: Qwen_Qwen3-0.6B-Q4_K_M.llamafile
+      LMSTUDIO_MODEL: qwen/qwen3-1.7b
+
     steps:
       # Runs fork code with our secrets on a labeled fork PR; gated on the
       # run-integration-tests label. See the note at the top of this file before changing.
@@ -212,22 +225,34 @@ jobs:
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
         with:
           path: ~/.ollama
-          key: ${{ runner.os }}-ollama-models-${{ hashFiles('tests/conftest.py') }}
+          key: ${{ runner.os }}-ollama-models-llama3.2-1b-qwen3-0.6b-llava-phi3
           restore-keys: |
             ${{ runner.os }}-ollama-models-
 
       - uses: actions/cache@v6
         with:
           path: ~/.llamafile
-          key: ${{ runner.os }}-llamafile-${{ hashFiles('tests/conftest.py') }}
+          key: ${{ runner.os }}-llamafile-${{ env.LLAMAFILE_NAME }}
           restore-keys: |
             ${{ runner.os }}-llamafile-
+
+      # The llama.cpp model used to be fetched by `-hf` from inside the container on every run,
+      # so a 1.28 GB HuggingFace download sat inside a 60s readiness window. That combination was
+      # the single largest source of flakes in this job. Caching it on the host takes the
+      # download off the critical path entirely.
+      - uses: actions/cache@v6
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamacpp')
+        with:
+          path: ~/.cache/llama.cpp
+          key: ${{ runner.os }}-llamacpp-${{ env.LLAMACPP_MODEL_FILE }}
+          restore-keys: |
+            ${{ runner.os }}-llamacpp-
 
       - uses: actions/cache@v6
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio')
         with:
           path: ~/.lmstudio
-          key: ${{ runner.os }}-lmstudio-models-${{ hashFiles('tests/conftest.py') }}
+          key: ${{ runner.os }}-lmstudio-models-${{ env.LMSTUDIO_MODEL }}
           restore-keys: |
             ${{ runner.os }}-lmstudio-models-
 
@@ -239,34 +264,73 @@ jobs:
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamafile')
         run: |
           mkdir -p ~/.llamafile
-          LLAMAFILE_PATH="$HOME/.llamafile/Qwen_Qwen3-0.6B-Q4_K_M.llamafile"
+          LLAMAFILE_PATH="$HOME/.llamafile/$LLAMAFILE_NAME"
 
-          if [ ! -f "$LLAMAFILE_PATH" ]; then
-            echo "Downloading llamafile (not found in cache)..."
-            wget -O "$LLAMAFILE_PATH" https://huggingface.co/Mozilla/Qwen3-0.6B-llamafile/resolve/main/Qwen_Qwen3-0.6B-Q4_K_M.llamafile
-            chmod +x "$LLAMAFILE_PATH"
-          else
+          if [ -s "$LLAMAFILE_PATH" ]; then
             echo "Using cached llamafile"
+          else
+            echo "Downloading llamafile (not found in cache)..."
+            # Download to a scratch path and move into place only once curl reports success.
+            # Writing straight to the final path meant an interrupted download left a truncated
+            # file that the `-f` check accepted and the cache then preserved under the same key,
+            # so one bad download could wedge every later run.
+            rm -f "$LLAMAFILE_PATH.partial"
+            .github/scripts/retry.sh 3 10 -- \
+              curl -fL --connect-timeout 20 --speed-limit 1024 --speed-time 60 \
+                   -o "$LLAMAFILE_PATH.partial" \
+                   "https://huggingface.co/Mozilla/Qwen3-0.6B-llamafile/resolve/main/$LLAMAFILE_NAME"
+            mv "$LLAMAFILE_PATH.partial" "$LLAMAFILE_PATH"
           fi
 
-          "$LLAMAFILE_PATH" --server --v2 &
+          chmod +x "$LLAMAFILE_PATH"
+          "$LLAMAFILE_PATH" --server --v2 > llamafile.log 2>&1 &
           echo $! > llamafile.pid
 
       - name: Wait for LlamaFile to be ready
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamafile')
         run: |
-          timeout 60 bash -c 'until curl -s http://localhost:8080/v1/models >/dev/null; do sleep 1; done'
+          .github/scripts/wait-for-http.sh http://localhost:8080/v1/models 120 "llamafile server" \
+            || { echo "--- llamafile.log ---"; cat llamafile.log || true; exit 1; }
 
-      - name : Download and Run LlamaCpp
+      - name: Download LlamaCpp model
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamacpp')
         run: |
-          cid=$(docker run -d -p 8090:8090 ghcr.io/ggml-org/llama.cpp:server -hf ggml-org/Qwen3-1.7B-GGUF --jinja --port 8090)
+          mkdir -p ~/.cache/llama.cpp
+          MODEL_PATH="$HOME/.cache/llama.cpp/$LLAMACPP_MODEL_FILE"
+
+          if [ -s "$MODEL_PATH" ]; then
+            echo "Using cached $LLAMACPP_MODEL_FILE"
+          else
+            echo "Downloading $LLAMACPP_MODEL_FILE (not found in cache)..."
+            # --speed-limit/--speed-time abort a download that has stalled below 1 KB/s for a
+            # minute, so a wedged connection fails fast into a retry instead of crawling until
+            # some outer timeout kills the step. Clear any .partial left by a cancelled run so it
+            # cannot sit in the cache indefinitely.
+            rm -f "$MODEL_PATH.partial"
+            .github/scripts/retry.sh 3 10 -- \
+              curl -fL --connect-timeout 20 --speed-limit 1024 --speed-time 60 \
+                   -o "$MODEL_PATH.partial" \
+                   "https://huggingface.co/$LLAMACPP_MODEL_REPO/resolve/main/$LLAMACPP_MODEL_FILE"
+            mv "$MODEL_PATH.partial" "$MODEL_PATH"
+          fi
+          ls -lh "$MODEL_PATH"
+
+      - name: Run LlamaCpp
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamacpp')
+        run: |
+          # Mount the cached model read-only and load it with -m. The previous `-hf` form made the
+          # container re-download it from HuggingFace on every run, inside the readiness window.
+          cid=$(docker run -d -p 8090:8090 \
+            -v "$HOME/.cache/llama.cpp:/models:ro" \
+            ghcr.io/ggml-org/llama.cpp:server \
+            -m "/models/$LLAMACPP_MODEL_FILE" --jinja --host 0.0.0.0 --port 8090)
           echo "$cid" > llamacpp.cid
 
       - name: Wait for LlamaCpp to be ready
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamacpp')
         run: |
-          timeout 60 bash -c 'until curl -s http://localhost:8090/health >/dev/null; do sleep 1; done'
+          .github/scripts/wait-for-http.sh http://localhost:8090/health 180 "llama.cpp server" \
+            || { echo "--- docker logs ---"; docker logs "$(cat llamacpp.cid)" || true; exit 1; }
 
       - name: Run LlamaFile and LlamaCpp integration tests
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'llamafile') || contains(github.event.inputs.filter, 'llamacpp')
@@ -299,34 +363,61 @@ jobs:
       - name: Run ollama
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
         run: |
-          ollama serve &
-          ollama pull llama3.2:1b
-          ollama pull qwen3:0.6b
-          ollama pull llava-phi3
+          # Redirect to a file rather than inheriting the step's stdout: a backgrounded process
+          # holding that pipe open can keep the step from completing.
+          ollama serve > ollama.log 2>&1 &
 
+      # The pulls used to run immediately after `ollama serve &`, racing the server's startup, and
+      # had no retry. Wait for the API first, then pull with retries.
       - name: Wait for Ollama to be ready
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
         run: |
-          timeout 60 bash -c 'until curl -s http://localhost:11434/api/tags >/dev/null; do sleep 1; done'
+          .github/scripts/wait-for-http.sh http://localhost:11434/api/tags 60 "ollama server" \
+            || { echo "--- ollama.log ---"; cat ollama.log || true; exit 1; }
+
+      - name: Pull ollama models
+        if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'ollama')
+        run: |
+          for model in llama3.2:1b qwen3:0.6b llava-phi3; do
+            .github/scripts/retry.sh 3 10 -- ollama pull "$model"
+          done
 
       - name: Install LM Studio CLI
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio')
-        run: curl -fsSL https://lmstudio.ai/install.sh | bash
+        run: .github/scripts/retry.sh 3 10 -- bash -c 'curl -fsSL https://lmstudio.ai/install.sh | bash'
 
       - name: Download LM Studio model
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio')
-        run: lms get qwen/qwen3-1.7b --yes
+        # `lms get` gives up on a stalled HuggingFace download ("Download failed: Timed-out"),
+        # which failed this job on main. It resumes from what it already fetched, so retrying is
+        # both cheap and usually sufficient.
+        run: .github/scripts/retry.sh 3 15 -- lms get "$LMSTUDIO_MODEL" --yes
 
       - name: Load model and start LM Studio server
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio')
         run: |
-          lms load qwen/qwen3-1.7b --yes &
+          lms load "$LMSTUDIO_MODEL" --yes > lms-load.log 2>&1 &
           lms server start
 
       - name: Wait for LM Studio to be ready
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio')
         run: |
-          timeout 120 bash -c 'until curl -s http://localhost:1234/v1/models >/dev/null; do sleep 1; done'
+          .github/scripts/wait-for-http.sh http://localhost:1234/v1/models 120 "LM Studio server" \
+            || { echo "--- lms-load.log ---"; cat lms-load.log || true; exit 1; }
+
+          # /v1/models answers 200 as soon as the server is up, whether or not a model finished
+          # loading, and the load above runs in the background. Without this the suite could start
+          # against a server with nothing loaded and fail for reasons unrelated to the change
+          # under test.
+          MODEL_SLUG="${LMSTUDIO_MODEL#*/}"
+          if ! timeout 180 bash -c "until curl -fsS http://localhost:1234/v1/models | grep -q '$MODEL_SLUG'; do sleep 2; done"; then
+            echo "::error::LM Studio never reported $LMSTUDIO_MODEL as loaded"
+            echo "--- lms-load.log ---"; cat lms-load.log || true
+            echo "--- /v1/models ---"; curl -fsS http://localhost:1234/v1/models || true
+            echo "--- lms ps ---"; lms ps || true
+            exit 1
+          fi
+          echo "LM Studio reports $LMSTUDIO_MODEL loaded"
 
       - name: Run LMStudio and Ollama integration tests
         if: github.event.inputs.filter == '' || contains(github.event.inputs.filter, 'lmstudio') || contains(github.event.inputs.filter, 'ollama')
