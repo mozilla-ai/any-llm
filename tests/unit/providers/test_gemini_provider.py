@@ -1,7 +1,7 @@
 import base64
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
-from typing import Any, ClassVar, get_args
+from typing import Any, get_args
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -598,62 +598,45 @@ async def test_completion_with_custom_reasoning_effort(reasoning_effort: Reasoni
             )
 
 
-def test_new_gemini_models_use_thinking_level_when_supported(monkeypatch: pytest.MonkeyPatch) -> None:
-    class ThinkingConfig:
-        model_fields: ClassVar[dict[str, object]] = {"include_thoughts": object(), "thinking_level": object()}
-
-        def __init__(self, **kwargs: object) -> None:
-            self.kwargs = kwargs
-
-    monkeypatch.setattr("any_llm.providers.gemini.base.types.ThinkingConfig", ThinkingConfig)
-    monkeypatch.setattr(
-        "any_llm.providers.gemini.base.types.GenerateContentConfig",
-        lambda **kwargs: Mock(thinking_config=kwargs["thinking_config"]),
-    )
-
-    result = GoogleProvider._convert_completion_params(
-        CompletionParams(
-            model_id="gemini-3.10-flash", messages=[{"role": "user", "content": "Hello"}], reasoning_effort="max"
-        ),
-        provider_name="gemini",
-    )
-
-    assert result["config"].thinking_config.kwargs == {
-        "include_thoughts": True,
-        "thinking_level": types.ThinkingLevel.HIGH,
-    }
-
-
-def test_new_gemini_models_use_thinking_budget_when_sdk_lacks_thinking_level(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("model_id", "reasoning_effort", "expected_level"),
+    [
+        ("gemini-3.5-flash", "xhigh", types.ThinkingLevel.HIGH),
+        ("gemini-3.5-flash", "max", types.ThinkingLevel.HIGH),
+        ("gemini-3.5-pro", "low", types.ThinkingLevel.LOW),
+        ("models/gemini-3.5-flash", "medium", types.ThinkingLevel.MEDIUM),
+        ("gemini-3.10-flash", "minimal", types.ThinkingLevel.MINIMAL),
+        ("gemini-4-pro", "high", types.ThinkingLevel.HIGH),
+    ],
+)
+def test_new_gemini_models_use_thinking_level(
+    model_id: str, reasoning_effort: ReasoningEffort, expected_level: types.ThinkingLevel
 ) -> None:
-    class ThinkingConfig:
-        model_fields: ClassVar[dict[str, object]] = {"include_thoughts": object()}
-
-        def __init__(self, **kwargs: object) -> None:
-            self.kwargs = kwargs
-
-    monkeypatch.setattr("any_llm.providers.gemini.base.types.ThinkingConfig", ThinkingConfig)
-    monkeypatch.setattr(
-        "any_llm.providers.gemini.base.types.GenerateContentConfig",
-        lambda **kwargs: Mock(thinking_config=kwargs["thinking_config"]),
-    )
-
     result = GoogleProvider._convert_completion_params(
         CompletionParams(
-            model_id="gemini-3.5-flash", messages=[{"role": "user", "content": "Hello"}], reasoning_effort="high"
+            model_id=model_id, messages=[{"role": "user", "content": "Hello"}], reasoning_effort=reasoning_effort
         ),
         provider_name="gemini",
     )
 
-    assert result["config"].thinking_config.kwargs == {"include_thoughts": True, "thinking_budget": 24576}
+    assert result["config"].thinking_config == types.ThinkingConfig(
+        include_thoughts=True, thinking_level=expected_level
+    )
 
 
-def test_older_gemini_models_keep_thinking_budget() -> None:
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "gemini-3.0-flash",
+        "gemini-3-pro-preview",
+        "gemini-2.5-flash",
+        "gemini-pro",
+        "projects/p/locations/l/publishers/google/models/gemini-3-pro",
+    ],
+)
+def test_older_gemini_models_keep_thinking_budget(model_id: str) -> None:
     result = GoogleProvider._convert_completion_params(
-        CompletionParams(
-            model_id="gemini-3.0-flash", messages=[{"role": "user", "content": "Hello"}], reasoning_effort="high"
-        ),
+        CompletionParams(model_id=model_id, messages=[{"role": "user", "content": "Hello"}], reasoning_effort="high"),
         provider_name="gemini",
     )
 
