@@ -37,6 +37,30 @@ def run_async_in_sync(coro: Coroutine[Any, Any, T], allow_running_loop: bool = T
     except RuntimeError:
         running_loop = False
 
+    async def run_with_cleanup() -> T:
+        try:
+            result = await coro
+        except Exception:
+            pending_tasks = [
+                task for task in asyncio.all_tasks() if not task.done() and task is not asyncio.current_task()
+            ]
+
+            for task in pending_tasks:
+                task.cancel()
+
+            if pending_tasks:
+                await asyncio.gather(*pending_tasks, return_exceptions=True)
+
+            raise
+
+        # Async HTTP clients can schedule response cleanup after the main coroutine returns. Finish
+        # those tasks before the event loop is closed so their transports can still schedule callbacks.
+        pending_tasks = [task for task in asyncio.all_tasks() if not task.done() and task is not asyncio.current_task()]
+        if pending_tasks:
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
+
+        return result
+
     if running_loop:
         if not allow_running_loop:
             msg = "Cannot use the `sync` API in an `async` context. Use the `async` API instead."
@@ -45,43 +69,23 @@ def run_async_in_sync(coro: Coroutine[Any, Any, T], allow_running_loop: bool = T
         # If we get here, there's a loop running, so we can't use run_until_complete()
         # or asyncio.run() - must use threading approach
         def run_in_thread() -> T:
-            async def run_with_cleanup() -> T:
-                try:
-                    result = await coro
-
-                    # Wait for any pending background tasks to complete to prevent "Event loop is closed" errors
-                    pending_tasks = [
-                        task for task in asyncio.all_tasks() if not task.done() and task is not asyncio.current_task()
-                    ]
-
-                    if pending_tasks:
-                        await asyncio.gather(*pending_tasks, return_exceptions=True)
-                except Exception:
-                    pending_tasks = [
-                        task for task in asyncio.all_tasks() if not task.done() and task is not asyncio.current_task()
-                    ]
-
-                    for task in pending_tasks:
-                        task.cancel()
-
-                    if pending_tasks:
-                        await asyncio.gather(*pending_tasks, return_exceptions=True)
-
-                    raise
-                return result
-
             return asyncio.run(run_with_cleanup())
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             return executor.submit(run_in_thread).result()
     else:
-        # No running event loop - try to get available loop
+        # No running event loop: reuse an available loop, or create one when the thread has no loop.
         try:
             loop = asyncio.get_event_loop()
-            return loop.run_until_complete(coro)
         except RuntimeError:
-            # No event loop at all - create one
-            return asyncio.run(coro)
+            return asyncio.run(run_with_cleanup())
+
+        if loop.is_closed():
+            return asyncio.run(run_with_cleanup())
+
+        # A reused loop belongs to the caller and stays open, so tasks on it are not ours to cancel
+        # or wait on, and there is no loop closure for background tasks to race with.
+        return loop.run_until_complete(coro)
 
 
 def _async_source_to_sync_iter(
