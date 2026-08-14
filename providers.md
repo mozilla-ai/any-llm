@@ -20,7 +20,7 @@ A provider can be verified whether it ships as a code folder or as a single conf
 |----|------|-----|------|-----------|------------|--------------------------|--------------------------|-----------|-----------|-------------|-------|
 | [`anthropic`](https://docs.anthropic.com/en/home) | ✅ Verified | ANTHROPIC_API_KEY | ANTHROPIC_BASE_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
 | [`atlascloud`](https://www.atlascloud.ai/docs) | 🤝 Community | ATLASCLOUD_API_KEY | ATLASCLOUD_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
-| [`azure`](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure) | 🤝 Community | AZURE_API_KEY | AZURE_AI_CHAT_ENDPOINT | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| [`azure`](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure) | 🤝 Community | AZURE_API_KEY | AZURE_AI_CHAT_ENDPOINT | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ |
 | [`azureanthropic`](https://learn.microsoft.com/en-us/azure/ai-foundry/model-inference/concepts/models) | 🤝 Community | AZURE_ANTHROPIC_API_KEY | AZURE_ANTHROPIC_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
 | [`azureopenai`](https://learn.microsoft.com/en-us/azure/ai-foundry/) | ✅ Verified | AZURE_OPENAI_API_KEY | AZURE_OPENAI_ENDPOINT | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ |
 | [`bedrock`](https://aws.amazon.com/bedrock/) | ✅ Verified | AWS_BEARER_TOKEN_BEDROCK | AWS_ENDPOINT_URL_BEDROCK_RUNTIME | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
