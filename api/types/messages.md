@@ -15,6 +15,7 @@ Full response from the Messages API.
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `request_id` | `str \| None` | Provider request identifier, when exposed by the transport. |
 | `container` | `BetaContainer \| None` |  |
 | `content` | `list[ThinkingBlock \| TextBlock \| ThinkingBlock \| RedactedThinkingBlock \| ToolUseBlock \| ServerToolUseBlock \| WebSearchToolResultBlock \| WebFetchToolResultBlock \| CodeExecutionToolResultBlock \| BashCodeExecutionToolResultBlock \| TextEditorCodeExecutionToolResultBlock \| ToolSearchToolResultBlock \| ContainerUploadBlock \| BetaTextBlock \| BetaThinkingBlock \| BetaRedactedThinkingBlock \| BetaToolUseBlock \| BetaServerToolUseBlock \| BetaWebSearchToolResultBlock \| BetaWebFetchToolResultBlock \| BetaAdvisorToolResultBlock \| BetaCodeExecutionToolResultBlock \| BetaBashCodeExecutionToolResultBlock \| BetaTextEditorCodeExecutionToolResultBlock \| BetaToolSearchToolResultBlock \| BetaMCPToolUseBlock \| BetaMCPToolResultBlock \| BetaContainerUploadBlock \| BetaCompactionBlock \| BetaFallbackBlock]` |  |
 | `stop_reason` | `Literal['end_turn', 'max_tokens', 'stop_sequence', 'tool_use', 'pause_turn', 'compaction', 'refusal', 'model_context_window_exceeded'] \| None` |  |
