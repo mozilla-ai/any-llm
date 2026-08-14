@@ -14,6 +14,7 @@ try:
     from azure.core.credentials import AzureKeyCredential
 
     from .utils import (
+        _convert_model_info_to_list,
         _convert_response,
         _convert_response_format,
         _create_openai_chunk_from_azure_chunk,
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterable, AsyncIterator, Sequence
 
     from azure.ai.inference import aio  # noqa: TC004
-    from azure.ai.inference.models import ChatCompletions, EmbeddingsResult, StreamingChatCompletionsUpdate
+    from azure.ai.inference.models import ChatCompletions, EmbeddingsResult, ModelInfo, StreamingChatCompletionsUpdate
     from azure.core.credentials_async import AsyncTokenCredential
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
@@ -59,7 +60,7 @@ class AzureProvider(AnyLLM):
     SUPPORTS_COMPLETION_REASONING = False
     SUPPORTS_COMPLETION = True
     SUPPORTS_RESPONSES = False
-    SUPPORTS_LIST_MODELS = False
+    SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
     SUPPORTS_RERANK = False
 
@@ -158,6 +159,18 @@ class AzureProvider(AnyLLM):
         return self._convert_completion_response(response)
 
     @override
+    async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
+        """List models via Azure AI Inference's ``/info`` route.
+
+        Azure AI Inference has no catalog-listing endpoint; each endpoint is bound to a single
+        deployed model, and ``get_model_info()`` describes that one model. This only works for
+        Serverless API and Managed Compute endpoints - Azure raises ``HttpResponseError`` for
+        GitHub Models and Azure OpenAI endpoints, which this lets propagate as-is.
+        """
+        response: ModelInfo = await self.chat_client.get_model_info(**kwargs)
+        return self._convert_list_models_response(response)
+
+    @override
     async def _aembedding(
         self,
         model: str,
@@ -229,6 +242,5 @@ class AzureProvider(AnyLLM):
     @staticmethod
     @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
-        """Convert Azure list models response to OpenAI format. Not supported by Azure."""
-        msg = "Azure provider does not support listing models"
-        raise NotImplementedError(msg)
+        """Convert Azure's single ModelInfo (from get_model_info) to an OpenAI Model list."""
+        return _convert_model_info_to_list(response)
