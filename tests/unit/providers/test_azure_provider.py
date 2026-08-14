@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from azure.ai.inference.models import JsonSchemaFormat, ModelInfo
+from azure.core.exceptions import HttpResponseError
 
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.azure.azure import AzureProvider
@@ -286,3 +287,21 @@ async def test_alist_models_calls_get_model_info_on_the_chat_client() -> None:
         assert result == [
             Model(id="Phi-4", object="model", created=0, owned_by="Microsoft Research"),
         ]
+
+
+@pytest.mark.asyncio
+async def test_alist_models_propagates_http_response_error_for_unsupported_endpoints() -> None:
+    """get_model_info() raises HttpResponseError for GitHub Models and Azure OpenAI endpoints
+    (it only works for Serverless API / Managed Compute). _alist_models must let that error
+    propagate unchanged rather than swallowing it into an empty list."""
+    custom_endpoint = "https://test.eu.models.ai.azure.com"
+
+    with mock_azure_provider() as (mock_client_instance, _, _):
+        mock_client_instance.get_model_info = AsyncMock(
+            side_effect=HttpResponseError(message="This method is not supported for the provided endpoint.")
+        )
+
+        provider = AzureProvider(api_key="test-key", api_base=custom_endpoint)
+
+        with pytest.raises(HttpResponseError):
+            await provider._alist_models()
