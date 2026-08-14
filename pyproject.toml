@@ -117,7 +117,7 @@ deepseek = []
 fireworks = []
 gmi = []
 otari = [
-  "otari>=0.2.0",
+  "otari>=0.3.0",
 ]
 github = []
 inception = []
