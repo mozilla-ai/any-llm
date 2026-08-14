@@ -46,11 +46,27 @@ def test_otari_passes_prompt_cache_key_to_the_resolved_provider() -> None:
     assert OtariProvider.PROMPT_CACHE_KEY_SUPPORT == "passthrough"
 
 
+class _MockMetadataStream:
+    def __init__(self, events: list[dict[str, Any]], request_id: str | None = None) -> None:
+        self.request_id = request_id
+        self._events = iter(events)
+
+    def __aiter__(self) -> _MockMetadataStream:
+        return self
+
+    async def __anext__(self) -> dict[str, Any]:
+        try:
+            return next(self._events)
+        except StopIteration:
+            raise StopAsyncIteration from None
+
+
 def _mock_otari_client() -> MagicMock:
     client = MagicMock()
     client.platform_mode = False
     client.completion = AsyncMock()
     client.message = AsyncMock()
+    client.with_response_metadata = SimpleNamespace(message=client.message)
     client.embedding = AsyncMock()
     client.moderation = AsyncMock()
     client.image_generation = AsyncMock()
@@ -778,7 +794,7 @@ def _message_response_payload() -> dict[str, Any]:
 @pytest.mark.asyncio
 async def test_otari_amessages_delegates_to_native_endpoint_preserving_anthropic_fields() -> None:
     client = _mock_otari_client()
-    client.message.return_value = _message_response_payload()
+    client.message.return_value = SimpleNamespace(data=_message_response_payload(), request_id=None)
     provider = _build_provider(client)
 
     params = MessagesParams(
@@ -811,9 +827,76 @@ async def test_otari_amessages_delegates_to_native_endpoint_preserving_anthropic
 
 
 @pytest.mark.asyncio
+async def test_otari_amessages_preserves_request_id() -> None:
+    client = _mock_otari_client()
+    client.with_response_metadata.message = AsyncMock(
+        return_value=SimpleNamespace(
+            data=_message_response_payload(),
+            request_id="req-message-123",
+        )
+    )
+    provider = _build_provider(client)
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+    )
+
+    result = await provider._amessages(params)
+
+    assert isinstance(result, MessageResponse)
+    assert result.request_id == "req-message-123"
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_streaming_preserves_request_id_on_message_start() -> None:
+    class _RequestIdStream:
+        def __init__(self) -> None:
+            self._request_id: str | None = None
+            self.request_id_reads = 0
+            self._events = iter([{"type": "message_start", "message": _message_response_payload()}])
+
+        @property
+        def request_id(self) -> str | None:
+            self.request_id_reads += 1
+            return self._request_id
+
+        def __aiter__(self) -> _RequestIdStream:
+            return self
+
+        async def __anext__(self) -> dict[str, Any]:
+            try:
+                event = next(self._events)
+            except StopIteration:
+                raise StopAsyncIteration from None
+            self._request_id = "req-stream-123"
+            return event
+
+    stream = _RequestIdStream()
+    client = _mock_otari_client()
+    client.with_response_metadata.message = AsyncMock(return_value=stream)
+    provider = _build_provider(client)
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+
+    result = await provider._amessages(params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+    collected = [event async for event in result]
+
+    assert len(collected) == 1
+    assert isinstance(collected[0], MessageStartEvent)
+    assert collected[0].message.request_id == "req-stream-123"
+    assert stream.request_id_reads == 1
+
+
+@pytest.mark.asyncio
 async def test_otari_amessages_forwards_anthropic_beta_params() -> None:
     client = _mock_otari_client()
-    client.message.return_value = _message_response_payload()
+    client.message.return_value = SimpleNamespace(data=_message_response_payload(), request_id=None)
     provider = _build_provider(client)
     context_management = {
         "edits": [
@@ -842,11 +925,8 @@ async def test_otari_amessages_forwards_anthropic_beta_params() -> None:
 
 @pytest.mark.asyncio
 async def test_otari_amessages_streaming_forwards_anthropic_beta_params() -> None:
-    async def _aiter() -> Any:
-        yield {"type": "message_stop"}
-
     client = _mock_otari_client()
-    client.message.return_value = _aiter()
+    client.with_response_metadata.message.return_value = _MockMetadataStream([{"type": "message_stop"}])
     provider = _build_provider(client)
     context_management = {"edits": [{"type": "compact_20260112"}]}
     betas = ["compact-2026-01-12"]
@@ -912,7 +992,7 @@ async def test_otari_amessages_output_format_falls_back_to_bridge() -> None:
 @pytest.mark.asyncio
 async def test_otari_amessages_excludes_none_valued_optional_params() -> None:
     client = _mock_otari_client()
-    client.message.return_value = _message_response_payload()
+    client.message.return_value = SimpleNamespace(data=_message_response_payload(), request_id=None)
     provider = _build_provider(client)
 
     params = MessagesParams(
@@ -932,7 +1012,7 @@ async def test_otari_amessages_excludes_none_valued_optional_params() -> None:
 
 @pytest.mark.asyncio
 async def test_otari_amessages_streaming_yields_typed_events_and_skips_unknown() -> None:
-    raw_events = [
+    raw_events: list[dict[str, Any]] = [
         {"type": "message_start", "message": _message_response_payload()},
         {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
         {"type": "ping"},
@@ -946,12 +1026,8 @@ async def test_otari_amessages_streaming_yields_typed_events_and_skips_unknown()
         {"type": "message_stop"},
     ]
 
-    async def _aiter() -> Any:
-        for event in raw_events:
-            yield event
-
     client = _mock_otari_client()
-    client.message.return_value = _aiter()
+    client.with_response_metadata.message.return_value = _MockMetadataStream(raw_events)
     provider = _build_provider(client)
 
     params = MessagesParams(
