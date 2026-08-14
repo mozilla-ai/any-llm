@@ -111,6 +111,9 @@ ContentBlock = MessageContentBlock
 
 
 class MessageResponse(AnthropicMessage):
+    request_id: str | None = None
+    """Provider request identifier, when exposed by the transport."""
+
     container: BetaContainer | None = None  # type: ignore[assignment]
     content: list[MessageContentBlock]  # type: ignore[assignment]
     stop_reason: StopReason | None = None  # type: ignore[assignment]

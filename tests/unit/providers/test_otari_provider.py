@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import BaseModel
 
 from any_llm.exceptions import BatchNotCompleteError
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams
@@ -46,11 +47,27 @@ def test_otari_passes_prompt_cache_key_to_the_resolved_provider() -> None:
     assert OtariProvider.PROMPT_CACHE_KEY_SUPPORT == "passthrough"
 
 
+class _MockMetadataStream:
+    def __init__(self, events: list[dict[str, Any]], request_id: str | None = None) -> None:
+        self.request_id = request_id
+        self._events = iter(events)
+
+    def __aiter__(self) -> _MockMetadataStream:
+        return self
+
+    async def __anext__(self) -> dict[str, Any]:
+        try:
+            return next(self._events)
+        except StopIteration:
+            raise StopAsyncIteration from None
+
+
 def _mock_otari_client() -> MagicMock:
     client = MagicMock()
     client.platform_mode = False
     client.completion = AsyncMock()
     client.message = AsyncMock()
+    client.with_response_metadata = SimpleNamespace(message=client.message)
     client.embedding = AsyncMock()
     client.moderation = AsyncMock()
     client.image_generation = AsyncMock()
@@ -66,8 +83,6 @@ def _mock_otari_client() -> MagicMock:
 
 
 def test_as_plain_dict_normalizes_models_and_passes_through() -> None:
-    from pydantic import BaseModel
-
     class _Model(BaseModel):
         value: int
 
@@ -80,7 +95,6 @@ def test_as_plain_dict_prefers_to_dict_over_model_dump() -> None:
     """otari's generated models leak oneOf/anyOf union wrappers via model_dump (breaking
     tool_calls and Messages content); their to_dict unwraps to the actual instance, so
     _as_plain_dict must prefer to_dict."""
-    from pydantic import BaseModel
 
     class _OtariLike(BaseModel):
         value: int
@@ -227,7 +241,6 @@ def test_otari_remaps_max_completion_tokens_to_max_tokens() -> None:
 
 def test_otari_converts_pydantic_response_format_to_json_schema() -> None:
     """otari has no parse() helper, so a Pydantic response_format must be sent as a json_schema dict."""
-    from pydantic import BaseModel
 
     class Schema(BaseModel):
         city: str
@@ -247,8 +260,6 @@ def test_otari_converts_pydantic_response_format_to_json_schema() -> None:
 
 
 def test_otari_to_parsed_completion_parses_json_content() -> None:
-    from pydantic import BaseModel
-
     from any_llm.types.completion import ParsedChatCompletion
 
     class Schema(BaseModel):
@@ -279,8 +290,6 @@ def test_otari_to_parsed_completion_parses_json_content() -> None:
 
 @pytest.mark.asyncio
 async def test_otari_acompletion_returns_parsed_completion_for_structured_output() -> None:
-    from pydantic import BaseModel
-
     from any_llm.types.completion import ParsedChatCompletion
 
     class Schema(BaseModel):
@@ -317,8 +326,6 @@ async def test_otari_acompletion_returns_parsed_completion_for_structured_output
 
 @pytest.mark.asyncio
 async def test_otari_acompletion_streams_with_response_format() -> None:
-    from pydantic import BaseModel
-
     class Schema(BaseModel):
         city: str
 
@@ -674,8 +681,6 @@ def _make_openai_response(text: str):  # type: ignore[no-untyped-def]
 
 @pytest.mark.asyncio
 async def test_otari_aresponses_basemodel_requests_schema_and_is_parsed() -> None:
-    from pydantic import BaseModel
-
     from any_llm.types.responses import ParsedResponse
 
     class City(BaseModel):
@@ -778,7 +783,7 @@ def _message_response_payload() -> dict[str, Any]:
 @pytest.mark.asyncio
 async def test_otari_amessages_delegates_to_native_endpoint_preserving_anthropic_fields() -> None:
     client = _mock_otari_client()
-    client.message.return_value = _message_response_payload()
+    client.message.return_value = SimpleNamespace(data=_message_response_payload(), request_id=None)
     provider = _build_provider(client)
 
     params = MessagesParams(
@@ -811,27 +816,128 @@ async def test_otari_amessages_delegates_to_native_endpoint_preserving_anthropic
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "unsupported_params",
-    [
-        {"context_management": {"edits": [{"type": "compact_20260112"}]}},
-        {"betas": ["compact-2026-01-12"]},
-    ],
-)
-async def test_otari_amessages_rejects_anthropic_beta_params(unsupported_params: dict[str, Any]) -> None:
+async def test_otari_amessages_preserves_request_id() -> None:
     client = _mock_otari_client()
+    client.with_response_metadata.message = AsyncMock(
+        return_value=SimpleNamespace(
+            data=_message_response_payload(),
+            request_id="req-message-123",
+        )
+    )
     provider = _build_provider(client)
     params = MessagesParams(
         model="claude-sonnet-4-5",
         messages=[{"role": "user", "content": "Hello"}],
         max_tokens=100,
-        **unsupported_params,
     )
 
-    with pytest.raises(NotImplementedError, match="native Anthropic Messages"):
-        await provider._amessages(params)
+    result = await provider._amessages(params)
 
-    client.message.assert_not_called()
+    assert isinstance(result, MessageResponse)
+    assert result.request_id == "req-message-123"
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_streaming_preserves_request_id_on_message_start() -> None:
+    class _RequestIdStream:
+        def __init__(self) -> None:
+            self._request_id: str | None = None
+            self.request_id_reads = 0
+            self._events = iter([{"type": "message_start", "message": _message_response_payload()}])
+
+        @property
+        def request_id(self) -> str | None:
+            self.request_id_reads += 1
+            return self._request_id
+
+        def __aiter__(self) -> _RequestIdStream:
+            return self
+
+        async def __anext__(self) -> dict[str, Any]:
+            try:
+                event = next(self._events)
+            except StopIteration:
+                raise StopAsyncIteration from None
+            self._request_id = "req-stream-123"
+            return event
+
+    stream = _RequestIdStream()
+    client = _mock_otari_client()
+    client.with_response_metadata.message = AsyncMock(return_value=stream)
+    provider = _build_provider(client)
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+
+    result = await provider._amessages(params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+    collected = [event async for event in result]
+
+    assert len(collected) == 1
+    assert isinstance(collected[0], MessageStartEvent)
+    assert collected[0].message.request_id == "req-stream-123"
+    assert stream.request_id_reads == 1
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_forwards_anthropic_beta_params() -> None:
+    client = _mock_otari_client()
+    client.message.return_value = SimpleNamespace(data=_message_response_payload(), request_id=None)
+    provider = _build_provider(client)
+    context_management = {
+        "edits": [
+            {
+                "type": "compact_20260112",
+                "trigger": {"type": "input_tokens", "value": 50_000},
+            }
+        ]
+    }
+    betas = ["compact-2026-01-12"]
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        context_management=context_management,
+        betas=betas,
+    )
+
+    result = await provider._amessages(params)
+
+    assert isinstance(result, MessageResponse)
+    call_kwargs = client.message.call_args.kwargs
+    assert call_kwargs["context_management"] == context_management
+    assert call_kwargs["betas"] == betas
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_streaming_forwards_anthropic_beta_params() -> None:
+    client = _mock_otari_client()
+    client.with_response_metadata.message.return_value = _MockMetadataStream([{"type": "message_stop"}])
+    provider = _build_provider(client)
+    context_management = {"edits": [{"type": "compact_20260112"}]}
+    betas = ["compact-2026-01-12"]
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+        context_management=context_management,
+        betas=betas,
+    )
+
+    result = await provider._amessages(params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+    collected = [event async for event in result]
+
+    assert len(collected) == 1
+    assert isinstance(collected[0], MessageStopEvent)
+    call_kwargs = client.message.call_args.kwargs
+    assert call_kwargs["stream"] is True
+    assert call_kwargs["context_management"] == context_management
+    assert call_kwargs["betas"] == betas
 
 
 @pytest.mark.asyncio
@@ -848,8 +954,6 @@ async def test_otari_amessages_output_format_falls_back_to_bridge() -> None:
             ],
         }
     )
-
-    from pydantic import BaseModel
 
     class City(BaseModel):
         city: str
@@ -873,9 +977,42 @@ async def test_otari_amessages_output_format_falls_back_to_bridge() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "beta_params",
+    [
+        {"context_management": {"edits": [{"type": "compact_20260112"}]}},
+        {"betas": ["compact-2026-01-12"]},
+    ],
+)
+async def test_otari_amessages_output_format_with_beta_params_raises(beta_params: dict[str, Any]) -> None:
+    """output_format routes through the bridge, which cannot carry context_management or betas."""
+
+    class City(BaseModel):
+        city: str
+
+    client = _mock_otari_client()
+    provider = _build_provider(client)
+    provider._acompletion = AsyncMock()  # type: ignore[method-assign]
+
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=100,
+        output_format=City,
+        **beta_params,
+    )
+
+    with pytest.raises(NotImplementedError, match="output_format cannot be combined"):
+        await provider._amessages(params)
+
+    provider._acompletion.assert_not_called()
+    client.message.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_otari_amessages_excludes_none_valued_optional_params() -> None:
     client = _mock_otari_client()
-    client.message.return_value = _message_response_payload()
+    client.message.return_value = SimpleNamespace(data=_message_response_payload(), request_id=None)
     provider = _build_provider(client)
 
     params = MessagesParams(
@@ -895,7 +1032,7 @@ async def test_otari_amessages_excludes_none_valued_optional_params() -> None:
 
 @pytest.mark.asyncio
 async def test_otari_amessages_streaming_yields_typed_events_and_skips_unknown() -> None:
-    raw_events = [
+    raw_events: list[dict[str, Any]] = [
         {"type": "message_start", "message": _message_response_payload()},
         {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
         {"type": "ping"},
@@ -909,12 +1046,8 @@ async def test_otari_amessages_streaming_yields_typed_events_and_skips_unknown()
         {"type": "message_stop"},
     ]
 
-    async def _aiter() -> Any:
-        for event in raw_events:
-            yield event
-
     client = _mock_otari_client()
-    client.message.return_value = _aiter()
+    client.with_response_metadata.message.return_value = _MockMetadataStream(raw_events)
     provider = _build_provider(client)
 
     params = MessagesParams(
