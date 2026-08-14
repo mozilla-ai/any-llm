@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import BaseModel
 
 from any_llm.exceptions import BatchNotCompleteError
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams
@@ -82,8 +83,6 @@ def _mock_otari_client() -> MagicMock:
 
 
 def test_as_plain_dict_normalizes_models_and_passes_through() -> None:
-    from pydantic import BaseModel
-
     class _Model(BaseModel):
         value: int
 
@@ -96,7 +95,6 @@ def test_as_plain_dict_prefers_to_dict_over_model_dump() -> None:
     """otari's generated models leak oneOf/anyOf union wrappers via model_dump (breaking
     tool_calls and Messages content); their to_dict unwraps to the actual instance, so
     _as_plain_dict must prefer to_dict."""
-    from pydantic import BaseModel
 
     class _OtariLike(BaseModel):
         value: int
@@ -243,7 +241,6 @@ def test_otari_remaps_max_completion_tokens_to_max_tokens() -> None:
 
 def test_otari_converts_pydantic_response_format_to_json_schema() -> None:
     """otari has no parse() helper, so a Pydantic response_format must be sent as a json_schema dict."""
-    from pydantic import BaseModel
 
     class Schema(BaseModel):
         city: str
@@ -263,8 +260,6 @@ def test_otari_converts_pydantic_response_format_to_json_schema() -> None:
 
 
 def test_otari_to_parsed_completion_parses_json_content() -> None:
-    from pydantic import BaseModel
-
     from any_llm.types.completion import ParsedChatCompletion
 
     class Schema(BaseModel):
@@ -295,8 +290,6 @@ def test_otari_to_parsed_completion_parses_json_content() -> None:
 
 @pytest.mark.asyncio
 async def test_otari_acompletion_returns_parsed_completion_for_structured_output() -> None:
-    from pydantic import BaseModel
-
     from any_llm.types.completion import ParsedChatCompletion
 
     class Schema(BaseModel):
@@ -333,8 +326,6 @@ async def test_otari_acompletion_returns_parsed_completion_for_structured_output
 
 @pytest.mark.asyncio
 async def test_otari_acompletion_streams_with_response_format() -> None:
-    from pydantic import BaseModel
-
     class Schema(BaseModel):
         city: str
 
@@ -690,8 +681,6 @@ def _make_openai_response(text: str):  # type: ignore[no-untyped-def]
 
 @pytest.mark.asyncio
 async def test_otari_aresponses_basemodel_requests_schema_and_is_parsed() -> None:
-    from pydantic import BaseModel
-
     from any_llm.types.responses import ParsedResponse
 
     class City(BaseModel):
@@ -966,8 +955,6 @@ async def test_otari_amessages_output_format_falls_back_to_bridge() -> None:
         }
     )
 
-    from pydantic import BaseModel
-
     class City(BaseModel):
         city: str
 
@@ -999,7 +986,6 @@ async def test_otari_amessages_output_format_falls_back_to_bridge() -> None:
 )
 async def test_otari_amessages_output_format_with_beta_params_raises(beta_params: dict[str, Any]) -> None:
     """output_format routes through the bridge, which cannot carry context_management or betas."""
-    from pydantic import BaseModel
 
     class City(BaseModel):
         city: str
