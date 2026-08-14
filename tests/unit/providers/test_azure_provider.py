@@ -294,7 +294,7 @@ async def test_alist_models_propagates_http_response_error_for_unsupported_endpo
     """get_model_info() raises HttpResponseError for GitHub Models and Azure OpenAI endpoints
     (it only works for Serverless API / Managed Compute). _alist_models must let that error
     propagate unchanged rather than swallowing it into an empty list."""
-    custom_endpoint = "https://test.eu.models.ai.azure.com"
+    custom_endpoint = "https://test.openai.azure.com"
 
     with mock_azure_provider() as (mock_client_instance, _, _):
         mock_client_instance.get_model_info = AsyncMock(
