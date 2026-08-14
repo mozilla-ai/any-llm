@@ -990,6 +990,40 @@ async def test_otari_amessages_output_format_falls_back_to_bridge() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "beta_params",
+    [
+        {"context_management": {"edits": [{"type": "compact_20260112"}]}},
+        {"betas": ["compact-2026-01-12"]},
+    ],
+)
+async def test_otari_amessages_output_format_with_beta_params_raises(beta_params: dict[str, Any]) -> None:
+    """output_format routes through the bridge, which cannot carry context_management or betas."""
+    from pydantic import BaseModel
+
+    class City(BaseModel):
+        city: str
+
+    client = _mock_otari_client()
+    provider = _build_provider(client)
+    provider._acompletion = AsyncMock()  # type: ignore[method-assign]
+
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=100,
+        output_format=City,
+        **beta_params,
+    )
+
+    with pytest.raises(NotImplementedError, match="output_format cannot be combined"):
+        await provider._amessages(params)
+
+    provider._acompletion.assert_not_called()
+    client.message.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_otari_amessages_excludes_none_valued_optional_params() -> None:
     client = _mock_otari_client()
     client.message.return_value = SimpleNamespace(data=_message_response_payload(), request_id=None)

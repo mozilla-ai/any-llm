@@ -354,6 +354,14 @@ class OtariProvider(BaseOpenAIProvider):
             # Structured output is handled by the base Messages<->Completions bridge, which
             # routes output_format through otari's completion path. A follow-up could adopt
             # otari's native /messages structured-output support directly.
+            if params.context_management is not None or params.betas:
+                msg = (
+                    "output_format cannot be combined with context_management or betas on otari: "
+                    "structured output routes through the Completions bridge, which drops both. "
+                    "Send them in separate requests until otari's native /messages structured "
+                    "output is adopted."
+                )
+                raise NotImplementedError(msg)
             return await super()._amessages(params, **kwargs)
 
         api_kwargs = params.model_dump(exclude_none=True)
