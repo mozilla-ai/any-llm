@@ -276,9 +276,7 @@ def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, An
     """Extract usage from a Gemini response as a dict.
 
     Gemini's ``prompt_token_count`` already includes cached tokens
-    (``cached_content_token_count`` is a subset). ``thoughts_token_count`` is
-    billed output and included in ``total_token_count``, so it is folded into
-    ``completion_tokens`` to keep ``prompt + completion == total``.
+    (``cached_content_token_count`` is a subset).
 
     Reference: https://ai.google.dev/gemini-api/docs/caching
     """
@@ -287,6 +285,7 @@ def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, An
         return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     usage: dict[str, Any] = {
         "prompt_tokens": metadata.prompt_token_count or 0,
+        # thoughts_token_count is billed output and already counted in total_token_count
         "completion_tokens": (metadata.candidates_token_count or 0) + (metadata.thoughts_token_count or 0),
         "total_tokens": metadata.total_token_count or 0,
     }
