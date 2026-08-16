@@ -24,7 +24,13 @@ from any_llm.providers.gemini.utils import (
     _has_additional_properties,
     _map_finish_reason,
 )
-from any_llm.types.completion import ChatCompletion, CompletionParams, PromptTokensDetails, ReasoningEffort
+from any_llm.types.completion import (
+    ChatCompletion,
+    CompletionParams,
+    CompletionTokensDetails,
+    PromptTokensDetails,
+    ReasoningEffort,
+)
 
 TEST_IMAGE_BYTES = b"test-image-bytes"
 TEST_PDF_BYTES = b"%PDF-1.4\ntest"
@@ -2125,6 +2131,35 @@ def test_convert_completion_response_preserves_prompt_tokens_details() -> None:
     assert result.usage.prompt_tokens == 100
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 80
+
+
+def test_convert_completion_response_preserves_completion_tokens_details() -> None:
+    """Test that _convert_completion_response passes completion_tokens_details through to ChatCompletion."""
+    response_dict = {
+        "id": "google_genai_response",
+        "model": "google/genai",
+        "created": 0,
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": "Hello!", "tool_calls": None},
+                "finish_reason": "stop",
+                "index": 0,
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 20,
+            "completion_tokens": 603,
+            "total_tokens": 623,
+            "completion_tokens_details": CompletionTokensDetails(reasoning_tokens=405),
+        },
+    }
+
+    result = GoogleProvider._convert_completion_response((response_dict, "test-model"))
+
+    assert result.usage is not None
+    assert result.usage.completion_tokens == 603
+    assert result.usage.completion_tokens_details is not None
+    assert result.usage.completion_tokens_details.reasoning_tokens == 405
 
 
 def test_merge_timeout_creates_http_options_when_absent() -> None:
