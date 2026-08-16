@@ -2045,6 +2045,59 @@ def test_streaming_chunk_includes_thought_tokens() -> None:
     assert chunk.usage.prompt_tokens + chunk.usage.completion_tokens == chunk.usage.total_tokens
 
 
+def test_convert_response_without_thought_tokens() -> None:
+    """Test that completion_tokens_details stays absent when the model produced no thoughts."""
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_part = Mock()
+    mock_part.thought = None
+    mock_part.function_call = None
+    mock_part.text = "Hello!"
+    mock_response.candidates[0].content.parts = [mock_part]
+
+    mock_response.usage_metadata = Mock()
+    mock_response.usage_metadata.prompt_token_count = 100
+    mock_response.usage_metadata.candidates_token_count = 50
+    mock_response.usage_metadata.thoughts_token_count = None
+    mock_response.usage_metadata.total_token_count = 150
+    mock_response.usage_metadata.cached_content_token_count = None
+
+    response_dict = _convert_response_to_response_dict(mock_response)
+
+    assert response_dict["usage"]["completion_tokens"] == 50
+    assert "completion_tokens_details" not in response_dict["usage"]
+
+
+def test_streaming_chunk_without_thought_tokens() -> None:
+    """Test that streaming usage has no completion_tokens_details when the model produced no thoughts."""
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_part = Mock()
+    mock_part.thought = None
+    mock_part.function_call = None
+    mock_part.text = "Hello!"
+    mock_response.candidates[0].content.parts = [mock_part]
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
+    mock_response.model_version = "gemini-2.5-flash"
+
+    mock_response.usage_metadata = Mock()
+    mock_response.usage_metadata.prompt_token_count = 100
+    mock_response.usage_metadata.candidates_token_count = 50
+    mock_response.usage_metadata.thoughts_token_count = None
+    mock_response.usage_metadata.total_token_count = 150
+    mock_response.usage_metadata.cached_content_token_count = None
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    assert chunk.usage is not None
+    assert chunk.usage.completion_tokens == 50
+    assert chunk.usage.completion_tokens_details is None
+
+
 def test_convert_completion_response_preserves_prompt_tokens_details() -> None:
     """Test that _convert_completion_response passes prompt_tokens_details through to ChatCompletion."""
     response_dict = {
