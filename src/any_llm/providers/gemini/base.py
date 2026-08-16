@@ -8,6 +8,7 @@ from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError, UnsupportedParameterError
+from any_llm.logging import logger
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -148,7 +149,17 @@ class GoogleProvider(AnyLLM):
             kwargs["presence_penalty"] = params.presence_penalty
         if params.reasoning_effort != "auto":
             if params.reasoning_effort is None or params.reasoning_effort == "none":
-                kwargs["thinking_config"] = types.ThinkingConfig(include_thoughts=False)
+                if _uses_thinking_level(params.model_id):
+                    # thinking_level has no off tier; MINIMAL is the nearest expressible value
+                    logger.warning(
+                        "%s cannot disable thinking; clamping reasoning_effort='none' to thinking_level=MINIMAL",
+                        params.model_id,
+                    )
+                    kwargs["thinking_config"] = types.ThinkingConfig(
+                        include_thoughts=False, thinking_level=types.ThinkingLevel.MINIMAL
+                    )
+                else:
+                    kwargs["thinking_config"] = types.ThinkingConfig(include_thoughts=False, thinking_budget=0)
             elif _uses_thinking_level(params.model_id):
                 kwargs["thinking_config"] = types.ThinkingConfig(
                     include_thoughts=True, thinking_level=REASONING_EFFORT_TO_THINKING_LEVELS[params.reasoning_effort]
