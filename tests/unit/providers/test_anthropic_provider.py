@@ -309,6 +309,30 @@ async def test_completion_with_tool_choice_and_parallel_tool_calls(parallel_tool
         )
 
 
+@pytest.mark.parametrize("parallel_tool_calls", [True, False])
+@pytest.mark.asyncio
+async def test_completion_with_parallel_tool_calls_only(parallel_tool_calls: bool) -> None:
+    """Test that parallel_tool_calls without tool_choice maps to "auto" instead of forcing tool use."""
+    api_key = "test-api-key"
+    model = "model-id"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key=api_key)
+        await provider._acompletion(
+            CompletionParams(model_id=model, messages=messages, parallel_tool_calls=parallel_tool_calls),
+        )
+
+        expected_kwargs = {"tool_choice": {"type": "auto", "disable_parallel_tool_use": not parallel_tool_calls}}
+
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
+            model=model,
+            messages=[{"role": "user", "content": "Hello"}],
+            **expected_kwargs,
+            max_tokens=DEFAULT_MAX_TOKENS,
+        )
+
+
 @pytest.mark.asyncio
 async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, Any]]) -> None:
     api_key = "test-api-key"

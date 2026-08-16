@@ -430,7 +430,7 @@ def _convert_tool_choice(params: CompletionParams) -> dict[str, Any]:
     parallel_tool_calls = params.parallel_tool_calls
     if parallel_tool_calls is None:
         parallel_tool_calls = True
-    tool_choice = params.tool_choice or "any"
+    tool_choice = params.tool_choice or "auto"
     if tool_choice == "required":
         tool_choice = "any"
     elif isinstance(tool_choice, dict):
@@ -480,7 +480,7 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
     if params.tools:
         params.tools = _convert_tool_spec(params.tools)
 
-    if params.tool_choice or params.parallel_tool_calls:
+    if params.tool_choice is not None or params.parallel_tool_calls is not None:
         params.tool_choice = _convert_tool_choice(params)
 
     if params.reasoning_effort is None or params.reasoning_effort == "none":
