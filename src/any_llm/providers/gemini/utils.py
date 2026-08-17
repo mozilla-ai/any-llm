@@ -128,7 +128,12 @@ def _convert_tool_choice(tool_choice: str | dict[str, Any], provider_name: str) 
             # Gemini only honors allowed_function_names in ANY mode, so mode="auto" has no equivalent.
             if not isinstance(allowed, dict) or allowed.get("mode") != "required":
                 raise UnsupportedParameterError(error_message, provider_name, additional_message)
-            functions = [tool.get("function") for tool in allowed.get("tools", []) if isinstance(tool, dict)]
+            allowed_tools = allowed.get("tools")
+            if not isinstance(allowed_tools, list):
+                raise UnsupportedParameterError(error_message, provider_name, additional_message)
+            # Every entry is kept so that an unusable one fails the name check below rather than
+            # being dropped, which would silently narrow the set of tools the caller asked for.
+            functions = [tool.get("function") if isinstance(tool, dict) else None for tool in allowed_tools]
         else:
             functions = [tool_choice.get("function")] if tool_choice.get("type") == "function" else []
         raw_names = [function.get("name") if isinstance(function, dict) else None for function in functions]

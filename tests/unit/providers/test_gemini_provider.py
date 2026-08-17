@@ -367,6 +367,16 @@ async def test_completion_with_allowed_tools_tool_choice() -> None:
             "allowed_tools": {"mode": "auto", "tools": [{"type": "function", "function": {"name": "get_weather"}}]},
         },
         {"type": "allowed_tools", "allowed_tools": {"mode": "required", "tools": []}},
+        {"type": "allowed_tools", "allowed_tools": {"mode": "required"}},
+        {"type": "allowed_tools", "allowed_tools": {"mode": "required", "tools": None}},
+        {"type": "allowed_tools", "allowed_tools": {"mode": "required", "tools": 1}},
+        {
+            "type": "allowed_tools",
+            "allowed_tools": {
+                "mode": "required",
+                "tools": [{"type": "function", "function": {"name": "get_weather"}}, "get_time"],
+            },
+        },
         {
             "type": "allowed_tools",
             "allowed_tools": {
