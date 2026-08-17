@@ -340,6 +340,37 @@ async def test_completion_with_named_function_tool_choice() -> None:
         assert function_calling_config.allowed_function_names == ["get_weather"]
 
 
+@pytest.mark.asyncio
+async def test_completion_with_allowed_tools_tool_choice() -> None:
+    """A required allowed_tools choice must forward every listed name in ANY mode."""
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="gemini-pro",
+                messages=messages,
+                tool_choice={
+                    "type": "allowed_tools",
+                    "allowed_tools": {
+                        "mode": "required",
+                        "tools": [
+                            {"type": "function", "function": {"name": "get_weather"}},
+                            {"type": "function", "function": {"name": "get_time"}},
+                        ],
+                    },
+                },
+            ),
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        function_calling_config = call_kwargs["config"].tool_config.function_calling_config
+
+        assert function_calling_config.mode.value == "ANY"
+        assert function_calling_config.allowed_function_names == ["get_weather", "get_time"]
+
+
 @pytest.mark.parametrize(
     "tool_choice",
     [
@@ -347,6 +378,26 @@ async def test_completion_with_named_function_tool_choice() -> None:
         {"type": "custom", "custom": {"name": "get_weather"}},
         {"type": "function"},
         {"type": "function", "function": {"name": 1}},
+        # Gemini honors allowed_function_names only in ANY mode, so "auto" cannot be expressed.
+        {
+            "type": "allowed_tools",
+            "allowed_tools": {"mode": "auto", "tools": [{"type": "function", "function": {"name": "get_weather"}}]},
+        },
+        {"type": "allowed_tools", "allowed_tools": {"mode": "required", "tools": []}},
+        {
+            "type": "allowed_tools",
+            "allowed_tools": {
+                "mode": "required",
+                "tools": [
+                    {"type": "function", "function": {"name": "get_weather"}},
+                    {"type": "function", "function": {"name": ""}},
+                ],
+            },
+        },
+        {
+            "type": "allowed_tools",
+            "allowed_tools": {"mode": "required", "tools": [{"type": "function", "function": {"name": 1}}]},
+        },
     ],
 )
 @pytest.mark.asyncio
