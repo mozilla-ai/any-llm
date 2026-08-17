@@ -978,7 +978,7 @@ def test_convert_tool_spec_basic_mapping() -> None:
         }
     ]
 
-    tools = _convert_tool_spec(openai_tools)
+    tools = _convert_tool_spec(openai_tools, "gemini")
 
     assert len(tools) == 1
     assert tools[0].function_declarations[0].name == "search"  # type: ignore[index]
@@ -994,7 +994,7 @@ def test_convert_tool_spec_basic_mapping() -> None:
 
 def test_convert_tool_spec_none_parameters() -> None:
     """Regression: parameters=None must not raise 'NoneType' object is not subscriptable."""
-    tools = _convert_tool_spec([{"type": "function", "function": {"name": "ping", "parameters": None}}])
+    tools = _convert_tool_spec([{"type": "function", "function": {"name": "ping", "parameters": None}}], "gemini")
     assert len(tools) == 1
     decl = tools[0].function_declarations[0]  # type: ignore[index]
     assert decl.name == "ping"
@@ -1004,7 +1004,9 @@ def test_convert_tool_spec_none_parameters() -> None:
 
 def test_convert_tool_spec_parameters_missing_properties() -> None:
     """Regression: parameters without a 'properties' key must not raise KeyError."""
-    tools = _convert_tool_spec([{"type": "function", "function": {"name": "ping", "parameters": {"type": "object"}}}])
+    tools = _convert_tool_spec(
+        [{"type": "function", "function": {"name": "ping", "parameters": {"type": "object"}}}], "gemini"
+    )
     assert len(tools) == 1
     decl = tools[0].function_declarations[0]  # type: ignore[index]
     assert decl.parameters.properties == {}  # type: ignore[union-attr]
@@ -1056,7 +1058,7 @@ def test_convert_tool_spec_json_schema_with_defs_and_refs() -> None:
         }
     ]
 
-    tools = _convert_tool_spec(openai_tools)
+    tools = _convert_tool_spec(openai_tools, "gemini")
 
     assert len(tools) == 1
     decl = tools[0].function_declarations[0]  # type: ignore[index]
@@ -1076,7 +1078,9 @@ def test_convert_tool_spec_nested_ref_only() -> None:
             }
         },
     }
-    tools = _convert_tool_spec([{"type": "function", "function": {"name": "nested", "parameters": raw_params}}])
+    tools = _convert_tool_spec(
+        [{"type": "function", "function": {"name": "nested", "parameters": raw_params}}], "gemini"
+    )
     decl = tools[0].function_declarations[0]  # type: ignore[index]
     assert decl.parameters is None
     assert decl.parameters_json_schema == raw_params
@@ -1104,7 +1108,8 @@ def test_convert_tool_spec_mixed_ref_and_plain_tools() -> None:
                     "parameters": {"type": "object", "properties": {"q": {"type": "string"}}},
                 },
             },
-        ]
+        ],
+        "gemini",
     )
     assert len(tools) == 1
     decls = tools[0].function_declarations
@@ -1134,6 +1139,54 @@ async def test_gemini_with_built_in_tools() -> None:
         assert generation_config.tools is not None
         assert len(generation_config.tools) == 1
         assert generation_config.tools[0] == google_search
+
+
+@pytest.mark.asyncio
+async def test_gemini_native_tool_dict_converts() -> None:
+    """A gemini-native tool dict must reach the request as a typed Tool, not be dropped."""
+    messages = [{"role": "user", "content": "Hello"}]
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(model_id="gemini-pro", messages=messages, tools=[{"google_search": {}}]),
+        )
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+        assert len(generation_config.tools) == 1
+        assert generation_config.tools[0].google_search is not None
+
+
+@pytest.mark.asyncio
+async def test_gemini_native_tool_dict_mixes_with_function_tools() -> None:
+    """Function tools and native tool dicts convert side by side."""
+    messages = [{"role": "user", "content": "Hello"}]
+    function_tool = {
+        "type": "function",
+        "function": {"name": "get_weather", "description": "d", "parameters": {"type": "object", "properties": {}}},
+    }
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(model_id="gemini-pro", messages=messages, tools=[function_tool, {"url_context": {}}]),
+        )
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        tools = call_kwargs["config"].tools
+        assert len(tools) == 2
+        assert any(t.url_context is not None for t in tools)
+        assert any(t.function_declarations for t in tools)
+
+
+@pytest.mark.parametrize("bad_tool", [{"type": "web_search"}, {"nonsense_tool": {}}])
+@pytest.mark.asyncio
+async def test_gemini_unknown_tool_dict_raises(bad_tool: dict[str, Any]) -> None:
+    """A dict that is neither function format nor a valid native tool must raise, not vanish."""
+    messages = [{"role": "user", "content": "Hello"}]
+    with mock_gemini_provider():
+        provider = GeminiProvider(api_key="test-api-key")
+        with pytest.raises(InvalidRequestError, match="Unsupported tool"):
+            await provider._acompletion(
+                CompletionParams(model_id="gemini-pro", messages=messages, tools=[bad_tool]),
+            )
 
 
 @pytest.mark.asyncio

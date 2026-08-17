@@ -7,6 +7,7 @@ from typing import Any, Literal, cast
 
 from google.genai import types
 from google.genai.pagers import Pager
+from pydantic import ValidationError
 
 from any_llm.exceptions import InvalidRequestError
 from any_llm.logging import logger
@@ -62,7 +63,7 @@ def _has_additional_properties(schema: Any) -> bool:
     return False
 
 
-def _convert_tool_spec(tools: list[dict[str, Any] | Any]) -> list[types.Tool]:
+def _convert_tool_spec(tools: list[dict[str, Any] | Any], provider_name: str) -> list[types.Tool]:
     converted_tools = []
     function_declarations = []
 
@@ -72,6 +73,14 @@ def _convert_tool_spec(tools: list[dict[str, Any] | Any]) -> list[types.Tool]:
             continue
 
         if tool.get("type") != "function":
+            # No openai "function" wrapper: treat it as a gemini-native tool dict (e.g.
+            # {"google_search": {}}) and let the SDK schema validate it, instead of silently
+            # dropping it from the request.
+            try:
+                converted_tools.append(types.Tool.model_validate(tool))
+            except ValidationError as exc:
+                msg = f"Unsupported tool: {tool}"
+                raise InvalidRequestError(msg, provider_name=provider_name) from exc
             continue
 
         function = tool["function"]
