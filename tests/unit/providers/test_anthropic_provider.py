@@ -10,6 +10,7 @@ import pytest
 from anthropic import transform_schema
 from anthropic.types import Message
 from anthropic.types.model_info import ModelInfo
+from anthropic.types.stop_reason import StopReason
 from pydantic import BaseModel
 
 from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
@@ -1096,6 +1097,66 @@ def test_non_streaming_response_preserves_multiple_tool_calls() -> None:
     assert isinstance(result.choices[0].message.tool_calls[1], ChatCompletionMessageFunctionToolCall)
     assert result.choices[0].message.tool_calls[1].function is not None
     assert result.choices[0].message.tool_calls[1].function.name == "get_time"
+
+
+@pytest.mark.parametrize("stop_reason", get_args(StopReason))
+def test_non_streaming_response_maps_every_anthropic_stop_reason(stop_reason: StopReason) -> None:
+    """Every stop reason the API can return needs an explicit OpenAI finish_reason.
+
+    An unmapped one falls back to "stop", which tells callers the model answered normally
+    when it actually refused or ran out of context.
+    """
+    from anthropic.types import Message, TextBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    expected_finish_reasons: dict[str, str] = {
+        "end_turn": "stop",
+        "stop_sequence": "stop",
+        "pause_turn": "stop",
+        "max_tokens": "length",
+        "model_context_window_exceeded": "length",
+        "tool_use": "tool_calls",
+        "refusal": "content_filter",
+    }
+    assert stop_reason in expected_finish_reasons, (
+        f"New Anthropic stop reason {stop_reason!r} needs a finish_reason mapping."
+    )
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason=stop_reason,
+        content=[TextBlock(type="text", text="Hello")],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].finish_reason == expected_finish_reasons[stop_reason]
+
+
+def test_non_streaming_response_without_stop_reason_finishes_as_stop() -> None:
+    """A response with no stop_reason at all still needs a valid finish_reason."""
+    from anthropic.types import Message, TextBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason=None,
+        content=[TextBlock(type="text", text="Hello")],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].finish_reason == "stop"
 
 
 def test_non_streaming_response_preserves_thinking_signature() -> None:
