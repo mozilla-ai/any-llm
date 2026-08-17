@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import inspect
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -30,6 +33,29 @@ def get_weather(location: str) -> str:
         location: The city name to get weather for.
     """
     return json.dumps({"location": location, "temperature": "15C", "condition": "sunny"})
+
+
+def call_tool(tool_fn: Callable[..., str], raw_arguments: str | None) -> str:
+    """Call a tool with model supplied arguments, dropping the ones it does not declare.
+
+    Models sometimes hallucinate arguments, such as a `result` key for a tool that takes no
+    parameters. Forwarding those verbatim raises `TypeError` and fails the agent loop for a
+    reason unrelated to what these tests cover.
+    """
+    arguments = json.loads(raw_arguments) if raw_arguments else {}
+    if not isinstance(arguments, dict):
+        arguments = {}
+
+    parameters = inspect.signature(tool_fn).parameters
+    if not any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()):
+        accepted = {
+            name
+            for name, parameter in parameters.items()
+            if parameter.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+        }
+        arguments = {name: value for name, value in arguments.items() if name in accepted}
+
+    return tool_fn(**arguments)
 
 
 @pytest.mark.asyncio
@@ -69,8 +95,7 @@ async def test_agent_loop_parallel_tool_calls(
             if not isinstance(tool_call, OpenAIChatCompletionMessageFunctionToolCall):
                 continue
             assert tool_call.function.name == "get_weather"
-            args = json.loads(tool_call.function.arguments)
-            tool_result = get_weather(**args)
+            tool_result = call_tool(get_weather, tool_call.function.arguments)
 
             messages.append(
                 {
@@ -154,8 +179,7 @@ async def test_agent_loop_sequential_tool_calls(
                 assert tool_name in available_tools, f"Unknown tool: {tool_name}"
                 tool_fn = available_tools[tool_name]
 
-                args = json.loads(tool_call.function.arguments) if tool_call.function.arguments else {}
-                tool_result = tool_fn(**args)
+                tool_result = call_tool(tool_fn, tool_call.function.arguments)
 
                 messages.append(
                     {
