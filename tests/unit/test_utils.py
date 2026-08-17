@@ -1,5 +1,6 @@
 import asyncio
 import contextvars
+import gc
 import threading
 import time
 from collections.abc import AsyncIterator, Generator
@@ -522,3 +523,50 @@ def test_async_iter_to_sync_iter_close_from_the_runner_thread_does_not_wedge_the
 
     assert not follow_up_thread.is_alive()
     assert follow_up == ["still running"]
+
+
+def test_nested_private_loop_is_torn_down_when_closed_on_its_own_thread() -> None:
+    """The private loop cannot stop itself, but it must not be left running either.
+
+    A garbage collection pass on that loop's own thread can finalise an abandoned nested
+    iterator. Blocking there would wedge the loop, so the teardown is handed off instead of
+    being skipped, which would leak the loop and its thread for the life of the process.
+    """
+
+    def live_nested_threads() -> list[str]:
+        return [thread.name for thread in threading.enumerate() if "nested" in thread.name]
+
+    async def source() -> AsyncIterator[int]:
+        value = 0
+        while True:
+            # Runs on the private loop's thread, so this is where the abandoned iterator below
+            # gets finalised.
+            gc.collect()
+            await asyncio.sleep(0.005)
+            yield value
+            value += 1
+
+    async def outer() -> str:
+        iterator = async_iter_to_sync_iter(source())
+        assert next(iterator) == 0
+
+        cycle: dict[str, Any] = {"iterator": iterator}
+        cycle["self"] = cycle
+        del iterator, cycle
+
+        await asyncio.sleep(0.5)
+        return "outer done"
+
+    results: list[str] = []
+    thread = threading.Thread(target=lambda: results.append(run_async_in_sync(outer())), daemon=True)
+    thread.start()
+    thread.join(timeout=15)
+
+    assert not thread.is_alive()
+    assert results == ["outer done"]
+
+    deadline = time.monotonic() + 5
+    while live_nested_threads() and time.monotonic() < deadline:
+        time.sleep(0.05)
+
+    assert live_nested_threads() == []

@@ -173,6 +173,14 @@ def _stop_loop_thread(loop: asyncio.AbstractEventLoop, thread: threading.Thread)
     loop.close()
 
 
+def _stop_loop_thread_when_settled(
+    loop: asyncio.AbstractEventLoop, thread: threading.Thread, settled: threading.Event
+) -> None:
+    """Wait for ``settled``, then tear the loop down, for callers that cannot afford to block."""
+    settled.wait()
+    _stop_loop_thread(loop, thread)
+
+
 def _run_in_dedicated_loop(coro: Coroutine[Any, Any, T]) -> T:
     """Run ``coro`` on a throwaway loop in a new thread.
 
@@ -317,6 +325,15 @@ def _async_source_to_sync_iter(
 
             if loop_thread is not None:
                 _stop_loop_thread(loop, loop_thread)
+        elif loop_thread is not None:
+            # A private loop still has to be stopped, and it cannot stop itself from inside, so
+            # hand that to a helper rather than leaving the loop and its thread behind.
+            threading.Thread(
+                target=_stop_loop_thread_when_settled,
+                args=(loop, loop_thread, consumer_done),
+                name=f"{RUNNER_THREAD_NAME}-nested-teardown",
+                daemon=True,
+            ).start()
 
 
 def async_iter_to_sync_iter(async_iter: AsyncIterator[T], allow_running_loop: bool = True) -> Iterator[T]:
