@@ -73,9 +73,7 @@ def _convert_tool_spec(tools: list[dict[str, Any] | Any], provider_name: str) ->
             continue
 
         if tool.get("type") != "function":
-            # No openai "function" wrapper: treat it as a gemini-native tool dict (e.g.
-            # {"google_search": {}}) and let the SDK schema validate it, instead of silently
-            # dropping it from the request.
+            # not openai function format: validate as a gemini-native tool dict, e.g. {"google_search": {}}
             try:
                 converted_tools.append(types.Tool.model_validate(tool))
             except ValidationError as exc:
