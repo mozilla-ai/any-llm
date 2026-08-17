@@ -4,6 +4,20 @@ from any_llm.providers.portkey.portkey import PortkeyProvider
 from any_llm.types.completion import CompletionParams
 
 
+def test_portkey_uses_native_async_client(monkeypatch) -> None:
+    """The provider initializes Portkey's native SDK instead of OpenAI's client."""
+    calls = {}
+
+    class FakeAsyncPortkey:
+        def __init__(self, **kwargs):
+            calls.update(kwargs)
+
+    monkeypatch.setattr("any_llm.providers.portkey.portkey.AsyncPortkey", FakeAsyncPortkey)
+    PortkeyProvider(api_key="test-key", api_base="https://example.test/v1")
+
+    assert calls == {"api_key": "test-key", "base_url": "https://example.test/v1"}
+
+
 def test_convert_completion_params_with_dataclass_response_format() -> None:
     """Test that dataclass response_format is converted to JSON schema format."""
 

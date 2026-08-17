@@ -12,6 +12,14 @@ from any_llm.providers.openai.xml_reasoning_utils import (
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
+try:
+    from portkey_ai import AsyncPortkey
+except ImportError as e:  # pragma: no cover - exercised by the package guard
+    AsyncPortkey = None  # type: ignore[assignment,misc]
+    MISSING_PACKAGES_ERROR = e
+else:
+    MISSING_PACKAGES_ERROR = None
+
 
 class PortkeyProvider(XMLReasoningOpenAIProvider):
     """Portkey provider for accessing 200+ LLMs through Portkey's AI Gateway."""
@@ -30,6 +38,16 @@ class PortkeyProvider(XMLReasoningOpenAIProvider):
     SUPPORTS_LIST_MODELS = True
 
     _DEFAULT_REASONING_EFFORT = None
+    MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
+
+    @override
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        """Initialize Portkey's native async client."""
+        self.client = AsyncPortkey(
+            api_key=api_key,
+            base_url=api_base or self.API_BASE,
+            **kwargs,
+        )
 
     @staticmethod
     @override
