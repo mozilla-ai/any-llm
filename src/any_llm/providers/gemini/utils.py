@@ -8,7 +8,7 @@ from typing import Any, Literal, cast
 from google.genai import types
 from google.genai.pagers import Pager
 
-from any_llm.exceptions import InvalidRequestError
+from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.logging import logger
 from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.completion import (
@@ -118,13 +118,32 @@ def _convert_tool_spec(tools: list[dict[str, Any] | Any]) -> list[types.Tool]:
     return converted_tools
 
 
-def _convert_tool_choice(tool_choice: str) -> types.ToolConfig:
+def _convert_tool_choice(tool_choice: str | dict[str, Any], provider_name: str) -> types.ToolConfig:
+    error_message = "tool_choice"
+    additional_message = f"Unsupported tool_choice: {tool_choice}"
+
+    if isinstance(tool_choice, dict):
+        function = tool_choice.get("function") if tool_choice.get("type") == "function" else None
+        name = function.get("name") if isinstance(function, dict) else None
+        if not name:
+            raise UnsupportedParameterError(error_message, provider_name, additional_message)
+        return types.ToolConfig(
+            function_calling_config=types.FunctionCallingConfig(
+                mode=types.FunctionCallingConfigMode.ANY,
+                allowed_function_names=[name],
+            )
+        )
+
     tool_choice_to_mode = {
         "required": types.FunctionCallingConfigMode.ANY,
         "auto": types.FunctionCallingConfigMode.AUTO,
+        "none": types.FunctionCallingConfigMode.NONE,
     }
+    mode = tool_choice_to_mode.get(tool_choice)
+    if mode is None:
+        raise UnsupportedParameterError(error_message, provider_name, additional_message)
 
-    return types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode=tool_choice_to_mode[tool_choice]))
+    return types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode=mode))
 
 
 def _parse_data_uri(data_uri: str, field_name: str, provider_name: str) -> tuple[str, bytes]:
