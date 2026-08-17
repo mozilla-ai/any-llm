@@ -302,6 +302,62 @@ async def test_completion_with_tool_choice_auto(tool_choice: str, expected_mode:
 
 
 @pytest.mark.asyncio
+async def test_completion_with_tool_choice_none_disables_function_calling() -> None:
+    """tool_choice='none' must map to Gemini's NONE mode instead of raising."""
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(model_id="gemini-pro", messages=messages, tool_choice="none"),
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+
+        assert generation_config.tool_config.function_calling_config.mode.value == "NONE"
+
+
+@pytest.mark.asyncio
+async def test_completion_with_named_function_tool_choice() -> None:
+    """The OpenAI named-function tool_choice must force that function via allowed_function_names."""
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="gemini-pro",
+                messages=messages,
+                tool_choice={"type": "function", "function": {"name": "get_weather"}},
+            ),
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        function_calling_config = call_kwargs["config"].tool_config.function_calling_config
+
+        assert function_calling_config.mode.value == "ANY"
+        assert function_calling_config.allowed_function_names == ["get_weather"]
+
+
+@pytest.mark.parametrize(
+    "tool_choice",
+    ["sometimes", {"type": "custom", "custom": {"name": "get_weather"}}, {"type": "function"}],
+)
+@pytest.mark.asyncio
+async def test_completion_with_unsupported_tool_choice_raises(tool_choice: str | dict[str, Any]) -> None:
+    """Unrecognized tool_choice values report the offending value rather than leaking a KeyError."""
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_gemini_provider():
+        provider = GeminiProvider(api_key="test-api-key")
+        with pytest.raises(UnsupportedParameterError, match="tool_choice"):
+            await provider._acompletion(
+                CompletionParams(model_id="gemini-pro", messages=messages, tool_choice=tool_choice),
+            )
+
+
+@pytest.mark.asyncio
 async def test_completion_without_tool_choice() -> None:
     """Test that completion works correctly without tool_choice."""
     api_key = "test-api-key"
