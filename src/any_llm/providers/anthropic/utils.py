@@ -43,6 +43,18 @@ if TYPE_CHECKING:
     )
 
 DEFAULT_MAX_TOKENS = 8192
+# OpenAI has no counterpart for the "stop_sequence" and "pause_turn" stop reasons, so those
+# fall through to the "stop" default. "refusal" (a safety stop) and
+# "model_context_window_exceeded" (the model ran out of context rather than out of max_tokens)
+# do have one, and without it a refused or truncated answer looks like a normal completion.
+# See https://docs.claude.com/en/docs/build-with-claude/handling-stop-reasons
+ANTHROPIC_STOP_REASON_TO_FINISH_REASON = {
+    "end_turn": "stop",
+    "max_tokens": "length",
+    "model_context_window_exceeded": "length",
+    "tool_use": "tool_calls",
+    "refusal": "content_filter",
+}
 REASONING_EFFORT_TO_ANTHROPIC_EFFORT = {
     "minimal": "low",
     "low": "low",
@@ -309,8 +321,7 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
 def _convert_response(response: Message) -> ChatCompletion:
     """Convert Anthropic Message to OpenAI ChatCompletion format."""
     finish_reason_raw = response.stop_reason or "end_turn"
-    finish_reason_map = {"end_turn": "stop", "max_tokens": "length", "tool_use": "tool_calls"}
-    finish_reason = finish_reason_map.get(finish_reason_raw, "stop")
+    finish_reason = ANTHROPIC_STOP_REASON_TO_FINISH_REASON.get(finish_reason_raw, "stop")
 
     content_parts: list[str] = []
     tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
