@@ -1,4 +1,5 @@
 import dataclasses
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
@@ -1138,6 +1139,107 @@ def test_non_streaming_response_empty_thinking_signature_has_no_extra_content() 
     result = _convert_response(response)
 
     assert result.choices[0].message.extra_content is None
+
+
+def test_non_streaming_response_keeps_text_alongside_redacted_thinking() -> None:
+    """Anthropic encrypts thinking its safety systems flag, and the block has no readable text.
+
+    The response still carries the answer, so the conversion must skip the redacted block
+    rather than failing the whole completion.
+    """
+    from anthropic.types import Message, RedactedThinkingBlock, TextBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason="end_turn",
+        content=[
+            RedactedThinkingBlock(type="redacted_thinking", data="EroBCkYIBBgCKkA"),
+            TextBlock(type="text", text="Here is the answer."),
+        ],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].message.content == "Here is the answer."
+    assert result.choices[0].message.reasoning is None
+    assert result.choices[0].message.extra_content is None
+
+
+def test_non_streaming_response_keeps_visible_thinking_next_to_redacted_thinking() -> None:
+    """A partially redacted turn keeps the readable thinking and its replayable signature."""
+    from anthropic.types import Message, RedactedThinkingBlock, TextBlock, ThinkingBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason="end_turn",
+        content=[
+            ThinkingBlock(type="thinking", thinking="Let me reason...", signature="sig-12345"),
+            RedactedThinkingBlock(type="redacted_thinking", data="EroBCkYIBBgCKkA"),
+            TextBlock(type="text", text="Here is the answer."),
+        ],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].message.content == "Here is the answer."
+    assert result.choices[0].message.reasoning is not None
+    assert result.choices[0].message.reasoning.content == "Let me reason..."
+    assert result.choices[0].message.extra_content == {"anthropic": {"signature": "sig-12345"}}
+
+
+def test_non_streaming_response_skips_server_tool_blocks(caplog: pytest.LogCaptureFixture) -> None:
+    """Anthropic's server-side tools add blocks with no Chat Completions equivalent.
+
+    They are reported instead of raised, matching how the streaming converter already
+    ignores block types it does not map.
+    """
+    from anthropic.types import (
+        Message,
+        ServerToolUseBlock,
+        TextBlock,
+        Usage,
+        WebSearchToolResultBlock,
+        WebSearchToolResultError,
+    )
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason="end_turn",
+        content=[
+            ServerToolUseBlock(type="server_tool_use", id="srvtoolu_1", name="web_search", input={"query": "any-llm"}),
+            WebSearchToolResultBlock(
+                type="web_search_tool_result",
+                tool_use_id="srvtoolu_1",
+                content=WebSearchToolResultError(type="web_search_tool_result_error", error_code="max_uses_exceeded"),
+            ),
+            TextBlock(type="text", text="Here is the answer."),
+        ],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="any_llm"):
+        result = _convert_response(response)
+
+    assert result.choices[0].message.content == "Here is the answer."
+    assert "server_tool_use" in caplog.text
+    assert "web_search_tool_result" in caplog.text
 
 
 def test_convert_messages_replays_thinking_block_with_tool_call() -> None:

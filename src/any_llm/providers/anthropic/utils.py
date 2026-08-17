@@ -340,9 +340,15 @@ def _convert_response(response: Message) -> ChatCompletion:
             # continuity. See https://docs.claude.com/en/docs/build-with-claude/extended-thinking
             if content_block.signature:
                 thinking_signature = content_block.signature
+        elif content_block.type == "redacted_thinking":
+            # Anthropic encrypts thinking that its safety systems flag, so the block carries
+            # no readable text to surface. The rest of the turn is a normal response.
+            logger.debug("Skipping redacted_thinking block with no readable content.")
         else:
-            msg = f"Unsupported content block type: {content_block.type}"
-            raise ValueError(msg)
+            # Server-side tool blocks (web search, code execution, ...) have no Chat
+            # Completions equivalent. Dropping them keeps the answer the model did return,
+            # which is what the streaming converter already does for the same block types.
+            logger.warning("Skipping unsupported Anthropic content block type: %s", content_block.type)
 
     message = ChatCompletionMessage(
         role="assistant",
