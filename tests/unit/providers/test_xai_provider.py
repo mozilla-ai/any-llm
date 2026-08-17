@@ -197,7 +197,8 @@ def test_client_is_built_on_the_loop_that_will_drive_it() -> None:
 
     grpc binds a channel to the loop that is current when it is built, so building it
     anywhere else fails at the first call with "attached to a different loop". That is what
-    broke every sync xAI request, since the sync bridge runs each one on a fresh worker loop.
+    broke every sync xAI request, since the sync bridge runs them on a loop of its own rather
+    than on whichever one was current where the provider was constructed.
     """
     from any_llm.providers.xai.xai import XaiProvider
 
@@ -219,8 +220,8 @@ def test_client_is_built_on_the_loop_that_will_drive_it() -> None:
 
 
 def test_each_event_loop_gets_its_own_client() -> None:
-    """A provider reused across sync calls sees a new worker loop each time, so it needs a
-    new client each time; within one loop it must reuse the channel rather than rebuild it.
+    """A provider shared between loops, such as an async caller's and the sync API's runner,
+    needs a client per loop; within one loop it must reuse the channel rather than rebuild it.
     """
     from any_llm.providers.xai.xai import XaiProvider
 
@@ -238,9 +239,9 @@ def test_each_event_loop_gets_its_own_client() -> None:
 
 
 def test_clients_for_closed_loops_are_dropped_and_closed() -> None:
-    """Sync callers get a throwaway loop per request, so the per-loop cache has to shed the
-    dead ones. Left alone it would hold a live grpc channel, and its socket, per call made
-    for the whole life of the provider.
+    """Loops still come and go, from the sync API's nested cases and from async callers that
+    close their own, so the per-loop cache has to shed the dead ones. Left alone it would hold
+    a live grpc channel, and its socket, per dead loop for the whole life of the provider.
     """
     from any_llm.providers.xai.xai import XaiProvider
 
