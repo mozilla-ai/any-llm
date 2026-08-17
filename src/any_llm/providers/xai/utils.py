@@ -7,6 +7,7 @@ from xai_sdk.chat import Response as XaiResponse
 from xai_sdk.chat import tool as xai_make_tool
 from xai_sdk.proto import chat_pb2 as xai_chat_pb2
 from xai_sdk.proto import models_pb2 as xai_models_pb2
+from xai_sdk.proto import sample_pb2 as xai_sample_pb2
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -40,6 +41,25 @@ def _map_xai_role_to_openai(
     return None
 
 
+# Reasons without an OpenAI counterpart are left out on purpose: REASON_INVALID, which every
+# non-final chunk carries, and REASON_TIME_LIMIT. Callers pick their own fallback from there,
+# since a chunk must not be labelled terminal while a complete response has to report something.
+_FINISH_REASON_MAP: dict[int, Literal["stop", "length", "tool_calls"]] = {
+    xai_sample_pb2.REASON_STOP: "stop",
+    xai_sample_pb2.REASON_MAX_LEN: "length",
+    xai_sample_pb2.REASON_MAX_CONTEXT: "length",
+    xai_sample_pb2.REASON_TOOL_CALLS: "tool_calls",
+}
+
+# Stream chunks carry the raw enum value, while Response.finish_reason returns its name. The
+# stubs shipped with xai_sdk describe FinishReason as a plain int subclass, so the
+# EnumTypeWrapper helpers provided by its metaclass are invisible to mypy.
+_FINISH_REASON_MAP_BY_NAME: dict[str, Literal["stop", "length", "tool_calls"]] = {
+    xai_sample_pb2.FinishReason.Name(value): mapped  # type: ignore[attr-defined]
+    for value, mapped in _FINISH_REASON_MAP.items()
+}
+
+
 def _convert_xai_chunk_to_anyllm_chunk(chunk: XaiChunk) -> ChatCompletionChunk:
     # Collect deltas from the first (and only) choice index 0
     choices: list[ChunkChoice] = []
@@ -71,7 +91,7 @@ def _convert_xai_chunk_to_anyllm_chunk(chunk: XaiChunk) -> ChatCompletionChunk:
             ChunkChoice(
                 index=i,
                 delta=delta,
-                finish_reason=None,
+                finish_reason=_FINISH_REASON_MAP.get(choice.finish_reason),
             )
         )
 
@@ -116,7 +136,12 @@ def _convert_xai_completion_to_anyllm_response(response: XaiResponse) -> ChatCom
         reasoning=reasoning,
     )
 
-    choice = Choice(index=0, finish_reason="tool_calls" if tool_calls else "stop", message=message)
+    # Truncation takes priority over "tool_calls": a response cut short mid tool call must not
+    # look like a completed tool call round.
+    mapped_finish_reason = _FINISH_REASON_MAP_BY_NAME.get(response.finish_reason)
+    finish_reason = mapped_finish_reason or ("tool_calls" if tool_calls else "stop")
+
+    choice = Choice(index=0, finish_reason=finish_reason, message=message)
 
     usage = CompletionUsage(
         prompt_tokens=response.proto.usage.prompt_text_tokens,
