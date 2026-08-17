@@ -364,6 +364,104 @@ def test_streaming_tool_call_delta_uses_chunk_index() -> None:
     assert tool_calls[0].function.arguments == '{"partial'  # type: ignore[union-attr]
 
 
+def _mock_v2chat_text_response(finish_reason: Any, text: str = "Hello there") -> Mock:
+    """Create a mock V2ChatResponse carrying a plain text turn."""
+    response = Mock()
+    response.finish_reason = finish_reason
+    response.id = "resp-456"
+    response.created = 0
+    response.message = Mock()
+    response.message.tool_calls = None
+    response.message.tool_plan = None
+    text_block = Mock()
+    text_block.type = "text"
+    text_block.text = text
+    response.message.content = [text_block]
+    response.usage = Mock()
+    response.usage.tokens = Mock()
+    response.usage.tokens.input_tokens = 10
+    response.usage.tokens.output_tokens = 20
+    return response
+
+
+def test_convert_response_maps_max_tokens_to_length() -> None:
+    """A truncated Cohere turn must be reported as `length`, not `stop`."""
+    result = _convert_response(_mock_v2chat_text_response("MAX_TOKENS"), model="command-a-03-2025")
+
+    assert result.choices[0].finish_reason == "length"
+
+
+@pytest.mark.parametrize("cohere_finish_reason", ["COMPLETE", "STOP_SEQUENCE"])
+def test_convert_response_maps_natural_endings_to_stop(cohere_finish_reason: str) -> None:
+    result = _convert_response(_mock_v2chat_text_response(cohere_finish_reason), model="command-a-03-2025")
+
+    assert result.choices[0].finish_reason == "stop"
+
+
+@pytest.mark.parametrize("cohere_finish_reason", ["ERROR", "TIMEOUT", "SOMETHING_NEW", None])
+def test_convert_response_maps_unmappable_finish_reasons_to_stop(cohere_finish_reason: str | None) -> None:
+    """Cohere reasons without an OpenAI equivalent fall back to `stop` rather than failing validation."""
+    result = _convert_response(_mock_v2chat_text_response(cohere_finish_reason), model="command-a-03-2025")
+
+    assert result.choices[0].finish_reason == "stop"
+
+
+def test_convert_response_tool_call_without_tool_calls_reports_stop() -> None:
+    """Claiming `tool_calls` on a message that carries none would break tool-calling consumers."""
+    result = _convert_response(_mock_v2chat_text_response("TOOL_CALL"), model="command-a-03-2025")
+
+    assert result.choices[0].message.tool_calls is None
+    assert result.choices[0].finish_reason == "stop"
+
+
+def _mock_message_end_chunk(finish_reason: Any) -> Mock:
+    chunk = Mock()
+    chunk.type = "message-end"
+    chunk.delta = Mock()
+    chunk.delta.finish_reason = finish_reason
+    chunk.delta.usage = None
+    return chunk
+
+
+def test_streaming_message_end_maps_max_tokens_to_length() -> None:
+    """Streaming: the terminal chunk must surface truncation instead of a plain stop."""
+    result = _create_openai_chunk_from_cohere_chunk(_mock_message_end_chunk("MAX_TOKENS"))
+
+    assert result.choices[0].finish_reason == "length"
+
+
+def test_streaming_message_end_maps_tool_call_to_tool_calls() -> None:
+    result = _create_openai_chunk_from_cohere_chunk(_mock_message_end_chunk("TOOL_CALL"))
+
+    assert result.choices[0].finish_reason == "tool_calls"
+
+
+def test_streaming_message_end_without_delta_falls_back_to_stop() -> None:
+    chunk = Mock()
+    chunk.type = "message-end"
+    chunk.delta = None
+
+    result = _create_openai_chunk_from_cohere_chunk(chunk)
+
+    assert result.choices[0].finish_reason == "stop"
+
+
+def test_streaming_message_end_still_reports_usage() -> None:
+    chunk = _mock_message_end_chunk("COMPLETE")
+    chunk.delta.usage = Mock()
+    chunk.delta.usage.tokens = Mock()
+    chunk.delta.usage.tokens.input_tokens = 12
+    chunk.delta.usage.tokens.output_tokens = 8
+
+    result = _create_openai_chunk_from_cohere_chunk(chunk)
+
+    assert result.choices[0].finish_reason == "stop"
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 12
+    assert result.usage.completion_tokens == 8
+    assert result.usage.total_tokens == 20
+
+
 def test_streaming_tool_call_index_defaults_to_zero_when_none() -> None:
     """Streaming: falls back to index 0 when chunk.index is None."""
     chunk = Mock()
