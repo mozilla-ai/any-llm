@@ -474,3 +474,51 @@ def test_async_iter_to_sync_iter_disallows_running_loop_when_requested() -> None
             list(async_iter_to_sync_iter(source(), allow_running_loop=False))
 
     asyncio.run(consume_in_async_context())
+
+
+def test_async_iter_to_sync_iter_close_from_the_runner_thread_does_not_wedge_the_loop() -> None:
+    """An abandoned iterator can be finalised on the runner thread by a garbage collection pass.
+
+    The close runs the iterator's cleanup there, and waiting for the consumer to settle would
+    block the only thread that can run the cancellation, taking the shared loop down for good.
+    """
+
+    async def infinite_source() -> AsyncIterator[int]:
+        value = 0
+        while True:
+            await asyncio.sleep(0.001)
+            yield value
+            value += 1
+
+    holder: dict[str, Any] = {}
+
+    def run_in_thread() -> None:
+        iterator = async_iter_to_sync_iter(infinite_source())
+        assert next(iterator) == 0
+        holder["iterator"] = iterator
+
+        async def close_on_the_runner_loop() -> str:
+            cast("Generator[int, None, None]", holder.pop("iterator")).close()
+            return "closed"
+
+        holder["result"] = run_async_in_sync(close_on_the_runner_loop())
+
+    thread = threading.Thread(target=run_in_thread, daemon=True)
+    thread.start()
+    thread.join(timeout=10)
+
+    assert not thread.is_alive(), "closing an abandoned iterator wedged the runner loop"
+    assert holder["result"] == "closed"
+
+    # The shared loop is still usable afterwards.
+    follow_up: list[str] = []
+
+    async def operation() -> str:
+        return "still running"
+
+    follow_up_thread = threading.Thread(target=lambda: follow_up.append(run_async_in_sync(operation())), daemon=True)
+    follow_up_thread.start()
+    follow_up_thread.join(timeout=5)
+
+    assert not follow_up_thread.is_alive()
+    assert follow_up == ["still running"]

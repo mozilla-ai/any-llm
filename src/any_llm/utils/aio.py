@@ -187,6 +187,14 @@ def _run_in_dedicated_loop(coro: Coroutine[Any, Any, T]) -> T:
         return executor.submit(run_in_thread).result()
 
 
+def _is_running_on(loop: asyncio.AbstractEventLoop) -> bool:
+    """Whether the calling thread is the one driving ``loop``."""
+    try:
+        return asyncio.get_running_loop() is loop
+    except RuntimeError:
+        return False
+
+
 def _reject_running_loop_if_needed(allow_running_loop: bool) -> asyncio.AbstractEventLoop | None:
     """Return the loop running in this thread, if any, rejecting the call when not allowed."""
     try:
@@ -298,12 +306,17 @@ def _async_source_to_sync_iter(
         if task is not None and not task.done():
             loop.call_soon_threadsafe(task.cancel)
 
-        # `consume` closes the source, so waiting for it means the source is fully cleaned up by the
-        # time this iterator returns.
-        consumer_done.wait()
+        # Closing from the thread that drives the loop, which happens when a garbage collection
+        # pass finalises an abandoned iterator there, must not wait: the cancellation just
+        # scheduled can only run once this thread returns to the loop, so blocking would wedge it
+        # permanently. Leave the consumer to settle on its own in that case.
+        if not _is_running_on(loop):
+            # `consume` closes the source, so waiting for it means the source is fully cleaned up
+            # by the time this iterator returns.
+            consumer_done.wait()
 
-        if loop_thread is not None:
-            _stop_loop_thread(loop, loop_thread)
+            if loop_thread is not None:
+                _stop_loop_thread(loop, loop_thread)
 
 
 def async_iter_to_sync_iter(async_iter: AsyncIterator[T], allow_running_loop: bool = True) -> Iterator[T]:
