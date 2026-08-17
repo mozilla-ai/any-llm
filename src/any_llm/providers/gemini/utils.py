@@ -123,14 +123,22 @@ def _convert_tool_choice(tool_choice: str | dict[str, Any], provider_name: str) 
     additional_message = f"Unsupported tool_choice: {tool_choice}"
 
     if isinstance(tool_choice, dict):
-        function = tool_choice.get("function") if tool_choice.get("type") == "function" else None
-        name = function.get("name") if isinstance(function, dict) else None
-        if not isinstance(name, str) or not name:
+        if tool_choice.get("type") == "allowed_tools":
+            allowed = tool_choice.get("allowed_tools")
+            # Gemini only honors allowed_function_names in ANY mode, so mode="auto" has no equivalent.
+            if not isinstance(allowed, dict) or allowed.get("mode") != "required":
+                raise UnsupportedParameterError(error_message, provider_name, additional_message)
+            functions = [tool.get("function") for tool in allowed.get("tools", []) if isinstance(tool, dict)]
+        else:
+            functions = [tool_choice.get("function")] if tool_choice.get("type") == "function" else []
+        raw_names = [function.get("name") if isinstance(function, dict) else None for function in functions]
+        names = [name for name in raw_names if isinstance(name, str) and name]
+        if not names or len(names) != len(raw_names):
             raise UnsupportedParameterError(error_message, provider_name, additional_message)
         return types.ToolConfig(
             function_calling_config=types.FunctionCallingConfig(
                 mode=types.FunctionCallingConfigMode.ANY,
-                allowed_function_names=[name],
+                allowed_function_names=names,
             )
         )
 
