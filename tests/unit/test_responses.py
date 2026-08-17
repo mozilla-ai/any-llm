@@ -120,10 +120,6 @@ async def test_tools_flattened_for_responses() -> None:
 @pytest.mark.asyncio
 async def test_timeout_forwarded_to_provider_not_params() -> None:
     """timeout is an SDK request option: it must reach the provider call, never ResponsesParams."""
-    from unittest.mock import AsyncMock, patch
-
-    from any_llm import AnyLLM
-
     llm = AnyLLM.create("openai", api_key="test-key")
     with patch.object(type(llm), "_aresponses", new=AsyncMock(return_value=object())) as mock_aresponses:
         await llm.aresponses("gpt-4.1-mini", "hello", timeout=60)
