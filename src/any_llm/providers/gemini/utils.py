@@ -303,6 +303,23 @@ def _thought_signature_extra_content(part: types.Part) -> dict[str, Any] | None:
     return None
 
 
+def _inline_image_block(part: types.Part) -> dict[str, Any] | None:
+    """Render an inline image blob as an OpenAI-style ``image_url`` content block.
+
+    Image models such as ``gemini-2.5-flash-image`` return the generated image as an
+    inline base64 blob, which has no text field to land in. Blobs of any other media
+    type are left alone, since a data URI labelled ``image_url`` would misdescribe them.
+    """
+    blob = part.inline_data
+    if blob is None or blob.data is None or not blob.mime_type:
+        return None
+    if not blob.mime_type.startswith("image/"):
+        logger.debug("Skipping Gemini inline data part with non-image MIME type: %s", blob.mime_type)
+        return None
+    encoded_data = base64.b64encode(blob.data).decode("utf-8")
+    return {"type": "image_url", "image_url": {"url": f"data:{blob.mime_type};base64,{encoded_data}"}}
+
+
 _FINISH_REASON_MAP: dict[types.FinishReason, Literal["stop", "length", "content_filter"]] = {
     types.FinishReason.STOP: "stop",
     types.FinishReason.MAX_TOKENS: "length",
@@ -359,6 +376,7 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
         reasoning = None
         tool_calls_list: list[dict[str, Any]] = []
         text_content = None
+        images: list[dict[str, Any]] = []
         parts = candidate.content.parts if candidate.content else None
 
         for part in parts or []:
@@ -386,11 +404,13 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                 tool_calls_list.append(tool_call_dict)
             elif part_text := getattr(part, "text", None):
                 text_content = (text_content or "") + part_text
+            elif image_block := _inline_image_block(part):
+                images.append(image_block)
 
         # Truncated or filtered responses produce a choice even without content or tool
         # calls, e.g. a thinking model that spent the whole max_output_tokens budget on
         # reasoning, so callers see the terminal reason instead of an empty choices list.
-        if tool_calls_list or text_content or mapped_finish_reason in ("length", "content_filter"):
+        if tool_calls_list or text_content or images or mapped_finish_reason in ("length", "content_filter"):
             choices.append(
                 {
                     "message": {
@@ -398,6 +418,7 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                         "content": None if tool_calls_list else text_content,
                         "reasoning": reasoning or None,
                         "tool_calls": tool_calls_list or None,
+                        "images": images or None,
                     },
                     "finish_reason": _resolve_finish_reason(mapped_finish_reason, bool(tool_calls_list)) or "stop",
                     "index": 0,
@@ -458,6 +479,7 @@ def _create_openai_chunk_from_google_chunk(
     content = ""
     reasoning_content = ""
     tool_calls_list: list[ChoiceDeltaToolCall] = []
+    images: list[dict[str, Any]] = []
 
     # Content can be absent on terminal chunks, e.g. when the response is truncated or
     # filtered before any part is produced; the finish reason must still be surfaced.
@@ -493,6 +515,8 @@ def _create_openai_chunk_from_google_chunk(
             )
         elif part.text:
             content += part.text
+        elif image_block := _inline_image_block(part):
+            images.append(image_block)
 
     # Unmapped reasons stay None so non-final chunks are not forced to a terminal reason.
     finish_reason = _resolve_finish_reason(_map_finish_reason(candidate.finish_reason), bool(tool_calls_list))
@@ -502,6 +526,7 @@ def _create_openai_chunk_from_google_chunk(
         role="assistant",
         reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
         tool_calls=tool_calls_list or None,
+        images=images or None,
     )
 
     choice = ChunkChoice(

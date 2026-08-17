@@ -159,6 +159,26 @@ print(response.choices[0].message.content)
 
 Reasoning also works with streaming — each chunk may include `chunk.choices[0].delta.reasoning`.
 
+## Generated Images
+
+Models that return images as part of a chat completion (for example Gemini's `gemini-*-image` models) put them on `message.images`, as OpenAI-style `image_url` blocks holding a base64 data URI. The text of the response, when the model produces any, stays on `message.content`:
+
+```python
+from any_llm import completion
+
+response = completion(
+    model="gemini-2.5-flash-image",
+    provider="gemini",
+    messages=[{"role": "user", "content": "Draw a simple red circle on a white background."}],
+    response_modalities=["TEXT", "IMAGE"],
+)
+
+for image in response.choices[0].message.images or []:
+    print(image["image_url"]["url"][:40])  # data:image/png;base64,...
+```
+
+The same blocks arrive on `chunk.choices[0].delta.images` when streaming, and they are in the shape any-llm accepts for image input, so an image can be passed straight back in a follow-up message.
+
 ## Embeddings
 
 `embedding` and `aembedding` allow you to create vector embeddings from text using the same unified interface across providers.

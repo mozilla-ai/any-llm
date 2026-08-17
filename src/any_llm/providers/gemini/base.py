@@ -250,6 +250,7 @@ class GoogleProvider(AnyLLM):
                 content=message_dict.get("content"),
                 tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls),
                 reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
+                images=message_dict.get("images"),
             )
             from typing import Literal
 

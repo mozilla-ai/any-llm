@@ -907,9 +907,9 @@ def test_convert_response_accumulates_multiple_text_parts() -> None:
     assert message["reasoning"] is None
 
 
-def test_convert_response_skips_parts_without_text_or_function_call() -> None:
-    """A candidate can mix in parts that carry neither text nor a tool call, e.g. inline image
-    data; those must not disturb the accumulated text."""
+def test_convert_response_surfaces_inline_image_alongside_text() -> None:
+    """Image models return the image as an inline blob next to the text describing it; both
+    must survive the conversion."""
     response = _make_gemini_response(
         [
             types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG")),
@@ -923,6 +923,79 @@ def test_convert_response_skips_parts_without_text_or_function_call() -> None:
     message = response_dict["choices"][0]["message"]
     assert message["content"] == "Described."
     assert message["tool_calls"] is None
+    encoded_image = base64.b64encode(b"\x89PNG").decode("utf-8")
+    assert message["images"] == [{"type": "image_url", "image_url": {"url": "data:image/png;base64," + encoded_image}}]
+
+
+def test_convert_response_emits_choice_for_image_only_candidate() -> None:
+    """An image-only response has no text candidate, so the choice has to come from the image
+    alone or the finish reason is lost with it."""
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"))],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert len(response_dict["choices"]) == 1
+    choice = response_dict["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert choice["message"]["content"] is None
+    assert len(choice["message"]["images"]) == 1
+
+
+def test_convert_response_accumulates_multiple_inline_images() -> None:
+    response = _make_gemini_response(
+        [
+            types.Part(inline_data=types.Blob(mime_type="image/png", data=b"first")),
+            types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=b"second")),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    images = response_dict["choices"][0]["message"]["images"]
+    assert [image["image_url"]["url"].split(";")[0] for image in images] == ["data:image/png", "data:image/jpeg"]
+
+
+@pytest.mark.parametrize(
+    "blob",
+    [
+        types.Blob(mime_type="audio/wav", data=b"RIFF"),
+        types.Blob(mime_type="image/png"),
+        types.Blob(data=b"\x89PNG"),
+    ],
+    ids=["non_image_mime_type", "missing_data", "missing_mime_type"],
+)
+def test_convert_response_leaves_images_none_for_unusable_inline_data(blob: types.Blob) -> None:
+    """Only image blobs with both data and a MIME type can become an image_url block; anything
+    else must not disturb the text."""
+    response = _make_gemini_response(
+        [types.Part(inline_data=blob), types.Part(text="Described.")],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    message = response_dict["choices"][0]["message"]
+    assert message["content"] == "Described."
+    assert message["images"] is None
+
+
+def test_convert_completion_response_forwards_images_to_message() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"))],
+        types.FinishReason.STOP,
+    )
+
+    completion = GoogleProvider._convert_completion_response(
+        (_convert_response_to_response_dict(response), "gemini-2.5-flash-image")
+    )
+
+    message = completion.choices[0].message
+    assert message.images is not None
+    assert message.images[0]["image_url"]["url"].startswith("data:image/png;base64,")
 
 
 def test_convert_response_emits_choice_for_filtered_response_without_content() -> None:
@@ -1846,6 +1919,42 @@ def test_streaming_completion_with_reasoning_content() -> None:
     assert chunk.choices[0].delta.reasoning is not None
     assert chunk.choices[0].delta.reasoning.content == "Let me think about this..."
     assert chunk.choices[0].finish_reason == "stop"
+
+
+def test_streaming_chunk_surfaces_inline_image() -> None:
+    """The streaming converter must surface generated images like the non-streaming one."""
+    response = _make_gemini_response(
+        [
+            types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG")),
+            types.Part(text="Described."),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    delta = chunk.choices[0].delta
+    assert delta.content == "Described."
+    assert delta.images is not None
+    encoded_image = base64.b64encode(b"\x89PNG").decode("utf-8")
+    assert delta.images == [{"type": "image_url", "image_url": {"url": "data:image/png;base64," + encoded_image}}]
+
+
+def test_streaming_chunk_leaves_images_none_for_text_only_chunk() -> None:
+    chunk = _create_openai_chunk_from_google_chunk(_make_gemini_response([types.Part(text="Hello")], None))
+
+    assert chunk.choices[0].delta.images is None
+
+
+def test_streaming_chunk_leaves_images_none_for_non_image_inline_data() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="audio/wav", data=b"RIFF"))],
+        types.FinishReason.STOP,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    assert chunk.choices[0].delta.images is None
 
 
 def test_streaming_completion_with_function_call_none() -> None:
