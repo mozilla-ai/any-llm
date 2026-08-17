@@ -110,6 +110,8 @@ async def test_tools_flattened_for_responses() -> None:
 
     tools = mock_aresponses.call_args.args[0].tools
     assert [tool.get("name") for tool in tools[:3]] == ["add", "sub", "mul"]
+    assert [tool["type"] for tool in tools[:3]] == ["function"] * 3
     assert all("function" not in tool for tool in tools[:3])
+    assert tools[1]["parameters"] == {}
     assert tools[1]["strict"] is True
     assert tools[3] == {"type": "web_search"}
