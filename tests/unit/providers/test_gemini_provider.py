@@ -325,7 +325,12 @@ async def test_completion_with_named_function_tool_choice() -> None:
 
 @pytest.mark.parametrize(
     "tool_choice",
-    ["sometimes", {"type": "custom", "custom": {"name": "get_weather"}}, {"type": "function"}],
+    [
+        "sometimes",
+        {"type": "custom", "custom": {"name": "get_weather"}},
+        {"type": "function"},
+        {"type": "function", "function": {"name": 1}},
+    ],
 )
 @pytest.mark.asyncio
 async def test_completion_with_unsupported_tool_choice_raises(tool_choice: str | dict[str, Any]) -> None:

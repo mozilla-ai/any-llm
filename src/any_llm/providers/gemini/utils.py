@@ -125,7 +125,7 @@ def _convert_tool_choice(tool_choice: str | dict[str, Any], provider_name: str) 
     if isinstance(tool_choice, dict):
         function = tool_choice.get("function") if tool_choice.get("type") == "function" else None
         name = function.get("name") if isinstance(function, dict) else None
-        if not name:
+        if not isinstance(name, str) or not name:
             raise UnsupportedParameterError(error_message, provider_name, additional_message)
         return types.ToolConfig(
             function_calling_config=types.FunctionCallingConfig(
