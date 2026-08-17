@@ -1183,7 +1183,7 @@ async def test_gemini_unknown_tool_dict_raises(bad_tool: dict[str, Any]) -> None
     messages = [{"role": "user", "content": "Hello"}]
     with mock_gemini_provider():
         provider = GeminiProvider(api_key="test-api-key")
-        with pytest.raises(InvalidRequestError, match="Unsupported tool"):
+        with pytest.raises(InvalidRequestError, match=r"\[gemini\] Unsupported tool"):
             await provider._acompletion(
                 CompletionParams(model_id="gemini-pro", messages=messages, tools=[bad_tool]),
             )
