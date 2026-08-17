@@ -171,9 +171,9 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
     inference_config: dict[str, Any] = {}
     if params.max_tokens:
         inference_config["maxTokens"] = params.max_tokens
-    if params.temperature:
+    if params.temperature is not None:
         inference_config["temperature"] = params.temperature
-    if params.top_p:
+    if params.top_p is not None:
         inference_config["topP"] = params.top_p
     if params.stop:
         inference_config["stopSequences"] = params.stop

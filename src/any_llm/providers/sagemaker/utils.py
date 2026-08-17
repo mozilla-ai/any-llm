@@ -51,9 +51,9 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
 
     if params.max_tokens:
         result_kwargs["max_tokens"] = params.max_tokens
-    if params.temperature:
+    if params.temperature is not None:
         result_kwargs["temperature"] = params.temperature
-    if params.top_p:
+    if params.top_p is not None:
         result_kwargs["top_p"] = params.top_p
     if params.stop:
         result_kwargs["stop"] = params.stop
