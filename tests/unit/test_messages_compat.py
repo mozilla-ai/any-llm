@@ -2127,3 +2127,15 @@ def test_output_config_non_object_format_raises() -> None:
     """A format key that is not the object it has to be is rejected, not re-nested."""
     with pytest.raises(InvalidRequestError, match="non-object format value"):
         normalize_output_config({"format": "json_schema", "schema": {"type": "object"}})
+
+
+def test_user_blocks_image_without_payload_raises() -> None:
+    """An image source with neither data nor a url is rejected, like the document converter."""
+    with pytest.raises(InvalidRequestError, match="carries no payload"):
+        _convert_user_blocks_to_openai([{"type": "image", "source": {"type": "unknown_source"}}])
+
+
+def test_user_blocks_base64_image_without_data_raises() -> None:
+    """An empty base64 payload would build a data uri with nothing in it."""
+    with pytest.raises(InvalidRequestError, match="carries no data"):
+        _convert_user_blocks_to_openai([{"type": "image", "source": {"type": "base64", "media_type": "image/png"}}])
