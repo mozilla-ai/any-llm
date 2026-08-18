@@ -1416,6 +1416,36 @@ def test_convert_params_rejects_reserved_tool_name_without_response_format() -> 
         )
 
 
+def test_convert_params_forwards_zero_temperature() -> None:
+    """temperature=0.0 asks for greedy decoding and must not be dropped as a falsy value."""
+    result = _convert_params(
+        CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "hi"}], temperature=0.0),
+        {},
+    )
+
+    assert result["inferenceConfig"] == {"temperature": 0.0}
+
+
+def test_convert_params_forwards_zero_top_p() -> None:
+    """top_p=0.0 is inside the documented range, so it must reach inferenceConfig."""
+    result = _convert_params(
+        CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "hi"}], top_p=0.0),
+        {},
+    )
+
+    assert result["inferenceConfig"] == {"topP": 0.0}
+
+
+def test_convert_params_omits_unset_sampling_params() -> None:
+    """Params the caller never set stay absent so the model applies its own defaults."""
+    result = _convert_params(
+        CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "hi"}]),
+        {},
+    )
+
+    assert "inferenceConfig" not in result
+
+
 def test_convert_response_structured_output_tool_call_becomes_content() -> None:
     """The synthetic structured-output tool call is unwrapped back into message.content."""
     response: dict[str, Any] = {
