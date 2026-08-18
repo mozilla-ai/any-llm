@@ -502,6 +502,8 @@ class StreamingState:
         self.stop_reason: StopReason | None = None
         self.tool_call_id: str | None = None
         self.tool_call_name: str | None = None
+        self.tool_block_indexes: dict[int, int] = {}
+        """Content block index of each open tool_use block, keyed by OpenAI ``tool_calls[].index``."""
 
 
 def chat_completion_chunk_to_message_stream_events(
@@ -593,12 +595,17 @@ def chat_completion_chunk_to_message_stream_events(
 
     if delta.tool_calls:
         for tc in delta.tool_calls:
-            if tc.id:
-                _close_current_block(state, events)
+            # An id repeated on later fragments of the same tool call must not open a second block.
+            if tc.id and tc.index not in state.tool_block_indexes:
+                # Parallel tool calls share one tool_use section: only a text or thinking block
+                # is closed here, so a block stays open for every call still receiving arguments.
+                if state.current_block_type != "tool_use":
+                    _close_current_block(state, events)
                 state.current_block_index += 1
                 state.current_block_type = "tool_use"
                 state.tool_call_id = tc.id
                 state.tool_call_name = tc.function.name if tc.function else ""
+                state.tool_block_indexes[tc.index] = state.current_block_index
                 events.append(
                     ContentBlockStartEvent(
                         type="content_block_start",
@@ -612,10 +619,12 @@ def chat_completion_chunk_to_message_stream_events(
                     )
                 )
             if tc.function and tc.function.arguments:
+                # Providers may interleave the fragments of parallel calls, so the destination
+                # block comes from the tool call's own index rather than from the newest block.
                 events.append(
                     ContentBlockDeltaEvent(
                         type="content_block_delta",
-                        index=state.current_block_index,
+                        index=state.tool_block_indexes.get(tc.index, state.current_block_index),
                         delta=InputJSONDelta(type="input_json_delta", partial_json=tc.function.arguments),
                     )
                 )
@@ -627,16 +636,23 @@ def chat_completion_chunk_to_message_stream_events(
     return events
 
 
+def close_open_blocks(state: StreamingState) -> list[ContentBlockStopEvent]:
+    """Build a content_block_stop event for every block still open, in block order.
+
+    A tool_use section can hold more than one open block, because each parallel tool call gets
+    its own block and stays open until the section ends.
+    """
+    if state.current_block_type is None:
+        return []
+    open_indexes = sorted(state.tool_block_indexes.values()) or [state.current_block_index]
+    state.tool_block_indexes.clear()
+    state.current_block_type = None
+    return [ContentBlockStopEvent(type="content_block_stop", index=index) for index in open_indexes]
+
+
 def _close_current_block(
     state: StreamingState,
     events: list[MessageStartEvent | ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent],
 ) -> None:
-    """Emit a content_block_stop event for the current block if one is open."""
-    if state.current_block_type is not None:
-        events.append(
-            ContentBlockStopEvent(
-                type="content_block_stop",
-                index=state.current_block_index,
-            )
-        )
-        state.current_block_type = None
+    """Emit content_block_stop events for any open blocks."""
+    events.extend(close_open_blocks(state))

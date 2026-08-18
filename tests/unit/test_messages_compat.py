@@ -13,13 +13,24 @@ from any_llm.types.completion import (
     ChatCompletionMessageFunctionToolCall,
     Choice,
     ChoiceDelta,
+    ChoiceDeltaToolCall,
+    ChoiceDeltaToolCallFunction,
     ChunkChoice,
     CompletionUsage,
     Function,
     PromptTokensDetails,
     Reasoning,
 )
-from any_llm.types.messages import MessagesParams, MessageStartEvent, ThinkingBlock
+from any_llm.types.messages import (
+    ContentBlockDeltaEvent,
+    ContentBlockStartEvent,
+    ContentBlockStopEvent,
+    InputJSONDelta,
+    MessagesParams,
+    MessageStartEvent,
+    ThinkingBlock,
+    ToolUseBlock,
+)
 from any_llm.utils.messages_compat import (
     StreamingState,
     _cached_tokens_from_usage,
@@ -28,6 +39,7 @@ from any_llm.utils.messages_compat import (
     _convert_user_blocks_to_openai,
     chat_completion_chunk_to_message_stream_events,
     chat_completion_to_message_response,
+    close_open_blocks,
     messages_params_to_completion_params,
     split_cached_input_tokens,
 )
@@ -741,6 +753,137 @@ def test_streaming_tool_call_events() -> None:
     assert isinstance(delta_event, ContentBlockDeltaEvent)
     assert isinstance(delta_event.delta, InputJSONDelta)
     assert delta_event.delta.partial_json == '{"city":"London"}'
+
+
+def _tool_calls_chunk(*tool_calls: ChoiceDeltaToolCall) -> ChatCompletionChunk:
+    """Build a chunk whose only delta content is the given tool-call fragments."""
+    return ChatCompletionChunk(
+        id="chunk",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[ChunkChoice(index=0, delta=ChoiceDelta(tool_calls=list(tool_calls)), finish_reason=None)],
+    )
+
+
+def test_streaming_parallel_tool_calls_route_arguments_by_tool_index() -> None:
+    """Argument fragments follow tool_calls[].index instead of the most recently opened block.
+
+    Providers may announce every parallel tool call before streaming any arguments, so routing
+    every delta to the newest block would file one tool's arguments under another tool's block.
+    """
+    state = StreamingState()
+
+    announce = _tool_calls_chunk(
+        ChoiceDeltaToolCall(
+            index=0, id="call_a", function=ChoiceDeltaToolCallFunction(name="get_weather", arguments="")
+        ),
+        ChoiceDeltaToolCall(index=1, id="call_b", function=ChoiceDeltaToolCallFunction(name="get_time", arguments="")),
+    )
+    starts = [
+        e for e in chat_completion_chunk_to_message_stream_events(announce, state) if e.type == "content_block_start"
+    ]
+    assert len(starts) == 2
+    for start, expected_index, expected_name in zip(starts, [0, 1], ["get_weather", "get_time"], strict=True):
+        assert isinstance(start, ContentBlockStartEvent)
+        assert start.index == expected_index
+        assert isinstance(start.content_block, ToolUseBlock)
+        assert start.content_block.name == expected_name
+
+    interleaved = [
+        _tool_calls_chunk(ChoiceDeltaToolCall(index=1, function=ChoiceDeltaToolCallFunction(arguments='{"tz":'))),
+        _tool_calls_chunk(
+            ChoiceDeltaToolCall(index=0, function=ChoiceDeltaToolCallFunction(arguments='{"city":"Paris"}'))
+        ),
+        _tool_calls_chunk(ChoiceDeltaToolCall(index=1, function=ChoiceDeltaToolCallFunction(arguments='"UTC"}'))),
+    ]
+    partial_json: dict[int, str] = {}
+    for chunk in interleaved:
+        for event in chat_completion_chunk_to_message_stream_events(chunk, state):
+            assert isinstance(event, ContentBlockDeltaEvent)
+            assert isinstance(event.delta, InputJSONDelta)
+            partial_json[event.index] = partial_json.get(event.index, "") + event.delta.partial_json
+
+    assert json.loads(partial_json[0]) == {"city": "Paris"}
+    assert json.loads(partial_json[1]) == {"tz": "UTC"}
+
+
+def test_streaming_parallel_tool_calls_stop_every_block() -> None:
+    """Both parallel tool_use blocks are closed once the turn finishes."""
+    state = StreamingState()
+    announce = _tool_calls_chunk(
+        ChoiceDeltaToolCall(index=0, id="call_a", function=ChoiceDeltaToolCallFunction(name="get_weather")),
+        ChoiceDeltaToolCall(index=1, id="call_b", function=ChoiceDeltaToolCallFunction(name="get_time")),
+    )
+    chat_completion_chunk_to_message_stream_events(announce, state)
+
+    finish = ChatCompletionChunk(
+        id="chunk-final",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[ChunkChoice(index=0, delta=ChoiceDelta(), finish_reason="tool_calls")],
+    )
+    events = chat_completion_chunk_to_message_stream_events(finish, state)
+    assert len(events) == 2
+    assert [(e.type, e.index) for e in events if isinstance(e, ContentBlockStopEvent)] == [
+        ("content_block_stop", 0),
+        ("content_block_stop", 1),
+    ]
+    assert state.stop_reason == "tool_use"
+
+
+def test_streaming_tool_call_id_repeated_reuses_the_same_block() -> None:
+    """Providers that resend the id on every fragment must not open a block per fragment."""
+    state = StreamingState()
+    first = _tool_calls_chunk(
+        ChoiceDeltaToolCall(
+            index=0, id="call_a", function=ChoiceDeltaToolCallFunction(name="get_weather", arguments='{"city":')
+        )
+    )
+    chat_completion_chunk_to_message_stream_events(first, state)
+    second = _tool_calls_chunk(
+        ChoiceDeltaToolCall(
+            index=0, id="call_a", function=ChoiceDeltaToolCallFunction(name="get_weather", arguments='"Paris"}')
+        )
+    )
+    events = chat_completion_chunk_to_message_stream_events(second, state)
+
+    assert len(events) == 1
+    assert isinstance(events[0], ContentBlockDeltaEvent)
+    assert events[0].index == 0
+    assert state.current_block_index == 0
+
+
+def test_streaming_tool_call_arguments_without_a_known_index_use_the_open_block() -> None:
+    """A fragment for an index that was never announced still lands on the open tool block."""
+    state = StreamingState()
+    announce = _tool_calls_chunk(
+        ChoiceDeltaToolCall(index=0, id="call_a", function=ChoiceDeltaToolCallFunction(name="get_weather"))
+    )
+    chat_completion_chunk_to_message_stream_events(announce, state)
+
+    orphan = _tool_calls_chunk(ChoiceDeltaToolCall(index=7, function=ChoiceDeltaToolCallFunction(arguments="{}")))
+    events = chat_completion_chunk_to_message_stream_events(orphan, state)
+
+    assert len(events) == 1
+    assert [(e.type, e.index) for e in events if isinstance(e, ContentBlockDeltaEvent)] == [("content_block_delta", 0)]
+
+
+def test_close_open_blocks_closes_every_open_tool_block() -> None:
+    """A stream that ends without a finish_reason still closes all parallel tool blocks."""
+    state = StreamingState()
+    announce = _tool_calls_chunk(
+        ChoiceDeltaToolCall(index=0, id="call_a", function=ChoiceDeltaToolCallFunction(name="get_weather")),
+        ChoiceDeltaToolCall(index=1, id="call_b", function=ChoiceDeltaToolCallFunction(name="get_time")),
+    )
+    chat_completion_chunk_to_message_stream_events(announce, state)
+
+    assert [(e.type, e.index) for e in close_open_blocks(state)] == [
+        ("content_block_stop", 0),
+        ("content_block_stop", 1),
+    ]
+    assert close_open_blocks(state) == []
 
 
 def test_optional_params_not_included_when_none() -> None:

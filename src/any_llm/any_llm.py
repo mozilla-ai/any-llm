@@ -29,7 +29,6 @@ from any_llm.types.completion import (
 )
 from any_llm.types.image import ImageGenerationParams, ImagesResponse
 from any_llm.types.messages import (
-    ContentBlockStopEvent,
     MessageDelta,
     MessageDeltaEvent,
     MessageDeltaUsage,
@@ -1030,6 +1029,7 @@ class AnyLLM(ABC):
             StreamingState,
             chat_completion_chunk_to_message_stream_events,
             chat_completion_to_message_response,
+            close_open_blocks,
             messages_params_to_completion_params,
             split_cached_input_tokens,
         )
@@ -1069,11 +1069,8 @@ class AnyLLM(ABC):
                 raise
             # Emit the closing events after the full stream is consumed so trailing-chunk usage is included.
             if state.started:
-                if state.current_block_type is not None:
-                    yield ContentBlockStopEvent(
-                        type="content_block_stop",
-                        index=state.current_block_index,
-                    )
+                for stop_event in close_open_blocks(state):
+                    yield stop_event
                 yield usage_delta(state.stop_reason or "end_turn")
                 yield MessageStopEvent(type="message_stop")
 
