@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal
 
 from cohere import V2ChatResponse
 from cohere.types import ListModelsResponse as CohereListModelsResponse
@@ -19,6 +19,24 @@ from any_llm.types.completion import (
 )
 from any_llm.types.model import Model
 from any_llm.types.rerank import RerankMeta, RerankResponse, RerankResult, RerankUsage
+
+_FinishReason = Literal["stop", "length", "tool_calls", "content_filter", "function_call"]
+
+# Cohere reports its own finish reasons (COMPLETE, STOP_SEQUENCE, MAX_TOKENS, TOOL_CALL, ERROR,
+# TIMEOUT). ERROR and TIMEOUT have no OpenAI equivalent, so they fall back to "stop" along with
+# any reason a future SDK release adds.
+_COHERE_FINISH_REASON_MAP: dict[str, _FinishReason] = {
+    "COMPLETE": "stop",
+    "STOP_SEQUENCE": "stop",
+    "MAX_TOKENS": "length",
+    "TOOL_CALL": "tool_calls",
+}
+
+
+def _map_cohere_finish_reason(finish_reason: Any) -> _FinishReason:
+    if not isinstance(finish_reason, str):
+        return "stop"
+    return _COHERE_FINISH_REASON_MAP.get(finish_reason, "stop")
 
 
 def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -126,22 +144,22 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
         finish_reason = "tool_calls"
 
     elif chunk_type == "message-end":
-        finish_reason = "stop"
+        chunk_delta = getattr(chunk, "delta", None)
+        finish_reason = _map_cohere_finish_reason(getattr(chunk_delta, "finish_reason", None))
 
         if (
-            hasattr(chunk, "delta")
-            and chunk.delta
-            and hasattr(chunk.delta, "usage")
-            and chunk.delta.usage
-            and hasattr(chunk.delta.usage, "tokens")
-            and chunk.delta.usage.tokens
+            chunk_delta
+            and hasattr(chunk_delta, "usage")
+            and chunk_delta.usage
+            and hasattr(chunk_delta.usage, "tokens")
+            and chunk_delta.usage.tokens
         ):
             chunk_dict["usage"] = {
-                "prompt_tokens": int(getattr(chunk.delta.usage.tokens, "input_tokens", 0) or 0),
-                "completion_tokens": int(getattr(chunk.delta.usage.tokens, "output_tokens", 0) or 0),
+                "prompt_tokens": int(getattr(chunk_delta.usage.tokens, "input_tokens", 0) or 0),
+                "completion_tokens": int(getattr(chunk_delta.usage.tokens, "output_tokens", 0) or 0),
                 "total_tokens": int(
-                    (getattr(chunk.delta.usage.tokens, "input_tokens", 0) or 0)
-                    + (getattr(chunk.delta.usage.tokens, "output_tokens", 0) or 0)
+                    (getattr(chunk_delta.usage.tokens, "input_tokens", 0) or 0)
+                    + (getattr(chunk_delta.usage.tokens, "output_tokens", 0) or 0)
                 ),
             }
 
@@ -209,9 +227,14 @@ def _convert_response(response: V2ChatResponse, model: str) -> ChatCompletion:
                     reasoning_content = Reasoning(content=item.thinking)
 
     message = ChatCompletionMessage(role="assistant", content=content, tool_calls=None, reasoning=reasoning_content)
+    finish_reason = _map_cohere_finish_reason(response.finish_reason)
+    if finish_reason == "tool_calls":
+        # Reaching this branch means Cohere reported TOOL_CALL without any usable tool calls;
+        # reporting them anyway would break consumers that key off finish_reason.
+        finish_reason = "stop"
     choice = Choice(
         index=0,
-        finish_reason="stop",
+        finish_reason=finish_reason,
         message=message,
     )
     return ChatCompletion(
