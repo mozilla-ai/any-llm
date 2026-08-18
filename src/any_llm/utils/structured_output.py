@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, TypeGuard
 
 from pydantic import BaseModel, TypeAdapter
 
+from any_llm.exceptions import InvalidRequestError
 from any_llm.logging import logger
 
 if TYPE_CHECKING:
@@ -13,6 +14,34 @@ if TYPE_CHECKING:
     from anthropic.types.parsed_message import ParsedMessage
 
     from any_llm.types.responses import ParsedResponse
+
+
+def normalize_output_config(output_config: dict[str, Any]) -> dict[str, Any]:
+    """Return an Anthropic ``output_config`` wrapper for either accepted dict shape.
+
+    Anthropic nests the JSON schema under ``output_config.format``, so a caller holding the
+    inner ``format`` object (``{"type": "json_schema", "schema": {...}}``) is one level away
+    from the documented shape. Both are accepted here, and both consumers of an
+    ``output_format`` dict normalize through this function so the field means the same thing
+    on the native Anthropic path and on the completion bridge.
+
+    Raises:
+        InvalidRequestError: when neither shape carries a schema. Passing the dict through
+            would send a structured-output request that constrains nothing.
+
+    """
+    fmt = output_config.get("format")
+    if not isinstance(fmt, dict):
+        fmt = output_config
+    schema = fmt.get("schema")
+    if not isinstance(schema, dict) or not schema:
+        msg = (
+            "output_format dict carries no JSON schema. Expected an Anthropic output_config "
+            '({"format": {"type": "json_schema", "schema": {...}}}) or the bare format object '
+            '({"type": "json_schema", "schema": {...}}).'
+        )
+        raise InvalidRequestError(msg)
+    return {**output_config, "format": fmt} if output_config.get("format") is not None else {"format": fmt}
 
 
 def is_structured_output_type(response_format: Any) -> TypeGuard[type]:

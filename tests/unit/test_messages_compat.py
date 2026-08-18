@@ -2000,3 +2000,127 @@ def test_user_blocks_tool_result_attachment_keeps_conversation_order() -> None:
     )
     assert [message["role"] for message in result] == ["user", "tool", "user"]
     assert result[0]["content"] == [{"type": "text", "text": "before"}]
+
+
+def test_output_config_bare_format_object_normalized_for_the_native_path() -> None:
+    """The shared normalizer wraps the bare object so the native output_config nesting holds."""
+    from any_llm.utils.structured_output import normalize_output_config
+
+    assert normalize_output_config({"type": "json_schema", "schema": {"type": "object"}}) == {
+        "format": {"type": "json_schema", "schema": {"type": "object"}}
+    }
+
+
+def test_output_config_wrapper_preserved_by_normalizer() -> None:
+    """An already-nested output_config keeps its siblings, such as effort."""
+    from any_llm.utils.structured_output import normalize_output_config
+
+    output_config = {"effort": "high", "format": {"type": "json_schema", "schema": {"type": "object"}}}
+    assert normalize_output_config(output_config) == output_config
+
+
+def test_image_block_url_source_conversion() -> None:
+    """A url-sourced image in plain user content forwards the url rather than a data uri."""
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "url", "url": "https://example.test/a.png"}},
+                ],
+            }
+        ],
+        max_tokens=1024,
+    )
+    result = messages_params_to_completion_params(params)
+    assert result["messages"][0]["content"] == [
+        {"type": "image_url", "image_url": {"url": "https://example.test/a.png"}}
+    ]
+
+
+def test_assistant_blocks_last_non_empty_thinking_signature_wins() -> None:
+    """Anthropic sends one thinking block per turn, so a hand-built multi-block turn keeps one.
+
+    The text still concatenates the way multiple text blocks do. Only a signature that pairs
+    with the whole concatenation would be meaningful, and none does, so this records the
+    chosen behavior rather than claiming the pairing survives.
+    """
+    result = _convert_assistant_blocks_to_openai(
+        [
+            {"type": "thinking", "thinking": "first ", "signature": "sig-1"},
+            {"type": "thinking", "thinking": "second", "signature": "sig-2"},
+        ]
+    )
+    assert result[0]["reasoning_content"] == "first second"
+    assert result[0]["extra_content"] == {"anthropic": {"signature": "sig-2"}}
+
+
+def test_user_blocks_tool_result_content_source_document_flattened_to_text() -> None:
+    """A content-source document carries text already, so it becomes a text part."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": [
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "content",
+                            "content": [{"type": "text", "text": "page one"}, {"type": "text", "text": " page two"}],
+                        },
+                    },
+                ],
+            },
+        ]
+    )
+    assert result[1]["content"] == [{"type": "text", "text": "page one page two"}]
+
+
+def test_user_blocks_tool_result_string_content_source_document() -> None:
+    """The content source also accepts a bare string."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": [
+                    {"type": "document", "source": {"type": "content", "content": "inline body"}},
+                ],
+            },
+        ]
+    )
+    assert result[1]["content"] == [{"type": "text", "text": "inline body"}]
+
+
+def test_user_blocks_tool_result_content_source_without_blocks_is_empty_text() -> None:
+    """A content source of an unexpected type flattens to empty rather than raising."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": [
+                    {"type": "document", "source": {"type": "content", "content": 42}},
+                ],
+            },
+        ]
+    )
+    assert result[1]["content"] == [{"type": "text", "text": ""}]
+
+
+def test_user_blocks_tool_result_document_without_payload_raises() -> None:
+    """A document source with no data and no url is rejected, not sent as an empty attachment."""
+    with pytest.raises(InvalidRequestError, match="carries no payload"):
+        _convert_user_blocks_to_openai(
+            [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "call_1",
+                    "content": [
+                        {"type": "document", "source": {"type": "unknown_source"}},
+                    ],
+                },
+            ]
+        )
