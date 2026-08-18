@@ -225,7 +225,7 @@ def _create_mistral_completion_from_response(
             and "</response>" in reasoning_content
         ):
             content = reasoning_content.split("<response>")[1].split("</response>")[0]
-            reasoning_content = reasoning_content.split("</response>")[0]
+            reasoning_content = reasoning_content.split("<response>")[0]
 
         message = ChatCompletionMessage(
             role="assistant",
