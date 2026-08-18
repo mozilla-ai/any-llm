@@ -31,6 +31,7 @@ from any_llm.utils.messages_compat import (
     messages_params_to_completion_params,
     split_cached_input_tokens,
 )
+from any_llm.utils.structured_output import normalize_output_config
 
 
 def test_basic_text_message_conversion() -> None:
@@ -1861,8 +1862,6 @@ def test_user_blocks_tool_result_attachment_keeps_conversation_order() -> None:
 
 def test_output_config_bare_format_object_normalized_for_the_native_path() -> None:
     """The shared normalizer wraps the bare object so the native output_config nesting holds."""
-    from any_llm.utils.structured_output import normalize_output_config
-
     assert normalize_output_config({"type": "json_schema", "schema": {"type": "object"}}) == {
         "format": {"type": "json_schema", "schema": {"type": "object"}}
     }
@@ -1870,8 +1869,6 @@ def test_output_config_bare_format_object_normalized_for_the_native_path() -> No
 
 def test_output_config_wrapper_preserved_by_normalizer() -> None:
     """An already-nested output_config keeps its siblings, such as effort."""
-    from any_llm.utils.structured_output import normalize_output_config
-
     output_config = {"effort": "high", "format": {"type": "json_schema", "schema": {"type": "object"}}}
     assert normalize_output_config(output_config) == output_config
 
@@ -1981,3 +1978,9 @@ def test_user_blocks_tool_result_document_without_payload_raises() -> None:
                 },
             ]
         )
+
+
+def test_output_config_non_object_format_raises() -> None:
+    """A format key that is not the object it has to be is rejected, not re-nested."""
+    with pytest.raises(InvalidRequestError, match="non-object format value"):
+        normalize_output_config({"format": "json_schema", "schema": {"type": "object"}})

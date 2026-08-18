@@ -26,13 +26,19 @@ def normalize_output_config(output_config: dict[str, Any]) -> dict[str, Any]:
     on the native Anthropic path and on the completion bridge.
 
     Raises:
-        InvalidRequestError: when neither shape carries a schema. Passing the dict through
-            would send a structured-output request that constrains nothing.
+        InvalidRequestError: when neither shape carries a schema, or when ``format`` is present
+            but is not the object it has to be. Passing the dict through would send a
+            structured-output request that constrains nothing.
 
     """
-    fmt = output_config.get("format")
-    if not isinstance(fmt, dict):
-        fmt = output_config
+    raw_format = output_config.get("format")
+    if raw_format is None:
+        wrapped, fmt = False, output_config
+    elif isinstance(raw_format, dict):
+        wrapped, fmt = True, raw_format
+    else:
+        msg = f"output_format dict has a non-object format value: {raw_format!r}"
+        raise InvalidRequestError(msg)
     schema = fmt.get("schema")
     if not isinstance(schema, dict) or not schema:
         msg = (
@@ -41,7 +47,7 @@ def normalize_output_config(output_config: dict[str, Any]) -> dict[str, Any]:
             '({"type": "json_schema", "schema": {...}}).'
         )
         raise InvalidRequestError(msg)
-    return {**output_config, "format": fmt} if output_config.get("format") is not None else {"format": fmt}
+    return output_config if wrapped else {"format": fmt}
 
 
 def is_structured_output_type(response_format: Any) -> TypeGuard[type]:
