@@ -211,12 +211,27 @@ def _convert_image_block_to_openai(block: dict[str, Any]) -> dict[str, Any]:
     """Convert an Anthropic ``image`` block to an OpenAI ``image_url`` content part.
 
     Inverse of the ``image_url`` branch in ``anthropic``'s ``_convert_content_for_anthropic``.
+
+    Raises:
+        InvalidRequestError: when the source carries neither inline data nor a url, matching
+            what ``_convert_document_block_to_openai`` does. An empty ``image_url.url`` is not
+            an attachment a backend can fetch.
+
     """
     source = block.get("source", {})
     if source.get("type") == "base64":
-        url = f"data:{source.get('media_type', 'image/png')};base64,{source.get('data', '')}"
-    else:
-        url = source.get("url", "")
+        data = source.get("data", "")
+        if not data:
+            msg = "image block base64 source carries no data"
+            raise InvalidRequestError(msg)
+        return {
+            "type": "image_url",
+            "image_url": {"url": f"data:{source.get('media_type', 'image/png')};base64,{data}"},
+        }
+    url = source.get("url", "")
+    if not url:
+        msg = f"image block source carries no payload (source type {source.get('type')!r})"
+        raise InvalidRequestError(msg)
     return {"type": "image_url", "image_url": {"url": url}}
 
 
