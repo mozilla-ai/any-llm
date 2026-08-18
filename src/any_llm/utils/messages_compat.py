@@ -21,7 +21,7 @@ from any_llm.types.messages import (
     ThinkingDelta,
     ToolUseBlock,
 )
-from any_llm.utils.structured_output import is_structured_output_type
+from any_llm.utils.structured_output import is_structured_output_type, normalize_output_config
 
 if TYPE_CHECKING:
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionUsage
@@ -35,29 +35,11 @@ def _output_config_to_response_format(output_config: dict[str, Any]) -> dict[str
     under ``output_config["format"]["schema"]`` is rewrapped as the OpenAI ``json_schema``
     response format. The name falls back to the schema's ``title`` (or ``"structured_output"``).
 
-    The bare ``format`` object (``{"type": "json_schema", "schema": {...}}``) is accepted as
-    well as the full ``output_config`` wrapper around it. Anthropic nests that object under
-    ``output_config.format``, so a caller holding the inner object is one level away from the
-    documented shape, and reading only the wrapper silently forwarded an empty schema:
-    ``response_format`` was present on the wire but constrained nothing.
-
-    Raises:
-        InvalidRequestError: when neither shape carries a schema, so the request cannot be
-            satisfied. Forwarding an empty schema instead would return unconstrained output
-            under a response_format the caller believes is in force.
-
+    Both dict shapes ``normalize_output_config`` accepts are handled, and a dict carrying no
+    schema raises there rather than putting a ``response_format`` on the wire that constrains
+    nothing.
     """
-    fmt = output_config.get("format")
-    if not isinstance(fmt, dict):
-        fmt = output_config
-    schema = fmt.get("schema")
-    if not isinstance(schema, dict) or not schema:
-        msg = (
-            "output_format dict carries no JSON schema. Expected an Anthropic output_config "
-            '({"format": {"type": "json_schema", "schema": {...}}}) or the bare format object '
-            '({"type": "json_schema", "schema": {...}}).'
-        )
-        raise InvalidRequestError(msg)
+    schema = normalize_output_config(output_config)["format"]["schema"]
     name = schema.get("title", "structured_output")
     return {"type": "json_schema", "json_schema": {"name": name, "schema": schema}}
 
@@ -243,17 +225,44 @@ def _convert_document_block_to_openai(block: dict[str, Any]) -> dict[str, Any]:
 
     Inverse of the ``file`` branch in ``anthropic``'s ``_convert_content_for_anthropic``, which
     pairs an Anthropic ``document`` with an OpenAI ``file`` part carrying a ``file_data`` data
-    URI. A ``text`` source has no ``file`` equivalent and its payload is already text, so it
-    becomes a text part rather than a data URI wrapping plain text.
+    URI. Anthropic's document source is one of ``base64``, ``text``, ``content`` or ``url``.
+    The two that already hold text (``text`` and ``content``) become a text part rather than a
+    data URI wrapping plain text, since ``file`` has no equivalent for them.
+
+    Raises:
+        InvalidRequestError: when the source carries no payload. An empty ``file_data`` is not
+            a usable attachment, so it would cost a backend round trip to learn the document
+            never made it.
+
     """
     source = block.get("source", {})
     source_type = source.get("type")
     if source_type == "text":
         return {"type": "text", "text": source.get("data", "")}
+    if source_type == "content":
+        return {"type": "text", "text": _flatten_document_content_source(source.get("content"))}
     if source_type == "base64":
         media_type = source.get("media_type", "application/pdf")
         return {"type": "file", "file": {"file_data": f"data:{media_type};base64,{source.get('data', '')}"}}
-    return {"type": "file", "file": {"file_data": source.get("url", "")}}
+    url = source.get("url", "")
+    if not url:
+        msg = f"document block source carries no payload (source type {source_type!r})"
+        raise InvalidRequestError(msg)
+    return {"type": "file", "file": {"file_data": url}}
+
+
+def _flatten_document_content_source(content: Any) -> str:
+    """Flatten a ``content``-source document into text.
+
+    Anthropic's ``content`` source holds either a string or a list of text and image blocks.
+    Only the text carries over: an OpenAI content part is a single typed value, so nested
+    images cannot ride inside the text part this returns.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+    return ""
 
 
 def _convert_tool_result_content(tool_content: Any) -> tuple[str, list[dict[str, Any]]]:
