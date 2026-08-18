@@ -18,6 +18,7 @@ from openai.types.chat.chat_completion_message_function_tool_call import (
     ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
 )
 from openai.types.chat.chat_completion_message_function_tool_call import Function as OpenAIFunction
+from openai.types.completion_usage import CompletionTokensDetails as OpenAICompletionTokensDetails
 from openai.types.completion_usage import CompletionUsage as OpenAICompletionUsage
 from openai.types.completion_usage import PromptTokensDetails as OpenAIPromptTokensDetails
 from openai.types.create_embedding_response import Usage as OpenAIUsage
@@ -141,6 +142,7 @@ class ChatCompletionMessageFunctionToolCall(OpenAIChatCompletionMessageFunctionT
 ChatCompletionMessageToolCall = ChatCompletionMessageFunctionToolCall | OpenAIChatCompletionMessageToolCall
 Function = OpenAIFunction
 CompletionUsage = OpenAICompletionUsage
+CompletionTokensDetails = OpenAICompletionTokensDetails
 PromptTokensDetails = OpenAIPromptTokensDetails
 CreateEmbeddingResponse = OpenAICreateEmbeddingResponse
 Embedding = OpenAIEmbedding

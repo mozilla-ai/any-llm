@@ -17,6 +17,7 @@ from any_llm.types.completion import (
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
     ChunkChoice,
+    CompletionTokensDetails,
     CompletionUsage,
     CreateEmbeddingResponse,
     Embedding,
@@ -284,9 +285,12 @@ def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, An
         return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     usage: dict[str, Any] = {
         "prompt_tokens": metadata.prompt_token_count or 0,
-        "completion_tokens": metadata.candidates_token_count or 0,
+        # thoughts_token_count is billed output and already counted in total_token_count
+        "completion_tokens": (metadata.candidates_token_count or 0) + (metadata.thoughts_token_count or 0),
         "total_tokens": metadata.total_token_count or 0,
     }
+    if metadata.thoughts_token_count:
+        usage["completion_tokens_details"] = CompletionTokensDetails(reasoning_tokens=metadata.thoughts_token_count)
     if metadata.cached_content_token_count:
         usage["prompt_tokens_details"] = PromptTokensDetails(cached_tokens=metadata.cached_content_token_count)
     return usage
@@ -513,11 +517,15 @@ def _create_openai_chunk_from_google_chunk(
     usage = None
     if response.usage_metadata:
         cached_tokens = response.usage_metadata.cached_content_token_count
+        thought_tokens = response.usage_metadata.thoughts_token_count
         usage = CompletionUsage(
             prompt_tokens=response.usage_metadata.prompt_token_count or 0,
-            completion_tokens=response.usage_metadata.candidates_token_count or 0,
+            completion_tokens=(response.usage_metadata.candidates_token_count or 0) + (thought_tokens or 0),
             total_tokens=response.usage_metadata.total_token_count or 0,
             prompt_tokens_details=PromptTokensDetails(cached_tokens=cached_tokens) if cached_tokens else None,
+            completion_tokens_details=CompletionTokensDetails(reasoning_tokens=thought_tokens)
+            if thought_tokens
+            else None,
         )
 
     return ChatCompletionChunk(
