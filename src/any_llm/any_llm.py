@@ -18,7 +18,7 @@ from any_llm.exceptions import (
     UnsupportedParameterError,
     UnsupportedProviderError,
 )
-from any_llm.tools import prepare_tools
+from any_llm.tools import _flatten_responses_tool, prepare_tools
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
 from any_llm.types.completion import (
     ChatCompletion,
@@ -1289,7 +1289,9 @@ class AnyLLM(ABC):
 
         prepared_tools = None
         if tools:
-            prepared_tools = prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
+            prepared_tools = [
+                _flatten_responses_tool(tool) for tool in prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
+            ]
 
         params = ResponsesParams(
             model=model,

@@ -1,8 +1,10 @@
 from typing import Any, cast
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic import ValidationError
 
+from any_llm import AnyLLM
 from any_llm.api import aresponses
 from any_llm.types.responses import ResponsesParams
 
@@ -88,3 +90,28 @@ def test_responses_params_rejects_top_level_dictionary_input() -> None:
     """Responses input must be text or a list of dictionaries."""
     with pytest.raises(ValidationError):
         ResponsesParams(model="test", input=cast("Any", {"role": "user", "content": "hello"}))
+
+
+@pytest.mark.asyncio
+async def test_tools_flattened_for_responses() -> None:
+    """Callables and chat-format tools must reach the provider flat; built-ins pass untouched."""
+
+    def add(a: int, b: int) -> int:
+        """Add two numbers."""
+        return a + b
+
+    chat_format = {"type": "function", "function": {"name": "sub", "parameters": {}, "strict": True}}
+    flat = {"type": "function", "name": "mul", "parameters": {}}
+    builtin = {"type": "web_search"}
+
+    llm = AnyLLM.create("openai", api_key="test-key")
+    with patch.object(type(llm), "_aresponses", new=AsyncMock(return_value=object())) as mock_aresponses:
+        await llm.aresponses("gpt-4.1-mini", "hello", tools=[add, chat_format, flat, builtin])
+
+    tools = mock_aresponses.call_args.args[0].tools
+    assert [tool.get("name") for tool in tools[:3]] == ["add", "sub", "mul"]
+    assert [tool["type"] for tool in tools[:3]] == ["function"] * 3
+    assert all("function" not in tool for tool in tools[:3])
+    assert tools[1]["parameters"] == {}
+    assert tools[1]["strict"] is True
+    assert tools[3] == {"type": "web_search"}
