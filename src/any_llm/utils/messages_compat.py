@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any, cast
 
+from any_llm.exceptions import InvalidRequestError
 from any_llm.types.messages import (
     ContentBlockDeltaEvent,
     ContentBlockStartEvent,
@@ -33,9 +34,30 @@ def _output_config_to_response_format(output_config: dict[str, Any]) -> dict[str
     Lets the bridge carry a non-Pydantic JSON schema to non-Anthropic providers: the schema
     under ``output_config["format"]["schema"]`` is rewrapped as the OpenAI ``json_schema``
     response format. The name falls back to the schema's ``title`` (or ``"structured_output"``).
+
+    The bare ``format`` object (``{"type": "json_schema", "schema": {...}}``) is accepted as
+    well as the full ``output_config`` wrapper around it. Anthropic nests that object under
+    ``output_config.format``, so a caller holding the inner object is one level away from the
+    documented shape, and reading only the wrapper silently forwarded an empty schema:
+    ``response_format`` was present on the wire but constrained nothing.
+
+    Raises:
+        InvalidRequestError: when neither shape carries a schema, so the request cannot be
+            satisfied. Forwarding an empty schema instead would return unconstrained output
+            under a response_format the caller believes is in force.
+
     """
-    fmt = output_config.get("format") or {}
-    schema = fmt.get("schema") or {}
+    fmt = output_config.get("format")
+    if not isinstance(fmt, dict):
+        fmt = output_config
+    schema = fmt.get("schema")
+    if not isinstance(schema, dict) or not schema:
+        msg = (
+            "output_format dict carries no JSON schema. Expected an Anthropic output_config "
+            '({"format": {"type": "json_schema", "schema": {...}}}) or the bare format object '
+            '({"type": "json_schema", "schema": {...}}).'
+        )
+        raise InvalidRequestError(msg)
     name = schema.get("title", "structured_output")
     return {"type": "json_schema", "json_schema": {"name": name, "schema": schema}}
 
@@ -106,6 +128,11 @@ def messages_params_to_completion_params(params: MessagesParams) -> dict[str, An
 
     if params.tool_choice is not None:
         result["tool_choice"] = _convert_tool_choice_to_openai(params.tool_choice)
+        # Anthropic carries the sequential-tool-use switch inside tool_choice; OpenAI carries it
+        # as a sibling of it. Anthropic accepts the flag on every tool_choice type, so this does
+        # not depend on which type _convert_tool_choice_to_openai resolved.
+        if params.tool_choice.get("disable_parallel_tool_use") is True:
+            result["parallel_tool_calls"] = False
 
     if params.thinking:
         if params.thinking.get("type") == "enabled":
@@ -138,14 +165,39 @@ def _convert_message_to_openai(msg: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _convert_assistant_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert Anthropic assistant content blocks to OpenAI format."""
+    """Convert Anthropic assistant content blocks to OpenAI format.
+
+    A ``thinking`` block replayed from a previous turn becomes ``reasoning_content`` on the
+    assistant message. That is the first entry in ``REASONING_FIELD_NAMES``, and the field
+    ``deepseek``'s ``_reinject_reasoning_content`` restores for the same purpose, on the
+    grounds it states there: of the reasoning fields any_llm knows about, ``reasoning_content``
+    is the one that belongs on the wire. The normalized ``reasoning`` field would not do,
+    because ``AnyLLM.acompletion`` strips it as an any_llm extension to the OpenAI spec.
+
+    Dropping the block made the bridge lossy in one direction only:
+    ``chat_completion_to_message_response`` builds a ``ThinkingBlock`` out of an upstream
+    ``reasoning`` field, so a caller could read thinking out of a Messages response and then
+    had nowhere to put it back on the next request.
+
+    The Anthropic ``signature`` travels in the ``extra_content["anthropic"]`` side-channel that
+    ``anthropic``'s ``_extract_anthropic_thinking_signature`` already reads, so a bridged
+    request that later reaches an Anthropic-native provider can rebuild the block whole.
+    Anthropic requires that signature back unmodified while extended thinking is on.
+    """
     text_parts: list[str] = []
+    thinking_parts: list[str] = []
+    signature: str | None = None
     tool_calls: list[dict[str, Any]] = []
 
     for block in blocks:
         block_type = block.get("type", "")
         if block_type == "text":
             text_parts.append(block.get("text", ""))
+        elif block_type == "thinking":
+            thinking_parts.append(block.get("thinking", ""))
+            block_signature = block.get("signature")
+            if isinstance(block_signature, str) and block_signature:
+                signature = block_signature
         elif block_type == "tool_use":
             tool_calls.append(
                 {
@@ -165,13 +217,83 @@ def _convert_assistant_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[di
         result["content"] = None
     if tool_calls:
         result["tool_calls"] = tool_calls
+    reasoning_content = "".join(thinking_parts)
+    if reasoning_content:
+        result["reasoning_content"] = reasoning_content
+    if signature is not None:
+        result["extra_content"] = {"anthropic": {"signature": signature}}
     return [result]
+
+
+def _convert_image_block_to_openai(block: dict[str, Any]) -> dict[str, Any]:
+    """Convert an Anthropic ``image`` block to an OpenAI ``image_url`` content part.
+
+    Inverse of the ``image_url`` branch in ``anthropic``'s ``_convert_content_for_anthropic``.
+    """
+    source = block.get("source", {})
+    if source.get("type") == "base64":
+        url = f"data:{source.get('media_type', 'image/png')};base64,{source.get('data', '')}"
+    else:
+        url = source.get("url", "")
+    return {"type": "image_url", "image_url": {"url": url}}
+
+
+def _convert_document_block_to_openai(block: dict[str, Any]) -> dict[str, Any]:
+    """Convert an Anthropic ``document`` block to an OpenAI content part.
+
+    Inverse of the ``file`` branch in ``anthropic``'s ``_convert_content_for_anthropic``, which
+    pairs an Anthropic ``document`` with an OpenAI ``file`` part carrying a ``file_data`` data
+    URI. A ``text`` source has no ``file`` equivalent and its payload is already text, so it
+    becomes a text part rather than a data URI wrapping plain text.
+    """
+    source = block.get("source", {})
+    source_type = source.get("type")
+    if source_type == "text":
+        return {"type": "text", "text": source.get("data", "")}
+    if source_type == "base64":
+        media_type = source.get("media_type", "application/pdf")
+        return {"type": "file", "file": {"file_data": f"data:{media_type};base64,{source.get('data', '')}"}}
+    return {"type": "file", "file": {"file_data": source.get("url", "")}}
+
+
+def _convert_tool_result_content(tool_content: Any) -> tuple[str, list[dict[str, Any]]]:
+    """Split an Anthropic ``tool_result`` payload into wire text and non-text content parts.
+
+    OpenAI's ``role: tool`` message takes text only, so the two halves cannot ride in one
+    message. Concatenating the text blocks and discarding the rest is what deleted image and
+    document bytes that an agent had put in a tool result; the caller re-attaches the returned
+    parts as a following ``user`` message instead.
+    """
+    if not isinstance(tool_content, list):
+        return str(tool_content), []
+    text_parts: list[str] = []
+    extra_parts: list[dict[str, Any]] = []
+    for block in tool_content:
+        block_type = block.get("type", "")
+        if block_type == "text":
+            text_parts.append(block.get("text", ""))
+        elif block_type == "image":
+            extra_parts.append(_convert_image_block_to_openai(block))
+        elif block_type == "document":
+            extra_parts.append(_convert_document_block_to_openai(block))
+    return "".join(text_parts), extra_parts
 
 
 def _convert_user_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Convert Anthropic user content blocks to OpenAI format.
 
     Handles tool_result blocks (→ role:tool messages) and content blocks (text, image).
+
+    A tool result marked ``is_error`` keeps that marker on the emitted ``role: tool`` message.
+    OpenAI has no field for it, and the OpenAI SDK forwards unknown message keys verbatim, so
+    the flag reaches a backend that understands it and is inert on one that does not. Dropping
+    it left a failed tool call indistinguishable from a successful one whose output happened to
+    read like an error.
+
+    A tool result carrying image or document blocks emits the text as the ``role: tool``
+    message and the remaining parts as a ``user`` message directly after it, because OpenAI
+    accepts text only on a tool message. The bytes stay in the request at the same point in the
+    conversation rather than being dropped.
     """
     results: list[dict[str, Any]] = []
     content_blocks: list[dict[str, Any]] = []
@@ -183,26 +305,21 @@ def _convert_user_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[dict[st
             if content_blocks:
                 results.append({"role": "user", "content": content_blocks})
                 content_blocks = []
-            tool_content = block.get("content", "")
-            if isinstance(tool_content, list):
-                text_parts = [b.get("text", "") for b in tool_content if b.get("type") == "text"]
-                tool_content = "".join(text_parts)
-            results.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": block.get("tool_use_id", ""),
-                    "content": str(tool_content),
-                }
-            )
+            tool_text, extra_parts = _convert_tool_result_content(block.get("content", ""))
+            tool_message: dict[str, Any] = {
+                "role": "tool",
+                "tool_call_id": block.get("tool_use_id", ""),
+                "content": tool_text,
+            }
+            if block.get("is_error") is True:
+                tool_message["is_error"] = True
+            results.append(tool_message)
+            if extra_parts:
+                results.append({"role": "user", "content": extra_parts})
         elif block_type == "text":
             content_blocks.append({"type": "text", "text": block.get("text", "")})
         elif block_type == "image":
-            source = block.get("source", {})
-            if source.get("type") == "base64":
-                url = f"data:{source.get('media_type', 'image/png')};base64,{source.get('data', '')}"
-            else:
-                url = source.get("url", "")
-            content_blocks.append({"type": "image_url", "image_url": {"url": url}})
+            content_blocks.append(_convert_image_block_to_openai(block))
         else:
             content_blocks.append(block)
 

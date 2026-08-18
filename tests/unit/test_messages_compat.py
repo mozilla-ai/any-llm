@@ -3,6 +3,9 @@
 import json
 from typing import Any
 
+import pytest
+
+from any_llm.exceptions import InvalidRequestError
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -20,7 +23,9 @@ from any_llm.types.messages import MessagesParams, MessageStartEvent, ThinkingBl
 from any_llm.utils.messages_compat import (
     StreamingState,
     _cached_tokens_from_usage,
+    _convert_assistant_blocks_to_openai,
     _convert_system_to_openai,
+    _convert_user_blocks_to_openai,
     chat_completion_chunk_to_message_stream_events,
     chat_completion_to_message_response,
     messages_params_to_completion_params,
@@ -978,7 +983,6 @@ def test_user_blocks_tool_result_with_list_content() -> None:
                 "content": [
                     {"type": "text", "text": "Result: "},
                     {"type": "text", "text": "42"},
-                    {"type": "image", "data": "ignored"},
                 ],
             },
         ]
@@ -1496,3 +1500,360 @@ def test_streaming_usage_with_zero_tokens() -> None:
     chat_completion_chunk_to_message_stream_events(chunk, state)
     assert state.input_tokens == 100
     assert state.output_tokens == 50
+
+
+def test_output_config_bare_format_object_translated_to_json_schema_response_format() -> None:
+    """The bare Anthropic format object, without the output_config wrapper, is accepted."""
+    params = MessagesParams(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        output_format={"type": "json_schema", "schema": {"title": "City", "type": "object"}},
+    )
+    result = messages_params_to_completion_params(params)
+    assert result["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "City", "schema": {"title": "City", "type": "object"}},
+    }
+
+
+def test_output_config_without_schema_raises() -> None:
+    """A dict with no schema in either shape is rejected instead of forwarding an empty schema."""
+    params = MessagesParams(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        output_format={"format": {"type": "json_schema"}},
+    )
+    with pytest.raises(InvalidRequestError, match="no JSON schema"):
+        messages_params_to_completion_params(params)
+
+
+def test_output_config_with_empty_schema_raises() -> None:
+    """An explicitly empty schema constrains nothing, so it is rejected rather than forwarded."""
+    params = MessagesParams(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        output_format={"type": "json_schema", "schema": {}},
+    )
+    with pytest.raises(InvalidRequestError, match="no JSON schema"):
+        messages_params_to_completion_params(params)
+
+
+def test_output_config_with_non_dict_schema_raises() -> None:
+    """A schema of the wrong type is rejected rather than forwarded as-is."""
+    params = MessagesParams(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        output_format={"type": "json_schema", "schema": "not-a-schema"},
+    )
+    with pytest.raises(InvalidRequestError, match="no JSON schema"):
+        messages_params_to_completion_params(params)
+
+
+def test_tool_choice_disable_parallel_tool_use_sets_parallel_tool_calls_false() -> None:
+    """Anthropic's sequential-tool-use switch becomes the OpenAI parallel_tool_calls flag."""
+    params = MessagesParams(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        tool_choice={"type": "auto", "disable_parallel_tool_use": True},
+    )
+    result = messages_params_to_completion_params(params)
+    assert result["tool_choice"] == "auto"
+    assert result["parallel_tool_calls"] is False
+
+
+def test_tool_choice_disable_parallel_tool_use_applies_to_any_type() -> None:
+    """The flag is independent of the tool_choice type it arrived on."""
+    params = MessagesParams(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        tool_choice={"type": "any", "disable_parallel_tool_use": True},
+    )
+    result = messages_params_to_completion_params(params)
+    assert result["tool_choice"] == "required"
+    assert result["parallel_tool_calls"] is False
+
+
+def test_tool_choice_without_disable_parallel_tool_use_omits_parallel_tool_calls() -> None:
+    """A tool_choice that does not disable parallel use leaves the OpenAI flag unset."""
+    params = MessagesParams(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        tool_choice={"type": "auto"},
+    )
+    result = messages_params_to_completion_params(params)
+    assert "parallel_tool_calls" not in result
+
+
+def test_tool_choice_disable_parallel_tool_use_false_omits_parallel_tool_calls() -> None:
+    """An explicit false is not a request to disable parallel tool use."""
+    params = MessagesParams(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        tool_choice={"type": "auto", "disable_parallel_tool_use": False},
+    )
+    result = messages_params_to_completion_params(params)
+    assert "parallel_tool_calls" not in result
+
+
+def test_assistant_blocks_thinking_becomes_reasoning_content() -> None:
+    """A replayed thinking block survives as reasoning_content next to the visible text."""
+    result = _convert_assistant_blocks_to_openai(
+        [
+            {"type": "thinking", "thinking": "2 plus 2 is 4", "signature": "sig-abc"},
+            {"type": "text", "text": "4"},
+        ]
+    )
+    assert result[0]["content"] == "4"
+    assert result[0]["reasoning_content"] == "2 plus 2 is 4"
+
+
+def test_assistant_blocks_thinking_signature_travels_in_extra_content() -> None:
+    """The signature uses the extra_content side-channel the Anthropic provider reads."""
+    result = _convert_assistant_blocks_to_openai(
+        [
+            {"type": "thinking", "thinking": "considering", "signature": "sig-abc"},
+        ]
+    )
+    assert result[0]["extra_content"] == {"anthropic": {"signature": "sig-abc"}}
+
+
+def test_assistant_blocks_thinking_signature_round_trips_to_anthropic() -> None:
+    """The emitted message is what the Anthropic provider needs to rebuild the block whole."""
+    pytest.importorskip("anthropic")
+    from any_llm.providers.anthropic.utils import _build_anthropic_thinking_block
+
+    converted = _convert_assistant_blocks_to_openai(
+        [
+            {"type": "thinking", "thinking": "considering", "signature": "sig-abc"},
+            {"type": "text", "text": "done"},
+        ]
+    )
+    rebuilt = _build_anthropic_thinking_block({**converted[0], "reasoning": converted[0]["reasoning_content"]})
+    assert rebuilt == {"type": "thinking", "thinking": "considering", "signature": "sig-abc"}
+
+
+def test_assistant_blocks_thinking_without_signature_omits_extra_content() -> None:
+    """A thinking block with no signature still keeps its text and adds no side-channel."""
+    result = _convert_assistant_blocks_to_openai(
+        [
+            {"type": "thinking", "thinking": "considering"},
+        ]
+    )
+    assert result[0]["reasoning_content"] == "considering"
+    assert "extra_content" not in result[0]
+
+
+def test_assistant_blocks_thinking_with_empty_signature_omits_extra_content() -> None:
+    """An empty signature is not a signature Anthropic would accept back."""
+    result = _convert_assistant_blocks_to_openai(
+        [
+            {"type": "thinking", "thinking": "considering", "signature": ""},
+        ]
+    )
+    assert "extra_content" not in result[0]
+
+
+def test_assistant_blocks_multiple_thinking_blocks_concatenated() -> None:
+    """Several thinking blocks join the same way several text blocks do."""
+    result = _convert_assistant_blocks_to_openai(
+        [
+            {"type": "thinking", "thinking": "first "},
+            {"type": "thinking", "thinking": "second"},
+        ]
+    )
+    assert result[0]["reasoning_content"] == "first second"
+
+
+def test_assistant_blocks_empty_thinking_omits_reasoning_content() -> None:
+    """A thinking block with no text adds no empty reasoning_content."""
+    result = _convert_assistant_blocks_to_openai(
+        [
+            {"type": "thinking", "thinking": ""},
+            {"type": "text", "text": "hello"},
+        ]
+    )
+    assert "reasoning_content" not in result[0]
+
+
+def test_assistant_blocks_thinking_alongside_tool_use_preserved() -> None:
+    """The agent-loop shape, thinking plus a tool call, keeps both halves."""
+    result = _convert_assistant_blocks_to_openai(
+        [
+            {"type": "thinking", "thinking": "need the weather", "signature": "sig-1"},
+            {"type": "tool_use", "id": "call_1", "name": "get_weather", "input": {"city": "London"}},
+        ]
+    )
+    assert result[0]["content"] is None
+    assert result[0]["reasoning_content"] == "need the weather"
+    assert result[0]["tool_calls"][0]["function"]["name"] == "get_weather"
+
+
+def test_user_blocks_tool_result_is_error_preserved() -> None:
+    """A failed tool result stays distinguishable from a successful one."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "is_error": True,
+                "content": "permission denied",
+            },
+        ]
+    )
+    assert result[0]["role"] == "tool"
+    assert result[0]["content"] == "permission denied"
+    assert result[0]["is_error"] is True
+
+
+def test_user_blocks_tool_result_without_is_error_omits_flag() -> None:
+    """A successful tool result carries no error marker."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {"type": "tool_result", "tool_use_id": "call_1", "content": "ok"},
+        ]
+    )
+    assert "is_error" not in result[0]
+
+
+def test_user_blocks_tool_result_is_error_false_omits_flag() -> None:
+    """An explicit false is not an error marker."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {"type": "tool_result", "tool_use_id": "call_1", "is_error": False, "content": "ok"},
+        ]
+    )
+    assert "is_error" not in result[0]
+
+
+def test_user_blocks_tool_result_image_emitted_as_following_user_message() -> None:
+    """An image in a tool result rides in a user message directly after the tool message."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": [
+                    {"type": "text", "text": "here it is:"},
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "abc123"}},
+                ],
+            },
+        ]
+    )
+    assert len(result) == 2
+    assert result[0] == {"role": "tool", "tool_call_id": "call_1", "content": "here it is:"}
+    assert result[1]["role"] == "user"
+    assert result[1]["content"] == [{"type": "image_url", "image_url": {"url": "data:image/png;base64,abc123"}}]
+
+
+def test_user_blocks_tool_result_image_url_source_emitted_as_url() -> None:
+    """A url-sourced image in a tool result forwards the url rather than a data uri."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": [
+                    {"type": "image", "source": {"type": "url", "url": "https://example.test/a.png"}},
+                ],
+            },
+        ]
+    )
+    assert result[1]["content"] == [{"type": "image_url", "image_url": {"url": "https://example.test/a.png"}}]
+
+
+def test_user_blocks_tool_result_text_document_emitted_as_text_part() -> None:
+    """A text-sourced document has no OpenAI file equivalent, so it becomes a text part."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": [
+                    {"type": "text", "text": "result text"},
+                    {"type": "document", "source": {"type": "text", "media_type": "text/plain", "data": "DOCBODY"}},
+                ],
+            },
+        ]
+    )
+    assert result[0]["content"] == "result text"
+    assert result[1]["content"] == [{"type": "text", "text": "DOCBODY"}]
+
+
+def test_user_blocks_tool_result_base64_document_emitted_as_file_part() -> None:
+    """A base64 document becomes the OpenAI file part the Anthropic provider maps back."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": [
+                    {
+                        "type": "document",
+                        "source": {"type": "base64", "media_type": "application/pdf", "data": "cGRm"},
+                    },
+                ],
+            },
+        ]
+    )
+    assert result[1]["content"] == [{"type": "file", "file": {"file_data": "data:application/pdf;base64,cGRm"}}]
+
+
+def test_user_blocks_tool_result_url_document_emitted_as_file_part() -> None:
+    """A url-sourced document forwards the url in the same file part shape."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": [
+                    {"type": "document", "source": {"type": "url", "url": "https://example.test/a.pdf"}},
+                ],
+            },
+        ]
+    )
+    assert result[1]["content"] == [{"type": "file", "file": {"file_data": "https://example.test/a.pdf"}}]
+
+
+def test_user_blocks_tool_result_unknown_block_type_dropped() -> None:
+    """A tool result block that is neither text nor a known attachment adds no content part."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": [
+                    {"type": "text", "text": "kept"},
+                    {"type": "mystery_block", "data": "x"},
+                ],
+            },
+        ]
+    )
+    assert len(result) == 1
+    assert result[0]["content"] == "kept"
+
+
+def test_user_blocks_tool_result_attachment_keeps_conversation_order() -> None:
+    """Text before a tool result still flushes first, and the attachment follows the tool message."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {"type": "text", "text": "before"},
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": [
+                    {"type": "text", "text": "shot"},
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "abc123"}},
+                ],
+            },
+        ]
+    )
+    assert [message["role"] for message in result] == ["user", "tool", "user"]
+    assert result[0]["content"] == [{"type": "text", "text": "before"}]
