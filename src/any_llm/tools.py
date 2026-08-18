@@ -236,6 +236,13 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
     return {"type": "string"}
 
 
+def _flatten_responses_tool(tool: Any) -> Any:
+    """Flatten a chat-format function tool for the Responses API, which takes function tools flat."""
+    if isinstance(tool, dict) and tool.get("type") == "function" and isinstance(tool.get("function"), dict):
+        return {"type": "function", **tool["function"]}
+    return tool
+
+
 def prepare_tools(
     tools: list[dict[str, Any] | Callable[..., Any] | Any], built_in_tools: list[Any] | None = None
 ) -> list[dict[str, Any] | Any]:
