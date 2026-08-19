@@ -1,7 +1,6 @@
 # ruff: noqa: E402
 from __future__ import annotations
 
-from typing import Any, cast
 from unittest.mock import MagicMock
 
 import httpx
@@ -185,10 +184,7 @@ def test_retry_after_is_read_from_a_real_httpx_response() -> None:
 
     original = OpenAIRateLimitError(
         message="Rate limit exceeded",
-        # openai>=3 types this parameter as httpx2.Response while any-llm depends on httpx.
-        # _extract_retry_after reads the response duck-typed, so either flavour works at
-        # runtime and the test keeps pinning a real case-insensitive Headers lookup.
-        response=cast("Any", response),
+        response=response,
         body={"message": "Rate limit exceeded", "type": "rate_limit_error"},
     )
 
