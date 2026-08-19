@@ -1713,6 +1713,57 @@ def test_convert_messages_with_thought_signature_in_extra_content() -> None:
     assert assistant_message.parts[0].thought_signature == original_bytes
 
 
+def _function_response_names(contents: list[types.Content]) -> list[str | None]:
+    names = []
+    for content in contents:
+        if content.role == "function":
+            assert content.parts is not None
+            assert content.parts[0].function_response is not None
+            names.append(content.parts[0].function_response.name)
+    return names
+
+
+def test_convert_messages_resolves_tool_result_name_from_tool_call_id() -> None:
+    """OpenAI tool messages carry no name: resolve it from the assistant's tool_calls by id, in any order."""
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Temperature and population of Toronto?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {"id": "call_1", "type": "function", "function": {"name": "get_temperature", "arguments": "{}"}},
+                {"id": "call_2", "type": "function", "function": {"name": "get_population", "arguments": "{}"}},
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_2", "content": '{"value": 2794356}'},
+        {"role": "tool", "tool_call_id": "call_1", "content": "8 degrees"},
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    assert _function_response_names(formatted_messages) == ["get_population", "get_temperature"]
+
+
+def test_convert_messages_tool_result_name_explicit_wins_else_unknown() -> None:
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}},
+                {"type": "function", "function": {"name": "no_id", "arguments": "{}"}},
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_1", "name": "explicit_name", "content": "{}"},
+        {"role": "tool", "tool_call_id": "call_9", "content": "{}"},  # an id no tool_call carries
+        {"role": "tool", "content": "{}"},  # neither side carries an id: nothing to resolve
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    assert _function_response_names(formatted_messages) == ["explicit_name", "unknown", "unknown"]
+
+
 def test_convert_messages_with_base64_image() -> None:
     image_b64 = base64.b64encode(TEST_IMAGE_BYTES).decode("utf-8")
     messages = [
