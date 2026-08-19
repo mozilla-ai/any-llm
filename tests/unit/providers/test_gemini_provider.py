@@ -601,7 +601,7 @@ async def test_completion_with_custom_reasoning_effort(reasoning_effort: Reasoni
         if reasoning_effort == "auto":
             assert thinking_config is None
         elif reasoning_effort is None or reasoning_effort == "none":
-            assert thinking_config == types.ThinkingConfig(include_thoughts=False)
+            assert thinking_config == types.ThinkingConfig(include_thoughts=False, thinking_budget=0)
         else:
             assert thinking_config == types.ThinkingConfig(
                 include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[reasoning_effort]
@@ -652,6 +652,42 @@ def test_older_gemini_models_keep_thinking_budget(model_id: str) -> None:
     )
 
     assert result["config"].thinking_config == types.ThinkingConfig(include_thoughts=True, thinking_budget=24576)
+
+
+@pytest.mark.parametrize("reasoning_effort", [None, "none"])
+def test_none_disables_thinking_on_thinking_budget_models(reasoning_effort: ReasoningEffort | None) -> None:
+    """Test that reasoning_effort='none' sends thinking_budget=0 instead of only hiding thoughts."""
+    result = GoogleProvider._convert_completion_params(
+        CompletionParams(
+            model_id="gemini-2.5-flash",
+            messages=[{"role": "user", "content": "Hello"}],
+            reasoning_effort=reasoning_effort,
+        ),
+        provider_name="gemini",
+    )
+
+    assert result["config"].thinking_config == types.ThinkingConfig(include_thoughts=False, thinking_budget=0)
+
+
+@pytest.mark.parametrize("reasoning_effort", [None, "none"])
+def test_none_clamps_to_minimal_on_thinking_level_models(
+    reasoning_effort: ReasoningEffort | None, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that models without a thinking off tier clamp 'none' to MINIMAL and warn."""
+    with caplog.at_level("WARNING"):
+        result = GoogleProvider._convert_completion_params(
+            CompletionParams(
+                model_id="gemini-3.5-flash",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort=reasoning_effort,
+            ),
+            provider_name="gemini",
+        )
+
+    assert result["config"].thinking_config == types.ThinkingConfig(
+        include_thoughts=False, thinking_level=types.ThinkingLevel.MINIMAL
+    )
+    assert "cannot disable thinking" in caplog.text
 
 
 @pytest.mark.asyncio
