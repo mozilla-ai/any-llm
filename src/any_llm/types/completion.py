@@ -57,6 +57,7 @@ class Reasoning(BaseModel):
 
 
 class ChatCompletionMessage(OpenAIChatCompletionMessage):
+    tool_calls: list["ChatCompletionMessageToolCall"] | None = None  # type: ignore[assignment]
     reasoning: Reasoning | None = None
     annotations: list[dict[str, Any]] | None = None  # type: ignore[assignment]
     extra_content: dict[str, Any] | None = None
