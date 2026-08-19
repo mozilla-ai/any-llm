@@ -1562,3 +1562,25 @@ def test_convert_response_multiple_tool_calls_not_treated_as_structured_output()
     assert result.choices[0].finish_reason == "tool_calls"
     assert result.choices[0].message.tool_calls is not None
     assert len(result.choices[0].message.tool_calls) == 2
+
+
+def test_convert_messages_merges_consecutive_user_messages() -> None:
+    """Bedrock rejects two user turns in a row, so a user message after a tool-result flush
+    extends that turn instead of starting another."""
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "screenshot"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"id": "t1", "type": "function", "function": {"name": "shot", "arguments": "{}"}}],
+        },
+        {"role": "tool", "tool_call_id": "t1", "content": "here"},
+        {"role": "user", "content": [{"type": "text", "text": "what is in it"}]},
+    ]
+    _, formatted_messages = _convert_messages(messages)
+
+    assert [message["role"] for message in formatted_messages] == ["user", "assistant", "user"]
+    assert formatted_messages[-1]["content"] == [
+        {"toolResult": {"toolUseId": "t1", "content": [{"text": "here"}]}},
+        {"text": "what is in it"},
+    ]

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 
 def normalize_output_config(output_config: dict[str, Any]) -> dict[str, Any]:
-    """Return an Anthropic ``output_config`` wrapper for either accepted dict shape.
+    """Return an Anthropic ``output_config`` in its documented shape.
 
     Anthropic nests the JSON schema under ``output_config.format``, so a caller holding the
     inner ``format`` object (``{"type": "json_schema", "schema": {...}}``) is one level away
@@ -25,29 +25,25 @@ def normalize_output_config(output_config: dict[str, Any]) -> dict[str, Any]:
     ``output_format`` dict normalize through this function so the field means the same thing
     on the native Anthropic path and on the completion bridge.
 
+    Every field of ``output_config`` is optional, so a config that names no format is returned
+    untouched: ``{"effort": "high"}`` is a valid request that sets effort alone. Requiring a
+    schema belongs to the caller that needs one, which is the bridge, since translating to an
+    OpenAI ``response_format`` is what cannot proceed without it.
+
     Raises:
-        InvalidRequestError: when neither shape carries a schema, or when ``format`` is present
-            but is not the object it has to be. Passing the dict through would send a
-            structured-output request that constrains nothing.
+        InvalidRequestError: when ``format`` is present but is not the object it has to be.
+            Treating it as absent would silently re-nest the config around the malformed value.
 
     """
     raw_format = output_config.get("format")
-    if raw_format is None:
-        wrapped, fmt = False, output_config
-    elif isinstance(raw_format, dict):
-        wrapped, fmt = True, raw_format
-    else:
+    if isinstance(raw_format, dict):
+        return output_config
+    if raw_format is not None:
         msg = f"output_format dict has a non-object format value: {raw_format!r}"
         raise InvalidRequestError(msg)
-    schema = fmt.get("schema")
-    if not isinstance(schema, dict) or not schema:
-        msg = (
-            "output_format dict carries no JSON schema. Expected an Anthropic output_config "
-            '({"format": {"type": "json_schema", "schema": {...}}}) or the bare format object '
-            '({"type": "json_schema", "schema": {...}}).'
-        )
-        raise InvalidRequestError(msg)
-    return output_config if wrapped else {"format": fmt}
+    if "schema" in output_config or output_config.get("type") == "json_schema":
+        return {"format": output_config}
+    return output_config
 
 
 def is_structured_output_type(response_format: Any) -> TypeGuard[type]:
