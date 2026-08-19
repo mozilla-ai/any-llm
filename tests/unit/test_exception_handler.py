@@ -21,6 +21,7 @@ from any_llm.utils.exception_handler import (
     _STATUS_ERROR_CLASSES,
     _handle_exception,
     convert_exception,
+    handle_exceptions,
 )
 
 
@@ -504,3 +505,56 @@ def test_status_free_failures_still_use_the_message_patterns() -> None:
     status classifies exactly as it did before."""
     assert type(convert_exception(Exception("Rate limit reached"), "openai")) is RateLimitError
     assert type(convert_exception(TimeoutError("request timed out"), "openai")) is ProviderError
+
+
+class _SdkStream:
+    """An SDK stream like openai's AsyncStream: iterable, closed via close(), no aclose()."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def __aiter__(self) -> Any:
+        for item in range(3):
+            yield item
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class _Provider:
+    PROVIDER_NAME = "test"
+
+    def __init__(self) -> None:
+        self.generator_closed = False
+        self.sdk_stream = _SdkStream()
+
+    @handle_exceptions(wrap_streaming=True)
+    async def stream_generator(self) -> Any:
+        async def generate() -> Any:
+            try:
+                for item in range(3):
+                    yield item
+            finally:
+                self.generator_closed = True
+
+        return generate()
+
+    @handle_exceptions(wrap_streaming=True)
+    async def stream_sdk(self) -> Any:
+        return self.sdk_stream
+
+
+@pytest.mark.asyncio
+async def test_closing_the_wrapped_stream_closes_the_provider_stream() -> None:
+    """A caller's aclose() must reach the provider stream, whether it spells it aclose or close."""
+    provider = _Provider()
+
+    wrapped = await provider.stream_generator()
+    await wrapped.__anext__()
+    await wrapped.aclose()
+    assert provider.generator_closed
+
+    wrapped = await provider.stream_sdk()
+    await wrapped.__anext__()
+    await wrapped.aclose()
+    assert provider.sdk_stream.closed
