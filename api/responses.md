@@ -52,6 +52,7 @@ def responses(
     prompt_cache_key: str | None = None,
     prompt_cache_retention: str | None = None,
     conversation: str | dict[str, Any] | None = None,
+    timeout: float | None = None,
     extra_body: dict[str, Any] | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
@@ -97,6 +98,7 @@ async def aresponses(
     prompt_cache_key: str | None = None,
     prompt_cache_retention: str | None = None,
     conversation: str | dict[str, Any] | None = None,
+    timeout: float | None = None,
     extra_body: dict[str, Any] | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
@@ -139,6 +141,7 @@ async def aresponses(
 | `prompt_cache_key` | `str \| None` | None | A key to use when reading from or writing to the prompt cache. |
 | `prompt_cache_retention` | `str \| None` | None | How long to retain a prompt cache entry created by this request. |
 | `conversation` | `str \| dict[str, Any] \| None` | None | The conversation to associate this response with (ID string or ConversationParam object). |
+| `timeout` | `float \| None` | None | Per-request timeout in seconds, passed through to the provider's client/SDK. An explicit ``None`` is treated the same as omitting it (the provider's default applies), so it cannot request an unbounded timeout. Providers that have no per-request timeout raise `UnsupportedParameterError`; set a timeout on their client via `client_args` instead. |
 | `extra_body` | `dict[str, Any] \| None` | None | Additional fields to merge into an OpenAI-compatible Responses request body. |
 | `client_args` | `dict[str, Any] \| None` | None | Additional provider-specific arguments that will be passed to the provider's client instantiation. |
 | `**kwargs` | `Any` | *required* | Additional provider-specific arguments that will be passed to the provider's API call. |
