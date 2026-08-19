@@ -521,6 +521,21 @@ class _SdkStream:
         self.closed = True
 
 
+_STREAM_ERROR = "stream broke"
+_CLOSE_ERROR = "close broke"
+
+
+class _SyncCloseStream:
+    """An iterable whose close() is synchronous and fails."""
+
+    async def __aiter__(self) -> Any:
+        yield 1
+        raise ValueError(_STREAM_ERROR)
+
+    def close(self) -> None:
+        raise RuntimeError(_CLOSE_ERROR)
+
+
 class _Provider:
     PROVIDER_NAME = "test"
 
@@ -543,6 +558,17 @@ class _Provider:
     async def stream_sdk(self) -> Any:
         return self.sdk_stream
 
+    @handle_exceptions(wrap_streaming=True)
+    async def stream_sync_close(self) -> Any:
+        return _SyncCloseStream()
+
+    @handle_exceptions(wrap_streaming=True)
+    async def stream_plain(self) -> Any:
+        async def generate() -> Any:
+            yield 1
+
+        return generate().__aiter__()
+
 
 @pytest.mark.asyncio
 async def test_closing_the_wrapped_stream_closes_the_provider_stream() -> None:
@@ -558,3 +584,18 @@ async def test_closing_the_wrapped_stream_closes_the_provider_stream() -> None:
     await wrapped.__anext__()
     await wrapped.aclose()
     assert provider.sdk_stream.closed
+
+
+@pytest.mark.asyncio
+async def test_provider_stream_closes_on_exhaustion_and_iteration_errors() -> None:
+    """Cleanup runs on every exit: exhaustion, an iteration error (still surfaced), a sync closer that fails."""
+    provider = _Provider()
+
+    assert [item async for item in await provider.stream_generator()] == [0, 1, 2]
+    assert provider.generator_closed
+
+    with pytest.raises(ValueError, match=_STREAM_ERROR):  # the stream's error wins over the failing closer
+        async for _ in await provider.stream_sync_close():
+            pass
+
+    assert [item async for item in await provider.stream_plain()] == [1]  # no close method at all is fine
