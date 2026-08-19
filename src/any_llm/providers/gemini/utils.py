@@ -2,6 +2,7 @@ import base64
 import binascii
 import json
 import mimetypes
+from contextlib import suppress
 from time import time
 from typing import Any, Literal, cast
 
@@ -275,7 +276,7 @@ def _convert_messages(
                     function_call = tool_call["function"]
                     if tool_call_id := tool_call.get("id"):
                         tool_names[tool_call_id] = function_call["name"]
-                    arguments = function_call["arguments"]
+                    arguments = function_call.get("arguments")
                     args = json.loads(arguments) if isinstance(arguments, str) and arguments else arguments or {}
 
                     # Extract thought_signature if present (OpenAI compatibility format)
@@ -310,10 +311,8 @@ def _convert_messages(
             name = message.get("name") or tool_names.get(message.get("tool_call_id", ""), "unknown")
             content = message["content"]
             if isinstance(content, str):
-                try:
+                with suppress(json.JSONDecodeError):
                     content = json.loads(content)
-                except json.JSONDecodeError:
-                    pass
             part = types.Part.from_function_response(name=name, response=_normalize_tool_response(content))
             formatted_messages.append(types.Content(role="function", parts=[part]))
 

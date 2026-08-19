@@ -1736,8 +1736,19 @@ def test_convert_messages_tool_call_without_a_signature_keeps_the_skip_sentinel(
     assert part_json["thought_signature"] == "skip_thought_signature_validator"
 
 
-@pytest.mark.parametrize("arguments", ['{"location": "Paris"}', {"location": "Paris"}])
-def test_convert_messages_accepts_json_or_parsed_tool_call_arguments(arguments: Any) -> None:
+@pytest.mark.parametrize(
+    ("function", "expected_args"),
+    [
+        ({"name": "get_weather", "arguments": '{"location": "Paris"}'}, {"location": "Paris"}),
+        ({"name": "get_weather", "arguments": {"location": "Paris"}}, {"location": "Paris"}),
+        ({"name": "get_weather"}, {}),
+        ({"name": "get_weather", "arguments": None}, {}),
+        ({"name": "get_weather", "arguments": ""}, {}),
+    ],
+)
+def test_convert_messages_accepts_json_or_parsed_tool_call_arguments(
+    function: dict[str, Any], expected_args: dict[str, Any]
+) -> None:
     messages: list[dict[str, Any]] = [
         {
             "role": "assistant",
@@ -1746,7 +1757,7 @@ def test_convert_messages_accepts_json_or_parsed_tool_call_arguments(arguments: 
                 {
                     "id": "call_1",
                     "type": "function",
-                    "function": {"name": "get_weather", "arguments": arguments},
+                    "function": function,
                 }
             ],
         }
@@ -1757,7 +1768,7 @@ def test_convert_messages_accepts_json_or_parsed_tool_call_arguments(arguments: 
     assert formatted_messages[0].parts is not None
     function_call = formatted_messages[0].parts[0].function_call
     assert function_call is not None
-    assert function_call.args == {"location": "Paris"}
+    assert function_call.args == expected_args
 
 
 def test_convert_messages_with_thought_signature_in_extra_content() -> None:
