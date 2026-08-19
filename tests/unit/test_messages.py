@@ -5,7 +5,7 @@ import threading
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from inspect import signature
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -1346,6 +1346,116 @@ class _StreamingHandler(BaseHTTPRequestHandler):
     @override
     def log_message(self, format: str, *args: Any) -> None:
         return
+
+
+class _CapturingHandler(BaseHTTPRequestHandler):
+    """Records every request body, then answers like a minimal OpenAI-compatible endpoint."""
+
+    protocol_version = "HTTP/1.1"
+    captured: ClassVar[list[dict[str, Any]]] = []
+
+    def do_POST(self) -> None:
+        content_length = int(self.headers.get("Content-Length", "0"))
+        raw = self.rfile.read(content_length)
+        type(self).captured.append(json.loads(raw or b"{}"))
+
+        encoded = json.dumps(
+            {
+                "id": "capture-1",
+                "object": "chat.completion",
+                "created": 1234567890,
+                "model": "test-model",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }
+        ).encode()
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(encoded)
+        self.wfile.flush()
+
+    @override
+    def log_message(self, format: str, *args: Any) -> None:
+        return
+
+
+def test_messages_bridge_forwards_thinking_tool_result_and_parallel_flag_on_the_wire() -> None:
+    """Regression test for #1311.
+
+    Asserts the encode side against the bytes an OpenAI-compatible backend actually receives,
+    rather than against the intermediate params dict, because every one of these losses was
+    invisible in the response: the request returned 200 with the field silently gone. Exercises
+    the real OpenAI SDK and httpx against a local server, with no live provider or API key.
+    """
+    png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    _CapturingHandler.captured = []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _CapturingHandler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        api_base = f"http://127.0.0.1:{server.server_address[1]}/v1"
+        provider = AnyLLM.create_openai_compatible(name="local-capture", api_base=api_base, api_key="test")
+        provider.messages(
+            model="test-model",
+            messages=[
+                {"role": "user", "content": "take a screenshot"},
+                {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "thinking", "thinking": "call the tool", "signature": "sig-abc"},
+                        {"type": "tool_use", "id": "toolu_1", "name": "screenshot", "input": {}},
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_1",
+                            "is_error": True,
+                            "content": [
+                                {"type": "text", "text": "partial capture:"},
+                                {
+                                    "type": "image",
+                                    "source": {"type": "base64", "media_type": "image/png", "data": png},
+                                },
+                            ],
+                        }
+                    ],
+                },
+            ],
+            max_tokens=32,
+            tools=[{"name": "screenshot", "description": "grab the screen", "input_schema": {"type": "object"}}],
+            tool_choice={"type": "auto", "disable_parallel_tool_use": True},
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+    assert len(_CapturingHandler.captured) == 1
+    body = _CapturingHandler.captured[0]
+
+    assert body["parallel_tool_calls"] is False
+
+    assistant = body["messages"][1]
+    assert assistant["reasoning_content"] == "call the tool"
+    assert assistant["extra_content"] == {"anthropic": {"signature": "sig-abc"}}
+
+    tool_message = body["messages"][2]
+    assert tool_message["role"] == "tool"
+    assert tool_message["content"] == "partial capture:"
+    assert tool_message["is_error"] is True
+
+    attachment = body["messages"][3]
+    assert attachment["role"] == "user"
+    assert attachment["content"] == [{"type": "image_url", "image_url": {"url": f"data:image/png;base64,{png}"}}]
 
 
 def test_sync_messages_streaming_consumes_response_on_a_single_event_loop() -> None:

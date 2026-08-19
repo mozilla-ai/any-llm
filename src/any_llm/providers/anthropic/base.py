@@ -25,7 +25,7 @@ from any_llm.types.messages import (
     MessageStopEvent,
     MessageStreamEvent,
 )
-from any_llm.utils.structured_output import is_structured_output_type
+from any_llm.utils.structured_output import is_structured_output_type, normalize_output_config
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -339,10 +339,11 @@ class BaseAnthropicProvider(AnyLLM, ABC):
                 with _translating_nonstreaming_guard(self, params.max_tokens):
                     parsed = await messages_resource.parse(output_format=params.output_format, **native_kwargs)
                 return cast("ParsedMessage[Any] | ParsedBetaMessage[Any]", parsed)
+            # Normalize here as well as on the bridge so a bare format object means the same
+            # thing on both paths; the native API requires the output_config nesting.
+            output_config = normalize_output_config(cast("dict[str, Any]", params.output_format))
             with _translating_nonstreaming_guard(self, params.max_tokens):
-                message = await messages_resource.create(
-                    output_config=cast("Any", params.output_format), **native_kwargs
-                )
+                message = await messages_resource.create(output_config=cast("Any", output_config), **native_kwargs)
             return self._convert_native_message_to_response(message)
 
         api_kwargs = params.model_dump(exclude_none=True, exclude={"betas"})

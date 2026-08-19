@@ -232,9 +232,13 @@ class MessagesParams(BaseModel):
 
     Either a Pydantic ``BaseModel`` subclass or dataclass **type**, or a raw Anthropic
     ``output_config`` **dict** (e.g. ``{"format": {"type": "json_schema", "schema": {...}}}``)
-    for non-Pydantic JSON schemas. A type goes to native ``messages.parse`` on Anthropic; a
-    dict is passed through to native ``messages.create(output_config=...)``. Other providers
-    route either form through the completion bridge. The result is Anthropic's ``ParsedMessage``:
-    its ``parsed_output`` holds the typed object for a type, or the parsed JSON (plain
-    ``dict``/``list``) for a raw schema.
+    for non-Pydantic JSON schemas. The bare ``format`` object
+    (``{"type": "json_schema", "schema": {...}}``) is accepted as well. A type goes to native
+    ``messages.parse`` on Anthropic; a dict is passed through to native
+    ``messages.create(output_config=...)``. Other providers route either form through the
+    completion bridge. The result is Anthropic's ``ParsedMessage``: its ``parsed_output`` holds
+    the typed object for a type, or the parsed JSON (plain ``dict``/``list``) for a raw schema.
+
+    A dict that carries no schema in either shape raises ``InvalidRequestError`` on the bridged
+    path rather than sending a ``response_format`` that constrains nothing.
     """
