@@ -1597,6 +1597,22 @@ def test_convert_messages_text_turn_replays_thought_signature() -> None:
     assert formatted_messages[1].parts[0].thought_signature == b"test-signature-bytes"
 
 
+def test_convert_messages_text_turn_ignores_malformed_extra_content() -> None:
+    """A caller-supplied extra_content of the wrong shape is ignored, not raised on."""
+    messages: list[dict[str, Any]] = [
+        {"role": "assistant", "content": "42", "extra_content": "not-a-dict"},
+        {"role": "assistant", "content": "43", "extra_content": {"google": "not-a-dict"}},
+        {"role": "assistant", "content": "44", "extra_content": {"google": {"thought_signature": 123}}},
+        {"role": "assistant", "content": "45", "extra_content": {"anthropic": {"signature": "abc"}}},
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    for formatted in formatted_messages:
+        assert formatted.parts is not None
+        assert formatted.parts[0].thought_signature is None
+
+
 def test_convert_messages_with_thought_signature_in_extra_content() -> None:
     # Use valid base64 that round-trips correctly
     original_bytes = b"test-signature-bytes"

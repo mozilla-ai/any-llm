@@ -192,6 +192,20 @@ def _convert_file_to_part(block: dict[str, Any], provider_name: str) -> types.Pa
     return types.Part.from_uri(file_uri=file_data, mime_type=guessed_type or "application/octet-stream")
 
 
+def _extract_google_thought_signature(message: dict[str, Any]) -> str | None:
+    """Extract the base64 thought_signature stored on a message's extra_content, if any.
+
+    Mirrors _extract_anthropic_thinking_signature: the value is caller-supplied, so a
+    non-dict extra_content or a non-string signature is ignored rather than raising.
+    """
+    extra_content = message.get("extra_content")
+    if isinstance(extra_content, dict) and isinstance(google_extra := extra_content.get("google"), dict):
+        signature = google_extra.get("thought_signature")
+        if isinstance(signature, str):
+            return signature
+    return None
+
+
 def _convert_messages(
     messages: list[dict[str, Any]], provider_name: str = "gemini"
 ) -> tuple[list[types.Content], str | None]:
@@ -247,8 +261,13 @@ def _convert_messages(
                         )
                     )
             else:
-                signature = ((message.get("extra_content") or {}).get("google") or {}).get("thought_signature")
-                parts = [types.Part(text=message["content"], thought_signature=signature)]
+                parts = [
+                    types.Part(
+                        text=message["content"],
+                        # The SDK field is typed bytes but its validator decodes a base64 str.
+                        thought_signature=cast("bytes | None", _extract_google_thought_signature(message)),
+                    )
+                ]
 
             formatted_messages.append(types.Content(role="model", parts=parts))
         elif message["role"] == "tool":
