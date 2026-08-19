@@ -27,8 +27,11 @@ from any_llm.providers.gemini.utils import (
 )
 from any_llm.types.completion import (
     ChatCompletion,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
     CompletionParams,
     CompletionTokensDetails,
+    Function,
     PromptTokensDetails,
     ReasoningEffort,
 )
@@ -1762,6 +1765,30 @@ def test_convert_messages_tool_result_name_explicit_wins_else_unknown() -> None:
     formatted_messages, _ = _convert_messages(messages)
 
     assert _function_response_names(formatted_messages) == ["explicit_name", "unknown", "unknown"]
+
+
+def test_convert_messages_replayed_message_object_keeps_thought_signature() -> None:
+    """Replaying a returned ChatCompletionMessage (dumped as acompletion does) must keep the signature."""
+    base64_signature = base64.b64encode(b"test-signature-bytes").decode("utf-8")
+    message = ChatCompletionMessage(
+        role="assistant",
+        content=None,
+        tool_calls=[
+            ChatCompletionMessageFunctionToolCall(
+                id="call_123",
+                type="function",
+                function=Function(name="get_weather", arguments='{"location": "Paris"}'),
+                extra_content={"google": {"thought_signature": base64_signature}},
+            )
+        ],
+    )
+    replayed = message.model_dump(exclude_none=True, exclude={"reasoning"})
+
+    formatted_messages, _ = _convert_messages([{"role": "user", "content": "What is the weather?"}, replayed])
+
+    assert replayed["tool_calls"][0]["extra_content"] == {"google": {"thought_signature": base64_signature}}
+    assert formatted_messages[1].parts is not None
+    assert formatted_messages[1].parts[0].thought_signature == b"test-signature-bytes"
 
 
 def test_convert_messages_with_base64_image() -> None:
