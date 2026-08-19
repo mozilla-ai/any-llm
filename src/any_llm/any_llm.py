@@ -1270,7 +1270,11 @@ class AnyLLM(ABC):
             prompt_cache_key: A key to use when reading from or writing to the prompt cache.
             prompt_cache_retention: How long to retain a prompt cache entry created by this request.
             conversation: The conversation to associate this response with (ID string or ConversationParam object).
-            timeout: Per-request timeout in seconds, forwarded to the provider's SDK call.
+            timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
+                An explicit ``None`` is treated the same as omitting it (the provider's default
+                applies), so it cannot request an unbounded timeout. Providers that have no
+                per-request timeout raise `UnsupportedParameterError`; set a timeout on their
+                client via `client_args` instead.
             extra_body: Additional fields to merge into an OpenAI-compatible Responses request body.
             **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
