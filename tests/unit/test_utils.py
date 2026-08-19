@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 
-from any_llm.utils.aio import _get_runner_loop, _runner, async_iter_to_sync_iter, run_async_in_sync
+from any_llm.utils.aio import _get_runner_loop, _runner, aclose_quietly, async_iter_to_sync_iter, run_async_in_sync
 
 
 def test_run_async_in_sync_fails_with_background_task_state() -> None:
@@ -344,6 +344,71 @@ def test_run_async_in_sync_disallows_running_loop_when_requested() -> None:
         coro.close()
 
     asyncio.run(call_from_async_context())
+
+
+class _Closable:
+    """A stream double whose close method is chosen per test: aclose, close, sync or async, or failing."""
+
+    def __init__(self, *, aclose: bool = False, close: bool = False, sync: bool = False, fail: bool = False) -> None:
+        self.calls: list[str] = []
+
+        async def _aclose() -> None:
+            self.calls.append("aclose")
+
+        def _close_sync() -> None:
+            self.calls.append("close")
+            if fail:
+                msg = "close failed"
+                raise RuntimeError(msg)
+
+        async def _close_async() -> None:
+            self.calls.append("close")
+            if fail:
+                msg = "close failed"
+                raise RuntimeError(msg)
+
+        if aclose:
+            self.aclose = _aclose
+        if close:
+            self.close = _close_sync if sync else _close_async
+
+
+@pytest.mark.asyncio
+async def test_aclose_quietly_prefers_aclose_over_close() -> None:
+    """An async generator style aclose() wins when both spellings exist."""
+    stream = _Closable(aclose=True, close=True)
+
+    await aclose_quietly(stream)
+
+    assert stream.calls == ["aclose"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sync", [True, False])
+async def test_aclose_quietly_calls_close_sync_or_async(sync: bool) -> None:
+    """SDK streams spell it close(); both the sync and the awaitable form run exactly once."""
+    stream = _Closable(close=True, sync=sync)
+
+    await aclose_quietly(stream)
+
+    assert stream.calls == ["close"]
+
+
+@pytest.mark.asyncio
+async def test_aclose_quietly_ignores_an_iterator_without_close() -> None:
+    """A plain iterable with nothing to close is left alone."""
+    await aclose_quietly(object())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sync", [True, False])
+async def test_aclose_quietly_suppresses_a_failing_close(sync: bool) -> None:
+    """A close that raises is swallowed so it can never replace the stream's own outcome."""
+    stream = _Closable(close=True, sync=sync, fail=True)
+
+    await aclose_quietly(stream)
+
+    assert stream.calls == ["close"]
 
 
 def test_async_iter_to_sync_iter_preserves_contextvars() -> None:

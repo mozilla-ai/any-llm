@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import contextlib
 import functools
-import inspect
 import os
 import re
 import warnings
@@ -23,6 +21,7 @@ from any_llm.exceptions import (
     RateLimitError,
     UpstreamProviderError,
 )
+from any_llm.utils.aio import aclose_quietly
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -341,14 +340,7 @@ def handle_exceptions(*, wrap_streaming: bool = False) -> Callable[[F], F]:
                 except Exception as e:
                     _handle_exception(e, provider_name)
                 finally:
-                    # async for never closes its source, so without this the caller's aclose() would stop
-                    # here and leave the provider stream to the GC. SDK streams spell the method close().
-                    close = getattr(async_iter, "aclose", None) or getattr(async_iter, "close", None)
-                    if callable(close):
-                        with contextlib.suppress(Exception):  # cleanup never outranks the stream's own error
-                            maybe_awaitable = close()
-                            if inspect.isawaitable(maybe_awaitable):
-                                await maybe_awaitable
+                    await aclose_quietly(async_iter)
 
             @functools.wraps(func)
             async def streaming_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:

@@ -524,7 +524,7 @@ class _SdkStream:
         self.close_calls = 0
 
     async def __aiter__(self) -> AsyncIterator[int]:
-        """Yield 0, 1, 2 — parking after 0 when asked to hang."""
+        """Yield 0, 1, 2, parking after 0 when asked to hang."""
         yield 0
         if self.hang:
             self.hanging.set()

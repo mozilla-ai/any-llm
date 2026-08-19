@@ -869,6 +869,71 @@ async def test_default_amessages_streaming() -> None:
 
 
 @pytest.mark.asyncio
+async def test_default_amessages_streaming_aclose_closes_the_provider_stream() -> None:
+    """Closing the bridged event stream early must close the completion stream it wraps, not leave it to the GC."""
+    closed = False
+
+    async def provider_stream() -> Any:
+        nonlocal closed
+        try:
+            for text in ("Hello", " world", " again"):
+                yield ChatCompletionChunk(
+                    id="chunk",
+                    model="gpt-4",
+                    created=0,
+                    object="chat.completion.chunk",
+                    choices=[ChunkChoice(index=0, delta=ChoiceDelta(content=text), finish_reason=None)],
+                )
+        finally:
+            closed = True
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=provider_stream())
+    params = MessagesParams(model="gpt-4", messages=[{"role": "user", "content": "Hello"}], max_tokens=100, stream=True)
+
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert isinstance(result, AsyncGenerator)
+    await anext(result)
+    assert not closed
+    await result.aclose()
+
+    assert closed
+
+
+@pytest.mark.asyncio
+async def test_default_amessages_streaming_closes_the_provider_stream_when_it_fails() -> None:
+    """A provider stream that raises mid-way is still closed, and its error is the one the caller sees."""
+    closed = False
+
+    async def failing_stream() -> Any:
+        nonlocal closed
+        try:
+            yield ChatCompletionChunk(
+                id="chunk",
+                model="gpt-4",
+                created=0,
+                object="chat.completion.chunk",
+                choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hello"), finish_reason=None)],
+            )
+            msg = "provider went away"
+            raise RuntimeError(msg)
+        finally:
+            closed = True
+
+    mock_provider = Mock()
+    mock_provider._acompletion = AsyncMock(return_value=failing_stream())
+    params = MessagesParams(model="gpt-4", messages=[{"role": "user", "content": "Hello"}], max_tokens=100, stream=True)
+
+    result = await AnyLLM._amessages(mock_provider, params)
+    assert isinstance(result, AsyncGenerator)
+    with pytest.raises(RuntimeError, match="provider went away"):
+        async for _ in result:
+            pass
+
+    assert closed
+
+
+@pytest.mark.asyncio
 async def test_default_amessages_streaming_requests_include_usage() -> None:
     """Streaming through the bridge must ask the backend for usage, otherwise
     OpenAI-compatible providers emit no usage-only chunk and the trailing-chunk
