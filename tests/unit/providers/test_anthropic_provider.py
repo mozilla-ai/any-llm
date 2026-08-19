@@ -1496,6 +1496,53 @@ def test_convert_messages_replays_thinking_block_with_tool_call() -> None:
     }
 
 
+def test_convert_messages_replays_assistant_text_between_thinking_and_tool_use() -> None:
+    """A turn that thought, spoke and then called a tool replays in that order, as Claude produced it."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Tell me your plan, then get the weather."},
+        {
+            "role": "assistant",
+            "content": "I will look up the weather in Paris.",
+            "reasoning": "The user wants a plan first.",
+            "extra_content": {"anthropic": {"signature": "sig-12345"}},
+            "tool_calls": [
+                {
+                    "id": "toolu_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'},
+                }
+            ],
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assert [block["type"] for block in converted[1]["content"]] == ["thinking", "text", "tool_use"]
+    assert converted[1]["content"][1] == {"type": "text", "text": "I will look up the weather in Paris."}
+
+
+@pytest.mark.parametrize("content", [None, ""])
+def test_convert_messages_tool_call_turn_without_text_emits_only_tool_use(content: str | None) -> None:
+    """No empty text block is fabricated for a tool-call turn with nothing to say (Anthropic rejects them)."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": content,
+            "tool_calls": [
+                {"id": "toolu_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}},
+            ],
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assert [block["type"] for block in converted[0]["content"]] == ["tool_use"]
+
+
 def test_convert_messages_replays_thinking_block_with_text() -> None:
     """A plain-text assistant message that carries a thinking signature should also replay it.
 
