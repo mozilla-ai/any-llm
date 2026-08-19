@@ -1,5 +1,7 @@
 import json
+import subprocess
 import sys
+import textwrap
 import threading
 from collections.abc import AsyncIterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -8,13 +10,22 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from pydantic import ValidationError
 from typing_extensions import override
 
 from any_llm import AnyLLM
 from any_llm.api import acompletion, aresponses, completion, responses
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.types.completion import ChatCompletion, CompletionParams
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    Choice,
+    CompletionParams,
+    Function,
+    Reasoning,
+)
 
 _PYTHON_314_INCOMPATIBLE_PROVIDERS = {"voyage", "watsonx"}
 
@@ -159,6 +170,146 @@ async def test_acompletion_rejects_prompt_cache_key_for_unsupported_provider() -
         )
 
     client.converse.assert_not_called()
+
+
+def _signed_tool_call_message() -> ChatCompletionMessage:
+    """An assistant turn with one tool call carrying gemini's thought_signature in extra_content."""
+    return ChatCompletionMessage(
+        role="assistant",
+        content=None,
+        reasoning=Reasoning(content="thinking"),
+        tool_calls=[
+            ChatCompletionMessageFunctionToolCall(
+                id="call_1",
+                type="function",
+                function=Function(name="get_weather", arguments='{"city": "Paris"}'),
+                extra_content={"google": {"thought_signature": "c2ln"}},
+            )
+        ],
+    )
+
+
+@pytest.mark.asyncio
+async def test_acompletion_replays_message_object_with_tool_call_extra_content() -> None:
+    """A returned message appended to the history keeps its tool-call extra_content when dumped for replay."""
+    provider = AnyLLM.create("openai", api_key="sk-test")
+    with patch.object(provider, "_acompletion", new=AsyncMock(return_value=Mock(spec=ChatCompletion))) as mock_ac:
+        await provider.acompletion(
+            model="gpt-4",
+            messages=[{"role": "user", "content": "Weather in Paris?"}, _signed_tool_call_message()],
+        )
+
+    params = mock_ac.call_args.args[0]
+    assert isinstance(params, CompletionParams)
+    assert params.messages[1] == {
+        "role": "assistant",
+        "tool_calls": [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'},
+                "extra_content": {"google": {"thought_signature": "c2ln"}},
+            }
+        ],
+    }
+
+
+def test_chat_completion_message_tool_calls_validate_from_dicts() -> None:
+    """Dicts still resolve by type: function → any-llm's extended type, custom → OpenAI's, no type → rejected."""
+    message = ChatCompletionMessage.model_validate(
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "f", "arguments": "{}"},
+                    "extra_content": {"google": {"thought_signature": "c2ln"}},
+                },
+                {"id": "call_2", "type": "custom", "custom": {"name": "c", "input": "raw"}},
+            ],
+        }
+    )
+    assert message.tool_calls is not None
+    function_call, custom_call = message.tool_calls
+    assert isinstance(function_call, ChatCompletionMessageFunctionToolCall)
+    assert function_call.extra_content == {"google": {"thought_signature": "c2ln"}}
+    assert not isinstance(custom_call, ChatCompletionMessageFunctionToolCall)
+    assert custom_call.type == "custom"
+
+    with pytest.raises(ValidationError):
+        ChatCompletionMessage.model_validate(
+            {"role": "assistant", "tool_calls": [{"id": "call_3", "function": {"name": "f", "arguments": "{}"}}]}
+        )
+
+
+def test_chat_completion_message_model_construct_resolves_tool_calls() -> None:
+    """model_construct() reads the annotation without validating, so it must already be the any-llm union.
+
+    Runs in a fresh interpreter on purpose. Pydantic repairs a forward reference in place the first
+    time the model is validated, so once any earlier test in the process has validated a
+    ChatCompletionMessage the annotation is already resolved and an in-process check stops guarding
+    the declaration order it exists to protect.
+    """
+    script = textwrap.dedent(
+        """
+        from any_llm.types.completion import ChatCompletionMessage, ChatCompletionMessageFunctionToolCall
+
+        message = ChatCompletionMessage.model_construct(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "f", "arguments": "{}"},
+                    "extra_content": {"google": {"thought_signature": "c2ln"}},
+                }
+            ],
+        )
+        assert message.tool_calls is not None
+        (tool_call,) = message.tool_calls
+        assert isinstance(tool_call, ChatCompletionMessageFunctionToolCall), type(tool_call)
+        assert tool_call.extra_content == {"google": {"thought_signature": "c2ln"}}
+        """
+    )
+
+    # S603: the command is this interpreter plus a literal script, with no external input.
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", script], capture_output=True, text=True, check=False
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_chat_completion_round_trips_tool_call_extra_content() -> None:
+    """extra_content survives a JSON round trip and is absent from the dump when unset."""
+    completion_response = ChatCompletion(
+        id="id",
+        model="m",
+        created=1,
+        object="chat.completion",
+        choices=[Choice(index=0, finish_reason="tool_calls", message=_signed_tool_call_message())],
+    )
+
+    restored = ChatCompletion.model_validate_json(completion_response.model_dump_json())
+
+    tool_calls = restored.choices[0].message.tool_calls
+    assert tool_calls is not None
+    assert isinstance(tool_calls[0], ChatCompletionMessageFunctionToolCall)
+    assert tool_calls[0].extra_content == {"google": {"thought_signature": "c2ln"}}
+
+    unsigned = ChatCompletionMessage(
+        role="assistant",
+        content=None,
+        tool_calls=[
+            ChatCompletionMessageFunctionToolCall(
+                id="call_1", type="function", function=Function(name="f", arguments="{}")
+            )
+        ],
+    )
+    assert "extra_content" not in unsigned.model_dump(exclude_none=True)["tool_calls"][0]
 
 
 @pytest.mark.asyncio
