@@ -1523,6 +1523,66 @@ def test_convert_response_no_thought_signature() -> None:
     assert "extra_content" not in tool_calls[0] or tool_calls[0].get("extra_content") is None
 
 
+def test_convert_response_text_part_thought_signature_rides_the_message() -> None:
+    """Gemini 3 signs the final text part of a text-only answer; it lands on message.extra_content."""
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
+    mock_response.usage_metadata = None
+    thought, text = Mock(), Mock()
+    thought.thought, thought.text, thought.function_call, thought.thought_signature = True, "let me think", None, None
+    text.thought, text.text, text.function_call, text.thought_signature = None, "42", None, b"test-signature-bytes"
+    mock_response.candidates[0].content.parts = [thought, text]
+
+    message = _convert_response_to_response_dict(mock_response)["choices"][0]["message"]
+
+    assert message["content"] == "42"
+    assert message["extra_content"] == {
+        "google": {"thought_signature": base64.b64encode(b"test-signature-bytes").decode()}
+    }
+
+
+def test_streaming_text_part_thought_signature_rides_the_delta() -> None:
+    """The signed final part arrives with empty text on the last chunk; the delta must still carry it."""
+    from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
+
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
+    mock_response.model_version = "gemini-3-flash-preview"
+    mock_response.usage_metadata = None
+    signed = Mock()
+    signed.thought, signed.text, signed.function_call, signed.thought_signature = (
+        None,
+        "",
+        None,
+        b"test-signature-bytes",
+    )
+    mock_response.candidates[0].content.parts = [signed]
+
+    delta = _create_openai_chunk_from_google_chunk(mock_response).choices[0].delta
+
+    assert delta.content is None
+    assert delta.extra_content == {"google": {"thought_signature": base64.b64encode(b"test-signature-bytes").decode()}}
+
+
+def test_convert_messages_text_turn_replays_thought_signature() -> None:
+    """A text-only assistant turn carrying extra_content replays its signature on the text part."""
+    base64_signature = base64.b64encode(b"test-signature-bytes").decode("utf-8")
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "How many sheep?"},
+        {"role": "assistant", "content": "42", "extra_content": {"google": {"thought_signature": base64_signature}}},
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    assert formatted_messages[1].parts is not None
+    assert formatted_messages[1].parts[0].text == "42"
+    assert formatted_messages[1].parts[0].thought_signature == b"test-signature-bytes"
+
+
 def test_convert_messages_with_thought_signature_in_extra_content() -> None:
     # Use valid base64 that round-trips correctly
     original_bytes = b"test-signature-bytes"

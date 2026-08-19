@@ -250,6 +250,7 @@ class GoogleProvider(AnyLLM):
                 content=message_dict.get("content"),
                 tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls),
                 reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
+                extra_content=message_dict.get("extra_content"),
             )
             from typing import Literal
 
