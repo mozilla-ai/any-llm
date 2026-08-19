@@ -349,6 +349,7 @@ def _resolve_finish_reason(
 
 
 def _convert_response_to_response_dict(response: types.GenerateContentResponse) -> dict[str, Any]:
+    """Convert a Gemini GenerateContentResponse into an OpenAI-shaped completion dict."""
     response_dict = {
         "id": "google_genai_response",
         "model": "google/genai",

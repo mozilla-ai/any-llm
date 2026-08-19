@@ -1459,6 +1459,7 @@ async def test_streaming_via_acompletion_keeps_tool_call_index_stable_across_chu
 
 
 def test_convert_response_preserves_thought_signature() -> None:
+    """A signed function call keeps its signature on the tool call and off the message."""
     import base64
 
     mock_response = Mock()
