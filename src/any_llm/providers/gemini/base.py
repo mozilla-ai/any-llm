@@ -164,7 +164,7 @@ class GoogleProvider(AnyLLM):
         if params.temperature is not None:
             kwargs["temperature"] = params.temperature
         if params.tools is not None:
-            kwargs["tools"] = _convert_tool_spec(params.tools)
+            kwargs["tools"] = _convert_tool_spec(params.tools, provider_name)
         if isinstance(params.tool_choice, str):
             kwargs["tool_config"] = _convert_tool_choice(params.tool_choice)
         if params.top_p is not None:
