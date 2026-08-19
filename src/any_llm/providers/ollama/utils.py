@@ -1,7 +1,7 @@
 import json
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Any, Literal, cast
 
 from ollama import ChatResponse as OllamaChatResponse
 from ollama import EmbedResponse
@@ -27,18 +27,6 @@ from any_llm.types.completion import (
     Usage,
 )
 from any_llm.types.model import Model
-
-if TYPE_CHECKING:
-    from openai.types.chat.chat_completion_message_custom_tool_call import (
-        ChatCompletionMessageCustomToolCall,
-    )
-    from openai.types.chat.chat_completion_message_function_tool_call import (
-        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
-    )
-
-    ChatCompletionMessageToolCallType = (
-        OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
-    )
 
 
 def _convert_tool_calls(tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -225,7 +213,7 @@ def _create_chat_completion_from_ollama_response(response: OllamaChatResponse) -
     message = ChatCompletionMessage(
         role="assistant",
         content=response_message.content,
-        tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", openai_tool_calls),
+        tool_calls=openai_tool_calls,
         reasoning=Reasoning(content=response_message.thinking) if response_message.thinking else None,
     )
 
