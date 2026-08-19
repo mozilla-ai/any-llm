@@ -1570,6 +1570,12 @@ def test_convert_messages_resolves_tool_result_name_from_tool_call_id() -> None:
         },
         {"role": "tool", "tool_call_id": "call_2", "content": '{"value": 2794356}'},
         {"role": "tool", "tool_call_id": "call_1", "content": "8 degrees"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"type": "function", "function": {"name": "no_id", "arguments": "{}"}}],
+        },
+        {"role": "tool", "content": "{}"},  # neither side carries an id: nothing to resolve
     ]
 
     formatted_messages, _ = _convert_messages(messages)
@@ -1580,7 +1586,7 @@ def test_convert_messages_resolves_tool_result_name_from_tool_call_id() -> None:
             assert content.parts is not None
             assert content.parts[0].function_response is not None
             names.append(content.parts[0].function_response.name)
-    assert names == ["get_population", "get_temperature"]
+    assert names == ["get_population", "get_temperature", "unknown"]
 
 
 def test_convert_messages_with_base64_image() -> None:

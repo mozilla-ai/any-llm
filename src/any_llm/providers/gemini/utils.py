@@ -226,7 +226,8 @@ def _convert_messages(
                 parts = []
                 for i, tool_call in enumerate(message["tool_calls"]):
                     function_call = tool_call["function"]
-                    tool_names[tool_call.get("id", "")] = function_call["name"]
+                    if tool_call_id := tool_call.get("id"):
+                        tool_names[tool_call_id] = function_call["name"]
                     args = json.loads(function_call["arguments"]) if function_call["arguments"] else {}
 
                     # Extract thought_signature if present (OpenAI compatibility format)
