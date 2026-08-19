@@ -42,6 +42,7 @@ def test_api_base_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OVHCLOUD_API_BASE", "https://proxy.internal/v1")
     provider = OvhcloudProvider(api_key="test-api-key")
     assert provider._resolve_api_base(None) == "https://proxy.internal/v1"
+    assert str(provider.client.base_url).rstrip("/") == "https://proxy.internal/v1"
 
 
 def test_api_base_default_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
