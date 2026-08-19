@@ -341,7 +341,8 @@ def handle_exceptions(*, wrap_streaming: bool = False) -> Callable[[F], F]:
                 except Exception as e:
                     _handle_exception(e, provider_name)
                 finally:
-                    # reach the provider stream so its HTTP response closes now, not at GC (SDK streams spell it close)
+                    # async for never closes its source, so without this the caller's aclose() would stop
+                    # here and leave the provider stream to the GC. SDK streams spell the method close().
                     close = getattr(async_iter, "aclose", None) or getattr(async_iter, "close", None)
                     if callable(close):
                         with contextlib.suppress(Exception):  # cleanup never outranks the stream's own error

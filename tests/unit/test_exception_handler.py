@@ -1,3 +1,5 @@
+import asyncio
+from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
@@ -507,95 +509,149 @@ def test_status_free_failures_still_use_the_message_patterns() -> None:
     assert type(convert_exception(TimeoutError("request timed out"), "openai")) is ProviderError
 
 
-class _SdkStream:
-    """An SDK stream like openai's AsyncStream: iterable, closed via close(), no aclose()."""
-
-    def __init__(self) -> None:
-        self.closed = False
-
-    async def __aiter__(self) -> Any:
-        for item in range(3):
-            yield item
-
-    async def close(self) -> None:
-        self.closed = True
-
-
 _STREAM_ERROR = "stream broke"
 _CLOSE_ERROR = "close broke"
 
 
-class _SyncCloseStream:
-    """An iterable whose close() is synchronous and fails."""
+class _SdkStream:
+    """An SDK stream like openai's AsyncStream: iterable, closed through an async close(), no aclose()."""
 
-    async def __aiter__(self) -> Any:
+    def __init__(self, *, hang: bool = False, close_error: Exception | None = None) -> None:
+        self.hang = hang
+        self.hanging = asyncio.Event()
+        self.close_error = close_error
+        self.close_calls = 0
+
+    async def __aiter__(self) -> AsyncIterator[int]:
+        yield 0
+        if self.hang:
+            self.hanging.set()
+            await asyncio.Event().wait()
         yield 1
-        raise ValueError(_STREAM_ERROR)
+        yield 2
+
+    async def close(self) -> None:
+        self.close_calls += 1
+        if self.close_error is not None:
+            raise self.close_error
+
+
+class _SyncCloseStream:
+    """A stream that fails after its first item and spells its close synchronously."""
+
+    def __init__(self, *, close_error: Exception | None = None) -> None:
+        self.close_error = close_error
+        self.closed = False
+
+    async def __aiter__(self) -> AsyncIterator[int]:
+        yield 1
+        raise ProviderError(_STREAM_ERROR)
 
     def close(self) -> None:
-        raise RuntimeError(_CLOSE_ERROR)
+        self.closed = True
+        if self.close_error is not None:
+            raise self.close_error
+
+
+class _PlainIterator:
+    """An async iterator with neither aclose() nor close()."""
+
+    def __init__(self) -> None:
+        self.items = iter([1, 2])
+
+    def __aiter__(self) -> AsyncIterator[int]:
+        return self
+
+    async def __anext__(self) -> int:
+        try:
+            return next(self.items)
+        except StopIteration:
+            raise StopAsyncIteration from None
 
 
 class _Provider:
     PROVIDER_NAME = "test"
 
-    def __init__(self) -> None:
-        self.generator_closed = False
-        self.sdk_stream = _SdkStream()
-
     @handle_exceptions(wrap_streaming=True)
-    async def stream_generator(self) -> Any:
-        async def generate() -> Any:
-            try:
-                for item in range(3):
-                    yield item
-            finally:
-                self.generator_closed = True
+    async def stream(self, source: Any) -> Any:
+        return source
 
-        return generate()
 
-    @handle_exceptions(wrap_streaming=True)
-    async def stream_sdk(self) -> Any:
-        return self.sdk_stream
-
-    @handle_exceptions(wrap_streaming=True)
-    async def stream_sync_close(self) -> Any:
-        return _SyncCloseStream()
-
-    @handle_exceptions(wrap_streaming=True)
-    async def stream_plain(self) -> Any:
-        async def generate() -> Any:
-            yield 1
-
-        return generate().__aiter__()
+async def _wrapped(source: Any) -> Any:
+    return await _Provider().stream(source)
 
 
 @pytest.mark.asyncio
 async def test_closing_the_wrapped_stream_closes_the_provider_stream() -> None:
-    """A caller's aclose() must reach the provider stream, whether it spells it aclose or close."""
-    provider = _Provider()
+    """A caller's aclose() reaches the provider stream, whether it spells it aclose or close, exactly once."""
+    closed: list[str] = []
 
-    wrapped = await provider.stream_generator()
+    async def generate() -> AsyncIterator[int]:
+        try:
+            yield 0
+            yield 1
+        finally:
+            closed.append("generator")
+
+    wrapped = await _wrapped(generate())
     await wrapped.__anext__()
     await wrapped.aclose()
-    assert provider.generator_closed
+    assert closed == ["generator"]
 
-    wrapped = await provider.stream_sdk()
+    sdk_stream = _SdkStream()
+    wrapped = await _wrapped(sdk_stream)
     await wrapped.__anext__()
     await wrapped.aclose()
-    assert provider.sdk_stream.closed
+    await wrapped.aclose()
+    assert sdk_stream.close_calls == 1
 
 
 @pytest.mark.asyncio
-async def test_provider_stream_closes_on_exhaustion_and_iteration_errors() -> None:
-    """Cleanup runs on every exit: exhaustion, an iteration error (still surfaced), a sync closer that fails."""
-    provider = _Provider()
+async def test_provider_stream_closes_after_exhaustion() -> None:
+    sdk_stream = _SdkStream()
+    assert [item async for item in await _wrapped(sdk_stream)] == [0, 1, 2]
+    assert sdk_stream.close_calls == 1
 
-    assert [item async for item in await provider.stream_generator()] == [0, 1, 2]
-    assert provider.generator_closed
 
-    with pytest.raises(ValueError, match=_STREAM_ERROR):  # the stream's error wins over the failing closer
-        async for _ in await provider.stream_sync_close():
+@pytest.mark.asyncio
+async def test_provider_stream_closes_when_the_consumer_is_cancelled() -> None:
+    """Cancellation lands inside the provider stream; the wrapper still closes it on the way out."""
+    sdk_stream = _SdkStream(hang=True)
+    wrapped = await _wrapped(sdk_stream)
+
+    async def consume() -> None:
+        async for _ in wrapped:
             pass
 
-    assert [item async for item in await provider.stream_plain()] == [1]  # no close method at all is fine
+    task = asyncio.create_task(consume())
+    await sdk_stream.hanging.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert sdk_stream.close_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_iteration_error_surfaces_after_a_sync_close() -> None:
+    """The failing stream is still closed, without awaiting its sync close(), and its error is what the caller sees."""
+    stream = _SyncCloseStream()
+    with pytest.raises(ProviderError, match=_STREAM_ERROR):
+        async for _ in await _wrapped(stream):
+            pass
+    assert stream.closed
+
+
+@pytest.mark.asyncio
+async def test_a_failing_close_never_outranks_the_stream_outcome() -> None:
+    """A close() that raises changes nothing: the stream's own error wins, and a clean run stays clean."""
+    with pytest.raises(ProviderError, match=_STREAM_ERROR):
+        async for _ in await _wrapped(_SyncCloseStream(close_error=RuntimeError(_CLOSE_ERROR))):
+            pass
+
+    sdk_stream = _SdkStream(close_error=RuntimeError(_CLOSE_ERROR))
+    assert [item async for item in await _wrapped(sdk_stream)] == [0, 1, 2]
+
+
+@pytest.mark.asyncio
+async def test_iterator_without_a_close_method_is_left_alone() -> None:
+    assert [item async for item in await _wrapped(_PlainIterator())] == [1, 2]
