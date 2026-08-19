@@ -1780,7 +1780,7 @@ def test_assistant_blocks_thinking_signature_round_trips_to_anthropic() -> None:
             {"type": "text", "text": "done"},
         ]
     )
-    rebuilt = _build_anthropic_thinking_block({**converted[0], "reasoning": converted[0]["reasoning_content"]})
+    rebuilt = _build_anthropic_thinking_block(converted[0])
     assert rebuilt == {"type": "thinking", "thinking": "considering", "signature": "sig-abc"}
 
 
@@ -1895,6 +1895,54 @@ def test_user_blocks_tool_result_image_emitted_as_following_user_message() -> No
     assert result[0] == {"role": "tool", "tool_call_id": "call_1", "content": "here it is:"}
     assert result[1]["role"] == "user"
     assert result[1]["content"] == [{"type": "image_url", "image_url": {"url": "data:image/png;base64,abc123"}}]
+
+
+def test_user_blocks_parallel_tool_results_keep_the_tool_run_contiguous() -> None:
+    """Anthropic puts every parallel tool_result in one user turn, so the tool messages adjoin.
+
+    OpenAI requires each tool message to follow the assistant tool_calls turn with nothing in
+    between, so attachments wait until the run ends instead of landing after each result.
+    """
+
+    def shot(tool_use_id: str, label: str) -> dict[str, Any]:
+        return {
+            "type": "tool_result",
+            "tool_use_id": tool_use_id,
+            "content": [
+                {"type": "text", "text": label},
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "abc123"}},
+            ],
+        }
+
+    result = _convert_user_blocks_to_openai([shot("call_1", "one"), shot("call_2", "two")])
+    assert [message["role"] for message in result] == ["tool", "tool", "user"]
+    assert [message["content"] for message in result[:2]] == ["one", "two"]
+    assert result[2]["content"] == [
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc123"}},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc123"}},
+    ]
+
+
+def test_user_blocks_held_attachments_lead_trailing_user_text() -> None:
+    """An attachment belongs with the tool result, so it precedes the user's own text."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": [
+                    {"type": "text", "text": "shot"},
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "abc123"}},
+                ],
+            },
+            {"type": "text", "text": "what is in it"},
+        ]
+    )
+    assert [message["role"] for message in result] == ["tool", "user"]
+    assert result[1]["content"] == [
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc123"}},
+        {"type": "text", "text": "what is in it"},
+    ]
 
 
 def test_user_blocks_tool_result_image_url_source_emitted_as_url() -> None:
@@ -2139,3 +2187,48 @@ def test_user_blocks_base64_image_without_data_raises() -> None:
     """An empty base64 payload would build a data uri with nothing in it."""
     with pytest.raises(InvalidRequestError, match="carries no data"):
         _convert_user_blocks_to_openai([{"type": "image", "source": {"type": "base64", "media_type": "image/png"}}])
+
+
+def test_output_config_without_format_passes_through_untouched() -> None:
+    """Every output_config field is optional, so an effort-only config is a valid request."""
+    assert normalize_output_config({"effort": "high"}) == {"effort": "high"}
+
+
+def test_output_config_empty_dict_passes_through_untouched() -> None:
+    """A config naming nothing has no shape to correct; the bridge is what rejects it."""
+    assert normalize_output_config({}) == {}
+
+
+def test_output_config_bare_type_without_schema_is_still_wrapped() -> None:
+    """A format object naming json_schema is wrapped even when its schema is missing."""
+    assert normalize_output_config({"type": "json_schema"}) == {"format": {"type": "json_schema"}}
+
+
+def test_output_format_effort_only_rejected_by_the_bridge() -> None:
+    """The bridge cannot translate a config that names no schema, so it raises rather than
+    forwarding a response_format that constrains nothing."""
+    params = MessagesParams(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        output_format={"effort": "high"},
+    )
+    with pytest.raises(InvalidRequestError, match="no JSON schema"):
+        messages_params_to_completion_params(params)
+
+
+def test_thinking_signature_round_trip_reads_wire_reasoning_content() -> None:
+    """A message carrying only the wire spelling still rebuilds the whole thinking block."""
+    pytest.importorskip("anthropic")
+    from any_llm.providers.anthropic.utils import _extract_reasoning_text
+
+    assert _extract_reasoning_text({"reasoning_content": "considering"}) == "considering"
+
+
+def test_normalized_reasoning_wins_over_the_wire_spelling() -> None:
+    """The normalized field is the one any_llm populates, so it is read first."""
+    pytest.importorskip("anthropic")
+    from any_llm.providers.anthropic.utils import _extract_reasoning_text
+
+    message = {"reasoning": {"content": "normalized"}, "reasoning_content": "wire"}
+    assert _extract_reasoning_text(message) == "normalized"

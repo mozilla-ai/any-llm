@@ -1036,8 +1036,32 @@ async def test_amessages_bare_output_format_object_is_nested_before_create() -> 
 
 
 @pytest.mark.asyncio
-async def test_amessages_output_format_without_schema_raises() -> None:
-    """A dict with no schema is rejected before the native call rather than sent as-is."""
+async def test_amessages_effort_only_output_config_reaches_create() -> None:
+    """Every output_config field is optional, so effort alone is a valid native request."""
+    mock_message = _make_message(content=[TextBlock(type="text", text="Paris")])
+
+    mock_client = Mock()
+    mock_client.messages.create = AsyncMock(return_value=mock_message)
+    mock_client.messages.parse = AsyncMock()
+
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = mock_client
+    provider._convert_native_message_to_response = BaseAnthropicProvider._convert_native_message_to_response
+
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=1024,
+        output_format={"effort": "high"},
+    )
+    await BaseAnthropicProvider._amessages(provider, params)
+
+    assert mock_client.messages.create.call_args.kwargs["output_config"] == {"effort": "high"}
+
+
+@pytest.mark.asyncio
+async def test_amessages_non_object_format_raises() -> None:
+    """A format value that is not an object is rejected rather than re-nested."""
     mock_client = Mock()
     mock_client.messages.create = AsyncMock()
     mock_client.messages.parse = AsyncMock()
@@ -1049,9 +1073,9 @@ async def test_amessages_output_format_without_schema_raises() -> None:
         model="claude-3-5-sonnet",
         messages=[{"role": "user", "content": "Capital of France?"}],
         max_tokens=1024,
-        output_format={"format": {"type": "json_schema"}},
+        output_format={"format": "json_schema"},
     )
-    with pytest.raises(InvalidRequestError, match="no JSON schema"):
+    with pytest.raises(InvalidRequestError, match="non-object format value"):
         await BaseAnthropicProvider._amessages(provider, params)
     mock_client.messages.create.assert_not_called()
 

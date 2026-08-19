@@ -35,11 +35,23 @@ def _output_config_to_response_format(output_config: dict[str, Any]) -> dict[str
     under ``output_config["format"]["schema"]`` is rewrapped as the OpenAI ``json_schema``
     response format. The name falls back to the schema's ``title`` (or ``"structured_output"``).
 
-    Both dict shapes ``normalize_output_config`` accepts are handled, and a dict carrying no
-    schema raises there rather than putting a ``response_format`` on the wire that constrains
-    nothing.
+    Both dict shapes ``normalize_output_config`` accepts are handled.
+
+    Raises:
+        InvalidRequestError: when the config names no schema. There is nothing to translate,
+            and a ``response_format`` carrying an empty schema would sit on the wire
+            constraining nothing while the caller believes it is in force.
+
     """
-    schema = normalize_output_config(output_config)["format"]["schema"]
+    fmt = normalize_output_config(output_config).get("format")
+    schema = fmt.get("schema") if isinstance(fmt, dict) else None
+    if not isinstance(schema, dict) or not schema:
+        msg = (
+            "output_format dict carries no JSON schema. Expected an Anthropic output_config "
+            '({"format": {"type": "json_schema", "schema": {...}}}) or the bare format object '
+            '({"type": "json_schema", "schema": {...}}).'
+        )
+        raise InvalidRequestError(msg)
     name = schema.get("title", "structured_output")
     return {"type": "json_schema", "json_schema": {"name": name, "schema": schema}}
 
@@ -315,12 +327,18 @@ def _convert_user_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[dict[st
     read like an error.
 
     A tool result carrying image or document blocks emits the text as the ``role: tool``
-    message and the remaining parts as a ``user`` message directly after it, because OpenAI
-    accepts text only on a tool message. The bytes stay in the request at the same point in the
-    conversation rather than being dropped.
+    message and holds the remaining parts back, because OpenAI accepts text only on a tool
+    message. The held parts lead the ``user`` message that closes the turn, so they stay at the
+    same point in the conversation rather than being dropped.
+
+    They are held until the whole run of tool results ends rather than emitted after each one.
+    Anthropic puts every ``tool_result`` of a parallel tool call in a single user turn, so
+    emitting per result would interleave user messages between the ``role: tool`` messages, and
+    OpenAI requires those to follow the assistant ``tool_calls`` turn with nothing in between.
     """
     results: list[dict[str, Any]] = []
     content_blocks: list[dict[str, Any]] = []
+    held_parts: list[dict[str, Any]] = []
 
     for block in blocks:
         block_type = block.get("type", "")
@@ -338,8 +356,7 @@ def _convert_user_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[dict[st
             if block.get("is_error") is True:
                 tool_message["is_error"] = True
             results.append(tool_message)
-            if extra_parts:
-                results.append({"role": "user", "content": extra_parts})
+            held_parts.extend(extra_parts)
         elif block_type == "text":
             content_blocks.append({"type": "text", "text": block.get("text", "")})
         elif block_type == "image":
@@ -347,8 +364,8 @@ def _convert_user_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[dict[st
         else:
             content_blocks.append(block)
 
-    if content_blocks:
-        results.append({"role": "user", "content": content_blocks})
+    if held_parts or content_blocks:
+        results.append({"role": "user", "content": held_parts + content_blocks})
 
     return results
 
