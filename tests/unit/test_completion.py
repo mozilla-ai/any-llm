@@ -242,6 +242,26 @@ def test_chat_completion_message_tool_calls_validate_from_dicts() -> None:
         )
 
 
+def test_chat_completion_message_model_construct_resolves_tool_calls() -> None:
+    """model_construct() reads the annotation without validating, so it must already be the any-llm union."""
+    message = ChatCompletionMessage.model_construct(
+        role="assistant",
+        content=None,
+        tool_calls=[
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "f", "arguments": "{}"},
+                "extra_content": {"google": {"thought_signature": "c2ln"}},
+            }
+        ],
+    )
+    assert message.tool_calls is not None
+    (tool_call,) = message.tool_calls
+    assert isinstance(tool_call, ChatCompletionMessageFunctionToolCall)
+    assert tool_call.extra_content == {"google": {"thought_signature": "c2ln"}}
+
+
 def test_chat_completion_round_trips_tool_call_extra_content() -> None:
     """extra_content survives a JSON round trip and is absent from the dump when unset."""
     completion_response = ChatCompletion(
