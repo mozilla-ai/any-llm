@@ -198,6 +198,7 @@ def _convert_messages(
     """Convert messages to Google GenAI format."""
     formatted_messages = []
     system_instruction = None
+    tool_names: dict[str, str] = {}  # tool_call id -> function name, for tool results that carry no name
 
     for message in messages:
         if message["role"] == "system":
@@ -225,6 +226,7 @@ def _convert_messages(
                 parts = []
                 for i, tool_call in enumerate(message["tool_calls"]):
                     function_call = tool_call["function"]
+                    tool_names[tool_call.get("id", "")] = function_call["name"]
                     args = json.loads(function_call["arguments"]) if function_call["arguments"] else {}
 
                     # Extract thought_signature if present (OpenAI compatibility format)
@@ -251,16 +253,13 @@ def _convert_messages(
 
             formatted_messages.append(types.Content(role="model", parts=parts))
         elif message["role"] == "tool":
+            name = message.get("name") or tool_names.get(message.get("tool_call_id", ""), "unknown")
             try:
                 content_json = json.loads(message["content"])
-                part = types.Part.from_function_response(
-                    name=message.get("name", "unknown"), response=_normalize_tool_response(content_json)
-                )
+                part = types.Part.from_function_response(name=name, response=_normalize_tool_response(content_json))
                 formatted_messages.append(types.Content(role="function", parts=[part]))
             except json.JSONDecodeError:
-                part = types.Part.from_function_response(
-                    name=message.get("name", "unknown"), response={"result": message["content"]}
-                )
+                part = types.Part.from_function_response(name=name, response={"result": message["content"]})
                 formatted_messages.append(types.Content(role="function", parts=[part]))
 
     return formatted_messages, system_instruction
