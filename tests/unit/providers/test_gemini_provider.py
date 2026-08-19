@@ -1248,6 +1248,7 @@ def test_streaming_completion_with_tool_call_preserves_thought_signature() -> No
     tool_call = chunk.choices[0].delta.tool_calls[0]
     assert tool_call.extra_content is not None
     assert tool_call.extra_content["google"]["thought_signature"] == base64.b64encode(original_bytes).decode("utf-8")
+    assert chunk.choices[0].delta.extra_content is None  # signature stays on the tool call
 
 
 def test_streaming_completion_with_tool_call_no_thought_signature() -> None:
@@ -1491,6 +1492,7 @@ def test_convert_response_preserves_thought_signature() -> None:
     assert tool_calls[0]["extra_content"]["google"]["thought_signature"] == base64.b64encode(
         b"test-signature-bytes"
     ).decode("utf-8")
+    assert response_dict["choices"][0]["message"]["extra_content"] is None  # signature stays on the tool call
 
 
 def test_convert_response_no_thought_signature() -> None:

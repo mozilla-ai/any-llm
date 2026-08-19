@@ -364,7 +364,7 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
         reasoning = None
         tool_calls_list: list[dict[str, Any]] = []
         text_content = None
-        extra_content = None  # gemini 3 signs the last text part too; it rides the message, like anthropic's
+        message_extra_content = None  # gemini 3 signs the last text part too; it rides the message, like anthropic's
         parts = candidate.content.parts if candidate.content else None
 
         for part in parts or []:
@@ -391,9 +391,9 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
 
                 tool_calls_list.append(tool_call_dict)
             else:
-                if part_text := getattr(part, "text", None):
-                    text_content = (text_content or "") + part_text
-                extra_content = _thought_signature_extra_content(part) or extra_content
+                if part.text:
+                    text_content = (text_content or "") + part.text
+                message_extra_content = _thought_signature_extra_content(part) or message_extra_content
 
         # Truncated or filtered responses produce a choice even without content or tool
         # calls, e.g. a thinking model that spent the whole max_output_tokens budget on
@@ -406,7 +406,7 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                         "content": None if tool_calls_list else text_content,
                         "reasoning": reasoning or None,
                         "tool_calls": tool_calls_list or None,
-                        "extra_content": extra_content,
+                        "extra_content": message_extra_content,
                     },
                     "finish_reason": _resolve_finish_reason(mapped_finish_reason, bool(tool_calls_list)) or "stop",
                     "index": 0,
@@ -467,7 +467,7 @@ def _create_openai_chunk_from_google_chunk(
     content = ""
     reasoning_content = ""
     tool_calls_list: list[ChoiceDeltaToolCall] = []
-    extra_content = None
+    message_extra_content = None
 
     # Content can be absent on terminal chunks, e.g. when the response is truncated or
     # filtered before any part is produced; the finish reason must still be surfaced.
@@ -503,7 +503,7 @@ def _create_openai_chunk_from_google_chunk(
             )
         else:
             content += part.text or ""  # the signed final part may carry empty text
-            extra_content = _thought_signature_extra_content(part) or extra_content
+            message_extra_content = _thought_signature_extra_content(part) or message_extra_content
 
     # Unmapped reasons stay None so non-final chunks are not forced to a terminal reason.
     finish_reason = _resolve_finish_reason(_map_finish_reason(candidate.finish_reason), bool(tool_calls_list))
@@ -513,7 +513,7 @@ def _create_openai_chunk_from_google_chunk(
         role="assistant",
         reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
         tool_calls=tool_calls_list or None,
-        extra_content=extra_content,
+        extra_content=message_extra_content,
     )
 
     choice = ChunkChoice(
