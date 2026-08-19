@@ -1736,6 +1736,30 @@ def test_convert_messages_tool_call_without_a_signature_keeps_the_skip_sentinel(
     assert part_json["thought_signature"] == "skip_thought_signature_validator"
 
 
+@pytest.mark.parametrize("arguments", ['{"location": "Paris"}', {"location": "Paris"}])
+def test_convert_messages_accepts_json_or_parsed_tool_call_arguments(arguments: Any) -> None:
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": arguments},
+                }
+            ],
+        }
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    assert formatted_messages[0].parts is not None
+    function_call = formatted_messages[0].parts[0].function_call
+    assert function_call is not None
+    assert function_call.args == {"location": "Paris"}
+
+
 def test_convert_messages_with_thought_signature_in_extra_content() -> None:
     # Use valid base64 that round-trips correctly
     original_bytes = b"test-signature-bytes"
@@ -2028,12 +2052,16 @@ def test_convert_messages_parallel_tool_calls_only_first_gets_skip_sentinel() ->
     ("tool_content", "expected_response"),
     [
         ('{"temp": "20C"}', {"temp": "20C"}),
+        ({"temp": "20C"}, {"temp": "20C"}),
         ("[]", {"result": []}),
+        ([], {"result": []}),
+        ([{"type": "text", "text": "ok"}], {"result": [{"type": "text", "text": "ok"}]}),
         ("1", {"result": 1}),
+        ("not JSON", {"result": "not JSON"}),
     ],
 )
-def test_convert_messages_tool_response_normalizes_non_objects(
-    tool_content: str, expected_response: dict[str, Any]
+def test_convert_messages_tool_response_accepts_json_or_parsed_content(
+    tool_content: Any, expected_response: dict[str, Any]
 ) -> None:
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": "What is the weather?"},
