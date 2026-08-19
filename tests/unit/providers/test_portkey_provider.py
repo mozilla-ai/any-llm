@@ -1,15 +1,18 @@
 from dataclasses import dataclass
+from typing import Any
+
+import pytest
 
 from any_llm.providers.portkey.portkey import PortkeyProvider
 from any_llm.types.completion import CompletionParams
 
 
-def test_portkey_uses_native_async_client(monkeypatch) -> None:
+def test_portkey_uses_native_async_client(monkeypatch: pytest.MonkeyPatch) -> None:
     """The provider initializes Portkey's native SDK instead of OpenAI's client."""
-    calls = {}
+    calls: dict[str, Any] = {}
 
     class FakeAsyncPortkey:
-        def __init__(self, **kwargs):
+        def __init__(self, **kwargs: Any) -> None:
             calls.update(kwargs)
 
     monkeypatch.setattr("any_llm.providers.portkey.portkey.AsyncPortkey", FakeAsyncPortkey)

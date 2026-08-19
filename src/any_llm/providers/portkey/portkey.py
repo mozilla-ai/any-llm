@@ -13,10 +13,12 @@ from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, Comple
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 try:
-    from portkey_ai import AsyncPortkey
+    import portkey_ai  # type: ignore[import-not-found]
+
+    AsyncPortkey: Any = portkey_ai.AsyncPortkey
 except ImportError as e:  # pragma: no cover - exercised by the package guard
-    AsyncPortkey = None  # type: ignore[assignment,misc]
-    MISSING_PACKAGES_ERROR = e
+    AsyncPortkey = None
+    MISSING_PACKAGES_ERROR: ImportError | None = e
 else:
     MISSING_PACKAGES_ERROR = None
 
@@ -39,6 +41,7 @@ class PortkeyProvider(XMLReasoningOpenAIProvider):
 
     _DEFAULT_REASONING_EFFORT = None
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
+    client: Any
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
