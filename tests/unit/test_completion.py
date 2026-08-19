@@ -171,6 +171,7 @@ async def test_acompletion_rejects_prompt_cache_key_for_unsupported_provider() -
 
 
 def _signed_tool_call_message() -> ChatCompletionMessage:
+    """An assistant turn with one tool call carrying gemini's thought_signature in extra_content."""
     return ChatCompletionMessage(
         role="assistant",
         content=None,
@@ -188,8 +189,7 @@ def _signed_tool_call_message() -> ChatCompletionMessage:
 
 @pytest.mark.asyncio
 async def test_acompletion_replays_message_object_with_tool_call_extra_content() -> None:
-    # A returned message appended to the history is dumped to a dict; the tool call keeps its
-    # provider metadata, while reasoning and unset fields stay out of the replayed message.
+    """A returned message appended to the history keeps its tool-call extra_content when dumped for replay."""
     provider = AnyLLM.create("openai", api_key="sk-test")
     with patch.object(provider, "_acompletion", new=AsyncMock(return_value=Mock(spec=ChatCompletion))) as mock_ac:
         await provider.acompletion(
@@ -213,8 +213,7 @@ async def test_acompletion_replays_message_object_with_tool_call_extra_content()
 
 
 def test_chat_completion_message_tool_calls_validate_from_dicts() -> None:
-    # Dict input still resolves by ``type``: function calls become any-llm's extended type,
-    # custom calls stay OpenAI's, and a call with no ``type`` is rejected as before.
+    """Dicts still resolve by type: function → any-llm's extended type, custom → OpenAI's, no type → rejected."""
     message = ChatCompletionMessage.model_validate(
         {
             "role": "assistant",
@@ -244,6 +243,7 @@ def test_chat_completion_message_tool_calls_validate_from_dicts() -> None:
 
 
 def test_chat_completion_round_trips_tool_call_extra_content() -> None:
+    """extra_content survives a JSON round trip and is absent from the dump when unset."""
     completion_response = ChatCompletion(
         id="id",
         model="m",

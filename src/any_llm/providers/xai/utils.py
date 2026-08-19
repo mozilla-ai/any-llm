@@ -90,6 +90,7 @@ def _convert_xai_chunk_to_anyllm_chunk(chunk: XaiChunk) -> ChatCompletionChunk:
 
 
 def _convert_xai_completion_to_anyllm_response(response: XaiResponse) -> ChatCompletion:
+    """Convert an xAI chat completion into any-llm's ChatCompletion."""
     reasoning = Reasoning(content=response.reasoning_content) if response.reasoning_content else None
 
     tool_calls_resp = response.tool_calls
