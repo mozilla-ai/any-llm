@@ -300,6 +300,7 @@ def responses(
     prompt_cache_key: str | None = None,
     prompt_cache_retention: str | None = None,
     conversation: str | dict[str, Any] | None = None,
+    timeout: float | None = None,
     extra_body: dict[str, Any] | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
@@ -354,6 +355,11 @@ def responses(
         prompt_cache_key: A key to use when reading from or writing to the prompt cache.
         prompt_cache_retention: How long to retain a prompt cache entry created by this request.
         conversation: The conversation to associate this response with (ID string or ConversationParam object).
+        timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
+            An explicit ``None`` is treated the same as omitting it (the provider's default
+            applies), so it cannot request an unbounded timeout. Providers that have no
+            per-request timeout raise `UnsupportedParameterError`; set a timeout on their
+            client via `client_args` instead.
         extra_body: Additional fields to merge into an OpenAI-compatible Responses request body.
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
@@ -410,6 +416,7 @@ def responses(
         prompt_cache_key=prompt_cache_key,
         prompt_cache_retention=prompt_cache_retention,
         conversation=conversation,
+        timeout=timeout,
         extra_body=extra_body,
         **kwargs,
     )
@@ -449,6 +456,7 @@ async def aresponses(
     prompt_cache_key: str | None = None,
     prompt_cache_retention: str | None = None,
     conversation: str | dict[str, Any] | None = None,
+    timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
     extra_body: dict[str, Any] | None = None,
     client_args: dict[str, Any] | None = None,
     **kwargs: Any,
@@ -503,6 +511,11 @@ async def aresponses(
         prompt_cache_key: A key to use when reading from or writing to the prompt cache.
         prompt_cache_retention: How long to retain a prompt cache entry created by this request.
         conversation: The conversation to associate this response with (ID string or ConversationParam object).
+        timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
+            An explicit ``None`` is treated the same as omitting it (the provider's default
+            applies), so it cannot request an unbounded timeout. Providers that have no
+            per-request timeout raise `UnsupportedParameterError`; set a timeout on their
+            client via `client_args` instead.
         extra_body: Additional fields to merge into an OpenAI-compatible Responses request body.
         client_args: Additional provider-specific arguments that will be passed to the provider's client instantiation.
         **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
@@ -559,6 +572,7 @@ async def aresponses(
         prompt_cache_key=prompt_cache_key,
         prompt_cache_retention=prompt_cache_retention,
         conversation=conversation,
+        timeout=timeout,
         extra_body=extra_body,
         **kwargs,
     )

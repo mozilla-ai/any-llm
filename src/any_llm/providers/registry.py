@@ -149,6 +149,13 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         supports_batch=True,
         supports_image_generation=True,
     ),
+    "ovhcloud": OpenAICompatibleProviderConfig(
+        name="ovhcloud",
+        api_base="https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+        env_api_key_name="OVHCLOUD_API_KEY",
+        env_api_base_name="OVHCLOUD_API_BASE",
+        provider_documentation_url="https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-getting-started",
+    ),
     "perplexity": OpenAICompatibleProviderConfig(
         name="perplexity",
         api_base="https://api.perplexity.ai",

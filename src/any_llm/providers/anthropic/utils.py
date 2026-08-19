@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from anthropic import transform_schema
 from anthropic.types import (
@@ -29,18 +29,6 @@ from any_llm.types.completion import (
 )
 from any_llm.types.model import Model
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
-
-if TYPE_CHECKING:
-    from openai.types.chat.chat_completion_message_custom_tool_call import (
-        ChatCompletionMessageCustomToolCall,
-    )
-    from openai.types.chat.chat_completion_message_function_tool_call import (
-        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
-    )
-
-    ChatCompletionMessageToolCallType = (
-        OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
-    )
 
 DEFAULT_MAX_TOKENS = 8192
 REASONING_EFFORT_TO_ANTHROPIC_EFFORT = {
@@ -358,7 +346,7 @@ def _convert_response(response: Message) -> ChatCompletion:
         role="assistant",
         content="".join(content_parts),
         reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
-        tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls or None),
+        tool_calls=tool_calls or None,
         extra_content={"anthropic": {"signature": thinking_signature}} if thinking_signature else None,
     )
 
