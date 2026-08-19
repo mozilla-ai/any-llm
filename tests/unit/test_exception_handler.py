@@ -650,6 +650,7 @@ async def test_a_failing_close_never_outranks_the_stream_outcome() -> None:
 
     sdk_stream = _SdkStream(close_error=RuntimeError(_CLOSE_ERROR))
     assert [item async for item in await _wrapped(sdk_stream)] == [0, 1, 2]
+    assert sdk_stream.close_calls == 1
 
 
 @pytest.mark.asyncio
