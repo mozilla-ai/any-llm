@@ -1,5 +1,7 @@
 import json
+import subprocess
 import sys
+import textwrap
 import threading
 from collections.abc import AsyncIterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -243,23 +245,42 @@ def test_chat_completion_message_tool_calls_validate_from_dicts() -> None:
 
 
 def test_chat_completion_message_model_construct_resolves_tool_calls() -> None:
-    """model_construct() reads the annotation without validating, so it must already be the any-llm union."""
-    message = ChatCompletionMessage.model_construct(
-        role="assistant",
-        content=None,
-        tool_calls=[
-            {
-                "id": "call_1",
-                "type": "function",
-                "function": {"name": "f", "arguments": "{}"},
-                "extra_content": {"google": {"thought_signature": "c2ln"}},
-            }
-        ],
+    """model_construct() reads the annotation without validating, so it must already be the any-llm union.
+
+    Runs in a fresh interpreter on purpose. Pydantic repairs a forward reference in place the first
+    time the model is validated, so once any earlier test in the process has validated a
+    ChatCompletionMessage the annotation is already resolved and an in-process check stops guarding
+    the declaration order it exists to protect.
+    """
+    script = textwrap.dedent(
+        """
+        from any_llm.types.completion import ChatCompletionMessage, ChatCompletionMessageFunctionToolCall
+
+        message = ChatCompletionMessage.model_construct(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "f", "arguments": "{}"},
+                    "extra_content": {"google": {"thought_signature": "c2ln"}},
+                }
+            ],
+        )
+        assert message.tool_calls is not None
+        (tool_call,) = message.tool_calls
+        assert isinstance(tool_call, ChatCompletionMessageFunctionToolCall), type(tool_call)
+        assert tool_call.extra_content == {"google": {"thought_signature": "c2ln"}}
+        """
     )
-    assert message.tool_calls is not None
-    (tool_call,) = message.tool_calls
-    assert isinstance(tool_call, ChatCompletionMessageFunctionToolCall)
-    assert tool_call.extra_content == {"google": {"thought_signature": "c2ln"}}
+
+    # S603: the command is this interpreter plus a literal script, with no external input.
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", script], capture_output=True, text=True, check=False
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_chat_completion_round_trips_tool_call_extra_content() -> None:
