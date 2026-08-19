@@ -2206,6 +2206,28 @@ def test_convert_completion_response_preserves_prompt_tokens_details() -> None:
     assert result.usage.prompt_tokens_details.cached_tokens == 80
 
 
+def test_convert_completion_response_preserves_message_extra_content() -> None:
+    """The text-part signature placed on the message dict reaches the public ChatCompletion."""
+    extra_content = {"google": {"thought_signature": "dGVzdA=="}}
+    response_dict = {
+        "id": "google_genai_response",
+        "model": "google/genai",
+        "created": 0,
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": "42", "tool_calls": None, "extra_content": extra_content},
+                "finish_reason": "stop",
+                "index": 0,
+            }
+        ],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+    }
+
+    result = GoogleProvider._convert_completion_response((response_dict, "test-model"))
+
+    assert result.choices[0].message.extra_content == extra_content
+
+
 def test_convert_completion_response_preserves_completion_tokens_details() -> None:
     """Test that _convert_completion_response passes completion_tokens_details through to ChatCompletion."""
     response_dict = {
