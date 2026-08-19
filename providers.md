@@ -55,6 +55,7 @@ A provider can be verified whether it ships as a code folder or as a single conf
 | [`openai`](https://platform.openai.com/docs/api-reference) | ✅ Verified | OPENAI_API_KEY | OPENAI_BASE_URL | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ |
 | [`openrouter`](https://openrouter.ai/docs) | ✅ Verified | OPENROUTER_API_KEY | OPENROUTER_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`otari`](https://mozilla-ai.github.io/otari/) | ✅ Verified | OTARI_API_KEY | OTARI_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [`ovhcloud`](https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-getting-started) | 🤝 Community | OVHCLOUD_API_KEY | OVHCLOUD_API_BASE | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | [`perplexity`](https://docs.perplexity.ai/) | 🤝 Community | PERPLEXITY_API_KEY | PERPLEXITY_BASE_URL | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | [`portkey`](https://portkey.ai/docs) | ✅ Verified | PORTKEY_API_KEY | PORTKEY_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
 | [`qiniu`](https://developer.qiniu.com/aitokenapi) | 🤝 Community | QINIU_API_KEY | QINIU_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
