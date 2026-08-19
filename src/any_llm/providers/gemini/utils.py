@@ -364,7 +364,9 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
         reasoning = None
         tool_calls_list: list[dict[str, Any]] = []
         text_content = None
-        message_extra_content = None  # gemini 3 signs the last text part too; it rides the message, like anthropic's
+        # Gemini 3 signs the last non-function-call part of a text answer. It rides message.extra_content,
+        # the same spelling Google's OpenAI-compatible endpoint uses.
+        message_extra_content = None
         parts = candidate.content.parts if candidate.content else None
 
         for part in parts or []:
