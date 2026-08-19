@@ -1,4 +1,5 @@
 import base64
+import json
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
 from typing import Any, get_args
@@ -1248,6 +1249,7 @@ def test_streaming_completion_with_tool_call_preserves_thought_signature() -> No
     tool_call = chunk.choices[0].delta.tool_calls[0]
     assert tool_call.extra_content is not None
     assert tool_call.extra_content["google"]["thought_signature"] == base64.b64encode(original_bytes).decode("utf-8")
+    assert chunk.choices[0].delta.extra_content is None  # signature stays on the tool call
 
 
 def test_streaming_completion_with_tool_call_no_thought_signature() -> None:
@@ -1458,6 +1460,7 @@ async def test_streaming_via_acompletion_keeps_tool_call_index_stable_across_chu
 
 
 def test_convert_response_preserves_thought_signature() -> None:
+    """A signed function call keeps its signature on the tool call and off the message."""
     import base64
 
     mock_response = Mock()
@@ -1491,6 +1494,7 @@ def test_convert_response_preserves_thought_signature() -> None:
     assert tool_calls[0]["extra_content"]["google"]["thought_signature"] == base64.b64encode(
         b"test-signature-bytes"
     ).decode("utf-8")
+    assert response_dict["choices"][0]["message"].get("extra_content") is None  # signature stays on the tool call
 
 
 def test_convert_response_no_thought_signature() -> None:
@@ -1521,6 +1525,159 @@ def test_convert_response_no_thought_signature() -> None:
     tool_calls = response_dict["choices"][0]["message"]["tool_calls"]
     assert len(tool_calls) == 1
     assert "extra_content" not in tool_calls[0] or tool_calls[0].get("extra_content") is None
+
+
+def test_convert_response_text_part_thought_signature_rides_the_message() -> None:
+    """Gemini 3 signs the final text part of a text-only answer; it lands on message.extra_content."""
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
+    mock_response.usage_metadata = None
+
+    mock_thought = Mock()
+    mock_thought.thought = True
+    mock_thought.text = "let me think"
+    mock_thought.function_call = None
+    mock_thought.thought_signature = None
+
+    mock_text = Mock()
+    mock_text.thought = None
+    mock_text.text = "42"
+    mock_text.function_call = None
+    mock_text.thought_signature = b"test-signature-bytes"
+
+    mock_response.candidates[0].content.parts = [mock_thought, mock_text]
+
+    message = _convert_response_to_response_dict(mock_response)["choices"][0]["message"]
+
+    assert message["content"] == "42"
+    assert message["extra_content"] == {
+        "google": {"thought_signature": base64.b64encode(b"test-signature-bytes").decode("utf-8")}
+    }
+
+
+def test_streaming_text_part_thought_signature_rides_the_delta() -> None:
+    """The signed final part arrives with empty text on the last chunk; the delta must still carry it."""
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
+    mock_response.model_version = "gemini-3-flash-preview"
+    mock_response.usage_metadata = None
+
+    mock_part = Mock()
+    mock_part.thought = None
+    mock_part.text = ""
+    mock_part.function_call = None
+    mock_part.thought_signature = b"test-signature-bytes"
+
+    mock_response.candidates[0].content.parts = [mock_part]
+
+    delta = _create_openai_chunk_from_google_chunk(mock_response).choices[0].delta
+
+    assert delta.content is None
+    assert delta.tool_calls is None
+    assert delta.extra_content == {
+        "google": {"thought_signature": base64.b64encode(b"test-signature-bytes").decode("utf-8")}
+    }
+
+
+def test_convert_messages_text_turn_replays_thought_signature() -> None:
+    """A text-only assistant turn carrying extra_content replays its signature on the text part."""
+    base64_signature = base64.b64encode(b"test-signature-bytes").decode("utf-8")
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "How many sheep?"},
+        {"role": "assistant", "content": "42", "extra_content": {"google": {"thought_signature": base64_signature}}},
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    assert formatted_messages[1].parts is not None
+    assert formatted_messages[1].parts[0].text == "42"
+    assert formatted_messages[1].parts[0].thought_signature == b"test-signature-bytes"
+
+
+@pytest.mark.parametrize(
+    "extra_content",
+    [
+        "not-a-dict",
+        {"google": "not-a-dict"},
+        {"anthropic": {"signature": "abc"}},
+        {"google": {"thought_signature": None}},
+    ],
+)
+def test_convert_messages_treats_a_non_google_extra_content_as_unsigned(extra_content: Any) -> None:
+    """extra_content that carries no Google signature leaves the part unsigned."""
+    messages: list[dict[str, Any]] = [{"role": "assistant", "content": "42", "extra_content": extra_content}]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    assert formatted_messages[0].parts is not None
+    assert formatted_messages[0].parts[0].thought_signature is None
+
+
+@pytest.mark.parametrize("signature", ["", "not!!base64@@", 123, ["sig"]])
+def test_convert_messages_text_turn_rejects_an_undecodable_signature(signature: Any) -> None:
+    """An undecodable signature is a caller error, not a bare pydantic ValidationError."""
+    messages: list[dict[str, Any]] = [
+        {"role": "assistant", "content": "42", "extra_content": {"google": {"thought_signature": signature}}}
+    ]
+
+    with pytest.raises(InvalidRequestError, match="thought_signature"):
+        _convert_messages(messages)
+
+
+@pytest.mark.parametrize("signature", ["", "not!!base64@@", 123, ["sig"]])
+def test_convert_messages_tool_call_rejects_an_undecodable_signature(signature: Any) -> None:
+    """The tool call path rejects the same shapes the text path does."""
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "f", "arguments": "{}"},
+                    "extra_content": {"google": {"thought_signature": signature}},
+                }
+            ],
+        }
+    ]
+
+    with pytest.raises(InvalidRequestError, match="thought_signature"):
+        _convert_messages(messages)
+
+
+@pytest.mark.parametrize("signature", ["dGVzdA==", "dGVzdA", "-_8-P76_", b"test-signature-bytes"])
+def test_convert_messages_accepts_every_signature_spelling_the_sdk_decodes(signature: Any) -> None:
+    """Unpadded and URL-safe base64, and raw bytes, all reach the part decoded."""
+    messages: list[dict[str, Any]] = [
+        {"role": "assistant", "content": "42", "extra_content": {"google": {"thought_signature": signature}}}
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    assert formatted_messages[0].parts is not None
+    assert formatted_messages[0].parts[0].thought_signature is not None
+
+
+def test_convert_messages_tool_call_without_a_signature_keeps_the_skip_sentinel() -> None:
+    """An unsigned first function call still gets Google's skip sentinel, unvalidated."""
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "f", "arguments": "{}"}}],
+        }
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    assert formatted_messages[0].parts is not None
+    part_json = json.loads(formatted_messages[0].parts[0].model_dump_json(exclude_none=True))
+    assert part_json["thought_signature"] == "skip_thought_signature_validator"
 
 
 def test_convert_messages_with_thought_signature_in_extra_content() -> None:
@@ -2182,6 +2339,28 @@ def test_convert_completion_response_preserves_prompt_tokens_details() -> None:
     assert result.usage.prompt_tokens == 100
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 80
+
+
+def test_convert_completion_response_preserves_message_extra_content() -> None:
+    """The text-part signature placed on the message dict reaches the public ChatCompletion."""
+    extra_content = {"google": {"thought_signature": "dGVzdA=="}}
+    response_dict = {
+        "id": "google_genai_response",
+        "model": "google/genai",
+        "created": 0,
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": "42", "tool_calls": None, "extra_content": extra_content},
+                "finish_reason": "stop",
+                "index": 0,
+            }
+        ],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+    }
+
+    result = GoogleProvider._convert_completion_response((response_dict, "test-model"))
+
+    assert result.choices[0].message.extra_content == extra_content
 
 
 def test_convert_completion_response_preserves_completion_tokens_details() -> None:
