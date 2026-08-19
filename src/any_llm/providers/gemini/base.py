@@ -47,19 +47,9 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
     from google import genai
-    from openai.types.chat.chat_completion_message_custom_tool_call import (
-        ChatCompletionMessageCustomToolCall,
-    )
-    from openai.types.chat.chat_completion_message_function_tool_call import (
-        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
-    )
 
     from any_llm.types.batch import Batch, BatchResult
     from any_llm.types.model import Model
-
-    ChatCompletionMessageToolCallType = (
-        OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
-    )
 
 REASONING_EFFORT_TO_THINKING_BUDGETS = {
     "minimal": 256,
@@ -248,7 +238,7 @@ class GoogleProvider(AnyLLM):
             message = ChatCompletionMessage(
                 role="assistant",
                 content=message_dict.get("content"),
-                tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls),
+                tool_calls=tool_calls,
                 reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
             )
             from typing import Literal

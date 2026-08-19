@@ -1,5 +1,5 @@
 import json
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Any, Literal, cast
 
 from azure.ai.inference.models import (
     ChatCompletions,
@@ -28,18 +28,6 @@ from any_llm.types.completion import (
 )
 from any_llm.types.model import Model
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
-
-if TYPE_CHECKING:
-    from openai.types.chat.chat_completion_message_custom_tool_call import (
-        ChatCompletionMessageCustomToolCall,
-    )
-    from openai.types.chat.chat_completion_message_function_tool_call import (
-        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
-    )
-
-    ChatCompletionMessageToolCallType = (
-        OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
-    )
 
 
 def _convert_response_format(
@@ -119,7 +107,7 @@ def _convert_response(response_data: ChatCompletions) -> ChatCompletion:
     message = ChatCompletionMessage(
         role="assistant",
         content=message_data.content,
-        tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls),
+        tool_calls=tool_calls,
     )
 
     choice = Choice(

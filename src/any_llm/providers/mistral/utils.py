@@ -42,16 +42,6 @@ DEFAULT_COMPLETION_WINDOW = f"{DEFAULT_TIMEOUT_HOURS}h"
 if TYPE_CHECKING:
     from mistralai.client.models import BatchJob, ListBatchJobsResponse
     from mistralai.client.models.embeddingresponse import EmbeddingResponse
-    from openai.types.chat.chat_completion_message_custom_tool_call import (
-        ChatCompletionMessageCustomToolCall,
-    )
-    from openai.types.chat.chat_completion_message_function_tool_call import (
-        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
-    )
-
-    ChatCompletionMessageToolCallType = (
-        OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
-    )
 
 
 def _convert_mistral_tool_calls_to_any_llm(
@@ -230,7 +220,7 @@ def _create_mistral_completion_from_response(
         message = ChatCompletionMessage(
             role="assistant",
             content=content,
-            tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls_final),
+            tool_calls=tool_calls_final,
             reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
             extra_content={"mistral": {"signature": thinking_signature}} if thinking_signature else None,
         )
