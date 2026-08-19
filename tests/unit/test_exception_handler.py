@@ -517,12 +517,14 @@ class _SdkStream:
     """An SDK stream like openai's AsyncStream: iterable, closed through an async close(), no aclose()."""
 
     def __init__(self, *, hang: bool = False, close_error: Exception | None = None) -> None:
+        """Optionally hang after the first item, and optionally fail on close()."""
         self.hang = hang
         self.hanging = asyncio.Event()
         self.close_error = close_error
         self.close_calls = 0
 
     async def __aiter__(self) -> AsyncIterator[int]:
+        """Yield 0, 1, 2 — parking after 0 when asked to hang."""
         yield 0
         if self.hang:
             self.hanging.set()
@@ -531,6 +533,7 @@ class _SdkStream:
         yield 2
 
     async def close(self) -> None:
+        """Count the call, then raise the configured error if any."""
         self.close_calls += 1
         if self.close_error is not None:
             raise self.close_error
@@ -540,44 +543,44 @@ class _SyncCloseStream:
     """A stream that fails after its first item and spells its close synchronously."""
 
     def __init__(self, *, close_error: Exception | None = None) -> None:
+        """Optionally fail on close()."""
         self.close_error = close_error
         self.closed = False
 
     async def __aiter__(self) -> AsyncIterator[int]:
+        """Yield one item, then fail."""
         yield 1
         raise ProviderError(_STREAM_ERROR)
 
     def close(self) -> None:
+        """Mark closed, then raise the configured error if any."""
         self.closed = True
         if self.close_error is not None:
             raise self.close_error
 
 
-class _PlainIterator:
-    """An async iterator with neither aclose() nor close()."""
+class _PlainIterable:
+    """An async iterable with neither aclose() nor close()."""
 
-    def __init__(self) -> None:
-        self.items = iter([1, 2])
-
-    def __aiter__(self) -> AsyncIterator[int]:
-        return self
-
-    async def __anext__(self) -> int:
-        try:
-            return next(self.items)
-        except StopIteration:
-            raise StopAsyncIteration from None
+    async def __aiter__(self) -> AsyncIterator[int]:
+        """Yield 1, 2."""
+        yield 1
+        yield 2
 
 
 class _Provider:
+    """A provider whose stream() hands back whatever source it is given, wrapped by handle_exceptions."""
+
     PROVIDER_NAME = "test"
 
     @handle_exceptions(wrap_streaming=True)
     async def stream(self, source: Any) -> Any:
+        """Return the source stream; the decorator wraps it."""
         return source
 
 
 async def _wrapped(source: Any) -> Any:
+    """The source as callers receive it: inside _wrap_async_iterator."""
     return await _Provider().stream(source)
 
 
@@ -587,6 +590,7 @@ async def test_closing_the_wrapped_stream_closes_the_provider_stream() -> None:
     closed: list[str] = []
 
     async def generate() -> AsyncIterator[int]:
+        """Record when the generator is closed."""
         try:
             yield 0
             yield 1
@@ -608,6 +612,7 @@ async def test_closing_the_wrapped_stream_closes_the_provider_stream() -> None:
 
 @pytest.mark.asyncio
 async def test_provider_stream_closes_after_exhaustion() -> None:
+    """Reading a stream to the end closes the SDK stream beneath it."""
     sdk_stream = _SdkStream()
     assert [item async for item in await _wrapped(sdk_stream)] == [0, 1, 2]
     assert sdk_stream.close_calls == 1
@@ -620,6 +625,7 @@ async def test_provider_stream_closes_when_the_consumer_is_cancelled() -> None:
     wrapped = await _wrapped(sdk_stream)
 
     async def consume() -> None:
+        """Iterate until cancelled."""
         async for _ in wrapped:
             pass
 
@@ -655,4 +661,5 @@ async def test_a_failing_close_never_outranks_the_stream_outcome() -> None:
 
 @pytest.mark.asyncio
 async def test_iterator_without_a_close_method_is_left_alone() -> None:
-    assert [item async for item in await _wrapped(_PlainIterator())] == [1, 2]
+    """A source with neither aclose() nor close() streams through untouched."""
+    assert [item async for item in await _wrapped(_PlainIterable())] == [1, 2]
