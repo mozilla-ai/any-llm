@@ -153,6 +153,10 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
                 content_blocks: list[dict[str, Any]] = []
                 if thinking_block := _build_anthropic_thinking_block(message):
                     content_blocks.append(thinking_block)
+                # The model's own text belongs in its turn, between the thinking and the tool_use blocks.
+                content = message.get("content")
+                if isinstance(content, str) and content:
+                    content_blocks.append({"type": "text", "text": content})
                 for tool_call in message["tool_calls"]:
                     content_blocks.append(
                         {
