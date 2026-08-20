@@ -21,6 +21,7 @@ from any_llm.exceptions import (
     RateLimitError,
     UpstreamProviderError,
 )
+from any_llm.utils.aio import aclose_quietly
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -338,6 +339,8 @@ def handle_exceptions(*, wrap_streaming: bool = False) -> Callable[[F], F]:
                         yield item
                 except Exception as e:
                     _handle_exception(e, provider_name)
+                finally:
+                    await aclose_quietly(async_iter)
 
             @functools.wraps(func)
             async def streaming_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:

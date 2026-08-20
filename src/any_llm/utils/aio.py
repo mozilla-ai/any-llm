@@ -1,4 +1,4 @@
-"""Utilities for running async code in sync contexts."""
+"""Utilities for running async code in sync contexts and for closing async iterators cleanly."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import asyncio
 import concurrent.futures
 import contextlib
 import contextvars
+import inspect
 import os
 import queue
 import threading
@@ -17,6 +18,21 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterator
 
 RUNNER_THREAD_NAME = "any-llm-async-runner"
+
+
+async def aclose_quietly(async_iter: object) -> None:
+    """Close an async iterator if it knows how; a failing close is suppressed so it never replaces the stream's own outcome.
+
+    ``async for`` never closes its source, so every generator that loops over a provider stream
+    must do this on the way out or a caller's ``aclose()`` stops at the outer layer. Async
+    generators spell it ``aclose()``; SDK streams spell it ``close()``, sometimes synchronous.
+    """
+    close = getattr(async_iter, "aclose", None) or getattr(async_iter, "close", None)
+    if callable(close):
+        with contextlib.suppress(Exception):
+            maybe_awaitable = close()
+            if inspect.isawaitable(maybe_awaitable):
+                await maybe_awaitable
 
 
 def _start_loop_thread(name: str) -> tuple[asyncio.AbstractEventLoop, threading.Thread]:
@@ -272,12 +288,7 @@ def _async_source_to_sync_iter(
                         break
                     output_queue.put(item)
             finally:
-                aclose = getattr(async_iter, "aclose", None)
-                if callable(aclose):
-                    with contextlib.suppress(Exception):
-                        maybe_awaitable = aclose()
-                        if asyncio.iscoroutine(maybe_awaitable):
-                            await maybe_awaitable
+                await aclose_quietly(async_iter)
         except asyncio.CancelledError:
             pass
         except Exception as exc:
