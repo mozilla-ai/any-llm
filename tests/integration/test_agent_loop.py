@@ -92,7 +92,6 @@ async def test_agent_loop_parallel_tool_calls(
                     "role": "tool",
                     "content": tool_result,
                     "tool_call_id": tool_call.id,
-                    "name": tool_call.function.name,
                 }
             )
 
@@ -178,7 +177,6 @@ async def test_agent_loop_sequential_tool_calls(
                         "role": "tool",
                         "content": tool_result,
                         "tool_call_id": tool_call.id,
-                        "name": tool_call.function.name,
                     }
                 )
 
