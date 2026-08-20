@@ -8,9 +8,11 @@ from anthropic.types import (
     ContentBlockStartEvent,
     ContentBlockStopEvent,
     Message,
+    MessageDeltaEvent,
     MessageStopEvent,
 )
 from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
+from pydantic import BaseModel
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.logging import logger
@@ -31,6 +33,7 @@ from any_llm.types.model import Model
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 DEFAULT_MAX_TOKENS = 8192
+_ANTHROPIC_CONTENT_FILTER_REFUSAL = "Response blocked by Anthropic content filtering."
 # OpenAI has no counterpart for the "stop_sequence" and "pause_turn" stop reasons, so those
 # fall through to the "stop" default. "refusal" (a safety stop) and
 # "model_context_window_exceeded" (the model ran out of context rather than out of max_tokens)
@@ -51,6 +54,14 @@ REASONING_EFFORT_TO_ANTHROPIC_EFFORT = {
     "xhigh": "xhigh",
     "max": "max",
 }
+
+
+def _refusal_stop_details(value: object) -> dict[str, Any] | None:
+    """Return typed Anthropic refusal details when the installed SDK exposes them."""
+    stop_details = getattr(value, "stop_details", None)
+    if isinstance(stop_details, BaseModel):
+        return stop_details.model_dump(mode="json", exclude_none=True)
+    return None
 
 
 def _is_tool_call(message: dict[str, Any]) -> bool:
@@ -275,13 +286,20 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
             delta = {"extra_content": {"anthropic": {"signature": chunk.delta.signature}}}
 
     elif isinstance(chunk, ContentBlockStopEvent):
-        if hasattr(chunk, "content_block") and chunk.content_block.type == "tool_use":
-            finish_reason = "tool_calls"
-        else:
-            finish_reason = None
+        finish_reason = None
+
+    elif isinstance(chunk, MessageDeltaEvent):
+        stop_reason = chunk.delta.stop_reason
+        finish_reason = (
+            ANTHROPIC_STOP_REASON_TO_FINISH_REASON.get(stop_reason, "stop") if stop_reason is not None else None
+        )
+        if finish_reason == "content_filter":
+            delta = {"refusal": _ANTHROPIC_CONTENT_FILTER_REFUSAL}
+        if stop_details := _refusal_stop_details(chunk.delta):
+            delta["extra_content"] = {"anthropic": {"stop_details": stop_details}}
 
     elif isinstance(chunk, MessageStopEvent):
-        finish_reason = "stop"
+        finish_reason = None
         if hasattr(chunk, "message") and chunk.message.usage:
             anthropic_usage = chunk.message.usage
             cache_read = anthropic_usage.cache_read_input_tokens or 0
@@ -349,12 +367,19 @@ def _convert_response(response: Message) -> ChatCompletion:
             # which is what the streaming converter already does for the same block types.
             logger.warning("Skipping unsupported Anthropic content block type: %s", content_block.type)
 
+    anthropic_extra_content: dict[str, Any] = {}
+    if thinking_signature:
+        anthropic_extra_content["signature"] = thinking_signature
+    if stop_details := _refusal_stop_details(response):
+        anthropic_extra_content["stop_details"] = stop_details
+
     message = ChatCompletionMessage(
         role="assistant",
         content="".join(content_parts),
+        refusal=_ANTHROPIC_CONTENT_FILTER_REFUSAL if finish_reason == "content_filter" else None,
         reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
         tool_calls=tool_calls or None,
-        extra_content={"anthropic": {"signature": thinking_signature}} if thinking_signature else None,
+        extra_content={"anthropic": anthropic_extra_content} if anthropic_extra_content else None,
     )
 
     cache_read = response.usage.cache_read_input_tokens or 0
