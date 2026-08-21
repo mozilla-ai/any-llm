@@ -49,6 +49,24 @@ def _has_json_schema_refs(schema: Any) -> bool:
     return False
 
 
+def _has_type_unions(schema: Any) -> bool:
+    """Return True if *schema* declares a type as a list, e.g. ``["string", "null"]``.
+
+    ``google.genai.types.Schema.type`` is a single ``types.Type`` enum, so the OpenAPI
+    3.0 shape cannot express a union and the API rejects the request. JSON Schema does
+    allow the list form, so such schemas must be routed through
+    ``FunctionDeclaration.parameters_json_schema``, which the SDK forwards to the
+    server as raw JSON Schema.
+    """
+    if isinstance(schema, dict):
+        if isinstance(schema.get("type"), list):
+            return True
+        return any(_has_type_unions(v) for v in schema.values())
+    if isinstance(schema, list):
+        return any(_has_type_unions(v) for v in schema)
+    return False
+
+
 def _has_additional_properties(schema: Any) -> bool:
     """Return True if *schema* sets ``additionalProperties`` anywhere, nested included.
 
@@ -86,7 +104,7 @@ def _convert_tool_spec(tools: list[dict[str, Any] | Any], provider_name: str) ->
         function = tool["function"]
         params: dict[str, Any] = function.get("parameters") or {}
 
-        if _has_json_schema_refs(params):
+        if _has_json_schema_refs(params) or _has_type_unions(params):
             function_declarations.append(
                 types.FunctionDeclaration(
                     name=function["name"],
