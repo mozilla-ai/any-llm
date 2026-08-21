@@ -245,6 +245,7 @@ async def test_amessages_non_streaming() -> None:
         model="claude-3-5-sonnet",
         messages=[{"role": "user", "content": "Hello"}],
         max_tokens=1024,
+        container="container_123",
     )
     result = await BaseAnthropicProvider._amessages(provider, params)
     assert isinstance(result, MessageResponse)
@@ -256,6 +257,7 @@ async def test_amessages_non_streaming() -> None:
     call_kwargs = mock_client.messages.create.call_args.kwargs
     assert call_kwargs["model"] == "claude-3-5-sonnet"
     assert call_kwargs["max_tokens"] == 1024
+    assert call_kwargs["container"] == "container_123"
 
 
 @pytest.mark.asyncio

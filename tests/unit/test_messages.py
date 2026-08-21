@@ -90,6 +90,36 @@ def test_messages_params_exposes_service_tier_in_schema() -> None:
     assert "service_tier" in MessagesParams.model_json_schema()["properties"]
 
 
+def test_messages_params_exposes_container_in_schema() -> None:
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        container="container_123",
+    )
+
+    assert params.container == "container_123"
+    assert "container" in MessagesParams.model_json_schema()["properties"]
+
+
+@pytest.mark.asyncio
+async def test_amessages_rejects_container_for_bridged_provider() -> None:
+    provider = AnyLLM.create("openai", api_key="sk-test")
+
+    with (
+        patch.object(provider, "_acompletion", new=AsyncMock()) as mock_acompletion,
+        pytest.raises(NotImplementedError, match="container"),
+    ):
+        await provider.amessages(
+            model="gpt-4",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=100,
+            container="container_123",
+        )
+
+    mock_acompletion.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_amessages_rejects_prompt_cache_key_for_unsupported_provider() -> None:
     pytest.importorskip("boto3")
@@ -600,11 +630,13 @@ async def test_amessages_forwards_typed_messages_params() -> None:
     assert "service_tier" in signature(amessages).parameters
     assert "context_management" in signature(amessages).parameters
     assert "betas" in signature(amessages).parameters
+    assert "container" in signature(amessages).parameters
     assert "timeout" in signature(amessages).parameters
     assert "prompt_cache_key" in signature(AnyLLM.amessages).parameters
     assert "service_tier" in signature(AnyLLM.amessages).parameters
     assert "context_management" in signature(AnyLLM.amessages).parameters
     assert "betas" in signature(AnyLLM.amessages).parameters
+    assert "container" in signature(AnyLLM.amessages).parameters
     assert "timeout" in signature(AnyLLM.amessages).parameters
 
     mock_provider = Mock()
@@ -622,6 +654,7 @@ async def test_amessages_forwards_typed_messages_params() -> None:
             service_tier="standard_only",
             context_management=context_management,
             betas=betas,
+            container="container_123",
             timeout=30,
         )
 
@@ -630,6 +663,7 @@ async def test_amessages_forwards_typed_messages_params() -> None:
     assert call_kwargs["service_tier"] == "standard_only"
     assert call_kwargs["context_management"] == context_management
     assert call_kwargs["betas"] == betas
+    assert call_kwargs["container"] == "container_123"
     assert call_kwargs["timeout"] == 30
 
 
@@ -673,11 +707,13 @@ def test_messages_forwards_typed_messages_params() -> None:
     assert "service_tier" in signature(messages).parameters
     assert "context_management" in signature(messages).parameters
     assert "betas" in signature(messages).parameters
+    assert "container" in signature(messages).parameters
     assert "timeout" in signature(messages).parameters
     assert "prompt_cache_key" in signature(AnyLLM.messages).parameters
     assert "service_tier" in signature(AnyLLM.messages).parameters
     assert "context_management" in signature(AnyLLM.messages).parameters
     assert "betas" in signature(AnyLLM.messages).parameters
+    assert "container" in signature(AnyLLM.messages).parameters
     assert "timeout" in signature(AnyLLM.messages).parameters
 
     mock_provider = Mock()
@@ -695,6 +731,7 @@ def test_messages_forwards_typed_messages_params() -> None:
             service_tier="standard_only",
             context_management=context_management,
             betas=betas,
+            container="container_123",
             timeout=30,
         )
 
@@ -703,6 +740,7 @@ def test_messages_forwards_typed_messages_params() -> None:
     assert call_kwargs["service_tier"] == "standard_only"
     assert call_kwargs["context_management"] == context_management
     assert call_kwargs["betas"] == betas
+    assert call_kwargs["container"] == "container_123"
     assert call_kwargs["timeout"] == 30
 
 

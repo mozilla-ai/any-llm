@@ -850,6 +850,7 @@ class AnyLLM(ABC):
         service_tier: str | None = None,
         context_management: dict[str, Any] | None = None,
         betas: list[str] | None = None,
+        container: str | None = None,
         timeout: float | None = None,
         **kwargs: Any,
     ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | Iterator[MessageStreamEvent]:
@@ -876,6 +877,7 @@ class AnyLLM(ABC):
                         service_tier=service_tier,
                         context_management=context_management,
                         betas=betas,
+                        container=container,
                         timeout=timeout,
                         **kwargs,
                     ),
@@ -889,6 +891,7 @@ class AnyLLM(ABC):
                 service_tier=service_tier,
                 context_management=context_management,
                 betas=betas,
+                container=container,
                 timeout=timeout,
                 **kwargs,
             ),
@@ -920,6 +923,7 @@ class AnyLLM(ABC):
         service_tier: str | None = None,
         context_management: dict[str, Any] | None = None,
         betas: list[str] | None = None,
+        container: str | None = None,
         output_format: type | dict[str, Any] | None = None,
         timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
         **kwargs: Any,
@@ -951,6 +955,7 @@ class AnyLLM(ABC):
                 trigger value must be at least 50,000 when provided; see
                 [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction).
             betas: Anthropic beta identifiers.
+            container: Container identifier for continuing a previous top-level container.
             output_format: Structured output, mirroring Anthropic's ``messages.parse``/
                 ``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed
                 ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic
@@ -969,8 +974,8 @@ class AnyLLM(ABC):
 
         Raises:
             ValueError: If `output_format` is combined with `stream=True`.
-            NotImplementedError: If `context_management` or `betas` is used with a
-                provider that has no native Anthropic Messages API.
+            NotImplementedError: If `container`, `context_management`, or `betas` is used
+                with a provider that has no native Anthropic Messages API.
 
         """
         if output_format is not None and stream:
@@ -996,6 +1001,7 @@ class AnyLLM(ABC):
             service_tier=service_tier,
             context_management=context_management,
             betas=betas,
+            container=container,
             output_format=output_format,
         )
         self._validate_prompt_cache_key(prompt_cache_key)
@@ -1020,6 +1026,9 @@ class AnyLLM(ABC):
         Providers with native Messages API support (e.g., Anthropic) override this
         for direct pass-through.
         """
+        if params.container is not None:
+            msg = "container requires a provider with a native Anthropic Messages API"
+            raise NotImplementedError(msg)
         if params.context_management is not None or params.betas:
             msg = "context_management and betas require a provider with a native Anthropic Messages API"
             raise NotImplementedError(msg)
