@@ -221,6 +221,9 @@ class MessagesParams(BaseModel):
     service_tier: str | None = None
     """The service tier to use for this request."""
 
+    container: str | None = None
+    """Container identifier for continuing a previous top-level container."""
+
     context_management: dict[str, Any] | None = None
     """Anthropic context management configuration"""
 

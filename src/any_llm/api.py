@@ -599,6 +599,7 @@ def messages(
     service_tier: str | None = None,
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
+    container: str | None = None,
     output_format: type | dict[str, Any] | None = None,
     timeout: float | None = None,
     api_key: str | None = None,
@@ -631,6 +632,7 @@ def messages(
             strategy requires a supported model. Its `input_tokens` trigger value must be at
             least 50,000 when provided; see [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction).
         betas: Anthropic beta identifiers.
+        container: Container identifier for continuing a previous top-level container.
         output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
             Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
@@ -677,6 +679,7 @@ def messages(
         service_tier=service_tier,
         context_management=context_management,
         betas=betas,
+        container=container,
         output_format=output_format,
         timeout=timeout,
         **kwargs,
@@ -704,6 +707,7 @@ async def amessages(
     service_tier: str | None = None,
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
+    container: str | None = None,
     output_format: type | dict[str, Any] | None = None,
     timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
     api_key: str | None = None,
@@ -736,6 +740,7 @@ async def amessages(
             strategy requires a supported model. Its `input_tokens` trigger value must be at
             least 50,000 when provided; see [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction).
         betas: Anthropic beta identifiers.
+        container: Container identifier for continuing a previous top-level container.
         output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
             Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
@@ -782,6 +787,7 @@ async def amessages(
         service_tier=service_tier,
         context_management=context_management,
         betas=betas,
+        container=container,
         output_format=output_format,
         timeout=timeout,
         **kwargs,

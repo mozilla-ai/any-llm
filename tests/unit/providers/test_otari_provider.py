@@ -793,6 +793,7 @@ async def test_otari_amessages_delegates_to_native_endpoint_preserving_anthropic
         system=[{"type": "text", "text": "You are helpful.", "cache_control": {"type": "ephemeral"}}],
         thinking={"type": "enabled", "budget_tokens": 1024},
         prompt_cache_key="tenant-1",
+        container="container_123",
     )
 
     result = await provider._amessages(params, metadata={"user_id": "u1"})
@@ -810,6 +811,7 @@ async def test_otari_amessages_delegates_to_native_endpoint_preserving_anthropic
     assert call_kwargs["system"][0]["cache_control"] == {"type": "ephemeral"}
     assert call_kwargs["thinking"] == {"type": "enabled", "budget_tokens": 1024}
     assert call_kwargs["prompt_cache_key"] == "tenant-1"
+    assert call_kwargs["container"] == "container_123"
     # Extra kwargs are forwarded; stream is not set for non-streaming calls.
     assert call_kwargs["metadata"] == {"user_id": "u1"}
     assert "stream" not in call_kwargs
