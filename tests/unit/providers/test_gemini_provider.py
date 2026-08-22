@@ -919,9 +919,7 @@ def test_convert_response_accumulates_multiple_text_parts() -> None:
     assert message["reasoning"] is None
 
 
-def test_convert_response_skips_parts_without_text_or_function_call() -> None:
-    """A candidate can mix in parts that carry neither text nor a tool call, e.g. inline image
-    data; those must not disturb the accumulated text."""
+def test_convert_response_preserves_inline_data_alongside_text() -> None:
     response = _make_gemini_response(
         [
             types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG")),
@@ -935,6 +933,36 @@ def test_convert_response_skips_parts_without_text_or_function_call() -> None:
     message = response_dict["choices"][0]["message"]
     assert message["content"] == "Described."
     assert message["tool_calls"] is None
+    assert message["images"] == [
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}
+    ]
+    assert ChatCompletion.model_validate(response_dict).choices[0].message.images == message["images"]
+
+
+def test_convert_response_emits_choice_for_image_only_response() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"))],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert response_dict["choices"][0]["finish_reason"] == "stop"
+    assert response_dict["choices"][0]["message"]["images"]
+
+
+def test_convert_streaming_response_preserves_inline_data() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="audio/wav", data=b"RIFF"))],
+        types.FinishReason.STOP,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    assert chunk.choices[0].delta.images == [
+        {"type": "image_url", "image_url": {"url": "data:audio/wav;base64,UklGRg=="}}
+    ]
+    assert chunk.model_dump()["choices"][0]["delta"]["images"] == chunk.choices[0].delta.images
 
 
 def test_convert_response_emits_choice_for_filtered_response_without_content() -> None:
