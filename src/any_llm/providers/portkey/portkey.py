@@ -57,6 +57,7 @@ class PortkeyProvider(XMLReasoningOpenAIProvider):
     @staticmethod
     @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
+        """Convert a Portkey completion response and extract XML reasoning."""
         if isinstance(response, OpenAIChatCompletion):
             return convert_chat_completion_with_xml_reasoning(response)
         if isinstance(response, ChatCompletion):
@@ -68,6 +69,7 @@ class PortkeyProvider(XMLReasoningOpenAIProvider):
     @staticmethod
     @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+        """Convert a Portkey completion chunk and extract XML reasoning."""
         if isinstance(response, OpenAIChatCompletionChunk):
             return convert_chat_completion_chunk_with_xml_reasoning(response)
         if isinstance(response, ChatCompletionChunk):
