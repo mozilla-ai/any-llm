@@ -377,3 +377,43 @@ async def test_amoderation_uses_portkey_default_model_when_model_is_empty() -> N
         model="text-moderation-latest",
         input="test input",
     )
+
+
+@pytest.mark.asyncio
+async def test_amoderation_with_include_raw() -> None:
+    with patch("any_llm.providers.portkey.portkey.AsyncPortkey") as mocked_portkey:
+        mock_client = AsyncMock()
+        mocked_portkey.return_value = mock_client
+
+        response = PortkeyModerationCreateResponse(
+            id="mod-test",
+            model="test-model",
+            results=[
+                PortkeyModeration(
+                    flagged=False,
+                    categories=PortkeyCategories(
+                        violence=False,
+                    ),
+                    category_scores=PortkeyCategoryScores(
+                        violence=0.01,
+                    ),
+                )
+            ],
+        )
+
+        mock_client.moderations.create = AsyncMock(return_value=response)
+
+        provider = PortkeyProvider(api_key="test")
+        result = await provider._amoderation(
+            model="test-model",
+            input="test input",
+            include_raw=True,
+        )
+
+    mock_client.moderations.create.assert_awaited_once_with(
+        model="test-model",
+        input="test input",
+    )
+
+    assert response.results is not None
+    assert result.results[0].provider_raw == response.results[0].model_dump()
