@@ -87,7 +87,7 @@ class _NativePortkeyClient:
             }
         )
 
-    async def list(self, **_kwargs: Any) -> Any:
+    async def list(self, **_kwargs: object) -> Any:
         return type(
             "NativeModelList",
             (),
