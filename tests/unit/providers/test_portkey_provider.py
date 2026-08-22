@@ -54,27 +54,19 @@ def test_convert_completion_params_with_dataclass_response_format() -> None:
     assert "value" in result["response_format"]["json_schema"]["schema"]["properties"]
 
 
-def test_portkey_convert_completion_response_creates_anyllm_chatcompletion() -> None:
-    """
-    Test that the _convert_completion_response_async converts a portkey ChatCompletion Object
-    into an anyllm ChatCompletion Object
-    """
+def test_convert_completion_params_with_non_structured_response_format() -> None:
 
-    provider = PortkeyProvider(api_key="test")
+    response_format = {"type": "json_object"}
 
-    response = PortkeyChatCompletions(
-        id="test",
-        choices=[],
-        created=123,
-        model="test-model",
-        object="chat.completion",
+    params = CompletionParams(
+        model_id="test-model",
+        messages=[{"role": "user", "content": "Hello"}],
+        response_format=response_format,
     )
 
-    result = provider._convert_completion_response(response)
+    result = PortkeyProvider._convert_completion_params(params)
 
-    assert isinstance(result, ChatCompletion)
-    assert result.id == "test"
-    assert result.model == "test-model"
+    assert result["response_format"] == response_format
 
 
 @pytest.mark.asyncio
@@ -110,31 +102,14 @@ async def test_acompletion_with_async_portkey() -> None:
     assert result.model == "test-model"
 
 
-def test_portkey_convert_completion_chunk_response_creates_anyllm_chatcompletion() -> None:
-    """
-    Test that the _convert_completion_chunk_response converts a portkey ChatCompletion Object
-    into an anyllm ChatCompletion Object
-    """
+def test_convert_embedding_params_raises_not_implemented() -> None:
+    with pytest.raises(NotImplementedError, match="Portkey does not support embeddings"):
+        PortkeyProvider._convert_embedding_params(None)
 
-    provider = PortkeyProvider(api_key="test")
 
-    class FakePortkeyChunk:
-        def model_dump(self) -> dict[str, Any]:
-            return {
-                "id": "test",
-                "choices": [],
-                "created": 123,
-                "model": "test-model",
-                "object": "chat.completion.chunk",
-            }
-
-    response = FakePortkeyChunk()
-
-    result = provider._convert_completion_chunk_response(response)
-
-    assert isinstance(result, ChatCompletionChunk)
-    assert result.id == "test"
-    assert result.model == "test-model"
+def test_convert_embedding_response_raises_not_implemented() -> None:
+    with pytest.raises(NotImplementedError, match="Portkey does not support embeddings"):
+        PortkeyProvider._convert_embedding_response(None)
 
 
 @pytest.mark.asyncio
@@ -253,3 +228,126 @@ async def test_amoderation_with_async_portkey() -> None:
     assert result.results[0].flagged is True
     assert result.results[0].categories["violence"] is True
     assert result.results[0].category_scores["violence"] == 0.95
+
+
+def test_portkey_convert_completion_response_normalizes_reasoning() -> None:
+    provider = PortkeyProvider(api_key="test")
+
+    class FakePortkeyCompletion:
+        def model_dump(self) -> dict[str, Any]:
+            return {
+                "id": "test",
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": "<think>xml reasoning</think>Final answer",
+                            "reasoning_content": "provider reasoning",
+                        },
+                    }
+                ],
+                "created": 123,
+                "model": "test-model",
+                "object": "chat.completion",
+            }
+
+    result = provider._convert_completion_response(FakePortkeyCompletion())
+
+    assert result.choices[0].message.content == "Final answer"
+    assert result.choices[0].message.reasoning is not None
+    assert result.choices[0].message.reasoning.content == "provider reasoning\nxml reasoning"
+
+
+def test_portkey_convert_completion_chunk_response_normalizes_reasoning() -> None:
+    provider = PortkeyProvider(api_key="test")
+
+    class FakePortkeyChunk:
+        def model_dump(self) -> dict[str, Any]:
+            return {
+                "id": "test",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "role": "assistant",
+                            "content": "<think>xml reasoning</think>Final answer",
+                            "reasoning_content": "provider reasoning",
+                        },
+                        "finish_reason": None,
+                    }
+                ],
+                "created": 123,
+                "model": "test-model",
+                "object": "chat.completion.chunk",
+            }
+
+    result = provider._convert_completion_chunk_response(FakePortkeyChunk())
+
+    assert result.choices[0].delta.content == "Final answer"
+    assert result.choices[0].delta.reasoning is not None
+    assert result.choices[0].delta.reasoning.content == "provider reasoning\nxml reasoning"
+
+
+@pytest.mark.asyncio
+async def test_acompletion_with_async_chunk_portkey_preserves_reasoning() -> None:
+    with patch("any_llm.providers.portkey.portkey.AsyncPortkey") as mocked_portkey:
+        mock_client = AsyncMock()
+        mocked_portkey.return_value = mock_client
+
+        class FakePortkeyChunk:
+            def model_dump(self) -> dict[str, Any]:
+                return {
+                    "id": "test",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {
+                                "role": "assistant",
+                                "content": "<think>xml reasoning</think>Final answer",
+                                "reasoning_content": "provider reasoning",
+                            },
+                            "finish_reason": None,
+                        }
+                    ],
+                    "created": 123,
+                    "model": "test-model",
+                    "object": "chat.completion.chunk",
+                }
+
+        async def fake_stream() -> AsyncIterator[FakePortkeyChunk]:
+            yield FakePortkeyChunk()
+
+        mock_client.chat.completions.create = AsyncMock(return_value=fake_stream())
+
+        provider = PortkeyProvider(api_key="test")
+
+        result = cast(
+            "AsyncIterator[ChatCompletionChunk]",
+            await provider._acompletion(
+                CompletionParams(
+                    model_id="test-model",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    stream=True,
+                )
+            ),
+        )
+
+    chunks = [chunk async for chunk in result]
+
+    assert len(chunks) == 1
+    assert chunks[0].choices[0].delta.content == "Final answer"
+    assert chunks[0].choices[0].delta.reasoning is not None
+    assert chunks[0].choices[0].delta.reasoning.content == "provider reasoning\nxml reasoning"
+
+
+def test_convert_list_models_response_returns_empty_list_when_data_is_none() -> None:
+    response = PortkeyModelList.model_construct(
+        object="list",
+        data=None,
+    )
+
+    result = PortkeyProvider._convert_list_models_response(response)
+
+    assert result == []

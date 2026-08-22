@@ -7,7 +7,6 @@ from typing_extensions import override
 from any_llm.any_llm import AnyLLM
 from any_llm.providers.openai.utils import (
     _convert_moderation_response_from_openai,
-    _normalize_openai_dict_response,
 )
 from any_llm.providers.openai.xml_reasoning import (
     wrap_chunks_with_xml_reasoning,
@@ -76,8 +75,7 @@ class PortkeyProvider(AnyLLM):
     @staticmethod
     @override
     def _convert_completion_response(response: Any) -> ChatCompletion:
-
-        response_dict = _normalize_openai_dict_response(response.model_dump())
+        response_dict = response.model_dump()
 
         choices = response_dict.get("choices")
         if isinstance(choices, list):
@@ -95,7 +93,7 @@ class PortkeyProvider(AnyLLM):
     @staticmethod
     @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
-        response_dict = _normalize_openai_dict_response(response.model_dump())
+        response_dict = response.model_dump()
 
         choices = response_dict.get("choices")
         if isinstance(choices, list):
