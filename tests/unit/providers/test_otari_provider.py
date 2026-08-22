@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -962,6 +963,49 @@ async def test_otari_amessages_output_format_uses_native_endpoint() -> None:
     call_kwargs = client.message.call_args.kwargs
     assert call_kwargs["output_config"]["format"]["schema"]["title"] == "City"
     assert call_kwargs["output_config"]["format"]["type"] == "json_schema"
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_output_format_accepts_dataclass_type() -> None:
+    @dataclass
+    class City:
+        city: str
+
+    client = _mock_otari_client()
+    provider = _build_provider(client)
+    client.message.return_value = SimpleNamespace(data=_message_response_payload(), request_id=None)
+
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=100,
+        output_format=City,
+    )
+
+    await provider._amessages(params)
+
+    output_format = client.message.call_args.kwargs["output_config"]["format"]
+    assert output_format["type"] == "json_schema"
+    assert output_format["schema"]["properties"]["city"]["type"] == "string"
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_output_format_forwards_raw_config() -> None:
+    output_config = {"type": "json_schema", "schema": {"type": "object"}}
+    client = _mock_otari_client()
+    provider = _build_provider(client)
+    client.message.return_value = SimpleNamespace(data=_message_response_payload(), request_id=None)
+
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=100,
+        output_format=output_config,
+    )
+
+    await provider._amessages(params)
+
+    assert client.message.call_args.kwargs["output_config"] == output_config
 
 
 @pytest.mark.asyncio
