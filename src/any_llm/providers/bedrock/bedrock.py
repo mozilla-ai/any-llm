@@ -11,7 +11,12 @@ from typing import TYPE_CHECKING, Any
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError, MissingApiKeyError
+from any_llm.exceptions import (
+    BatchNotCompleteError,
+    InvalidRequestError,
+    MissingApiKeyError,
+    UnsupportedParameterError,
+)
 from any_llm.logging import logger
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.model import Model
@@ -60,7 +65,8 @@ class BedrockProvider(AnyLLM):
     SUPPORTS_RERANK = False
 
     # boto3's Converse API has no per-request timeout, so it is translated into a per-timeout
-    # boto3 client in _completion via _client_for_timeout.
+    # boto3 client in _completion via _client_for_timeout. A caller-supplied `client=` can't be
+    # rebuilt that way, so a timeout is rejected on that path instead.
     TIMEOUT_SUPPORT = "mapped"
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
@@ -295,20 +301,27 @@ class BedrockProvider(AnyLLM):
 
         boto3 has no per-request timeout; connect/read timeouts are only configurable at
         client-construction time via ``botocore.config.Config``. When a custom client was
-        supplied, any-llm doesn't own its construction, so `timeout` is dropped with a warning
-        instead of being silently ignored or crashing.
+        supplied, any-llm doesn't own its construction and cannot apply the timeout, so the
+        parameter is rejected the same way an ``unsupported`` provider rejects it centrally
+        (see ``AnyLLM._validate_and_forward_timeout``). Dropping it instead would let the call
+        run unbounded while the caller believed a deadline was in force.
 
         ``_completion`` runs on executor threads (via ``_acompletion``), so the cache miss path
         is locked: concurrent calls with the same not-yet-cached timeout must not each build and
         leak their own client. The cache is also bounded, since a caller deriving `timeout` from
         a remaining deadline would otherwise produce a new distinct value (and client) per call.
         """
-        if timeout is None or self._boto_session is None:
+        if self._boto_session is None:
             if timeout is not None:
-                logger.warning(
-                    "Bedrock does not support a per-request 'timeout' when a custom client is provided; "
-                    "ignoring it. Configure timeouts via botocore.config.Config when constructing your client."
+                parameter_name = "timeout"
+                additional_message = (
+                    "A per-request 'timeout' cannot be applied to a custom client. Set "
+                    "connect_timeout/read_timeout via botocore.config.Config when constructing it, "
+                    "or let any-llm build the client."
                 )
+                raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME, additional_message)
+            return self.client
+        if timeout is None:
             return self.client
 
         with self._timeout_clients_lock:

@@ -18,7 +18,7 @@ from any_llm.exceptions import (
     UnsupportedParameterError,
     UnsupportedProviderError,
 )
-from any_llm.tools import prepare_tools
+from any_llm.tools import _flatten_responses_tool, prepare_tools
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
 from any_llm.types.completion import (
     ChatCompletion,
@@ -29,7 +29,6 @@ from any_llm.types.completion import (
 )
 from any_llm.types.image import ImageGenerationParams, ImagesResponse
 from any_llm.types.messages import (
-    ContentBlockStopEvent,
     MessageDelta,
     MessageDeltaEvent,
     MessageDeltaUsage,
@@ -1030,6 +1029,7 @@ class AnyLLM(ABC):
             StreamingState,
             chat_completion_chunk_to_message_stream_events,
             chat_completion_to_message_response,
+            close_open_blocks,
             messages_params_to_completion_params,
             split_cached_input_tokens,
         )
@@ -1069,11 +1069,8 @@ class AnyLLM(ABC):
                 raise
             # Emit the closing events after the full stream is consumed so trailing-chunk usage is included.
             if state.started:
-                if state.current_block_type is not None:
-                    yield ContentBlockStopEvent(
-                        type="content_block_stop",
-                        index=state.current_block_index,
-                    )
+                for stop_event in close_open_blocks(state):
+                    yield stop_event
                 yield usage_delta(state.stop_reason or "end_turn")
                 yield MessageStopEvent(type="message_stop")
 
@@ -1225,6 +1222,7 @@ class AnyLLM(ABC):
         prompt_cache_key: str | None = None,
         prompt_cache_retention: str | None = None,
         conversation: str | dict[str, Any] | None = None,
+        timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
         extra_body: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> ResponseResource | Response | AsyncIterator[ResponseStreamEvent] | ParsedResponse[Any]:
@@ -1272,6 +1270,11 @@ class AnyLLM(ABC):
             prompt_cache_key: A key to use when reading from or writing to the prompt cache.
             prompt_cache_retention: How long to retain a prompt cache entry created by this request.
             conversation: The conversation to associate this response with (ID string or ConversationParam object).
+            timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
+                An explicit ``None`` is treated the same as omitting it (the provider's default
+                applies), so it cannot request an unbounded timeout. Providers that have no
+                per-request timeout raise `UnsupportedParameterError`; set a timeout on their
+                client via `client_args` instead.
             extra_body: Additional fields to merge into an OpenAI-compatible Responses request body.
             **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
@@ -1292,7 +1295,9 @@ class AnyLLM(ABC):
 
         prepared_tools = None
         if tools:
-            prepared_tools = prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
+            prepared_tools = [
+                _flatten_responses_tool(tool) for tool in prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
+            ]
 
         params = ResponsesParams(
             model=model,
@@ -1328,6 +1333,7 @@ class AnyLLM(ABC):
         )
 
         provider_kwargs: dict[str, Any] = {}
+        self._validate_and_forward_timeout(timeout, provider_kwargs)
         if extra_body is not None:
             provider_kwargs["extra_body"] = extra_body
         result = await self._aresponses(params, **provider_kwargs)

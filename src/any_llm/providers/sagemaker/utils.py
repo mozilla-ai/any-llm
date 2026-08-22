@@ -1,6 +1,6 @@
 import json
 from time import time
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Any, Literal, cast
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -18,18 +18,6 @@ from any_llm.types.completion import (
     Function,
     Usage,
 )
-
-if TYPE_CHECKING:
-    from openai.types.chat.chat_completion_message_custom_tool_call import (
-        ChatCompletionMessageCustomToolCall,
-    )
-    from openai.types.chat.chat_completion_message_function_tool_call import (
-        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
-    )
-
-    ChatCompletionMessageToolCallType = (
-        OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
-    )
 
 
 def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -51,9 +39,9 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
 
     if params.max_tokens:
         result_kwargs["max_tokens"] = params.max_tokens
-    if params.temperature:
+    if params.temperature is not None:
         result_kwargs["temperature"] = params.temperature
-    if params.top_p:
+    if params.top_p is not None:
         result_kwargs["top_p"] = params.top_p
     if params.stop:
         result_kwargs["stop"] = params.stop
@@ -91,7 +79,7 @@ def _convert_response(response: dict[str, Any], model: str) -> ChatCompletion:
             message = ChatCompletionMessage(
                 role=message_data.get("role", "assistant"),
                 content=message_data.get("content"),
-                tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls),
+                tool_calls=tool_calls,
             )
 
             finish_reason = choice_data.get("finish_reason", "stop")

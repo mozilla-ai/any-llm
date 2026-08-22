@@ -18,6 +18,7 @@ from openai.types.chat.chat_completion_message_function_tool_call import (
     ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
 )
 from openai.types.chat.chat_completion_message_function_tool_call import Function as OpenAIFunction
+from openai.types.completion_usage import CompletionTokensDetails as OpenAICompletionTokensDetails
 from openai.types.completion_usage import CompletionUsage as OpenAICompletionUsage
 from openai.types.completion_usage import PromptTokensDetails as OpenAIPromptTokensDetails
 from openai.types.create_embedding_response import Usage as OpenAIUsage
@@ -55,7 +56,25 @@ class Reasoning(BaseModel):
         return self.content
 
 
+class ChatCompletionMessageFunctionToolCall(OpenAIChatCompletionMessageFunctionToolCall):
+    """Extended tool call type that includes extra_content for provider-specific data.
+
+    The extra_content field is used to store provider-specific metadata that needs
+    to be preserved across multi-turn conversations. For example, Gemini 3 models
+    require thought_signature to be passed back with function calls.
+
+    Example extra_content structure for Gemini:
+        {"google": {"thought_signature": "<base64-encoded-signature>"}}
+    """
+
+    extra_content: dict[str, Any] | None = None
+
+
+ChatCompletionMessageToolCall = ChatCompletionMessageFunctionToolCall | OpenAIChatCompletionMessageToolCall
+
+
 class ChatCompletionMessage(OpenAIChatCompletionMessage):
+    tool_calls: list[ChatCompletionMessageToolCall] | None = None  # type: ignore[assignment]
     reasoning: Reasoning | None = None
     annotations: list[dict[str, Any]] | None = None  # type: ignore[assignment]
     extra_content: dict[str, Any] | None = None
@@ -124,23 +143,9 @@ class ChatCompletionChunk(OpenAIChatCompletionChunk):
     service_tier: str | None = None  # type: ignore[assignment]
 
 
-class ChatCompletionMessageFunctionToolCall(OpenAIChatCompletionMessageFunctionToolCall):
-    """Extended tool call type that includes extra_content for provider-specific data.
-
-    The extra_content field is used to store provider-specific metadata that needs
-    to be preserved across multi-turn conversations. For example, Gemini 3 models
-    require thought_signature to be passed back with function calls.
-
-    Example extra_content structure for Gemini:
-        {"google": {"thought_signature": "<base64-encoded-signature>"}}
-    """
-
-    extra_content: dict[str, Any] | None = None
-
-
-ChatCompletionMessageToolCall = ChatCompletionMessageFunctionToolCall | OpenAIChatCompletionMessageToolCall
 Function = OpenAIFunction
 CompletionUsage = OpenAICompletionUsage
+CompletionTokensDetails = OpenAICompletionTokensDetails
 PromptTokensDetails = OpenAIPromptTokensDetails
 CreateEmbeddingResponse = OpenAICreateEmbeddingResponse
 Embedding = OpenAIEmbedding

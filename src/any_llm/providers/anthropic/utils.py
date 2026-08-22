@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from anthropic import transform_schema
 from anthropic.types import (
@@ -29,18 +29,6 @@ from any_llm.types.completion import (
 )
 from any_llm.types.model import Model
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
-
-if TYPE_CHECKING:
-    from openai.types.chat.chat_completion_message_custom_tool_call import (
-        ChatCompletionMessageCustomToolCall,
-    )
-    from openai.types.chat.chat_completion_message_function_tool_call import (
-        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
-    )
-
-    ChatCompletionMessageToolCallType = (
-        OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
-    )
 
 DEFAULT_MAX_TOKENS = 8192
 REASONING_EFFORT_TO_ANTHROPIC_EFFORT = {
@@ -340,15 +328,21 @@ def _convert_response(response: Message) -> ChatCompletion:
             # continuity. See https://docs.claude.com/en/docs/build-with-claude/extended-thinking
             if content_block.signature:
                 thinking_signature = content_block.signature
+        elif content_block.type == "redacted_thinking":
+            # Anthropic encrypts thinking that its safety systems flag, so the block carries
+            # no readable text to surface. The rest of the turn is a normal response.
+            logger.debug("Skipping redacted_thinking block with no readable content.")
         else:
-            msg = f"Unsupported content block type: {content_block.type}"
-            raise ValueError(msg)
+            # Server-side tool blocks (web search, code execution, ...) have no Chat
+            # Completions equivalent. Dropping them keeps the answer the model did return,
+            # which is what the streaming converter already does for the same block types.
+            logger.warning("Skipping unsupported Anthropic content block type: %s", content_block.type)
 
     message = ChatCompletionMessage(
         role="assistant",
         content="".join(content_parts),
         reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
-        tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls or None),
+        tool_calls=tool_calls or None,
         extra_content={"anthropic": {"signature": thinking_signature}} if thinking_signature else None,
     )
 
@@ -430,7 +424,7 @@ def _convert_tool_choice(params: CompletionParams) -> dict[str, Any]:
     parallel_tool_calls = params.parallel_tool_calls
     if parallel_tool_calls is None:
         parallel_tool_calls = True
-    tool_choice = params.tool_choice or "any"
+    tool_choice = params.tool_choice or "auto"
     if tool_choice == "required":
         tool_choice = "any"
     elif isinstance(tool_choice, dict):
@@ -480,7 +474,7 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
     if params.tools:
         params.tools = _convert_tool_spec(params.tools)
 
-    if params.tool_choice or params.parallel_tool_calls:
+    if params.tool_choice is not None or params.parallel_tool_calls is not None:
         params.tool_choice = _convert_tool_choice(params)
 
     if params.reasoning_effort is None or params.reasoning_effort == "none":

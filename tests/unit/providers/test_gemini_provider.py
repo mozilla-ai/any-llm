@@ -1,4 +1,5 @@
 import base64
+import json
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
 from typing import Any, get_args
@@ -24,7 +25,16 @@ from any_llm.providers.gemini.utils import (
     _has_additional_properties,
     _map_finish_reason,
 )
-from any_llm.types.completion import ChatCompletion, CompletionParams, PromptTokensDetails, ReasoningEffort
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    CompletionParams,
+    CompletionTokensDetails,
+    Function,
+    PromptTokensDetails,
+    ReasoningEffort,
+)
 
 TEST_IMAGE_BYTES = b"test-image-bytes"
 TEST_PDF_BYTES = b"%PDF-1.4\ntest"
@@ -682,6 +692,7 @@ def test_convert_response_single_tool_call() -> None:
     mock_response.usage_metadata.candidates_token_count = 15
     mock_response.usage_metadata.total_token_count = 25
     mock_response.usage_metadata.cached_content_token_count = None
+    mock_response.usage_metadata.thoughts_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -744,6 +755,7 @@ def test_convert_response_multiple_parallel_tool_calls() -> None:
     mock_response.usage_metadata.candidates_token_count = 30
     mock_response.usage_metadata.total_token_count = 50
     mock_response.usage_metadata.cached_content_token_count = None
+    mock_response.usage_metadata.thoughts_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -966,7 +978,7 @@ def test_convert_tool_spec_basic_mapping() -> None:
         }
     ]
 
-    tools = _convert_tool_spec(openai_tools)
+    tools = _convert_tool_spec(openai_tools, "gemini")
 
     assert len(tools) == 1
     assert tools[0].function_declarations[0].name == "search"  # type: ignore[index]
@@ -982,7 +994,7 @@ def test_convert_tool_spec_basic_mapping() -> None:
 
 def test_convert_tool_spec_none_parameters() -> None:
     """Regression: parameters=None must not raise 'NoneType' object is not subscriptable."""
-    tools = _convert_tool_spec([{"type": "function", "function": {"name": "ping", "parameters": None}}])
+    tools = _convert_tool_spec([{"type": "function", "function": {"name": "ping", "parameters": None}}], "gemini")
     assert len(tools) == 1
     decl = tools[0].function_declarations[0]  # type: ignore[index]
     assert decl.name == "ping"
@@ -992,7 +1004,9 @@ def test_convert_tool_spec_none_parameters() -> None:
 
 def test_convert_tool_spec_parameters_missing_properties() -> None:
     """Regression: parameters without a 'properties' key must not raise KeyError."""
-    tools = _convert_tool_spec([{"type": "function", "function": {"name": "ping", "parameters": {"type": "object"}}}])
+    tools = _convert_tool_spec(
+        [{"type": "function", "function": {"name": "ping", "parameters": {"type": "object"}}}], "gemini"
+    )
     assert len(tools) == 1
     decl = tools[0].function_declarations[0]  # type: ignore[index]
     assert decl.parameters.properties == {}  # type: ignore[union-attr]
@@ -1044,7 +1058,7 @@ def test_convert_tool_spec_json_schema_with_defs_and_refs() -> None:
         }
     ]
 
-    tools = _convert_tool_spec(openai_tools)
+    tools = _convert_tool_spec(openai_tools, "gemini")
 
     assert len(tools) == 1
     decl = tools[0].function_declarations[0]  # type: ignore[index]
@@ -1064,7 +1078,9 @@ def test_convert_tool_spec_nested_ref_only() -> None:
             }
         },
     }
-    tools = _convert_tool_spec([{"type": "function", "function": {"name": "nested", "parameters": raw_params}}])
+    tools = _convert_tool_spec(
+        [{"type": "function", "function": {"name": "nested", "parameters": raw_params}}], "gemini"
+    )
     decl = tools[0].function_declarations[0]  # type: ignore[index]
     assert decl.parameters is None
     assert decl.parameters_json_schema == raw_params
@@ -1092,7 +1108,8 @@ def test_convert_tool_spec_mixed_ref_and_plain_tools() -> None:
                     "parameters": {"type": "object", "properties": {"q": {"type": "string"}}},
                 },
             },
-        ]
+        ],
+        "gemini",
     )
     assert len(tools) == 1
     decls = tools[0].function_declarations
@@ -1125,6 +1142,54 @@ async def test_gemini_with_built_in_tools() -> None:
 
 
 @pytest.mark.asyncio
+async def test_gemini_native_tool_dict_converts() -> None:
+    """A gemini-native tool dict must reach the request as a typed Tool, not be dropped."""
+    messages = [{"role": "user", "content": "Hello"}]
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(model_id="gemini-pro", messages=messages, tools=[{"google_search": {}}]),
+        )
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+        assert len(generation_config.tools) == 1
+        assert generation_config.tools[0].google_search is not None
+
+
+@pytest.mark.asyncio
+async def test_gemini_native_tool_dict_mixes_with_function_tools() -> None:
+    """Function tools and native tool dicts convert side by side."""
+    messages = [{"role": "user", "content": "Hello"}]
+    function_tool = {
+        "type": "function",
+        "function": {"name": "get_weather", "description": "d", "parameters": {"type": "object", "properties": {}}},
+    }
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(model_id="gemini-pro", messages=messages, tools=[function_tool, {"url_context": {}}]),
+        )
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        tools = call_kwargs["config"].tools
+        assert len(tools) == 2
+        assert any(t.url_context is not None for t in tools)
+        assert any(t.function_declarations for t in tools)
+
+
+@pytest.mark.parametrize("bad_tool", [{"type": "web_search"}, {"nonsense_tool": {}}])
+@pytest.mark.asyncio
+async def test_gemini_unknown_tool_dict_raises(bad_tool: dict[str, Any]) -> None:
+    """A dict that is neither function format nor a valid native tool must raise, not vanish."""
+    messages = [{"role": "user", "content": "Hello"}]
+    with mock_gemini_provider():
+        provider = GeminiProvider(api_key="test-api-key")
+        with pytest.raises(InvalidRequestError, match=r"\[gemini\] Unsupported tool"):
+            await provider._acompletion(
+                CompletionParams(model_id="gemini-pro", messages=messages, tools=[bad_tool]),
+            )
+
+
+@pytest.mark.asyncio
 async def test_streaming_completion_includes_usage_data() -> None:
     """Test that streaming chunks include usage metadata when available."""
     from any_llm.providers.gemini.utils import _create_openai_chunk_from_google_chunk
@@ -1144,6 +1209,7 @@ async def test_streaming_completion_includes_usage_data() -> None:
     mock_response.usage_metadata.candidates_token_count = 5
     mock_response.usage_metadata.total_token_count = 15
     mock_response.usage_metadata.cached_content_token_count = None
+    mock_response.usage_metadata.thoughts_token_count = None
 
     chunk = _create_openai_chunk_from_google_chunk(mock_response)
 
@@ -1239,6 +1305,7 @@ def test_streaming_completion_with_tool_call_preserves_thought_signature() -> No
     tool_call = chunk.choices[0].delta.tool_calls[0]
     assert tool_call.extra_content is not None
     assert tool_call.extra_content["google"]["thought_signature"] == base64.b64encode(original_bytes).decode("utf-8")
+    assert chunk.choices[0].delta.extra_content is None  # signature stays on the tool call
 
 
 def test_streaming_completion_with_tool_call_no_thought_signature() -> None:
@@ -1449,6 +1516,7 @@ async def test_streaming_via_acompletion_keeps_tool_call_index_stable_across_chu
 
 
 def test_convert_response_preserves_thought_signature() -> None:
+    """A signed function call keeps its signature on the tool call and off the message."""
     import base64
 
     mock_response = Mock()
@@ -1472,6 +1540,7 @@ def test_convert_response_preserves_thought_signature() -> None:
     mock_response.usage_metadata.candidates_token_count = 15
     mock_response.usage_metadata.total_token_count = 25
     mock_response.usage_metadata.cached_content_token_count = None
+    mock_response.usage_metadata.thoughts_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -1481,6 +1550,7 @@ def test_convert_response_preserves_thought_signature() -> None:
     assert tool_calls[0]["extra_content"]["google"]["thought_signature"] == base64.b64encode(
         b"test-signature-bytes"
     ).decode("utf-8")
+    assert response_dict["choices"][0]["message"].get("extra_content") is None  # signature stays on the tool call
 
 
 def test_convert_response_no_thought_signature() -> None:
@@ -1504,12 +1574,166 @@ def test_convert_response_no_thought_signature() -> None:
     mock_response.usage_metadata.candidates_token_count = 15
     mock_response.usage_metadata.total_token_count = 25
     mock_response.usage_metadata.cached_content_token_count = None
+    mock_response.usage_metadata.thoughts_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
     tool_calls = response_dict["choices"][0]["message"]["tool_calls"]
     assert len(tool_calls) == 1
     assert "extra_content" not in tool_calls[0] or tool_calls[0].get("extra_content") is None
+
+
+def test_convert_response_text_part_thought_signature_rides_the_message() -> None:
+    """Gemini 3 signs the final text part of a text-only answer; it lands on message.extra_content."""
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
+    mock_response.usage_metadata = None
+
+    mock_thought = Mock()
+    mock_thought.thought = True
+    mock_thought.text = "let me think"
+    mock_thought.function_call = None
+    mock_thought.thought_signature = None
+
+    mock_text = Mock()
+    mock_text.thought = None
+    mock_text.text = "42"
+    mock_text.function_call = None
+    mock_text.thought_signature = b"test-signature-bytes"
+
+    mock_response.candidates[0].content.parts = [mock_thought, mock_text]
+
+    message = _convert_response_to_response_dict(mock_response)["choices"][0]["message"]
+
+    assert message["content"] == "42"
+    assert message["extra_content"] == {
+        "google": {"thought_signature": base64.b64encode(b"test-signature-bytes").decode("utf-8")}
+    }
+
+
+def test_streaming_text_part_thought_signature_rides_the_delta() -> None:
+    """The signed final part arrives with empty text on the last chunk; the delta must still carry it."""
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
+    mock_response.model_version = "gemini-3-flash-preview"
+    mock_response.usage_metadata = None
+
+    mock_part = Mock()
+    mock_part.thought = None
+    mock_part.text = ""
+    mock_part.function_call = None
+    mock_part.thought_signature = b"test-signature-bytes"
+
+    mock_response.candidates[0].content.parts = [mock_part]
+
+    delta = _create_openai_chunk_from_google_chunk(mock_response).choices[0].delta
+
+    assert delta.content is None
+    assert delta.tool_calls is None
+    assert delta.extra_content == {
+        "google": {"thought_signature": base64.b64encode(b"test-signature-bytes").decode("utf-8")}
+    }
+
+
+def test_convert_messages_text_turn_replays_thought_signature() -> None:
+    """A text-only assistant turn carrying extra_content replays its signature on the text part."""
+    base64_signature = base64.b64encode(b"test-signature-bytes").decode("utf-8")
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "How many sheep?"},
+        {"role": "assistant", "content": "42", "extra_content": {"google": {"thought_signature": base64_signature}}},
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    assert formatted_messages[1].parts is not None
+    assert formatted_messages[1].parts[0].text == "42"
+    assert formatted_messages[1].parts[0].thought_signature == b"test-signature-bytes"
+
+
+@pytest.mark.parametrize(
+    "extra_content",
+    [
+        "not-a-dict",
+        {"google": "not-a-dict"},
+        {"anthropic": {"signature": "abc"}},
+        {"google": {"thought_signature": None}},
+    ],
+)
+def test_convert_messages_treats_a_non_google_extra_content_as_unsigned(extra_content: Any) -> None:
+    """extra_content that carries no Google signature leaves the part unsigned."""
+    messages: list[dict[str, Any]] = [{"role": "assistant", "content": "42", "extra_content": extra_content}]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    assert formatted_messages[0].parts is not None
+    assert formatted_messages[0].parts[0].thought_signature is None
+
+
+@pytest.mark.parametrize("signature", ["", "not!!base64@@", 123, ["sig"]])
+def test_convert_messages_text_turn_rejects_an_undecodable_signature(signature: Any) -> None:
+    """An undecodable signature is a caller error, not a bare pydantic ValidationError."""
+    messages: list[dict[str, Any]] = [
+        {"role": "assistant", "content": "42", "extra_content": {"google": {"thought_signature": signature}}}
+    ]
+
+    with pytest.raises(InvalidRequestError, match="thought_signature"):
+        _convert_messages(messages)
+
+
+@pytest.mark.parametrize("signature", ["", "not!!base64@@", 123, ["sig"]])
+def test_convert_messages_tool_call_rejects_an_undecodable_signature(signature: Any) -> None:
+    """The tool call path rejects the same shapes the text path does."""
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "f", "arguments": "{}"},
+                    "extra_content": {"google": {"thought_signature": signature}},
+                }
+            ],
+        }
+    ]
+
+    with pytest.raises(InvalidRequestError, match="thought_signature"):
+        _convert_messages(messages)
+
+
+@pytest.mark.parametrize("signature", ["dGVzdA==", "dGVzdA", "-_8-P76_", b"test-signature-bytes"])
+def test_convert_messages_accepts_every_signature_spelling_the_sdk_decodes(signature: Any) -> None:
+    """Unpadded and URL-safe base64, and raw bytes, all reach the part decoded."""
+    messages: list[dict[str, Any]] = [
+        {"role": "assistant", "content": "42", "extra_content": {"google": {"thought_signature": signature}}}
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    assert formatted_messages[0].parts is not None
+    assert formatted_messages[0].parts[0].thought_signature is not None
+
+
+def test_convert_messages_tool_call_without_a_signature_keeps_the_skip_sentinel() -> None:
+    """An unsigned first function call still gets Google's skip sentinel, unvalidated."""
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "f", "arguments": "{}"}}],
+        }
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    assert formatted_messages[0].parts is not None
+    part_json = json.loads(formatted_messages[0].parts[0].model_dump_json(exclude_none=True))
+    assert part_json["thought_signature"] == "skip_thought_signature_validator"
 
 
 def test_convert_messages_with_thought_signature_in_extra_content() -> None:
@@ -1543,6 +1767,81 @@ def test_convert_messages_with_thought_signature_in_extra_content() -> None:
     assert assistant_message.parts is not None
     assert len(assistant_message.parts) == 1
     assert assistant_message.parts[0].thought_signature == original_bytes
+
+
+def _function_response_names(contents: list[types.Content]) -> list[str | None]:
+    names = []
+    for content in contents:
+        if content.role == "function":
+            assert content.parts is not None
+            assert content.parts[0].function_response is not None
+            names.append(content.parts[0].function_response.name)
+    return names
+
+
+def test_convert_messages_resolves_tool_result_name_from_tool_call_id() -> None:
+    """OpenAI tool messages carry no name: resolve it from the assistant's tool_calls by id, in any order."""
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Temperature and population of Toronto?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {"id": "call_1", "type": "function", "function": {"name": "get_temperature", "arguments": "{}"}},
+                {"id": "call_2", "type": "function", "function": {"name": "get_population", "arguments": "{}"}},
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_2", "content": '{"value": 2794356}'},
+        {"role": "tool", "tool_call_id": "call_1", "content": "8 degrees"},
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    assert _function_response_names(formatted_messages) == ["get_population", "get_temperature"]
+
+
+def test_convert_messages_tool_result_name_explicit_wins_else_unknown() -> None:
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}},
+                {"type": "function", "function": {"name": "no_id", "arguments": "{}"}},
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_1", "name": "explicit_name", "content": "{}"},
+        {"role": "tool", "tool_call_id": "call_9", "content": "{}"},  # an id no tool_call carries
+        {"role": "tool", "content": "{}"},  # neither side carries an id: nothing to resolve
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    assert _function_response_names(formatted_messages) == ["explicit_name", "unknown", "unknown"]
+
+
+def test_convert_messages_replayed_message_object_keeps_thought_signature() -> None:
+    """Replaying a returned ChatCompletionMessage (dumped as acompletion does) must keep the signature."""
+    base64_signature = base64.b64encode(b"test-signature-bytes").decode("utf-8")
+    message = ChatCompletionMessage(
+        role="assistant",
+        content=None,
+        tool_calls=[
+            ChatCompletionMessageFunctionToolCall(
+                id="call_123",
+                type="function",
+                function=Function(name="get_weather", arguments='{"location": "Paris"}'),
+                extra_content={"google": {"thought_signature": base64_signature}},
+            )
+        ],
+    )
+    replayed = message.model_dump(exclude_none=True, exclude={"reasoning"})
+
+    formatted_messages, _ = _convert_messages([{"role": "user", "content": "What is the weather?"}, replayed])
+
+    assert replayed["tool_calls"][0]["extra_content"] == {"google": {"thought_signature": base64_signature}}
+    assert formatted_messages[1].parts is not None
+    assert formatted_messages[1].parts[0].thought_signature == b"test-signature-bytes"
 
 
 def test_convert_messages_with_base64_image() -> None:
@@ -1890,6 +2189,7 @@ def test_convert_response_extracts_cached_tokens() -> None:
     mock_response.usage_metadata.candidates_token_count = 50
     mock_response.usage_metadata.total_token_count = 150
     mock_response.usage_metadata.cached_content_token_count = 80
+    mock_response.usage_metadata.thoughts_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -1916,6 +2216,7 @@ def test_convert_response_without_cached_tokens() -> None:
     mock_response.usage_metadata.candidates_token_count = 50
     mock_response.usage_metadata.total_token_count = 150
     mock_response.usage_metadata.cached_content_token_count = None
+    mock_response.usage_metadata.thoughts_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -1942,6 +2243,7 @@ def test_streaming_chunk_extracts_cached_tokens() -> None:
     mock_response.usage_metadata.candidates_token_count = 50
     mock_response.usage_metadata.total_token_count = 150
     mock_response.usage_metadata.cached_content_token_count = 80
+    mock_response.usage_metadata.thoughts_token_count = None
 
     chunk = _create_openai_chunk_from_google_chunk(mock_response)
 
@@ -1971,12 +2273,123 @@ def test_streaming_chunk_without_cached_tokens() -> None:
     mock_response.usage_metadata.candidates_token_count = 50
     mock_response.usage_metadata.total_token_count = 150
     mock_response.usage_metadata.cached_content_token_count = None
+    mock_response.usage_metadata.thoughts_token_count = None
 
     chunk = _create_openai_chunk_from_google_chunk(mock_response)
 
     assert chunk.usage is not None
     assert chunk.usage.prompt_tokens == 100
     assert chunk.usage.prompt_tokens_details is None
+
+
+def test_convert_response_includes_thought_tokens() -> None:
+    """Test that thought tokens are folded into completion_tokens and surfaced as reasoning_tokens."""
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_part = Mock()
+    mock_part.thought = None
+    mock_part.function_call = None
+    mock_part.text = "36"
+    mock_response.candidates[0].content.parts = [mock_part]
+
+    mock_response.usage_metadata = Mock()
+    mock_response.usage_metadata.prompt_token_count = 20
+    mock_response.usage_metadata.candidates_token_count = 198
+    mock_response.usage_metadata.thoughts_token_count = 405
+    mock_response.usage_metadata.total_token_count = 623
+    mock_response.usage_metadata.cached_content_token_count = None
+
+    response_dict = _convert_response_to_response_dict(mock_response)
+
+    usage = response_dict["usage"]
+    assert usage["completion_tokens"] == 603
+    assert usage["completion_tokens_details"].reasoning_tokens == 405
+    assert usage["prompt_tokens"] + usage["completion_tokens"] == usage["total_tokens"]
+
+
+def test_streaming_chunk_includes_thought_tokens() -> None:
+    """Test that streaming usage folds thought tokens into completion_tokens with reasoning_tokens detail."""
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_part = Mock()
+    mock_part.thought = None
+    mock_part.function_call = None
+    mock_part.text = "36"
+    mock_response.candidates[0].content.parts = [mock_part]
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
+    mock_response.model_version = "gemini-2.5-flash"
+
+    mock_response.usage_metadata = Mock()
+    mock_response.usage_metadata.prompt_token_count = 20
+    mock_response.usage_metadata.candidates_token_count = 198
+    mock_response.usage_metadata.thoughts_token_count = 405
+    mock_response.usage_metadata.total_token_count = 623
+    mock_response.usage_metadata.cached_content_token_count = None
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    assert chunk.usage is not None
+    assert chunk.usage.completion_tokens == 603
+    assert chunk.usage.completion_tokens_details is not None
+    assert chunk.usage.completion_tokens_details.reasoning_tokens == 405
+    assert chunk.usage.prompt_tokens + chunk.usage.completion_tokens == chunk.usage.total_tokens
+
+
+def test_convert_response_without_thought_tokens() -> None:
+    """Test that completion_tokens_details stays absent when the model produced no thoughts."""
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_part = Mock()
+    mock_part.thought = None
+    mock_part.function_call = None
+    mock_part.text = "Hello!"
+    mock_response.candidates[0].content.parts = [mock_part]
+
+    mock_response.usage_metadata = Mock()
+    mock_response.usage_metadata.prompt_token_count = 100
+    mock_response.usage_metadata.candidates_token_count = 50
+    mock_response.usage_metadata.thoughts_token_count = None
+    mock_response.usage_metadata.total_token_count = 150
+    mock_response.usage_metadata.cached_content_token_count = None
+
+    response_dict = _convert_response_to_response_dict(mock_response)
+
+    assert response_dict["usage"]["completion_tokens"] == 50
+    assert "completion_tokens_details" not in response_dict["usage"]
+
+
+def test_streaming_chunk_without_thought_tokens() -> None:
+    """Test that streaming usage has no completion_tokens_details when the model produced no thoughts."""
+    mock_response = Mock()
+    mock_response.candidates = [Mock()]
+    mock_response.candidates[0].content = Mock()
+
+    mock_part = Mock()
+    mock_part.thought = None
+    mock_part.function_call = None
+    mock_part.text = "Hello!"
+    mock_response.candidates[0].content.parts = [mock_part]
+    mock_response.candidates[0].finish_reason = types.FinishReason.STOP
+    mock_response.model_version = "gemini-2.5-flash"
+
+    mock_response.usage_metadata = Mock()
+    mock_response.usage_metadata.prompt_token_count = 100
+    mock_response.usage_metadata.candidates_token_count = 50
+    mock_response.usage_metadata.thoughts_token_count = None
+    mock_response.usage_metadata.total_token_count = 150
+    mock_response.usage_metadata.cached_content_token_count = None
+
+    chunk = _create_openai_chunk_from_google_chunk(mock_response)
+
+    assert chunk.usage is not None
+    assert chunk.usage.completion_tokens == 50
+    assert chunk.usage.completion_tokens_details is None
 
 
 def test_convert_completion_response_preserves_prompt_tokens_details() -> None:
@@ -2006,6 +2419,57 @@ def test_convert_completion_response_preserves_prompt_tokens_details() -> None:
     assert result.usage.prompt_tokens == 100
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 80
+
+
+def test_convert_completion_response_preserves_message_extra_content() -> None:
+    """The text-part signature placed on the message dict reaches the public ChatCompletion."""
+    extra_content = {"google": {"thought_signature": "dGVzdA=="}}
+    response_dict = {
+        "id": "google_genai_response",
+        "model": "google/genai",
+        "created": 0,
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": "42", "tool_calls": None, "extra_content": extra_content},
+                "finish_reason": "stop",
+                "index": 0,
+            }
+        ],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+    }
+
+    result = GoogleProvider._convert_completion_response((response_dict, "test-model"))
+
+    assert result.choices[0].message.extra_content == extra_content
+
+
+def test_convert_completion_response_preserves_completion_tokens_details() -> None:
+    """Test that _convert_completion_response passes completion_tokens_details through to ChatCompletion."""
+    response_dict = {
+        "id": "google_genai_response",
+        "model": "google/genai",
+        "created": 0,
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": "Hello!", "tool_calls": None},
+                "finish_reason": "stop",
+                "index": 0,
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 20,
+            "completion_tokens": 603,
+            "total_tokens": 623,
+            "completion_tokens_details": CompletionTokensDetails(reasoning_tokens=405),
+        },
+    }
+
+    result = GoogleProvider._convert_completion_response((response_dict, "test-model"))
+
+    assert result.usage is not None
+    assert result.usage.completion_tokens == 603
+    assert result.usage.completion_tokens_details is not None
+    assert result.usage.completion_tokens_details.reasoning_tokens == 405
 
 
 def test_merge_timeout_creates_http_options_when_absent() -> None:

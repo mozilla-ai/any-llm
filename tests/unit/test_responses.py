@@ -1,9 +1,13 @@
+from inspect import signature
 from typing import Any, cast
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic import ValidationError
 
-from any_llm.api import aresponses
+from any_llm import AnyLLM
+from any_llm.api import aresponses, responses
+from any_llm.exceptions import UnsupportedParameterError
 from any_llm.types.responses import ResponsesParams
 
 
@@ -88,3 +92,89 @@ def test_responses_params_rejects_top_level_dictionary_input() -> None:
     """Responses input must be text or a list of dictionaries."""
     with pytest.raises(ValidationError):
         ResponsesParams(model="test", input=cast("Any", {"role": "user", "content": "hello"}))
+
+
+@pytest.mark.asyncio
+async def test_tools_flattened_for_responses() -> None:
+    """Callables and chat-format tools must reach the provider flat; built-ins pass untouched."""
+
+    def add(a: int, b: int) -> int:
+        """Add two numbers."""
+        return a + b
+
+    chat_format = {"type": "function", "function": {"name": "sub", "parameters": {}, "strict": True}}
+    flat = {"type": "function", "name": "mul", "parameters": {}}
+    builtin = {"type": "web_search"}
+
+    llm = AnyLLM.create("openai", api_key="test-key")
+    with patch.object(type(llm), "_aresponses", new=AsyncMock(return_value=object())) as mock_aresponses:
+        await llm.aresponses("gpt-4.1-mini", "hello", tools=[add, chat_format, flat, builtin])
+
+    tools = mock_aresponses.call_args.args[0].tools
+    assert [tool.get("name") for tool in tools[:3]] == ["add", "sub", "mul"]
+    assert [tool["type"] for tool in tools[:3]] == ["function"] * 3
+    assert all("function" not in tool for tool in tools[:3])
+    assert tools[1]["parameters"] == {}
+    assert tools[1]["strict"] is True
+    assert tools[3] == {"type": "web_search"}
+
+
+def test_responses_exposes_timeout_parameter() -> None:
+    """The Responses entry points advertise timeout the same way the completion ones do."""
+    assert "timeout" in signature(responses).parameters
+    assert "timeout" in signature(aresponses).parameters
+    assert "timeout" in signature(AnyLLM.aresponses).parameters
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("requested_timeout", "expected"), [(60, 60), (None, None)])
+async def test_timeout_forwarded_to_provider_not_params(
+    requested_timeout: float | None, expected: float | None
+) -> None:
+    """timeout is an SDK request option: it must reach the provider call, never ResponsesParams."""
+    llm = AnyLLM.create("openai", api_key="test-key")
+    with patch.object(type(llm), "_aresponses", new=AsyncMock(return_value=object())) as mock_aresponses:
+        await llm.aresponses("gpt-4.1-mini", "hello", timeout=requested_timeout)
+
+    assert mock_aresponses.call_args.kwargs.get("timeout") == expected
+    params = mock_aresponses.call_args.args[0]
+    assert "timeout" not in params.model_dump(exclude_none=True)
+
+
+@pytest.mark.asyncio
+async def test_aresponses_helper_forwards_timeout_to_provider() -> None:
+    """The public aresponses() helper routes timeout through to the provider call."""
+    provider = AnyLLM.create("openai", api_key="test-key")
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider),
+        patch.object(provider, "_aresponses", new=AsyncMock(return_value=object())) as mock_aresponses,
+    ):
+        await aresponses("gpt-4.1-mini", "hello", provider="openai", api_key="test-key", timeout=60)
+
+    assert mock_aresponses.call_args.kwargs["timeout"] == 60
+
+
+def test_responses_helper_forwards_timeout_to_provider_sync() -> None:
+    """The synchronous responses() helper routes timeout through the same path."""
+    provider = AnyLLM.create("openai", api_key="test-key")
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider),
+        patch.object(provider, "_aresponses", new=AsyncMock(return_value=object())) as mock_aresponses,
+    ):
+        responses("gpt-4.1-mini", "hello", provider="openai", api_key="test-key", timeout=60)
+
+    assert mock_aresponses.call_args.kwargs["timeout"] == 60
+
+
+@pytest.mark.asyncio
+async def test_aresponses_rejects_timeout_for_unsupported_provider() -> None:
+    """A provider declaring no per-request timeout support is rejected before the request is built."""
+    llm = AnyLLM.create("openai", api_key="test-key")
+    llm.TIMEOUT_SUPPORT = "unsupported"
+    with (
+        patch.object(llm, "_aresponses", new=AsyncMock()) as mock_aresponses,
+        pytest.raises(UnsupportedParameterError, match="timeout"),
+    ):
+        await llm.aresponses("gpt-4.1-mini", "hello", timeout=60)
+
+    mock_aresponses.assert_not_called()
