@@ -359,6 +359,19 @@ def _thought_signature_extra_content(part: types.Part) -> dict[str, Any] | None:
     return None
 
 
+def _inline_data_image(part: types.Part) -> dict[str, Any] | None:
+    """Build an OpenAI-compatible image content item from Gemini inline data."""
+    inline_data = part.inline_data
+    if inline_data is None or inline_data.data is None or inline_data.mime_type is None:
+        return None
+    return {
+        "type": "image_url",
+        "image_url": {
+            "url": f"data:{inline_data.mime_type};base64,{base64.b64encode(inline_data.data).decode('ascii')}"
+        },
+    }
+
+
 _FINISH_REASON_MAP: dict[types.FinishReason, Literal["stop", "length", "content_filter"]] = {
     types.FinishReason.STOP: "stop",
     types.FinishReason.MAX_TOKENS: "length",
@@ -416,6 +429,7 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
         reasoning = None
         tool_calls_list: list[dict[str, Any]] = []
         text_content = None
+        images: list[dict[str, Any]] = []
         # Gemini 3 signs the last non-function-call part of a text answer. It rides message.extra_content,
         # the same spelling Google's OpenAI-compatible endpoint uses.
         message_extra_content = None
@@ -445,6 +459,8 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
 
                 tool_calls_list.append(tool_call_dict)
             else:
+                if image := _inline_data_image(part):
+                    images.append(image)
                 if part.text:
                     text_content = (text_content or "") + part.text
                 message_extra_content = _thought_signature_extra_content(part) or message_extra_content
@@ -452,7 +468,7 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
         # Truncated or filtered responses produce a choice even without content or tool
         # calls, e.g. a thinking model that spent the whole max_output_tokens budget on
         # reasoning, so callers see the terminal reason instead of an empty choices list.
-        if tool_calls_list or text_content or mapped_finish_reason in ("length", "content_filter"):
+        if tool_calls_list or text_content or images or mapped_finish_reason in ("length", "content_filter"):
             choices.append(
                 {
                     "message": {
@@ -460,6 +476,7 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                         "content": None if tool_calls_list else text_content,
                         "reasoning": reasoning or None,
                         "tool_calls": tool_calls_list or None,
+                        "images": images or None,
                         "extra_content": message_extra_content,
                     },
                     "finish_reason": _resolve_finish_reason(mapped_finish_reason, bool(tool_calls_list)) or "stop",
@@ -522,6 +539,7 @@ def _create_openai_chunk_from_google_chunk(
     reasoning_content = ""
     tool_calls_list: list[ChoiceDeltaToolCall] = []
     message_extra_content = None
+    images: list[dict[str, Any]] = []
 
     # Content can be absent on terminal chunks, e.g. when the response is truncated or
     # filtered before any part is produced; the finish reason must still be surfaced.
@@ -556,6 +574,8 @@ def _create_openai_chunk_from_google_chunk(
                 )
             )
         else:
+            if image := _inline_data_image(part):
+                images.append(image)
             content += part.text or ""  # the signed final part may carry empty text
             message_extra_content = _thought_signature_extra_content(part) or message_extra_content
 
@@ -567,6 +587,7 @@ def _create_openai_chunk_from_google_chunk(
         role="assistant",
         reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
         tool_calls=tool_calls_list or None,
+        images=images or None,
         extra_content=message_extra_content,
     )
 
