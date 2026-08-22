@@ -210,7 +210,7 @@ class PortkeyProvider(AnyLLM):
         **kwargs: Any,
     ) -> ModerationResponse:
         include_raw = kwargs.pop("include_raw", False)
-        model_name = model or "omni-moderation-latest"
+        model_name = model or "text-moderation-latest"
 
         raw = await self.client.moderations.create(
             model=model_name,

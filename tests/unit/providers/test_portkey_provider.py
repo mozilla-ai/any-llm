@@ -351,3 +351,29 @@ def test_convert_list_models_response_returns_empty_list_when_data_is_none() -> 
     result = PortkeyProvider._convert_list_models_response(response)
 
     assert result == []
+
+
+@pytest.mark.asyncio
+async def test_amoderation_uses_portkey_default_model_when_model_is_empty() -> None:
+    with patch("any_llm.providers.portkey.portkey.AsyncPortkey") as mocked_portkey:
+        mock_client = AsyncMock()
+        mocked_portkey.return_value = mock_client
+
+        response = PortkeyModerationCreateResponse(
+            id="mod-test",
+            model="text-moderation-latest",
+            results=[],
+        )
+
+        mock_client.moderations.create = AsyncMock(return_value=response)
+
+        provider = PortkeyProvider(api_key="test")
+        await provider._amoderation(
+            model="",
+            input="test input",
+        )
+
+    mock_client.moderations.create.assert_awaited_once_with(
+        model="text-moderation-latest",
+        input="test input",
+    )
