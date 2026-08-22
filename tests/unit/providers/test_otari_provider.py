@@ -991,7 +991,7 @@ async def test_otari_amessages_output_format_accepts_dataclass_type() -> None:
 
 @pytest.mark.asyncio
 async def test_otari_amessages_output_format_forwards_raw_config() -> None:
-    output_config = {"type": "json_schema", "schema": {"type": "object"}}
+    output_config = {"format": {"type": "json_schema", "schema": {"type": "object"}}}
     client = _mock_otari_client()
     provider = _build_provider(client)
     client.message.return_value = SimpleNamespace(data=_message_response_payload(), request_id=None)
