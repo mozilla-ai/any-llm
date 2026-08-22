@@ -936,6 +936,7 @@ def test_convert_response_preserves_inline_data_alongside_text() -> None:
     assert message["images"] == [
         {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}
     ]
+    assert ChatCompletion.model_validate(response_dict).choices[0].message.images == message["images"]
 
 
 def test_convert_response_emits_choice_for_image_only_response() -> None:
@@ -961,6 +962,7 @@ def test_convert_streaming_response_preserves_inline_data() -> None:
     assert chunk.choices[0].delta.images == [
         {"type": "image_url", "image_url": {"url": "data:audio/wav;base64,UklGRg=="}}
     ]
+    assert chunk.model_dump()["choices"][0]["delta"]["images"] == chunk.choices[0].delta.images
 
 
 def test_convert_response_emits_choice_for_filtered_response_without_content() -> None:

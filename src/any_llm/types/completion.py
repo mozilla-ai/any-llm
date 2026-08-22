@@ -77,6 +77,7 @@ class ChatCompletionMessage(OpenAIChatCompletionMessage):
     tool_calls: list[ChatCompletionMessageToolCall] | None = None  # type: ignore[assignment]
     reasoning: Reasoning | None = None
     annotations: list[dict[str, Any]] | None = None  # type: ignore[assignment]
+    images: list[dict[str, Any]] | None = None
     extra_content: dict[str, Any] | None = None
     """Provider-specific metadata that needs to be preserved across multi-turn conversations.
 
@@ -126,6 +127,7 @@ class ChoiceDeltaToolCall(OpenAIChoiceDeltaToolCall):
 class ChoiceDelta(OpenAIChoiceDelta):
     reasoning: Reasoning | None = None
     tool_calls: list[ChoiceDeltaToolCall] | None = None  # type: ignore[assignment]
+    images: list[dict[str, Any]] | None = None
     extra_content: dict[str, Any] | None = None
     """Streaming counterpart of ``ChatCompletionMessage.extra_content``.
 
