@@ -13,6 +13,18 @@ from portkey_ai.api_resources.types.models_type import (
 from portkey_ai.api_resources.types.models_type import (
     ModelList as PortkeyModelList,
 )
+from portkey_ai.api_resources.types.moderations_type import (
+    Categories as PortkeyCategories,
+)
+from portkey_ai.api_resources.types.moderations_type import (
+    CategoryScores as PortkeyCategoryScores,
+)
+from portkey_ai.api_resources.types.moderations_type import (
+    Moderation as PortkeyModeration,
+)
+from portkey_ai.api_resources.types.moderations_type import (
+    ModerationCreateResponse as PortkeyModerationCreateResponse,
+)
 
 from any_llm.providers.portkey.portkey import PortkeyProvider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
@@ -203,3 +215,41 @@ async def test_alist_models_with_async_portkey() -> None:
     assert result[0].object == "model"
     assert result[0].created == 123
     assert result[0].owned_by == "test-provider"
+
+
+@pytest.mark.asyncio
+async def test_amoderation_with_async_portkey() -> None:
+    with patch("any_llm.providers.portkey.portkey.AsyncPortkey") as mocked_portkey:
+        mock_client = AsyncMock()
+        mocked_portkey.return_value = mock_client
+
+        response = PortkeyModerationCreateResponse(
+            id="mod-test",
+            model="test-model",
+            results=[
+                PortkeyModeration(
+                    flagged=True,
+                    categories=PortkeyCategories(
+                        violence=True,
+                    ),
+                    category_scores=PortkeyCategoryScores(
+                        violence=0.95,
+                    ),
+                )
+            ],
+        )
+
+        mock_client.moderations.create = AsyncMock(return_value=response)
+
+        provider = PortkeyProvider(api_key="test")
+        result = await provider._amoderation(
+            model="test-model",
+            input="test input",
+        )
+
+    assert result.id == "mod-test"
+    assert result.model == "test-model"
+    assert len(result.results) == 1
+    assert result.results[0].flagged is True
+    assert result.results[0].categories["violence"] is True
+    assert result.results[0].category_scores["violence"] == 0.95
