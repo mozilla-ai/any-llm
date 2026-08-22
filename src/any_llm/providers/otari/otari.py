@@ -350,23 +350,18 @@ class OtariProvider(BaseOpenAIProvider):
         config). otari's gateway serves /messages natively, so delegate to the otari
         SDK's ``message()`` to preserve them.
         """
-        if params.output_format is not None:
-            # Structured output is handled by the base Messages<->Completions bridge, which
-            # routes output_format through otari's completion path. A follow-up could adopt
-            # otari's native /messages structured-output support directly.
-            if params.context_management is not None or params.betas:
-                msg = (
-                    "output_format cannot be combined with context_management or betas on otari: "
-                    "structured output routes through the Completions bridge, which drops both. "
-                    "Send them in separate requests until otari's native /messages structured "
-                    "output is adopted."
-                )
-                raise NotImplementedError(msg)
-            return await super()._amessages(params, **kwargs)
-
         api_kwargs = params.model_dump(exclude_none=True)
         api_kwargs.update(kwargs)
         api_kwargs.pop("stream", None)
+
+        if params.output_format is not None:
+            output_config = (
+                {"format": {"type": "json_schema", "schema": get_json_schema(params.output_format)}}
+                if is_structured_output_type(params.output_format)
+                else params.output_format
+            )
+            api_kwargs["output_config"] = output_config
+            api_kwargs.pop("output_format", None)
 
         if params.stream:
             return self._stream_messages_async(**api_kwargs)
