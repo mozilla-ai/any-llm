@@ -1654,5 +1654,60 @@ def test_completion_usage_preserves_provider_cache_meters() -> None:
     assert usage.cache_usage is not None
     assert usage.cache_usage.read_input_tokens == 80
     assert usage.cache_usage.creation_5m_input_tokens == 12
-    assert usage.cache_usage.included_in_prompt_tokens is False
+    assert usage.cache_usage.included_in_prompt_tokens is True
     assert usage.cache_usage.provider_meters == {"prompt_cache_miss_tokens": 20}
+
+
+def test_completion_usage_normalization_preserves_existing_and_openai_cache_details() -> None:
+    existing = CompletionUsage(
+        prompt_tokens=10,
+        completion_tokens=1,
+        total_tokens=11,
+        cache_usage={"read_input_tokens": 2, "included_in_prompt_tokens": False},
+    )
+    assert existing.cache_usage is not None
+    assert existing.cache_usage.read_input_tokens == 2
+    assert existing.cache_usage.included_in_prompt_tokens is False
+
+    openai_usage = CompletionUsage(
+        prompt_tokens=10,
+        completion_tokens=1,
+        total_tokens=11,
+        prompt_tokens_details={"cached_tokens": 4},
+    )
+    assert openai_usage.cache_usage is not None
+    assert openai_usage.cache_usage.read_input_tokens == 4
+    assert openai_usage.cache_usage.included_in_prompt_tokens is True
+
+
+def test_completion_usage_normalization_supports_creation_aliases_and_empty_data() -> None:
+    direct = CompletionUsage(
+        prompt_tokens=10,
+        completion_tokens=1,
+        total_tokens=11,
+        cache_creation_input_tokens=6,
+    )
+    alias = CompletionUsage(
+        prompt_tokens=10,
+        completion_tokens=1,
+        total_tokens=11,
+        prompt_cache_write_tokens=7,
+    )
+    assert direct.cache_usage is not None
+    assert direct.cache_usage.creation_input_tokens == 6
+    assert alias.cache_usage is not None
+    assert alias.cache_usage.creation_input_tokens == 7
+
+    plain = CompletionUsage(prompt_tokens=10, completion_tokens=1, total_tokens=11)
+    assert plain.cache_usage is None
+    assert "cache_usage" not in plain.model_dump(exclude_none=True)
+
+
+def test_completion_usage_normalization_ignores_invalid_cache_creation_shape() -> None:
+    usage = CompletionUsage(
+        prompt_tokens=10,
+        completion_tokens=1,
+        total_tokens=11,
+        cache_creation=["not", "a", "mapping"],
+    )
+    assert usage.cache_usage is None

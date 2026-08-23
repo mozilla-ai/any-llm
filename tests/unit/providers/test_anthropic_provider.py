@@ -868,6 +868,8 @@ def test_convert_response_includes_cache_creation_tokens() -> None:
     assert result.usage.prompt_tokens == expected_prompt_tokens
     assert result.usage.total_tokens == expected_total_tokens
     assert result.usage.prompt_tokens_details is None
+    assert result.usage.cache_usage is not None
+    assert result.usage.cache_usage.creation_input_tokens == 13332
 
 
 def test_convert_response_without_cache_tokens() -> None:
