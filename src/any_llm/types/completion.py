@@ -213,7 +213,9 @@ class CompletionUsage(OpenAICompletionUsage):
             "creation_input_tokens": creation,
             "creation_5m_input_tokens": ttl.get("ephemeral_5m_input_tokens"),
             "creation_1h_input_tokens": ttl.get("ephemeral_1h_input_tokens"),
-            "included_in_prompt_tokens": "prompt_cache_hit_tokens" in value or cached is not None,
+            "included_in_prompt_tokens": any(
+                meter is not None for meter in (read, creation, cached)
+            ),
             "provider_meters": meters or None,
         }
         return value

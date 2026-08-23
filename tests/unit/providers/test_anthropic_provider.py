@@ -898,6 +898,7 @@ def test_convert_response_without_cache_tokens() -> None:
     assert result.usage.completion_tokens == 50
     assert result.usage.total_tokens == 150
     assert result.usage.prompt_tokens_details is None
+    assert result.usage.cache_usage is None
 
 
 def test_streaming_chunk_includes_cache_tokens_in_usage() -> None:
@@ -933,6 +934,31 @@ def test_streaming_chunk_includes_cache_tokens_in_usage() -> None:
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 13332
     assert result.choices[0].finish_reason is None
+
+
+def test_streaming_chunk_includes_cache_creation_tokens_in_usage() -> None:
+    from unittest.mock import MagicMock
+
+    from anthropic.types import MessageStopEvent, Usage
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    usage = Usage(
+        input_tokens=3,
+        output_tokens=5,
+        cache_read_input_tokens=None,
+        cache_creation_input_tokens=12,
+        cache_creation={"ephemeral_5m_input_tokens": 7, "ephemeral_1h_input_tokens": 5},
+    )
+    message = MagicMock(usage=usage)
+    chunk = MessageStopEvent(type="message_stop")
+    chunk.message = message  # type: ignore[attr-defined]
+
+    result = _create_openai_chunk_from_anthropic_chunk(chunk, "claude-3-haiku")
+
+    assert result.usage is not None
+    assert result.usage.cache_creation_input_tokens == 12
+    assert result.usage.cache_creation.ephemeral_5m_input_tokens == 7
+    assert result.usage.cache_creation.ephemeral_1h_input_tokens == 5
 
 
 @pytest.mark.asyncio

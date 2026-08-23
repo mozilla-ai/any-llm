@@ -310,6 +310,8 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
                 "completion_tokens": anthropic_usage.output_tokens,
                 "total_tokens": total_prompt_tokens + anthropic_usage.output_tokens,
                 "prompt_tokens_details": PromptTokensDetails(cached_tokens=cache_read) if cache_read else None,
+                "cache_creation_input_tokens": anthropic_usage.cache_creation_input_tokens,
+                "cache_creation": anthropic_usage.cache_creation,
             }
 
     choice = {
@@ -383,7 +385,8 @@ def _convert_response(response: Message) -> ChatCompletion:
     )
 
     cache_read = response.usage.cache_read_input_tokens or 0
-    cache_creation = response.usage.cache_creation_input_tokens or 0
+    cache_creation_value = response.usage.cache_creation_input_tokens
+    cache_creation = cache_creation_value or 0
     total_prompt_tokens = response.usage.input_tokens + cache_read + cache_creation
 
     usage = CompletionUsage(
@@ -391,7 +394,7 @@ def _convert_response(response: Message) -> ChatCompletion:
         prompt_tokens=total_prompt_tokens,
         total_tokens=total_prompt_tokens + response.usage.output_tokens,
         prompt_tokens_details=PromptTokensDetails(cached_tokens=cache_read) if cache_read else None,
-        cache_creation_input_tokens=cache_creation,
+        cache_creation_input_tokens=cache_creation_value,
     )
 
     from typing import Literal
