@@ -368,11 +368,7 @@ def _thought_signature_extra_content(part: types.Part) -> dict[str, Any] | None:
 def _inline_data_image(part: types.Part) -> dict[str, Any] | None:
     """Build an OpenAI-compatible image content item from Gemini inline data."""
     inline_data = part.inline_data
-    if (
-        inline_data is None
-        or not isinstance(inline_data.data, bytes)
-        or not isinstance(inline_data.mime_type, str)
-    ):
+    if inline_data is None or not isinstance(inline_data.data, bytes) or not isinstance(inline_data.mime_type, str):
         return None
     return {
         "type": "image_url",

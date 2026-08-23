@@ -943,10 +943,8 @@ def test_convert_response_preserves_inline_data_alongside_text() -> None:
     message = response_dict["choices"][0]["message"]
     assert message["content"] == "Described."
     assert message["tool_calls"] is None
-    assert message["images"] == [
-        {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}
-    ]
-    assert ChatCompletion.model_validate(response_dict).choices[0].message.images == message["images"]
+    assert message["images"] == [{"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}]
+    assert ChatCompletionMessage.model_validate(message).images == message["images"]
 
 
 def test_convert_response_emits_choice_for_image_only_response() -> None:
@@ -981,7 +979,9 @@ def test_convert_response_preserves_thought_inline_data() -> None:
         types.FinishReason.STOP,
     )
 
-    message = ChatCompletion.model_validate(_convert_response_to_response_dict(response)).choices[0].message
+    message = ChatCompletionMessage.model_validate(
+        _convert_response_to_response_dict(response)["choices"][0]["message"]
+    )
 
     assert message.reasoning is None
     assert message.images == [{"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}]
