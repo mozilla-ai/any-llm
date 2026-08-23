@@ -452,6 +452,8 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
         parts = candidate.content.parts if candidate.content else None
 
         for part in parts or []:
+            if image := _inline_data_image(part):
+                images.append(image)
             if getattr(part, "thought", None):
                 reasoning = (reasoning or "") + (part.text or "")
             elif function_call := getattr(part, "function_call", None):
@@ -475,8 +477,6 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
 
                 tool_calls_list.append(tool_call_dict)
             else:
-                if image := _inline_data_image(part):
-                    images.append(image)
                 if part.text:
                     text_content = (text_content or "") + part.text
                 message_extra_content = _thought_signature_extra_content(part) or message_extra_content
@@ -577,6 +577,8 @@ def _create_openai_chunk_from_google_chunk(
     parts = candidate.content.parts if candidate and candidate.content else None
 
     for part in parts or []:
+        if image := _inline_data_image(part):
+            images.append(image)
         if part.thought:
             reasoning_content += part.text or ""
         elif function_call := part.function_call:
@@ -605,8 +607,6 @@ def _create_openai_chunk_from_google_chunk(
                 )
             )
         else:
-            if image := _inline_data_image(part):
-                images.append(image)
             content += part.text or ""  # the signed final part may carry empty text
             message_extra_content = _thought_signature_extra_content(part) or message_extra_content
 

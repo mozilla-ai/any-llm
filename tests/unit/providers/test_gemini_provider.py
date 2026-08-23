@@ -975,6 +975,31 @@ def test_convert_streaming_response_preserves_inline_data() -> None:
     assert chunk.model_dump()["choices"][0]["delta"]["images"] == chunk.choices[0].delta.images
 
 
+def test_convert_response_preserves_thought_inline_data() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"), thought=True)],
+        types.FinishReason.STOP,
+    )
+
+    message = ChatCompletion.model_validate(_convert_response_to_response_dict(response)).choices[0].message
+
+    assert message.reasoning is None
+    assert message.images == [{"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}]
+
+
+def test_convert_streaming_response_preserves_thought_inline_data() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"), thought=True)],
+        types.FinishReason.STOP,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    assert chunk.choices[0].delta.images == [
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}
+    ]
+
+
 def test_convert_response_emits_choice_for_filtered_response_without_content() -> None:
     response_dict = _convert_response_to_response_dict(_make_gemini_response(None, types.FinishReason.SAFETY))
 
