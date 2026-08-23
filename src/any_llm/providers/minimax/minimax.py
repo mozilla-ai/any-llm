@@ -1,6 +1,8 @@
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
+import httpx
 from openai._streaming import AsyncStream
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
@@ -10,6 +12,7 @@ from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.openai.xml_reasoning import XMLReasoningOpenAIProvider, wrap_chunks_with_xml_reasoning
 from any_llm.providers.openai.xml_reasoning_utils import convert_chat_completion_with_xml_reasoning
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.image import ImageGenerationParams, ImagesResponse
 
 
 class MinimaxProvider(XMLReasoningOpenAIProvider):
@@ -17,13 +20,42 @@ class MinimaxProvider(XMLReasoningOpenAIProvider):
     ENV_API_KEY_NAME = "MINIMAX_API_KEY"
     ENV_API_BASE_NAME = "MINIMAX_API_BASE"
     PROVIDER_NAME = "minimax"
-    PROVIDER_DOCUMENTATION_URL = "https://www.minimax.io/platform_overview"
+    PROVIDER_DOCUMENTATION_URL = "https://platform.minimax.io/docs"
 
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_COMPLETION_IMAGE = False
+    SUPPORTS_IMAGE_GENERATION = True
     SUPPORTS_LIST_MODELS = False
     SUPPORTS_EMBEDDING = False
+
+    @override
+    async def _aimage_generation(self, params: ImageGenerationParams, **kwargs: Any) -> ImagesResponse:
+        """Call MiniMax's native image endpoint and normalize its response."""
+        api_kwargs = params.to_api_kwargs()
+        api_kwargs.update(kwargs)
+        response_format = api_kwargs.get("response_format")
+        if response_format == "b64_json":
+            api_kwargs["response_format"] = "base64"
+
+        endpoint = f"{str(self.client.base_url).rstrip('/')}/image_generation"
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                endpoint,
+                headers={"Authorization": f"Bearer {self.client.api_key}"},
+                json={"model": params.model_id, "prompt": params.prompt, **api_kwargs},
+            )
+            response.raise_for_status()
+            payload = response.json()
+
+        base_resp = payload.get("base_resp") or {}
+        if str(base_resp.get("status_code", 0)) not in ("0", "None"):
+            raise RuntimeError(base_resp.get("status_msg", "MiniMax image generation failed"))
+
+        image_data = payload.get("data") or {}
+        images = [{"url": url} for url in image_data.get("image_urls", [])]
+        images.extend({"b64_json": value} for value in image_data.get("image_base64", []))
+        return ImagesResponse.model_validate({"created": int(time.time()), "data": images})
 
     @staticmethod
     @override

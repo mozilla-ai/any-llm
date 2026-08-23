@@ -20,6 +20,12 @@ class ImageGenerationParams(BaseModel):
     style: str | None = None
     response_format: Literal["url", "b64_json"] | None = None
     user: str | None = None
+    subject_reference: list[str] | None = None
+    aspect_ratio: str | None = None
+    width: int | None = None
+    height: int | None = None
+    seed: int | None = None
+    prompt_optimizer: bool | None = None
 
     def to_api_kwargs(self) -> dict[str, Any]:
         """Convert to kwargs for the provider API call, excluding None values."""

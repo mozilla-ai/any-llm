@@ -19,6 +19,7 @@ from any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.minimax.minimax import MinimaxProvider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.image import ImageGenerationParams
 
 if TYPE_CHECKING:
     from openai._streaming import AsyncStream
@@ -44,6 +45,7 @@ def test_provider_basics() -> None:
     assert p.SUPPORTS_COMPLETION_REASONING is True
     assert p.SUPPORTS_EMBEDDING is False
     assert p.SUPPORTS_COMPLETION_IMAGE is False
+    assert p.SUPPORTS_IMAGE_GENERATION is True
     assert p.SUPPORTS_COMPLETION_PDF is False
     assert p.SUPPORTS_LIST_MODELS is False
 
@@ -91,10 +93,47 @@ def test_provider_metadata() -> None:
     metadata = MinimaxProvider.get_provider_metadata()
     assert metadata.name == "minimax"
     assert metadata.env_key == "MINIMAX_API_KEY"
-    assert metadata.doc_url == "https://www.minimax.io/platform_overview"
+    assert metadata.doc_url == "https://platform.minimax.io/docs"
     assert metadata.completion is True
     assert metadata.embedding is False
     assert metadata.image is False
+    assert metadata.image_generation is True
+
+
+@pytest.mark.asyncio
+async def test_image_generation_uses_native_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"data": {"image_urls": ["https://img.example/image.png"]}, "base_resp": {"status_code": 0}}
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.request: dict[str, object] | None = None
+
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def post(self, url: str, **kwargs: object) -> FakeResponse:
+            self.request = {"url": url, **kwargs}
+            return FakeResponse()
+
+    client = FakeClient()
+    monkeypatch.setattr("any_llm.providers.minimax.minimax.httpx.AsyncClient", lambda: client)
+    provider = MinimaxProvider(api_key="sk-test")
+    result = await provider._aimage_generation(
+        ImageGenerationParams(model_id="image-01", prompt="a cat", aspect_ratio="16:9")
+    )
+
+    assert result.data[0].url == "https://img.example/image.png"
+    assert client.request is not None
+    assert client.request["url"] == "https://api.minimax.io/v1/image_generation"
+    assert client.request["json"] == {"model": "image-01", "prompt": "a cat", "aspect_ratio": "16:9"}
 
 
 @pytest.mark.asyncio
