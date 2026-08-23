@@ -23,6 +23,7 @@ from any_llm.providers.gemini.utils import (
     _convert_tool_spec,
     _create_openai_chunk_from_google_chunk,
     _has_additional_properties,
+    _inline_data_image,
     _map_finish_reason,
 )
 from any_llm.types.completion import (
@@ -998,6 +999,19 @@ def test_convert_streaming_response_preserves_thought_inline_data() -> None:
     assert chunk.choices[0].delta.images == [
         {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}
     ]
+
+
+@pytest.mark.parametrize(
+    "inline_data",
+    [
+        types.Blob(mime_type="", data=b"image-bytes"),
+        types.Blob(mime_type="image/png", data=b""),
+    ],
+)
+def test_inline_data_image_ignores_incomplete_data(inline_data: types.Blob) -> None:
+    part = types.Part(inline_data=inline_data)
+
+    assert _inline_data_image(part) is None
 
 
 def test_convert_response_emits_choice_for_filtered_response_without_content() -> None:
