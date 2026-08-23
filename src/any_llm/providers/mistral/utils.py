@@ -158,6 +158,34 @@ def _extract_mistral_content_and_reasoning(
     return content, reasoning_content, thinking_signature
 
 
+def _split_response_tag_from_reasoning(
+    content: str | None, reasoning_content: str | None
+) -> tuple[str | None, str | None]:
+    """Recover an answer that Mistral wrapped in `<response>` tags inside the thinking trace.
+
+    Some Mistral reasoning models (e.g. Magistral) sometimes return an empty/None content
+    and instead wrap the real answer in `<response>...</response>` inside the reasoning
+    content. When that happens, pull the answer out of the reasoning and trim the reasoning
+    down to what came before the opening tag.
+
+    Used by both the non-streaming and streaming converters so the two paths can't drift
+    apart again the way they did when this was only fixed in one of them (see #1302).
+
+    Note: this only handles the tags landing in a single string. In streaming, if the
+    `<response>` or `</response>` marker itself is split across two chunks, this will not
+    catch it - each chunk's reasoning text is checked independently.
+    """
+    if (
+        content is None
+        and reasoning_content
+        and "<response>" in reasoning_content
+        and "</response>" in reasoning_content
+    ):
+        content = reasoning_content.split("<response>")[1].split("</response>")[0]
+        reasoning_content = reasoning_content.split("<response>")[0]
+    return content, reasoning_content
+
+
 def _create_mistral_completion_from_response(
     response_data: MistralChatCompletionResponse, model: str
 ) -> ChatCompletion:
@@ -208,14 +236,7 @@ def _create_mistral_completion_from_response(
 
         # if the content is none, see if it accidentally ended up in the reasoning content (aka <response>).
         # This is a bug in the mistral provider/model return
-        if (
-            content is None
-            and reasoning_content
-            and "<response>" in reasoning_content
-            and "</response>" in reasoning_content
-        ):
-            content = reasoning_content.split("<response>")[1].split("</response>")[0]
-            reasoning_content = reasoning_content.split("<response>")[0]
+        content, reasoning_content = _split_response_tag_from_reasoning(content, reasoning_content)
 
         message = ChatCompletionMessage(
             role="assistant",
@@ -289,6 +310,11 @@ def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompl
                 content = "".join(text_parts) if text_parts else None
             else:
                 content = str(choice.delta.content)
+
+        # Mirrors the non-streaming converter's recovery of an answer that Mistral wrapped
+        # in <response> tags inside the thinking trace (see #1302). This only catches the
+        # case where both tags land in the same chunk; see _split_response_tag_from_reasoning.
+        content, reasoning_content = _split_response_tag_from_reasoning(content, reasoning_content)
 
         role = None
         if choice.delta.role:
