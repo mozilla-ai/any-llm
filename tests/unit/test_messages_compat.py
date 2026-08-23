@@ -1639,3 +1639,20 @@ def test_streaming_usage_with_zero_tokens() -> None:
     chat_completion_chunk_to_message_stream_events(chunk, state)
     assert state.input_tokens == 100
     assert state.output_tokens == 50
+
+
+def test_completion_usage_preserves_provider_cache_meters() -> None:
+    usage = CompletionUsage(
+        prompt_tokens=100,
+        completion_tokens=5,
+        total_tokens=105,
+        prompt_cache_hit_tokens=80,
+        prompt_cache_miss_tokens=20,
+        cache_creation={"ephemeral_5m_input_tokens": 12},
+    )
+
+    assert usage.cache_usage is not None
+    assert usage.cache_usage.read_input_tokens == 80
+    assert usage.cache_usage.creation_5m_input_tokens == 12
+    assert usage.cache_usage.included_in_prompt_tokens is False
+    assert usage.cache_usage.provider_meters == {"prompt_cache_miss_tokens": 20}

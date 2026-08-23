@@ -144,7 +144,79 @@ class ChatCompletionChunk(OpenAIChatCompletionChunk):
 
 
 Function = OpenAIFunction
-CompletionUsage = OpenAICompletionUsage
+
+
+class CacheUsageDetails(BaseModel):
+    """Provider-neutral cache meters preserved alongside completion usage."""
+
+    read_input_tokens: int | None = None
+    creation_input_tokens: int | None = None
+    creation_5m_input_tokens: int | None = None
+    creation_1h_input_tokens: int | None = None
+    included_in_prompt_tokens: bool | None = None
+    provider_meters: dict[str, int] | None = None
+
+
+class CompletionUsage(OpenAICompletionUsage):
+    """OpenAI-compatible usage with optional provider cache accounting."""
+
+    cache_usage: CacheUsageDetails | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _preserve_cache_usage(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        if value.get("cache_usage") is not None:
+            return value
+
+        def first(*names: str) -> int | None:
+            for name in names:
+                if value.get(name) is not None:
+                    return value[name]
+            return None
+
+        read = first("cache_read_input_tokens", "prompt_cache_hit_tokens")
+        creation = first("cache_creation_input_tokens", "prompt_cache_write_tokens")
+        details = value.get("prompt_tokens_details") or {}
+        if isinstance(details, dict):
+            cached = details.get("cached_tokens")
+        else:
+            cached = getattr(details, "cached_tokens", None)
+        if read is None and cached is not None:
+            read = cached
+
+        ttl = value.get("cache_creation") or {}
+        if not isinstance(ttl, dict):
+            ttl = {}
+        meters = {
+            key: meter
+            for key, meter in value.items()
+            if key
+            not in {
+                "cache_read_input_tokens",
+                "prompt_cache_hit_tokens",
+                "cache_creation_input_tokens",
+                "prompt_cache_write_tokens",
+                "cache_creation",
+                "prompt_tokens_details",
+                "cache_usage",
+            }
+            and key.startswith(("prompt_cache_", "cache_"))
+            and isinstance(meter, int)
+        }
+        if read is None and creation is None and not ttl and not meters:
+            return value
+        value = dict(value)
+        value["cache_usage"] = {
+            "read_input_tokens": read,
+            "creation_input_tokens": creation,
+            "creation_5m_input_tokens": ttl.get("ephemeral_5m_input_tokens"),
+            "creation_1h_input_tokens": ttl.get("ephemeral_1h_input_tokens"),
+            "included_in_prompt_tokens": True if cached is not None else False,
+            "provider_meters": meters or None,
+        }
+        return value
 CompletionTokensDetails = OpenAICompletionTokensDetails
 PromptTokensDetails = OpenAIPromptTokensDetails
 CreateEmbeddingResponse = OpenAICreateEmbeddingResponse
