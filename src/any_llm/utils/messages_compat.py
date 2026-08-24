@@ -23,7 +23,7 @@ from any_llm.types.messages import (
 from any_llm.utils.structured_output import is_structured_output_type
 
 if TYPE_CHECKING:
-    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionUsage
+    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
     from any_llm.types.messages import MessageContentBlock, MessagesParams
 
 
@@ -280,7 +280,7 @@ def split_cached_input_tokens(prompt_tokens: int, cached_tokens: int) -> tuple[i
     return prompt_tokens - cached, cached or None
 
 
-def _cached_tokens_from_usage(usage: CompletionUsage) -> int:
+def _cached_tokens_from_usage(usage: Any) -> int:
     """Read ``prompt_tokens_details.cached_tokens`` off a usage object, defaulting to 0."""
     if usage.prompt_tokens_details is None:
         return 0
@@ -336,6 +336,8 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
             input_tokens=input_tokens,
             cache_read_input_tokens=cache_read,
             output_tokens=completion.usage.completion_tokens,
+            cache_creation_input_tokens=getattr(completion.usage, "cache_creation_input_tokens", None),
+            cache_creation=getattr(completion.usage, "cache_creation", None),
         )
 
     return MessageResponse(
@@ -373,6 +375,8 @@ class StreamingState:
         self.input_tokens = 0
         self.output_tokens = 0
         self.cache_read_input_tokens = 0
+        self.cache_creation_input_tokens: int | None = None
+        self.cache_creation: Any | None = None
         self.stop_reason: StopReason | None = None
         self.tool_call_id: str | None = None
         self.tool_call_name: str | None = None
@@ -400,6 +404,12 @@ def chat_completion_chunk_to_message_stream_events(
         cached = _cached_tokens_from_usage(chunk.usage)
         if cached:
             state.cache_read_input_tokens = cached
+        cache_creation = getattr(chunk.usage, "cache_creation_input_tokens", None)
+        if cache_creation is not None:
+            state.cache_creation_input_tokens = cache_creation
+        cache_creation_details = getattr(chunk.usage, "cache_creation", None)
+        if cache_creation_details is not None:
+            state.cache_creation = cache_creation_details
 
     if not state.started:
         state.started = True
@@ -408,6 +418,8 @@ def chat_completion_chunk_to_message_stream_events(
             input_tokens=input_tokens,
             cache_read_input_tokens=cache_read,
             output_tokens=0,
+            cache_creation_input_tokens=state.cache_creation_input_tokens,
+            cache_creation=state.cache_creation,
         )
         msg = MessageResponse(
             id=chunk.id,

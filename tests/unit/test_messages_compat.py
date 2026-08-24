@@ -3,6 +3,9 @@
 import json
 from typing import Any
 
+import pytest
+from pydantic import ValidationError
+
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -1704,10 +1707,34 @@ def test_completion_usage_normalization_supports_creation_aliases_and_empty_data
 
 
 def test_completion_usage_normalization_ignores_invalid_cache_creation_shape() -> None:
-    usage = CompletionUsage(
-        prompt_tokens=10,
-        completion_tokens=1,
-        total_tokens=11,
-        cache_creation=["not", "a", "mapping"],
+    with pytest.raises(ValidationError, match="cache_creation"):
+        CompletionUsage(
+            prompt_tokens=10,
+            completion_tokens=1,
+            total_tokens=11,
+            cache_creation=["not", "a", "mapping"],
+        )
+
+
+def test_streaming_usage_preserves_cache_creation_details() -> None:
+    chunk = ChatCompletionChunk(
+        id="c-cache",
+        model="claude",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[],
+        usage=CompletionUsage(
+            prompt_tokens=100,
+            completion_tokens=5,
+            total_tokens=105,
+            cache_creation_input_tokens=12,
+            cache_creation={"ephemeral_5m_input_tokens": 7, "ephemeral_1h_input_tokens": 5},
+        ),
     )
-    assert usage.cache_usage is None
+    state = StreamingState()
+    events = chat_completion_chunk_to_message_stream_events(chunk, state)
+
+    assert state.cache_creation_input_tokens == 12
+    assert state.cache_creation["ephemeral_5m_input_tokens"] == 7
+    assert events[0].message.usage.cache_creation_input_tokens == 12
+    assert events[0].message.usage.cache_creation.ephemeral_1h_input_tokens == 5

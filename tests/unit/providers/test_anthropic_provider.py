@@ -940,6 +940,7 @@ def test_streaming_chunk_includes_cache_creation_tokens_in_usage() -> None:
     from unittest.mock import MagicMock
 
     from anthropic.types import MessageStopEvent, Usage
+
     from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
 
     usage = Usage(

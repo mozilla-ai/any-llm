@@ -161,6 +161,8 @@ class CompletionUsage(OpenAICompletionUsage):
     """OpenAI-compatible usage with optional provider cache accounting."""
 
     cache_usage: CacheUsageDetails | None = None
+    cache_creation_input_tokens: int | None = None
+    cache_creation: dict[str, int] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -172,8 +174,9 @@ class CompletionUsage(OpenAICompletionUsage):
 
         def first(*names: str) -> int | None:
             for name in names:
-                if value.get(name) is not None:
-                    return value[name]
+                meter = value.get(name)
+                if isinstance(meter, int):
+                    return meter
             return None
 
         read = first("cache_read_input_tokens", "prompt_cache_hit_tokens")

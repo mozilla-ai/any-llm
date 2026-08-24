@@ -1053,6 +1053,8 @@ class AnyLLM(ABC):
                         output_tokens=state.output_tokens,
                         input_tokens=input_tokens,
                         cache_read_input_tokens=cache_read,
+                        cache_creation_input_tokens=state.cache_creation_input_tokens,
+                        cache_creation=state.cache_creation,
                     ),
                 )
 
