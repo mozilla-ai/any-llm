@@ -512,6 +512,7 @@ def test_has_additional_properties(schema: Any, expected: bool) -> None:
         ({"type": "object", "required": ["a", "b"], "properties": {"a": {"type": "string"}}}, False),
         ({"type": "string", "enum": ["a", "b"]}, False),
         ({"anyOf": [{"type": "string"}, {"type": "null"}]}, False),
+        ({"anyOf": [{"type": ["string", "null"]}]}, True),
         ("not-a-schema", False),
     ],
 )
