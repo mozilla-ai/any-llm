@@ -189,8 +189,12 @@ class CompletionUsage(OpenAICompletionUsage):
         if read is None and cached is not None:
             read = cached
 
-        ttl = value.get("cache_creation") or {}
-        if not isinstance(ttl, dict):
+        ttl_value = value.get("cache_creation")
+        if isinstance(ttl_value, BaseModel):
+            ttl = ttl_value.model_dump(exclude_none=True)
+        elif isinstance(ttl_value, dict):
+            ttl = ttl_value
+        else:
             ttl = {}
         meters = {
             key: meter
@@ -211,17 +215,19 @@ class CompletionUsage(OpenAICompletionUsage):
         if read is None and creation is None and not ttl and not meters:
             return value
         value = dict(value)
+        if ttl:
+            value["cache_creation"] = ttl
         value["cache_usage"] = {
             "read_input_tokens": read,
             "creation_input_tokens": creation,
             "creation_5m_input_tokens": ttl.get("ephemeral_5m_input_tokens"),
             "creation_1h_input_tokens": ttl.get("ephemeral_1h_input_tokens"),
-            "included_in_prompt_tokens": any(
-                meter is not None for meter in (read, creation, cached)
-            ),
+            "included_in_prompt_tokens": any(meter is not None for meter in (read, creation, cached)),
             "provider_meters": meters or None,
         }
         return value
+
+
 CompletionTokensDetails = OpenAICompletionTokensDetails
 PromptTokensDetails = OpenAIPromptTokensDetails
 CreateEmbeddingResponse = OpenAICreateEmbeddingResponse

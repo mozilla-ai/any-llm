@@ -395,6 +395,7 @@ def _convert_response(response: Message) -> ChatCompletion:
         total_tokens=total_prompt_tokens + response.usage.output_tokens,
         prompt_tokens_details=PromptTokensDetails(cached_tokens=cache_read) if cache_read else None,
         cache_creation_input_tokens=cache_creation_value,
+        cache_creation=cast("Any", response.usage.cache_creation),
     )
 
     from typing import Literal
