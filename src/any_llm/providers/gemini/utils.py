@@ -315,7 +315,7 @@ def _convert_messages(
             name = message.get("name") or tool_names.get(message.get("tool_call_id", ""), "unknown")
             content = message["content"]
             if isinstance(content, (str, bytes, bytearray)):
-                with suppress(json.JSONDecodeError):
+                with suppress(json.JSONDecodeError, UnicodeDecodeError):
                     content = json.loads(content)
             part = types.Part.from_function_response(name=name, response=_normalize_tool_response(content))
             formatted_messages.append(types.Content(role="function", parts=[part]))

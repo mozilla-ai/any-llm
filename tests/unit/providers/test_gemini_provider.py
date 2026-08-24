@@ -2067,6 +2067,8 @@ def test_convert_messages_parallel_tool_calls_only_first_gets_skip_sentinel() ->
         ('{"temp": "20C"}', {"temp": "20C"}),
         (b'{"temp": "20C"}', {"temp": "20C"}),
         (bytearray(b'{"temp": "20C"}'), {"temp": "20C"}),
+        (b"\xff", {"result": b"\xff"}),
+        (bytearray(b"\xff"), {"result": bytearray(b"\xff")}),
         ({"temp": "20C"}, {"temp": "20C"}),
         ("[]", {"result": []}),
         ([], {"result": []}),
