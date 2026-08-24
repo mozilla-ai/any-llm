@@ -1740,6 +1740,8 @@ def test_convert_messages_tool_call_without_a_signature_keeps_the_skip_sentinel(
     ("function", "expected_args"),
     [
         ({"name": "get_weather", "arguments": '{"location": "Paris"}'}, {"location": "Paris"}),
+        ({"name": "get_weather", "arguments": b'{"location": "Paris"}'}, {"location": "Paris"}),
+        ({"name": "get_weather", "arguments": bytearray(b'{"location": "Paris"}')}, {"location": "Paris"}),
         ({"name": "get_weather", "arguments": {"location": "Paris"}}, {"location": "Paris"}),
         ({"name": "get_weather"}, {}),
         ({"name": "get_weather", "arguments": None}, {}),
@@ -2063,6 +2065,8 @@ def test_convert_messages_parallel_tool_calls_only_first_gets_skip_sentinel() ->
     ("tool_content", "expected_response"),
     [
         ('{"temp": "20C"}', {"temp": "20C"}),
+        (b'{"temp": "20C"}', {"temp": "20C"}),
+        (bytearray(b'{"temp": "20C"}'), {"temp": "20C"}),
         ({"temp": "20C"}, {"temp": "20C"}),
         ("[]", {"result": []}),
         ([], {"result": []}),

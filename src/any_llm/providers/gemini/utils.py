@@ -277,7 +277,11 @@ def _convert_messages(
                     if tool_call_id := tool_call.get("id"):
                         tool_names[tool_call_id] = function_call["name"]
                     arguments = function_call.get("arguments")
-                    args = json.loads(arguments) if isinstance(arguments, str) and arguments else arguments or {}
+                    args = (
+                        json.loads(arguments)
+                        if isinstance(arguments, (str, bytes, bytearray)) and arguments
+                        else arguments or {}
+                    )
 
                     # Extract thought_signature if present (OpenAI compatibility format)
                     # SDK accepts base64 string or bytes
@@ -310,7 +314,7 @@ def _convert_messages(
         elif message["role"] == "tool":
             name = message.get("name") or tool_names.get(message.get("tool_call_id", ""), "unknown")
             content = message["content"]
-            if isinstance(content, str):
+            if isinstance(content, (str, bytes, bytearray)):
                 with suppress(json.JSONDecodeError):
                     content = json.loads(content)
             part = types.Part.from_function_response(name=name, response=_normalize_tool_response(content))
