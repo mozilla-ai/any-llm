@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, cast
 
+import httpx
 import pytest
 
 from any_llm.providers.portkey.portkey import PortkeyProvider
@@ -110,7 +111,9 @@ def test_portkey_uses_native_async_client(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr("any_llm.providers.portkey.portkey.AsyncPortkey", FakeAsyncPortkey)
     PortkeyProvider(api_key="test-key", api_base="https://example.test/v1")
 
-    assert calls == {"api_key": "test-key", "base_url": "https://example.test/v1"}
+    assert calls["api_key"] == "test-key"
+    assert calls["base_url"] == "https://example.test/v1"
+    assert calls["timeout"] == httpx.Timeout(600.0, connect=5.0)
 
 
 def test_convert_completion_params_with_dataclass_response_format() -> None:
