@@ -1706,6 +1706,41 @@ def test_completion_usage_normalization_supports_creation_aliases_and_empty_data
     assert "cache_usage" not in plain.model_dump(exclude_none=True)
 
 
+def test_completion_usage_normalizes_cache_creation_without_other_meters() -> None:
+    """Normalize cache creation details even when no cache totals are present."""
+    from pydantic import BaseModel
+
+    class CacheCreation(BaseModel):
+        ephemeral_5m_input_tokens: int | None = None
+        ephemeral_1h_input_tokens: int | None = None
+
+    usage = CompletionUsage(
+        prompt_tokens=10,
+        completion_tokens=1,
+        total_tokens=11,
+        cache_creation=CacheCreation(ephemeral_5m_input_tokens=None),
+    )
+
+    assert usage.cache_usage is None
+    assert usage.cache_creation is None
+    assert "cache_creation" not in usage.model_dump(exclude_none=True)
+
+
+def test_completion_usage_removes_none_cache_creation_values() -> None:
+    """Drop null cache creation meters before validating the integer mapping."""
+    usage = CompletionUsage(
+        prompt_tokens=10,
+        completion_tokens=1,
+        total_tokens=11,
+        cache_creation={"ephemeral_5m_input_tokens": 3, "ephemeral_1h_input_tokens": None},
+    )
+
+    assert usage.cache_usage is not None
+    assert usage.cache_usage.creation_5m_input_tokens == 3
+    assert usage.cache_creation == {"ephemeral_5m_input_tokens": 3}
+    assert usage.model_dump(exclude_none=True)["cache_creation"] == {"ephemeral_5m_input_tokens": 3}
+
+
 def test_completion_usage_normalization_ignores_invalid_cache_creation_shape() -> None:
     with pytest.raises(ValidationError, match="cache_creation"):
         CompletionUsage(
