@@ -953,8 +953,8 @@ def test_streaming_chunk_includes_cache_creation_tokens_in_usage() -> None:
 
     assert result.usage is not None
     assert result.usage.cache_creation_input_tokens == 12
-    assert result.usage.cache_creation.ephemeral_5m_input_tokens == 7
-    assert result.usage.cache_creation.ephemeral_1h_input_tokens == 5
+    assert result.usage.cache_creation["ephemeral_5m_input_tokens"] == 7
+    assert result.usage.cache_creation["ephemeral_1h_input_tokens"] == 5
 
 
 @pytest.mark.asyncio
