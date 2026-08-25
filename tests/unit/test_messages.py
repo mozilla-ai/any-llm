@@ -34,6 +34,7 @@ from any_llm.types.completion import (
     Choice,
     ChoiceDelta,
     ChunkChoice,
+    CompletionParams,
     CompletionUsage,
     PromptTokensDetails,
 )
@@ -1730,3 +1731,58 @@ async def test_amessages_output_config_dict_rejects_streaming() -> None:
             output_format=output_config,
             stream=True,
         )
+
+
+@pytest.mark.asyncio
+async def test_amessages_parallel_tool_calls_rejection_names_the_anthropic_parameter() -> None:
+    """A provider that rejects parallel_tool_calls must not name a parameter the caller never sent.
+
+    The bridge synthesizes parallel_tool_calls out of Anthropic's tool_choice, so Gemini and
+    Cohere raise for it on a Messages call whose caller only set disable_parallel_tool_use.
+    The request still fails, since neither provider can honor sequential tool use, but the
+    error names the field that was actually passed.
+    """
+
+    class RejectingProvider(AnyLLM):
+        PROVIDER_NAME = "rejecting"
+
+        @override
+        async def _acompletion(self, params: CompletionParams, **kwargs: Any) -> Any:
+            if params.parallel_tool_calls is not None:
+                msg = "parallel_tool_calls"
+                raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
+            return None
+
+    provider = Mock(spec=RejectingProvider)
+    provider.PROVIDER_NAME = "rejecting"
+    provider._acompletion = RejectingProvider._acompletion.__get__(provider)
+
+    params = MessagesParams(
+        model="m",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=32,
+        tools=[{"name": "t", "description": "d", "input_schema": {"type": "object"}}],
+        tool_choice={"type": "auto", "disable_parallel_tool_use": True},
+    )
+    with pytest.raises(UnsupportedParameterError) as exc_info:
+        await AnyLLM._amessages(provider, params)
+    assert exc_info.value.parameter_name == "tool_choice.disable_parallel_tool_use"
+
+
+@pytest.mark.asyncio
+async def test_amessages_unrelated_unsupported_parameter_is_not_relabelled() -> None:
+    """Only the synthesized parameter is renamed; every other rejection passes through."""
+
+    provider = Mock(spec=AnyLLM)
+    provider.PROVIDER_NAME = "rejecting"
+
+    async def _acompletion(params: CompletionParams, **kwargs: Any) -> Any:
+        msg = "seed"
+        raise UnsupportedParameterError(msg, "rejecting")
+
+    provider._acompletion = _acompletion
+
+    params = MessagesParams(model="m", messages=[{"role": "user", "content": "hi"}], max_tokens=32)
+    with pytest.raises(UnsupportedParameterError) as exc_info:
+        await AnyLLM._amessages(provider, params)
+    assert exc_info.value.parameter_name == "seed"

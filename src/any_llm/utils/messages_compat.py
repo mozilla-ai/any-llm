@@ -28,28 +28,36 @@ if TYPE_CHECKING:
     from any_llm.types.messages import MessageContentBlock, MessagesParams
 
 
-def _output_config_to_response_format(output_config: dict[str, Any]) -> dict[str, Any]:
+def _output_config_to_response_format(output_config: dict[str, Any]) -> dict[str, Any] | None:
     """Translate a raw Anthropic ``output_config`` dict into a completion ``response_format``.
 
     Lets the bridge carry a non-Pydantic JSON schema to non-Anthropic providers: the schema
     under ``output_config["format"]["schema"]`` is rewrapped as the OpenAI ``json_schema``
     response format. The name falls back to the schema's ``title`` (or ``"structured_output"``).
 
-    Both dict shapes ``normalize_output_config`` accepts are handled.
+    Both dict shapes ``normalize_output_config`` accepts are handled. ``None`` means the config
+    asked for no structured output, so the caller leaves ``response_format`` unset.
+
+    ``output_config.effort`` is never translated: chat completions has no equivalent, and the
+    nearest field, ``reasoning_effort``, governs reasoning rather than output. It is ignored
+    whether or not a schema sits beside it, so an effort-only config is not rejected in one
+    shape while being dropped in the other.
 
     Raises:
-        InvalidRequestError: when the config names no schema. There is nothing to translate,
-            and a ``response_format`` carrying an empty schema would sit on the wire
-            constraining nothing while the caller believes it is in force.
+        InvalidRequestError: when the config names a format but no usable schema. The caller
+            asked for structured output, and a ``response_format`` carrying an empty schema
+            would sit on the wire constraining nothing while they believe it is in force.
 
     """
     fmt = normalize_output_config(output_config).get("format")
+    if fmt is None:
+        return None
     schema = fmt.get("schema") if isinstance(fmt, dict) else None
     if not isinstance(schema, dict) or not schema:
         msg = (
-            "output_format dict carries no JSON schema. Expected an Anthropic output_config "
-            '({"format": {"type": "json_schema", "schema": {...}}}) or the bare format object '
-            '({"type": "json_schema", "schema": {...}}).'
+            "output_format names a format but carries no JSON schema. Expected an Anthropic "
+            'output_config ({"format": {"type": "json_schema", "schema": {...}}}) or the bare '
+            'format object ({"type": "json_schema", "schema": {...}}).'
         )
         raise InvalidRequestError(msg)
     name = schema.get("title", "structured_output")
@@ -114,8 +122,10 @@ def messages_params_to_completion_params(params: MessagesParams) -> dict[str, An
     if params.output_format is not None:
         if is_structured_output_type(params.output_format):
             result["response_format"] = params.output_format
-        else:
-            result["response_format"] = _output_config_to_response_format(cast("dict[str, Any]", params.output_format))
+        elif (
+            response_format := _output_config_to_response_format(cast("dict[str, Any]", params.output_format))
+        ) is not None:
+            result["response_format"] = response_format
 
     if params.tools:
         result["tools"] = _convert_tools_to_openai(params.tools)
@@ -168,15 +178,20 @@ def _convert_assistant_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[di
     is the one that belongs on the wire. The normalized ``reasoning`` field would not do,
     because ``AnyLLM.acompletion`` strips it as an any_llm extension to the OpenAI spec.
 
-    Dropping the block made the bridge lossy in one direction only:
-    ``chat_completion_to_message_response`` builds a ``ThinkingBlock`` out of an upstream
-    ``reasoning`` field, so a caller could read thinking out of a Messages response and then
-    had nowhere to put it back on the next request.
-
     The Anthropic ``signature`` travels in the ``extra_content["anthropic"]`` side-channel that
     ``anthropic``'s ``_extract_anthropic_thinking_signature`` already reads, so a bridged
     request that later reaches an Anthropic-native provider can rebuild the block whole.
     Anthropic requires that signature back unmodified while extended thinking is on.
+
+    A signature is emitted only when the turn holds a single ``thinking`` block. Interleaved
+    thinking can put several in one turn, and the OpenAI wire has one ``reasoning_content``
+    string to hold them, so the joined text is not what any one signature signs. Emitting one
+    anyway would pair a signature with text it does not cover, which Anthropic rejects on
+    replay; the text is kept either way, since that is what the backend reads.
+
+    ``redacted_thinking`` blocks are dropped. They carry encrypted payloads with no text to
+    join and nothing on the OpenAI wire to carry them, so preserving them needs a side-channel
+    schema of its own and is left out of this change.
     """
     text_parts: list[str] = []
     thinking_parts: list[str] = []
@@ -214,7 +229,7 @@ def _convert_assistant_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[di
     reasoning_content = "".join(thinking_parts)
     if reasoning_content:
         result["reasoning_content"] = reasoning_content
-    if signature is not None:
+    if signature is not None and len(thinking_parts) == 1:
         result["extra_content"] = {"anthropic": {"signature": signature}}
     return [result]
 
@@ -269,8 +284,12 @@ def _convert_document_block_to_openai(block: dict[str, Any]) -> dict[str, Any]:
     if source_type == "content":
         return {"type": "text", "text": _flatten_document_content_source(source.get("content"))}
     if source_type == "base64":
+        data = source.get("data", "")
+        if not data:
+            msg = "document block base64 source carries no data"
+            raise InvalidRequestError(msg)
         media_type = source.get("media_type", "application/pdf")
-        return {"type": "file", "file": {"file_data": f"data:{media_type};base64,{source.get('data', '')}"}}
+        return {"type": "file", "file": {"file_data": f"data:{media_type};base64,{data}"}}
     url = source.get("url", "")
     if not url:
         msg = f"document block source carries no payload (source type {source_type!r})"
@@ -322,9 +341,11 @@ def _convert_user_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[dict[st
 
     A tool result marked ``is_error`` keeps that marker on the emitted ``role: tool`` message.
     OpenAI has no field for it, and the OpenAI SDK forwards unknown message keys verbatim, so
-    the flag reaches a backend that understands it and is inert on one that does not. Dropping
-    it left a failed tool call indistinguishable from a successful one whose output happened to
-    read like an error.
+    the flag reaches any backend reached through an OpenAI-shaped request and is inert on one
+    that does not read it. It travels no further than that: a provider that rebuilds the
+    message from known keys, as ``bedrock``, ``gemini`` and ``ollama`` do, drops it again.
+    Mapping it onto each of those representations, such as ``toolResult.status`` on Bedrock,
+    is left to a follow-up.
 
     A tool result carrying image or document blocks emits the text as the ``role: tool``
     message and holds the remaining parts back, because OpenAI accepts text only on a tool

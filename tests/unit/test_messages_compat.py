@@ -1669,7 +1669,7 @@ def test_output_config_without_schema_raises() -> None:
         max_tokens=1024,
         output_format={"format": {"type": "json_schema"}},
     )
-    with pytest.raises(InvalidRequestError, match="no JSON schema"):
+    with pytest.raises(InvalidRequestError, match="carries no JSON schema"):
         messages_params_to_completion_params(params)
 
 
@@ -1681,7 +1681,7 @@ def test_output_config_with_empty_schema_raises() -> None:
         max_tokens=1024,
         output_format={"type": "json_schema", "schema": {}},
     )
-    with pytest.raises(InvalidRequestError, match="no JSON schema"):
+    with pytest.raises(InvalidRequestError, match="carries no JSON schema"):
         messages_params_to_completion_params(params)
 
 
@@ -1693,7 +1693,7 @@ def test_output_config_with_non_dict_schema_raises() -> None:
         max_tokens=1024,
         output_format={"type": "json_schema", "schema": "not-a-schema"},
     )
-    with pytest.raises(InvalidRequestError, match="no JSON schema"):
+    with pytest.raises(InvalidRequestError, match="carries no JSON schema"):
         messages_params_to_completion_params(params)
 
 
@@ -2084,12 +2084,12 @@ def test_image_block_url_source_conversion() -> None:
     ]
 
 
-def test_assistant_blocks_last_non_empty_thinking_signature_wins() -> None:
-    """Anthropic sends one thinking block per turn, so a hand-built multi-block turn keeps one.
+def test_assistant_blocks_multiple_thinking_blocks_emit_no_signature() -> None:
+    """Interleaved thinking puts several blocks in one turn, and no signature signs the join.
 
-    The text still concatenates the way multiple text blocks do. Only a signature that pairs
-    with the whole concatenation would be meaningful, and none does, so this records the
-    chosen behavior rather than claiming the pairing survives.
+    The text still concatenates the way multiple text blocks do, since that is what the
+    backend reads. Emitting one of the signatures would pair it with text it does not cover,
+    which Anthropic rejects on replay.
     """
     result = _convert_assistant_blocks_to_openai(
         [
@@ -2098,7 +2098,7 @@ def test_assistant_blocks_last_non_empty_thinking_signature_wins() -> None:
         ]
     )
     assert result[0]["reasoning_content"] == "first second"
-    assert result[0]["extra_content"] == {"anthropic": {"signature": "sig-2"}}
+    assert "extra_content" not in result[0]
 
 
 def test_user_blocks_tool_result_content_source_document_flattened_to_text() -> None:
@@ -2204,16 +2204,41 @@ def test_output_config_bare_type_without_schema_is_still_wrapped() -> None:
     assert normalize_output_config({"type": "json_schema"}) == {"format": {"type": "json_schema"}}
 
 
-def test_output_format_effort_only_rejected_by_the_bridge() -> None:
-    """The bridge cannot translate a config that names no schema, so it raises rather than
-    forwarding a response_format that constrains nothing."""
+def test_output_format_effort_only_leaves_response_format_unset() -> None:
+    """An effort-only config asks for no structured output, so there is nothing to translate."""
     params = MessagesParams(
         model="gpt-4o",
         messages=[{"role": "user", "content": "Hello"}],
         max_tokens=1024,
         output_format={"effort": "high"},
     )
-    with pytest.raises(InvalidRequestError, match="no JSON schema"):
+    assert "response_format" not in messages_params_to_completion_params(params)
+
+
+def test_output_format_effort_beside_a_schema_is_ignored_not_rejected() -> None:
+    """effort gets the same treatment in both shapes: ignored, never a reason to reject."""
+    params = MessagesParams(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        output_format={"effort": "high", "format": {"type": "json_schema", "schema": {"type": "object"}}},
+    )
+    result = messages_params_to_completion_params(params)
+    assert result["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "structured_output", "schema": {"type": "object"}},
+    }
+
+
+def test_output_format_naming_a_format_without_a_schema_raises() -> None:
+    """Naming a format is asking for structured output, which needs a schema to translate."""
+    params = MessagesParams(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        output_format={"format": {"type": "json_schema"}},
+    )
+    with pytest.raises(InvalidRequestError, match="carries no JSON schema"):
         messages_params_to_completion_params(params)
 
 
@@ -2232,3 +2257,30 @@ def test_normalized_reasoning_wins_over_the_wire_spelling() -> None:
 
     message = {"reasoning": {"content": "normalized"}, "reasoning_content": "wire"}
     assert _extract_reasoning_text(message) == "normalized"
+
+
+def test_user_blocks_base64_document_without_data_raises() -> None:
+    """An empty base64 payload would build a data uri with nothing in it, like the image case."""
+    with pytest.raises(InvalidRequestError, match="carries no data"):
+        _convert_user_blocks_to_openai(
+            [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "call_1",
+                    "content": [{"type": "document", "source": {"type": "base64", "media_type": "application/pdf"}}],
+                },
+            ]
+        )
+
+
+def test_assistant_blocks_redacted_thinking_is_dropped() -> None:
+    """redacted_thinking carries no text to join and has no wire field, so it is left out."""
+    result = _convert_assistant_blocks_to_openai(
+        [
+            {"type": "redacted_thinking", "data": "encrypted"},
+            {"type": "text", "text": "answer"},
+        ]
+    )
+    assert result[0]["content"] == "answer"
+    assert "reasoning_content" not in result[0]
+    assert "extra_content" not in result[0]
