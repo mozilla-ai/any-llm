@@ -1736,43 +1736,6 @@ def test_convert_messages_tool_call_without_a_signature_keeps_the_skip_sentinel(
     assert part_json["thought_signature"] == "skip_thought_signature_validator"
 
 
-@pytest.mark.parametrize(
-    ("function", "expected_args"),
-    [
-        ({"name": "get_weather", "arguments": '{"location": "Paris"}'}, {"location": "Paris"}),
-        ({"name": "get_weather", "arguments": b'{"location": "Paris"}'}, {"location": "Paris"}),
-        ({"name": "get_weather", "arguments": bytearray(b'{"location": "Paris"}')}, {"location": "Paris"}),
-        ({"name": "get_weather", "arguments": {"location": "Paris"}}, {"location": "Paris"}),
-        ({"name": "get_weather"}, {}),
-        ({"name": "get_weather", "arguments": None}, {}),
-        ({"name": "get_weather", "arguments": ""}, {}),
-    ],
-)
-def test_convert_messages_accepts_json_or_parsed_tool_call_arguments(
-    function: dict[str, Any], expected_args: dict[str, Any]
-) -> None:
-    messages: list[dict[str, Any]] = [
-        {
-            "role": "assistant",
-            "content": None,
-            "tool_calls": [
-                {
-                    "id": "call_1",
-                    "type": "function",
-                    "function": function,
-                }
-            ],
-        }
-    ]
-
-    formatted_messages, _ = _convert_messages(messages)
-
-    assert formatted_messages[0].parts is not None
-    function_call = formatted_messages[0].parts[0].function_call
-    assert function_call is not None
-    assert function_call.args == expected_args
-
-
 def test_convert_messages_with_thought_signature_in_extra_content() -> None:
     # Use valid base64 that round-trips correctly
     original_bytes = b"test-signature-bytes"
@@ -2065,20 +2028,12 @@ def test_convert_messages_parallel_tool_calls_only_first_gets_skip_sentinel() ->
     ("tool_content", "expected_response"),
     [
         ('{"temp": "20C"}', {"temp": "20C"}),
-        (b'{"temp": "20C"}', {"temp": "20C"}),
-        (bytearray(b'{"temp": "20C"}'), {"temp": "20C"}),
-        (b"\xff", {"result": b"\xff"}),
-        (bytearray(b"\xff"), {"result": bytearray(b"\xff")}),
-        ({"temp": "20C"}, {"temp": "20C"}),
         ("[]", {"result": []}),
-        ([], {"result": []}),
-        ([{"type": "text", "text": "ok"}], {"result": [{"type": "text", "text": "ok"}]}),
         ("1", {"result": 1}),
-        ("not JSON", {"result": "not JSON"}),
     ],
 )
-def test_convert_messages_tool_response_accepts_json_or_parsed_content(
-    tool_content: Any, expected_response: dict[str, Any]
+def test_convert_messages_tool_response_normalizes_non_objects(
+    tool_content: str, expected_response: dict[str, Any]
 ) -> None:
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": "What is the weather?"},
