@@ -44,6 +44,7 @@ async def test_agent_loop_parallel_tool_calls(
     provider_model_map: dict[LLMProvider, str],
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
+    """Execute multiple model-selected tool calls and return their results."""
     if provider in (*LOCAL_PROVIDERS, LLMProvider.PERPLEXITY):
         pytest.skip(f"{provider} does not support tools, skipping")
 
@@ -111,6 +112,7 @@ async def test_agent_loop_sequential_tool_calls(
     provider_model_map: dict[LLMProvider, str],
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
+    """Execute model-selected tools over several agent-loop iterations."""
     if provider in (*LOCAL_PROVIDERS, LLMProvider.PERPLEXITY):
         pytest.skip(f"{provider} does not support tools, skipping")
 
