@@ -1706,6 +1706,43 @@ def test_completion_usage_normalization_supports_creation_aliases_and_empty_data
     assert "cache_usage" not in plain.model_dump(exclude_none=True)
 
 
+def test_chat_completion_wrappers_normalize_raw_cache_usage() -> None:
+    """Provider cache aliases are normalized when wrappers validate raw dictionaries."""
+    usage = {
+        "prompt_tokens": 10,
+        "completion_tokens": 1,
+        "total_tokens": 11,
+        "prompt_cache_hit_tokens": 4,
+    }
+    completion = ChatCompletion.model_validate(
+        {
+            "id": "raw",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test",
+            "choices": [],
+            "usage": usage,
+        }
+    )
+    chunk = ChatCompletionChunk.model_validate(
+        {
+            "id": "raw",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "test",
+            "choices": [],
+            "usage": usage,
+        }
+    )
+
+    assert completion.usage is not None
+    assert completion.usage.cache_usage is not None
+    assert completion.usage.cache_usage.read_input_tokens == 4
+    assert chunk.usage is not None
+    assert chunk.usage.cache_usage is not None
+    assert chunk.usage.cache_usage.read_input_tokens == 4
+
+
 def test_completion_usage_normalizes_cache_creation_without_other_meters() -> None:
     """Normalize cache creation details even when no cache totals are present."""
     from pydantic import BaseModel
