@@ -256,7 +256,12 @@ def _budget_to_reasoning_effort(budget: int) -> str:
     return "xhigh"
 
 
-def split_cached_input_tokens(prompt_tokens: int, cached_tokens: int) -> tuple[int, int | None]:
+def split_cached_input_tokens(
+    prompt_tokens: int,
+    cached_tokens: int,
+    cache_creation_tokens: int = 0,
+    creation_in_prompt: bool = False,
+) -> tuple[int, int | None]:
     """Split an OpenAI prompt-token total into disjoint Anthropic input/cache-read counts.
 
     OpenAI reports ``prompt_tokens`` as the whole prompt with ``prompt_tokens_details.cached_tokens``
@@ -277,14 +282,31 @@ def split_cached_input_tokens(prompt_tokens: int, cached_tokens: int) -> tuple[i
     invariant intact: the two returned values still add up to ``prompt_tokens``.
     """
     cached = min(max(cached_tokens, 0), prompt_tokens)
+    if creation_in_prompt:
+        prompt_tokens = max(prompt_tokens - max(cache_creation_tokens, 0), 0)
+        cached = min(cached, prompt_tokens)
     return prompt_tokens - cached, cached or None
 
 
 def _cached_tokens_from_usage(usage: Any) -> int:
     """Read ``prompt_tokens_details.cached_tokens`` off a usage object, defaulting to 0."""
+    if usage.cache_usage is not None and usage.cache_usage.read_input_tokens is not None:
+        return usage.cache_usage.read_input_tokens
     if usage.prompt_tokens_details is None:
         return 0
     return usage.prompt_tokens_details.cached_tokens or 0
+
+
+def _cache_creation_from_usage(usage: Any) -> int:
+    """Read canonical cache-creation tokens with a raw-field compatibility fallback."""
+    if usage.cache_usage is not None and usage.cache_usage.creation_input_tokens is not None:
+        return usage.cache_usage.creation_input_tokens
+    return getattr(usage, "cache_creation_input_tokens", None) or 0
+
+
+def _cache_included_in_prompt(usage: Any) -> bool:
+    """Return whether cache creation is included in the provider prompt total."""
+    return bool(usage.cache_usage is not None and usage.cache_usage.included_in_prompt_tokens)
 
 
 def chat_completion_to_message_response(completion: ChatCompletion) -> MessageResponse:
@@ -331,6 +353,8 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
         input_tokens, cache_read = split_cached_input_tokens(
             completion.usage.prompt_tokens,
             _cached_tokens_from_usage(completion.usage),
+            _cache_creation_from_usage(completion.usage),
+            _cache_included_in_prompt(completion.usage),
         )
         usage = MessageUsage(
             input_tokens=input_tokens,
@@ -405,6 +429,8 @@ def chat_completion_chunk_to_message_stream_events(
         if cached:
             state.cache_read_input_tokens = cached
         cache_creation = getattr(chunk.usage, "cache_creation_input_tokens", None)
+        if cache_creation is None:
+            cache_creation = _cache_creation_from_usage(chunk.usage)
         if cache_creation is not None:
             state.cache_creation_input_tokens = cache_creation
         cache_creation_details = getattr(chunk.usage, "cache_creation", None)
@@ -413,7 +439,9 @@ def chat_completion_chunk_to_message_stream_events(
 
     if not state.started:
         state.started = True
-        input_tokens, cache_read = split_cached_input_tokens(state.input_tokens, state.cache_read_input_tokens)
+        input_tokens, cache_read = split_cached_input_tokens(
+            state.input_tokens, state.cache_read_input_tokens, state.cache_creation_input_tokens or 0, True
+        )
         usage = MessageUsage(
             input_tokens=input_tokens,
             cache_read_input_tokens=cache_read,

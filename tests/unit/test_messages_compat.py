@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -60,8 +60,6 @@ def test_basic_text_message_conversion() -> None:
 
 def test_output_format_type_passes_through_as_response_format() -> None:
     """A structured-output type is forwarded to the bridge as the completion response_format."""
-    from pydantic import BaseModel
-
     class Schema(BaseModel):
         city: str
 
@@ -1658,7 +1656,10 @@ def test_completion_usage_preserves_provider_cache_meters() -> None:
     assert usage.cache_usage.read_input_tokens == 80
     assert usage.cache_usage.creation_5m_input_tokens == 12
     assert usage.cache_usage.included_in_prompt_tokens is True
-    assert usage.cache_usage.provider_meters == {"prompt_cache_miss_tokens": 20}
+    assert usage.cache_usage.provider_meters == {
+        "prompt_cache_hit_tokens": 80,
+        "prompt_cache_miss_tokens": 20,
+    }
 
 
 def test_completion_usage_normalization_preserves_existing_and_openai_cache_details() -> None:

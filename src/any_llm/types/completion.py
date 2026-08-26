@@ -76,7 +76,7 @@ class CompletionUsage(OpenAICompletionUsage):
         meters = {
             key: meter for key, meter in value.items()
             if isinstance(key, str)
-            and key not in {"cache_read_input_tokens", "prompt_cache_hit_tokens", "cache_creation_input_tokens", "prompt_cache_write_tokens", "cache_creation", "prompt_tokens_details", "cache_usage"}
+            and key not in {"cache_read_input_tokens", "cache_creation_input_tokens", "prompt_cache_write_tokens", "cache_creation", "prompt_tokens_details", "cache_usage"}
             and key.startswith(("prompt_cache_", "cache_"))
             and isinstance(meter, int)
         }
