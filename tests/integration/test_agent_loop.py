@@ -1,4 +1,6 @@
+import inspect
 import json
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -13,8 +15,6 @@ from any_llm.exceptions import MissingApiKeyError
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
 
 
@@ -30,6 +30,12 @@ def get_weather(location: str) -> str:
         location: The city name to get weather for.
     """
     return json.dumps({"location": location, "temperature": "15C", "condition": "sunny"})
+
+
+def _call_tool(tool_fn: Callable[..., str], args: dict[str, Any]) -> str:
+    """Call a model-selected tool without passing arguments it does not accept."""
+    accepted = inspect.signature(tool_fn).parameters
+    return tool_fn(**{name: value for name, value in args.items() if name in accepted})
 
 
 @pytest.mark.asyncio
@@ -70,7 +76,7 @@ async def test_agent_loop_parallel_tool_calls(
                 continue
             assert tool_call.function.name == "get_weather"
             args = json.loads(tool_call.function.arguments)
-            tool_result = get_weather(**args)
+            tool_result = _call_tool(get_weather, args)
 
             messages.append(
                 {
@@ -155,7 +161,7 @@ async def test_agent_loop_sequential_tool_calls(
                 tool_fn = available_tools[tool_name]
 
                 args = json.loads(tool_call.function.arguments) if tool_call.function.arguments else {}
-                tool_result = tool_fn(**args)
+                tool_result = _call_tool(tool_fn, args)
 
                 messages.append(
                     {
