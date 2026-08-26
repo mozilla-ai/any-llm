@@ -83,7 +83,7 @@ jobs:
       should_run_local: ${{ steps.determine.outputs.should_run_local }}
     steps:
       # The base revision is trusted; do not change this to the PR head.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.event.pull_request.base.sha || github.sha }}
 
@@ -106,7 +106,7 @@ jobs:
 
     steps:
       # The base revision is trusted; do not change this to the PR head.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.event.pull_request.base.sha || github.sha }}
 
@@ -187,7 +187,7 @@ jobs:
 
     steps:
       # The base revision is trusted; do not change this to the PR head.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.event.pull_request.base.sha || github.sha }}
 
