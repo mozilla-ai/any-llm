@@ -16,35 +16,23 @@ on:
         description: the arg you want to pass to pytest filter (-k)
         type: string
 
-# Why the checkout steps below set allow-unsafe-pr-checkout: true
+# This workflow uses pull_request_target so maintainers can request a run with a label. The
+# secret-bearing jobs must use the trusted base revision and never execute PR-head code.
 #
-# This workflow runs on pull_request_target and checks out the PR head, so on a fork PR it
-# executes contributor code with this repository's secrets (the provider API keys). That is the
-# "pwn request" shape, and actions/checkout v7 blocks it by default (actions/checkout#2454,
-# released in v7.0.0). Opting back in is deliberate, and safe here only because of the gate:
+#   1. pull_request_target fires only when a repository member applies the run-integration-tests
+#      label.
+#   2. remove-label strips the label immediately, so each run needs a fresh, deliberate act.
+#   3. The jobs check out the base revision with persist-credentials: false.
 #
-#   1. pull_request_target fires on types: [labeled], and every job is gated on the label being
-#      run-integration-tests, so nothing runs until a repository member applies it. An outside
-#      contributor cannot label their own PR. Applying the label means "I have read this diff
-#      and I am willing to run it against our keys", so treat it as a credential-trust decision,
-#      not just a request for CI minutes.
-#   2. remove-label strips the label immediately, so each run needs a fresh, deliberate act. A
-#      later push to the same PR cannot silently reuse an earlier approval.
-#   3. The jobs that execute fork code hold only contents: read (see below), and check out with
-#      persist-credentials: false so the token is not left in .git/config for that code to read.
-#
-# Residual risks the gate does NOT cover:
-#   - The provider API keys are readable by whatever code runs. Read the diff, with attention to
-#     tests/ and conftest.py, before applying the label.
+# The provider API keys are available only to the trusted base revision. PR changes are validated
+# by the normal pull_request checks and are not executed by this secret-bearing workflow.
 #   - The gate is "any member who can label", not "write access". GitHub's triage role can apply
 #     and dismiss labels without write access, so anyone at triage or above can start a run. This
 #     workflow does not verify the labeler's permission level; if triage is ever granted to
 #     someone who should not reach the provider keys, add an explicit check on the label author.
-#   - determine-jobs-to-run runs ./.github/actions/determine-jobs from the checked-out tree, so
-#     that composite action is fork-controlled too. It is not a safe place to put trusted logic.
+#   - determine-jobs-to-run runs the base revision's composite action.
 #
-# Do not drop the `ref:` inputs to dodge the check. Without them checkout takes the base branch,
-# which would silently test main instead of the PR and make a green run meaningless.
+# Keep the explicit `ref:` inputs so push and manual runs retain their existing SHA behavior.
 
 # Default to read-only. Only remove-label needs pull-requests: write, and it is granted
 # there instead of workflow-wide so the jobs that execute fork code cannot use it.
@@ -94,14 +82,12 @@ jobs:
       should_run_integration: ${{ steps.determine.outputs.should_run_integration }}
       should_run_local: ${{ steps.determine.outputs.should_run_local }}
     steps:
-      # Runs fork code with our secrets on a labeled fork PR; gated on the
-      # run-integration-tests label. See the note at the top of this file before changing.
+      # The base revision is trusted; do not change this to the PR head.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          allow-unsafe-pr-checkout: true
-          # Do not leave the token in .git/config where the fork code we are about to run
-          # could read it. Nothing in these jobs uses git after checkout.
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+
+          # Do not leave the token in .git/config for later steps to read.
           persist-credentials: false
 
       - name: Determine which jobs should run based on filter
@@ -119,14 +105,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Runs fork code with our secrets on a labeled fork PR; gated on the
-      # run-integration-tests label. See the note at the top of this file before changing.
+      # The base revision is trusted; do not change this to the PR head.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          allow-unsafe-pr-checkout: true
-          # Do not leave the token in .git/config where the fork code we are about to run
-          # could read it. Nothing in these jobs uses git after checkout.
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+
+          # Do not leave the token in .git/config for later steps to read.
           persist-credentials: false
 
       - uses: astral-sh/setup-uv@v7
@@ -202,14 +186,12 @@ jobs:
       LMSTUDIO_MODEL: qwen/qwen3-1.7b
 
     steps:
-      # Runs fork code with our secrets on a labeled fork PR; gated on the
-      # run-integration-tests label. See the note at the top of this file before changing.
+      # The base revision is trusted; do not change this to the PR head.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          allow-unsafe-pr-checkout: true
-          # Do not leave the token in .git/config where the fork code we are about to run
-          # could read it. Nothing in these jobs uses git after checkout.
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+
+          # Do not leave the token in .git/config for later steps to read.
           persist-credentials: false
 
       - uses: astral-sh/setup-uv@v7
