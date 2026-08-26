@@ -11,6 +11,11 @@ from any_llm.exceptions import UnsupportedParameterError
 from any_llm.types.responses import ResponsesParams
 
 
+async def _response_event_stream() -> Any:
+    yield "response.created"
+    yield "response.completed"
+
+
 @pytest.mark.asyncio
 async def test_responses_invalid_model_format_no_slash() -> None:
     """Test responses raises ValueError for model without separator."""
@@ -164,6 +169,19 @@ def test_responses_helper_forwards_timeout_to_provider_sync() -> None:
         responses("gpt-4.1-mini", "hello", provider="openai", api_key="test-key", timeout=60)
 
     assert mock_aresponses.call_args.kwargs["timeout"] == 60
+
+
+def test_responses_helper_streaming_returns_sync_iterator() -> None:
+    """The synchronous Responses API must bridge an async event stream."""
+    provider = AnyLLM.create("openai", api_key="test-key")
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider),
+        patch.object(provider, "_aresponses", new=AsyncMock(return_value=_response_event_stream())) as mock_aresponses,
+    ):
+        stream = responses("gpt-4.1-mini", "hello", provider="openai", api_key="test-key", stream=True)
+        assert list(stream) == ["response.created", "response.completed"]
+
+    assert mock_aresponses.call_args.args[0].stream is True
 
 
 @pytest.mark.asyncio
