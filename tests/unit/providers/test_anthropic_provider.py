@@ -10,6 +10,7 @@ import pytest
 from anthropic import transform_schema
 from anthropic.types import Message
 from anthropic.types.model_info import ModelInfo
+from anthropic.types.stop_reason import StopReason
 from pydantic import BaseModel
 
 from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
@@ -929,6 +930,7 @@ def test_streaming_chunk_includes_cache_tokens_in_usage() -> None:
     assert result.usage.total_tokens == expected_total_tokens
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 13332
+    assert result.choices[0].finish_reason is None
 
 
 @pytest.mark.asyncio
@@ -998,6 +1000,7 @@ def test_streaming_chunk_without_cache_tokens() -> None:
     assert result.usage.completion_tokens == 50
     assert result.usage.total_tokens == 150
     assert result.usage.prompt_tokens_details is None
+    assert result.choices[0].finish_reason is None
 
 
 def test_streaming_tool_chunks_preserve_parallel_tool_index() -> None:
@@ -1096,6 +1099,193 @@ def test_non_streaming_response_preserves_multiple_tool_calls() -> None:
     assert isinstance(result.choices[0].message.tool_calls[1], ChatCompletionMessageFunctionToolCall)
     assert result.choices[0].message.tool_calls[1].function is not None
     assert result.choices[0].message.tool_calls[1].function.name == "get_time"
+
+
+@pytest.mark.parametrize("stop_reason", get_args(StopReason))
+def test_non_streaming_response_maps_every_anthropic_stop_reason(stop_reason: StopReason) -> None:
+    """Every stop reason the API can return needs an explicit OpenAI finish_reason.
+
+    An unmapped one falls back to "stop", which tells callers the model answered normally
+    when it actually refused or ran out of context.
+    """
+    from anthropic.types import Message, TextBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    expected_finish_reasons: dict[str, str] = {
+        "end_turn": "stop",
+        "stop_sequence": "stop",
+        "pause_turn": "stop",
+        "max_tokens": "length",
+        "model_context_window_exceeded": "length",
+        "tool_use": "tool_calls",
+        "refusal": "content_filter",
+    }
+    assert stop_reason in expected_finish_reasons, (
+        f"New Anthropic stop reason {stop_reason!r} needs a finish_reason mapping."
+    )
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason=stop_reason,
+        content=[TextBlock(type="text", text="Hello")],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].finish_reason == expected_finish_reasons[stop_reason]
+    assert result.choices[0].message.refusal == (
+        "Response blocked by Anthropic content filtering." if stop_reason == "refusal" else None
+    )
+
+
+def test_non_streaming_response_without_stop_reason_finishes_as_stop() -> None:
+    """A response with no stop_reason at all still needs a valid finish_reason."""
+    from anthropic.types import Message, TextBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason=None,
+        content=[TextBlock(type="text", text="Hello")],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].finish_reason == "stop"
+    assert result.choices[0].message.refusal is None
+
+
+@pytest.mark.parametrize(
+    ("stop_reason", "expected_finish_reason", "expected_refusal"),
+    [
+        ("end_turn", "stop", None),
+        ("max_tokens", "length", None),
+        ("stop_sequence", "stop", None),
+        ("pause_turn", "stop", None),
+        ("tool_use", "tool_calls", None),
+        ("model_context_window_exceeded", "length", None),
+        ("refusal", "content_filter", "Response blocked by Anthropic content filtering."),
+        (None, None, None),
+    ],
+)
+def test_streaming_message_delta_preserves_terminal_reason(
+    stop_reason: StopReason | None, expected_finish_reason: str | None, expected_refusal: str | None
+) -> None:
+    from anthropic.types import MessageDeltaEvent, MessageDeltaUsage
+    from anthropic.types.raw_message_delta_event import Delta
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    chunk = MessageDeltaEvent(
+        type="message_delta",
+        delta=Delta(stop_reason=stop_reason, stop_sequence=None),
+        usage=MessageDeltaUsage(output_tokens=5),
+    )
+
+    result = _create_openai_chunk_from_anthropic_chunk(chunk, "claude-sonnet-4-5")
+
+    assert result.choices[0].finish_reason == expected_finish_reason
+    assert result.choices[0].delta.refusal == expected_refusal
+
+
+def test_non_streaming_refusal_preserves_stop_details() -> None:
+    from anthropic.types import Message, RefusalStopDetails, TextBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_refusal",
+        type="message",
+        role="assistant",
+        model="claude-sonnet-4-5",
+        stop_reason="refusal",
+        stop_details=RefusalStopDetails(type="refusal", category="bio", explanation="Request declined."),
+        content=[TextBlock(type="text", text="Request declined.")],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].message.extra_content == {
+        "anthropic": {
+            "stop_details": {
+                "type": "refusal",
+                "category": "bio",
+                "explanation": "Request declined.",
+            }
+        }
+    }
+
+
+def test_streaming_refusal_preserves_stop_details() -> None:
+    from anthropic.types import MessageDeltaEvent, MessageDeltaUsage, RefusalStopDetails
+    from anthropic.types.raw_message_delta_event import Delta
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    chunk = MessageDeltaEvent(
+        type="message_delta",
+        delta=Delta(
+            stop_reason="refusal",
+            stop_sequence=None,
+            stop_details=RefusalStopDetails(type="refusal", category="bio", explanation="Request declined."),
+        ),
+        usage=MessageDeltaUsage(output_tokens=5),
+    )
+
+    result = _create_openai_chunk_from_anthropic_chunk(chunk, "claude-sonnet-4-5")
+
+    assert result.choices[0].delta.extra_content == {
+        "anthropic": {
+            "stop_details": {
+                "type": "refusal",
+                "category": "bio",
+                "explanation": "Request declined.",
+            }
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    ("stop_reason", "expected_finish_reason"),
+    [("end_turn", "stop"), ("tool_use", "tool_calls"), ("refusal", "content_filter")],
+)
+def test_stream_sequence_has_one_terminal_reason(stop_reason: StopReason, expected_finish_reason: str) -> None:
+    from anthropic.types import (
+        ContentBlockStopEvent,
+        MessageDeltaEvent,
+        MessageDeltaUsage,
+        MessageStopEvent,
+    )
+    from anthropic.types.raw_message_delta_event import Delta
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    events = [
+        ContentBlockStopEvent(type="content_block_stop", index=0),
+        MessageDeltaEvent(
+            type="message_delta",
+            delta=Delta(stop_reason=stop_reason, stop_sequence=None),
+            usage=MessageDeltaUsage(output_tokens=1),
+        ),
+        MessageStopEvent(type="message_stop"),
+    ]
+
+    results = [_create_openai_chunk_from_anthropic_chunk(event, "claude-sonnet-4-5") for event in events]
+
+    assert [choice.finish_reason for result in results for choice in result.choices if choice.finish_reason] == [
+        expected_finish_reason
+    ]
 
 
 def test_non_streaming_response_preserves_thinking_signature() -> None:

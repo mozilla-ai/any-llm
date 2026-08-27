@@ -2,6 +2,7 @@ import base64
 import binascii
 import json
 import mimetypes
+from contextlib import suppress
 from time import time
 from typing import Any, Literal, cast
 
@@ -29,6 +30,7 @@ from any_llm.types.completion import (
 from any_llm.types.model import Model
 
 _INLINE_SIZE_LIMIT = 20 * 1024 * 1024
+_GEMINI_CONTENT_FILTER_REFUSAL = "Response blocked by Gemini content filtering."
 
 
 def _has_json_schema_refs(schema: Any) -> bool:
@@ -275,7 +277,12 @@ def _convert_messages(
                     function_call = tool_call["function"]
                     if tool_call_id := tool_call.get("id"):
                         tool_names[tool_call_id] = function_call["name"]
-                    args = json.loads(function_call["arguments"]) if function_call["arguments"] else {}
+                    arguments = function_call.get("arguments")
+                    args = (
+                        json.loads(arguments)
+                        if isinstance(arguments, (str, bytes, bytearray)) and arguments
+                        else arguments or {}
+                    )
 
                     # Extract thought_signature if present (OpenAI compatibility format)
                     # SDK accepts base64 string or bytes
@@ -307,13 +314,12 @@ def _convert_messages(
             formatted_messages.append(types.Content(role="model", parts=parts))
         elif message["role"] == "tool":
             name = message.get("name") or tool_names.get(message.get("tool_call_id", ""), "unknown")
-            try:
-                content_json = json.loads(message["content"])
-                part = types.Part.from_function_response(name=name, response=_normalize_tool_response(content_json))
-                formatted_messages.append(types.Content(role="function", parts=[part]))
-            except json.JSONDecodeError:
-                part = types.Part.from_function_response(name=name, response={"result": message["content"]})
-                formatted_messages.append(types.Content(role="function", parts=[part]))
+            content = message["content"]
+            if isinstance(content, (str, bytes, bytearray)):
+                with suppress(json.JSONDecodeError, UnicodeDecodeError):
+                    content = json.loads(content)
+            part = types.Part.from_function_response(name=name, response=_normalize_tool_response(content))
+            formatted_messages.append(types.Content(role="function", parts=[part]))
 
     return formatted_messages, system_instruction
 
@@ -399,6 +405,16 @@ def _resolve_finish_reason(
     return mapped_finish_reason
 
 
+def _prompt_was_blocked(response: types.GenerateContentResponse) -> bool:
+    """Return whether Gemini rejected the prompt before producing a candidate."""
+    prompt_feedback = response.prompt_feedback
+    return (
+        prompt_feedback is not None
+        and isinstance(prompt_feedback.block_reason, types.BlockedReason)
+        and prompt_feedback.block_reason is not types.BlockedReason.BLOCKED_REASON_UNSPECIFIED
+    )
+
+
 def _convert_response_to_response_dict(response: types.GenerateContentResponse) -> dict[str, Any]:
     """Convert a Gemini GenerateContentResponse into an OpenAI-shaped completion dict."""
     response_dict = {
@@ -461,11 +477,27 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                         "reasoning": reasoning or None,
                         "tool_calls": tool_calls_list or None,
                         "extra_content": message_extra_content,
+                        "refusal": _GEMINI_CONTENT_FILTER_REFUSAL if mapped_finish_reason == "content_filter" else None,
                     },
                     "finish_reason": _resolve_finish_reason(mapped_finish_reason, bool(tool_calls_list)) or "stop",
                     "index": 0,
                 }
             )
+    elif _prompt_was_blocked(response):
+        choices.append(
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "reasoning": None,
+                    "tool_calls": None,
+                    "extra_content": None,
+                    "refusal": _GEMINI_CONTENT_FILTER_REFUSAL,
+                },
+                "finish_reason": "content_filter",
+                "index": 0,
+            }
+        )
 
     response_dict["choices"] = choices
 
@@ -512,8 +544,7 @@ def _create_openai_chunk_from_google_chunk(
             than restarting at 0 for every chunk.
     """
 
-    assert response.candidates
-    candidate = response.candidates[0]
+    candidate = response.candidates[0] if response.candidates else None
 
     if tool_call_counter is None:
         tool_call_counter = [0]
@@ -525,7 +556,7 @@ def _create_openai_chunk_from_google_chunk(
 
     # Content can be absent on terminal chunks, e.g. when the response is truncated or
     # filtered before any part is produced; the finish reason must still be surfaced.
-    parts = candidate.content.parts if candidate.content else None
+    parts = candidate.content.parts if candidate and candidate.content else None
 
     for part in parts or []:
         if part.thought:
@@ -560,11 +591,16 @@ def _create_openai_chunk_from_google_chunk(
             message_extra_content = _thought_signature_extra_content(part) or message_extra_content
 
     # Unmapped reasons stay None so non-final chunks are not forced to a terminal reason.
-    finish_reason = _resolve_finish_reason(_map_finish_reason(candidate.finish_reason), bool(tool_calls_list))
+    mapped_finish_reason = _map_finish_reason(candidate.finish_reason) if candidate else None
+    prompt_was_blocked = _prompt_was_blocked(response)
+    finish_reason = (
+        "content_filter" if prompt_was_blocked else _resolve_finish_reason(mapped_finish_reason, bool(tool_calls_list))
+    )
 
     delta = ChoiceDelta(
         content=content or None,
         role="assistant",
+        refusal=_GEMINI_CONTENT_FILTER_REFUSAL if finish_reason == "content_filter" else None,
         reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
         tool_calls=tool_calls_list or None,
         extra_content=message_extra_content,
