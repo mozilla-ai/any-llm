@@ -51,7 +51,9 @@ class PortkeyProvider(XMLReasoningOpenAIProvider):
         """Initialize Portkey's native async client."""
         # Preserve the timeout behavior of the former OpenAI client: a bounded read
         # timeout with a shorter connection timeout, unless explicitly overridden.
-        kwargs.setdefault("timeout", httpx.Timeout(600.0, connect=5.0))
+        timeout = kwargs.pop("timeout", httpx.Timeout(600.0, connect=5.0))
+        kwargs.setdefault("http_client", httpx.AsyncClient(timeout=timeout))
+        kwargs.setdefault("request_timeout", timeout)
         self.client = AsyncPortkey(
             api_key=api_key,
             base_url=api_base or self.API_BASE,
