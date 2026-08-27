@@ -67,6 +67,13 @@ def _make_gemini_response(
     )
 
 
+def _make_gemini_prompt_block(block_reason: types.BlockedReason) -> types.GenerateContentResponse:
+    return types.GenerateContentResponse(
+        candidates=None,
+        prompt_feedback=types.GenerateContentResponsePromptFeedback(block_reason=block_reason),
+    )
+
+
 @contextmanager
 def mock_gemini_provider():  # type: ignore[no-untyped-def]
     with (
@@ -828,6 +835,9 @@ def test_convert_response_maps_finish_reason(
     choice = response_dict["choices"][0]
     assert choice["finish_reason"] == expected_finish_reason
     assert choice["message"]["content"] == "Hello"
+    assert choice["message"]["refusal"] == (
+        "Response blocked by Gemini content filtering." if expected_finish_reason == "content_filter" else None
+    )
 
 
 @pytest.mark.parametrize(
@@ -944,6 +954,44 @@ def test_convert_response_emits_choice_for_filtered_response_without_content() -
     choice = response_dict["choices"][0]
     assert choice["finish_reason"] == "content_filter"
     assert choice["message"]["content"] is None
+    assert choice["message"]["refusal"] == "Response blocked by Gemini content filtering."
+
+
+@pytest.mark.parametrize(
+    "block_reason",
+    [reason for reason in types.BlockedReason if reason is not types.BlockedReason.BLOCKED_REASON_UNSPECIFIED],
+)
+def test_convert_response_maps_prompt_block_to_content_filter(block_reason: types.BlockedReason) -> None:
+    response_dict = _convert_response_to_response_dict(_make_gemini_prompt_block(block_reason))
+
+    assert len(response_dict["choices"]) == 1
+    choice = response_dict["choices"][0]
+    assert choice["finish_reason"] == "content_filter"
+    assert choice["message"]["content"] is None
+    assert choice["message"]["refusal"] == "Response blocked by Gemini content filtering."
+
+
+def test_convert_response_does_not_filter_unspecified_prompt_feedback() -> None:
+    response_dict = _convert_response_to_response_dict(
+        _make_gemini_prompt_block(types.BlockedReason.BLOCKED_REASON_UNSPECIFIED)
+    )
+
+    assert response_dict["choices"] == []
+
+
+def test_convert_response_without_candidate_or_prompt_feedback_has_no_choices() -> None:
+    response_dict = _convert_response_to_response_dict(types.GenerateContentResponse(candidates=None))
+
+    assert response_dict["choices"] == []
+
+
+def test_google_provider_preserves_prompt_block_as_refusal() -> None:
+    response_dict = _convert_response_to_response_dict(_make_gemini_prompt_block(types.BlockedReason.SAFETY))
+
+    result = GoogleProvider._convert_completion_response((response_dict, "gemini-3.5-flash"))
+
+    assert result.choices[0].finish_reason == "content_filter"
+    assert result.choices[0].message.refusal == "Response blocked by Gemini content filtering."
 
 
 def test_convert_response_without_content_and_terminal_reason_has_no_choices() -> None:
@@ -1736,6 +1784,43 @@ def test_convert_messages_tool_call_without_a_signature_keeps_the_skip_sentinel(
     assert part_json["thought_signature"] == "skip_thought_signature_validator"
 
 
+@pytest.mark.parametrize(
+    ("function", "expected_args"),
+    [
+        ({"name": "get_weather", "arguments": '{"location": "Paris"}'}, {"location": "Paris"}),
+        ({"name": "get_weather", "arguments": b'{"location": "Paris"}'}, {"location": "Paris"}),
+        ({"name": "get_weather", "arguments": bytearray(b'{"location": "Paris"}')}, {"location": "Paris"}),
+        ({"name": "get_weather", "arguments": {"location": "Paris"}}, {"location": "Paris"}),
+        ({"name": "get_weather"}, {}),
+        ({"name": "get_weather", "arguments": None}, {}),
+        ({"name": "get_weather", "arguments": ""}, {}),
+    ],
+)
+def test_convert_messages_accepts_json_or_parsed_tool_call_arguments(
+    function: dict[str, Any], expected_args: dict[str, Any]
+) -> None:
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": function,
+                }
+            ],
+        }
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    assert formatted_messages[0].parts is not None
+    function_call = formatted_messages[0].parts[0].function_call
+    assert function_call is not None
+    assert function_call.args == expected_args
+
+
 def test_convert_messages_with_thought_signature_in_extra_content() -> None:
     # Use valid base64 that round-trips correctly
     original_bytes = b"test-signature-bytes"
@@ -2028,12 +2113,20 @@ def test_convert_messages_parallel_tool_calls_only_first_gets_skip_sentinel() ->
     ("tool_content", "expected_response"),
     [
         ('{"temp": "20C"}', {"temp": "20C"}),
+        (b'{"temp": "20C"}', {"temp": "20C"}),
+        (bytearray(b'{"temp": "20C"}'), {"temp": "20C"}),
+        (b"\xff", {"result": b"\xff"}),
+        (bytearray(b"\xff"), {"result": bytearray(b"\xff")}),
+        ({"temp": "20C"}, {"temp": "20C"}),
         ("[]", {"result": []}),
+        ([], {"result": []}),
+        ([{"type": "text", "text": "ok"}], {"result": [{"type": "text", "text": "ok"}]}),
         ("1", {"result": 1}),
+        ("not JSON", {"result": "not JSON"}),
     ],
 )
-def test_convert_messages_tool_response_normalizes_non_objects(
-    tool_content: str, expected_response: dict[str, Any]
+def test_convert_messages_tool_response_accepts_json_or_parsed_content(
+    tool_content: Any, expected_response: dict[str, Any]
 ) -> None:
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": "What is the weather?"},
@@ -2612,6 +2705,38 @@ def test_streaming_chunk_emits_finish_reason_for_filtered_chunk_without_content(
 
     assert chunk.choices[0].finish_reason == "content_filter"
     assert chunk.choices[0].delta.content is None
+    assert chunk.choices[0].delta.refusal == "Response blocked by Gemini content filtering."
+
+
+def test_streaming_chunk_maps_prompt_block_to_refusal() -> None:
+    chunk = _create_openai_chunk_from_google_chunk(_make_gemini_prompt_block(types.BlockedReason.SAFETY))
+
+    assert chunk.choices[0].finish_reason == "content_filter"
+    assert chunk.choices[0].delta.content is None
+    assert chunk.choices[0].delta.refusal == "Response blocked by Gemini content filtering."
+
+
+def test_streaming_prompt_block_has_one_terminal_refusal() -> None:
+    responses = [
+        types.GenerateContentResponse(candidates=None),
+        _make_gemini_prompt_block(types.BlockedReason.SAFETY),
+    ]
+
+    chunks = [_create_openai_chunk_from_google_chunk(response) for response in responses]
+
+    assert [choice.finish_reason for chunk in chunks for choice in chunk.choices if choice.finish_reason] == [
+        "content_filter"
+    ]
+    assert [choice.delta.refusal for chunk in chunks for choice in chunk.choices if choice.delta.refusal] == [
+        "Response blocked by Gemini content filtering."
+    ]
+
+
+def test_streaming_chunk_without_candidate_or_prompt_block_remains_nonterminal() -> None:
+    chunk = _create_openai_chunk_from_google_chunk(types.GenerateContentResponse(candidates=None))
+
+    assert chunk.choices[0].finish_reason is None
+    assert chunk.choices[0].delta.refusal is None
 
 
 @pytest.mark.parametrize(

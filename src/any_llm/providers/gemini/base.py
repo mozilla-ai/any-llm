@@ -238,6 +238,7 @@ class GoogleProvider(AnyLLM):
             message = ChatCompletionMessage(
                 role="assistant",
                 content=message_dict.get("content"),
+                refusal=message_dict.get("refusal"),
                 tool_calls=tool_calls,
                 reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
                 extra_content=message_dict.get("extra_content"),
