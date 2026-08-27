@@ -241,6 +241,7 @@ class GoogleProvider(AnyLLM):
                 refusal=message_dict.get("refusal"),
                 tool_calls=tool_calls,
                 reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
+                images=message_dict.get("images"),
                 extra_content=message_dict.get("extra_content"),
             )
             from typing import Literal

@@ -948,6 +948,20 @@ def test_convert_response_preserves_inline_data_alongside_text() -> None:
     assert ChatCompletionMessage.model_validate(message).images == message["images"]
 
 
+def test_convert_completion_response_preserves_public_images() -> None:
+    response_dict = _convert_response_to_response_dict(
+        _make_gemini_response(
+            [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"))],
+            types.FinishReason.STOP,
+        )
+    )
+
+    completion = GoogleProvider._convert_completion_response((response_dict, "test-model"))
+    message = completion.choices[0].message
+    assert message.images == [{"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}]
+    assert completion.model_dump()["choices"][0]["message"]["images"] == message.images
+
+
 def test_convert_response_emits_choice_for_image_only_response() -> None:
     response = _make_gemini_response(
         [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"))],
