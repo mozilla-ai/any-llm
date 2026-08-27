@@ -291,7 +291,7 @@ def split_cached_input_tokens(
 def _cached_tokens_from_usage(usage: Any) -> int:
     """Read ``prompt_tokens_details.cached_tokens`` off a usage object, defaulting to 0."""
     if usage.cache_usage is not None and usage.cache_usage.read_input_tokens is not None:
-        return usage.cache_usage.read_input_tokens
+        return int(usage.cache_usage.read_input_tokens)
     if usage.prompt_tokens_details is None:
         return 0
     return usage.prompt_tokens_details.cached_tokens or 0
@@ -300,7 +300,7 @@ def _cached_tokens_from_usage(usage: Any) -> int:
 def _cache_creation_from_usage(usage: Any) -> int:
     """Read canonical cache-creation tokens with a raw-field compatibility fallback."""
     if usage.cache_usage is not None and usage.cache_usage.creation_input_tokens is not None:
-        return usage.cache_usage.creation_input_tokens
+        return int(usage.cache_usage.creation_input_tokens)
     return getattr(usage, "cache_creation_input_tokens", None) or 0
 
 

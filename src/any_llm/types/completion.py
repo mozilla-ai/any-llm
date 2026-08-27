@@ -44,6 +44,9 @@ class CompletionUsage(OpenAICompletionUsage):
     cache_creation_input_tokens: int | None = None
     cache_creation: dict[str, int] | None = None
 
+    def __init__(self, **data: Any) -> None:
+        super().__init__(**data)
+
     @model_validator(mode="before")
     @classmethod
     def _preserve_cache_usage(cls, value: Any) -> Any:
@@ -74,9 +77,18 @@ class CompletionUsage(OpenAICompletionUsage):
             ttl = {}
         invalid_creation = raw_creation is not None and not isinstance(raw_creation, (dict, BaseModel))
         meters = {
-            key: meter for key, meter in value.items()
+            key: meter
+            for key, meter in value.items()
             if isinstance(key, str)
-            and key not in {"cache_read_input_tokens", "cache_creation_input_tokens", "prompt_cache_write_tokens", "cache_creation", "prompt_tokens_details", "cache_usage"}
+            and key
+            not in {
+                "cache_read_input_tokens",
+                "cache_creation_input_tokens",
+                "prompt_cache_write_tokens",
+                "cache_creation",
+                "prompt_tokens_details",
+                "cache_usage",
+            }
             and key.startswith(("prompt_cache_", "cache_"))
             and isinstance(meter, int)
         }
@@ -97,6 +109,7 @@ class CompletionUsage(OpenAICompletionUsage):
         if not invalid_creation:
             value["cache_creation"] = ttl or None
         return value
+
 
 # See https://github.com/mozilla-ai/any-llm/issues/95:
 # OpenAI Completion API doesn't include reasoning information, so we need to extend the openai type
@@ -168,7 +181,7 @@ class Choice(OpenAIChoice):
 class ChatCompletion(OpenAIChatCompletion):
     choices: list[Choice]  # type: ignore[assignment]
     service_tier: str | None = None  # type: ignore[assignment]
-    usage: "CompletionUsage | None" = None  # type: ignore[assignment]
+    usage: "CompletionUsage | None" = None
 
 
 ContentType = TypeVar("ContentType")
@@ -215,7 +228,7 @@ class ChunkChoice(OpenAIChunkChoice):
 class ChatCompletionChunk(OpenAIChatCompletionChunk):
     choices: list[ChunkChoice]  # type: ignore[assignment]
     service_tier: str | None = None  # type: ignore[assignment]
-    usage: "CompletionUsage | None" = None  # type: ignore[assignment]
+    usage: "CompletionUsage | None" = None
 
 
 Function = OpenAIFunction

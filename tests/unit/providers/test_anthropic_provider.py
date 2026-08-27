@@ -943,7 +943,7 @@ def test_streaming_chunk_includes_cache_creation_tokens_in_usage() -> None:
         output_tokens=5,
         cache_read_input_tokens=None,
         cache_creation_input_tokens=12,
-        cache_creation={"ephemeral_5m_input_tokens": 7, "ephemeral_1h_input_tokens": 5},
+        cache_creation=CacheCreation(ephemeral_5m_input_tokens=7, ephemeral_1h_input_tokens=5),
     )
     message = MagicMock(usage=usage)
     chunk = MessageStopEvent(type="message_stop")
@@ -953,6 +953,7 @@ def test_streaming_chunk_includes_cache_creation_tokens_in_usage() -> None:
 
     assert result.usage is not None
     assert result.usage.cache_creation_input_tokens == 12
+    assert result.usage.cache_creation is not None
     assert result.usage.cache_creation["ephemeral_5m_input_tokens"] == 7
     assert result.usage.cache_creation["ephemeral_1h_input_tokens"] == 5
 

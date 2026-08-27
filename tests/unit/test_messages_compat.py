@@ -1,7 +1,7 @@
 """Tests for bidirectional Anthropic Messages ↔ OpenAI Chat Completions conversion."""
 
 import json
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -60,6 +60,7 @@ def test_basic_text_message_conversion() -> None:
 
 def test_output_format_type_passes_through_as_response_format() -> None:
     """A structured-output type is forwarded to the bridge as the completion response_format."""
+
     class Schema(BaseModel):
         city: str
 
@@ -1808,6 +1809,8 @@ def test_streaming_usage_preserves_cache_creation_details() -> None:
     events = chat_completion_chunk_to_message_stream_events(chunk, state)
 
     assert state.cache_creation_input_tokens == 12
-    assert state.cache_creation["ephemeral_5m_input_tokens"] == 7
-    assert events[0].message.usage.cache_creation_input_tokens == 12
-    assert events[0].message.usage.cache_creation.ephemeral_1h_input_tokens == 5
+    cache_creation = cast("dict[str, int]", state.cache_creation)
+    assert cache_creation["ephemeral_5m_input_tokens"] == 7
+    first_event = cast("Any", events[0])
+    assert first_event.message.usage.cache_creation_input_tokens == 12
+    assert first_event.message.usage.cache_creation.ephemeral_1h_input_tokens == 5
