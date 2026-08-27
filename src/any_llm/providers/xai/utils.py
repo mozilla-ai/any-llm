@@ -1,4 +1,3 @@
-import uuid
 from collections.abc import Sequence
 from typing import Any, Literal
 
@@ -76,7 +75,7 @@ def _convert_xai_chunk_to_anyllm_chunk(chunk: XaiChunk) -> ChatCompletionChunk:
                 delta_tool_calls_list.append(
                     ChoiceDeltaToolCall(
                         index=idx,
-                        id=str(uuid.uuid4()),
+                        id=tc.id,
                         type="function",
                         function=ChoiceDeltaToolCallFunction(name=func.name, arguments=func.arguments),
                     )

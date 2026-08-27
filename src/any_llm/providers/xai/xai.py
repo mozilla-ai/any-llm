@@ -188,19 +188,22 @@ class XaiProvider(AnyLLM):
             if message["role"] == "user":
                 xai_messages.append(user(message["content"]))
             elif message["role"] == "assistant":
-                content = message["content"]
+                content = message.get("content")
                 xai_message = (
                     assistant(content) if content is not None else chat_pb2.Message(role=chat_pb2.ROLE_ASSISTANT)
                 )
                 for tool_call in message.get("tool_calls") or []:
                     function = tool_call["function"]
+                    arguments = function.get("arguments")
+                    if not isinstance(arguments, str):
+                        arguments = json.dumps(arguments or {})
                     xai_message.tool_calls.append(
                         chat_pb2.ToolCall(
                             id=tool_call["id"],
                             type=chat_pb2.TOOL_CALL_TYPE_CLIENT_SIDE_TOOL,
                             function=chat_pb2.FunctionCall(
                                 name=function["name"],
-                                arguments=function["arguments"],
+                                arguments=arguments,
                             ),
                         )
                     )

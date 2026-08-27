@@ -97,7 +97,7 @@ voyage = [
 ]
 
 xai = [
-  "xai-sdk>=1.0.1",
+  "xai-sdk>=1.6.0",
 ]
 
 sagemaker = [

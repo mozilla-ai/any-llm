@@ -224,6 +224,58 @@ async def test_completion_replays_tool_calls_and_reversed_results_by_id() -> Non
 
 
 @pytest.mark.asyncio
+async def test_completion_accepts_assistant_message_without_content_key() -> None:
+    from any_llm.providers.xai.xai import XaiProvider
+
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "call_weather",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": '{"city":"Paris"}'},
+                }
+            ],
+        }
+    ]
+
+    with mock_xai_provider() as (mock_xai, _):
+        provider = XaiProvider(api_key="test-api-key")
+        await provider._acompletion(CompletionParams(model_id="model", messages=messages))
+
+        xai_message = mock_xai.return_value.chat.create.call_args.kwargs["messages"][0]
+        assert list(xai_message.content) == []
+        assert xai_message.tool_calls[0].id == "call_weather"
+
+
+@pytest.mark.asyncio
+async def test_completion_serializes_parsed_tool_call_arguments() -> None:
+    from any_llm.providers.xai.xai import XaiProvider
+
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_weather",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": {"city": "Paris"}},
+                }
+            ],
+        }
+    ]
+
+    with mock_xai_provider() as (mock_xai, _):
+        provider = XaiProvider(api_key="test-api-key")
+        await provider._acompletion(CompletionParams(model_id="model", messages=messages))
+
+        xai_message = mock_xai.return_value.chat.create.call_args.kwargs["messages"][0]
+        assert xai_message.tool_calls[0].function.arguments == '{"city": "Paris"}'
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("content", "expected_content"),
     [
@@ -276,6 +328,38 @@ async def test_completion_preserves_assistant_message_without_tool_calls() -> No
         xai_message = mock_xai.return_value.chat.create.call_args.kwargs["messages"][0]
         assert [part.text for part in xai_message.content] == ["Previous answer."]
         assert list(xai_message.tool_calls) == []
+
+
+def test_streaming_response_preserves_tool_call_id() -> None:
+    from xai_sdk.chat import Chunk
+    from xai_sdk.proto import chat_pb2
+
+    from any_llm.providers.xai.utils import _convert_xai_chunk_to_anyllm_chunk
+
+    proto = chat_pb2.GetChatCompletionChunk(
+        id="chunk",
+        model="model",
+        outputs=[
+            chat_pb2.CompletionOutputChunk(
+                index=0,
+                delta=chat_pb2.Delta(
+                    role=chat_pb2.ROLE_ASSISTANT,
+                    tool_calls=[
+                        chat_pb2.ToolCall(
+                            id="call_from_xai",
+                            type=chat_pb2.TOOL_CALL_TYPE_CLIENT_SIDE_TOOL,
+                            function=chat_pb2.FunctionCall(name="get_weather", arguments='{"city":"Paris"}'),
+                        )
+                    ],
+                ),
+            )
+        ],
+    )
+
+    converted = _convert_xai_chunk_to_anyllm_chunk(Chunk(proto, None))
+
+    assert converted.choices[0].delta.tool_calls is not None
+    assert converted.choices[0].delta.tool_calls[0].id == "call_from_xai"
 
 
 @pytest.mark.asyncio
