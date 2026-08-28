@@ -662,25 +662,30 @@ def test_older_gemini_models_keep_thinking_budget(model_id: str) -> None:
 
 
 @pytest.mark.parametrize("reasoning_effort", [None, "none"])
-def test_none_disables_thinking_on_thinking_budget_models(reasoning_effort: ReasoningEffort | None) -> None:
-    """Test that reasoning_effort='none' sends thinking_budget=0 instead of only hiding thoughts."""
-    result = GoogleProvider._convert_completion_params(
-        CompletionParams(
-            model_id="gemini-2.5-flash",
-            messages=[{"role": "user", "content": "Hello"}],
-            reasoning_effort=reasoning_effort,
-        ),
-        provider_name="gemini",
-    )
+def test_none_disables_thinking_on_thinking_budget_models(
+    reasoning_effort: ReasoningEffort | None, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that reasoning_effort='none' sends thinking_budget=0 instead of only hiding thoughts, without a warning."""
+    with caplog.at_level("WARNING"):
+        result = GoogleProvider._convert_completion_params(
+            CompletionParams(
+                model_id="gemini-2.5-flash",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort=reasoning_effort,
+            ),
+            provider_name="gemini",
+        )
 
     assert result["config"].thinking_config == types.ThinkingConfig(include_thoughts=False, thinking_budget=0)
+    assert not caplog.records
 
 
 @pytest.mark.parametrize("reasoning_effort", [None, "none"])
 def test_none_clamps_to_minimal_on_thinking_level_models(
-    reasoning_effort: ReasoningEffort | None, caplog: pytest.LogCaptureFixture
+    reasoning_effort: ReasoningEffort | None, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Test that models without a thinking off tier clamp 'none' to MINIMAL and warn."""
+    monkeypatch.setattr("any_llm.providers.gemini.base._MINIMAL_CLAMP_WARNED", set())
     with caplog.at_level("WARNING"):
         result = GoogleProvider._convert_completion_params(
             CompletionParams(
@@ -694,7 +699,21 @@ def test_none_clamps_to_minimal_on_thinking_level_models(
     assert result["config"].thinking_config == types.ThinkingConfig(
         include_thoughts=False, thinking_level=types.ThinkingLevel.MINIMAL
     )
-    assert "cannot disable thinking" in caplog.text
+    assert "clamping reasoning_effort='none' to thinking_level=MINIMAL" in caplog.text
+
+
+def test_minimal_clamp_warns_once_per_model(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A caller that sets 'none' on every request sees the clamp warning once per model, not once per call."""
+    monkeypatch.setattr("any_llm.providers.gemini.base._MINIMAL_CLAMP_WARNED", set())
+    params = CompletionParams(
+        model_id="gemini-3.5-flash", messages=[{"role": "user", "content": "Hello"}], reasoning_effort="none"
+    )
+
+    with caplog.at_level("WARNING"):
+        GoogleProvider._convert_completion_params(params, provider_name="gemini")
+        GoogleProvider._convert_completion_params(params, provider_name="gemini")
+
+    assert len(caplog.records) == 1
 
 
 @pytest.mark.asyncio

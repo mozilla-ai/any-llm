@@ -98,3 +98,22 @@ def test_client_error_when_model_rejects_minimal_thinking_level() -> None:
     assert isinstance(result, InvalidRequestError)
     assert "Thinking level MINIMAL is not supported" in str(result)
     assert result.original_exception is original
+
+
+def test_client_error_without_attached_response_still_maps_to_invalid_request() -> None:
+    """With no usable response object, the status Google puts in the error body still classifies the 400."""
+    original = ClientError(
+        code=400,
+        response_json={
+            "error": {
+                "code": 400,
+                "message": "Thinking level MINIMAL is not supported for this model. Please retry with other thinking level.",
+                "status": "INVALID_ARGUMENT",
+            }
+        },
+    )
+
+    result = convert_exception(original, "gemini")
+
+    assert isinstance(result, InvalidRequestError)
+    assert "Thinking level MINIMAL is not supported" in str(result)

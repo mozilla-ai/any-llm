@@ -71,6 +71,7 @@ REASONING_EFFORT_TO_THINKING_LEVELS = {
 _SUPPORTED_BATCH_ENDPOINTS = frozenset({"/v1/chat/completions"})
 _THINKING_LEVEL_MIN_GEMINI_VERSION = (3, 5)
 _GEMINI_VERSION_PATTERN = re.compile(r"(?:^|/)gemini-(\d+)(?:\.(\d+))?")
+_MINIMAL_CLAMP_WARNED: set[str] = set()
 
 
 def _uses_thinking_level(model_id: str) -> bool:
@@ -150,11 +151,12 @@ class GoogleProvider(AnyLLM):
         if params.reasoning_effort != "auto":
             if params.reasoning_effort is None or params.reasoning_effort == "none":
                 if _uses_thinking_level(params.model_id):
-                    # thinking_level has no off tier; MINIMAL is the nearest expressible value
-                    logger.warning(
-                        "%s cannot disable thinking; clamping reasoning_effort='none' to thinking_level=MINIMAL",
-                        params.model_id,
-                    )
+                    if params.model_id not in _MINIMAL_CLAMP_WARNED:
+                        _MINIMAL_CLAMP_WARNED.add(params.model_id)
+                        logger.warning(
+                            "%s has no thinking off tier; clamping reasoning_effort='none' to thinking_level=MINIMAL",
+                            params.model_id,
+                        )
                     kwargs["thinking_config"] = types.ThinkingConfig(
                         include_thoughts=False, thinking_level=types.ThinkingLevel.MINIMAL
                     )
