@@ -7,10 +7,14 @@ from dataclasses import dataclass
 from typing import Any, Self, cast
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import httpx as standard_httpx
+
 try:
-    import httpx2 as httpx
+    import httpx2
 except ImportError:
-    import httpx
+    httpx = standard_httpx
+else:
+    httpx = httpx2
 
 import pytest
 from anthropic.types import Message, TextBlock, ThinkingBlock, ToolUseBlock, Usage
