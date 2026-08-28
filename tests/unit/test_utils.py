@@ -354,6 +354,9 @@ class _Closable:
 
         async def _aclose() -> None:
             self.calls.append("aclose")
+            if fail:
+                msg = "close failed"
+                raise RuntimeError(msg)
 
         def _close_sync() -> None:
             self.calls.append("close")
@@ -409,6 +412,16 @@ async def test_aclose_quietly_suppresses_a_failing_close(sync: bool) -> None:
     await aclose_quietly(stream)
 
     assert stream.calls == ["close"]
+
+
+@pytest.mark.asyncio
+async def test_aclose_quietly_suppresses_a_failing_aclose() -> None:
+    """The preferred aclose() gets the same treatment: its error is swallowed and it runs once."""
+    stream = _Closable(aclose=True, fail=True)
+
+    await aclose_quietly(stream)
+
+    assert stream.calls == ["aclose"]
 
 
 def test_async_iter_to_sync_iter_preserves_contextvars() -> None:
