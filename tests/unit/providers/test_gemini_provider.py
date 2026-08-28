@@ -39,6 +39,13 @@ from any_llm.types.completion import (
 
 TEST_IMAGE_BYTES = b"test-image-bytes"
 TEST_PDF_BYTES = b"%PDF-1.4\ntest"
+TEST_PNG_BYTES = b"\x89PNG\r\n\x1a\n"
+TEST_WAV_BYTES = (
+    b"RIFF\x24\x00\x00\x00WAVE"
+    b"fmt \x10\x00\x00\x00\x01\x00\x01\x00"
+    b"\x44\xac\x00\x00\x88\x58\x01\x00\x02\x00\x10\x00"
+    b"data\x00\x00\x00\x00"
+)
 
 
 class StructuredAnswer(BaseModel):
@@ -933,7 +940,7 @@ def test_convert_response_accumulates_multiple_text_parts() -> None:
 def test_convert_response_preserves_inline_data_alongside_text() -> None:
     response = _make_gemini_response(
         [
-            types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG")),
+            types.Part(inline_data=types.Blob(mime_type="image/png", data=TEST_PNG_BYTES)),
             types.Part(text="Described."),
         ],
         types.FinishReason.STOP,
@@ -944,27 +951,37 @@ def test_convert_response_preserves_inline_data_alongside_text() -> None:
     message = response_dict["choices"][0]["message"]
     assert message["content"] == "Described."
     assert message["tool_calls"] is None
-    assert message["images"] == [{"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}]
+    assert message["images"] == [
+        {
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{base64.b64encode(TEST_PNG_BYTES).decode('ascii')}"},
+        }
+    ]
     assert ChatCompletionMessage.model_validate(message).images == message["images"]
 
 
 def test_convert_completion_response_preserves_public_images() -> None:
     response_dict = _convert_response_to_response_dict(
         _make_gemini_response(
-            [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"))],
+            [types.Part(inline_data=types.Blob(mime_type="image/png", data=TEST_PNG_BYTES))],
             types.FinishReason.STOP,
         )
     )
 
     completion = GoogleProvider._convert_completion_response((response_dict, "test-model"))
     message = completion.choices[0].message
-    assert message.images == [{"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}]
+    assert message.images == [
+        {
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{base64.b64encode(TEST_PNG_BYTES).decode('ascii')}"},
+        }
+    ]
     assert completion.model_dump()["choices"][0]["message"]["images"] == message.images
 
 
 def test_convert_response_emits_choice_for_image_only_response() -> None:
     response = _make_gemini_response(
-        [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"))],
+        [types.Part(inline_data=types.Blob(mime_type="image/png", data=TEST_PNG_BYTES))],
         types.FinishReason.STOP,
     )
 
@@ -976,21 +993,24 @@ def test_convert_response_emits_choice_for_image_only_response() -> None:
 
 def test_convert_streaming_response_preserves_inline_data() -> None:
     response = _make_gemini_response(
-        [types.Part(inline_data=types.Blob(mime_type="audio/wav", data=b"RIFF"))],
+        [types.Part(inline_data=types.Blob(mime_type="audio/wav", data=TEST_WAV_BYTES))],
         types.FinishReason.STOP,
     )
 
     chunk = _create_openai_chunk_from_google_chunk(response)
 
     assert chunk.choices[0].delta.images == [
-        {"type": "image_url", "image_url": {"url": "data:audio/wav;base64,UklGRg=="}}
+        {
+            "type": "image_url",
+            "image_url": {"url": f"data:audio/wav;base64,{base64.b64encode(TEST_WAV_BYTES).decode('ascii')}"},
+        }
     ]
     assert chunk.model_dump()["choices"][0]["delta"]["images"] == chunk.choices[0].delta.images
 
 
 def test_convert_response_preserves_thought_inline_data() -> None:
     response = _make_gemini_response(
-        [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"), thought=True)],
+        [types.Part(inline_data=types.Blob(mime_type="image/png", data=TEST_PNG_BYTES), thought=True)],
         types.FinishReason.STOP,
     )
 
@@ -999,19 +1019,27 @@ def test_convert_response_preserves_thought_inline_data() -> None:
     )
 
     assert message.reasoning is None
-    assert message.images == [{"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}]
+    assert message.images == [
+        {
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{base64.b64encode(TEST_PNG_BYTES).decode('ascii')}"},
+        }
+    ]
 
 
 def test_convert_streaming_response_preserves_thought_inline_data() -> None:
     response = _make_gemini_response(
-        [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"), thought=True)],
+        [types.Part(inline_data=types.Blob(mime_type="image/png", data=TEST_PNG_BYTES), thought=True)],
         types.FinishReason.STOP,
     )
 
     chunk = _create_openai_chunk_from_google_chunk(response)
 
     assert chunk.choices[0].delta.images == [
-        {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}
+        {
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{base64.b64encode(TEST_PNG_BYTES).decode('ascii')}"},
+        }
     ]
 
 
