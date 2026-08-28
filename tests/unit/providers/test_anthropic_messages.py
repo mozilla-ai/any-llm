@@ -7,12 +7,12 @@ from dataclasses import dataclass
 from typing import Any, Self, cast
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
-import httpx as standard_httpx
+import httpx
 
 try:
     import httpx2
 except ImportError:
-    httpx = standard_httpx
+    pass
 else:
     httpx = httpx2
 
