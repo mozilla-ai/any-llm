@@ -1046,7 +1046,10 @@ class AnyLLM(ABC):
 
             def usage_delta(stop_reason: StopReason | None) -> MessageDeltaEvent:
                 input_tokens, cache_read = split_cached_input_tokens(
-                    state.input_tokens, state.cache_read_input_tokens, state.cache_creation_input_tokens or 0, True
+                    state.input_tokens,
+                    state.cache_read_input_tokens,
+                    state.cache_creation_input_tokens,
+                    state.cache_included_in_prompt is True,
                 )
                 return MessageDeltaEvent(
                     type="message_delta",

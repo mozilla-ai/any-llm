@@ -50,6 +50,8 @@ class CompletionUsage(OpenAICompletionUsage):
     @model_validator(mode="before")
     @classmethod
     def _preserve_cache_usage(cls, value: Any) -> Any:
+        if isinstance(value, BaseModel):
+            value = value.model_dump()
         if not isinstance(value, dict):
             return value
         if value.get("cache_usage") is not None:

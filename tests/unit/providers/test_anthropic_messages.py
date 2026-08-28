@@ -4,7 +4,7 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any, Self, cast
+from typing import TYPE_CHECKING, Any, Self, cast
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import httpx
@@ -30,6 +30,11 @@ from any_llm.types.messages import (
 from any_llm.types.messages import (
     ThinkingBlock as AnyLLMThinkingBlock,
 )
+
+if not TYPE_CHECKING:
+    from anthropic import _base_client
+
+    httpx = _base_client.httpx
 
 
 class _ContextEditModel(BaseModel):
