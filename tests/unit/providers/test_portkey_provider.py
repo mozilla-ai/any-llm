@@ -1,6 +1,6 @@
-from collections.abc import AsyncIterator
+import json
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 import pytest
@@ -8,96 +8,46 @@ import pytest
 from any_llm.providers.portkey.portkey import PortkeyProvider
 from any_llm.types.completion import ChatCompletion, CompletionParams
 
-
-def _native_portkey_model(data: dict[str, Any]) -> Any:
-    """Build the public Pydantic model returned by portkey-ai."""
-    if data["object"] == "chat.completion":
-        from portkey_ai.api_resources.types.chat_complete_type import ChatCompletions as NativeChatCompletion
-
-        return NativeChatCompletion.model_validate(data)
-    if data["object"] == "chat.completion.chunk":
-        from portkey_ai.api_resources.types.chat_complete_type import (
-            ChatCompletionChunk as NativeChatCompletionChunk,
-        )
-
-        return NativeChatCompletionChunk.model_validate(data)
-
-    from portkey_ai.api_resources.types.models_type import Model as NativeModel
-
-    return NativeModel.model_validate(data)
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 
-class _NativePortkeyStream:
-    """Async iterator matching the stream returned by AsyncPortkey."""
+def _mock_portkey_http_client() -> httpx.AsyncClient:
+    """Create a real Portkey SDK client backed by deterministic HTTP responses."""
 
-    def __init__(self, chunks: list[Any]) -> None:
-        self._chunks = iter(chunks)
-
-    def __aiter__(self) -> AsyncIterator[Any]:
-        return self
-
-    async def __anext__(self) -> Any:
-        try:
-            return next(self._chunks)
-        except StopIteration:
-            raise StopAsyncIteration from None
-
-
-class _NativePortkeyClient:
-    """Minimal AsyncPortkey-shaped client with deterministic native SDK responses."""
-
-    def __init__(self) -> None:
-        self.chat = self
-        self.completions = self
-        self.models = self
-
-    async def create(self, **kwargs: Any) -> Any:
-        if kwargs.get("stream"):
-            return _NativePortkeyStream(
-                [
-                    _native_portkey_model(
-                        {
-                            "id": "chunk-1",
-                            "object": "chat.completion.chunk",
-                            "created": 0,
-                            "model": "test-model",
-                            "choices": [
-                                {
-                                    "index": 0,
-                                    "delta": {"role": "assistant", "content": "<think>because</think>answer"},
-                                    "finish_reason": "stop",
-                                }
-                            ],
-                        }
-                    )
-                ]
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/models"):
+            return httpx.Response(
+                200,
+                json={"object": "list", "data": [{"id": "test-model", "object": "model", "created": 0, "owned_by": "portkey"}]},
             )
-        return _native_portkey_model(
-            {
+
+        if json.loads(request.content).get("stream"):
+            chunk = {
+                "id": "chunk-1",
+                "object": "chat.completion.chunk",
+                "created": 0,
+                "model": "test-model",
+                "choices": [{"index": 0, "delta": {"role": "assistant", "content": "<think>because</think>answer"}, "finish_reason": "stop"}],
+            }
+            body = f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n"
+            return httpx.Response(200, content=body.encode(), headers={"content-type": "text/event-stream"})
+
+        return httpx.Response(
+            200,
+            json={
                 "id": "completion-1",
                 "object": "chat.completion",
                 "created": 0,
                 "model": "test-model",
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": {"role": "assistant", "content": "<think>because</think>answer"},
-                        "finish_reason": "stop",
-                    }
-                ],
-            }
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "<think>because</think>answer"}, "finish_reason": "stop"}],
+            },
         )
 
-    async def list(self, **_kwargs: object) -> Any:
-        return type(
-            "NativeModelList",
-            (),
-            {
-                "data": [
-                    _native_portkey_model({"id": "test-model", "object": "model", "created": 0, "owned_by": "portkey"})
-                ]
-            },
-        )()
+    return httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        timeout=httpx.Timeout(600.0, connect=5.0),
+    )
 
 
 @pytest.mark.asyncio
@@ -145,12 +95,18 @@ def test_convert_completion_params_with_dataclass_response_format() -> None:
 
 @pytest.mark.asyncio
 async def test_native_portkey_completion_converts_vendored_model_and_xml_reasoning() -> None:
-    provider = PortkeyProvider(api_key="test-key")
-    provider.client = cast("Any", _NativePortkeyClient())
+    from portkey_ai import AsyncPortkey
 
-    result = await provider._acompletion(
-        CompletionParams(model_id="test-model", messages=[{"role": "user", "content": "Hello"}])
-    )
+    provider = PortkeyProvider(api_key="test-key")
+    http_client = _mock_portkey_http_client()
+    provider.client = cast("Any", AsyncPortkey(api_key="test-key", http_client=http_client))
+
+    try:
+        result = await provider._acompletion(
+            CompletionParams(model_id="test-model", messages=[{"role": "user", "content": "Hello"}])
+        )
+    finally:
+        await http_client.aclose()
 
     completion = cast("ChatCompletion", result)
     assert completion.choices[0].message.content == "answer"
@@ -160,18 +116,23 @@ async def test_native_portkey_completion_converts_vendored_model_and_xml_reasoni
 
 @pytest.mark.asyncio
 async def test_native_portkey_stream_converts_vendored_chunks_and_xml_reasoning() -> None:
+    from portkey_ai import AsyncPortkey
+
     provider = PortkeyProvider(api_key="test-key")
-    provider.client = cast("Any", _NativePortkeyClient())
+    http_client = _mock_portkey_http_client()
+    provider.client = cast("Any", AsyncPortkey(api_key="test-key", http_client=http_client))
 
-    result = await provider._acompletion(
-        CompletionParams(
-            model_id="test-model",
-            messages=[{"role": "user", "content": "Hello"}],
-            stream=True,
+    try:
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="test-model",
+                messages=[{"role": "user", "content": "Hello"}],
+                stream=True,
+            )
         )
-    )
-
-    chunks = [chunk async for chunk in cast("AsyncIterator[Any]", result)]
+        chunks = [chunk async for chunk in cast("AsyncIterator[Any]", result)]
+    finally:
+        await http_client.aclose()
 
     assert chunks[0].choices[0].delta.content == "answer"
     assert chunks[0].choices[0].delta.reasoning is not None
@@ -180,9 +141,15 @@ async def test_native_portkey_stream_converts_vendored_chunks_and_xml_reasoning(
 
 @pytest.mark.asyncio
 async def test_native_portkey_list_models_converts_vendored_models() -> None:
-    provider = PortkeyProvider(api_key="test-key")
-    provider.client = cast("Any", _NativePortkeyClient())
+    from portkey_ai import AsyncPortkey
 
-    models = await provider._alist_models()
+    provider = PortkeyProvider(api_key="test-key")
+    http_client = _mock_portkey_http_client()
+    provider.client = cast("Any", AsyncPortkey(api_key="test-key", http_client=http_client))
+
+    try:
+        models = await provider._alist_models()
+    finally:
+        await http_client.aclose()
 
     assert [(model.id, model.owned_by) for model in models] == [("test-model", "portkey")]
