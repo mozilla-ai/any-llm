@@ -124,10 +124,17 @@ def test_azureopenai_ad_token_provider_counts_as_credentials(monkeypatch: pytest
     monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("AZURE_OPENAI_AD_TOKEN", raising=False)
 
-    with mock_azureopenai_provider() as (_, mock_azure_client):
-        AzureopenaiProvider(api_key=None, api_base="https://test.openai.azure.com", azure_ad_token_provider=lambda: "t")
+    def token_provider() -> str:
+        return "t"
 
-        assert mock_azure_client.call_args.kwargs["api_key"] is None
+    with mock_azureopenai_provider() as (_, mock_azure_client):
+        AzureopenaiProvider(
+            api_key=None, api_base="https://test.openai.azure.com", azure_ad_token_provider=token_provider
+        )
+
+        kwargs = mock_azure_client.call_args.kwargs
+        assert kwargs["api_key"] is None
+        assert kwargs["azure_ad_token_provider"] is token_provider
 
 
 @pytest.mark.asyncio
