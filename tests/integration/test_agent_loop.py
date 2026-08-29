@@ -51,6 +51,20 @@ def _mentions_tool_result(content: str | None) -> bool:
     return content is not None and ("15" in content or "sunny" in content.lower())
 
 
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        (None, False),
+        ("", False),
+        ("It rains in Paris.", False),
+        ("It is 15C in Paris.", True),
+        ("Sunny in London.", True),
+    ],
+)
+def test_mentions_tool_result(content: str | None, expected: bool) -> None:
+    assert _mentions_tool_result(content) is expected
+
+
 @pytest.mark.asyncio
 async def test_agent_loop_parallel_tool_calls(
     provider: LLMProvider,
