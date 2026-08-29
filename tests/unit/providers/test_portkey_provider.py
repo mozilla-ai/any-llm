@@ -100,7 +100,8 @@ class _NativePortkeyClient:
         )()
 
 
-def test_portkey_uses_native_async_client(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_portkey_uses_native_async_client(monkeypatch: pytest.MonkeyPatch) -> None:
     """The provider initializes Portkey's native SDK instead of OpenAI's client."""
     calls: dict[str, Any] = {}
 
@@ -115,7 +116,7 @@ def test_portkey_uses_native_async_client(monkeypatch: pytest.MonkeyPatch) -> No
     assert calls["base_url"] == "https://example.test/v1"
     assert calls["request_timeout"] == httpx.Timeout(600.0, connect=5.0)
     assert calls["http_client"].timeout == httpx.Timeout(600.0, connect=5.0)
-    calls["http_client"].close()
+    await calls["http_client"].aclose()
 
 
 def test_convert_completion_params_with_dataclass_response_format() -> None:
@@ -145,7 +146,7 @@ def test_convert_completion_params_with_dataclass_response_format() -> None:
 @pytest.mark.asyncio
 async def test_native_portkey_completion_converts_vendored_model_and_xml_reasoning() -> None:
     provider = PortkeyProvider(api_key="test-key")
-    provider.client = _NativePortkeyClient()
+    provider.client = cast("Any", _NativePortkeyClient())
 
     result = await provider._acompletion(
         CompletionParams(model_id="test-model", messages=[{"role": "user", "content": "Hello"}])
@@ -160,7 +161,7 @@ async def test_native_portkey_completion_converts_vendored_model_and_xml_reasoni
 @pytest.mark.asyncio
 async def test_native_portkey_stream_converts_vendored_chunks_and_xml_reasoning() -> None:
     provider = PortkeyProvider(api_key="test-key")
-    provider.client = _NativePortkeyClient()
+    provider.client = cast("Any", _NativePortkeyClient())
 
     result = await provider._acompletion(
         CompletionParams(
@@ -180,7 +181,7 @@ async def test_native_portkey_stream_converts_vendored_chunks_and_xml_reasoning(
 @pytest.mark.asyncio
 async def test_native_portkey_list_models_converts_vendored_models() -> None:
     provider = PortkeyProvider(api_key="test-key")
-    provider.client = _NativePortkeyClient()
+    provider.client = cast("Any", _NativePortkeyClient())
 
     models = await provider._alist_models()
 

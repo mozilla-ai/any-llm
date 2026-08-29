@@ -1,12 +1,13 @@
-from collections.abc import AsyncIterator, Sequence
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from typing_extensions import override
 
-from any_llm.providers.openai.xml_reasoning import XMLReasoningOpenAIProvider
+from any_llm.providers.openai.xml_reasoning import XMLReasoningOpenAIProvider, wrap_chunks_with_xml_reasoning
 from any_llm.providers.openai.xml_reasoning_utils import (
     convert_chat_completion_chunk_with_xml_reasoning,
     convert_chat_completion_with_xml_reasoning,
@@ -14,6 +15,11 @@ from any_llm.providers.openai.xml_reasoning_utils import (
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 from any_llm.types.model import Model
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Sequence
+
+    from openai import AsyncOpenAI
 
 try:
     import portkey_ai
@@ -44,7 +50,7 @@ class PortkeyProvider(XMLReasoningOpenAIProvider):
 
     _DEFAULT_REASONING_EFFORT = None
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
-    client: Any
+    client: AsyncOpenAI
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
@@ -97,8 +103,6 @@ class PortkeyProvider(XMLReasoningOpenAIProvider):
         async def chunk_iterator() -> AsyncIterator[ChatCompletionChunk]:
             async for chunk in response:
                 yield self._convert_completion_chunk_response(chunk)
-
-        from any_llm.providers.openai.xml_reasoning import wrap_chunks_with_xml_reasoning
 
         return wrap_chunks_with_xml_reasoning(chunk_iterator())
 
