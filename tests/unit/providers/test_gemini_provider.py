@@ -408,6 +408,10 @@ async def test_completion_with_allowed_tools_tool_choice() -> None:
             "type": "allowed_tools",
             "allowed_tools": {"mode": "required", "tools": [{"type": "function", "function": {"name": 1}}]},
         },
+        {
+            "type": "allowed_tools",
+            "allowed_tools": {"mode": "required", "tools": [{"type": "custom", "function": {"name": "get_weather"}}]},
+        },
     ],
 )
 @pytest.mark.asyncio

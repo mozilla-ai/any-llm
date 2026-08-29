@@ -143,7 +143,10 @@ def _convert_tool_choice(tool_choice: str | dict[str, Any], provider_name: str) 
                 raise UnsupportedParameterError(error_message, provider_name, additional_message)
             # Every entry is kept so that an unusable one fails the name check below rather than
             # being dropped, which would silently narrow the set of tools the caller asked for.
-            functions = [tool.get("function") if isinstance(tool, dict) else None for tool in allowed_tools]
+            functions = [
+                tool.get("function") if isinstance(tool, dict) and tool.get("type") == "function" else None
+                for tool in allowed_tools
+            ]
         else:
             functions = [tool_choice.get("function")] if tool_choice.get("type") == "function" else []
         raw_names = [function.get("name") if isinstance(function, dict) else None for function in functions]
