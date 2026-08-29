@@ -19,7 +19,10 @@ def _mock_portkey_http_client() -> httpx.AsyncClient:
         if request.url.path.endswith("/models"):
             return httpx.Response(
                 200,
-                json={"object": "list", "data": [{"id": "test-model", "object": "model", "created": 0, "owned_by": "portkey"}]},
+                json={
+                    "object": "list",
+                    "data": [{"id": "test-model", "object": "model", "created": 0, "owned_by": "portkey"}],
+                },
             )
 
         if json.loads(request.content).get("stream"):
@@ -28,7 +31,13 @@ def _mock_portkey_http_client() -> httpx.AsyncClient:
                 "object": "chat.completion.chunk",
                 "created": 0,
                 "model": "test-model",
-                "choices": [{"index": 0, "delta": {"role": "assistant", "content": "<think>because</think>answer"}, "finish_reason": "stop"}],
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"role": "assistant", "content": "<think>because</think>answer"},
+                        "finish_reason": "stop",
+                    }
+                ],
             }
             body = f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n"
             return httpx.Response(200, content=body.encode(), headers={"content-type": "text/event-stream"})
@@ -40,7 +49,13 @@ def _mock_portkey_http_client() -> httpx.AsyncClient:
                 "object": "chat.completion",
                 "created": 0,
                 "model": "test-model",
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": "<think>because</think>answer"}, "finish_reason": "stop"}],
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "<think>because</think>answer"},
+                        "finish_reason": "stop",
+                    }
+                ],
             },
         )
 
