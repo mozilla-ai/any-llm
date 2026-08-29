@@ -159,7 +159,7 @@ print(response.choices[0].message.content)
 
 Reasoning also works with streaming — each chunk may include `chunk.choices[0].delta.reasoning`.
 
-`reasoning_effort="none"` (or `None`) turns thinking off. A model that only runs with thinking on, such as `gemini-2.5-pro`, rejects it with an `InvalidRequestError`, so use `"auto"` or a graded level there.
+`reasoning_effort="none"` (or `None`) turns thinking off where the model has an off setting. Gemini 3.5 and newer have no off tier and run at their lowest level instead, and a model that only runs with thinking on, such as `gemini-2.5-pro`, rejects it with an `InvalidRequestError`, so use `"auto"` or a graded level there.
 
 ## Embeddings
 
