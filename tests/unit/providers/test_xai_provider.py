@@ -96,7 +96,9 @@ async def test_truncated_tool_call_response_reports_length_not_tool_calls() -> N
 
 
 @pytest.mark.asyncio
-async def test_tool_call_response_reports_tool_calls_finish_reason() -> None:
+@pytest.mark.parametrize("xai_finish_reason", ["REASON_TOOL_CALLS", "REASON_TIME_LIMIT"])
+async def test_tool_call_response_reports_tool_calls_finish_reason(xai_finish_reason: str) -> None:
+    """Mapped directly for REASON_TOOL_CALLS; for a reason without a counterpart, the tool calls decide."""
     from any_llm.providers.xai.xai import XaiProvider
 
     with mock_xai_provider() as (_, mock_response):
@@ -105,7 +107,7 @@ async def test_tool_call_response_reports_tool_calls_finish_reason() -> None:
         tool_call.function.name = "test_function"
         tool_call.function.arguments = "{}"
         mock_response.tool_calls = [tool_call]
-        mock_response.finish_reason = "REASON_TOOL_CALLS"
+        mock_response.finish_reason = xai_finish_reason
 
         provider = XaiProvider(api_key="test-api-key")
         response = await provider._acompletion(
