@@ -1,3 +1,4 @@
+import inspect
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -155,7 +156,19 @@ async def test_agent_loop_sequential_tool_calls(
                 tool_fn = available_tools[tool_name]
 
                 args = json.loads(tool_call.function.arguments) if tool_call.function.arguments else {}
-                tool_result = tool_fn(**args)
+                sig = inspect.signature(tool_fn)
+                if any(
+                    param.kind == inspect.Parameter.VAR_KEYWORD
+                    for param in sig.parameters.values()
+                ):
+                    filtered_args = args
+                else:
+                    filtered_args = {
+                        key: value
+                        for key, value in args.items()
+                        if key in sig.parameters
+                    }
+                tool_result = tool_fn(**filtered_args)
 
                 messages.append(
                     {
