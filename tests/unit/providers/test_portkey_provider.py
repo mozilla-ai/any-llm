@@ -10,19 +10,19 @@ from any_llm.types.completion import ChatCompletion, CompletionParams
 
 
 def _native_portkey_model(data: dict[str, Any]) -> Any:
-    """Build the actual vendored Pydantic model returned by portkey-ai."""
+    """Build the public Pydantic model returned by portkey-ai."""
     if data["object"] == "chat.completion":
-        from portkey_ai._vendor.openai.types.chat.chat_completion import ChatCompletion as NativeChatCompletion
+        from portkey_ai.api_resources.types.chat_complete_type import ChatCompletions as NativeChatCompletion
 
         return NativeChatCompletion.model_validate(data)
     if data["object"] == "chat.completion.chunk":
-        from portkey_ai._vendor.openai.types.chat.chat_completion_chunk import (
+        from portkey_ai.api_resources.types.chat_complete_type import (
             ChatCompletionChunk as NativeChatCompletionChunk,
         )
 
         return NativeChatCompletionChunk.model_validate(data)
 
-    from portkey_ai._vendor.openai.types.model import Model as NativeModel
+    from portkey_ai.api_resources.types.models_type import Model as NativeModel
 
     return NativeModel.model_validate(data)
 
