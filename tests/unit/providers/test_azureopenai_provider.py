@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.azureopenai.azureopenai import AzureopenaiProvider
 from any_llm.types.completion import CompletionParams
 
@@ -107,6 +108,26 @@ async def test_azureopenai_ad_token_auth() -> None:
         assert call_args is not None
         _, kwargs = call_args
         assert kwargs["azure_ad_token"] == azure_ad_token
+
+
+def test_azureopenai_requires_api_key_or_ad_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no key and no Entra token the typed error is raised, not the SDK's own OpenAIError."""
+    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("AZURE_OPENAI_AD_TOKEN", raising=False)
+
+    with pytest.raises(MissingApiKeyError, match="AZURE_OPENAI_API_KEY"):
+        AzureopenaiProvider(api_key=None, api_base="https://test.openai.azure.com")
+
+
+def test_azureopenai_ad_token_provider_counts_as_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A token provider callable is the third Azure auth path and must not trip the check."""
+    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("AZURE_OPENAI_AD_TOKEN", raising=False)
+
+    with mock_azureopenai_provider() as (_, mock_azure_client):
+        AzureopenaiProvider(api_key=None, api_base="https://test.openai.azure.com", azure_ad_token_provider=lambda: "t")
+
+        assert mock_azure_client.call_args.kwargs["api_key"] is None
 
 
 @pytest.mark.asyncio
