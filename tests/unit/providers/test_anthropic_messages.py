@@ -8,14 +8,6 @@ from typing import Any, Self, cast
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import httpx
-
-try:
-    import httpx2
-except ImportError:
-    pass
-else:
-    httpx = httpx2
-
 import pytest
 from anthropic.types import Message, TextBlock, ThinkingBlock, ToolUseBlock, Usage
 from anthropic.types.beta import BetaMCPToolUseBlock, BetaMessage, BetaThinkingBlock, BetaUsage
