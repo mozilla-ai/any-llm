@@ -1721,7 +1721,7 @@ class AnyLLM(ABC):
 
         Args:
             after: A cursor for pagination. Returns batches after this batch ID.
-            limit: Maximum number of batches to return (default: 20)
+            limit: Maximum number of batches to return. When omitted, the provider's own default applies.
             **kwargs: Additional provider-specific arguments
 
         Returns:
