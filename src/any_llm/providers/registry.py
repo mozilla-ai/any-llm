@@ -187,6 +187,13 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         supports_completion_image=True,
         supports_moderation=True,
     ),
+    "orcarouter": OpenAICompatibleProviderConfig(
+        name="orcarouter",
+        api_base="https://api.orcarouter.ai/v1",
+        env_api_key_name="ORCAROUTER_API_KEY",
+        env_api_base_name="ORCAROUTER_API_BASE",
+        provider_documentation_url="https://docs.orcarouter.ai",
+    ),
 }
 
 _class_cache: dict[str, type[BaseOpenAIProvider]] = {}
