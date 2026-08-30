@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 workspace_root="$(dirname "$repo_root")"
 export PATH="$HOME/.local/bin:$PATH"
+cd "$repo_root"
 
 run_step() {
   local label="$1"
@@ -20,7 +21,6 @@ require_tool() {
 }
 
 require_tool uv
-require_tool go
 
 run_step \
   'Synchronize Python development dependencies' \
@@ -33,6 +33,7 @@ run_step \
 
 go_repo="$workspace_root/repos/any-llm-go"
 if [[ -f "$go_repo/go.mod" ]]; then
+  require_tool go
   run_step 'Download any-llm-go modules' go -C "$go_repo" mod download
 fi
 
