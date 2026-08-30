@@ -289,6 +289,7 @@ tests = [
   "mktestdocs>=0.2.4",
   "pytest-xdist>=3.6.1",
   "pytest-timeout",
+  "httpx2>=2,<3",
   "debugpy",
   "aiofiles",
 
