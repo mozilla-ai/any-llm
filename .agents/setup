@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+workspace_root="$(dirname "$repo_root")"
+export PATH="$HOME/.local/bin:$PATH"
+
+run_step() {
+  local label="$1"
+  shift
+  printf '\n==> %s\n' "$label"
+  time "$@"
+}
+
+require_tool() {
+  command -v "$1" >/dev/null 2>&1 || {
+    printf 'Required tool is missing: %s\n' "$1" >&2
+    return 1
+  }
+}
+
+require_tool uv
+require_tool go
+
+run_step \
+  'Synchronize Python development dependencies' \
+  env UV_PYTHON=/usr/bin/python3.11 UV_NO_MANAGED_PYTHON=1 UV_PYTHON_DOWNLOADS=never \
+  uv sync --group dev --extra all --python /usr/bin/python3.11
+
+run_step \
+  'Prepare pre-commit environments' \
+  env DISABLE_PRE_COMMIT_UV_PATCH=1 uv run pre-commit install-hooks
+
+go_repo="$workspace_root/repos/any-llm-go"
+if [[ -f "$go_repo/go.mod" ]]; then
+  run_step 'Download any-llm-go modules' go -C "$go_repo" mod download
+fi
+
+printf '\nOrb repository setup complete.\n'

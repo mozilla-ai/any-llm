@@ -218,3 +218,6 @@ __marimo__/
 service_account.json
 config.yml
 gateway.db
+
+# Amp orb runtime files
+.amp/portals/*

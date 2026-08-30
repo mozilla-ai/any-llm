@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PATH="$HOME/.local/bin:$PATH"
+
+command -v uv >/dev/null 2>&1 || {
+  printf 'uv is missing; rerun orb setup.\n' >&2
+  exit 1
+}
+
+if [[ ! -x "$repo_root/.venv/bin/python" ]]; then
+  printf 'The repository virtual environment is missing; rerun orb setup.\n' >&2
+  exit 1
+fi
+
+printf 'Orb repository environment is ready.\n'
