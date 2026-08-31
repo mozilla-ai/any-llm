@@ -559,6 +559,11 @@ def test_split_cached_input_tokens_floors_negative_cached_at_zero() -> None:
     assert cache_read is None
 
 
+def test_split_cached_input_tokens_excludes_cache_buckets_when_not_in_prompt() -> None:
+    """An explicit false inclusion flag keeps cache buckets outside the prompt total."""
+    assert split_cached_input_tokens(100, 20, 12, False) == (100, None)
+
+
 def test_streaming_message_start_cached_without_prompt_total_is_not_negative() -> None:
     """A usage chunk carrying cached tokens but no prompt total must not yield negative input_tokens.
 
@@ -1761,6 +1766,28 @@ def test_completion_usage_normalization_supports_creation_aliases_and_empty_data
     plain = CompletionUsage(prompt_tokens=10, completion_tokens=1, total_tokens=11)
     assert plain.cache_usage is None
     assert "cache_usage" not in plain.model_dump(exclude_none=True)
+
+
+def test_chat_completion_preserves_canonical_cache_creation_ttl_details() -> None:
+    """Canonical TTL meters survive the completion-to-Messages bridge."""
+    completion = ChatCompletion(
+        id="cmpl-cache-write",
+        model="some-model",
+        created=0,
+        object="chat.completion",
+        choices=[Choice(index=0, finish_reason="stop", message=ChatCompletionMessage(role="assistant", content="hi"))],
+        usage=CompletionUsage(
+            prompt_tokens=100,
+            completion_tokens=5,
+            total_tokens=105,
+            cache_usage={"creation_5m_input_tokens": 7, "creation_1h_input_tokens": 5},
+        ),
+    )
+
+    usage = chat_completion_to_message_response(completion).usage
+    assert usage.cache_creation is not None
+    assert usage.cache_creation.ephemeral_5m_input_tokens == 7
+    assert usage.cache_creation.ephemeral_1h_input_tokens == 5
 
 
 def test_chat_completion_wrappers_normalize_raw_cache_usage() -> None:

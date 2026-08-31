@@ -836,6 +836,8 @@ def test_convert_response_includes_cache_tokens_in_usage() -> None:
     assert result.usage.total_tokens == expected_total_tokens
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 13332
+    assert result.usage.cache_usage is not None
+    assert result.usage.cache_usage.read_input_tokens == 13332
 
 
 def test_convert_response_includes_cache_creation_tokens() -> None:
@@ -898,6 +900,29 @@ def test_convert_response_without_cache_tokens() -> None:
     assert result.usage.total_tokens == 150
     assert result.usage.prompt_tokens_details is None
     assert result.usage.cache_usage is None
+
+
+def test_convert_response_preserves_zero_cache_read_tokens() -> None:
+    """An explicit zero cache read remains distinguishable from an absent meter."""
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    mock_response = MagicMock()
+    mock_response.id = "msg_zero-read"
+    mock_response.model = "claude-3-haiku"
+    mock_response.stop_reason = "end_turn"
+    mock_response.content = [MagicMock(type="text", text="Hello!")]
+    mock_response.created_at = datetime.now(UTC)
+    mock_response.usage.input_tokens = 3
+    mock_response.usage.output_tokens = 1
+    mock_response.usage.cache_read_input_tokens = 0
+    mock_response.usage.cache_creation_input_tokens = None
+    mock_response.usage.cache_creation = None
+
+    result = _convert_response(mock_response)
+
+    assert result.usage is not None
+    assert result.usage.cache_usage is not None
+    assert result.usage.cache_usage.read_input_tokens == 0
 
 
 def test_streaming_chunk_includes_cache_tokens_in_usage() -> None:
