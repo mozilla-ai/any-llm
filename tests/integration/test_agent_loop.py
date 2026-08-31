@@ -33,6 +33,31 @@ def get_weather(location: str) -> str:
     return json.dumps({"location": location, "temperature": "15C", "condition": "sunny"})
 
 
+def filter_tool_args(tool_fn: Callable[..., str], args: dict[str, Any]) -> dict[str, Any]:
+    """Keep only arguments accepted by ``tool_fn`` unless it accepts ``**kwargs``."""
+    sig = inspect.signature(tool_fn)
+    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in sig.parameters.values()):
+        return args
+    return {key: value for key, value in args.items() if key in sig.parameters}
+
+
+def get_weather_with_extras(location: str, **kwargs: Any) -> str:
+    """Get the weather for a location, forwarding extra model-supplied keys."""
+    payload: dict[str, Any] = {"location": location, "temperature": "15C", "condition": "sunny"}
+    payload.update(kwargs)
+    return json.dumps(payload)
+
+
+def test_filter_tool_args_var_keyword_forwards_extra_keys() -> None:
+    args = {"location": "Paris", "unexpected_key": "ignored-by-strict-tools"}
+    assert filter_tool_args(get_weather_with_extras, args) == args
+
+
+def test_filter_tool_args_strict_signature_drops_extra_keys() -> None:
+    args = {"location": "Paris", "unexpected_key": "drop-me"}
+    assert filter_tool_args(get_weather, args) == {"location": "Paris"}
+
+
 @pytest.mark.asyncio
 async def test_agent_loop_parallel_tool_calls(
     provider: LLMProvider,
@@ -156,18 +181,7 @@ async def test_agent_loop_sequential_tool_calls(
                 tool_fn = available_tools[tool_name]
 
                 args = json.loads(tool_call.function.arguments) if tool_call.function.arguments else {}
-                sig = inspect.signature(tool_fn)
-                if any(
-                    param.kind == inspect.Parameter.VAR_KEYWORD
-                    for param in sig.parameters.values()
-                ):
-                    filtered_args = args
-                else:
-                    filtered_args = {
-                        key: value
-                        for key, value in args.items()
-                        if key in sig.parameters
-                    }
+                filtered_args = filter_tool_args(tool_fn, args)
                 tool_result = tool_fn(**filtered_args)
 
                 messages.append(
