@@ -291,7 +291,7 @@ tests = [
   "pytest-timeout",
   "debugpy",
   "aiofiles",
-
+  "httpx2",
 ]
 
 # For completeness, but 'uv sync --group dev' currently installs the others too.
