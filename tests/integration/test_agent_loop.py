@@ -1,5 +1,6 @@
 import inspect
 import json
+import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -35,6 +36,13 @@ def get_weather(location: str) -> str:
 def _call_tool(tool_fn: Callable[..., str], args: dict[str, Any]) -> str:
     """Call a model-selected tool without passing arguments it does not accept."""
     accepted = inspect.signature(tool_fn).parameters
+    unexpected = set(args) - set(accepted)
+    if unexpected:
+        warnings.warn(
+            f"Ignoring unexpected arguments for {tool_fn.__name__}: {', '.join(sorted(unexpected))}",
+            UserWarning,
+            stacklevel=2,
+        )
     return tool_fn(**{name: value for name, value in args.items() if name in accepted})
 
 
