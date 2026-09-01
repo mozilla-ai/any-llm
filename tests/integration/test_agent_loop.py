@@ -1,5 +1,6 @@
 import inspect
 import json
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -14,8 +15,6 @@ from any_llm.exceptions import MissingApiKeyError
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
 
 
