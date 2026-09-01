@@ -1036,7 +1036,15 @@ class AnyLLM(ABC):
 
         completion_kwargs = messages_params_to_completion_params(params)
         completion_params = CompletionParams(**completion_kwargs)
-        result = await self._acompletion(completion_params, **kwargs)
+        try:
+            result = await self._acompletion(completion_params, **kwargs)
+        except UnsupportedParameterError as exc:
+            # parallel_tool_calls is synthesized here from Anthropic's tool_choice, so a
+            # provider that rejects it would otherwise name a parameter the caller never sent.
+            if exc.parameter_name != "parallel_tool_calls" or "parallel_tool_calls" not in completion_kwargs:
+                raise
+            msg = "tool_choice.disable_parallel_tool_use"
+            raise UnsupportedParameterError(msg, self.PROVIDER_NAME) from exc
 
         if isinstance(result, ChatCompletion):
             return chat_completion_to_message_response(result)

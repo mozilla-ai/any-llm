@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, TypeGuard
 
 from pydantic import BaseModel, TypeAdapter
 
+from any_llm.exceptions import InvalidRequestError
 from any_llm.logging import logger
 
 if TYPE_CHECKING:
@@ -13,6 +14,36 @@ if TYPE_CHECKING:
     from anthropic.types.parsed_message import ParsedMessage
 
     from any_llm.types.responses import ParsedResponse
+
+
+def normalize_output_config(output_config: dict[str, Any]) -> dict[str, Any]:
+    """Return an Anthropic ``output_config`` in its documented shape.
+
+    Anthropic nests the JSON schema under ``output_config.format``, so a caller holding the
+    inner ``format`` object (``{"type": "json_schema", "schema": {...}}``) is one level away
+    from the documented shape. Both are accepted here, and both consumers of an
+    ``output_format`` dict normalize through this function so the field means the same thing
+    on the native Anthropic path and on the completion bridge.
+
+    Every field of ``output_config`` is optional, so a config that names no format is returned
+    untouched: ``{"effort": "high"}`` is a valid request that sets effort alone. Requiring a
+    schema belongs to the caller that needs one, which is the bridge, since translating to an
+    OpenAI ``response_format`` is what cannot proceed without it.
+
+    Raises:
+        InvalidRequestError: when ``format`` is present but is not the object it has to be.
+            Treating it as absent would silently re-nest the config around the malformed value.
+
+    """
+    raw_format = output_config.get("format")
+    if isinstance(raw_format, dict):
+        return output_config
+    if raw_format is not None:
+        msg = f"output_format dict has a non-object format value: {raw_format!r}"
+        raise InvalidRequestError(msg)
+    if "schema" in output_config or output_config.get("type") == "json_schema":
+        return {"format": output_config}
+    return output_config
 
 
 def is_structured_output_type(response_format: Any) -> TypeGuard[type]:

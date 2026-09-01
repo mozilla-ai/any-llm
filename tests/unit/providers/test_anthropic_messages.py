@@ -1007,6 +1007,80 @@ async def test_amessages_output_format_uses_native_parse() -> None:
 
 
 @pytest.mark.asyncio
+async def test_amessages_bare_output_format_object_is_nested_before_create() -> None:
+    """The bare format object is wrapped before the native call, which requires the nesting.
+
+    The bridge accepts either shape, so the field would otherwise mean two different things
+    depending on which provider served the request.
+    """
+    mock_message = _make_message(content=[TextBlock(type="text", text='{"city_name": "Paris"}')])
+
+    mock_client = Mock()
+    mock_client.messages.create = AsyncMock(return_value=mock_message)
+    mock_client.messages.parse = AsyncMock()
+
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = mock_client
+    provider._convert_native_message_to_response = BaseAnthropicProvider._convert_native_message_to_response
+
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=1024,
+        output_format={"type": "json_schema", "schema": {"type": "object"}},
+    )
+    await BaseAnthropicProvider._amessages(provider, params)
+
+    call_kwargs = mock_client.messages.create.call_args.kwargs
+    assert call_kwargs["output_config"] == {"format": {"type": "json_schema", "schema": {"type": "object"}}}
+
+
+@pytest.mark.asyncio
+async def test_amessages_effort_only_output_config_reaches_create() -> None:
+    """Every output_config field is optional, so effort alone is a valid native request."""
+    mock_message = _make_message(content=[TextBlock(type="text", text="Paris")])
+
+    mock_client = Mock()
+    mock_client.messages.create = AsyncMock(return_value=mock_message)
+    mock_client.messages.parse = AsyncMock()
+
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = mock_client
+    provider._convert_native_message_to_response = BaseAnthropicProvider._convert_native_message_to_response
+
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=1024,
+        output_format={"effort": "high"},
+    )
+    await BaseAnthropicProvider._amessages(provider, params)
+
+    assert mock_client.messages.create.call_args.kwargs["output_config"] == {"effort": "high"}
+
+
+@pytest.mark.asyncio
+async def test_amessages_non_object_format_raises() -> None:
+    """A format value that is not an object is rejected rather than re-nested."""
+    mock_client = Mock()
+    mock_client.messages.create = AsyncMock()
+    mock_client.messages.parse = AsyncMock()
+
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = mock_client
+
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=1024,
+        output_format={"format": "json_schema"},
+    )
+    with pytest.raises(InvalidRequestError, match="non-object format value"):
+        await BaseAnthropicProvider._amessages(provider, params)
+    mock_client.messages.create.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_amessages_output_config_dict_passes_through_to_create() -> None:
     """A raw output_config dict goes to native messages.create(output_config=...), not parse."""
     output_config = {"format": {"type": "json_schema", "schema": {"type": "object"}}}
