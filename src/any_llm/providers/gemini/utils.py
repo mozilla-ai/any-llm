@@ -271,8 +271,21 @@ def _convert_messages(
                         logger.debug("Skipping unsupported Gemini content block type: %s", content.get("type"))
             formatted_messages.append(types.Content(role="user", parts=parts))
         elif message["role"] == "assistant":
+            parts = []
+            # The model's own text belongs in its turn, ahead of any function calls it made.
+            content = message.get("content")
+            has_text = isinstance(content, str) and content
+            if has_text or not message.get("tool_calls"):
+                parts.append(
+                    types.Part(
+                        text=content,
+                        # The SDK field is typed bytes but its validator decodes a base64 str.
+                        thought_signature=cast(
+                            "bytes | None", _extract_google_thought_signature(message, provider_name)
+                        ),
+                    )
+                )
             if message.get("tool_calls"):
-                parts = []
                 for i, tool_call in enumerate(message["tool_calls"]):
                     function_call = tool_call["function"]
                     if tool_call_id := tool_call.get("id"):
@@ -300,16 +313,6 @@ def _convert_messages(
                             thought_signature=cast("bytes | None", thought_signature),
                         )
                     )
-            else:
-                parts = [
-                    types.Part(
-                        text=message["content"],
-                        # The SDK field is typed bytes but its validator decodes a base64 str.
-                        thought_signature=cast(
-                            "bytes | None", _extract_google_thought_signature(message, provider_name)
-                        ),
-                    )
-                ]
 
             formatted_messages.append(types.Content(role="model", parts=parts))
         elif message["role"] == "tool":
@@ -473,7 +476,7 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                 {
                     "message": {
                         "role": "assistant",
-                        "content": None if tool_calls_list else text_content,
+                        "content": text_content,
                         "reasoning": reasoning or None,
                         "tool_calls": tool_calls_list or None,
                         "extra_content": message_extra_content,

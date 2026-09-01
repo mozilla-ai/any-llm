@@ -929,6 +929,24 @@ def test_convert_response_accumulates_multiple_text_parts() -> None:
     assert message["reasoning"] is None
 
 
+def test_convert_response_keeps_text_alongside_function_call() -> None:
+    """A turn that speaks and then calls a tool reports both, as the streaming converter already does."""
+    response = _make_gemini_response(
+        [
+            types.Part(text="I will look up the weather in Paris."),
+            types.Part(function_call=types.FunctionCall(name="get_weather", args={"location": "Paris"})),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    message = response_dict["choices"][0]["message"]
+    assert message["content"] == "I will look up the weather in Paris."
+    assert [tool_call["function"]["name"] for tool_call in message["tool_calls"]] == ["get_weather"]
+    assert response_dict["choices"][0]["finish_reason"] == "tool_calls"
+
+
 def test_convert_response_skips_parts_without_text_or_function_call() -> None:
     """A candidate can mix in parts that carry neither text nor a tool call, e.g. inline image
     data; those must not disturb the accumulated text."""
@@ -2047,6 +2065,103 @@ def test_convert_messages_invalid_base64_raises_invalid_request() -> None:
 
     with pytest.raises(InvalidRequestError, match="invalid base64"):
         _convert_messages(messages)
+
+
+def test_convert_messages_replays_assistant_text_ahead_of_its_tool_calls() -> None:
+    """A turn that spoke and then called a tool replays as [text, function_call], signatures on their own parts."""
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Tell me your plan, then get the weather."},
+        {
+            "role": "assistant",
+            "content": "I will look up the weather in Paris.",
+            "extra_content": {"google": {"thought_signature": "dGV4dA=="}},
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": '{"location": "Paris"}'},
+                    "extra_content": {"google": {"thought_signature": "Y2FsbA=="}},
+                }
+            ],
+        },
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[1].parts
+    assert parts is not None
+    assert [part.text for part in parts] == ["I will look up the weather in Paris.", None]
+    assert parts[0].function_call is None
+    assert parts[0].thought_signature == b"text"
+    assert parts[1].function_call is not None
+    assert parts[1].function_call.name == "get_weather"
+    assert parts[1].thought_signature == b"call"
+
+
+@pytest.mark.parametrize("content", [None, "", [{"type": "text", "text": "ignored"}]])
+def test_convert_messages_tool_call_turn_without_text_emits_only_function_calls(content: Any) -> None:
+    """Only a non-empty string adds a text part to a tool-call turn; the first call keeps the skip sentinel."""
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": content,
+            "tool_calls": [
+                {"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}},
+            ],
+        },
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[0].parts
+    assert parts is not None
+    assert len(parts) == 1
+    assert parts[0].function_call is not None
+    assert parts[0].thought_signature is not None
+
+
+def test_convert_messages_tool_call_turn_rejects_an_undecodable_text_signature() -> None:
+    """The text part of a tool-call turn goes through the same signature check as a text-only turn."""
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": "I will look up the weather.",
+            "extra_content": {"google": {"thought_signature": 12345}},
+            "tool_calls": [
+                {"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}},
+            ],
+        },
+    ]
+
+    with pytest.raises(InvalidRequestError, match="thought_signature"):
+        _convert_messages(messages)
+
+
+def test_convert_messages_round_trips_a_text_and_tool_call_turn() -> None:
+    """Response -> ChatCompletionMessage -> dump (as acompletion replays it) -> model turn keeps text and both signatures."""
+    response = _make_gemini_response(
+        [
+            types.Part(text="I will look up the weather in Paris.", thought_signature=b"text-sig"),
+            types.Part(
+                function_call=types.FunctionCall(name="get_weather", args={"location": "Paris"}),
+                thought_signature=b"call-sig",
+            ),
+        ],
+        types.FinishReason.STOP,
+    )
+    message = ChatCompletionMessage.model_validate(
+        _convert_response_to_response_dict(response)["choices"][0]["message"]
+    )
+    replayed = message.model_dump(exclude_none=True, exclude={"reasoning"})
+
+    formatted_messages, _ = _convert_messages([{"role": "user", "content": "Plan, then weather?"}, replayed])
+
+    parts = formatted_messages[1].parts
+    assert parts is not None
+    assert [part.text for part in parts] == ["I will look up the weather in Paris.", None]
+    assert parts[0].thought_signature == b"text-sig"
+    assert parts[1].function_call is not None
+    assert parts[1].thought_signature == b"call-sig"
 
 
 def test_convert_messages_without_thought_signature_uses_skip_sentinel() -> None:
