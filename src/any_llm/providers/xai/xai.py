@@ -133,11 +133,12 @@ class XaiProvider(AnyLLM):
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         # The xAI SDK builds its grpc.aio channels eagerly, and grpc binds a channel to
-        # whatever event loop is current in the constructing thread. The sync API runs each
-        # request on a fresh worker loop (see any_llm.utils.aio), so a client built here
-        # would always belong to a different loop than the one driving the RPC, and every
-        # call would fail with "attached to a different loop". Defer construction instead,
-        # keyed by loop, so the channel always belongs to the loop that will use it.
+        # whatever event loop is current in the constructing thread. A provider is built on
+        # the caller's thread, while its requests run somewhere else: on the sync API's runner
+        # loop (see any_llm.utils.aio), or on whichever loop an async caller is using. A client
+        # built here would belong to neither, and every call would fail with "attached to a
+        # different loop". Defer construction instead, keyed by loop, so the channel always
+        # belongs to the loop that will use it.
         self._client_kwargs: dict[str, Any] = {"api_key": api_key, **kwargs}
         self._clients_by_loop: dict[asyncio.AbstractEventLoop, XaiAsyncClient] = {}
 
@@ -169,9 +170,10 @@ class XaiProvider(AnyLLM):
     def _discard_clients_for_closed_loops(self) -> None:
         """Drop clients whose loop has been closed, releasing their grpc socket.
 
-        The sync API gives every request a throwaway loop, so a provider used from sync code
-        would otherwise accumulate one live channel per call for its whole life. A closed
-        loop can never serve another request, so its client is dead weight.
+        Sync calls share one long-lived loop, but its nested cases still run on a private loop
+        that closes afterwards, and an async caller can close its own loop at any time. A
+        closed loop can never serve another request, so its client is dead weight holding a
+        socket open.
         """
         for loop in [loop for loop in self._clients_by_loop if loop.is_closed()]:
             _close_client(self._clients_by_loop.pop(loop))

@@ -47,19 +47,9 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
     from google import genai
-    from openai.types.chat.chat_completion_message_custom_tool_call import (
-        ChatCompletionMessageCustomToolCall,
-    )
-    from openai.types.chat.chat_completion_message_function_tool_call import (
-        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
-    )
 
     from any_llm.types.batch import Batch, BatchResult
     from any_llm.types.model import Model
-
-    ChatCompletionMessageToolCallType = (
-        OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
-    )
 
 REASONING_EFFORT_TO_THINKING_BUDGETS = {
     "minimal": 256,
@@ -174,7 +164,7 @@ class GoogleProvider(AnyLLM):
         if params.temperature is not None:
             kwargs["temperature"] = params.temperature
         if params.tools is not None:
-            kwargs["tools"] = _convert_tool_spec(params.tools)
+            kwargs["tools"] = _convert_tool_spec(params.tools, provider_name)
         if isinstance(params.tool_choice, str):
             kwargs["tool_config"] = _convert_tool_choice(params.tool_choice)
         if params.top_p is not None:
@@ -248,8 +238,10 @@ class GoogleProvider(AnyLLM):
             message = ChatCompletionMessage(
                 role="assistant",
                 content=message_dict.get("content"),
-                tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls),
+                refusal=message_dict.get("refusal"),
+                tool_calls=tool_calls,
                 reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
+                extra_content=message_dict.get("extra_content"),
             )
             from typing import Literal
 
@@ -270,6 +262,7 @@ class GoogleProvider(AnyLLM):
             completion_tokens=usage_dict.get("completion_tokens", 0),
             total_tokens=usage_dict.get("total_tokens", 0),
             prompt_tokens_details=usage_dict.get("prompt_tokens_details"),
+            completion_tokens_details=usage_dict.get("completion_tokens_details"),
         )
 
         return ChatCompletion(

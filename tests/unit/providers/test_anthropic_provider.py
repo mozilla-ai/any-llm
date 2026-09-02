@@ -1,4 +1,5 @@
 import dataclasses
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
@@ -9,6 +10,7 @@ import pytest
 from anthropic import transform_schema
 from anthropic.types import Message
 from anthropic.types.model_info import ModelInfo
+from anthropic.types.stop_reason import StopReason
 from pydantic import BaseModel
 
 from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
@@ -297,6 +299,30 @@ async def test_completion_with_tool_choice_and_parallel_tool_calls(parallel_tool
             CompletionParams(
                 model_id=model, messages=messages, tool_choice="auto", parallel_tool_calls=parallel_tool_calls
             ),
+        )
+
+        expected_kwargs = {"tool_choice": {"type": "auto", "disable_parallel_tool_use": not parallel_tool_calls}}
+
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
+            model=model,
+            messages=[{"role": "user", "content": "Hello"}],
+            **expected_kwargs,
+            max_tokens=DEFAULT_MAX_TOKENS,
+        )
+
+
+@pytest.mark.parametrize("parallel_tool_calls", [True, False])
+@pytest.mark.asyncio
+async def test_completion_with_parallel_tool_calls_only(parallel_tool_calls: bool) -> None:
+    """Test that parallel_tool_calls without tool_choice maps to "auto" instead of forcing tool use."""
+    api_key = "test-api-key"
+    model = "model-id"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key=api_key)
+        await provider._acompletion(
+            CompletionParams(model_id=model, messages=messages, parallel_tool_calls=parallel_tool_calls),
         )
 
         expected_kwargs = {"tool_choice": {"type": "auto", "disable_parallel_tool_use": not parallel_tool_calls}}
@@ -904,6 +930,7 @@ def test_streaming_chunk_includes_cache_tokens_in_usage() -> None:
     assert result.usage.total_tokens == expected_total_tokens
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 13332
+    assert result.choices[0].finish_reason is None
 
 
 @pytest.mark.asyncio
@@ -973,6 +1000,7 @@ def test_streaming_chunk_without_cache_tokens() -> None:
     assert result.usage.completion_tokens == 50
     assert result.usage.total_tokens == 150
     assert result.usage.prompt_tokens_details is None
+    assert result.choices[0].finish_reason is None
 
 
 def test_streaming_tool_chunks_preserve_parallel_tool_index() -> None:
@@ -1073,6 +1101,193 @@ def test_non_streaming_response_preserves_multiple_tool_calls() -> None:
     assert result.choices[0].message.tool_calls[1].function.name == "get_time"
 
 
+@pytest.mark.parametrize("stop_reason", get_args(StopReason))
+def test_non_streaming_response_maps_every_anthropic_stop_reason(stop_reason: StopReason) -> None:
+    """Every stop reason the API can return needs an explicit OpenAI finish_reason.
+
+    An unmapped one falls back to "stop", which tells callers the model answered normally
+    when it actually refused or ran out of context.
+    """
+    from anthropic.types import Message, TextBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    expected_finish_reasons: dict[str, str] = {
+        "end_turn": "stop",
+        "stop_sequence": "stop",
+        "pause_turn": "stop",
+        "max_tokens": "length",
+        "model_context_window_exceeded": "length",
+        "tool_use": "tool_calls",
+        "refusal": "content_filter",
+    }
+    assert stop_reason in expected_finish_reasons, (
+        f"New Anthropic stop reason {stop_reason!r} needs a finish_reason mapping."
+    )
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason=stop_reason,
+        content=[TextBlock(type="text", text="Hello")],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].finish_reason == expected_finish_reasons[stop_reason]
+    assert result.choices[0].message.refusal == (
+        "Response blocked by Anthropic content filtering." if stop_reason == "refusal" else None
+    )
+
+
+def test_non_streaming_response_without_stop_reason_finishes_as_stop() -> None:
+    """A response with no stop_reason at all still needs a valid finish_reason."""
+    from anthropic.types import Message, TextBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason=None,
+        content=[TextBlock(type="text", text="Hello")],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].finish_reason == "stop"
+    assert result.choices[0].message.refusal is None
+
+
+@pytest.mark.parametrize(
+    ("stop_reason", "expected_finish_reason", "expected_refusal"),
+    [
+        ("end_turn", "stop", None),
+        ("max_tokens", "length", None),
+        ("stop_sequence", "stop", None),
+        ("pause_turn", "stop", None),
+        ("tool_use", "tool_calls", None),
+        ("model_context_window_exceeded", "length", None),
+        ("refusal", "content_filter", "Response blocked by Anthropic content filtering."),
+        (None, None, None),
+    ],
+)
+def test_streaming_message_delta_preserves_terminal_reason(
+    stop_reason: StopReason | None, expected_finish_reason: str | None, expected_refusal: str | None
+) -> None:
+    from anthropic.types import MessageDeltaEvent, MessageDeltaUsage
+    from anthropic.types.raw_message_delta_event import Delta
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    chunk = MessageDeltaEvent(
+        type="message_delta",
+        delta=Delta(stop_reason=stop_reason, stop_sequence=None),
+        usage=MessageDeltaUsage(output_tokens=5),
+    )
+
+    result = _create_openai_chunk_from_anthropic_chunk(chunk, "claude-sonnet-4-5")
+
+    assert result.choices[0].finish_reason == expected_finish_reason
+    assert result.choices[0].delta.refusal == expected_refusal
+
+
+def test_non_streaming_refusal_preserves_stop_details() -> None:
+    from anthropic.types import Message, RefusalStopDetails, TextBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_refusal",
+        type="message",
+        role="assistant",
+        model="claude-sonnet-4-5",
+        stop_reason="refusal",
+        stop_details=RefusalStopDetails(type="refusal", category="bio", explanation="Request declined."),
+        content=[TextBlock(type="text", text="Request declined.")],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].message.extra_content == {
+        "anthropic": {
+            "stop_details": {
+                "type": "refusal",
+                "category": "bio",
+                "explanation": "Request declined.",
+            }
+        }
+    }
+
+
+def test_streaming_refusal_preserves_stop_details() -> None:
+    from anthropic.types import MessageDeltaEvent, MessageDeltaUsage, RefusalStopDetails
+    from anthropic.types.raw_message_delta_event import Delta
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    chunk = MessageDeltaEvent(
+        type="message_delta",
+        delta=Delta(
+            stop_reason="refusal",
+            stop_sequence=None,
+            stop_details=RefusalStopDetails(type="refusal", category="bio", explanation="Request declined."),
+        ),
+        usage=MessageDeltaUsage(output_tokens=5),
+    )
+
+    result = _create_openai_chunk_from_anthropic_chunk(chunk, "claude-sonnet-4-5")
+
+    assert result.choices[0].delta.extra_content == {
+        "anthropic": {
+            "stop_details": {
+                "type": "refusal",
+                "category": "bio",
+                "explanation": "Request declined.",
+            }
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    ("stop_reason", "expected_finish_reason"),
+    [("end_turn", "stop"), ("tool_use", "tool_calls"), ("refusal", "content_filter")],
+)
+def test_stream_sequence_has_one_terminal_reason(stop_reason: StopReason, expected_finish_reason: str) -> None:
+    from anthropic.types import (
+        ContentBlockStopEvent,
+        MessageDeltaEvent,
+        MessageDeltaUsage,
+        MessageStopEvent,
+    )
+    from anthropic.types.raw_message_delta_event import Delta
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    events = [
+        ContentBlockStopEvent(type="content_block_stop", index=0),
+        MessageDeltaEvent(
+            type="message_delta",
+            delta=Delta(stop_reason=stop_reason, stop_sequence=None),
+            usage=MessageDeltaUsage(output_tokens=1),
+        ),
+        MessageStopEvent(type="message_stop"),
+    ]
+
+    results = [_create_openai_chunk_from_anthropic_chunk(event, "claude-sonnet-4-5") for event in events]
+
+    assert [choice.finish_reason for result in results for choice in result.choices if choice.finish_reason] == [
+        expected_finish_reason
+    ]
+
+
 def test_non_streaming_response_preserves_thinking_signature() -> None:
     """The encrypted thinking signature must be surfaced on the message's extra_content."""
     from anthropic.types import Message, ThinkingBlock, ToolUseBlock, Usage
@@ -1140,6 +1355,107 @@ def test_non_streaming_response_empty_thinking_signature_has_no_extra_content() 
     assert result.choices[0].message.extra_content is None
 
 
+def test_non_streaming_response_keeps_text_alongside_redacted_thinking() -> None:
+    """Anthropic encrypts thinking its safety systems flag, and the block has no readable text.
+
+    The response still carries the answer, so the conversion must skip the redacted block
+    rather than failing the whole completion.
+    """
+    from anthropic.types import Message, RedactedThinkingBlock, TextBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason="end_turn",
+        content=[
+            RedactedThinkingBlock(type="redacted_thinking", data="EroBCkYIBBgCKkA"),
+            TextBlock(type="text", text="Here is the answer."),
+        ],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].message.content == "Here is the answer."
+    assert result.choices[0].message.reasoning is None
+    assert result.choices[0].message.extra_content is None
+
+
+def test_non_streaming_response_keeps_visible_thinking_next_to_redacted_thinking() -> None:
+    """A partially redacted turn keeps the readable thinking and its replayable signature."""
+    from anthropic.types import Message, RedactedThinkingBlock, TextBlock, ThinkingBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason="end_turn",
+        content=[
+            ThinkingBlock(type="thinking", thinking="Let me reason...", signature="sig-12345"),
+            RedactedThinkingBlock(type="redacted_thinking", data="EroBCkYIBBgCKkA"),
+            TextBlock(type="text", text="Here is the answer."),
+        ],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].message.content == "Here is the answer."
+    assert result.choices[0].message.reasoning is not None
+    assert result.choices[0].message.reasoning.content == "Let me reason..."
+    assert result.choices[0].message.extra_content == {"anthropic": {"signature": "sig-12345"}}
+
+
+def test_non_streaming_response_skips_server_tool_blocks(caplog: pytest.LogCaptureFixture) -> None:
+    """Anthropic's server-side tools add blocks with no Chat Completions equivalent.
+
+    They are reported instead of raised, matching how the streaming converter already
+    ignores block types it does not map.
+    """
+    from anthropic.types import (
+        Message,
+        ServerToolUseBlock,
+        TextBlock,
+        Usage,
+        WebSearchToolResultBlock,
+        WebSearchToolResultError,
+    )
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason="end_turn",
+        content=[
+            ServerToolUseBlock(type="server_tool_use", id="srvtoolu_1", name="web_search", input={"query": "any-llm"}),
+            WebSearchToolResultBlock(
+                type="web_search_tool_result",
+                tool_use_id="srvtoolu_1",
+                content=WebSearchToolResultError(type="web_search_tool_result_error", error_code="max_uses_exceeded"),
+            ),
+            TextBlock(type="text", text="Here is the answer."),
+        ],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="any_llm"):
+        result = _convert_response(response)
+
+    assert result.choices[0].message.content == "Here is the answer."
+    assert "server_tool_use" in caplog.text
+    assert "web_search_tool_result" in caplog.text
+
+
 def test_convert_messages_replays_thinking_block_with_tool_call() -> None:
     """Anthropic requires the unmodified thinking block (with signature) to be replayed
     alongside the tool_use block when continuing a turn that used extended thinking."""
@@ -1178,6 +1494,64 @@ def test_convert_messages_replays_thinking_block_with_tool_call() -> None:
         "name": "get_weather",
         "input": {"city": "Paris"},
     }
+
+
+def test_convert_messages_replays_assistant_text_between_thinking_and_tool_use() -> None:
+    """A turn that thought, spoke and then called a tool replays in that order, as Claude produced it."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Tell me your plan, then get the weather."},
+        {
+            "role": "assistant",
+            "content": "I will look up the weather in Paris.",
+            "reasoning": "The user wants a plan first.",
+            "extra_content": {"anthropic": {"signature": "sig-12345"}},
+            "tool_calls": [
+                {
+                    "id": "toolu_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'},
+                }
+            ],
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assert [block["type"] for block in converted[1]["content"]] == ["thinking", "text", "tool_use"]
+    assert converted[1]["content"][1] == {"type": "text", "text": "I will look up the weather in Paris."}
+
+
+@pytest.mark.parametrize("content", [None, ""])
+def test_convert_messages_tool_call_turn_without_text_emits_only_tool_use(content: str | None) -> None:
+    """No empty text block is fabricated for a tool-call turn with nothing to say (Anthropic rejects them)."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": content,
+            "tool_calls": [
+                {"id": "toolu_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}},
+            ],
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assert [block["type"] for block in converted[0]["content"]] == ["tool_use"]
+
+
+def test_convert_messages_keeps_text_when_tool_calls_is_empty() -> None:
+    """An assistant turn with text and an empty tool_calls list keeps its text instead of sending content: []."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [{"role": "assistant", "content": "I will check the weather.", "tool_calls": []}]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assert converted[0]["content"] == [{"type": "text", "text": "I will check the weather."}]
 
 
 def test_convert_messages_replays_thinking_block_with_text() -> None:

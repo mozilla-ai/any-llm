@@ -1,7 +1,6 @@
 import base64
 import dataclasses
 import json
-import logging
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
@@ -337,28 +336,67 @@ def test_timeout_client_creation_is_thread_safe() -> None:
         assert mock_client_call.call_count == 2
 
 
-def test_completion_timeout_with_custom_client_logs_warning_and_is_ignored(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Test that `timeout` is dropped with a warning (not a crash) when a custom client is used.
+def test_completion_timeout_with_custom_client_raises_unsupported_parameter_error() -> None:
+    """Test that `timeout` is rejected when a custom client is used.
 
-    any-llm doesn't own a custom client's construction, so it can't safely reconfigure its
-    connection timeouts.
+    any-llm doesn't own a custom client's construction, so it can't reconfigure its connection
+    timeouts. Rejecting matches the centralized `TIMEOUT_SUPPORT` contract instead of dropping a
+    requested timeout, which would leave the caller believing a bound was applied.
     """
+    custom_client = Mock()
+
+    provider = BedrockProvider(client=custom_client)
+    with pytest.raises(UnsupportedParameterError, match="timeout") as exc_info:
+        provider._completion(
+            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]),
+            timeout=5,
+        )
+
+    assert "botocore.config.Config" in str(exc_info.value)
+    custom_client.converse.assert_not_called()
+
+
+def test_streaming_completion_timeout_with_custom_client_raises_unsupported_parameter_error() -> None:
+    """Test that the rejection happens before the streaming request is opened."""
+    custom_client = Mock()
+
+    provider = BedrockProvider(client=custom_client)
+    with pytest.raises(UnsupportedParameterError, match="timeout"):
+        provider._completion(
+            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}], stream=True),
+            timeout=5,
+        )
+
+    custom_client.converse_stream.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_acompletion_timeout_with_custom_client_raises_unsupported_parameter_error() -> None:
+    """Test that the rejection surfaces through the public async entry point too."""
+    custom_client = Mock()
+
+    provider = BedrockProvider(client=custom_client)
+    with pytest.raises(UnsupportedParameterError, match="timeout"):
+        await provider.acompletion(
+            model="model-id",
+            messages=[{"role": "user", "content": "Hello"}],
+            timeout=5,
+        )
+
+    custom_client.converse.assert_not_called()
+
+
+def test_completion_without_timeout_still_uses_custom_client() -> None:
+    """Test that a custom client keeps working when no per-request `timeout` is requested."""
     custom_client = Mock()
     custom_client.converse.return_value = {"output": {"message": {"content": [{"text": "response"}]}}}
 
     with patch("any_llm.providers.bedrock.bedrock._convert_response"):
         provider = BedrockProvider(client=custom_client)
-        with caplog.at_level(logging.WARNING, logger="any_llm"):
-            provider._completion(
-                CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]),
-                timeout=5,
-            )
+        provider._completion(CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}]))
 
+    assert provider._client_for_timeout(None) is custom_client
     custom_client.converse.assert_called_once()
-    assert "timeout" not in custom_client.converse.call_args[1]
-    assert "timeout" in caplog.text.lower()
 
 
 def test_custom_client_used_when_provided() -> None:
@@ -1378,6 +1416,36 @@ def test_convert_params_rejects_reserved_tool_name_without_response_format() -> 
         )
 
 
+def test_convert_params_forwards_zero_temperature() -> None:
+    """temperature=0.0 asks for greedy decoding and must not be dropped as a falsy value."""
+    result = _convert_params(
+        CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "hi"}], temperature=0.0),
+        {},
+    )
+
+    assert result["inferenceConfig"] == {"temperature": 0.0}
+
+
+def test_convert_params_forwards_zero_top_p() -> None:
+    """top_p=0.0 is inside the documented range, so it must reach inferenceConfig."""
+    result = _convert_params(
+        CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "hi"}], top_p=0.0),
+        {},
+    )
+
+    assert result["inferenceConfig"] == {"topP": 0.0}
+
+
+def test_convert_params_omits_unset_sampling_params() -> None:
+    """Params the caller never set stay absent so the model applies its own defaults."""
+    result = _convert_params(
+        CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "hi"}]),
+        {},
+    )
+
+    assert "inferenceConfig" not in result
+
+
 def test_convert_response_structured_output_tool_call_becomes_content() -> None:
     """The synthetic structured-output tool call is unwrapped back into message.content."""
     response: dict[str, Any] = {
@@ -1494,3 +1562,25 @@ def test_convert_response_multiple_tool_calls_not_treated_as_structured_output()
     assert result.choices[0].finish_reason == "tool_calls"
     assert result.choices[0].message.tool_calls is not None
     assert len(result.choices[0].message.tool_calls) == 2
+
+
+def test_convert_messages_merges_consecutive_user_messages() -> None:
+    """Bedrock rejects two user turns in a row, so a user message after a tool-result flush
+    extends that turn instead of starting another."""
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "screenshot"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"id": "t1", "type": "function", "function": {"name": "shot", "arguments": "{}"}}],
+        },
+        {"role": "tool", "tool_call_id": "t1", "content": "here"},
+        {"role": "user", "content": [{"type": "text", "text": "what is in it"}]},
+    ]
+    _, formatted_messages = _convert_messages(messages)
+
+    assert [message["role"] for message in formatted_messages] == ["user", "assistant", "user"]
+    assert formatted_messages[-1]["content"] == [
+        {"toolResult": {"toolUseId": "t1", "content": [{"text": "here"}]}},
+        {"text": "what is in it"},
+    ]

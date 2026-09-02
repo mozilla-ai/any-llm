@@ -48,7 +48,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.VERTEXAI: "gemini-2.5-flash",
         LLMProvider.GITHUB: "openai/gpt-4.1-nano",
         LLMProvider.GROQ: "openai/gpt-oss-20b",
-        LLMProvider.FIREWORKS: "accounts/fireworks/models/gpt-oss-20b",
+        LLMProvider.FIREWORKS: "accounts/fireworks/models/gpt-oss-120b",
         LLMProvider.OPENAI: "gpt-5-nano",
         # magistral-medium-latest / magistral-small-latest (native reasoning models) are
         # deprecated; mistral-medium-3-5 supports adjustable reasoning via reasoning_effort
@@ -106,7 +106,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.GMI: "zai-org/GLM-5-FP8",
         LLMProvider.GITHUB: "openai/gpt-4.1-nano",
         LLMProvider.VERTEXAI: "gemini-3-flash-preview",
-        LLMProvider.MOONSHOT: "moonshot-v1-8k",
+        LLMProvider.MOONSHOT: "kimi-k2.6",
         LLMProvider.SAMBANOVA: "gpt-oss-120b",
         LLMProvider.TOGETHER: "openai/gpt-oss-20b",
         LLMProvider.XAI: "grok-3-mini-latest",
@@ -126,7 +126,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.BEDROCK: "amazon.nova-lite-v1:0",
         LLMProvider.SAGEMAKER: "<sagemaker_endpoint_name>",
         LLMProvider.WATSONX: "ibm/granite-3-8b-instruct",
-        LLMProvider.FIREWORKS: "accounts/fireworks/models/gpt-oss-20b",
+        LLMProvider.FIREWORKS: "accounts/fireworks/models/gpt-oss-120b",
         LLMProvider.GROQ: "openai/gpt-oss-20b",
         LLMProvider.PORTKEY: "@any-llm-test/gpt-4.1-mini",
         LLMProvider.LLAMA: "Llama-4-Maverick-17B-128E-Instruct-FP8",

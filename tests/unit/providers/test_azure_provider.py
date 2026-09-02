@@ -3,12 +3,14 @@ from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from azure.ai.inference.models import JsonSchemaFormat
+from azure.ai.inference.models import JsonSchemaFormat, ModelInfo
+from azure.core.exceptions import HttpResponseError
 
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.azure.azure import AzureProvider
-from any_llm.providers.azure.utils import _convert_response_format
+from any_llm.providers.azure.utils import _convert_model_info_to_list, _convert_response_format
 from any_llm.types.completion import CompletionParams
+from any_llm.types.model import Model
 
 
 @contextmanager
@@ -241,3 +243,65 @@ def test_convert_completion_params_drops_stream_options() -> None:
     )
     result = AzureProvider._convert_completion_params(params)
     assert "stream_options" not in result
+
+
+def test_supports_list_models_flag() -> None:
+    """Azure exposes list_models via get_model_info(), so the capability flag is True."""
+    assert AzureProvider.SUPPORTS_LIST_MODELS is True
+
+
+def test_convert_model_info_to_list() -> None:
+    """Azure's /info route describes the single model behind the endpoint, so the OpenAI-shaped
+    list_models() result is always exactly one item, built from that model's name and provider."""
+    model_info = ModelInfo(
+        model_name="Phi-4",
+        model_type="chat_completion",
+        model_provider_name="Microsoft Research",
+    )
+
+    result = _convert_model_info_to_list(model_info)
+
+    assert result == [
+        Model(id="Phi-4", object="model", created=0, owned_by="Microsoft Research"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_alist_models_calls_get_model_info_on_the_chat_client() -> None:
+    """_alist_models must go through get_model_info(), the only model-info route the Azure AI
+    Inference SDK exposes (there is no catalog-listing endpoint)."""
+    custom_endpoint = "https://test.eu.models.ai.azure.com"
+
+    with mock_azure_provider() as (mock_client_instance, _, _):
+        model_info = ModelInfo(
+            model_name="Phi-4",
+            model_type="chat_completion",
+            model_provider_name="Microsoft Research",
+        )
+        mock_client_instance.get_model_info = AsyncMock(return_value=model_info)
+
+        provider = AzureProvider(api_key="test-key", api_base=custom_endpoint)
+        result = await provider._alist_models()
+
+        mock_client_instance.get_model_info.assert_called_once()
+        assert result == [
+            Model(id="Phi-4", object="model", created=0, owned_by="Microsoft Research"),
+        ]
+
+
+@pytest.mark.asyncio
+async def test_alist_models_propagates_http_response_error_for_unsupported_endpoints() -> None:
+    """get_model_info() raises HttpResponseError for GitHub Models and Azure OpenAI endpoints
+    (it only works for Serverless API / Managed Compute). _alist_models must let that error
+    propagate unchanged rather than swallowing it into an empty list."""
+    custom_endpoint = "https://test.openai.azure.com"
+
+    with mock_azure_provider() as (mock_client_instance, _, _):
+        mock_client_instance.get_model_info = AsyncMock(
+            side_effect=HttpResponseError(message="This method is not supported for the provided endpoint.")
+        )
+
+        provider = AzureProvider(api_key="test-key", api_base=custom_endpoint)
+
+        with pytest.raises(HttpResponseError):
+            await provider._alist_models()

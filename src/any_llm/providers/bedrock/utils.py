@@ -171,9 +171,9 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
     inference_config: dict[str, Any] = {}
     if params.max_tokens:
         inference_config["maxTokens"] = params.max_tokens
-    if params.temperature:
+    if params.temperature is not None:
         inference_config["temperature"] = params.temperature
-    if params.top_p:
+    if params.top_p is not None:
         inference_config["topP"] = params.top_p
     if params.stop:
         inference_config["stopSequences"] = params.stop
@@ -294,7 +294,8 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, An
 
     Bedrock requires that consecutive tool results are merged into a single user message.
     This is necessary because Bedrock expects all toolResult blocks that correspond to
-    tool calls from a single assistant message to be grouped together.
+    tool calls from a single assistant message to be grouped together. Consecutive user
+    messages are merged for the same reason: Bedrock rejects two user turns in a row.
     """
     system_message = []
     if messages and messages[0]["role"] == "system":
@@ -332,12 +333,19 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, An
             else:
                 # Simple text content
                 converted_content = [{"text": content}]
-            formatted_messages.append(
-                {
-                    "role": message["role"],
-                    "content": converted_content,
-                }
-            )
+            # Bedrock requires alternating roles, so a user turn landing straight after another
+            # one extends it instead of starting a second. Reachable whenever a user message
+            # follows a tool-result flush, as it does for an attachment carried out of a tool
+            # result by the Anthropic Messages bridge.
+            if formatted_messages and formatted_messages[-1]["role"] == "user":
+                formatted_messages[-1]["content"].extend(converted_content)
+            else:
+                formatted_messages.append(
+                    {
+                        "role": message["role"],
+                        "content": converted_content,
+                    }
+                )
 
     # Flush any remaining tool results at the end
     flush_tool_results()

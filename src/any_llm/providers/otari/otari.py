@@ -141,7 +141,7 @@ _MESSAGE_STREAM_EVENT_TYPES: dict[str, type[BaseModel]] = {
 }
 
 
-def _message_stream_event_from_dict(event: dict[str, Any]) -> MessageStreamEvent | None:
+def _message_stream_event_from_dict(event: dict[str, Any], request_id: str | None = None) -> MessageStreamEvent | None:
     """Validate a raw otari message SSE event dict into a typed MessageStreamEvent.
 
     Returns ``None`` for event types any-llm does not surface (e.g. ``ping``).
@@ -150,6 +150,10 @@ def _message_stream_event_from_dict(event: dict[str, Any]) -> MessageStreamEvent
     model = _MESSAGE_STREAM_EVENT_TYPES.get(event_type) if isinstance(event_type, str) else None
     if model is None:
         return None
+    if event_type == "message_start" and request_id is not None:
+        message = event.get("message")
+        if isinstance(message, dict):
+            event = {**event, "message": {**message, "request_id": request_id}}
     return cast("MessageStreamEvent", model.model_validate(event))
 
 
@@ -346,14 +350,18 @@ class OtariProvider(BaseOpenAIProvider):
         config). otari's gateway serves /messages natively, so delegate to the otari
         SDK's ``message()`` to preserve them.
         """
-        if params.context_management is not None or params.betas:
-            msg = "context_management and betas require a provider with a native Anthropic Messages API"
-            raise NotImplementedError(msg)
-
         if params.output_format is not None:
             # Structured output is handled by the base Messages<->Completions bridge, which
             # routes output_format through otari's completion path. A follow-up could adopt
             # otari's native /messages structured-output support directly.
+            if params.context_management is not None or params.betas:
+                msg = (
+                    "output_format cannot be combined with context_management or betas on otari: "
+                    "structured output routes through the Completions bridge, which drops both. "
+                    "Send them in separate requests until otari's native /messages structured "
+                    "output is adopted."
+                )
+                raise NotImplementedError(msg)
             return await super()._amessages(params, **kwargs)
 
         api_kwargs = params.model_dump(exclude_none=True)
@@ -363,14 +371,22 @@ class OtariProvider(BaseOpenAIProvider):
         if params.stream:
             return self._stream_messages_async(**api_kwargs)
 
-        response = await self.otari_client.message(**api_kwargs)
-        return MessageResponse.model_validate(_as_plain_dict(response))
+        response = await self.otari_client.with_response_metadata.message(**api_kwargs)
+        payload = _as_plain_dict(response.data)
+        if response.request_id is not None and isinstance(payload, dict):
+            payload = {**payload, "request_id": response.request_id}
+        return MessageResponse.model_validate(payload)
 
     async def _stream_messages_async(self, **api_kwargs: Any) -> AsyncIterator[MessageStreamEvent]:
         """Stream otari's /messages endpoint, yielding typed any-llm event models."""
-        stream = await self.otari_client.message(stream=True, **api_kwargs)
+        stream = await self.otari_client.with_response_metadata.message(stream=True, **api_kwargs)
+        request_id: str | None = None
+        request_id_read = False
         async for event in stream:
-            converted = _message_stream_event_from_dict(_as_plain_dict(event))
+            if not request_id_read:
+                request_id = stream.request_id
+                request_id_read = True
+            converted = _message_stream_event_from_dict(_as_plain_dict(event), request_id)
             if converted is not None:
                 yield converted
 

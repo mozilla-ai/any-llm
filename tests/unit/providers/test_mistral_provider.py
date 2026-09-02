@@ -1261,6 +1261,68 @@ def test_create_mistral_completion_omits_extra_content_without_signature() -> No
     assert completion.choices[0].message.extra_content is None
 
 
+def test_create_mistral_completion_strips_response_block_from_reasoning() -> None:
+    """When Mistral leaks the answer into the thinking trace, reasoning keeps only the thinking.
+
+    Some Mistral models return an empty content array and wrap the real answer in
+    `<response>` tags inside the thinking block. The converter recovers the answer, and the
+    reasoning it reports must not repeat that answer or the tags around it.
+    """
+    pytest.importorskip("mistralai")
+    from mistralai.client.models import TextChunk, ThinkChunk
+
+    from any_llm.providers.mistral.utils import _create_mistral_completion_from_response
+
+    message = Mock()
+    message.content = [
+        ThinkChunk(thinking=[TextChunk(text="Let me work it out.<response>The answer is 42.</response>")])
+    ]
+    message.tool_calls = None
+
+    choice = Mock()
+    choice.message = message
+    choice.finish_reason = "stop"
+
+    response = Mock()
+    response.id = "chatcmpl-abc"
+    response.created = 1_700_000_000
+    response.choices = [choice]
+    response.usage = None
+
+    completion = _create_mistral_completion_from_response(response, model="magistral-medium-latest")
+
+    assert completion.choices[0].message.content == "The answer is 42."
+    assert completion.choices[0].message.reasoning is not None
+    assert completion.choices[0].message.reasoning.content == "Let me work it out."
+
+
+def test_create_mistral_completion_drops_reasoning_that_is_only_a_response_block() -> None:
+    """A thinking trace that holds nothing but the answer leaves no reasoning behind."""
+    pytest.importorskip("mistralai")
+    from mistralai.client.models import TextChunk, ThinkChunk
+
+    from any_llm.providers.mistral.utils import _create_mistral_completion_from_response
+
+    message = Mock()
+    message.content = [ThinkChunk(thinking=[TextChunk(text="<response>The answer is 42.</response>")])]
+    message.tool_calls = None
+
+    choice = Mock()
+    choice.message = message
+    choice.finish_reason = "stop"
+
+    response = Mock()
+    response.id = "chatcmpl-abc"
+    response.created = 1_700_000_000
+    response.choices = [choice]
+    response.usage = None
+
+    completion = _create_mistral_completion_from_response(response, model="magistral-medium-latest")
+
+    assert completion.choices[0].message.content == "The answer is 42."
+    assert completion.choices[0].message.reasoning is None
+
+
 def test_create_openai_chunk_captures_thinking_signature() -> None:
     """Streaming deltas surface the thinking signature the same way as non-streaming."""
     pytest.importorskip("mistralai")
@@ -1287,6 +1349,69 @@ def test_create_openai_chunk_captures_thinking_signature() -> None:
     assert chunk.choices[0].delta.reasoning is not None
     assert chunk.choices[0].delta.reasoning.content == "step one"
     assert chunk.choices[0].delta.extra_content == {"mistral": {"signature": "sig-abc"}}
+
+
+def test_create_openai_chunk_strips_response_block_from_reasoning() -> None:
+    """Streaming must recover a <response>-wrapped answer the same way non-streaming does.
+
+    #1302 fixed this for `_create_mistral_completion_from_response` but left the streaming
+    converter untouched, so `stream=True` silently returned an empty `delta.content` for the
+    same payload. This is the streaming half of that fix.
+    """
+    pytest.importorskip("mistralai")
+    from mistralai.client.models import TextChunk, ThinkChunk
+
+    from any_llm.providers.mistral.utils import _create_openai_chunk_from_mistral_chunk
+
+    choice = Mock()
+    choice.index = 0
+    choice.delta.content = [
+        ThinkChunk(thinking=[TextChunk(text="Let me work it out.<response>The answer is 42.</response>")])
+    ]
+    choice.delta.role = "assistant"
+    choice.delta.tool_calls = None
+    choice.finish_reason = None
+
+    event = Mock()
+    event.data.id = "chatcmpl-abc"
+    event.data.created = 1_700_000_000
+    event.data.model = "magistral-medium-latest"
+    event.data.choices = [choice]
+    event.data.usage = None
+
+    chunk = _create_openai_chunk_from_mistral_chunk(event)
+
+    assert chunk.choices[0].delta.content == "The answer is 42."
+    assert chunk.choices[0].delta.reasoning is not None
+    assert chunk.choices[0].delta.reasoning.content == "Let me work it out."
+
+
+def test_create_openai_chunk_leaves_plain_reasoning_unchanged() -> None:
+    """Regression: a normal streaming chunk with plain reasoning and no tags is unaffected."""
+    pytest.importorskip("mistralai")
+    from mistralai.client.models import TextChunk, ThinkChunk
+
+    from any_llm.providers.mistral.utils import _create_openai_chunk_from_mistral_chunk
+
+    choice = Mock()
+    choice.index = 0
+    choice.delta.content = [ThinkChunk(thinking=[TextChunk(text="just thinking, nothing special")])]
+    choice.delta.role = "assistant"
+    choice.delta.tool_calls = None
+    choice.finish_reason = None
+
+    event = Mock()
+    event.data.id = "chatcmpl-abc"
+    event.data.created = 1_700_000_000
+    event.data.model = "mistral-medium-3-5"
+    event.data.choices = [choice]
+    event.data.usage = None
+
+    chunk = _create_openai_chunk_from_mistral_chunk(event)
+
+    assert chunk.choices[0].delta.content is None
+    assert chunk.choices[0].delta.reasoning is not None
+    assert chunk.choices[0].delta.reasoning.content == "just thinking, nothing special"
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from anthropic import transform_schema
 from anthropic.types import (
@@ -8,9 +8,11 @@ from anthropic.types import (
     ContentBlockStartEvent,
     ContentBlockStopEvent,
     Message,
+    MessageDeltaEvent,
     MessageStopEvent,
 )
 from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
+from pydantic import BaseModel
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.logging import logger
@@ -30,19 +32,20 @@ from any_llm.types.completion import (
 from any_llm.types.model import Model
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
-if TYPE_CHECKING:
-    from openai.types.chat.chat_completion_message_custom_tool_call import (
-        ChatCompletionMessageCustomToolCall,
-    )
-    from openai.types.chat.chat_completion_message_function_tool_call import (
-        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
-    )
-
-    ChatCompletionMessageToolCallType = (
-        OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
-    )
-
 DEFAULT_MAX_TOKENS = 8192
+_ANTHROPIC_CONTENT_FILTER_REFUSAL = "Response blocked by Anthropic content filtering."
+# OpenAI has no counterpart for the "stop_sequence" and "pause_turn" stop reasons, so those
+# fall through to the "stop" default. "refusal" (a safety stop) and
+# "model_context_window_exceeded" (the model ran out of context rather than out of max_tokens)
+# do have one, and without it a refused or truncated answer looks like a normal completion.
+# See https://docs.claude.com/en/docs/build-with-claude/handling-stop-reasons
+ANTHROPIC_STOP_REASON_TO_FINISH_REASON = {
+    "end_turn": "stop",
+    "max_tokens": "length",
+    "model_context_window_exceeded": "length",
+    "tool_use": "tool_calls",
+    "refusal": "content_filter",
+}
 REASONING_EFFORT_TO_ANTHROPIC_EFFORT = {
     "minimal": "low",
     "low": "low",
@@ -51,6 +54,14 @@ REASONING_EFFORT_TO_ANTHROPIC_EFFORT = {
     "xhigh": "xhigh",
     "max": "max",
 }
+
+
+def _refusal_stop_details(value: object) -> dict[str, Any] | None:
+    """Return typed Anthropic refusal details when the installed SDK exposes them."""
+    stop_details = getattr(value, "stop_details", None)
+    if isinstance(stop_details, BaseModel):
+        return stop_details.model_dump(mode="json", exclude_none=True)
+    return None
 
 
 def _is_tool_call(message: dict[str, Any]) -> bool:
@@ -73,12 +84,16 @@ def _extract_reasoning_text(message: dict[str, Any]) -> str:
 
     ``reasoning`` may be a plain string (the OpenAI-wire-compatible serialized form) or a
     ``{"content": str}`` dict, depending on how the caller constructed the message.
+    ``reasoning_content`` is the wire spelling, which is what arrives on a message replayed
+    from a backend that reports reasoning there and on one built by the Messages bridge.
     """
     reasoning = message.get("reasoning")
     if isinstance(reasoning, str):
         return reasoning
     if isinstance(reasoning, dict) and isinstance(content := reasoning.get("content"), str):
         return content
+    if isinstance(reasoning_content := message.get("reasoning_content"), str):
+        return reasoning_content
     return ""
 
 
@@ -165,6 +180,10 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
                 content_blocks: list[dict[str, Any]] = []
                 if thinking_block := _build_anthropic_thinking_block(message):
                     content_blocks.append(thinking_block)
+                # The model's own text belongs in its turn, between the thinking and the tool_use blocks.
+                content = message.get("content")
+                if isinstance(content, str) and content:
+                    content_blocks.append({"type": "text", "text": content})
                 for tool_call in message["tool_calls"]:
                     content_blocks.append(
                         {
@@ -275,13 +294,20 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
             delta = {"extra_content": {"anthropic": {"signature": chunk.delta.signature}}}
 
     elif isinstance(chunk, ContentBlockStopEvent):
-        if hasattr(chunk, "content_block") and chunk.content_block.type == "tool_use":
-            finish_reason = "tool_calls"
-        else:
-            finish_reason = None
+        finish_reason = None
+
+    elif isinstance(chunk, MessageDeltaEvent):
+        stop_reason = chunk.delta.stop_reason
+        finish_reason = (
+            ANTHROPIC_STOP_REASON_TO_FINISH_REASON.get(stop_reason, "stop") if stop_reason is not None else None
+        )
+        if finish_reason == "content_filter":
+            delta = {"refusal": _ANTHROPIC_CONTENT_FILTER_REFUSAL}
+        if stop_details := _refusal_stop_details(chunk.delta):
+            delta["extra_content"] = {"anthropic": {"stop_details": stop_details}}
 
     elif isinstance(chunk, MessageStopEvent):
-        finish_reason = "stop"
+        finish_reason = None
         if hasattr(chunk, "message") and chunk.message.usage:
             anthropic_usage = chunk.message.usage
             cache_read = anthropic_usage.cache_read_input_tokens or 0
@@ -309,8 +335,7 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
 def _convert_response(response: Message) -> ChatCompletion:
     """Convert Anthropic Message to OpenAI ChatCompletion format."""
     finish_reason_raw = response.stop_reason or "end_turn"
-    finish_reason_map = {"end_turn": "stop", "max_tokens": "length", "tool_use": "tool_calls"}
-    finish_reason = finish_reason_map.get(finish_reason_raw, "stop")
+    finish_reason = ANTHROPIC_STOP_REASON_TO_FINISH_REASON.get(finish_reason_raw, "stop")
 
     content_parts: list[str] = []
     tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
@@ -340,16 +365,29 @@ def _convert_response(response: Message) -> ChatCompletion:
             # continuity. See https://docs.claude.com/en/docs/build-with-claude/extended-thinking
             if content_block.signature:
                 thinking_signature = content_block.signature
+        elif content_block.type == "redacted_thinking":
+            # Anthropic encrypts thinking that its safety systems flag, so the block carries
+            # no readable text to surface. The rest of the turn is a normal response.
+            logger.debug("Skipping redacted_thinking block with no readable content.")
         else:
-            msg = f"Unsupported content block type: {content_block.type}"
-            raise ValueError(msg)
+            # Server-side tool blocks (web search, code execution, ...) have no Chat
+            # Completions equivalent. Dropping them keeps the answer the model did return,
+            # which is what the streaming converter already does for the same block types.
+            logger.warning("Skipping unsupported Anthropic content block type: %s", content_block.type)
+
+    anthropic_extra_content: dict[str, Any] = {}
+    if thinking_signature:
+        anthropic_extra_content["signature"] = thinking_signature
+    if stop_details := _refusal_stop_details(response):
+        anthropic_extra_content["stop_details"] = stop_details
 
     message = ChatCompletionMessage(
         role="assistant",
         content="".join(content_parts),
+        refusal=_ANTHROPIC_CONTENT_FILTER_REFUSAL if finish_reason == "content_filter" else None,
         reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
-        tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls or None),
-        extra_content={"anthropic": {"signature": thinking_signature}} if thinking_signature else None,
+        tool_calls=tool_calls or None,
+        extra_content={"anthropic": anthropic_extra_content} if anthropic_extra_content else None,
     )
 
     cache_read = response.usage.cache_read_input_tokens or 0
@@ -430,7 +468,7 @@ def _convert_tool_choice(params: CompletionParams) -> dict[str, Any]:
     parallel_tool_calls = params.parallel_tool_calls
     if parallel_tool_calls is None:
         parallel_tool_calls = True
-    tool_choice = params.tool_choice or "any"
+    tool_choice = params.tool_choice or "auto"
     if tool_choice == "required":
         tool_choice = "any"
     elif isinstance(tool_choice, dict):
@@ -480,7 +518,7 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
     if params.tools:
         params.tools = _convert_tool_spec(params.tools)
 
-    if params.tool_choice or params.parallel_tool_calls:
+    if params.tool_choice is not None or params.parallel_tool_calls is not None:
         params.tool_choice = _convert_tool_choice(params)
 
     if params.reasoning_effort is None or params.reasoning_effort == "none":

@@ -1,10 +1,11 @@
 import json
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Any, Literal, cast
 
 from azure.ai.inference.models import (
     ChatCompletions,
     EmbeddingsResult,
     JsonSchemaFormat,
+    ModelInfo,
     StreamingChatCompletionsUpdate,
 )
 
@@ -25,19 +26,8 @@ from any_llm.types.completion import (
     Function,
     Usage,
 )
+from any_llm.types.model import Model
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
-
-if TYPE_CHECKING:
-    from openai.types.chat.chat_completion_message_custom_tool_call import (
-        ChatCompletionMessageCustomToolCall,
-    )
-    from openai.types.chat.chat_completion_message_function_tool_call import (
-        ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
-    )
-
-    ChatCompletionMessageToolCallType = (
-        OpenAIChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall
-    )
 
 
 def _convert_response_format(
@@ -117,7 +107,7 @@ def _convert_response(response_data: ChatCompletions) -> ChatCompletion:
     message = ChatCompletionMessage(
         role="assistant",
         content=message_data.content,
-        tool_calls=cast("list[ChatCompletionMessageToolCallType] | None", tool_calls),
+        tool_calls=tool_calls,
     )
 
     choice = Choice(
@@ -250,3 +240,21 @@ def _create_openai_embedding_response_from_azure(
         object="list",
         usage=usage,
     )
+
+
+def _convert_model_info_to_list(model_info: ModelInfo) -> list[Model]:
+    """Convert Azure's single-model /info response to a one-item OpenAI Model list.
+
+    The Azure AI Inference SDK has no catalog-listing endpoint: ``get_model_info()`` only
+    describes the single model deployed behind the caller's endpoint. Azure has no ``created``
+    timestamp for a model, so it is reported as 0, matching the convention other providers
+    without one (bedrock, cohere, gemini) already use.
+    """
+    return [
+        Model(
+            id=model_info.model_name,
+            object="model",
+            created=0,
+            owned_by=model_info.model_provider_name,
+        )
+    ]

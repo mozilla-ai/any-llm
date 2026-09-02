@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import httpx
+import httpx2
 import pytest
 
 openai = pytest.importorskip("openai")
@@ -171,14 +171,15 @@ def test_rate_limit_metadata_is_preserved_on_the_unified_error() -> None:
 
 
 def test_retry_after_is_read_from_a_real_httpx_response() -> None:
-    """Pins the case-insensitive httpx.Headers lookup, not just a dict.
+    """Pins the case-insensitive httpx2.Headers lookup, not just a dict.
 
-    The SDK attaches a real httpx.Response, so the header arrives however the
-    provider capitalized it on the wire.
+    The SDK attaches a real httpx2.Response (the openai SDK's HTTP client
+    dependency since v3.0.0), so the header arrives however the provider
+    capitalized it on the wire.
     """
-    response = httpx.Response(
+    response = httpx2.Response(
         429,
-        request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions"),
+        request=httpx2.Request("POST", "https://api.openai.com/v1/chat/completions"),
         headers={"Retry-After": "30"},
     )
 

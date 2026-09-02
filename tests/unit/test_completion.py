@@ -1,16 +1,31 @@
+import json
+import subprocess
 import sys
+import textwrap
+import threading
 from collections.abc import AsyncIterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from inspect import signature
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from pydantic import ValidationError
+from typing_extensions import override
 
 from any_llm import AnyLLM
 from any_llm.api import acompletion, aresponses, completion, responses
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import UnsupportedParameterError
-from any_llm.types.completion import ChatCompletion, CompletionParams
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    Choice,
+    CompletionParams,
+    Function,
+    Reasoning,
+)
 
 _PYTHON_314_INCOMPATIBLE_PROVIDERS = {"voyage", "watsonx"}
 
@@ -155,6 +170,146 @@ async def test_acompletion_rejects_prompt_cache_key_for_unsupported_provider() -
         )
 
     client.converse.assert_not_called()
+
+
+def _signed_tool_call_message() -> ChatCompletionMessage:
+    """An assistant turn with one tool call carrying gemini's thought_signature in extra_content."""
+    return ChatCompletionMessage(
+        role="assistant",
+        content=None,
+        reasoning=Reasoning(content="thinking"),
+        tool_calls=[
+            ChatCompletionMessageFunctionToolCall(
+                id="call_1",
+                type="function",
+                function=Function(name="get_weather", arguments='{"city": "Paris"}'),
+                extra_content={"google": {"thought_signature": "c2ln"}},
+            )
+        ],
+    )
+
+
+@pytest.mark.asyncio
+async def test_acompletion_replays_message_object_with_tool_call_extra_content() -> None:
+    """A returned message appended to the history keeps its tool-call extra_content when dumped for replay."""
+    provider = AnyLLM.create("openai", api_key="sk-test")
+    with patch.object(provider, "_acompletion", new=AsyncMock(return_value=Mock(spec=ChatCompletion))) as mock_ac:
+        await provider.acompletion(
+            model="gpt-4",
+            messages=[{"role": "user", "content": "Weather in Paris?"}, _signed_tool_call_message()],
+        )
+
+    params = mock_ac.call_args.args[0]
+    assert isinstance(params, CompletionParams)
+    assert params.messages[1] == {
+        "role": "assistant",
+        "tool_calls": [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'},
+                "extra_content": {"google": {"thought_signature": "c2ln"}},
+            }
+        ],
+    }
+
+
+def test_chat_completion_message_tool_calls_validate_from_dicts() -> None:
+    """Dicts still resolve by type: function → any-llm's extended type, custom → OpenAI's, no type → rejected."""
+    message = ChatCompletionMessage.model_validate(
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "f", "arguments": "{}"},
+                    "extra_content": {"google": {"thought_signature": "c2ln"}},
+                },
+                {"id": "call_2", "type": "custom", "custom": {"name": "c", "input": "raw"}},
+            ],
+        }
+    )
+    assert message.tool_calls is not None
+    function_call, custom_call = message.tool_calls
+    assert isinstance(function_call, ChatCompletionMessageFunctionToolCall)
+    assert function_call.extra_content == {"google": {"thought_signature": "c2ln"}}
+    assert not isinstance(custom_call, ChatCompletionMessageFunctionToolCall)
+    assert custom_call.type == "custom"
+
+    with pytest.raises(ValidationError):
+        ChatCompletionMessage.model_validate(
+            {"role": "assistant", "tool_calls": [{"id": "call_3", "function": {"name": "f", "arguments": "{}"}}]}
+        )
+
+
+def test_chat_completion_message_model_construct_resolves_tool_calls() -> None:
+    """model_construct() reads the annotation without validating, so it must already be the any-llm union.
+
+    Runs in a fresh interpreter on purpose. Pydantic repairs a forward reference in place the first
+    time the model is validated, so once any earlier test in the process has validated a
+    ChatCompletionMessage the annotation is already resolved and an in-process check stops guarding
+    the declaration order it exists to protect.
+    """
+    script = textwrap.dedent(
+        """
+        from any_llm.types.completion import ChatCompletionMessage, ChatCompletionMessageFunctionToolCall
+
+        message = ChatCompletionMessage.model_construct(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "f", "arguments": "{}"},
+                    "extra_content": {"google": {"thought_signature": "c2ln"}},
+                }
+            ],
+        )
+        assert message.tool_calls is not None
+        (tool_call,) = message.tool_calls
+        assert isinstance(tool_call, ChatCompletionMessageFunctionToolCall), type(tool_call)
+        assert tool_call.extra_content == {"google": {"thought_signature": "c2ln"}}
+        """
+    )
+
+    # S603: the command is this interpreter plus a literal script, with no external input.
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", script], capture_output=True, text=True, check=False
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_chat_completion_round_trips_tool_call_extra_content() -> None:
+    """extra_content survives a JSON round trip and is absent from the dump when unset."""
+    completion_response = ChatCompletion(
+        id="id",
+        model="m",
+        created=1,
+        object="chat.completion",
+        choices=[Choice(index=0, finish_reason="tool_calls", message=_signed_tool_call_message())],
+    )
+
+    restored = ChatCompletion.model_validate_json(completion_response.model_dump_json())
+
+    tool_calls = restored.choices[0].message.tool_calls
+    assert tool_calls is not None
+    assert isinstance(tool_calls[0], ChatCompletionMessageFunctionToolCall)
+    assert tool_calls[0].extra_content == {"google": {"thought_signature": "c2ln"}}
+
+    unsigned = ChatCompletionMessage(
+        role="assistant",
+        content=None,
+        tool_calls=[
+            ChatCompletionMessageFunctionToolCall(
+                id="call_1", type="function", function=Function(name="f", arguments="{}")
+            )
+        ],
+    )
+    assert "extra_content" not in unsigned.model_dump(exclude_none=True)["tool_calls"][0]
 
 
 @pytest.mark.asyncio
@@ -398,3 +553,86 @@ async def test_provider_factory_can_create_all_supported_providers() -> None:
         provider_instance = AnyLLM.create(provider_name, **kwargs)
 
         assert isinstance(provider_instance, AnyLLM), f"Failed to create valid AnyLLM instance for {provider_name}"
+
+
+class _ChatCompletionHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"  # keep-alive, so the connection stays in the client's pool
+
+    def do_POST(self) -> None:
+        self.rfile.read(int(self.headers.get("content-length", 0)))
+        encoded = json.dumps(
+            {
+                "id": "chatcmpl-1",
+                "object": "chat.completion",
+                "created": 1234567890,
+                "model": "test-model",
+                "choices": [
+                    {"index": 0, "message": {"role": "assistant", "content": "Hello"}, "finish_reason": "stop"}
+                ],
+            }
+        ).encode()
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+        self.wfile.flush()
+
+    @override
+    def log_message(self, format: str, *args: Any) -> None:
+        return
+
+
+def test_sync_completion_can_be_called_repeatedly_on_one_provider() -> None:
+    """Regression test for #1268.
+
+    Each sync call used to run on its own event loop and close it, while the provider client kept
+    the connection pool it built on the first loop. Reusing that pooled connection from the next
+    call raised `RuntimeError: Event loop is closed`. This exercises the real OpenAI SDK, httpx and
+    anyio against a local server, with no live provider or API key required.
+
+    The calls happen on a worker thread so that no event loop is set for the thread, which is what
+    the reported failure needed and what `asyncio.run` gives every Python version under test.
+    Retries are disabled because the OpenAI SDK otherwise hides the failure by reconnecting, while
+    SDKs that do not retry (such as Ollama's, in the report) surface it to the caller.
+    """
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _ChatCompletionHandler)
+    server.daemon_threads = True
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    contents: list[str | None] = []
+    errors: list[Exception] = []
+
+    def call_twice() -> None:
+        api_base = f"http://127.0.0.1:{server.server_address[1]}/v1"
+        provider = AnyLLM.create_openai_compatible(
+            name="local-completion", api_base=api_base, api_key="test", max_retries=0
+        )
+
+        try:
+            # A short message leaves a pooled connection behind; the long one reuses it.
+            for content in ("hello", "c" * 300_000):
+                response = provider.completion(
+                    model="test-model",
+                    messages=[{"role": "user", "content": content}],
+                )
+                assert isinstance(response, ChatCompletion)
+                contents.append(response.choices[0].message.content)
+        except Exception as exc:
+            errors.append(exc)
+
+    caller = threading.Thread(target=call_twice, daemon=True)
+    caller.start()
+    caller.join(timeout=30)
+
+    try:
+        assert not caller.is_alive()
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join()
+
+    assert errors == []
+    assert contents == ["Hello", "Hello"]

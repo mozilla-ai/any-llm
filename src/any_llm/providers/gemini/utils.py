@@ -2,11 +2,13 @@ import base64
 import binascii
 import json
 import mimetypes
+from contextlib import suppress
 from time import time
 from typing import Any, Literal, cast
 
 from google.genai import types
 from google.genai.pagers import Pager
+from pydantic import ValidationError
 
 from any_llm.exceptions import InvalidRequestError
 from any_llm.logging import logger
@@ -17,6 +19,7 @@ from any_llm.types.completion import (
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
     ChunkChoice,
+    CompletionTokensDetails,
     CompletionUsage,
     CreateEmbeddingResponse,
     Embedding,
@@ -27,6 +30,7 @@ from any_llm.types.completion import (
 from any_llm.types.model import Model
 
 _INLINE_SIZE_LIMIT = 20 * 1024 * 1024
+_GEMINI_CONTENT_FILTER_REFUSAL = "Response blocked by Gemini content filtering."
 
 
 def _has_json_schema_refs(schema: Any) -> bool:
@@ -61,7 +65,7 @@ def _has_additional_properties(schema: Any) -> bool:
     return False
 
 
-def _convert_tool_spec(tools: list[dict[str, Any] | Any]) -> list[types.Tool]:
+def _convert_tool_spec(tools: list[dict[str, Any] | Any], provider_name: str) -> list[types.Tool]:
     converted_tools = []
     function_declarations = []
 
@@ -71,6 +75,12 @@ def _convert_tool_spec(tools: list[dict[str, Any] | Any]) -> list[types.Tool]:
             continue
 
         if tool.get("type") != "function":
+            # not openai function format: validate as a gemini-native tool dict, e.g. {"google_search": {}}
+            try:
+                converted_tools.append(types.Tool.model_validate(tool))
+            except ValidationError as exc:
+                msg = f"Unsupported tool: {tool}"
+                raise InvalidRequestError(msg, provider_name=provider_name) from exc
             continue
 
         function = tool["function"]
@@ -191,12 +201,53 @@ def _convert_file_to_part(block: dict[str, Any], provider_name: str) -> types.Pa
     return types.Part.from_uri(file_uri=file_data, mime_type=guessed_type or "application/octet-stream")
 
 
+def _is_decodable_signature(signature: str) -> bool:
+    """Return True if *signature* is base64 the google-genai SDK can decode.
+
+    The SDK reads both the standard and the URL-safe alphabet and tolerates missing
+    padding, so match that leniency rather than being stricter than the layer below.
+    """
+    normalized = signature.replace("-", "+").replace("_", "/")
+    try:
+        base64.b64decode(normalized + "=" * (-len(normalized) % 4), validate=True)
+    except (binascii.Error, ValueError):
+        return False
+    return True
+
+
+def _extract_google_thought_signature(container: dict[str, Any], provider_name: str) -> str | bytes | None:
+    """Extract the thought_signature stored on a message's or tool call's extra_content.
+
+    A container that carries no Google signature (no extra_content, another provider's
+    payload, an explicit None) yields None. A signature that is present but undecodable is
+    a caller error, so it is rejected here instead of surfacing from the SDK as a bare
+    pydantic ValidationError several frames away.
+    """
+    extra_content = container.get("extra_content")
+    if not isinstance(extra_content, dict) or not isinstance(google_extra := extra_content.get("google"), dict):
+        return None
+
+    signature = google_extra.get("thought_signature")
+    if signature is None:
+        return None
+    if isinstance(signature, bytes):
+        return signature
+    if not isinstance(signature, str) or not signature or not _is_decodable_signature(signature):
+        msg = (
+            "extra_content['google']['thought_signature'] must be a non-empty base64 string "
+            f"or raw bytes, got {signature!r}"
+        )
+        raise InvalidRequestError(msg, provider_name=provider_name)
+    return signature
+
+
 def _convert_messages(
     messages: list[dict[str, Any]], provider_name: str = "gemini"
 ) -> tuple[list[types.Content], str | None]:
     """Convert messages to Google GenAI format."""
     formatted_messages = []
     system_instruction = None
+    tool_names: dict[str, str] = {}  # tool_call id -> function name, for tool results that carry no name
 
     for message in messages:
         if message["role"] == "system":
@@ -220,18 +271,35 @@ def _convert_messages(
                         logger.debug("Skipping unsupported Gemini content block type: %s", content.get("type"))
             formatted_messages.append(types.Content(role="user", parts=parts))
         elif message["role"] == "assistant":
+            parts = []
+            # The model's own text belongs in its turn, ahead of any function calls it made.
+            content = message.get("content")
+            has_text = isinstance(content, str) and content
+            if has_text or not message.get("tool_calls"):
+                parts.append(
+                    types.Part(
+                        text=content,
+                        # The SDK field is typed bytes but its validator decodes a base64 str.
+                        thought_signature=cast(
+                            "bytes | None", _extract_google_thought_signature(message, provider_name)
+                        ),
+                    )
+                )
             if message.get("tool_calls"):
-                parts = []
                 for i, tool_call in enumerate(message["tool_calls"]):
                     function_call = tool_call["function"]
-                    args = json.loads(function_call["arguments"]) if function_call["arguments"] else {}
+                    if tool_call_id := tool_call.get("id"):
+                        tool_names[tool_call_id] = function_call["name"]
+                    arguments = function_call.get("arguments")
+                    args = (
+                        json.loads(arguments)
+                        if isinstance(arguments, (str, bytes, bytearray)) and arguments
+                        else arguments or {}
+                    )
 
                     # Extract thought_signature if present (OpenAI compatibility format)
                     # SDK accepts base64 string or bytes
-                    thought_signature = None
-                    if extra_content := tool_call.get("extra_content"):
-                        if google_extra := extra_content.get("google"):
-                            thought_signature = google_extra.get("thought_signature")
+                    thought_signature = _extract_google_thought_signature(tool_call, provider_name)
 
                     # For the first function call in parallel calls, if no thought_signature is present,
                     # use the skip validator sentinel per Google's documentation:
@@ -242,25 +310,19 @@ def _convert_messages(
                     parts.append(
                         types.Part(
                             function_call=types.FunctionCall(name=function_call["name"], args=args),
-                            thought_signature=thought_signature,
+                            thought_signature=cast("bytes | None", thought_signature),
                         )
                     )
-            else:
-                parts = [types.Part.from_text(text=message["content"])]
 
             formatted_messages.append(types.Content(role="model", parts=parts))
         elif message["role"] == "tool":
-            try:
-                content_json = json.loads(message["content"])
-                part = types.Part.from_function_response(
-                    name=message.get("name", "unknown"), response=_normalize_tool_response(content_json)
-                )
-                formatted_messages.append(types.Content(role="function", parts=[part]))
-            except json.JSONDecodeError:
-                part = types.Part.from_function_response(
-                    name=message.get("name", "unknown"), response={"result": message["content"]}
-                )
-                formatted_messages.append(types.Content(role="function", parts=[part]))
+            name = message.get("name") or tool_names.get(message.get("tool_call_id", ""), "unknown")
+            content = message["content"]
+            if isinstance(content, (str, bytes, bytearray)):
+                with suppress(json.JSONDecodeError, UnicodeDecodeError):
+                    content = json.loads(content)
+            part = types.Part.from_function_response(name=name, response=_normalize_tool_response(content))
+            formatted_messages.append(types.Content(role="function", parts=[part]))
 
     return formatted_messages, system_instruction
 
@@ -284,9 +346,12 @@ def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, An
         return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     usage: dict[str, Any] = {
         "prompt_tokens": metadata.prompt_token_count or 0,
-        "completion_tokens": metadata.candidates_token_count or 0,
+        # thoughts_token_count is billed output and already counted in total_token_count
+        "completion_tokens": (metadata.candidates_token_count or 0) + (metadata.thoughts_token_count or 0),
         "total_tokens": metadata.total_token_count or 0,
     }
+    if metadata.thoughts_token_count:
+        usage["completion_tokens_details"] = CompletionTokensDetails(reasoning_tokens=metadata.thoughts_token_count)
     if metadata.cached_content_token_count:
         usage["prompt_tokens_details"] = PromptTokensDetails(cached_tokens=metadata.cached_content_token_count)
     return usage
@@ -343,7 +408,18 @@ def _resolve_finish_reason(
     return mapped_finish_reason
 
 
+def _prompt_was_blocked(response: types.GenerateContentResponse) -> bool:
+    """Return whether Gemini rejected the prompt before producing a candidate."""
+    prompt_feedback = response.prompt_feedback
+    return (
+        prompt_feedback is not None
+        and isinstance(prompt_feedback.block_reason, types.BlockedReason)
+        and prompt_feedback.block_reason is not types.BlockedReason.BLOCKED_REASON_UNSPECIFIED
+    )
+
+
 def _convert_response_to_response_dict(response: types.GenerateContentResponse) -> dict[str, Any]:
+    """Convert a Gemini GenerateContentResponse into an OpenAI-shaped completion dict."""
     response_dict = {
         "id": "google_genai_response",
         "model": "google/genai",
@@ -359,6 +435,9 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
         reasoning = None
         tool_calls_list: list[dict[str, Any]] = []
         text_content = None
+        # Gemini 3 signs the last non-function-call part of a text answer. It rides message.extra_content,
+        # the same spelling Google's OpenAI-compatible endpoint uses.
+        message_extra_content = None
         parts = candidate.content.parts if candidate.content else None
 
         for part in parts or []:
@@ -384,8 +463,10 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                     tool_call_dict["extra_content"] = extra_content
 
                 tool_calls_list.append(tool_call_dict)
-            elif part_text := getattr(part, "text", None):
-                text_content = (text_content or "") + part_text
+            else:
+                if part.text:
+                    text_content = (text_content or "") + part.text
+                message_extra_content = _thought_signature_extra_content(part) or message_extra_content
 
         # Truncated or filtered responses produce a choice even without content or tool
         # calls, e.g. a thinking model that spent the whole max_output_tokens budget on
@@ -395,14 +476,31 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                 {
                     "message": {
                         "role": "assistant",
-                        "content": None if tool_calls_list else text_content,
+                        "content": text_content,
                         "reasoning": reasoning or None,
                         "tool_calls": tool_calls_list or None,
+                        "extra_content": message_extra_content,
+                        "refusal": _GEMINI_CONTENT_FILTER_REFUSAL if mapped_finish_reason == "content_filter" else None,
                     },
                     "finish_reason": _resolve_finish_reason(mapped_finish_reason, bool(tool_calls_list)) or "stop",
                     "index": 0,
                 }
             )
+    elif _prompt_was_blocked(response):
+        choices.append(
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "reasoning": None,
+                    "tool_calls": None,
+                    "extra_content": None,
+                    "refusal": _GEMINI_CONTENT_FILTER_REFUSAL,
+                },
+                "finish_reason": "content_filter",
+                "index": 0,
+            }
+        )
 
     response_dict["choices"] = choices
 
@@ -449,8 +547,7 @@ def _create_openai_chunk_from_google_chunk(
             than restarting at 0 for every chunk.
     """
 
-    assert response.candidates
-    candidate = response.candidates[0]
+    candidate = response.candidates[0] if response.candidates else None
 
     if tool_call_counter is None:
         tool_call_counter = [0]
@@ -458,10 +555,11 @@ def _create_openai_chunk_from_google_chunk(
     content = ""
     reasoning_content = ""
     tool_calls_list: list[ChoiceDeltaToolCall] = []
+    message_extra_content = None
 
     # Content can be absent on terminal chunks, e.g. when the response is truncated or
     # filtered before any part is produced; the finish reason must still be surfaced.
-    parts = candidate.content.parts if candidate.content else None
+    parts = candidate.content.parts if candidate and candidate.content else None
 
     for part in parts or []:
         if part.thought:
@@ -491,17 +589,24 @@ def _create_openai_chunk_from_google_chunk(
                     extra_content=extra_content,
                 )
             )
-        elif part.text:
-            content += part.text
+        else:
+            content += part.text or ""  # the signed final part may carry empty text
+            message_extra_content = _thought_signature_extra_content(part) or message_extra_content
 
     # Unmapped reasons stay None so non-final chunks are not forced to a terminal reason.
-    finish_reason = _resolve_finish_reason(_map_finish_reason(candidate.finish_reason), bool(tool_calls_list))
+    mapped_finish_reason = _map_finish_reason(candidate.finish_reason) if candidate else None
+    prompt_was_blocked = _prompt_was_blocked(response)
+    finish_reason = (
+        "content_filter" if prompt_was_blocked else _resolve_finish_reason(mapped_finish_reason, bool(tool_calls_list))
+    )
 
     delta = ChoiceDelta(
         content=content or None,
         role="assistant",
+        refusal=_GEMINI_CONTENT_FILTER_REFUSAL if finish_reason == "content_filter" else None,
         reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
         tool_calls=tool_calls_list or None,
+        extra_content=message_extra_content,
     )
 
     choice = ChunkChoice(
@@ -513,11 +618,15 @@ def _create_openai_chunk_from_google_chunk(
     usage = None
     if response.usage_metadata:
         cached_tokens = response.usage_metadata.cached_content_token_count
+        thought_tokens = response.usage_metadata.thoughts_token_count
         usage = CompletionUsage(
             prompt_tokens=response.usage_metadata.prompt_token_count or 0,
-            completion_tokens=response.usage_metadata.candidates_token_count or 0,
+            completion_tokens=(response.usage_metadata.candidates_token_count or 0) + (thought_tokens or 0),
             total_tokens=response.usage_metadata.total_token_count or 0,
             prompt_tokens_details=PromptTokensDetails(cached_tokens=cached_tokens) if cached_tokens else None,
+            completion_tokens_details=CompletionTokensDetails(reasoning_tokens=thought_tokens)
+            if thought_tokens
+            else None,
         )
 
     return ChatCompletionChunk(
