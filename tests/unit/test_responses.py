@@ -179,7 +179,9 @@ def test_responses_helper_streaming_returns_sync_iterator() -> None:
         patch.object(provider, "_aresponses", new=AsyncMock(return_value=_response_event_stream())) as mock_aresponses,
     ):
         stream = responses("gpt-4.1-mini", "hello", provider="openai", api_key="test-key", stream=True)
-        assert list(stream) == ["response.created", "response.completed"]
+        events = list(stream)
+        assert all(isinstance(event, str) for event in events)
+        assert cast("list[str]", events) == ["response.created", "response.completed"]
 
     assert mock_aresponses.call_args.args[0].stream is True
 
