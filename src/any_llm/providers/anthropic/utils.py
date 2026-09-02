@@ -65,7 +65,8 @@ _JSON_SCHEMA_MAPPING_KEYWORDS = frozenset(
         "properties",
     }
 )
-_JSON_SCHEMA_SEQUENCE_KEYWORDS = frozenset({"allOf", "anyOf", "oneOf", "prefixItems"})
+_JSON_SCHEMA_COMPOSITION_KEYWORDS = ("anyOf", "oneOf", "allOf")
+_JSON_SCHEMA_SEQUENCE_KEYWORDS = frozenset((*_JSON_SCHEMA_COMPOSITION_KEYWORDS, "prefixItems"))
 _JSON_SCHEMA_VALUE_KEYWORDS = frozenset(
     {
         "additionalItems",
@@ -532,8 +533,21 @@ def _normalize_anthropic_type_arrays(value: Any) -> Any:
         msg = "JSON Schema type arrays must contain at least one string type"
         raise ValueError(msg)
 
-    siblings = {key: item for key, item in normalized.items() if key != "type"}
-    return {"anyOf": [{"type": item, **siblings} for item in cast("list[str]", type_value)]}
+    composition_constraints = [
+        {keyword: normalized[keyword]} for keyword in _JSON_SCHEMA_COMPOSITION_KEYWORDS if keyword in normalized
+    ]
+    branch_siblings = {
+        key: item
+        for key, item in normalized.items()
+        if key not in {"type", "$defs", *_JSON_SCHEMA_COMPOSITION_KEYWORDS}
+    }
+    type_union: dict[str, Any] = {
+        "anyOf": [{"type": item, **branch_siblings} for item in cast("list[str]", type_value)]
+    }
+    root_keywords: dict[str, Any] = {"$defs": normalized["$defs"]} if "$defs" in normalized else {}
+    if composition_constraints:
+        return {**root_keywords, "allOf": [type_union, *composition_constraints]}
+    return {**root_keywords, **type_union}
 
 
 def _convert_response_format(response_format: dict[str, Any] | type, provider_name: str) -> dict[str, Any]:

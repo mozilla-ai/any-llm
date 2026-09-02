@@ -723,7 +723,7 @@ def test_convert_response_format_normalizes_type_arrays() -> None:
     assert result["format"]["schema"]["properties"]["answer"] == {"anyOf": [{"type": "string"}, {"type": "null"}]}
 
 
-def test_normalize_anthropic_type_arrays_preserves_composition_keywords() -> None:
+def test_normalize_anthropic_type_arrays_separates_composition_keywords() -> None:
     schema = {
         "type": ["string", "null"],
         "anyOf": [{"type": "string", "maxLength": 20}, {"type": "null"}],
@@ -732,15 +732,33 @@ def test_normalize_anthropic_type_arrays_preserves_composition_keywords() -> Non
     result = _normalize_anthropic_type_arrays(schema)
 
     assert result == {
-        "anyOf": [
-            {
-                "type": "string",
-                "anyOf": [{"type": "string", "maxLength": 20}, {"type": "null"}],
-            },
-            {
-                "type": "null",
-                "anyOf": [{"type": "string", "maxLength": 20}, {"type": "null"}],
-            },
+        "allOf": [
+            {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            {"anyOf": [{"type": "string", "maxLength": 20}, {"type": "null"}]},
+        ]
+    }
+
+
+@pytest.mark.parametrize(
+    ("composition_keyword", "transformed_keyword"),
+    [("anyOf", "anyOf"), ("oneOf", "anyOf"), ("allOf", "allOf")],
+)
+def test_convert_response_format_keeps_type_arrays_separate_from_composition(
+    composition_keyword: str,
+    transformed_keyword: str,
+) -> None:
+    variants = [{"type": "string"}, {"type": "integer"}]
+    schema = {"type": ["string", "null"], composition_keyword: variants}
+
+    result = _convert_response_format(
+        {"type": "json_schema", "json_schema": {"name": "Composed", "schema": schema}},
+        "anthropic",
+    )
+
+    assert result["format"]["schema"] == {
+        "allOf": [
+            {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            {transformed_keyword: variants},
         ]
     }
 
