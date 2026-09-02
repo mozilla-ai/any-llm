@@ -745,6 +745,38 @@ def test_normalize_anthropic_type_arrays_preserves_composition_keywords() -> Non
     }
 
 
+def test_normalize_anthropic_type_arrays_preserves_instance_values() -> None:
+    schema = {
+        "type": "object",
+        "examples": [{"type": []}],
+        "default": {"type": ["string", "null"]},
+        "const": {"type": ["integer", "null"]},
+        "enum": [{"type": []}, {"type": ["number", "null"]}],
+    }
+
+    assert _normalize_anthropic_type_arrays(schema) == schema
+
+
+def test_normalize_anthropic_type_arrays_recurses_only_through_subschemas() -> None:
+    schema = {
+        "$defs": {"optionalName": {"type": ["string", "null"]}},
+        "allOf": [{"properties": {"count": {"type": ["integer", "null"]}}}],
+        "items": {"type": ["boolean", "null"]},
+    }
+
+    assert _normalize_anthropic_type_arrays(schema) == {
+        "$defs": {"optionalName": {"anyOf": [{"type": "string"}, {"type": "null"}]}},
+        "allOf": [
+            {
+                "properties": {
+                    "count": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                }
+            }
+        ],
+        "items": {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
+    }
+
+
 @pytest.mark.parametrize(
     ("type_schema", "error"),
     [

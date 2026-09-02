@@ -55,6 +55,33 @@ REASONING_EFFORT_TO_ANTHROPIC_EFFORT = {
     "max": "max",
 }
 
+_JSON_SCHEMA_MAPPING_KEYWORDS = frozenset(
+    {
+        "$defs",
+        "definitions",
+        "dependencies",
+        "dependentSchemas",
+        "patternProperties",
+        "properties",
+    }
+)
+_JSON_SCHEMA_SEQUENCE_KEYWORDS = frozenset({"allOf", "anyOf", "oneOf", "prefixItems"})
+_JSON_SCHEMA_VALUE_KEYWORDS = frozenset(
+    {
+        "additionalItems",
+        "additionalProperties",
+        "contains",
+        "contentSchema",
+        "else",
+        "if",
+        "not",
+        "propertyNames",
+        "then",
+        "unevaluatedItems",
+        "unevaluatedProperties",
+    }
+)
+
 
 def _refusal_stop_details(value: object) -> dict[str, Any] | None:
     """Return typed Anthropic refusal details when the installed SDK exposes them."""
@@ -480,26 +507,33 @@ def _convert_tool_choice(params: CompletionParams) -> dict[str, Any]:
     return {"type": tool_choice, "disable_parallel_tool_use": not parallel_tool_calls}
 
 
+def _normalize_anthropic_schema_keyword(keyword: str, value: Any) -> Any:
+    if keyword in _JSON_SCHEMA_MAPPING_KEYWORDS and isinstance(value, dict):
+        return {name: _normalize_anthropic_type_arrays(schema) for name, schema in value.items()}
+    if keyword in _JSON_SCHEMA_SEQUENCE_KEYWORDS and isinstance(value, list):
+        return [_normalize_anthropic_type_arrays(schema) for schema in value]
+    if keyword == "items" and isinstance(value, list):
+        return [_normalize_anthropic_type_arrays(schema) for schema in value]
+    if keyword == "items" or keyword in _JSON_SCHEMA_VALUE_KEYWORDS:
+        return _normalize_anthropic_type_arrays(value)
+    return value
+
+
 def _normalize_anthropic_type_arrays(value: Any) -> Any:
     """Rewrite JSON Schema type arrays that ``anthropic.transform_schema`` rejects."""
-    if isinstance(value, list):
-        return [_normalize_anthropic_type_arrays(item) for item in value]
     if not isinstance(value, dict):
         return value
 
+    normalized = {key: _normalize_anthropic_schema_keyword(key, item) for key, item in value.items()}
     type_value = value.get("type")
     if not isinstance(type_value, list):
-        return {key: _normalize_anthropic_type_arrays(item) for key, item in value.items()}
+        return normalized
     if not type_value or not all(isinstance(item, str) for item in type_value):
         msg = "JSON Schema type arrays must contain at least one string type"
         raise ValueError(msg)
 
-    siblings = {key: item for key, item in value.items() if key != "type"}
-    return {
-        "anyOf": [
-            _normalize_anthropic_type_arrays({"type": item, **siblings}) for item in cast("list[str]", type_value)
-        ]
-    }
+    siblings = {key: item for key, item in normalized.items() if key != "type"}
+    return {"anyOf": [{"type": item, **siblings} for item in cast("list[str]", type_value)]}
 
 
 def _convert_response_format(response_format: dict[str, Any] | type, provider_name: str) -> dict[str, Any]:
