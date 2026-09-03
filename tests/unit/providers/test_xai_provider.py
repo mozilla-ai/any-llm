@@ -47,6 +47,109 @@ async def test_response_function_call_id_is_preserved() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("xai_finish_reason", "expected"),
+    [
+        ("REASON_STOP", "stop"),
+        ("REASON_MAX_LEN", "length"),
+        ("REASON_MAX_CONTEXT", "length"),
+        # No OpenAI counterpart, so the response falls back to a terminal reason.
+        ("REASON_TIME_LIMIT", "stop"),
+    ],
+)
+async def test_response_finish_reason_is_mapped(xai_finish_reason: str, expected: str) -> None:
+    """A truncated response must report "length", not "stop": callers (including the
+    structured-output truncation check) cannot tell a cut-off answer from a complete one
+    otherwise."""
+    from any_llm.providers.xai.xai import XaiProvider
+
+    with mock_xai_provider() as (_, mock_response):
+        mock_response.finish_reason = xai_finish_reason
+
+        provider = XaiProvider(api_key="test-api-key")
+        response = await provider._acompletion(
+            CompletionParams(model_id="model", messages=[{"role": "user", "content": "Hello"}])
+        )
+        assert isinstance(response, ChatCompletion)
+        assert response.choices[0].finish_reason == expected
+
+
+@pytest.mark.asyncio
+async def test_truncated_tool_call_response_reports_length_not_tool_calls() -> None:
+    """A response cut short mid tool call must not look like a completed tool call round."""
+    from any_llm.providers.xai.xai import XaiProvider
+
+    with mock_xai_provider() as (_, mock_response):
+        tool_call = MagicMock()
+        tool_call.id = "call_1"
+        tool_call.function.name = "test_function"
+        tool_call.function.arguments = '{"key": "va'
+        mock_response.tool_calls = [tool_call]
+        mock_response.finish_reason = "REASON_MAX_LEN"
+
+        provider = XaiProvider(api_key="test-api-key")
+        response = await provider._acompletion(
+            CompletionParams(model_id="model", messages=[{"role": "user", "content": "Hello"}])
+        )
+        assert isinstance(response, ChatCompletion)
+        assert response.choices[0].finish_reason == "length"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("xai_finish_reason", ["REASON_TOOL_CALLS", "REASON_TIME_LIMIT"])
+async def test_tool_call_response_reports_tool_calls_finish_reason(xai_finish_reason: str) -> None:
+    """Mapped directly for REASON_TOOL_CALLS; for a reason without a counterpart, the tool calls decide."""
+    from any_llm.providers.xai.xai import XaiProvider
+
+    with mock_xai_provider() as (_, mock_response):
+        tool_call = MagicMock()
+        tool_call.id = "call_1"
+        tool_call.function.name = "test_function"
+        tool_call.function.arguments = "{}"
+        mock_response.tool_calls = [tool_call]
+        mock_response.finish_reason = xai_finish_reason
+
+        provider = XaiProvider(api_key="test-api-key")
+        response = await provider._acompletion(
+            CompletionParams(model_id="model", messages=[{"role": "user", "content": "Hello"}])
+        )
+        assert isinstance(response, ChatCompletion)
+        assert response.choices[0].finish_reason == "tool_calls"
+
+
+@pytest.mark.parametrize(
+    ("xai_finish_reason_name", "expected"),
+    [
+        ("REASON_INVALID", None),
+        ("REASON_STOP", "stop"),
+        ("REASON_MAX_LEN", "length"),
+        ("REASON_TOOL_CALLS", "tool_calls"),
+    ],
+)
+def test_stream_chunk_finish_reason_is_mapped(xai_finish_reason_name: str, expected: str | None) -> None:
+    """Streamed chunks used to always report finish_reason=None, so a stream never signalled
+    why it ended. Non-final chunks carry REASON_INVALID and must stay None."""
+    from xai_sdk.chat import Chunk as XaiChunk
+    from xai_sdk.proto import chat_pb2
+
+    from any_llm.providers.xai.utils import _convert_xai_chunk_to_anyllm_chunk
+
+    proto = chat_pb2.GetChatCompletionChunk(
+        outputs=[
+            chat_pb2.CompletionOutputChunk(
+                index=0,
+                delta=chat_pb2.Delta(role=chat_pb2.ROLE_ASSISTANT, content="hi"),
+                finish_reason=xai_finish_reason_name,
+            )
+        ]
+    )
+
+    chunk = _convert_xai_chunk_to_anyllm_chunk(XaiChunk(proto, index=None))
+
+    assert chunk.choices[0].finish_reason == expected
+
+
+@pytest.mark.asyncio
 async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, Any]]) -> None:
     from any_llm.providers.xai.xai import XaiProvider
 
