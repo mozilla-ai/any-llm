@@ -317,14 +317,19 @@ def test_deepseek_rejects_unsupported_minimal_reasoning_effort() -> None:
 
 
 def test_deepseek_thinking_respects_explicit_extra_body_override() -> None:
-    """A caller-supplied extra_body/thinking value should not be clobbered by the default."""
+    """Caller-supplied DeepSeek fields take precedence over normalized controls."""
     params = CompletionParams(
         model_id="deepseek-v4-flash",
         messages=[{"role": "user", "content": "hi"}],
-        reasoning_effort=None,
+        reasoning_effort="max",
+        user="normalized-user",
     )
-    result = DeepseekProvider._convert_completion_params(params, extra_body={"thinking": {"type": "enabled"}})
-    assert result["extra_body"]["thinking"] == {"type": "enabled"}
+    result = DeepseekProvider._convert_completion_params(
+        params,
+        extra_body={"thinking": {"type": "disabled"}, "user_id": "caller-user"},
+    )
+    assert result["reasoning_effort"] == "max"
+    assert result["extra_body"] == {"thinking": {"type": "disabled"}, "user_id": "caller-user"}
 
 
 def test_deepseek_maps_user_id_and_omits_unsupported_fields() -> None:
