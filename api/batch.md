@@ -147,7 +147,7 @@ Async variant with the same parameters.
 |-----------|------|---------|-------------|
 | `provider` | `str \| LLMProvider` | *required* | Provider name to use for the request (e.g., 'openai', 'mistral') |
 | `after` | `str \| None` | None | A cursor for pagination. Returns batches after this batch ID. |
-| `limit` | `int \| None` | None | Maximum number of batches to return (default: 20) |
+| `limit` | `int \| None` | None | Maximum number of batches to return. When omitted, the provider's own default applies. |
 | `api_key` | `str \| None` | None | API key for the provider |
 | `api_base` | `str \| None` | None | Base URL for the provider API |
 | `client_args` | `dict[str, Any] \| None` | None | Additional provider-specific arguments for client instantiation |
