@@ -83,6 +83,7 @@ Normalized parameters for the Anthropic Messages API, used internally to pass st
 | `cache_control` | `dict[str, Any] \| None` | Cache control configuration for prompt caching |
 | `prompt_cache_key` | `str \| None` | A key to use when reading from or writing to a provider's prompt cache. |
 | `service_tier` | `str \| None` | The service tier to use for this request. |
+| `container` | `str \| None` | Container identifier for continuing a previous top-level container. |
 | `context_management` | `dict[str, Any] \| None` | Anthropic context management configuration |
 | `betas` | `list[str] \| None` | Anthropic beta identifiers |
 | `output_format` | `type \| dict[str, Any] \| None` |  |
