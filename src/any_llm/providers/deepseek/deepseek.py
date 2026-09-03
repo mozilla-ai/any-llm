@@ -1,3 +1,4 @@
+import re
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -85,9 +86,20 @@ class DeepseekProvider(BaseOpenAIProvider):
             thinking = {"type": "enabled"}
 
         if user_id is not None or thinking is not None:
-            extra_body = converted_params.setdefault("extra_body", {})
-            if user_id is not None:
-                extra_body.setdefault("user_id", user_id)
+            extra_body = converted_params.get("extra_body")
+            if extra_body is None:
+                extra_body = {}
+                converted_params["extra_body"] = extra_body
+            if user_id is not None and "user_id" not in extra_body:
+                # DeepSeek's user_id contract is stricter than any-llm's shared user field.
+                # https://api-docs.deepseek.com/quick_start/rate_limit/#setting-user_id
+                if re.fullmatch(r"[a-zA-Z0-9_-]{1,512}", user_id) is None:
+                    msg = (
+                        "DeepSeek user_id must contain only ASCII letters, digits, underscores, or hyphens "
+                        "and be at most 512 characters"
+                    )
+                    raise InvalidRequestError(msg, provider_name=DeepseekProvider.PROVIDER_NAME)
+                extra_body["user_id"] = user_id
             if thinking is not None:
                 extra_body.setdefault("thinking", thinking)
         return converted_params

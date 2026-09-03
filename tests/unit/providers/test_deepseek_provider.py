@@ -322,7 +322,7 @@ def test_deepseek_thinking_respects_explicit_extra_body_override() -> None:
         model_id="deepseek-v4-flash",
         messages=[{"role": "user", "content": "hi"}],
         reasoning_effort="max",
-        user="normalized-user",
+        user="ignored.invalid-user",
     )
     result = DeepseekProvider._convert_completion_params(
         params,
@@ -333,10 +333,11 @@ def test_deepseek_thinking_respects_explicit_extra_body_override() -> None:
 
 
 def test_deepseek_maps_user_id_and_omits_unsupported_fields() -> None:
+    user_id = "a" * 512
     params = CompletionParams(
         model_id="deepseek-v4-flash",
         messages=[{"role": "user", "content": "hi"}],
-        user="account_42",
+        user=user_id,
         n=2,
         frequency_penalty=0.5,
         presence_penalty=0.5,
@@ -349,7 +350,7 @@ def test_deepseek_maps_user_id_and_omits_unsupported_fields() -> None:
 
     result = DeepseekProvider._convert_completion_params(params)
 
-    assert result["extra_body"]["user_id"] == "account_42"
+    assert result["extra_body"]["user_id"] == user_id
     for field in (
         "user",
         "n",
@@ -362,6 +363,39 @@ def test_deepseek_maps_user_id_and_omits_unsupported_fields() -> None:
         "service_tier",
     ):
         assert field not in result
+
+
+@pytest.mark.parametrize("user_id", ["", "account.42", "a" * 513])
+def test_deepseek_rejects_invalid_user_id(user_id: str) -> None:
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        user=user_id,
+    )
+
+    with pytest.raises(InvalidRequestError, match="user_id"):
+        DeepseekProvider._convert_completion_params(params)
+
+
+@pytest.mark.parametrize(
+    ("params_kwargs", "expected_extra_body"),
+    [
+        ({"user": "account_42"}, {"user_id": "account_42"}),
+        ({"reasoning_effort": "low"}, {"thinking": {"type": "enabled"}}),
+    ],
+)
+def test_deepseek_treats_explicit_none_extra_body_as_absent(
+    params_kwargs: dict[str, Any], expected_extra_body: dict[str, Any]
+) -> None:
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        **params_kwargs,
+    )
+
+    result = DeepseekProvider._convert_completion_params(params, extra_body=None)
+
+    assert result["extra_body"] == expected_extra_body
 
 
 def test_convert_completion_response_stashes_reasoning_into_extra_content() -> None:
