@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic import BaseModel
 
-from any_llm.exceptions import BatchNotCompleteError
+from any_llm.exceptions import BatchNotCompleteError, UnsupportedParameterError
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams
 from any_llm.types.batch import BatchResult
 from any_llm.types.completion import ChatCompletion, CompletionParams
@@ -813,6 +813,23 @@ async def test_otari_amessages_delegates_to_native_endpoint_preserving_anthropic
     # Extra kwargs are forwarded; stream is not set for non-streaming calls.
     assert call_kwargs["metadata"] == {"user_id": "u1"}
     assert "stream" not in call_kwargs
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_rejects_container_until_sdk_supports_it() -> None:
+    client = _mock_otari_client()
+    provider = _build_provider(client)
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Continue"}],
+        max_tokens=100,
+        container="container_123",
+    )
+
+    with pytest.raises(UnsupportedParameterError, match="container"):
+        await provider._amessages(params)
+
+    client.with_response_metadata.message.assert_not_called()
 
 
 @pytest.mark.asyncio

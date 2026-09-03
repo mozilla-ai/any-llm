@@ -190,6 +190,7 @@ async def test_amessages_rejects_betas() -> None:
 @pytest.mark.parametrize(
     ("field_name", "value"),
     [
+        ("container", "container_123"),
         ("prompt_cache_key", "my-app"),
         ("stop_sequences", ["STOP"]),
         ("top_k", 5),
@@ -197,10 +198,7 @@ async def test_amessages_rejects_betas() -> None:
 )
 @pytest.mark.asyncio
 async def test_amessages_rejects_unsupported_params(field_name: str, value: Any) -> None:
-    """Meta's Messages docs 400 on `stop_sequences`/`top_k`, and don't document
-    `prompt_cache_key` for Messages at all (only for Chat Completions/Responses); reject
-    all three client-side rather than forwarding them into the Anthropic SDK, where
-    `prompt_cache_key` isn't even a valid `messages.create` kwarg."""
+    """Reject fields that Meta's Messages endpoint rejects or does not document."""
     provider = _build_provider()
     params = MessagesParams(
         model="muse-spark-1.2",
