@@ -14,9 +14,9 @@ from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.logging import logger
 from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.completion import (
-    AudioContent,
     ChatCompletionChunk,
     ChoiceDelta,
+    ChoiceDeltaAudio,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
     ChunkChoice,
@@ -443,8 +443,8 @@ def _inline_data_image(part: types.Part) -> dict[str, Any] | None:
     }
 
 
-def _inline_data_audio(part: types.Part, transcript: str) -> dict[str, Any] | None:
-    """Convert Gemini audio inline data into an OpenAI-compatible audio object."""
+def _inline_audio_blob(part: types.Part) -> types.Blob | None:
+    """Return the part's non-empty audio blob, if it has one."""
     blob = part.inline_data
     if (
         blob is None
@@ -454,9 +454,53 @@ def _inline_data_audio(part: types.Part, transcript: str) -> dict[str, Any] | No
         or not blob.mime_type.startswith("audio/")
     ):
         return None
+    return blob
+
+
+def _wav_from_pcm(pcm: bytes, mime_type: str) -> bytes:
+    """Wrap headerless 16-bit mono PCM in a WAV header."""
+    rate = 24000
+    for parameter in mime_type.split(";"):
+        parameter = parameter.strip()
+        if parameter.startswith("rate="):
+            with suppress(ValueError):
+                parsed_rate = int(parameter.removeprefix("rate="))
+                if parsed_rate > 0:
+                    rate = parsed_rate
+            break
+    return (
+        b"RIFF"
+        + (36 + len(pcm)).to_bytes(4, "little")
+        + b"WAVE"
+        + b"fmt "
+        + (16).to_bytes(4, "little")
+        + (1).to_bytes(2, "little")
+        + (1).to_bytes(2, "little")
+        + rate.to_bytes(4, "little")
+        + (rate * 2).to_bytes(4, "little")
+        + (2).to_bytes(2, "little")
+        + (16).to_bytes(2, "little")
+        + b"data"
+        + len(pcm).to_bytes(4, "little")
+        + pcm
+    )
+
+
+def _inline_data_audio(blobs: list[types.Blob], transcript: str, *, playable: bool) -> dict[str, Any] | None:
+    """Convert Gemini audio blobs into an OpenAI-compatible audio object.
+
+    Complete audio/L16 responses are wrapped as WAV so the sample rate from the MIME
+    type is retained. Streaming chunks stay raw because their total length is unknown.
+    """
+    if not blobs:
+        return None
+    data = b"".join(cast("bytes", blob.data) for blob in blobs)
+    mime_type = cast("str", blobs[0].mime_type)
+    if playable and mime_type.startswith("audio/L16"):
+        data = _wav_from_pcm(data, mime_type)
     return {
         "id": "google_genai_audio",
-        "data": base64.b64encode(blob.data).decode("ascii"),
+        "data": base64.b64encode(data).decode("ascii"),
         "expires_at": 0,
         "transcript": transcript,
     }
@@ -530,7 +574,7 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
         tool_calls_list: list[dict[str, Any]] = []
         text_content = None
         images: list[dict[str, Any]] = []
-        audio_part: types.Part | None = None
+        audio_blobs: list[types.Blob] = []
         # Gemini 3 signs the last non-function-call part of a text answer. It rides message.extra_content,
         # the same spelling Google's OpenAI-compatible endpoint uses.
         message_extra_content = None
@@ -562,17 +606,13 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
             else:
                 if image := _inline_data_image(part):
                     images.append(image)
-                if (
-                    part.inline_data
-                    and isinstance(part.inline_data.mime_type, str)
-                    and part.inline_data.mime_type.startswith("audio/")
-                ):
-                    audio_part = part
+                if audio_blob := _inline_audio_blob(part):
+                    audio_blobs.append(audio_blob)
                 if part.text:
                     text_content = (text_content or "") + part.text
                 message_extra_content = _thought_signature_extra_content(part) or message_extra_content
 
-        audio = _inline_data_audio(audio_part, text_content or "") if audio_part else None
+        audio = _inline_data_audio(audio_blobs, text_content or "", playable=True)
 
         # Truncated or filtered responses produce a choice even without content or tool
         # calls, e.g. a thinking model that spent the whole max_output_tokens budget on
@@ -665,7 +705,7 @@ def _create_openai_chunk_from_google_chunk(
     tool_calls_list: list[ChoiceDeltaToolCall] = []
     message_extra_content = None
     images: list[dict[str, Any]] = []
-    audio_part: types.Part | None = None
+    audio_blobs: list[types.Blob] = []
 
     # Content can be absent on terminal chunks, e.g. when the response is truncated or
     # filtered before any part is produced; the finish reason must still be surfaced.
@@ -702,18 +742,14 @@ def _create_openai_chunk_from_google_chunk(
         else:
             if image := _inline_data_image(part):
                 images.append(image)
-            if (
-                part.inline_data
-                and isinstance(part.inline_data.mime_type, str)
-                and part.inline_data.mime_type.startswith("audio/")
-            ):
-                audio_part = part
+            if audio_blob := _inline_audio_blob(part):
+                audio_blobs.append(audio_blob)
             content += part.text or ""  # the signed final part may carry empty text
             message_extra_content = _thought_signature_extra_content(part) or message_extra_content
 
     audio = None
-    if audio_part and (converted_audio := _inline_data_audio(audio_part, content)):
-        audio = AudioContent(**converted_audio)
+    if converted_audio := _inline_data_audio(audio_blobs, content, playable=False):
+        audio = ChoiceDeltaAudio(data=converted_audio["data"], transcript=converted_audio["transcript"] or None)
 
     # Unmapped reasons stay None so non-final chunks are not forced to a terminal reason.
     mapped_finish_reason = _map_finish_reason(candidate.finish_reason) if candidate else None

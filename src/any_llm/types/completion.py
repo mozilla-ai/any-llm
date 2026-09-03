@@ -1,9 +1,8 @@
-from typing import TYPE_CHECKING, Any, Generic, Literal, TypeAlias, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 from openai.types import CreateEmbeddingResponse as OpenAICreateEmbeddingResponse
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion import Choice as OpenAIChoice
-from openai.types.chat.chat_completion_audio import ChatCompletionAudio
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from openai.types.chat.chat_completion_chunk import Choice as OpenAIChunkChoice
 from openai.types.chat.chat_completion_chunk import ChoiceDelta as OpenAIChoiceDelta
@@ -25,11 +24,6 @@ from openai.types.completion_usage import PromptTokensDetails as OpenAIPromptTok
 from openai.types.create_embedding_response import Usage as OpenAIUsage
 from openai.types.embedding import Embedding as OpenAIEmbedding
 from pydantic import BaseModel, ConfigDict, field_validator, model_serializer, model_validator
-
-if TYPE_CHECKING:
-    AudioContent: TypeAlias = ChatCompletionAudio
-else:
-    AudioContent = ChatCompletionAudio
 
 # See https://github.com/mozilla-ai/any-llm/issues/95:
 # OpenAI Completion API doesn't include reasoning information, so we need to extend the openai type
@@ -92,6 +86,20 @@ class ImageContent(BaseModel):
     image_url: ImageURL
 
 
+class ChoiceDeltaAudio(BaseModel):
+    """Partial audio object emitted by a streaming chat completion.
+
+    Providers may send the identifier, transcript, data, and expiration timestamp in
+    separate chunks, so every field is optional. The data field contains the
+    base64-encoded bytes for the current chunk.
+    """
+
+    id: str | None = None
+    data: str | None = None
+    transcript: str | None = None
+    expires_at: int | None = None
+
+
 class ChatCompletionMessage(OpenAIChatCompletionMessage):
     tool_calls: list[ChatCompletionMessageToolCall] | None = None  # type: ignore[assignment]
     reasoning: Reasoning | None = None
@@ -107,7 +115,6 @@ class ChatCompletionMessage(OpenAIChatCompletionMessage):
     """
 
     images: list[ImageContent] | None = None
-    audio: AudioContent | None = None
 
 
 class Choice(OpenAIChoice):
@@ -156,7 +163,7 @@ class ChoiceDelta(OpenAIChoiceDelta):
     """
 
     images: list[ImageContent] | None = None
-    audio: AudioContent | None = None
+    audio: ChoiceDeltaAudio | None = None
 
 
 class ChunkChoice(OpenAIChunkChoice):
