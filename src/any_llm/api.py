@@ -1592,7 +1592,7 @@ def list_batches(
     Args:
         provider: Provider name to use for the request (e.g., 'openai', 'mistral')
         after: A cursor for pagination. Returns batches after this batch ID.
-        limit: Maximum number of batches to return (default: 20)
+        limit: Maximum number of batches to return. When omitted, the provider's own default applies.
         api_key: API key for the provider
         api_base: Base URL for the provider API
         client_args: Additional provider-specific arguments for client instantiation
@@ -1621,7 +1621,7 @@ async def alist_batches(
     Args:
         provider: Provider name to use for the request (e.g., 'openai', 'mistral')
         after: A cursor for pagination. Returns batches after this batch ID.
-        limit: Maximum number of batches to return (default: 20)
+        limit: Maximum number of batches to return. When omitted, the provider's own default applies.
         api_key: API key for the provider
         api_base: Base URL for the provider API
         client_args: Additional provider-specific arguments for client instantiation
