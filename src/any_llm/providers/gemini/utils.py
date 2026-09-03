@@ -344,11 +344,14 @@ def _convert_messages(
                     if tool_call_id := tool_call.get("id"):
                         tool_names[tool_call_id] = function_call["name"]
                     arguments = function_call.get("arguments")
-                    args = (
-                        json.loads(arguments)
-                        if isinstance(arguments, (str, bytes, bytearray)) and arguments
-                        else arguments or {}
-                    )
+                    if isinstance(arguments, (str, bytes, bytearray)) and arguments:
+                        try:
+                            args = json.loads(arguments)
+                        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                            msg = f"Tool call arguments for {function_call['name']!r} must be valid JSON"
+                            raise InvalidRequestError(msg, exc, provider_name) from exc
+                    else:
+                        args = arguments or {}
 
                     # Extract thought_signature if present (OpenAI compatibility format)
                     # SDK accepts base64 string or bytes

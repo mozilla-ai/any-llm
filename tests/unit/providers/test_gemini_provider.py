@@ -2066,6 +2066,38 @@ def test_convert_messages_accepts_json_or_parsed_tool_call_arguments(
     assert function_call.args == expected_args
 
 
+@pytest.mark.parametrize(
+    ("arguments", "expected_exception"),
+    [
+        ("{not-json", json.JSONDecodeError),
+        (b"\xff", UnicodeDecodeError),
+        (bytearray(b"\xff"), UnicodeDecodeError),
+    ],
+)
+def test_convert_messages_rejects_malformed_serialized_tool_call_arguments(
+    arguments: str | bytes | bytearray, expected_exception: type[Exception]
+) -> None:
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": arguments},
+                }
+            ],
+        }
+    ]
+
+    with pytest.raises(InvalidRequestError, match="must be valid JSON") as exc_info:
+        _convert_messages(messages)
+
+    assert isinstance(exc_info.value.original_exception, expected_exception)
+    assert isinstance(exc_info.value.__cause__, expected_exception)
+
+
 def test_convert_messages_with_thought_signature_in_extra_content() -> None:
     # Use valid base64 that round-trips correctly
     original_bytes = b"test-signature-bytes"
