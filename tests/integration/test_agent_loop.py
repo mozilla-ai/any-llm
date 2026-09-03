@@ -1,5 +1,6 @@
 import inspect
 import json
+import re
 import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -47,8 +48,12 @@ def _call_tool(tool_fn: Callable[..., str], args: dict[str, Any]) -> str:
 
 
 def _mentions_tool_result(content: str | None) -> bool:
-    """The weather tool returns 15C and sunny, so an answer built on it repeats one of them."""
-    return content is not None and ("15" in content or "sunny" in content.lower())
+    """The weather tool returns 15C and sunny, so an answer built on it repeats one of them.
+
+    ``15`` must not run into another digit, so ``150F`` does not count; ``15C``, ``15°C`` and
+    ``15 degrees`` all do.
+    """
+    return content is not None and re.search(r"\b15(?!\d)|\bsunny\b", content, re.IGNORECASE) is not None
 
 
 @pytest.mark.parametrize(
@@ -57,7 +62,9 @@ def _mentions_tool_result(content: str | None) -> bool:
         (None, False),
         ("", False),
         ("It rains in Paris.", False),
+        ("It is 150F in Paris.", False),
         ("It is 15C in Paris.", True),
+        ("It is 15°C in Paris.", True),
         ("Sunny in London.", True),
     ],
 )
