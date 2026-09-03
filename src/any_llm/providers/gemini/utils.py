@@ -14,6 +14,7 @@ from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.logging import logger
 from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.completion import (
+    AudioContent,
     ChatCompletionChunk,
     ChoiceDelta,
     ChoiceDeltaToolCall,
@@ -23,6 +24,7 @@ from any_llm.types.completion import (
     CompletionUsage,
     CreateEmbeddingResponse,
     Embedding,
+    ImageContent,
     PromptTokensDetails,
     Reasoning,
     Usage,
@@ -424,6 +426,42 @@ def _thought_signature_extra_content(part: types.Part) -> dict[str, Any] | None:
     return None
 
 
+def _inline_data_image(part: types.Part) -> dict[str, Any] | None:
+    """Convert Gemini inline data into an OpenAI-compatible data URL."""
+    blob = part.inline_data
+    if (
+        blob is None
+        or not isinstance(blob.data, bytes)
+        or not blob.data
+        or not isinstance(blob.mime_type, str)
+        or not blob.mime_type.startswith("image/")
+    ):
+        return None
+    return {
+        "type": "image_url",
+        "image_url": {"url": f"data:{blob.mime_type};base64,{base64.b64encode(blob.data).decode('ascii')}"},
+    }
+
+
+def _inline_data_audio(part: types.Part, transcript: str) -> dict[str, Any] | None:
+    """Convert Gemini audio inline data into an OpenAI-compatible audio object."""
+    blob = part.inline_data
+    if (
+        blob is None
+        or not isinstance(blob.data, bytes)
+        or not blob.data
+        or not isinstance(blob.mime_type, str)
+        or not blob.mime_type.startswith("audio/")
+    ):
+        return None
+    return {
+        "id": "google_genai_audio",
+        "data": base64.b64encode(blob.data).decode("ascii"),
+        "expires_at": 0,
+        "transcript": transcript,
+    }
+
+
 _FINISH_REASON_MAP: dict[types.FinishReason, Literal["stop", "length", "content_filter"]] = {
     types.FinishReason.STOP: "stop",
     types.FinishReason.MAX_TOKENS: "length",
@@ -491,15 +529,17 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
         reasoning = None
         tool_calls_list: list[dict[str, Any]] = []
         text_content = None
+        images: list[dict[str, Any]] = []
+        audio_part: types.Part | None = None
         # Gemini 3 signs the last non-function-call part of a text answer. It rides message.extra_content,
         # the same spelling Google's OpenAI-compatible endpoint uses.
         message_extra_content = None
         parts = candidate.content.parts if candidate.content else None
 
         for part in parts or []:
-            if getattr(part, "thought", None):
+            if part.thought:
                 reasoning = (reasoning or "") + (part.text or "")
-            elif function_call := getattr(part, "function_call", None):
+            elif function_call := part.function_call:
                 args_dict = {}
                 if args := getattr(function_call, "args", None):
                     for key, value in args.items():
@@ -520,14 +560,24 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
 
                 tool_calls_list.append(tool_call_dict)
             else:
+                if image := _inline_data_image(part):
+                    images.append(image)
+                if (
+                    part.inline_data
+                    and isinstance(part.inline_data.mime_type, str)
+                    and part.inline_data.mime_type.startswith("audio/")
+                ):
+                    audio_part = part
                 if part.text:
                     text_content = (text_content or "") + part.text
                 message_extra_content = _thought_signature_extra_content(part) or message_extra_content
 
+        audio = _inline_data_audio(audio_part, text_content or "") if audio_part else None
+
         # Truncated or filtered responses produce a choice even without content or tool
         # calls, e.g. a thinking model that spent the whole max_output_tokens budget on
         # reasoning, so callers see the terminal reason instead of an empty choices list.
-        if tool_calls_list or text_content or mapped_finish_reason in ("length", "content_filter"):
+        if tool_calls_list or text_content or images or audio or mapped_finish_reason in ("length", "content_filter"):
             choices.append(
                 {
                     "message": {
@@ -535,6 +585,8 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                         "content": text_content,
                         "reasoning": reasoning or None,
                         "tool_calls": tool_calls_list or None,
+                        "images": images or None,
+                        "audio": audio,
                         "extra_content": message_extra_content,
                         "refusal": _GEMINI_CONTENT_FILTER_REFUSAL if mapped_finish_reason == "content_filter" else None,
                     },
@@ -612,6 +664,8 @@ def _create_openai_chunk_from_google_chunk(
     reasoning_content = ""
     tool_calls_list: list[ChoiceDeltaToolCall] = []
     message_extra_content = None
+    images: list[dict[str, Any]] = []
+    audio_part: types.Part | None = None
 
     # Content can be absent on terminal chunks, e.g. when the response is truncated or
     # filtered before any part is produced; the finish reason must still be surfaced.
@@ -646,8 +700,20 @@ def _create_openai_chunk_from_google_chunk(
                 )
             )
         else:
+            if image := _inline_data_image(part):
+                images.append(image)
+            if (
+                part.inline_data
+                and isinstance(part.inline_data.mime_type, str)
+                and part.inline_data.mime_type.startswith("audio/")
+            ):
+                audio_part = part
             content += part.text or ""  # the signed final part may carry empty text
             message_extra_content = _thought_signature_extra_content(part) or message_extra_content
+
+    audio = None
+    if audio_part and (converted_audio := _inline_data_audio(audio_part, content)):
+        audio = AudioContent(**converted_audio)
 
     # Unmapped reasons stay None so non-final chunks are not forced to a terminal reason.
     mapped_finish_reason = _map_finish_reason(candidate.finish_reason) if candidate else None
@@ -663,6 +729,8 @@ def _create_openai_chunk_from_google_chunk(
         reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
         tool_calls=tool_calls_list or None,
         extra_content=message_extra_content,
+        images=cast("list[ImageContent] | None", images or None),
+        audio=audio,
     )
 
     choice = ChunkChoice(

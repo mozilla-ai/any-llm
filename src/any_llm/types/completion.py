@@ -1,8 +1,9 @@
-from typing import Any, Generic, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeAlias, TypeVar
 
 from openai.types import CreateEmbeddingResponse as OpenAICreateEmbeddingResponse
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion import Choice as OpenAIChoice
+from openai.types.chat.chat_completion_audio import ChatCompletionAudio
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from openai.types.chat.chat_completion_chunk import Choice as OpenAIChunkChoice
 from openai.types.chat.chat_completion_chunk import ChoiceDelta as OpenAIChoiceDelta
@@ -24,6 +25,11 @@ from openai.types.completion_usage import PromptTokensDetails as OpenAIPromptTok
 from openai.types.create_embedding_response import Usage as OpenAIUsage
 from openai.types.embedding import Embedding as OpenAIEmbedding
 from pydantic import BaseModel, ConfigDict, field_validator, model_serializer, model_validator
+
+if TYPE_CHECKING:
+    AudioContent: TypeAlias = ChatCompletionAudio
+else:
+    AudioContent = ChatCompletionAudio
 
 # See https://github.com/mozilla-ai/any-llm/issues/95:
 # OpenAI Completion API doesn't include reasoning information, so we need to extend the openai type
@@ -73,6 +79,19 @@ class ChatCompletionMessageFunctionToolCall(OpenAIChatCompletionMessageFunctionT
 ChatCompletionMessageToolCall = ChatCompletionMessageFunctionToolCall | OpenAIChatCompletionMessageToolCall
 
 
+class ImageURL(BaseModel):
+    """OpenAI-compatible URL for an image response part."""
+
+    url: str
+
+
+class ImageContent(BaseModel):
+    """OpenAI-compatible image response content."""
+
+    type: Literal["image_url"]
+    image_url: ImageURL
+
+
 class ChatCompletionMessage(OpenAIChatCompletionMessage):
     tool_calls: list[ChatCompletionMessageToolCall] | None = None  # type: ignore[assignment]
     reasoning: Reasoning | None = None
@@ -86,6 +105,9 @@ class ChatCompletionMessage(OpenAIChatCompletionMessage):
     Example extra_content structure for Anthropic:
         {"anthropic": {"signature": "<encrypted-signature>"}}
     """
+
+    images: list[ImageContent] | None = None
+    audio: AudioContent | None = None
 
 
 class Choice(OpenAIChoice):
@@ -132,6 +154,9 @@ class ChoiceDelta(OpenAIChoiceDelta):
     Carries provider-specific metadata (e.g. Anthropic's thinking block ``signature``)
     that arrives as part of a streaming delta rather than the final message.
     """
+
+    images: list[ImageContent] | None = None
+    audio: AudioContent | None = None
 
 
 class ChunkChoice(OpenAIChunkChoice):
