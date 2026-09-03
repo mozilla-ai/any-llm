@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 from pydantic import BaseModel
 from typing_extensions import override
 
-from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError
+from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError, UnsupportedParameterError
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.openai.utils import _convert_moderation_response_from_openai
 from any_llm.types.batch import Batch, BatchResult, BatchResultError, BatchResultItem
@@ -348,8 +348,14 @@ class OtariProvider(BaseOpenAIProvider):
         The base implementation converts Messages to Chat Completions, which silently
         drops Anthropic-only features (``cache_control`` on system blocks, ``thinking``
         config). otari's gateway serves /messages natively, so delegate to the otari
-        SDK's ``message()`` to preserve them.
+        SDK's ``message()`` to preserve them. Otari SDK 0.3.0 drops ``container`` while
+        constructing non-streaming requests, so reject it until the supported SDK serializes
+        the field.
         """
+        if params.container is not None:
+            parameter_name = "container"
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+
         if params.output_format is not None:
             # Structured output is handled by the base Messages<->Completions bridge, which
             # routes output_format through otari's completion path. A follow-up could adopt

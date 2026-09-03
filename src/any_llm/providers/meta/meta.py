@@ -39,10 +39,10 @@ _MESSAGE_STREAM_EVENT_TYPES: dict[str, type[Any]] = {
 }
 
 # Meta's Messages docs state these return HTTP 400 (`stop_sequences`, `top_k`) or are simply
-# not part of its documented request shape (`prompt_cache_key`, which Meta documents only for
-# Chat Completions/Responses, not Messages). Reject them client-side with a clear error instead
-# of letting the SDK or the API surface an opaque 400/TypeError.
-_MESSAGES_UNSUPPORTED_PARAMS = ("prompt_cache_key", "stop_sequences", "top_k")
+# not part of its documented request shape (`container`, plus `prompt_cache_key`, which Meta
+# documents only for Chat Completions/Responses). Reject them client-side with a clear error
+# instead of letting the SDK or the API surface an opaque 400/TypeError.
+_MESSAGES_UNSUPPORTED_PARAMS = ("container", "prompt_cache_key", "stop_sequences", "top_k")
 
 
 def _derive_anthropic_base(openai_base: str) -> str:
@@ -65,8 +65,8 @@ class MetaProvider(BaseOpenAIProvider):
     any-llm's default Messages<->Completions bridge, so that `thinking` blocks and native
     `tool_use` blocks survive the round trip (a bridged conversion would drop both). Meta's
     Messages endpoint documents a narrower field set than genuine Anthropic, though: fields
-    it explicitly 400s on or doesn't document at all (`prompt_cache_key`, `stop_sequences`,
-    `top_k`) are rejected client-side rather than forwarded, see `_amessages`.
+    it explicitly 400s on or doesn't document at all (`container`, `prompt_cache_key`,
+    `stop_sequences`, `top_k`) are rejected client-side rather than forwarded, see `_amessages`.
     """
 
     PROVIDER_NAME = "meta"
@@ -118,11 +118,10 @@ class MetaProvider(BaseOpenAIProvider):
 
         Meta's translation layer does not document support for Anthropic's context
         management or beta primitives, so those are rejected rather than silently dropped.
-        Likewise `prompt_cache_key` (documented only for Chat Completions/Responses) and
-        `stop_sequences`/`top_k` (documented to 400 on Messages) are rejected client-side
-        instead of being forwarded to the Anthropic SDK, which would either reject them with
-        a raw `TypeError` (`prompt_cache_key` isn't part of its `messages.create` signature)
-        or a less legible API-side 400.
+        Likewise `container` (not documented for Meta Messages), `prompt_cache_key`
+        (documented only for Chat Completions/Responses), and `stop_sequences`/`top_k`
+        (documented to 400 on Messages) are rejected client-side instead of being forwarded
+        to the Anthropic SDK or the Meta endpoint.
         """
         if params.context_management is not None or params.betas:
             msg = "context_management and betas are not supported by the Meta Messages API"
