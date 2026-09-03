@@ -17,6 +17,7 @@ try:
     from xai_sdk.chat import Chunk as XaiChunk
     from xai_sdk.chat import Response as XaiResponse
     from xai_sdk.chat import assistant, required_tool, system, tool_result, user
+    from xai_sdk.proto import chat_pb2
 
     from .utils import (
         _convert_models_list,
@@ -187,15 +188,30 @@ class XaiProvider(AnyLLM):
             if message["role"] == "user":
                 xai_messages.append(user(message["content"]))
             elif message["role"] == "assistant":
-                args: list[str] = []
-                if message.get("tool_calls"):
-                    # No idea how to pass tool calls reconstructed in the original protobuf format.
-                    args.extend(str(tool_call) for tool_call in message["tool_calls"])
-                xai_messages.append(assistant(*args, message["content"]))
+                content = message.get("content")
+                xai_message = (
+                    assistant(content) if content is not None else chat_pb2.Message(role=chat_pb2.ROLE_ASSISTANT)
+                )
+                for tool_call in message.get("tool_calls") or []:
+                    function = tool_call["function"]
+                    arguments = function.get("arguments")
+                    if not isinstance(arguments, str):
+                        arguments = json.dumps(arguments or {})
+                    xai_message.tool_calls.append(
+                        chat_pb2.ToolCall(
+                            id=tool_call["id"],
+                            type=chat_pb2.TOOL_CALL_TYPE_CLIENT_SIDE_TOOL,
+                            function=chat_pb2.FunctionCall(
+                                name=function["name"],
+                                arguments=arguments,
+                            ),
+                        )
+                    )
+                xai_messages.append(xai_message)
             elif message["role"] == "system":
                 xai_messages.append(system(message["content"]))
             elif message["role"] == "tool":
-                xai_messages.append(tool_result(message["content"]))
+                xai_messages.append(tool_result(message["content"], tool_call_id=message.get("tool_call_id")))
         if params.tools is not None:
             kwargs["tools"] = _convert_openai_tools_to_xai_tools(params.tools)
 
@@ -214,15 +230,11 @@ class XaiProvider(AnyLLM):
         # since xAI's parse() only supports Pydantic BaseModel.
         response_format_pb = None
         if params.response_format is not None and dataclasses.is_dataclass(params.response_format):
-            from xai_sdk.proto import chat_pb2
-
             response_format_pb = chat_pb2.ResponseFormat(
                 format_type=chat_pb2.FORMAT_TYPE_JSON_SCHEMA,
                 schema=json.dumps(get_json_schema(params.response_format)),
             )
         elif params.response_format is not None and isinstance(params.response_format, dict):
-            from xai_sdk.proto import chat_pb2
-
             rf = params.response_format
             if rf.get("type") == "json_schema":
                 json_schema = rf.get("json_schema", {})
