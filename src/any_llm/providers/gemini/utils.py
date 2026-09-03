@@ -49,6 +49,24 @@ def _has_json_schema_refs(schema: Any) -> bool:
     return False
 
 
+def _has_type_unions(schema: Any) -> bool:
+    """Return True if *schema* declares a type as a list, e.g. ``["string", "null"]``.
+
+    ``google.genai.types.Schema.type`` is a single ``types.Type`` enum, so the OpenAPI
+    3.0 shape cannot express a union and the API rejects the request. JSON Schema does
+    allow the list form, so such schemas must be routed through
+    ``FunctionDeclaration.parameters_json_schema``, which the SDK forwards to the
+    server as raw JSON Schema.
+    """
+    if isinstance(schema, dict):
+        if isinstance(schema.get("type"), list):
+            return True
+        return any(_has_type_unions(v) for v in schema.values())
+    if isinstance(schema, list):
+        return any(_has_type_unions(v) for v in schema)
+    return False
+
+
 def _has_additional_properties(schema: Any) -> bool:
     """Return True if *schema* sets ``additionalProperties`` anywhere, nested included.
 
@@ -86,7 +104,7 @@ def _convert_tool_spec(tools: list[dict[str, Any] | Any], provider_name: str) ->
         function = tool["function"]
         params: dict[str, Any] = function.get("parameters") or {}
 
-        if _has_json_schema_refs(params):
+        if _has_json_schema_refs(params) or _has_type_unions(params):
             function_declarations.append(
                 types.FunctionDeclaration(
                     name=function["name"],
@@ -326,11 +344,14 @@ def _convert_messages(
                     if tool_call_id := tool_call.get("id"):
                         tool_names[tool_call_id] = function_call["name"]
                     arguments = function_call.get("arguments")
-                    args = (
-                        json.loads(arguments)
-                        if isinstance(arguments, (str, bytes, bytearray)) and arguments
-                        else arguments or {}
-                    )
+                    if isinstance(arguments, (str, bytes, bytearray)) and arguments:
+                        try:
+                            args = json.loads(arguments)
+                        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                            msg = f"Tool call arguments for {function_call['name']!r} must be valid JSON"
+                            raise InvalidRequestError(msg, exc, provider_name) from exc
+                    else:
+                        args = arguments or {}
 
                     # Extract thought_signature if present (OpenAI compatibility format)
                     # SDK accepts base64 string or bytes

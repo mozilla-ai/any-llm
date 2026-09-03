@@ -23,6 +23,7 @@ from any_llm.providers.gemini.utils import (
     _convert_tool_spec,
     _create_openai_chunk_from_google_chunk,
     _has_additional_properties,
+    _has_type_unions,
     _map_finish_reason,
 )
 from any_llm.types.completion import (
@@ -484,6 +485,106 @@ async def test_completion_with_dataclass_response_format() -> None:
 )
 def test_has_additional_properties(schema: Any, expected: bool) -> None:
     assert _has_additional_properties(schema) is expected
+
+
+@pytest.mark.parametrize(
+    ("schema", "expected"),
+    [
+        ({"type": ["string", "null"]}, True),
+        ({"type": "object", "properties": {"a": {"type": ["string", "null"]}}}, True),
+        # The union that matters in practice sits inside array items, which the
+        # OpenAPI path copies verbatim into types.Schema.
+        (
+            {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {"type": "object", "properties": {"a": {"type": ["string", "null"]}}},
+                    }
+                },
+            },
+            True,
+        ),
+        # A single-element list is still a list and still unrepresentable.
+        ({"type": ["string"]}, True),
+        # Lists that are not type declarations must not trigger the routing.
+        ({"type": "object", "required": ["a", "b"], "properties": {"a": {"type": "string"}}}, False),
+        ({"type": "string", "enum": ["a", "b"]}, False),
+        ({"anyOf": [{"type": "string"}, {"type": "null"}]}, False),
+        ({"anyOf": [{"type": ["string", "null"]}]}, True),
+        ("not-a-schema", False),
+    ],
+)
+def test_has_type_unions(schema: Any, expected: bool) -> None:
+    assert _has_type_unions(schema) is expected
+
+
+def test_convert_tool_spec_type_union_routes_through_json_schema() -> None:
+    """A nullable field written as ``{"type": ["string", "null"]}`` must not be reshaped.
+
+    ``types.Schema.type`` is a single ``types.Type`` enum, so the OpenAPI path serializes
+    the list into a field that cannot hold it and Gemini answers 400. The union survives
+    only through ``parameters_json_schema``.
+    """
+    raw_params = {
+        "type": "object",
+        "properties": {
+            "candidates": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "content": {"type": "string"},
+                        "category": {"type": "string", "enum": ["preference", "fact"]},
+                        "valid_from_date": {"type": ["string", "null"]},
+                    },
+                    "required": ["content", "category"],
+                },
+            }
+        },
+        "required": ["candidates"],
+    }
+    openai_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "submit_candidates",
+                "description": "Submit candidates.",
+                "parameters": raw_params,
+            },
+        }
+    ]
+
+    tools = _convert_tool_spec(openai_tools, "gemini")
+
+    decl = tools[0].function_declarations[0]  # type: ignore[index]
+    assert decl.parameters is None
+    assert decl.parameters_json_schema == raw_params
+
+
+def test_convert_tool_spec_without_type_unions_still_uses_openapi_path() -> None:
+    """The reshaping path is unchanged for schemas types.Schema can represent."""
+    openai_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "echo",
+                "description": "Echo a word.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"word": {"type": "string"}},
+                    "required": ["word"],
+                },
+            },
+        }
+    ]
+
+    tools = _convert_tool_spec(openai_tools, "gemini")
+
+    decl = tools[0].function_declarations[0]  # type: ignore[index]
+    assert decl.parameters_json_schema is None
+    assert decl.parameters is not None
 
 
 @pytest.mark.asyncio
@@ -1963,6 +2064,38 @@ def test_convert_messages_accepts_json_or_parsed_tool_call_arguments(
     function_call = formatted_messages[0].parts[0].function_call
     assert function_call is not None
     assert function_call.args == expected_args
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected_exception"),
+    [
+        ("{not-json", json.JSONDecodeError),
+        (b"\xff", UnicodeDecodeError),
+        (bytearray(b"\xff"), UnicodeDecodeError),
+    ],
+)
+def test_convert_messages_rejects_malformed_serialized_tool_call_arguments(
+    arguments: str | bytes | bytearray, expected_exception: type[Exception]
+) -> None:
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": arguments},
+                }
+            ],
+        }
+    ]
+
+    with pytest.raises(InvalidRequestError, match="must be valid JSON") as exc_info:
+        _convert_messages(messages)
+
+    assert isinstance(exc_info.value.original_exception, expected_exception)
+    assert isinstance(exc_info.value.__cause__, expected_exception)
 
 
 def test_convert_messages_with_thought_signature_in_extra_content() -> None:
