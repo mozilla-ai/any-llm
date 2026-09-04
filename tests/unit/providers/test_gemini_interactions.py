@@ -569,3 +569,52 @@ async def test_convert_interaction_stream_propagates_cancellation_and_closes_sou
         await pending
 
     stream.close.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_aresponses_defaults_only_interactions_requests_to_v1() -> None:
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as client_class:
+        client = client_class.return_value
+        client.aio.interactions.create = AsyncMock(return_value=_interaction())
+        provider = GeminiProvider(api_key="test-key")
+        result = await provider.aresponses(
+            "gemini-3.8-flash",
+            "Hello",
+            instructions="Be concise",
+            timeout=1.5,
+        )
+
+    assert isinstance(result, Response)
+    assert result.output_text == "Hello"
+    client_class.assert_called_once_with(api_key="test-key")
+    client.aio.interactions.create.assert_awaited_once_with(
+        api_version="v1",
+        model="gemini-3.8-flash",
+        input="Hello",
+        system_instruction="Be concise",
+        timeout=1.5,
+    )
+
+
+@pytest.mark.asyncio
+async def test_aresponses_preserves_explicit_v1beta_client_configuration() -> None:
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as client_class:
+        client = client_class.return_value
+        client.aio.interactions.create = AsyncMock(return_value=_interaction())
+        provider = GeminiProvider(api_key="test-key", http_options={"api_version": "v1beta"})
+        await provider.aresponses("gemini-3.8-flash", "Hello")
+
+    assert client_class.call_args.kwargs["http_options"] == {"api_version": "v1beta"}
+    assert client.aio.interactions.create.await_args.kwargs["api_version"] == "v1beta"
+
+
+@pytest.mark.asyncio
+async def test_aresponses_rejects_openai_extra_body() -> None:
+    with patch("any_llm.providers.gemini.gemini.genai.Client"):
+        provider = GeminiProvider(api_key="test-key")
+        with pytest.raises(UnsupportedParameterError, match="extra_body"):
+            await provider.aresponses(
+                "gemini-3.8-flash",
+                "Hello",
+                extra_body={"future": True},
+            )
