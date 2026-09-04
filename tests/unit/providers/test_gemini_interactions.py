@@ -720,3 +720,71 @@ async def test_real_sdk_parses_stream_events_and_done_sentinel() -> None:
     assert terminal.response.output_text == "Hello"
     assert str(requests[0].url) == "https://example.test/v1/interactions"
     assert json.loads(requests[0].content)["stream"] is True
+
+
+@pytest.mark.asyncio
+async def test_real_sdk_http_error_uses_unified_error_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            headers={"content-type": "application/json"},
+            json={"error": {"code": "INVALID_ARGUMENT", "message": "invalid input"}},
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        provider = GeminiProvider(
+            api_key="test-key",
+            api_base="https://example.test",
+            http_options=types.HttpOptions(httpx_async_client=http_client),
+        )
+        with pytest.raises(InvalidRequestError) as raised:
+            await provider.aresponses("gemini-3.8-flash", "Hello")
+    finally:
+        await http_client.aclose()
+
+    assert raised.value.status_code == 400
+    assert raised.value.code == "INVALID_ARGUMENT"
+
+
+@pytest.mark.asyncio
+async def test_real_sdk_timeout_uses_unified_error_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        message = "read timed out"
+        raise httpx.ReadTimeout(message, request=request)
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        provider = GeminiProvider(
+            api_key="test-key",
+            api_base="https://example.test",
+            http_options=types.HttpOptions(httpx_async_client=http_client),
+        )
+        with pytest.raises(ProviderError) as raised:
+            await provider.aresponses("gemini-3.8-flash", "Hello", timeout=0.1)
+    finally:
+        await http_client.aclose()
+
+    assert raised.value.status_code is None
+    original = raised.value.original_exception
+    assert original is not None
+    assert type(original).__name__ == "APITimeoutError"
+    assert isinstance(original.__cause__, httpx.ReadTimeout)
+
+
+def test_responses_calls_interactions_synchronously() -> None:
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as client_class:
+        client_class.return_value.aio.interactions.create = AsyncMock(return_value=_interaction())
+        provider = GeminiProvider(api_key="test-key")
+        response = provider.responses("gemini-3.8-flash", "Hello")
+
+    assert isinstance(response, Response)
+    assert response.output_text == "Hello"
