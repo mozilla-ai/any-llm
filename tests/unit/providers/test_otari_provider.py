@@ -995,6 +995,41 @@ async def test_otari_amessages_streaming_output_format_uses_native_messages() ->
 
 
 @pytest.mark.asyncio
+async def test_otari_amessages_streaming_bare_output_format_uses_native_messages() -> None:
+    client = _mock_otari_client()
+    client.with_response_metadata.message.return_value = _MockMetadataStream([{"type": "message_stop"}])
+    provider = _build_provider(client)
+    provider._acompletion = AsyncMock()  # type: ignore[method-assign]
+    output_format = {"type": "json_schema", "schema": {"type": "object"}}
+    context_management = {"edits": [{"type": "compact_20260112"}]}
+    betas = ["compact-2026-01-12"]
+
+    result = await provider.amessages(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=100,
+        output_format=output_format,
+        stream=True,
+        context_management=context_management,
+        betas=betas,
+        cache_control={"type": "ephemeral"},
+    )
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+    collected = [event async for event in result]
+
+    assert len(collected) == 1
+    assert isinstance(collected[0], MessageStopEvent)
+    call_kwargs = client.message.call_args.kwargs
+    assert call_kwargs["stream"] is True
+    assert call_kwargs["output_format"] == {"format": output_format}
+    assert call_kwargs["context_management"] == context_management
+    assert call_kwargs["betas"] == betas
+    assert call_kwargs["cache_control"] == {"type": "ephemeral"}
+    provider._acompletion.assert_not_called()
+    client.completion.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_otari_amessages_output_format_uses_native_messages_with_anthropic_fields() -> None:
     class City(BaseModel):
         city: str
@@ -1049,6 +1084,26 @@ async def test_otari_amessages_bare_output_format_uses_native_messages() -> None
 
     assert client.message.call_args.kwargs["output_format"] == {"format": output_format}
     client.completion.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_schema_less_output_config_returns_plain_message() -> None:
+    client = _mock_otari_client()
+    client.message.return_value = SimpleNamespace(data=_message_response_payload(), request_id=None)
+    provider = _build_provider(client)
+
+    result = await provider.amessages(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        output_format={"effort": "high"},
+    )
+
+    assert isinstance(result, MessageResponse)
+    block = result.content[0]
+    assert isinstance(block, TextBlock)
+    assert block.text == "hi"
+    assert client.message.call_args.kwargs["output_format"] == {"effort": "high"}
 
 
 @pytest.mark.asyncio
