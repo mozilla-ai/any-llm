@@ -611,18 +611,20 @@ def test_messages_betas_rejects_non_list_edits(edits: Any) -> None:
         _messages_betas(params)
 
 
-def test_pop_anthropic_beta_header_decodes_bytes() -> None:
+def test_pop_anthropic_beta_header_preserves_bytes_for_sdk_validation() -> None:
+    value = b"fast-mode-2026-02-01, compact-2026-01-12"
     kwargs = {
         "extra_headers": {
-            "anthropic-beta": b"fast-mode-2026-02-01, compact-2026-01-12",
+            "anthropic-beta": value,
             "x-custom-header": "custom-value",
         }
     }
 
     betas = _pop_anthropic_beta_header(kwargs)
 
-    assert betas == ["fast-mode-2026-02-01", "compact-2026-01-12"]
-    assert kwargs == {"extra_headers": {"x-custom-header": "custom-value"}}
+    assert betas == []
+    assert kwargs["extra_headers"]["anthropic-beta"] is value
+    assert kwargs["extra_headers"]["x-custom-header"] == "custom-value"
 
 
 @pytest.mark.parametrize("value", [object(), b"\xff"])
@@ -1056,6 +1058,30 @@ async def test_amessages_non_streaming_with_all_params() -> None:
     assert call_kwargs["tool_choice"] == {"type": "auto"}
     assert call_kwargs["metadata"] == {"user_id": "u1"}
     assert call_kwargs["thinking"] == {"type": "enabled", "budget_tokens": 8192}
+
+
+@pytest.mark.asyncio
+async def test_amessages_sdk_v1_rejects_bytes_beta_header() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(500)
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+    )
+    try:
+        with pytest.raises(AttributeError, match="encode"):
+            await provider._amessages(params, extra_headers={"anthropic-beta": b"future-beta"})
+    finally:
+        await http_client.aclose()
+
+    assert requests == []
 
 
 @pytest.mark.asyncio

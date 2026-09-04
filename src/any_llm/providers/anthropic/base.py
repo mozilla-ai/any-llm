@@ -125,12 +125,8 @@ def _pop_anthropic_beta_header(kwargs: dict[str, Any]) -> list[str]:
     found_beta_header = False
     for name, value in extra_headers.items():
         if isinstance(name, str) and name.lower() == "anthropic-beta":
-            if isinstance(value, bytes):
-                try:
-                    value = value.decode()
-                except UnicodeDecodeError:
-                    remaining_headers[name] = value
-                    continue
+            # SDK v1 intentionally rejects bytes header values. Keep them untouched for its validation:
+            # https://github.com/anthropics/anthropic-sdk-python/blob/370ee927ca8a8d3b5d4f907555e890b2df685786/MIGRATION.md#bytes-header-values-no-longer-work
             if isinstance(value, str):
                 found_beta_header = True
                 header_betas.extend(beta.strip() for beta in value.split(",") if beta.strip())
