@@ -411,3 +411,161 @@ async def test_convert_interaction_stream_logs_and_skips_unknown_delta(caplog: p
         "response.completed",
     ]
     assert "Skipping unknown Gemini Interactions step delta" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_raises_error_event() -> None:
+    error = ErrorEvent.model_validate(
+        {"event_type": "error", "error": {"code": "gateway_timeout", "message": "deadline expired"}}
+    )
+
+    with pytest.raises(ProviderError, match="deadline expired") as raised:
+        _ = [event async for event in convert_interaction_stream(_events(error), model="requested")]
+
+    assert raised.value.code == "gateway_timeout"
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_rejects_missing_terminal_event() -> None:
+    with pytest.raises(ProviderError, match=r"before interaction\.completed"):
+        await _converted_events(_created())
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_rejects_terminal_before_created() -> None:
+    with pytest.raises(ProviderError, match=r"before interaction\.created"):
+        await _converted_events(_completed("failed"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("events", "message"),
+    [
+        (
+            [StepStart(index=0, step=ModelOutputStep())],
+            "step.start before interaction.created",
+        ),
+        (
+            [InteractionStatusUpdate(interaction_id="int-123", status="in_progress")],
+            "status update before interaction.created",
+        ),
+        (
+            [StepDelta(index=0, delta=TextDelta(text="unexpected"))],
+            "step.delta before interaction.created",
+        ),
+        (
+            [StepStop(index=0)],
+            "step.stop before interaction.created",
+        ),
+        (
+            [_created(), _created()],
+            "interaction.created more than once",
+        ),
+        (
+            [
+                _created(),
+                StepStart(index=0, step=ModelOutputStep()),
+                StepStart(index=0, step=ModelOutputStep()),
+            ],
+            "started step 0 more than once",
+        ),
+        (
+            [
+                _created(),
+                StepDelta(index=0, delta=TextDelta(text="unexpected")),
+            ],
+            "delta before step.start",
+        ),
+        (
+            [
+                _created(),
+                StepStart(index=0, step=UserInputStep()),
+                StepDelta(index=0, delta=TextDelta(text="unexpected")),
+            ],
+            "text for non-model step",
+        ),
+        (
+            [_created(), StepStop(index=0)],
+            "stopped unknown step",
+        ),
+        (
+            [
+                _created(),
+                StepStart(index=0, step=ModelOutputStep()),
+                _completed(),
+            ],
+            "before step.stop",
+        ),
+    ],
+)
+async def test_convert_interaction_stream_rejects_malformed_order(
+    events: list[InteractionSSEEvent],
+    message: str,
+) -> None:
+    with pytest.raises(ProviderError, match=message):
+        await _converted_events(*events)
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_closes_source_when_consumer_stops() -> None:
+    stream = AsyncMock()
+    stream.__aiter__.return_value = [_created()]
+
+    converted = convert_interaction_stream(stream, model="requested")
+    await anext(converted)
+    await converted.aclose()
+
+    stream.close.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_propagates_close_error_after_success() -> None:
+    stream = AsyncMock()
+    stream.__aiter__.return_value = [_created(), _completed()]
+    stream.close.side_effect = RuntimeError("close failed")
+
+    with pytest.raises(RuntimeError, match="close failed"):
+        _ = [event async for event in convert_interaction_stream(stream, model="requested")]
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_preserves_primary_error_when_close_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    stream = AsyncMock()
+    stream.__aiter__.return_value = [
+        ErrorEvent.model_validate(
+            {"event_type": "error", "error": {"code": "gateway_timeout", "message": "request failed"}}
+        )
+    ]
+    stream.close.side_effect = RuntimeError("close failed")
+
+    with (
+        caplog.at_level(logging.WARNING, logger="any_llm"),
+        pytest.raises(ProviderError, match="request failed"),
+    ):
+        _ = [event async for event in convert_interaction_stream(stream, model="requested")]
+
+    assert "Failed to close Gemini Interactions stream" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_propagates_cancellation_and_closes_source() -> None:
+    stream = AsyncMock()
+
+    async def blocked_events() -> AsyncIterator[InteractionSSEEvent]:
+        yield _created()
+        await asyncio.Event().wait()
+
+    stream.__aiter__.side_effect = blocked_events
+    converted = convert_interaction_stream(stream, model="requested")
+    await anext(converted)
+    await anext(converted)
+    pending = asyncio.create_task(anext(converted))
+    await asyncio.sleep(0)
+    pending.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await pending
+
+    stream.close.assert_awaited_once_with()
