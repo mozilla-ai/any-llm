@@ -241,6 +241,8 @@ class MessagesParams(BaseModel):
     ``messages.create(output_config=...)``. Other providers route either form through the
     completion bridge. The result is Anthropic's ``ParsedMessage``: its ``parsed_output`` holds
     the typed object for a type, or the parsed JSON (plain ``dict``/``list``) for a raw schema.
+    Providers with native support can instead return schema-constrained Messages events when
+    ``stream=True``.
 
     A dict that carries no schema in either shape raises ``InvalidRequestError`` on the bridged
     path rather than sending a ``response_format`` that constrains nothing.

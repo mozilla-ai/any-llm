@@ -132,6 +132,9 @@ class AnyLLM(ABC):
     SUPPORTS_MESSAGES: bool = True
     """Anthropic Messages API (all providers support it via conversion)"""
 
+    SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING: bool = False
+    """Whether Messages structured output can be streamed by this provider."""
+
     PROMPT_CACHE_KEY_SUPPORT: Literal["unsupported", "supported", "passthrough"] = "unsupported"
     """Whether prompt_cache_key is supported, forwarded to a router, or rejected."""
 
@@ -960,7 +963,8 @@ class AnyLLM(ABC):
                 ``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed
                 ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic
                 JSON schemas (``parsed_output`` holds the parsed JSON). The call returns
-                Anthropic's ``ParsedMessage``. Not supported with ``stream=True``.
+                Anthropic's ``ParsedMessage`` for non-streaming requests. Providers with native
+                support can stream schema-constrained Messages events instead.
             timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
                 An explicit ``None`` is treated the same as omitting it (the provider's default
                 applies), so it cannot request an unbounded timeout. Providers that have no
@@ -973,12 +977,13 @@ class AnyLLM(ABC):
             iterator of MessageStreamEvent (if streaming).
 
         Raises:
-            ValueError: If `output_format` is combined with `stream=True`.
+            ValueError: If `output_format` is combined with `stream=True` for a provider that
+                does not support streaming structured output.
             NotImplementedError: If `container`, `context_management`, or `betas` is used
                 with a provider that has no native Anthropic Messages API.
 
         """
-        if output_format is not None and stream:
+        if output_format is not None and stream and not self.SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING:
             msg = "stream is not supported for output_format"
             raise ValueError(msg)
 

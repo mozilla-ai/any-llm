@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from anthropic import transform_schema
 from pydantic import BaseModel
 
 from any_llm.exceptions import BatchNotCompleteError, UnsupportedParameterError
@@ -958,72 +959,96 @@ async def test_otari_amessages_streaming_forwards_anthropic_beta_params() -> Non
 
 
 @pytest.mark.asyncio
-async def test_otari_amessages_output_format_falls_back_to_bridge() -> None:
-    """With output_format set, otari delegates to the Completions bridge, not /messages."""
-    completion = ChatCompletion.model_validate(
-        {
-            "id": "chatcmpl-test",
-            "object": "chat.completion",
-            "created": 0,
-            "model": "claude-sonnet-4-5",
-            "choices": [
-                {"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": '{"city": "Paris"}'}}
-            ],
-        }
-    )
-
+async def test_otari_amessages_streaming_output_format_uses_native_messages() -> None:
     class City(BaseModel):
         city: str
 
     client = _mock_otari_client()
+    client.with_response_metadata.message.return_value = _MockMetadataStream([{"type": "message_stop"}])
     provider = _build_provider(client)
-    provider._acompletion = AsyncMock(return_value=completion)  # type: ignore[method-assign]
+    context_management = {"edits": [{"type": "compact_20260112"}]}
+    betas = ["compact-2026-01-12"]
+
+    result = await provider.amessages(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=100,
+        output_format=City,
+        stream=True,
+        context_management=context_management,
+        betas=betas,
+        cache_control={"type": "ephemeral"},
+    )
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+    collected = [event async for event in result]
+
+    assert len(collected) == 1
+    assert isinstance(collected[0], MessageStopEvent)
+    call_kwargs = client.message.call_args.kwargs
+    assert call_kwargs["stream"] is True
+    assert call_kwargs["output_format"] == {
+        "format": {"type": "json_schema", "schema": transform_schema(City.model_json_schema())}
+    }
+    assert call_kwargs["context_management"] == context_management
+    assert call_kwargs["betas"] == betas
+    assert call_kwargs["cache_control"] == {"type": "ephemeral"}
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_output_format_uses_native_messages_with_anthropic_fields() -> None:
+    class City(BaseModel):
+        city: str
+
+    client = _mock_otari_client()
+    payload = _message_response_payload()
+    payload["content"] = [{"type": "text", "text": '{"city": "Paris"}'}]
+    client.message.return_value = SimpleNamespace(data=payload, request_id=None)
+    provider = _build_provider(client)
+    provider._acompletion = AsyncMock()  # type: ignore[method-assign]
+    context_management = {"edits": [{"type": "compact_20260112"}]}
+    betas = ["compact-2026-01-12"]
 
     params = MessagesParams(
         model="claude-sonnet-4-5",
         messages=[{"role": "user", "content": "Capital of France?"}],
         max_tokens=100,
         output_format=City,
+        context_management=context_management,
+        betas=betas,
+        cache_control={"type": "ephemeral"},
     )
 
     result = await provider._amessages(params)
 
     assert isinstance(result, MessageResponse)
-    provider._acompletion.assert_called_once()
-    client.message.assert_not_called()
+    provider._acompletion.assert_not_called()
+    call_kwargs = client.message.call_args.kwargs
+    assert call_kwargs["output_format"] == {
+        "format": {"type": "json_schema", "schema": transform_schema(City.model_json_schema())}
+    }
+    assert call_kwargs["context_management"] == context_management
+    assert call_kwargs["betas"] == betas
+    assert call_kwargs["cache_control"] == {"type": "ephemeral"}
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "beta_params",
-    [
-        {"context_management": {"edits": [{"type": "compact_20260112"}]}},
-        {"betas": ["compact-2026-01-12"]},
-    ],
-)
-async def test_otari_amessages_output_format_with_beta_params_raises(beta_params: dict[str, Any]) -> None:
-    """output_format routes through the bridge, which cannot carry context_management or betas."""
-
-    class City(BaseModel):
-        city: str
-
+async def test_otari_amessages_bare_output_format_uses_native_messages() -> None:
     client = _mock_otari_client()
+    client.message.return_value = SimpleNamespace(data=_message_response_payload(), request_id=None)
     provider = _build_provider(client)
-    provider._acompletion = AsyncMock()  # type: ignore[method-assign]
+    output_format = {"type": "json_schema", "schema": {"type": "object"}}
 
     params = MessagesParams(
         model="claude-sonnet-4-5",
         messages=[{"role": "user", "content": "Capital of France?"}],
         max_tokens=100,
-        output_format=City,
-        **beta_params,
+        output_format=output_format,
     )
 
-    with pytest.raises(NotImplementedError, match="output_format cannot be combined"):
-        await provider._amessages(params)
+    await provider._amessages(params)
 
-    provider._acompletion.assert_not_called()
-    client.message.assert_not_called()
+    assert client.message.call_args.kwargs["output_format"] == {"format": output_format}
+    client.completion.assert_not_called()
 
 
 @pytest.mark.asyncio
