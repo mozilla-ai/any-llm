@@ -81,7 +81,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.NEBIUS: "openai/gpt-oss-120b",
         LLMProvider.SAMBANOVA: "gpt-oss-120b",
         LLMProvider.TOGETHER: "openai/gpt-oss-20b",
-        LLMProvider.PORTKEY: "@nebius-any-llm/Qwen/Qwen3-32B",
+        LLMProvider.PORTKEY: "@nebius-any-llm/Qwen/Qwen3.5-397B-A17B",
         LLMProvider.MINIMAX: "MiniMax-M2",
         LLMProvider.ZAI: "glm-4.5-flash",
         LLMProvider.DEEPINFRA: "deepseek-ai/DeepSeek-R1",
@@ -106,7 +106,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.GMI: "zai-org/GLM-5-FP8",
         LLMProvider.GITHUB: "openai/gpt-4.1-nano",
         LLMProvider.VERTEXAI: "gemini-3-flash-preview",
-        LLMProvider.MOONSHOT: "kimi-k2.6",
+        LLMProvider.MOONSHOT: "kimi-k3",
         LLMProvider.SAMBANOVA: "gpt-oss-120b",
         LLMProvider.TOGETHER: "openai/gpt-oss-20b",
         LLMProvider.XAI: "grok-3-mini-latest",
@@ -150,7 +150,7 @@ def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict
         LLMProvider.OPENAI: "gpt-5-mini",  # Slightly more powerful so that it doesn't get caught in a loop of logic
         LLMProvider.WATSONX: "meta-llama/llama-guard-3-11b-vision",
         LLMProvider.SAMBANOVA: "gemma-4-31B-it",
-        LLMProvider.NEBIUS: "Qwen/Qwen2.5-VL-72B-Instruct",
+        LLMProvider.NEBIUS: "google/gemma-3-27b-it",
         LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
         LLMProvider.COHERE: "command-a-vision-07-2025",  # command-a-03-2025 rejects image content
         LLMProvider.OLLAMA: "llava-phi3",  # Fast vision model compatible with OpenAI format
