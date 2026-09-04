@@ -162,6 +162,13 @@ def test_convert_interaction_preserves_explicit_zero_total_usage() -> None:
     assert response.usage.total_tokens == 0
 
 
+def test_convert_interaction_preserves_absent_usage() -> None:
+    interaction = _interaction()
+    interaction.usage = None
+
+    assert convert_interaction_to_response(interaction).usage is None
+
+
 def test_convert_interaction_preserves_empty_text_output() -> None:
     response = convert_interaction_to_response(_interaction(steps=[ModelOutputStep(content=[TextContent(text="")])]))
 
@@ -209,6 +216,21 @@ def test_convert_interaction_handles_unknown_status_and_invalid_timestamp() -> N
 
     assert response.status == "in_progress"
     assert response.created_at == 0.0
+
+
+@pytest.mark.parametrize(
+    ("gemini_status", "expected_status"),
+    [
+        ("queued", "queued"),
+        ("requires_action", "incomplete"),
+        ("budget_exceeded", "incomplete"),
+    ],
+)
+def test_convert_interaction_normalizes_extended_sdk_statuses(
+    gemini_status: str,
+    expected_status: str,
+) -> None:
+    assert convert_interaction_to_response(_interaction(status=gemini_status)).status == expected_status
 
 
 def test_convert_responses_params_maps_only_reviewed_text_subset() -> None:
@@ -335,6 +357,25 @@ async def test_convert_interaction_stream_keeps_output_indices_contiguous() -> N
     terminal = result[-1]
     assert isinstance(terminal, ResponseCompletedEvent)
     assert terminal.response.output[0].id == "msg-0"
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_orders_terminal_messages_by_output_index() -> None:
+    result = await _converted_events(
+        _created(),
+        StepStart(index=7, step=ModelOutputStep()),
+        StepStart(index=2, step=ModelOutputStep()),
+        StepDelta(index=2, delta=TextDelta(text="second")),
+        StepStop(index=2),
+        StepDelta(index=7, delta=TextDelta(text="first")),
+        StepStop(index=7),
+        _completed(),
+    )
+
+    terminal = result[-1]
+    assert isinstance(terminal, ResponseCompletedEvent)
+    assert [message.id for message in terminal.response.output] == ["msg-0", "msg-1"]
+    assert terminal.response.output_text == "firstsecond"
 
 
 @pytest.mark.asyncio
