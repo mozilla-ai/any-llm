@@ -1,154 +1,345 @@
-from contextlib import contextmanager
-from unittest.mock import AsyncMock, MagicMock, patch
+import json
+import re
+import threading
+from unittest.mock import patch
 
+import httpx
 import pytest
+from openai import OpenAIError
 
-from any_llm.exceptions import MissingApiKeyError
+from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.providers.azureopenai.azureopenai import AzureopenaiProvider
-from any_llm.types.completion import CompletionParams
+
+_HTTP_OK = 200
+_HTTP_TOO_MANY_REQUESTS = 429
+_CHAT_RESPONSE = {
+    "id": "chatcmpl-test",
+    "object": "chat.completion",
+    "created": 1,
+    "model": "deployment-name",
+    "choices": [
+        {
+            "index": 0,
+            "finish_reason": "stop",
+            "logprobs": None,
+            "message": {"role": "assistant", "content": "Hello from Azure", "future_message_field": True},
+        }
+    ],
+    "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
+    "future_response_field": True,
+}
+_CHAT_STREAM = (
+    b'data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,'
+    b'"model":"deployment-name","choices":[{"index":0,"delta":{"role":"assistant",'
+    b'"content":"Hello"},"finish_reason":null}]}\n\n'
+    b"data: [DONE]\n\n"
+)
+_RESPONSES_RESPONSE = {
+    "id": "resp-test",
+    "object": "response",
+    "created_at": 1,
+    "model": "deployment-name",
+    "output": [
+        {
+            "id": "msg-test",
+            "type": "message",
+            "role": "assistant",
+            "status": "completed",
+            "content": [{"type": "output_text", "text": "Hello from Responses", "annotations": []}],
+        }
+    ],
+    "parallel_tool_calls": False,
+    "tool_choice": "auto",
+    "tools": [],
+    "future_response_field": True,
+}
 
 
-@contextmanager
-def mock_azureopenai_provider():  # type: ignore[no-untyped-def]
-    with patch("any_llm.providers.azureopenai.azureopenai.AsyncAzureOpenAI") as mock_azure_client:
-        mock_client_instance = MagicMock()
-        mock_azure_client.return_value = mock_client_instance
+def _azure_transport(
+    status_codes: tuple[int, ...] = (_HTTP_OK,),
+) -> tuple[httpx.MockTransport, list[httpx.Request]]:
+    requests: list[httpx.Request] = []
 
-        mock_response = MagicMock()
-        mock_client_instance.chat.completions.create = AsyncMock(return_value=mock_response)
+    def handle(request: httpx.Request) -> httpx.Response:
+        request.read()
+        requests.append(request)
+        status = status_codes[min(len(requests) - 1, len(status_codes) - 1)]
+        if status != _HTTP_OK:
+            return httpx.Response(
+                status,
+                headers={"Retry-After": "0"},
+                json={
+                    "error": {
+                        "message": "request rejected",
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                    }
+                },
+            )
+        if request.url.path.endswith("/responses"):
+            return httpx.Response(_HTTP_OK, json=_RESPONSES_RESPONSE)
+        if b'"stream":true' in request.content:
+            return httpx.Response(_HTTP_OK, headers={"Content-Type": "text/event-stream"}, content=_CHAT_STREAM)
+        return httpx.Response(_HTTP_OK, json=_CHAT_RESPONSE)
 
-        yield mock_client_instance, mock_azure_client
-
-
-@pytest.mark.asyncio
-async def test_azureopenai_uses_azure_endpoint() -> None:
-    """Test that AzureopenaiProvider maps api_base to azure_endpoint."""
-    api_key = "test-api-key"
-    api_base = "https://test.openai.azure.com"
-
-    messages = [{"role": "user", "content": "Hello"}]
-
-    with mock_azureopenai_provider() as (mock_client, mock_azure_client):
-        provider = AzureopenaiProvider(api_key=api_key, api_base=api_base)
-        await provider._acompletion(CompletionParams(model_id="gpt-4", messages=messages))
-
-        mock_azure_client.assert_called_once()
-        call_args = mock_azure_client.call_args
-        assert call_args is not None
-        _, kwargs = call_args
-        assert kwargs["azure_endpoint"] == api_base
-        assert kwargs["api_key"] == api_key
-
-        mock_client.chat.completions.create.assert_called_once()
+    return httpx.MockTransport(handle), requests
 
 
-@pytest.mark.asyncio
-async def test_azureopenai_api_version_default() -> None:
-    """Test that AzureopenaiProvider uses default API version."""
-    api_key = "test-api-key"
-    api_base = "https://test.openai.azure.com"
-
-    with mock_azureopenai_provider() as (_, mock_azure_client):
-        AzureopenaiProvider(api_key=api_key, api_base=api_base)
-
-        mock_azure_client.assert_called_once()
-        call_args = mock_azure_client.call_args
-        assert call_args is not None
-        _, kwargs = call_args
-        assert kwargs["api_version"] == "preview"
-
-
-@pytest.mark.asyncio
-async def test_azureopenai_api_version_custom() -> None:
-    """Test that AzureopenaiProvider accepts custom API version via kwargs."""
-    api_key = "test-api-key"
-    api_base = "https://test.openai.azure.com"
-    custom_api_version = "2024-06-01"
-
-    with mock_azureopenai_provider() as (_, mock_azure_client):
-        AzureopenaiProvider(api_key=api_key, api_base=api_base, api_version=custom_api_version)
-
-        mock_azure_client.assert_called_once()
-        call_args = mock_azure_client.call_args
-        assert call_args is not None
-        _, kwargs = call_args
-        assert kwargs["api_version"] == custom_api_version
-
-
-@pytest.mark.asyncio
-async def test_azureopenai_api_version_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that AzureopenaiProvider reads API version from environment."""
-    api_key = "test-api-key"
-    api_base = "https://test.openai.azure.com"
-    env_api_version = "2024-08-01-preview"
-
-    monkeypatch.setenv("OPENAI_API_VERSION", env_api_version)
-
-    with mock_azureopenai_provider() as (_, mock_azure_client):
-        AzureopenaiProvider(api_key=api_key, api_base=api_base)
-
-        mock_azure_client.assert_called_once()
-        call_args = mock_azure_client.call_args
-        assert call_args is not None
-        _, kwargs = call_args
-        assert kwargs["api_version"] == env_api_version
-
-
-@pytest.mark.asyncio
-async def test_azureopenai_ad_token_auth() -> None:
-    """Test that AzureopenaiProvider supports Azure AD token authentication."""
-    api_base = "https://test.openai.azure.com"
-    azure_ad_token = "test-ad-token"  # noqa: S105
-
-    with mock_azureopenai_provider() as (_, mock_azure_client):
-        AzureopenaiProvider(api_key=None, api_base=api_base, azure_ad_token=azure_ad_token)
-
-        mock_azure_client.assert_called_once()
-        call_args = mock_azure_client.call_args
-        assert call_args is not None
-        _, kwargs = call_args
-        assert kwargs["azure_ad_token"] == azure_ad_token
-
-
-def test_azureopenai_requires_api_key_or_ad_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    """With no key and no Entra token the typed error is raised, not the SDK's own OpenAIError."""
-    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("AZURE_OPENAI_AD_TOKEN", raising=False)
-
-    with pytest.raises(MissingApiKeyError, match="AZURE_OPENAI_API_KEY"):
-        AzureopenaiProvider(api_key=None, api_base="https://test.openai.azure.com")
-
-
-def test_azureopenai_ad_token_provider_counts_as_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A token provider callable is the third Azure auth path and must not trip the check."""
-    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("AZURE_OPENAI_AD_TOKEN", raising=False)
-
-    def token_provider() -> str:
-        return "t"
-
-    with mock_azureopenai_provider() as (_, mock_azure_client):
+def test_azureopenai_normalizes_v1_endpoint_and_preserves_client_options() -> None:
+    with patch("any_llm.providers.azureopenai.azureopenai.AsyncOpenAI") as sdk_client:
         AzureopenaiProvider(
-            api_key=None, api_base="https://test.openai.azure.com", azure_ad_token_provider=token_provider
+            api_key="key",
+            api_base="https://explicit.openai.azure.com/openai/v1/",
+            azure_endpoint="https://ignored.openai.azure.com",
+            default_query={"api-version": "v1", "trace": "1"},
+            timeout=30,
         )
 
-        kwargs = mock_azure_client.call_args.kwargs
-        assert kwargs["api_key"] is None
-        assert kwargs["azure_ad_token_provider"] is token_provider
+    sdk_client.assert_called_once_with(
+        api_key="key",
+        base_url="https://explicit.openai.azure.com/openai/v1/",
+        default_query={"api-version": "v1", "trace": "1"},
+        timeout=30,
+    )
+
+
+def test_azureopenai_uses_environment_endpoint_and_entra_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://resource.openai.azure.com")
+    monkeypatch.setenv("AZURE_OPENAI_AD_TOKEN", "entra-token")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "lower-precedence-key")
+
+    with patch("any_llm.providers.azureopenai.azureopenai.AsyncOpenAI") as sdk_client:
+        AzureopenaiProvider()
+
+    assert sdk_client.call_args.kwargs["api_key"] == "entra-token"
+    assert sdk_client.call_args.kwargs["base_url"] == "https://resource.openai.azure.com/openai/v1/"
+
+
+def test_azureopenai_explicit_azure_arguments_override_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://environment.openai.azure.com")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "environment-key")
+
+    with patch("any_llm.providers.azureopenai.azureopenai.AsyncOpenAI") as sdk_client:
+        AzureopenaiProvider(
+            azure_endpoint="https://explicit.openai.azure.com",
+            azure_ad_token="explicit-token",  # noqa: S106
+        )
+
+    assert sdk_client.call_args.kwargs["api_key"] == "explicit-token"
+    assert sdk_client.call_args.kwargs["base_url"] == "https://explicit.openai.azure.com/openai/v1/"
+
+
+@pytest.mark.parametrize(
+    ("legacy_options", "expected_parameter"),
+    [
+        ({"api_version": "2024-10-21"}, "api_version"),
+        ({"azure_deployment": "deployment-name"}, "azure_deployment"),
+        ({"default_query": {"api-version": "2024-10-21"}}, "default_query['api-version']"),
+    ],
+)
+def test_azureopenai_rejects_legacy_routing_options(legacy_options: dict[str, object], expected_parameter: str) -> None:
+    with pytest.raises(UnsupportedParameterError, match=re.escape(expected_parameter)):
+        AzureopenaiProvider(
+            api_key="key",
+            api_base="https://resource.openai.azure.com",
+            **legacy_options,
+        )
+
+
+def test_azureopenai_rejects_legacy_api_version_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENAI_API_VERSION", "2024-10-21")
+
+    with pytest.raises(UnsupportedParameterError, match="OPENAI_API_VERSION"):
+        AzureopenaiProvider(api_key="key", api_base="https://resource.openai.azure.com")
+
+
+@pytest.mark.parametrize(
+    ("api_key", "ad_token", "expected_credential"),
+    [("", "entra-token", "entra-token"), ("api-key", "", "api-key")],
+)
+def test_azureopenai_treats_empty_environment_credentials_as_absent(
+    monkeypatch: pytest.MonkeyPatch,
+    api_key: str,
+    ad_token: str,
+    expected_credential: str,
+) -> None:
+    """An empty environment value must not count as a second credential."""
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://resource.openai.azure.com")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", api_key)
+    monkeypatch.setenv("AZURE_OPENAI_AD_TOKEN", ad_token)
+
+    with patch("any_llm.providers.azureopenai.azureopenai.AsyncOpenAI") as sdk_client:
+        AzureopenaiProvider()
+
+    assert sdk_client.call_args.kwargs["api_key"] == expected_credential
+
+
+def test_azureopenai_requires_one_endpoint_and_credential(monkeypatch: pytest.MonkeyPatch) -> None:
+    for variable in ("AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_AD_TOKEN", "AZURE_OPENAI_API_KEY"):
+        monkeypatch.delenv(variable, raising=False)
+
+    with pytest.raises(ValueError, match="endpoint is required"):
+        AzureopenaiProvider(api_key="key")
+    with pytest.raises(MissingApiKeyError, match="AZURE_OPENAI_API_KEY or AZURE_OPENAI_AD_TOKEN"):
+        AzureopenaiProvider(api_base="https://resource.openai.azure.com")
+    token = "token"  # noqa: S105
+    with pytest.raises(OpenAIError, match="mutually exclusive"):
+        AzureopenaiProvider(
+            api_key="key",
+            api_base="https://resource.openai.azure.com",
+            azure_ad_token=token,
+        )
+    with pytest.raises(OpenAIError, match="mutually exclusive"):
+        AzureopenaiProvider(
+            api_key="key",
+            api_base="https://resource.openai.azure.com",
+            azure_ad_token_provider=lambda: token,
+        )
 
 
 @pytest.mark.asyncio
-async def test_azureopenai_preserves_extra_kwargs() -> None:
-    """Test that AzureopenaiProvider preserves extra kwargs."""
-    api_key = "test-api-key"
-    api_base = "https://test.openai.azure.com"
-    custom_timeout = 30
+async def test_azureopenai_sends_chat_to_v1_with_bearer_api_key_and_preserves_optional_presence() -> None:
+    transport, requests = _azure_transport()
+    provider = AzureopenaiProvider(
+        api_key="api-key",
+        api_base="https://resource.openai.azure.com",
+        http_client=httpx.AsyncClient(transport=transport),
+        max_retries=0,
+    )
+    try:
+        first = await provider.acompletion(
+            model="deployment-name",
+            messages=[{"role": "user", "content": "Hello"}],
+        )
+        await provider.acompletion(
+            model="deployment-name",
+            messages=[{"role": "user", "content": "Hello"}],
+            temperature=0,
+        )
+    finally:
+        await provider.client.close()
 
-    with mock_azureopenai_provider() as (_, mock_azure_client):
-        AzureopenaiProvider(api_key=api_key, api_base=api_base, timeout=custom_timeout)
+    assert first.choices[0].message.content == "Hello from Azure"
+    assert [request.url.path for request in requests] == [
+        "/openai/v1/chat/completions",
+        "/openai/v1/chat/completions",
+    ]
+    assert [request.headers["Authorization"] for request in requests] == ["Bearer api-key", "Bearer api-key"]
+    first_body = json.loads(requests[0].content)
+    second_body = json.loads(requests[1].content)
+    assert first_body["model"] == "deployment-name"
+    assert "temperature" not in first_body
+    assert second_body["temperature"] == 0
 
-        mock_azure_client.assert_called_once()
-        call_args = mock_azure_client.call_args
-        assert call_args is not None
-        _, kwargs = call_args
-        assert kwargs["timeout"] == custom_timeout
+
+@pytest.mark.asyncio
+async def test_azureopenai_refreshes_sync_entra_provider_before_sdk_retry() -> None:
+    """The SDK retries with refreshed credentials without blocking the event loop."""
+    tokens = iter(("entra-token-1", "entra-token-2"))
+    event_loop_thread = threading.get_ident()
+    provider_threads: list[int] = []
+
+    def token_provider() -> str:
+        provider_threads.append(threading.get_ident())
+        return next(tokens)
+
+    transport, requests = _azure_transport((_HTTP_TOO_MANY_REQUESTS, _HTTP_OK))
+    provider = AzureopenaiProvider(
+        api_base="https://resource.openai.azure.com",
+        azure_ad_token_provider=token_provider,
+        http_client=httpx.AsyncClient(transport=transport),
+        max_retries=1,
+    )
+    try:
+        result = await provider.acompletion(
+            model="deployment-name",
+            messages=[{"role": "user", "content": "Hello"}],
+        )
+    finally:
+        await provider.client.close()
+
+    assert result.choices[0].message.content == "Hello from Azure"
+    assert [request.url.path for request in requests] == [
+        "/openai/v1/chat/completions",
+        "/openai/v1/chat/completions",
+    ]
+    assert [request.headers["Authorization"] for request in requests] == [
+        "Bearer entra-token-1",
+        "Bearer entra-token-2",
+    ]
+    assert provider_threads
+    assert all(thread_id != event_loop_thread for thread_id in provider_threads)
+
+
+@pytest.mark.asyncio
+async def test_azureopenai_rejects_empty_entra_provider_token() -> None:
+    """Reject an empty dynamic token before sending the request."""
+
+    def token_provider() -> str:
+        return ""
+
+    transport, _ = _azure_transport()
+    provider = AzureopenaiProvider(
+        api_base="https://resource.openai.azure.com",
+        azure_ad_token_provider=token_provider,
+        http_client=httpx.AsyncClient(transport=transport),
+        max_retries=0,
+    )
+    try:
+        with (
+            pytest.warns(DeprecationWarning, match="Provider-specific exceptions"),
+            pytest.raises(ValueError, match="non-empty string"),
+        ):
+            await provider.acompletion(
+                model="deployment-name",
+                messages=[{"role": "user", "content": "Hello"}],
+            )
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
+async def test_azureopenai_supports_async_entra_provider_and_chat_sse() -> None:
+    async def token_provider() -> str:
+        return "async-entra-token"
+
+    transport, requests = _azure_transport()
+    provider = AzureopenaiProvider(
+        api_base="https://resource.openai.azure.com",
+        azure_ad_token_provider=token_provider,
+        http_client=httpx.AsyncClient(transport=transport),
+        max_retries=0,
+    )
+    try:
+        stream = await provider.acompletion(
+            model="deployment-name",
+            messages=[{"role": "user", "content": "Hello"}],
+            stream=True,
+        )
+        chunks = [chunk async for chunk in stream]
+    finally:
+        await provider.client.close()
+
+    assert [request.url.path for request in requests] == ["/openai/v1/chat/completions"]
+    assert [request.headers["Authorization"] for request in requests] == ["Bearer async-entra-token"]
+    assert [chunk.choices[0].delta.content for chunk in chunks] == ["Hello"]
+
+
+@pytest.mark.asyncio
+async def test_azureopenai_sends_responses_to_v1() -> None:
+    transport, requests = _azure_transport()
+    provider = AzureopenaiProvider(
+        api_key="api-key",
+        api_base="https://resource.openai.azure.com",
+        http_client=httpx.AsyncClient(transport=transport),
+        max_retries=0,
+    )
+    try:
+        response = await provider.aresponses(model="deployment-name", input_data="Hello")
+    finally:
+        await provider.client.close()
+
+    assert response.id == "resp-test"
+    assert [request.url.path for request in requests] == ["/openai/v1/responses"]
+    assert [request.headers["Authorization"] for request in requests] == ["Bearer api-key"]
+    assert requests[0].read() == b'{"input":"Hello","model":"deployment-name"}'
