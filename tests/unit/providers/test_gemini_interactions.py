@@ -618,3 +618,105 @@ async def test_aresponses_rejects_openai_extra_body() -> None:
                 "Hello",
                 extra_body={"future": True},
             )
+
+
+@pytest.mark.asyncio
+async def test_real_sdk_serializes_stable_interactions_path_and_body() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "int-123",
+                "status": "completed",
+                "model": "gemini-3.8-flash",
+                "steps": [{"type": "model_output", "content": [{"type": "text", "text": "Hello"}]}],
+            },
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        provider = GeminiProvider(
+            api_key="test-key",
+            api_base="https://example.test",
+            http_options=types.HttpOptions(httpx_async_client=http_client),
+        )
+        response = await provider.aresponses(
+            "gemini-3.8-flash",
+            "Hello",
+            instructions="",
+            max_output_tokens=0,
+        )
+    finally:
+        await http_client.aclose()
+
+    assert isinstance(response, Response)
+    assert response.output_text == "Hello"
+    assert len(requests) == 1
+    assert str(requests[0].url) == "https://example.test/v1/interactions"
+    assert requests[0].headers["x-goog-api-key"] == "test-key"
+    assert json.loads(requests[0].content) == {
+        "input": "Hello",
+        "model": "gemini-3.8-flash",
+        "generation_config": {"max_output_tokens": 0},
+        "system_instruction": "",
+    }
+
+
+@pytest.mark.asyncio
+async def test_real_sdk_parses_stream_events_and_done_sentinel() -> None:
+    requests: list[httpx.Request] = []
+    event_payloads = [
+        {
+            "event_type": "interaction.created",
+            "interaction": {"id": "int-123", "status": "in_progress"},
+        },
+        {
+            "event_type": "step.start",
+            "index": 0,
+            "step": {"type": "model_output", "content": [{"type": "text", "text": ""}]},
+        },
+        {"event_type": "step.delta", "index": 0, "delta": {"type": "text", "text": "Hello"}},
+        {"event_type": "step.stop", "index": 0},
+        {
+            "event_type": "interaction.completed",
+            "interaction": {"id": "int-123", "status": "completed"},
+        },
+    ]
+    body = "".join(f"data: {json.dumps(payload)}\n\n" for payload in event_payloads) + "data: [DONE]\n\n"
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body)
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        provider = GeminiProvider(
+            api_key="test-key",
+            api_base="https://example.test",
+            http_options=types.HttpOptions(httpx_async_client=http_client),
+        )
+        response = await provider.aresponses("gemini-3.8-flash", "Hello", stream=True)
+        assert isinstance(response, AsyncIterator)
+        events = [event async for event in response]
+    finally:
+        await http_client.aclose()
+
+    assert [event.type for event in events] == [
+        "response.created",
+        "response.in_progress",
+        "response.output_item.added",
+        "response.content_part.added",
+        "response.output_text.delta",
+        "response.output_text.done",
+        "response.content_part.done",
+        "response.output_item.done",
+        "response.completed",
+    ]
+    terminal = events[-1]
+    assert isinstance(terminal, ResponseCompletedEvent)
+    assert terminal.response.output_text == "Hello"
+    assert str(requests[0].url) == "https://example.test/v1/interactions"
+    assert json.loads(requests[0].content)["stream"] is True
