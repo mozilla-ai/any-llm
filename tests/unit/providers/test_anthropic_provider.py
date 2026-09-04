@@ -21,6 +21,7 @@ from any_llm.providers.anthropic.utils import (
     _convert_models_list,
     _convert_response_format,
     _convert_tool_spec,
+    _normalize_anthropic_type_arrays,
 )
 from any_llm.types.completion import ChatCompletionMessageFunctionToolCall, CompletionParams, ReasoningEffort
 
@@ -701,6 +702,111 @@ async def test_completion_with_response_format_dict_json_schema() -> None:
 
         call_kwargs = mock_anthropic.return_value.messages.create.call_args[1]
         assert call_kwargs["output_config"] == {"format": {"type": "json_schema", "schema": transform_schema(schema)}}
+
+
+def test_convert_response_format_normalizes_type_arrays() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "code": {"type": "string"},
+            "answer": {"type": ["string", "null"]},
+        },
+        "required": ["code", "answer"],
+        "additionalProperties": False,
+    }
+
+    result = _convert_response_format(
+        {"type": "json_schema", "json_schema": {"name": "CodeStep", "schema": schema}},
+        "anthropic",
+    )
+
+    assert result["format"]["schema"]["properties"]["answer"] == {"anyOf": [{"type": "string"}, {"type": "null"}]}
+
+
+def test_normalize_anthropic_type_arrays_separates_composition_keywords() -> None:
+    schema = {
+        "type": ["string", "null"],
+        "anyOf": [{"type": "string", "maxLength": 20}, {"type": "null"}],
+    }
+
+    result = _normalize_anthropic_type_arrays(schema)
+
+    assert result == {
+        "allOf": [
+            {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            {"anyOf": [{"type": "string", "maxLength": 20}, {"type": "null"}]},
+        ]
+    }
+
+
+@pytest.mark.parametrize(
+    ("composition_keyword", "transformed_keyword"),
+    [("anyOf", "anyOf"), ("oneOf", "anyOf"), ("allOf", "allOf")],
+)
+def test_convert_response_format_keeps_type_arrays_separate_from_composition(
+    composition_keyword: str,
+    transformed_keyword: str,
+) -> None:
+    variants = [{"type": "string"}, {"type": "integer"}]
+    schema = {"type": ["string", "null"], composition_keyword: variants}
+
+    result = _convert_response_format(
+        {"type": "json_schema", "json_schema": {"name": "Composed", "schema": schema}},
+        "anthropic",
+    )
+
+    assert result["format"]["schema"] == {
+        "allOf": [
+            {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            {transformed_keyword: variants},
+        ]
+    }
+
+
+def test_normalize_anthropic_type_arrays_preserves_instance_values() -> None:
+    schema = {
+        "type": "object",
+        "examples": [{"type": []}],
+        "default": {"type": ["string", "null"]},
+        "const": {"type": ["integer", "null"]},
+        "enum": [{"type": []}, {"type": ["number", "null"]}],
+    }
+
+    assert _normalize_anthropic_type_arrays(schema) == schema
+
+
+def test_normalize_anthropic_type_arrays_recurses_only_through_subschemas() -> None:
+    schema = {
+        "$defs": {"optionalName": {"type": ["string", "null"]}},
+        "allOf": [{"properties": {"count": {"type": ["integer", "null"]}}}],
+        "items": {"type": ["boolean", "null"]},
+    }
+
+    assert _normalize_anthropic_type_arrays(schema) == {
+        "$defs": {"optionalName": {"anyOf": [{"type": "string"}, {"type": "null"}]}},
+        "allOf": [
+            {
+                "properties": {
+                    "count": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                }
+            }
+        ],
+        "items": {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
+    }
+
+
+@pytest.mark.parametrize(
+    ("type_schema", "error"),
+    [
+        ({"type": []}, "at least one string type"),
+        ({"type": ["string", 1]}, "at least one string type"),
+    ],
+)
+def test_convert_response_format_rejects_invalid_type_arrays(type_schema: dict[str, Any], error: str) -> None:
+    response_format = {"type": "json_schema", "json_schema": {"name": "Invalid", "schema": type_schema}}
+
+    with pytest.raises(ValueError, match=error):
+        _convert_response_format(response_format, "anthropic")
 
 
 @pytest.mark.asyncio
