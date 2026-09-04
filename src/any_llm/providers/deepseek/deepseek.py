@@ -14,15 +14,19 @@ from any_llm.providers.deepseek.utils import (
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, ReasoningEffort
 
-# DeepSeek Chat accepts low, high, and max. Its compatibility mapping collapses medium and
-# xhigh to high. OpenAI's minimal value is not part of the DeepSeek Chat contract.
+# Each entry maps an any-llm effort to DeepSeek's top-level effort and thinking toggle.
+# DeepSeek Chat accepts low, high, and max, maps medium and xhigh to high, and does not
+# accept OpenAI's minimal value.
 # https://api-docs.deepseek.com/guides/thinking_mode/
-_REASONING_EFFORT_MAP: dict[ReasoningEffort, str] = {
-    "low": "low",
-    "medium": "high",
-    "high": "high",
-    "xhigh": "high",
-    "max": "max",
+_REASONING_CONTROLS: dict[ReasoningEffort | None, tuple[str | None, str | None]] = {
+    None: (None, None),
+    "auto": (None, None),
+    "none": (None, "disabled"),
+    "low": ("low", "enabled"),
+    "medium": ("high", "enabled"),
+    "high": ("high", "enabled"),
+    "xhigh": ("high", "enabled"),
+    "max": ("max", "enabled"),
 }
 
 # These normalized fields are absent from the current DeepSeek Chat schema, except for the two
@@ -36,7 +40,6 @@ _UNSUPPORTED_DEEPSEEK_FIELDS = frozenset(
         "n",
         "parallel_tool_calls",
         "presence_penalty",
-        "prompt_cache_key",
         "seed",
         "service_tier",
     }
@@ -73,17 +76,14 @@ class DeepseekProvider(BaseOpenAIProvider):
             converted_params.pop(field, None)
 
         converted_params.pop("reasoning_effort", None)
-        reasoning_effort = params.reasoning_effort
-        thinking: dict[str, str] | None = None
-        if reasoning_effort == "none":
-            thinking = {"type": "disabled"}
-        elif reasoning_effort not in (None, "auto"):
-            mapped_effort = _REASONING_EFFORT_MAP.get(reasoning_effort)
-            if mapped_effort is None:
-                msg = f"reasoning_effort {reasoning_effort!r} is not supported by DeepSeek Chat"
-                raise InvalidRequestError(msg, provider_name=DeepseekProvider.PROVIDER_NAME)
-            converted_params["reasoning_effort"] = mapped_effort
-            thinking = {"type": "enabled"}
+        controls = _REASONING_CONTROLS.get(params.reasoning_effort)
+        if controls is None:
+            msg = f"reasoning_effort {params.reasoning_effort!r} is not supported by DeepSeek Chat"
+            raise InvalidRequestError(msg, provider_name=DeepseekProvider.PROVIDER_NAME)
+        reasoning_effort, thinking_type = controls
+        if reasoning_effort is not None:
+            converted_params["reasoning_effort"] = reasoning_effort
+        thinking = {"type": thinking_type} if thinking_type is not None else None
 
         if user_id is not None or thinking is not None:
             extra_body = converted_params.get("extra_body")
@@ -96,7 +96,7 @@ class DeepseekProvider(BaseOpenAIProvider):
                 if re.fullmatch(r"[a-zA-Z0-9_-]{1,512}", user_id) is None:
                     msg = (
                         "DeepSeek user_id must contain only ASCII letters, digits, underscores, or hyphens "
-                        "and be at most 512 characters"
+                        "and be between 1 and 512 characters"
                     )
                     raise InvalidRequestError(msg, provider_name=DeepseekProvider.PROVIDER_NAME)
                 extra_body["user_id"] = user_id

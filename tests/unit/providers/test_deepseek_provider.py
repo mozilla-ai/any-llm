@@ -1,6 +1,8 @@
 import dataclasses
+import json
 from typing import Any
 
+import httpx
 import pytest
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
@@ -332,25 +334,65 @@ def test_deepseek_thinking_respects_explicit_extra_body_override() -> None:
     assert result["extra_body"] == {"thinking": {"type": "disabled"}, "user_id": "caller-user"}
 
 
-def test_deepseek_maps_user_id_and_omits_unsupported_fields() -> None:
+@pytest.mark.asyncio
+async def test_deepseek_emits_current_chat_wire_contract() -> None:
+    requests: list[httpx.Request] = []
+
+    def handle_request(request: httpx.Request) -> httpx.Response:
+        request.read()
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "deepseek-v4-pro",
+                "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": "ok"}}],
+            },
+        )
+
     user_id = "a" * 512
-    params = CompletionParams(
-        model_id="deepseek-v4-flash",
-        messages=[{"role": "user", "content": "hi"}],
-        user=user_id,
-        n=2,
-        frequency_penalty=0.5,
-        presence_penalty=0.5,
-        seed=7,
-        parallel_tool_calls=False,
-        logit_bias={"123": 1.0},
-        prompt_cache_key="cache-key",
-        service_tier="priority",
+    provider = DeepseekProvider(
+        api_key="test-key",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle_request)),
+        max_retries=0,
     )
+    try:
+        await provider.acompletion(
+            model="deepseek-v4-pro",
+            messages=[
+                {"role": "user", "content": "Use the lookup tool"},
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "extra_content": {"deepseek": {"reasoning_content": "I should use lookup."}},
+                },
+            ],
+            tools=[{"type": "function", "function": {"name": "lookup", "parameters": {"type": "object"}}}],
+            reasoning_effort="medium",
+            user=user_id,
+            n=2,
+            frequency_penalty=0.5,
+            presence_penalty=0.5,
+            seed=7,
+            parallel_tool_calls=False,
+            logit_bias={"123": 1.0},
+            service_tier="priority",
+        )
+    finally:
+        await provider.client.close()
 
-    result = DeepseekProvider._convert_completion_params(params)
-
-    assert result["extra_body"]["user_id"] == user_id
+    assert len(requests) == 1
+    request = requests[0]
+    body = json.loads(request.content)
+    assert request.url.path == "/chat/completions"
+    assert body["model"] == "deepseek-v4-pro"
+    assert body["reasoning_effort"] == "high"
+    assert body["thinking"] == {"type": "enabled"}
+    assert body["user_id"] == user_id
+    assert body["messages"][1]["reasoning_content"] == "I should use lookup."
+    assert "extra_content" not in body["messages"][1]
     for field in (
         "user",
         "n",
@@ -359,10 +401,9 @@ def test_deepseek_maps_user_id_and_omits_unsupported_fields() -> None:
         "seed",
         "parallel_tool_calls",
         "logit_bias",
-        "prompt_cache_key",
         "service_tier",
     ):
-        assert field not in result
+        assert field not in body
 
 
 @pytest.mark.parametrize("user_id", ["", "account.42", "a" * 513])
