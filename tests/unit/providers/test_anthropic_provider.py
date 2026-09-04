@@ -383,7 +383,7 @@ async def test_completion_with_custom_reasoning_effort(reasoning_effort: Reasoni
         elif reasoning_effort == "auto":
             assert "thinking" not in call_kwargs
         else:
-            assert call_kwargs["thinking"] == {"type": "adaptive"}
+            assert "thinking" not in call_kwargs
             assert call_kwargs["output_config"] == {"effort": REASONING_EFFORT_TO_ANTHROPIC_EFFORT[reasoning_effort]}
 
 
@@ -682,7 +682,7 @@ async def test_completion_with_response_format_and_reasoning_effort() -> None:
             "format": {"type": "json_schema", "schema": expected_schema},
             "effort": "medium",
         }
-        assert call_kwargs["thinking"] == {"type": "adaptive"}
+        assert "thinking" not in call_kwargs
 
 
 @pytest.mark.asyncio
