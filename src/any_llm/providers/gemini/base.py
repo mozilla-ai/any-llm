@@ -242,6 +242,8 @@ class GoogleProvider(AnyLLM):
                 tool_calls=tool_calls,
                 reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
                 extra_content=message_dict.get("extra_content"),
+                images=message_dict.get("images"),
+                audio=message_dict.get("audio"),
             )
             from typing import Literal
 

@@ -166,3 +166,30 @@ def test_convert_chunk_response_with_nonstandard_service_tier() -> None:
     )
     result = BaseOpenAIProvider._convert_completion_chunk_response(openai_chunk)
     assert result.service_tier == "standard"
+
+
+@pytest.mark.parametrize(
+    "audio_piece",
+    [
+        {"id": "audio_6a98e62e", "transcript": "Sure"},
+        {"data": "AAAB//8CAP=="},
+        {"expires_at": 1788408898},
+    ],
+)
+def test_convert_chunk_response_keeps_partial_audio_delta(audio_piece: dict[str, object]) -> None:
+    """OpenAI streams delta audio fields in separate chunks."""
+    openai_chunk = OpenAIChatCompletionChunk.model_validate(
+        {
+            "id": "chatcmpl-audio",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "gpt-audio-mini",
+            "choices": [{"index": 0, "delta": {"role": "assistant", "audio": audio_piece}, "finish_reason": None}],
+        }
+    )
+
+    result = BaseOpenAIProvider._convert_completion_chunk_response(openai_chunk)
+
+    audio = result.choices[0].delta.audio
+    assert audio is not None
+    assert audio.model_dump(exclude_none=True) == audio_piece

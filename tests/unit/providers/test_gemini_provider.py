@@ -1190,6 +1190,168 @@ def test_convert_response_skips_parts_without_text_or_function_call() -> None:
     message = response_dict["choices"][0]["message"]
     assert message["content"] == "Described."
     assert message["tool_calls"] is None
+    assert message["images"][0]["image_url"]["url"] == "data:image/png;base64,iVBORw=="
+
+
+def test_convert_response_emits_choice_for_image_only_response() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"))],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert len(response_dict["choices"]) == 1
+    message = response_dict["choices"][0]["message"]
+    assert message["content"] is None
+    assert message["images"][0]["image_url"]["url"] == "data:image/png;base64,iVBORw=="
+
+
+@pytest.mark.parametrize(
+    "blob",
+    [
+        types.Blob(mime_type="image/png", data=b""),
+        types.Blob(mime_type="image/png", data=None),
+        types.Blob(mime_type=None, data=b"data"),
+        types.Blob(mime_type="application/pdf", data=b"data"),
+    ],
+)
+def test_convert_response_skips_inline_data_without_image_payload(blob: types.Blob) -> None:
+    response = _make_gemini_response([types.Part(inline_data=blob)], types.FinishReason.STOP)
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert response_dict["choices"] == []
+
+
+def test_streaming_completion_with_inline_image() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"))],
+        types.FinishReason.STOP,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    images = chunk.choices[0].delta.images
+    assert images is not None
+    assert images[0].image_url.url == "data:image/png;base64,iVBORw=="
+
+
+def test_convert_response_preserves_inline_audio() -> None:
+    response = _make_gemini_response(
+        [
+            types.Part(text="Here is the audio."),
+            types.Part(inline_data=types.Blob(mime_type="audio/wav", data=b"WAVE")),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    result = GoogleProvider._convert_completion_response(
+        (_convert_response_to_response_dict(response), "gemini-2.5-flash")
+    )
+
+    assert result.choices[0].message.audio is not None
+    assert result.choices[0].message.audio.data == "V0FWRQ=="
+    assert result.choices[0].message.audio.transcript == "Here is the audio."
+
+
+def test_convert_response_emits_choice_for_audio_only_response() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="audio/wav", data=b"WAVE"))],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert len(response_dict["choices"]) == 1
+    message = response_dict["choices"][0]["message"]
+    assert message["content"] is None
+    assert message["audio"]["data"] == "V0FWRQ=="
+
+
+def test_streaming_completion_with_inline_audio() -> None:
+    response = _make_gemini_response(
+        [
+            types.Part(text="Here is the audio."),
+            types.Part(inline_data=types.Blob(mime_type="audio/wav", data=b"WAVE")),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    assert chunk.choices[0].delta.audio is not None
+    assert chunk.choices[0].delta.audio.data == "V0FWRQ=="
+    assert chunk.choices[0].delta.audio.transcript == "Here is the audio."
+
+
+def test_streaming_completion_emits_choice_for_audio_only_response() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="audio/wav", data=b"WAVE"))],
+        types.FinishReason.STOP,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    assert chunk.choices[0].delta.audio is not None
+    assert chunk.choices[0].delta.audio.data == "V0FWRQ=="
+
+
+def _wav_fields(wav: bytes) -> tuple[bytes, int, int, bytes]:
+    """Return the RIFF tag, sample rate, data length, and payload from a WAV file."""
+    return wav[:4], int.from_bytes(wav[24:28], "little"), int.from_bytes(wav[40:44], "little"), wav[44:]
+
+
+@pytest.mark.parametrize("rate", [24000, 16000])
+def test_convert_response_wraps_pcm_audio_as_wav(rate: int) -> None:
+    """Complete Gemini TTS responses expose all PCM parts as a playable WAV."""
+    mime_type = f"audio/L16;codec=pcm;rate={rate}"
+    response = _make_gemini_response(
+        [
+            types.Part(inline_data=types.Blob(mime_type=mime_type, data=b"\x01\x02")),
+            types.Part(inline_data=types.Blob(mime_type=mime_type, data=b"\x03\x04")),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    result = GoogleProvider._convert_completion_response(
+        (_convert_response_to_response_dict(response), "gemini-2.5-flash-preview-tts")
+    )
+
+    audio = result.choices[0].message.audio
+    assert audio is not None
+    assert _wav_fields(base64.b64decode(audio.data)) == (b"RIFF", rate, 4, b"\x01\x02\x03\x04")
+    assert result.choices[0].message.content is None
+    assert result.choices[0].finish_reason == "stop"
+
+
+def test_streaming_completion_keeps_pcm_audio_raw() -> None:
+    """Streaming Gemini TTS parts stay raw and are joined in their original order."""
+    mime_type = "audio/L16;codec=pcm;rate=24000"
+    response = _make_gemini_response(
+        [
+            types.Part(inline_data=types.Blob(mime_type=mime_type, data=b"\x01\x02")),
+            types.Part(inline_data=types.Blob(mime_type=mime_type, data=b"\x03\x04")),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    audio = chunk.choices[0].delta.audio
+    assert audio is not None
+    assert audio.data is not None
+    assert base64.b64decode(audio.data) == b"\x01\x02\x03\x04"
+
+
+def test_convert_response_skips_empty_audio_blob() -> None:
+    """Empty inline audio must not create an otherwise empty completion choice."""
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="audio/L16;codec=pcm;rate=24000", data=b""))],
+        types.FinishReason.STOP,
+    )
+
+    assert _convert_response_to_response_dict(response)["choices"] == []
 
 
 def test_convert_response_emits_choice_for_filtered_response_without_content() -> None:
@@ -1237,6 +1399,20 @@ def test_google_provider_preserves_prompt_block_as_refusal() -> None:
 
     assert result.choices[0].finish_reason == "content_filter"
     assert result.choices[0].message.refusal == "Response blocked by Gemini content filtering."
+
+
+def test_google_provider_preserves_images_on_completion_message() -> None:
+    response_dict = _convert_response_to_response_dict(
+        _make_gemini_response(
+            [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"))],
+            types.FinishReason.STOP,
+        )
+    )
+
+    result = GoogleProvider._convert_completion_response((response_dict, "gemini-2.5-flash-image"))
+
+    assert result.choices[0].message.images is not None
+    assert result.choices[0].message.images[0].image_url.url == "data:image/png;base64,iVBORw=="
 
 
 def test_convert_response_without_content_and_terminal_reason_has_no_choices() -> None:
