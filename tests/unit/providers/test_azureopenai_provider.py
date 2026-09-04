@@ -1,7 +1,7 @@
 import json
 import re
 import threading
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -272,16 +272,13 @@ async def test_azureopenai_refreshes_sync_entra_provider_before_sdk_retry() -> N
 
 
 @pytest.mark.asyncio
-async def test_azureopenai_rejects_empty_entra_provider_token() -> None:
-    """Reject an empty dynamic token before sending the request."""
-
-    def token_provider() -> str:
-        return ""
-
+@pytest.mark.parametrize("token", ["", 1])
+async def test_azureopenai_rejects_invalid_entra_provider_token(token: object) -> None:
+    """Reject empty and non-string dynamic tokens before sending the request."""
     transport, _ = _azure_transport()
     provider = AzureopenaiProvider(
         api_base="https://resource.openai.azure.com",
-        azure_ad_token_provider=token_provider,
+        azure_ad_token_provider=AsyncMock(return_value=token),
         http_client=httpx.AsyncClient(transport=transport),
         max_retries=0,
     )
