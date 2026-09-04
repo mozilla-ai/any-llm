@@ -1,8 +1,10 @@
+import re
 from collections.abc import AsyncIterator
 from typing import Any
 
 from typing_extensions import override
 
+from any_llm.exceptions import InvalidRequestError
 from any_llm.providers.deepseek.utils import (
     _inject_cached_tokens,
     _inject_cached_tokens_chunk,
@@ -10,13 +12,38 @@ from any_llm.providers.deepseek.utils import (
     _preprocess_messages,
 )
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, ReasoningEffort
 
-# The two legacy API model names being discontinued 2026-07-24 in favor of deepseek-v4-flash /
-# deepseek-v4-pro. See https://api-docs.deepseek.com/updates/#date-2026-04-24. They hard-code
-# their own thinking behavior (non-thinking / thinking respectively) and don't need, and may not
-# accept, the `thinking` request toggle added below for the new model family.
-_LEGACY_MODEL_IDS = frozenset({"deepseek-chat", "deepseek-reasoner"})
+# Each entry maps an any-llm effort to DeepSeek's top-level effort and thinking toggle.
+# DeepSeek Chat accepts low, high, and max, maps medium and xhigh to high, and does not
+# accept OpenAI's minimal value.
+# https://api-docs.deepseek.com/guides/thinking_mode/
+_REASONING_CONTROLS: dict[ReasoningEffort | None, tuple[str | None, str | None]] = {
+    None: (None, None),
+    "auto": (None, None),
+    "none": (None, "disabled"),
+    "low": ("low", "enabled"),
+    "medium": ("high", "enabled"),
+    "high": ("high", "enabled"),
+    "xhigh": ("high", "enabled"),
+    "max": ("max", "enabled"),
+}
+
+# These normalized fields are absent from the current DeepSeek Chat schema, except for the two
+# penalty fields, which the API marks deprecated and ineffective. They remain accepted by
+# any_llm's shared interface for compatibility but are not sent to DeepSeek.
+# https://api-docs.deepseek.com/api/create-chat-completion
+_UNSUPPORTED_DEEPSEEK_FIELDS = frozenset(
+    {
+        "frequency_penalty",
+        "logit_bias",
+        "n",
+        "parallel_tool_calls",
+        "presence_penalty",
+        "seed",
+        "service_tier",
+    }
+)
 
 
 class DeepseekProvider(BaseOpenAIProvider):
@@ -36,25 +63,45 @@ class DeepseekProvider(BaseOpenAIProvider):
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """DeepSeek only accepts ``max_tokens``, not ``max_completion_tokens``.
 
-        Also maps ``reasoning_effort`` to DeepSeek's ``thinking`` toggle for the V4 model
-        family. DeepSeek's V4 models default to thinking mode ENABLED when the toggle is
-        omitted from the request (see https://api-docs.deepseek.com/guides/thinking_mode), so
-        any_llm explicitly defaults it to disabled here -- matching the legacy ``deepseek-chat``
-        behavior -- unless the caller opts in via ``reasoning_effort``. A caller-supplied
-        ``extra_body`` override is respected and not clobbered.
+        DeepSeek's V4 models default to enabled thinking with high effort, so ``None`` and the
+        normalized ``auto`` sentinel leave both controls absent. An explicit ``none`` uses the
+        provider's thinking toggle. Caller-supplied ``extra_body`` values take precedence.
         """
         converted_params = BaseOpenAIProvider._convert_completion_params(params, **kwargs)
         if "max_completion_tokens" in converted_params:
             converted_params["max_tokens"] = converted_params.pop("max_completion_tokens")
 
-        if params.model_id not in _LEGACY_MODEL_IDS:
-            # ``"auto"`` means "no explicit reasoning requested" (BaseOpenAIProvider._acompletion
-            # normalizes it to this provider's default before we run), so it is treated the same
-            # as ``None``/``"none"`` here -- matching every other provider's converter and keeping
-            # this self-contained even if called directly with ``"auto"``.
-            thinking_disabled = params.reasoning_effort in (None, "none", "auto")
-            extra_body = converted_params.setdefault("extra_body", {})
-            extra_body.setdefault("thinking", {"type": "disabled" if thinking_disabled else "enabled"})
+        user_id = converted_params.pop("user", None)
+        for field in _UNSUPPORTED_DEEPSEEK_FIELDS:
+            converted_params.pop(field, None)
+
+        converted_params.pop("reasoning_effort", None)
+        controls = _REASONING_CONTROLS.get(params.reasoning_effort)
+        if controls is None:
+            msg = f"reasoning_effort {params.reasoning_effort!r} is not supported by DeepSeek Chat"
+            raise InvalidRequestError(msg, provider_name=DeepseekProvider.PROVIDER_NAME)
+        reasoning_effort, thinking_type = controls
+        if reasoning_effort is not None:
+            converted_params["reasoning_effort"] = reasoning_effort
+        thinking = {"type": thinking_type} if thinking_type is not None else None
+
+        if user_id is not None or thinking is not None:
+            extra_body = converted_params.get("extra_body")
+            if extra_body is None:
+                extra_body = {}
+                converted_params["extra_body"] = extra_body
+            if user_id is not None and "user_id" not in extra_body:
+                # DeepSeek's user_id contract is stricter than any-llm's shared user field.
+                # https://api-docs.deepseek.com/quick_start/rate_limit/#setting-user_id
+                if re.fullmatch(r"[a-zA-Z0-9_-]{1,512}", user_id) is None:
+                    msg = (
+                        "DeepSeek user_id must contain only ASCII letters, digits, underscores, or hyphens "
+                        "and be between 1 and 512 characters"
+                    )
+                    raise InvalidRequestError(msg, provider_name=DeepseekProvider.PROVIDER_NAME)
+                extra_body["user_id"] = user_id
+            if thinking is not None:
+                extra_body.setdefault("thinking", thinking)
         return converted_params
 
     @staticmethod
