@@ -108,7 +108,7 @@ async def test_completion_with_multiple_system_messages() -> None:
 
 
 @pytest.mark.asyncio
-async def test_completion_with_kwargs() -> None:
+async def test_completion_sends_deprecated_sampling_through_sdk_extra_body() -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
@@ -120,7 +120,10 @@ async def test_completion_with_kwargs() -> None:
         )
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
-            model=model, messages=messages, max_tokens=100, temperature=0.5
+            model=model,
+            messages=messages,
+            max_tokens=100,
+            extra_body={"temperature": 0.5},
         )
 
 
@@ -380,7 +383,7 @@ async def test_completion_with_custom_reasoning_effort(reasoning_effort: Reasoni
         elif reasoning_effort == "auto":
             assert "thinking" not in call_kwargs
         else:
-            assert call_kwargs["thinking"] == {"type": "adaptive"}
+            assert "thinking" not in call_kwargs
             assert call_kwargs["output_config"] == {"effort": REASONING_EFFORT_TO_ANTHROPIC_EFFORT[reasoning_effort]}
 
 
@@ -679,7 +682,7 @@ async def test_completion_with_response_format_and_reasoning_effort() -> None:
             "format": {"type": "json_schema", "schema": expected_schema},
             "effort": "medium",
         }
-        assert call_kwargs["thinking"] == {"type": "adaptive"}
+        assert "thinking" not in call_kwargs
 
 
 @pytest.mark.asyncio
