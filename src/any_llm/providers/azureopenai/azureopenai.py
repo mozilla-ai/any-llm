@@ -43,8 +43,8 @@ def _resolve_credential(
 
         async def get_token() -> str:
             token = await asyncio.to_thread(azure_ad_token_provider)
-            resolved_token = token if isinstance(token, str) else await token
-            if not resolved_token:
+            resolved_token = await token if isinstance(token, Awaitable) else token
+            if not isinstance(resolved_token, str) or not resolved_token:
                 message = "Expected `azure_ad_token_provider` to return a non-empty string."
                 raise ValueError(message)
             return resolved_token
