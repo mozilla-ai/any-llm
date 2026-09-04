@@ -478,7 +478,10 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
         if msg.reasoning:
             content_blocks.append(ThinkingBlock(type="thinking", thinking=msg.reasoning.content))
 
-        if msg.content:
+        if msg.refusal:
+            content_blocks.append(TextBlock(type="text", text=msg.refusal))
+            stop_reason = "refusal"
+        elif msg.content:
             content_blocks.append(TextBlock(type="text", text=msg.content))
 
         if msg.tool_calls:
@@ -499,8 +502,9 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
                     )
                 )
 
-        finish_reason = choice.finish_reason
-        stop_reason = _finish_reason_to_stop_reason(finish_reason)
+        if not msg.refusal:
+            finish_reason = choice.finish_reason
+            stop_reason = _finish_reason_to_stop_reason(finish_reason)
 
     if not content_blocks:
         content_blocks.append(TextBlock(type="text", text=""))
@@ -534,7 +538,7 @@ def _finish_reason_to_stop_reason(finish_reason: str | None) -> StopReason:
         "stop": "end_turn",
         "length": "max_tokens",
         "tool_calls": "tool_use",
-        "content_filter": "end_turn",
+        "content_filter": "refusal",
         "function_call": "tool_use",
     }
     return mapping.get(finish_reason or "stop", "end_turn")
@@ -625,7 +629,28 @@ def chat_completion_chunk_to_message_stream_events(
             )
         )
 
-    if delta.content is not None:
+    if delta.refusal is not None:
+        if state.current_block_type != "text":
+            _close_current_block(state, events)
+            state.current_block_index += 1
+            state.current_block_type = "text"
+            events.append(
+                ContentBlockStartEvent(
+                    type="content_block_start",
+                    index=state.current_block_index,
+                    content_block=TextBlock(type="text", text=""),
+                )
+            )
+        if delta.refusal:
+            state.stop_reason = "refusal"
+            events.append(
+                ContentBlockDeltaEvent(
+                    type="content_block_delta",
+                    index=state.current_block_index,
+                    delta=TextDelta(type="text_delta", text=delta.refusal),
+                )
+            )
+    elif delta.content is not None:
         if state.current_block_type != "text":
             _close_current_block(state, events)
             state.current_block_index += 1
