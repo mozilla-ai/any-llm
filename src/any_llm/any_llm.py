@@ -938,9 +938,9 @@ class AnyLLM(ABC):
             messages: List of messages in Anthropic format.
             max_tokens: Maximum number of tokens to generate.
             system: System prompt (string or list of content blocks with optional cache_control).
-            temperature: Controls randomness (0.0 to 1.0).
-            top_p: Controls diversity via nucleus sampling.
-            top_k: Only sample from the top K options.
+            temperature: Controls randomness. Anthropic deprecates this for current Claude models.
+            top_p: Controls nucleus sampling. Anthropic deprecates this for current Claude models.
+            top_k: Restricts sampling to the top K options. Anthropic deprecates this for current Claude models.
             stream: Whether to stream the response.
             stop_sequences: Custom stop sequences.
             tools: List of tools in Anthropic format.

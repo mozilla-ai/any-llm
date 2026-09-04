@@ -108,7 +108,7 @@ async def test_completion_with_multiple_system_messages() -> None:
 
 
 @pytest.mark.asyncio
-async def test_completion_with_kwargs() -> None:
+async def test_completion_sends_deprecated_sampling_through_sdk_extra_body() -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
@@ -120,7 +120,10 @@ async def test_completion_with_kwargs() -> None:
         )
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
-            model=model, messages=messages, max_tokens=100, temperature=0.5
+            model=model,
+            messages=messages,
+            max_tokens=100,
+            extra_body={"temperature": 0.5},
         )
 
 

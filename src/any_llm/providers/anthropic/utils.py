@@ -1,4 +1,5 @@
 import json
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, cast
 
@@ -62,6 +63,30 @@ def _refusal_stop_details(value: object) -> dict[str, Any] | None:
     if isinstance(stop_details, BaseModel):
         return stop_details.model_dump(mode="json", exclude_none=True)
     return None
+
+
+def _set_deprecated_sampling_extra_body(
+    request_kwargs: dict[str, object],
+    sampling: dict[str, float | int],
+) -> None:
+    """Preserve legacy-model sampling fields through the SDK extension point."""
+    # Anthropic SDK v1 removed these method arguments. The API still exposes them as deprecated
+    # fields for older models and directs callers to extra_body:
+    # https://github.com/anthropics/anthropic-sdk-python/blob/370ee927ca8a8d3b5d4f907555e890b2df685786/MIGRATION.md#removed-deprecated-request-parameters
+    if not sampling:
+        return
+
+    extra_body = request_kwargs.get("extra_body")
+    if extra_body is None:
+        request_kwargs["extra_body"] = sampling
+        return
+    if not isinstance(extra_body, Mapping):
+        # Keep invalid values untouched so the official SDK retains ownership of validation.
+        return
+
+    # The SDK merges extra_body second, so caller values override adapter-supplied legacy values:
+    # https://github.com/anthropics/anthropic-sdk-python/blob/370ee927ca8a8d3b5d4f907555e890b2df685786/src/anthropic/_base_client.py#L2428-L2437
+    request_kwargs["extra_body"] = {**sampling, **extra_body}
 
 
 def _is_tool_call(message: dict[str, Any]) -> bool:
@@ -509,6 +534,13 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
     provider_name: str = kwargs.pop("provider_name")
     result_kwargs: dict[str, Any] = kwargs.copy()
 
+    sampling = {
+        name: value
+        for name, value in (("temperature", params.temperature), ("top_p", params.top_p))
+        if value is not None
+    }
+    _set_deprecated_sampling_extra_body(result_kwargs, sampling)
+
     if params.response_format:
         result_kwargs["output_config"] = _convert_response_format(params.response_format, provider_name)
     if params.max_tokens is None:
@@ -540,6 +572,8 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
                 "response_format",
                 "parallel_tool_calls",
                 "stream_options",
+                "temperature",
+                "top_p",
             },
         )
     )

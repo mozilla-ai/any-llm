@@ -36,6 +36,7 @@ try:
         _convert_params,
         _convert_response,
         _create_openai_chunk_from_anthropic_chunk,
+        _set_deprecated_sampling_extra_body,
     )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
@@ -329,9 +330,20 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         use_beta = params.context_management is not None or bool(betas)
         messages_resource: Any
 
+        sampling = {
+            name: value
+            for name, value in (("temperature", params.temperature), ("top_p", params.top_p), ("top_k", params.top_k))
+            if value is not None
+        }
+        if sampling:
+            _set_deprecated_sampling_extra_body(kwargs, sampling)
+
         if params.output_format is not None:
             messages_resource = self.client.beta.messages if use_beta else self.client.messages
-            native_kwargs = params.model_dump(exclude_none=True, exclude={"output_format", "stream", "betas"})
+            native_kwargs = params.model_dump(
+                exclude_none=True,
+                exclude={"output_format", "stream", "betas", "temperature", "top_p", "top_k"},
+            )
             if betas:
                 native_kwargs["betas"] = betas
             native_kwargs.update(kwargs)
@@ -346,7 +358,10 @@ class BaseAnthropicProvider(AnyLLM, ABC):
                 message = await messages_resource.create(output_config=cast("Any", output_config), **native_kwargs)
             return self._convert_native_message_to_response(message)
 
-        api_kwargs = params.model_dump(exclude_none=True, exclude={"betas"})
+        api_kwargs = params.model_dump(
+            exclude_none=True,
+            exclude={"betas", "temperature", "top_p", "top_k"},
+        )
         api_kwargs.pop("stream", None)
         if betas:
             api_kwargs["betas"] = betas
