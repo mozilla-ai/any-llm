@@ -49,7 +49,7 @@ from any_llm.types.responses import (
     ResponsesParams,
     ResponseStreamEvent,
 )
-from any_llm.utils.aio import async_coro_to_sync_iter, async_iter_to_sync_iter, run_async_in_sync
+from any_llm.utils.aio import aclose_quietly, async_coro_to_sync_iter, async_iter_to_sync_iter, run_async_in_sync
 from any_llm.utils.exception_handler import handle_exceptions
 from any_llm.utils.structured_output import (
     build_parsed_message,
@@ -1084,6 +1084,9 @@ class AnyLLM(ABC):
                 if state.started:
                     yield usage_delta(None)
                 raise
+            finally:
+                await aclose_quietly(result)
+
             # Emit the closing events after the full stream is consumed so trailing-chunk usage is included.
             if state.started:
                 for stop_event in close_open_blocks(state):
