@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from typing_extensions import override
@@ -52,33 +51,35 @@ if TYPE_CHECKING:
     from any_llm.types.model import Model
 
 REASONING_EFFORT_TO_THINKING_BUDGETS = {
-    "minimal": 256,
+    "minimal": 1024,
     "low": 1024,
     "medium": 8192,
     "high": 24576,
-    "xhigh": 32768,
-    "max": 32768,
 }
 REASONING_EFFORT_TO_THINKING_LEVELS = {
     "minimal": types.ThinkingLevel.MINIMAL,
     "low": types.ThinkingLevel.LOW,
     "medium": types.ThinkingLevel.MEDIUM,
     "high": types.ThinkingLevel.HIGH,
-    "xhigh": types.ThinkingLevel.HIGH,
-    "max": types.ThinkingLevel.HIGH,
 }
 _SUPPORTED_BATCH_ENDPOINTS = frozenset({"/v1/chat/completions"})
-_THINKING_LEVEL_MIN_GEMINI_VERSION = (3, 5)
-_GEMINI_VERSION_PATTERN = re.compile(r"(?:^|/)gemini-(\d+)(?:\.(\d+))?")
-
-
-def _uses_thinking_level(model_id: str) -> bool:
-    """Gemini 3.5 and newer reject `thinking_budget` and expect `thinking_level` instead."""
-    match = _GEMINI_VERSION_PATTERN.search(model_id.lower())
-    if match is None:
-        return False
-    major, minor = int(match.group(1)), int(match.group(2) or 0)
-    return (major, minor) >= _THINKING_LEVEL_MIN_GEMINI_VERSION
+_ALL_THINKING_LEVELS = frozenset(REASONING_EFFORT_TO_THINKING_LEVELS.values())
+# Model capabilities differ within the Gemini 3 family, so a version comparison is not sufficient.
+# Source: https://ai.google.dev/gemini-api/docs/generate-content/thinking#thinking-levels
+_THINKING_LEVELS_BY_MODEL = {
+    "gemini-3.8-flash": frozenset({types.ThinkingLevel.LOW, types.ThinkingLevel.MEDIUM, types.ThinkingLevel.HIGH}),
+    "gemini-3.7-flash": frozenset({types.ThinkingLevel.LOW, types.ThinkingLevel.MEDIUM, types.ThinkingLevel.HIGH}),
+    "gemini-3.6-flash": _ALL_THINKING_LEVELS,
+    "gemini-3.5-flash": _ALL_THINKING_LEVELS,
+    "gemini-3.5-flash-lite": _ALL_THINKING_LEVELS,
+    "gemini-3.1-flash-lite": _ALL_THINKING_LEVELS,
+    "gemini-3.1-pro-preview": frozenset(
+        {types.ThinkingLevel.LOW, types.ThinkingLevel.MEDIUM, types.ThinkingLevel.HIGH}
+    ),
+    "gemini-3.1-flash-lite-image": frozenset({types.ThinkingLevel.MINIMAL, types.ThinkingLevel.HIGH}),
+    "gemini-3-flash-preview": _ALL_THINKING_LEVELS,
+}
+_THINKING_BUDGET_MODELS = frozenset({"gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"})
 
 
 class GoogleProvider(AnyLLM):
@@ -146,17 +147,41 @@ class GoogleProvider(AnyLLM):
             kwargs["max_output_tokens"] = params.max_tokens
         if params.presence_penalty is not None:
             kwargs["presence_penalty"] = params.presence_penalty
-        if params.reasoning_effort != "auto":
-            if params.reasoning_effort is None or params.reasoning_effort == "none":
-                kwargs["thinking_config"] = types.ThinkingConfig(include_thoughts=False)
-            elif _uses_thinking_level(params.model_id):
+        if params.reasoning_effort not in (None, "auto"):
+            error_message = "reasoning_effort"
+            model_name = params.model_id.rsplit("/", maxsplit=1)[-1].lower()
+            supported_levels = _THINKING_LEVELS_BY_MODEL.get(model_name)
+            if supported_levels is not None:
+                reasoning_effort = params.reasoning_effort
+                thinking_level = REASONING_EFFORT_TO_THINKING_LEVELS.get(reasoning_effort)
+                # Google's OpenAI compatibility contract maps `minimal` to `low` for Gemini 3.1 Pro.
+                # Source: https://ai.google.dev/gemini-api/docs/openai#thinking
+                if model_name == "gemini-3.1-pro-preview" and reasoning_effort == "minimal":
+                    thinking_level = types.ThinkingLevel.LOW
+                if thinking_level is None or thinking_level not in supported_levels:
+                    raise UnsupportedParameterError(error_message, provider_name)
                 kwargs["thinking_config"] = types.ThinkingConfig(
-                    include_thoughts=True, thinking_level=REASONING_EFFORT_TO_THINKING_LEVELS[params.reasoning_effort]
+                    include_thoughts=True,
+                    thinking_level=thinking_level,
                 )
+            elif model_name in _THINKING_BUDGET_MODELS:
+                if params.reasoning_effort == "none":
+                    if model_name == "gemini-2.5-pro":
+                        raise UnsupportedParameterError(error_message, provider_name)
+                    kwargs["thinking_config"] = types.ThinkingConfig(
+                        include_thoughts=False,
+                        thinking_budget=0,
+                    )
+                else:
+                    thinking_budget = REASONING_EFFORT_TO_THINKING_BUDGETS.get(params.reasoning_effort)
+                    if thinking_budget is None:
+                        raise UnsupportedParameterError(error_message, provider_name)
+                    kwargs["thinking_config"] = types.ThinkingConfig(
+                        include_thoughts=True,
+                        thinking_budget=thinking_budget,
+                    )
             else:
-                kwargs["thinking_config"] = types.ThinkingConfig(
-                    include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort]
-                )
+                raise UnsupportedParameterError(error_message, provider_name)
         if params.seed is not None:
             kwargs["seed"] = params.seed
         if params.service_tier is not None:

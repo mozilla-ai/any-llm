@@ -2,9 +2,10 @@ import base64
 import json
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
-from typing import Any, get_args
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 from google.genai import types
 from pydantic import BaseModel, ConfigDict
@@ -16,7 +17,7 @@ from any_llm.exceptions import (
     UnsupportedParameterError,
 )
 from any_llm.providers.gemini import GeminiProvider
-from any_llm.providers.gemini.base import REASONING_EFFORT_TO_THINKING_BUDGETS, GoogleProvider
+from any_llm.providers.gemini.base import GoogleProvider
 from any_llm.providers.gemini.utils import (
     _convert_messages,
     _convert_response_to_response_dict,
@@ -816,45 +817,29 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
         assert contents[2].role == "function"
 
 
-@pytest.mark.parametrize("reasoning_effort", [None, *get_args(ReasoningEffort)])
-@pytest.mark.asyncio
-async def test_completion_with_custom_reasoning_effort(reasoning_effort: ReasoningEffort | None) -> None:
-    api_key = "test-api-key"
-    model = "model-id"
-    messages = [{"role": "user", "content": "Hello"}]
-
-    with mock_gemini_provider() as mock_genai:
-        provider = GeminiProvider(api_key=api_key)
-        await provider._acompletion(
-            CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort)
-        )
-
-        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
-        thinking_config = call_kwargs["config"].thinking_config
-
-        if reasoning_effort == "auto":
-            assert thinking_config is None
-        elif reasoning_effort is None or reasoning_effort == "none":
-            assert thinking_config == types.ThinkingConfig(include_thoughts=False)
-        else:
-            assert thinking_config == types.ThinkingConfig(
-                include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[reasoning_effort]
-            )
-
-
 @pytest.mark.parametrize(
-    ("model_id", "reasoning_effort", "expected_level"),
+    ("model_id", "reasoning_effort", "expected"),
     [
-        ("gemini-3.5-flash", "xhigh", types.ThinkingLevel.HIGH),
-        ("gemini-3.5-flash", "max", types.ThinkingLevel.HIGH),
-        ("gemini-3.5-pro", "low", types.ThinkingLevel.LOW),
-        ("models/gemini-3.5-flash", "medium", types.ThinkingLevel.MEDIUM),
-        ("gemini-3.10-flash", "minimal", types.ThinkingLevel.MINIMAL),
-        ("gemini-4-pro", "high", types.ThinkingLevel.HIGH),
+        ("gemini-3.8-flash", "low", {"includeThoughts": True, "thinkingLevel": "LOW"}),
+        ("gemini-3.7-flash", "medium", {"includeThoughts": True, "thinkingLevel": "MEDIUM"}),
+        ("gemini-3.6-flash", "minimal", {"includeThoughts": True, "thinkingLevel": "MINIMAL"}),
+        ("gemini-3.5-flash", "high", {"includeThoughts": True, "thinkingLevel": "HIGH"}),
+        ("gemini-3.5-flash-lite", "minimal", {"includeThoughts": True, "thinkingLevel": "MINIMAL"}),
+        ("gemini-3.1-flash-lite", "medium", {"includeThoughts": True, "thinkingLevel": "MEDIUM"}),
+        ("models/gemini-3.1-pro-preview", "minimal", {"includeThoughts": True, "thinkingLevel": "LOW"}),
+        ("gemini-3.1-flash-lite-image", "high", {"includeThoughts": True, "thinkingLevel": "HIGH"}),
+        ("gemini-3-flash-preview", "minimal", {"includeThoughts": True, "thinkingLevel": "MINIMAL"}),
+        ("gemini-2.5-flash", "none", {"includeThoughts": False, "thinkingBudget": 0}),
+        ("gemini-2.5-flash", "minimal", {"includeThoughts": True, "thinkingBudget": 1024}),
+        ("gemini-2.5-flash", "low", {"includeThoughts": True, "thinkingBudget": 1024}),
+        ("gemini-2.5-flash-lite", "medium", {"includeThoughts": True, "thinkingBudget": 8192}),
+        ("gemini-2.5-pro", "high", {"includeThoughts": True, "thinkingBudget": 24576}),
     ],
 )
-def test_new_gemini_models_use_thinking_level(
-    model_id: str, reasoning_effort: ReasoningEffort, expected_level: types.ThinkingLevel
+def test_gemini_reasoning_effort_matches_documented_thinking_config(
+    model_id: str,
+    reasoning_effort: ReasoningEffort,
+    expected: dict[str, object],
 ) -> None:
     result = GoogleProvider._convert_completion_params(
         CompletionParams(
@@ -863,29 +848,101 @@ def test_new_gemini_models_use_thinking_level(
         provider_name="gemini",
     )
 
-    assert result["config"].thinking_config == types.ThinkingConfig(
-        include_thoughts=True, thinking_level=expected_level
-    )
+    config = result["config"].model_dump(by_alias=True, exclude_none=True)
+    assert config["thinkingConfig"] == expected
 
 
 @pytest.mark.parametrize(
-    "model_id",
+    ("model_id", "reasoning_effort"),
     [
-        "gemini-3.0-flash",
-        "gemini-3.4-flash",
-        "gemini-3-pro-preview",
-        "gemini-2.5-flash",
-        "gemini-pro",
-        "projects/p/locations/l/publishers/google/models/gemini-3-pro",
+        ("gemini-3.8-flash", "minimal"),
+        ("gemini-3.1-pro-preview", "none"),
+        ("gemini-3.1-flash-lite-image", "low"),
+        ("gemini-3.1-flash-image", "high"),
+        ("gemini-3-pro-image", "high"),
+        ("gemini-robotics-er-2-preview", "high"),
+        ("gemini-2.5-pro", "none"),
+        ("gemini-2.5-flash", "xhigh"),
+        ("gemini-2.5-flash", "max"),
+        ("gemini-2.5-flash-future", "high"),
+        ("gemini-2.0-flash", "high"),
+        ("gemini-pro", "none"),
     ],
 )
-def test_older_gemini_models_keep_thinking_budget(model_id: str) -> None:
+def test_gemini_rejects_undocumented_reasoning_effort(
+    model_id: str,
+    reasoning_effort: ReasoningEffort,
+) -> None:
+    with pytest.raises(UnsupportedParameterError, match="reasoning_effort"):
+        GoogleProvider._convert_completion_params(
+            CompletionParams(
+                model_id=model_id,
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort=reasoning_effort,
+            ),
+            provider_name="gemini",
+        )
+
+
+@pytest.mark.parametrize("reasoning_effort", [None, "auto"])
+def test_gemini_omits_default_thinking_config(reasoning_effort: ReasoningEffort | None) -> None:
     result = GoogleProvider._convert_completion_params(
-        CompletionParams(model_id=model_id, messages=[{"role": "user", "content": "Hello"}], reasoning_effort="high"),
+        CompletionParams(
+            model_id="gemini-3.8-flash",
+            messages=[{"role": "user", "content": "Hello"}],
+            reasoning_effort=reasoning_effort,
+        ),
         provider_name="gemini",
     )
 
-    assert result["config"].thinking_config == types.ThinkingConfig(include_thoughts=True, thinking_budget=24576)
+    assert result["config"].thinking_config is None
+
+
+@pytest.mark.parametrize(
+    ("model_id", "reasoning_effort", "expected"),
+    [
+        ("gemini-3.8-flash", "high", {"include_thoughts": True, "thinking_level": "HIGH"}),
+        ("gemini-2.5-flash", "none", {"include_thoughts": False, "thinking_budget": 0}),
+    ],
+)
+@pytest.mark.asyncio
+async def test_gemini_reasoning_effort_reaches_official_sdk_wire(
+    model_id: str,
+    reasoning_effort: ReasoningEffort,
+    expected: dict[str, object],
+) -> None:
+    requests: list[dict[str, object]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "content": {"parts": [{"text": "ok"}], "role": "model"},
+                        "finishReason": "STOP",
+                    }
+                ]
+            },
+        )
+
+    provider = GeminiProvider(
+        api_key="test-api-key",
+        http_options=types.HttpOptions(
+            async_client_args={"transport": httpx.MockTransport(handler)},
+        ),
+    )
+    await provider._acompletion(
+        CompletionParams(
+            model_id=model_id,
+            messages=[{"role": "user", "content": "Hello"}],
+            reasoning_effort=reasoning_effort,
+        )
+    )
+    provider.client.close()
+
+    assert requests[0]["generationConfig"] == {"thinkingConfig": expected}
 
 
 @pytest.mark.asyncio
