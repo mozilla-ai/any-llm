@@ -255,3 +255,159 @@ def test_convert_responses_params_rejects_unimplemented_surface(parameter: str, 
 
     with pytest.raises(UnsupportedParameterError, match=parameter):
         convert_responses_params(params, "gemini", api_version="v1")
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_maps_text_and_terminal_snapshot() -> None:
+    started = StepStart(index=0, step=ModelOutputStep(content=[TextContent(text="Hello")]))
+    delta = StepDelta(index=0, delta=TextDelta(text=" world"))
+    status = InteractionStatusUpdate(interaction_id="int-123", status="in_progress")
+    stopped = StepStop(index=0)
+
+    result = await _converted_events(
+        _created(model="gemini-3.8-flash"),
+        status,
+        started,
+        delta,
+        stopped,
+        _completed(model="gemini-3.8-flash"),
+        model="gemini-3.8-flash",
+    )
+
+    assert [event.type for event in result] == [
+        "response.created",
+        "response.in_progress",
+        "response.output_item.added",
+        "response.content_part.added",
+        "response.output_text.delta",
+        "response.output_text.delta",
+        "response.output_text.done",
+        "response.content_part.done",
+        "response.output_item.done",
+        "response.completed",
+    ]
+    assert [event.sequence_number for event in result] == list(range(10))
+    assert isinstance(result[0], ResponseCreatedEvent)
+    assert result[0].response.model == "gemini-3.8-flash"
+    assert isinstance(result[1], ResponseInProgressEvent)
+    assert isinstance(result[2], ResponseOutputItemAddedEvent)
+    assert isinstance(result[2].item, ResponseOutputMessage)
+    assert result[2].item.content == []
+    assert isinstance(result[3], ResponseContentPartAddedEvent)
+    assert isinstance(result[3].part, ResponseOutputText)
+    assert result[3].part.text == ""
+    assert isinstance(result[4], ResponseTextDeltaEvent)
+    assert result[4].delta == "Hello"
+    assert isinstance(result[5], ResponseTextDeltaEvent)
+    assert result[5].delta == " world"
+    assert isinstance(result[6], ResponseTextDoneEvent)
+    assert result[6].text == "Hello world"
+    assert isinstance(result[7], ResponseContentPartDoneEvent)
+    assert isinstance(result[7].part, ResponseOutputText)
+    assert result[7].part.text == "Hello world"
+    assert isinstance(result[8], ResponseOutputItemDoneEvent)
+    assert isinstance(result[8].item, ResponseOutputMessage)
+    assert isinstance(result[8].item.content[0], ResponseOutputText)
+    assert result[8].item.content[0].text == "Hello world"
+    terminal = result[9]
+    assert isinstance(terminal, ResponseCompletedEvent)
+    assert terminal.response.output_text == "Hello world"
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_keeps_output_indices_contiguous() -> None:
+    user_started = StepStart(index=0, step=UserInputStep())
+    model_started = StepStart(index=1, step=ModelOutputStep())
+
+    result = await _converted_events(
+        _created(),
+        user_started,
+        StepStop(index=0),
+        model_started,
+        StepDelta(index=1, delta=TextDelta(text="Hello")),
+        StepStop(index=1),
+        _completed(),
+    )
+
+    added = next(event for event in result if isinstance(event, ResponseOutputItemAddedEvent))
+    assert added.output_index == 0
+    assert added.item.id == "msg-0"
+    terminal = result[-1]
+    assert isinstance(terminal, ResponseCompletedEvent)
+    assert terminal.response.output[0].id == "msg-0"
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_uses_terminal_steps_when_present() -> None:
+    result = await _converted_events(
+        _created(),
+        _completed(steps=[ModelOutputStep(content=[TextContent(text="terminal")])]),
+    )
+
+    terminal = result[-1]
+    assert isinstance(terminal, ResponseCompletedEvent)
+    assert terminal.response.model == "requested"
+    assert terminal.response.output_text == "terminal"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "event_type", "message_status"),
+    [
+        ("failed", "response.failed", "incomplete"),
+        ("incomplete", "response.incomplete", "incomplete"),
+    ],
+)
+async def test_convert_interaction_stream_maps_non_success_terminal_status(
+    status: InteractionSseEventInteractionStatus,
+    event_type: str,
+    message_status: str,
+) -> None:
+    result = await _converted_events(
+        _created(),
+        _completed(status, steps=[ModelOutputStep(content=[TextContent(text="partial")])]),
+    )
+
+    terminal = result[-1]
+    assert isinstance(terminal, ResponseFailedEvent | ResponseIncompleteEvent)
+    assert terminal.type == event_type
+    assert isinstance(terminal.response.output[0], ResponseOutputMessage)
+    assert terminal.response.output[0].status == message_status
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_logs_and_skips_unknown_event(caplog: pytest.LogCaptureFixture) -> None:
+    unknown = UnknownInteractionSSEEvent(raw={"event_type": "future.event", "value": 1})
+
+    with caplog.at_level(logging.WARNING, logger="any_llm"):
+        result = await _converted_events(_created(), unknown, _completed())
+
+    assert [event.type for event in result] == [
+        "response.created",
+        "response.in_progress",
+        "response.completed",
+    ]
+    assert "Skipping unknown Gemini Interactions event" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_logs_and_skips_unknown_delta(caplog: pytest.LogCaptureFixture) -> None:
+    started = StepStart(index=0, step=ModelOutputStep())
+    non_text = StepDelta(index=0, delta=ArgumentsDelta(arguments="{}"))
+    unknown = StepDelta(index=0, delta=UnknownStepDeltaData(raw={"type": "future_delta", "value": 1}))
+    stopped = StepStop(index=0)
+
+    with caplog.at_level(logging.WARNING, logger="any_llm"):
+        result = await _converted_events(_created(), started, non_text, unknown, stopped, _completed())
+
+    assert [event.type for event in result] == [
+        "response.created",
+        "response.in_progress",
+        "response.output_item.added",
+        "response.content_part.added",
+        "response.output_text.done",
+        "response.content_part.done",
+        "response.output_item.done",
+        "response.completed",
+    ]
+    assert "Skipping unknown Gemini Interactions step delta" in caplog.text
