@@ -636,8 +636,8 @@ def messages(
         output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
             Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
-            holds the parsed JSON). The call returns Anthropic's ``ParsedMessage``. Not supported
-            with streaming.
+            holds the parsed JSON). Non-streaming calls return Anthropic's ``ParsedMessage``;
+            providers with native support can stream schema-constrained Messages events.
         timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
             An explicit ``None`` is treated the same as omitting it (the provider's default
             applies), so it cannot request an unbounded timeout. Providers that have no
@@ -744,8 +744,8 @@ async def amessages(
         output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
             Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
-            holds the parsed JSON). The call returns Anthropic's ``ParsedMessage``. Not supported
-            with streaming.
+            holds the parsed JSON). Non-streaming calls return Anthropic's ``ParsedMessage``;
+            providers with native support can stream schema-constrained Messages events.
         timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
             An explicit ``None`` is treated the same as omitting it (the provider's default
             applies), so it cannot request an unbounded timeout. Providers that have no
