@@ -54,6 +54,7 @@ from any_llm.utils.exception_handler import handle_exceptions
 from any_llm.utils.structured_output import (
     build_parsed_message,
     is_structured_output_type,
+    normalize_output_config,
     parse_json_content,
     parse_responses_output,
 )
@@ -1019,6 +1020,11 @@ class AnyLLM(ABC):
         # case); for the raw-dict case and for all bridged providers it returns a MessageResponse,
         # so build the same ParsedMessage shape from the response's JSON text here.
         if output_format is not None and isinstance(result, MessageResponse):
+            if isinstance(output_format, dict):
+                format_config = normalize_output_config(output_format).get("format")
+                schema = format_config.get("schema") if isinstance(format_config, dict) else None
+                if not isinstance(schema, dict) or not schema:
+                    return result
             return build_parsed_message(result, output_format)
 
         return result
