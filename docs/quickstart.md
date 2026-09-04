@@ -159,6 +159,35 @@ print(response.choices[0].message.content)
 
 Reasoning also works with streaming — each chunk may include `chunk.choices[0].delta.reasoning`.
 
+## Gemini Interactions
+
+Gemini maps text-only `responses()` calls to Google's [Interactions API](https://ai.google.dev/gemini-api/docs/interactions). The existing `completion()` method continues to use `generateContent`.
+
+```python
+from any_llm import AnyLLM
+
+llm = AnyLLM.create("gemini")
+response = llm.responses(
+    model="gemini-3.8-flash",
+    input_data="Explain why the sky is blue.",
+)
+print(response.output_text)
+```
+
+Pass `stream=True` to `responses()` for a synchronous event iterator. With the async API, await `aresponses()` and consume the returned async iterator:
+
+```python
+stream = await llm.aresponses(
+    model="gemini-3.8-flash",
+    input_data="Explain why the sky is blue.",
+    stream=True,
+)
+async for event in stream:
+    print(event.type)
+```
+
+Gemini text Interactions accept string input, instructions, maximum output tokens, per-request timeouts, and streaming. This first slice does not expose `store`, so Google's default storage behavior applies. Other Responses parameters, including media, tools, reasoning controls, structured output, chaining, metadata, and background execution, raise `UnsupportedParameterError`.
+
 ## Embeddings
 
 `embedding` and `aembedding` allow you to create vector embeddings from text using the same unified interface across providers.

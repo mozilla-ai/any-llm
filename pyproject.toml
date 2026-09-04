@@ -39,7 +39,8 @@ mistral = [
 anthropic = []
 
 gemini = [
-  "google-genai>=1.51.0",
+  # 2.17.0 first models the stable Interactions API's diagnostic errors field.
+  "google-genai>=2.17.0",
   "google-cloud-storage",
 ]
 
