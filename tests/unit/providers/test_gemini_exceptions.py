@@ -1,6 +1,7 @@
 # ruff: noqa: E402
 from __future__ import annotations
 
+import httpx
 import pytest
 
 google_genai = pytest.importorskip("google.genai")
@@ -64,3 +65,55 @@ def test_api_error_generic() -> None:
     assert isinstance(result, ProviderError)
     assert result.provider_name == "gemini"
     assert result.original_exception is original
+
+
+def test_client_error_when_model_rejects_zero_thinking_budget() -> None:
+    """Models that only work in thinking mode reject thinking_budget=0 with a 400."""
+    original = ClientError(
+        code=400,
+        response_json={"error": {"message": "Budget 0 is invalid. This model only works in thinking mode."}},
+    )
+
+    result = convert_exception(original, "gemini")
+
+    assert isinstance(result, InvalidRequestError)
+    assert "Budget 0 is invalid" in str(result)
+    assert result.original_exception is original
+
+
+def test_client_error_when_model_rejects_minimal_thinking_level() -> None:
+    """Models without a MINIMAL thinking level reject the clamp with a 400."""
+    original = ClientError(
+        code=400,
+        response_json={
+            "error": {
+                "message": "Thinking level MINIMAL is not supported for this model. Please retry with other thinking level."
+            }
+        },
+        response=httpx.Response(400),
+    )
+
+    result = convert_exception(original, "gemini")
+
+    assert isinstance(result, InvalidRequestError)
+    assert "Thinking level MINIMAL is not supported" in str(result)
+    assert result.original_exception is original
+
+
+def test_client_error_without_attached_response_still_maps_to_invalid_request() -> None:
+    """With no usable response object, the status Google puts in the error body still classifies the 400."""
+    original = ClientError(
+        code=400,
+        response_json={
+            "error": {
+                "code": 400,
+                "message": "Thinking level MINIMAL is not supported for this model. Please retry with other thinking level.",
+                "status": "INVALID_ARGUMENT",
+            }
+        },
+    )
+
+    result = convert_exception(original, "gemini")
+
+    assert isinstance(result, InvalidRequestError)
+    assert "Thinking level MINIMAL is not supported" in str(result)

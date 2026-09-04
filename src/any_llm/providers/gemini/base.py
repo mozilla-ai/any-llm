@@ -8,6 +8,7 @@ from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError, UnsupportedParameterError
+from any_llm.logging import logger
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -70,6 +71,7 @@ REASONING_EFFORT_TO_THINKING_LEVELS = {
 _SUPPORTED_BATCH_ENDPOINTS = frozenset({"/v1/chat/completions"})
 _THINKING_LEVEL_MIN_GEMINI_VERSION = (3, 5)
 _GEMINI_VERSION_PATTERN = re.compile(r"(?:^|/)gemini-(\d+)(?:\.(\d+))?")
+_MINIMAL_CLAMP_WARNED: set[str] = set()
 
 
 def _uses_thinking_level(model_id: str) -> bool:
@@ -148,7 +150,18 @@ class GoogleProvider(AnyLLM):
             kwargs["presence_penalty"] = params.presence_penalty
         if params.reasoning_effort != "auto":
             if params.reasoning_effort is None or params.reasoning_effort == "none":
-                kwargs["thinking_config"] = types.ThinkingConfig(include_thoughts=False)
+                if _uses_thinking_level(params.model_id):
+                    if params.model_id not in _MINIMAL_CLAMP_WARNED:
+                        _MINIMAL_CLAMP_WARNED.add(params.model_id)
+                        logger.warning(
+                            "%s has no thinking off tier; clamping reasoning_effort='none' to thinking_level=MINIMAL",
+                            params.model_id,
+                        )
+                    kwargs["thinking_config"] = types.ThinkingConfig(
+                        include_thoughts=False, thinking_level=types.ThinkingLevel.MINIMAL
+                    )
+                else:
+                    kwargs["thinking_config"] = types.ThinkingConfig(include_thoughts=False, thinking_budget=0)
             elif _uses_thinking_level(params.model_id):
                 kwargs["thinking_config"] = types.ThinkingConfig(
                     include_thoughts=True, thinking_level=REASONING_EFFORT_TO_THINKING_LEVELS[params.reasoning_effort]

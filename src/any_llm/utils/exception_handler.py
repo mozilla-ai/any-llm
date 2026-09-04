@@ -142,9 +142,11 @@ def _extract_status_code(exception: Exception) -> int | None:
 
     response = getattr(exception, "response", None)
     if response is not None:
-        response_status = getattr(response, "status_code", None)
-        if isinstance(response_status, int):
-            return response_status
+        # httpx and requests spell it status_code; aiohttp spells it status
+        for name in ("status_code", "status"):
+            response_status = getattr(response, name, None)
+            if isinstance(response_status, int):
+                return response_status
 
     return None
 
