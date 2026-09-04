@@ -3,7 +3,7 @@ import json
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
+import httpx2
 import pytest
 from openai.types.responses import ResponseCompactionItem, ResponseOutputMessage, ResponseOutputText
 from openresponses_types import CompactionBody, ResponseResource
@@ -30,11 +30,11 @@ def test_timeout_capability_is_native_for_openai_compatible_providers() -> None:
 
 @pytest.mark.asyncio
 async def test_openai_messages_bridge_sends_typed_prompt_cache_key() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "id": "chatcmpl-test",
@@ -52,7 +52,7 @@ async def test_openai_messages_bridge_sends_typed_prompt_cache_key() -> None:
             },
         )
 
-    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     provider = OpenaiProvider(api_key="test-key", http_client=http_client)
     try:
         await provider.amessages(
