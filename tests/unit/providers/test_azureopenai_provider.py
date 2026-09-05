@@ -85,12 +85,18 @@ def _azure_transport(
     return httpx.MockTransport(handle), requests
 
 
-def test_azureopenai_normalizes_v1_endpoint_and_preserves_client_options() -> None:
+@pytest.mark.parametrize("api_version", [None, "v1"])
+@pytest.mark.parametrize("environment_version", ["", "v1"])
+def test_azureopenai_normalizes_v1_endpoint_and_preserves_client_options(
+    api_version: str | None, environment_version: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_API_VERSION", environment_version)
     with patch("any_llm.providers.azureopenai.azureopenai.AsyncOpenAI") as sdk_client:
         AzureopenaiProvider(
             api_key="key",
             api_base="https://explicit.openai.azure.com/openai/v1/",
             azure_endpoint="https://ignored.openai.azure.com",
+            api_version=api_version,
             default_query={"api-version": "v1", "trace": "1"},
             timeout=30,
         )

@@ -105,10 +105,10 @@ class AzureopenaiProvider(BaseOpenAIProvider):
         # deployment name in `model`. Rejecting legacy routing options prevents
         # a dated-route configuration from appearing to work while being ignored.
         # https://learn.microsoft.com/azure/foundry/openai/api-version-lifecycle
-        if api_version is not None:
+        if api_version not in (None, "v1"):
             parameter_name = "api_version"
             raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
-        if os.getenv("OPENAI_API_VERSION"):
+        if os.getenv("OPENAI_API_VERSION") not in (None, "", "v1"):
             parameter_name = "OPENAI_API_VERSION"
             raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
         if azure_deployment is not None:
