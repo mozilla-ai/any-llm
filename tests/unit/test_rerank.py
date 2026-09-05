@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -74,6 +76,20 @@ def test_otari_supports_rerank() -> None:
     from any_llm.providers.otari import OtariProvider
 
     assert OtariProvider.SUPPORTS_RERANK is True
+
+
+def test_together_supports_rerank() -> None:
+    pytest.importorskip("together")
+    from any_llm.providers.together import TogetherProvider
+
+    assert TogetherProvider.SUPPORTS_RERANK is True
+
+
+def test_voyage_supports_rerank() -> None:
+    pytest.importorskip("voyageai")
+    from any_llm.providers.voyage.voyage import VoyageProvider
+
+    assert VoyageProvider.SUPPORTS_RERANK is True
 
 
 def test_openai_base_does_not_support_rerank() -> None:
@@ -425,8 +441,6 @@ def test_base_convert_rerank_response_raises() -> None:
         pytest.param("any_llm.providers.huggingface.huggingface:HuggingfaceProvider", id="huggingface"),
         pytest.param("any_llm.providers.ollama.ollama:OllamaProvider", id="ollama"),
         pytest.param("any_llm.providers.sagemaker.sagemaker:SagemakerProvider", id="sagemaker"),
-        pytest.param("any_llm.providers.together.together:TogetherProvider", id="together"),
-        pytest.param("any_llm.providers.voyage.voyage:VoyageProvider", id="voyage"),
         pytest.param("any_llm.providers.watsonx.watsonx:WatsonxProvider", id="watsonx"),
         pytest.param("any_llm.providers.xai.xai:XaiProvider", id="xai"),
         pytest.param("any_llm.providers.mistral.mistral:MistralProvider", id="mistral"),
@@ -711,3 +725,282 @@ def test_rerank_response_id_optional() -> None:
     """RerankResponse.id defaults to None for forward compatibility."""
     resp = RerankResponse(results=[])
     assert resp.id is None
+
+
+def test_together_convert_rerank_params_basic() -> None:
+    pytest.importorskip("together")
+    from any_llm.providers.together import TogetherProvider
+
+    params = TogetherProvider._convert_rerank_params(
+        model="Salesforce/Llama-Rank-v1",
+        query="test query",
+        documents=["doc1", "doc2"],
+    )
+    assert params == {"query": "test query", "documents": ["doc1", "doc2"]}
+
+
+def test_together_convert_rerank_params_with_options() -> None:
+    pytest.importorskip("together")
+    from any_llm.providers.together import TogetherProvider
+
+    params = TogetherProvider._convert_rerank_params(
+        model="Salesforce/Llama-Rank-v1",
+        query="test query",
+        documents=["doc1", "doc2"],
+        top_n=2,
+        return_documents=True,
+        rank_fields=["title"],
+    )
+    assert params["top_n"] == 2
+    assert params["return_documents"] is True
+    assert params["rank_fields"] == ["title"]
+
+
+def test_together_convert_rerank_params_ignores_none_top_n() -> None:
+    pytest.importorskip("together")
+    from any_llm.providers.together import TogetherProvider
+
+    params = TogetherProvider._convert_rerank_params(
+        model="Salesforce/Llama-Rank-v1",
+        query="q",
+        documents=["d"],
+        top_n=None,
+        max_tokens_per_doc=None,
+    )
+    assert "top_n" not in params
+
+
+def test_together_convert_rerank_params_rejects_max_tokens_per_doc() -> None:
+    pytest.importorskip("together")
+    from any_llm.exceptions import UnsupportedParameterError
+    from any_llm.providers.together import TogetherProvider
+
+    with pytest.raises(UnsupportedParameterError, match="max_tokens_per_doc"):
+        TogetherProvider._convert_rerank_params(
+            model="Salesforce/Llama-Rank-v1",
+            query="q",
+            documents=["d"],
+            max_tokens_per_doc=512,
+        )
+
+
+def _together_rerank_response(**overrides: object) -> object:
+    from together.types import RerankCreateResponse
+
+    payload: dict[str, object] = {
+        "model": "Salesforce/Llama-Rank-v1",
+        "object": "rerank",
+        "id": "rerank-together-1",
+        "results": [
+            {"document": {"text": "doc1"}, "index": 0, "relevance_score": 0.3},
+            {"document": {"text": "doc2"}, "index": 1, "relevance_score": 0.9},
+        ],
+        "usage": {"prompt_tokens": 42, "completion_tokens": 0, "total_tokens": 42},
+    }
+    payload.update(overrides)
+    return RerankCreateResponse.model_validate(payload)
+
+
+def test_convert_together_rerank_response_basic() -> None:
+    pytest.importorskip("together")
+    from any_llm.providers.together.utils import _convert_together_rerank_response
+
+    result = _convert_together_rerank_response(_together_rerank_response())  # type: ignore[arg-type]
+    assert isinstance(result, RerankResponse)
+    assert result.id == "rerank-together-1"
+    assert len(result.results) == 2
+    assert result.meta is None
+
+
+def test_convert_together_rerank_response_sorts_descending() -> None:
+    pytest.importorskip("together")
+    from any_llm.providers.together.utils import _convert_together_rerank_response
+
+    result = _convert_together_rerank_response(_together_rerank_response())  # type: ignore[arg-type]
+    assert [r.index for r in result.results] == [1, 0]
+    assert result.results[0].relevance_score == 0.9
+    assert result.results[1].relevance_score == 0.3
+
+
+def test_convert_together_rerank_response_with_usage() -> None:
+    pytest.importorskip("together")
+    from any_llm.providers.together.utils import _convert_together_rerank_response
+
+    result = _convert_together_rerank_response(_together_rerank_response())  # type: ignore[arg-type]
+    assert result.usage is not None
+    assert result.usage.total_tokens == 42
+
+
+def test_convert_together_rerank_response_without_usage() -> None:
+    pytest.importorskip("together")
+    from any_llm.providers.together.utils import _convert_together_rerank_response
+
+    result = _convert_together_rerank_response(_together_rerank_response(usage=None))  # type: ignore[arg-type]
+    assert result.usage is None
+
+
+@pytest.mark.asyncio
+async def test_together_arerank_calls_client() -> None:
+    """TogetherProvider._arerank calls client.rerank.create with converted params."""
+    pytest.importorskip("together")
+    from any_llm.providers.together import TogetherProvider
+
+    provider = TogetherProvider.__new__(TogetherProvider)
+    provider.client = MagicMock()
+    provider.client.rerank.create = AsyncMock(return_value=_together_rerank_response())
+
+    result = await provider._arerank("Salesforce/Llama-Rank-v1", "my query", ["doc1", "doc2"], top_n=2)
+
+    provider.client.rerank.create.assert_awaited_once_with(
+        model="Salesforce/Llama-Rank-v1",
+        query="my query",
+        documents=["doc1", "doc2"],
+        top_n=2,
+    )
+    assert isinstance(result, RerankResponse)
+    assert result.id == "rerank-together-1"
+    assert result.results[0].index == 1
+
+
+def test_voyage_convert_rerank_params_basic() -> None:
+    pytest.importorskip("voyageai")
+    from any_llm.providers.voyage.voyage import VoyageProvider
+
+    params = VoyageProvider._convert_rerank_params(
+        model="rerank-2",
+        query="test query",
+        documents=["doc1", "doc2"],
+    )
+    assert params == {"query": "test query", "documents": ["doc1", "doc2"]}
+
+
+def test_voyage_convert_rerank_params_maps_top_n_to_top_k() -> None:
+    pytest.importorskip("voyageai")
+    from any_llm.providers.voyage.voyage import VoyageProvider
+
+    params = VoyageProvider._convert_rerank_params(
+        model="rerank-2",
+        query="q",
+        documents=["d1", "d2"],
+        top_n=1,
+        truncation=False,
+    )
+    assert params["top_k"] == 1
+    assert "top_n" not in params
+    assert params["truncation"] is False
+
+
+def test_voyage_convert_rerank_params_ignores_none_top_n() -> None:
+    pytest.importorskip("voyageai")
+    from any_llm.providers.voyage.voyage import VoyageProvider
+
+    params = VoyageProvider._convert_rerank_params(
+        model="rerank-2",
+        query="q",
+        documents=["d"],
+        top_n=None,
+        max_tokens_per_doc=None,
+    )
+    assert "top_k" not in params
+
+
+def test_voyage_convert_rerank_params_rejects_max_tokens_per_doc() -> None:
+    pytest.importorskip("voyageai")
+    from any_llm.exceptions import UnsupportedParameterError
+    from any_llm.providers.voyage.voyage import VoyageProvider
+
+    with pytest.raises(UnsupportedParameterError, match="max_tokens_per_doc"):
+        VoyageProvider._convert_rerank_params(
+            model="rerank-2",
+            query="q",
+            documents=["d"],
+            max_tokens_per_doc=512,
+        )
+
+
+def _voyage_reranking_object(total_tokens: int = 17) -> object:
+    """Build a real voyageai RerankingObject from a raw response payload."""
+    from voyageai.object.reranking import RerankingObject
+
+    raw = SimpleNamespace(
+        data=[
+            SimpleNamespace(index=0, relevance_score=0.3),
+            SimpleNamespace(index=1, relevance_score=0.9),
+        ],
+        usage=SimpleNamespace(total_tokens=total_tokens),
+    )
+    return RerankingObject(["doc1", "doc2"], cast("Any", raw))
+
+
+def test_convert_voyage_rerank_response_basic() -> None:
+    pytest.importorskip("voyageai")
+    from any_llm.providers.voyage.utils import _convert_voyage_rerank_response
+
+    result = _convert_voyage_rerank_response(_voyage_reranking_object())  # type: ignore[arg-type]
+    assert isinstance(result, RerankResponse)
+    assert len(result.results) == 2
+    assert result.meta is None
+
+
+def test_convert_voyage_rerank_response_has_no_id() -> None:
+    """Voyage returns no response ID, so RerankResponse.id stays None."""
+    pytest.importorskip("voyageai")
+    from any_llm.providers.voyage.utils import _convert_voyage_rerank_response
+
+    result = _convert_voyage_rerank_response(_voyage_reranking_object())  # type: ignore[arg-type]
+    assert result.id is None
+
+
+def test_convert_voyage_rerank_response_sorts_descending() -> None:
+    pytest.importorskip("voyageai")
+    from any_llm.providers.voyage.utils import _convert_voyage_rerank_response
+
+    result = _convert_voyage_rerank_response(_voyage_reranking_object())  # type: ignore[arg-type]
+    assert [r.index for r in result.results] == [1, 0]
+    assert result.results[0].relevance_score == 0.9
+
+
+def test_convert_voyage_rerank_response_with_usage() -> None:
+    pytest.importorskip("voyageai")
+    from any_llm.providers.voyage.utils import _convert_voyage_rerank_response
+
+    result = _convert_voyage_rerank_response(_voyage_reranking_object(total_tokens=99))  # type: ignore[arg-type]
+    assert result.usage is not None
+    assert result.usage.total_tokens == 99
+
+
+@pytest.mark.asyncio
+async def test_voyage_arerank_calls_client() -> None:
+    """VoyageProvider._arerank calls client.rerank with top_n mapped to top_k."""
+    pytest.importorskip("voyageai")
+    from any_llm.providers.voyage.voyage import VoyageProvider
+
+    provider = VoyageProvider.__new__(VoyageProvider)
+    provider.client = MagicMock()
+    provider.client.rerank = AsyncMock(return_value=_voyage_reranking_object())
+
+    result = await provider._arerank("rerank-2", "my query", ["doc1", "doc2"], top_n=1)
+
+    provider.client.rerank.assert_awaited_once_with(
+        model="rerank-2",
+        query="my query",
+        documents=["doc1", "doc2"],
+        top_k=1,
+    )
+    assert isinstance(result, RerankResponse)
+    assert result.id is None
+    assert result.results[0].index == 1
+
+
+def test_together_metadata_includes_rerank() -> None:
+    pytest.importorskip("together")
+    from any_llm.providers.together import TogetherProvider
+
+    assert TogetherProvider.get_provider_metadata().rerank is True
+
+
+def test_voyage_metadata_includes_rerank() -> None:
+    pytest.importorskip("voyageai")
+    from any_llm.providers.voyage.voyage import VoyageProvider
+
+    assert VoyageProvider.get_provider_metadata().rerank is True
