@@ -13,7 +13,12 @@ from botocore.exceptions import ProfileNotFound
 from botocore.tokens import ScopedEnvTokenProvider
 from pydantic import BaseModel
 
-from any_llm.exceptions import InvalidRequestError, MissingApiKeyError, UnsupportedParameterError
+from any_llm.exceptions import (
+    ContentFilterFinishReasonError,
+    InvalidRequestError,
+    MissingApiKeyError,
+    UnsupportedParameterError,
+)
 from any_llm.providers.bedrock import BedrockProvider
 from any_llm.providers.bedrock.utils import (
     _STRUCTURED_OUTPUT_TOOL_NAME,
@@ -1584,3 +1589,90 @@ def test_convert_messages_merges_consecutive_user_messages() -> None:
         {"toolResult": {"toolUseId": "t1", "content": [{"text": "here"}]}},
         {"text": "what is in it"},
     ]
+
+
+def _bedrock_stop_reasons() -> tuple[str, ...]:
+    """Every stopReason the Converse API can return, read from the installed botocore service model.
+
+    Reading the enum out of the service model rather than hardcoding it means a botocore upgrade
+    that adds a stop reason fails the parametrized tests below instead of silently defaulting the
+    new reason to "stop".
+    """
+    service_model = botocore.session.Session().get_service_model("bedrock-runtime")  # type: ignore[no-untyped-call]
+    return tuple(service_model.shape_for("StopReason").enum)
+
+
+_EXPECTED_FINISH_REASONS = {
+    "end_turn": "stop",
+    "stop_sequence": "stop",
+    "malformed_model_output": "stop",
+    "malformed_tool_use": "stop",
+    "max_tokens": "length",
+    "model_context_window_exceeded": "length",
+    "tool_use": "tool_calls",
+    "content_filtered": "content_filter",
+    "guardrail_intervened": "content_filter",
+}
+
+
+@pytest.mark.parametrize("stop_reason", _bedrock_stop_reasons())
+def test_convert_response_maps_every_bedrock_stop_reason(stop_reason: str) -> None:
+    """Every stopReason the Converse API can return needs an explicit OpenAI finish_reason.
+
+    An unmapped one falls back to "stop", which tells callers the model answered normally when it
+    was actually blocked by a guardrail or ran out of context.
+    """
+    assert stop_reason in _EXPECTED_FINISH_REASONS, (
+        f"New Bedrock stop reason {stop_reason!r} needs a finish_reason mapping."
+    )
+
+    response: dict[str, Any] = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "stopReason": stop_reason,
+    }
+
+    result = _convert_response(response)
+
+    assert result.choices[0].finish_reason == _EXPECTED_FINISH_REASONS[stop_reason]
+
+
+@pytest.mark.parametrize("stop_reason", _bedrock_stop_reasons())
+def test_streaming_chunk_maps_every_bedrock_stop_reason(stop_reason: str) -> None:
+    """The streaming path must agree with the non-streaming one on every stopReason."""
+    result = _create_openai_chunk_from_aws_chunk({"messageStop": {"stopReason": stop_reason}}, "test-model")
+
+    assert result is not None
+    assert result.choices[0].finish_reason == _EXPECTED_FINISH_REASONS[stop_reason]
+
+
+def test_convert_response_without_stop_reason_finishes_as_stop() -> None:
+    """A response with no stopReason at all still needs a valid finish_reason."""
+    response: dict[str, Any] = {"output": {"message": {"content": [{"text": "Hello!"}]}}}
+
+    result = _convert_response(response)
+
+    assert result.choices[0].finish_reason == "stop"
+
+
+@pytest.mark.asyncio
+async def test_guardrail_blocked_structured_output_raises_content_filter_error() -> None:
+    """A guardrail block on a structured-output call must reach the caller as a typed error.
+
+    While guardrail_intervened mapped to "stop", the content_filter guard in
+    AnyLLM.acompletion never fired and the guardrail's blocked-message prose was handed to the
+    JSON parser instead, so callers saw a pydantic ValidationError from an unrelated layer.
+    """
+    custom_client = Mock()
+    custom_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Sorry, I cannot answer that."}]}},
+        "stopReason": "guardrail_intervened",
+    }
+
+    provider = BedrockProvider(client=custom_client)
+
+    with pytest.raises(ContentFilterFinishReasonError):
+        await provider.acompletion(
+            model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+            messages=[{"role": "user", "content": "Hello"}],
+            response_format=_City,
+        )
