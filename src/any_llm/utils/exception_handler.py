@@ -33,7 +33,8 @@ ANY_LLM_UNIFIED_EXCEPTIONS_ENV = "ANY_LLM_UNIFIED_EXCEPTIONS"
 _DEPRECATION_WARNING = (
     "Provider-specific exceptions will be converted to unified any-llm exceptions "
     "(e.g., RateLimitError, AuthenticationError) in a future version. "
-    "To enable this behavior now, set the environment variable ANY_LLM_UNIFIED_EXCEPTIONS=1. "
+    "To enable this behavior now, pass unified_exceptions=True when creating a provider "
+    "or set the environment variable ANY_LLM_UNIFIED_EXCEPTIONS=1. "
     "The original exception will be available in the original_exception attribute."
 )
 
@@ -270,12 +271,13 @@ def convert_exception(
     return error
 
 
-def _handle_exception(exception: Exception, provider_name: str) -> None:
+def _handle_exception(exception: Exception, provider_name: str, unified_exceptions: bool | None = None) -> None:
     """Handle an exception based on the unified exceptions flag.
 
     Args:
         exception: The original exception
         provider_name: Name of the provider for error context
+        unified_exceptions: Instance override, or None to use the environment variable
 
     Raises:
         AnyLLMError: If unified exceptions are enabled
@@ -295,7 +297,9 @@ def _handle_exception(exception: Exception, provider_name: str) -> None:
     if isinstance(exception, ValidationError):
         raise exception
 
-    if os.environ.get(ANY_LLM_UNIFIED_EXCEPTIONS_ENV, "").lower() in ("1", "true", "yes", "on"):
+    if unified_exceptions is None:
+        unified_exceptions = os.environ.get(ANY_LLM_UNIFIED_EXCEPTIONS_ENV, "").lower() in ("1", "true", "yes", "on")
+    if unified_exceptions:
         converted = convert_exception(exception, provider_name)
         raise converted from exception
 
@@ -331,27 +335,29 @@ def handle_exceptions(*, wrap_streaming: bool = False) -> Callable[[F], F]:
             async def _wrap_async_iterator(
                 async_iter: Any,
                 provider_name: str,
+                unified_exceptions: bool | None,
             ) -> Any:
                 """Wrap an async iterator to handle exceptions during iteration."""
                 try:
                     async for item in async_iter:
                         yield item
                 except Exception as e:
-                    _handle_exception(e, provider_name)
+                    _handle_exception(e, provider_name, unified_exceptions)
 
             @functools.wraps(func)
             async def streaming_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
                 provider_name = getattr(self, "PROVIDER_NAME", "unknown")
+                unified_exceptions = getattr(self, "_unified_exceptions", None)
                 try:
                     result = await func(self, *args, **kwargs)
                 except Exception as e:
-                    _handle_exception(e, provider_name)
+                    _handle_exception(e, provider_name, unified_exceptions)
                     return None  # unreachable, but helps type checkers
 
                 # Check if result is an async iterator (streaming response)
                 # If so, wrap it to handle exceptions during iteration
                 if hasattr(result, "__aiter__"):
-                    return _wrap_async_iterator(result, provider_name)
+                    return _wrap_async_iterator(result, provider_name, unified_exceptions)
 
                 # Non-streaming response, return as-is
                 return result
@@ -364,7 +370,7 @@ def handle_exceptions(*, wrap_streaming: bool = False) -> Callable[[F], F]:
             try:
                 return await func(self, *args, **kwargs)
             except Exception as e:
-                _handle_exception(e, provider_name)
+                _handle_exception(e, provider_name, getattr(self, "_unified_exceptions", None))
 
         return wrapper  # type: ignore[return-value]
 
