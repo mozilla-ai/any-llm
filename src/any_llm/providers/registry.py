@@ -187,6 +187,16 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         supports_completion_image=True,
         supports_moderation=True,
     ),
+    "thegrid": OpenAICompatibleProviderConfig(
+        name="thegrid",
+        api_base="https://api.thegrid.ai/v1",
+        env_api_key_name="THEGRID_API_KEY",
+        env_api_base_name="THEGRID_API_BASE",
+        provider_documentation_url="https://thegrid.ai/docs",
+        supports_completion_reasoning=True,
+        supports_completion_image=True,
+        supports_responses=True,
+    ),
 }
 
 _class_cache: dict[str, type[BaseOpenAIProvider]] = {}
