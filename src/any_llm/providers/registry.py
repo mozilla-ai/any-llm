@@ -63,6 +63,13 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         provider_documentation_url="https://www.atlascloud.ai/docs",
         supports_completion_reasoning=True,
     ),
+    "daoxe": OpenAICompatibleProviderConfig(
+        name="daoxe",
+        api_base="https://daoxe.com/v1",
+        env_api_key_name="DAOXE_API_KEY",
+        env_api_base_name="DAOXE_API_BASE",
+        provider_documentation_url="https://daoxe.com/docs",
+    ),
     "dashscope": OpenAICompatibleProviderConfig(
         name="dashscope",
         api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
