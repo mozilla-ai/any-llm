@@ -49,6 +49,7 @@ class PortkeyProvider(XMLReasoningOpenAIProvider):
     SUPPORTS_LIST_MODELS = True
 
     _DEFAULT_REASONING_EFFORT = None
+    _DEFAULT_TIMEOUT = httpx.Timeout(600.0, connect=5.0)
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
     client: AsyncOpenAI
 
@@ -57,9 +58,9 @@ class PortkeyProvider(XMLReasoningOpenAIProvider):
         """Initialize Portkey's native async client."""
         # Preserve the timeout behavior of the former OpenAI client: a bounded read
         # timeout with a shorter connection timeout, unless explicitly overridden.
-        timeout = kwargs.pop("timeout", httpx.Timeout(600.0, connect=5.0))
-        kwargs.setdefault("http_client", httpx.AsyncClient(timeout=timeout))
-        kwargs.setdefault("request_timeout", timeout)
+        request_timeout = kwargs.pop("request_timeout", kwargs.pop("timeout", self._DEFAULT_TIMEOUT))
+        kwargs.setdefault("http_client", httpx.AsyncClient(timeout=request_timeout))
+        kwargs.setdefault("request_timeout", request_timeout)
         self.client = AsyncPortkey(
             api_key=api_key,
             base_url=api_base or self.API_BASE,
@@ -126,13 +127,13 @@ class PortkeyProvider(XMLReasoningOpenAIProvider):
                 },
             }
         converted_params = params.model_dump(exclude_none=True, exclude={"model_id", "messages"})
-        converted_params.setdefault("timeout", 600.0)
+        converted_params.setdefault("timeout", PortkeyProvider._DEFAULT_TIMEOUT)
         converted_params.update(kwargs)
         return converted_params
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         """List models with the legacy bounded read timeout."""
-        kwargs.setdefault("timeout", 600.0)
+        kwargs.setdefault("timeout", self._DEFAULT_TIMEOUT)
         response = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(response)
