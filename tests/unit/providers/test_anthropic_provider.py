@@ -930,7 +930,7 @@ def test_streaming_chunk_includes_cache_tokens_in_usage() -> None:
     assert result.usage.total_tokens == expected_total_tokens
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 13332
-    assert result.choices[0].finish_reason is None
+    assert result.choices == []
 
 
 @pytest.mark.asyncio
@@ -1000,7 +1000,7 @@ def test_streaming_chunk_without_cache_tokens() -> None:
     assert result.usage.completion_tokens == 50
     assert result.usage.total_tokens == 150
     assert result.usage.prompt_tokens_details is None
-    assert result.choices[0].finish_reason is None
+    assert result.choices == []
 
 
 def test_streaming_tool_chunks_preserve_parallel_tool_index() -> None:
@@ -1824,3 +1824,56 @@ def test_convert_response_non_datetime_created_at(created_at: Any) -> None:
 
     assert result.created == 0
     assert result.choices[0].message.content == "hello"
+
+
+def test_stream_trailing_usage_chunk_has_no_choices() -> None:
+    """Usage arrives on the message_stop chunk after finish_reason, with choices left empty like OpenAI."""
+    from unittest.mock import MagicMock
+
+    from anthropic.types import (
+        ContentBlockDeltaEvent,
+        ContentBlockStopEvent,
+        MessageDeltaEvent,
+        MessageDeltaUsage,
+        MessageStopEvent,
+        TextDelta,
+        Usage,
+    )
+    from anthropic.types.raw_message_delta_event import Delta
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    stop_event = MessageStopEvent(type="message_stop")
+    stop_event.message = MagicMock(usage=Usage(input_tokens=12, output_tokens=7))  # type: ignore[attr-defined]
+    events = [
+        ContentBlockDeltaEvent(type="content_block_delta", index=0, delta=TextDelta(type="text_delta", text="hi")),
+        ContentBlockStopEvent(type="content_block_stop", index=0),
+        MessageDeltaEvent(
+            type="message_delta",
+            delta=Delta(stop_reason="end_turn", stop_sequence=None),
+            usage=MessageDeltaUsage(output_tokens=7),
+        ),
+        stop_event,
+    ]
+
+    results = [_create_openai_chunk_from_anthropic_chunk(event, "claude-sonnet-4-5") for event in events]
+
+    finish_index = next(i for i, r in enumerate(results) if r.choices and r.choices[0].finish_reason == "stop")
+    usage_chunks = [r for r in results if r.usage is not None]
+    assert len(usage_chunks) == 1
+    assert results.index(usage_chunks[0]) > finish_index
+    assert usage_chunks[0].choices == []
+    assert usage_chunks[0].usage is not None
+    assert usage_chunks[0].usage.total_tokens == 19
+
+
+def test_stream_message_stop_without_message_has_no_choices_or_usage() -> None:
+    """A raw message_stop event with no accumulated message yields neither choices nor usage."""
+    from anthropic.types import MessageStopEvent
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    result = _create_openai_chunk_from_anthropic_chunk(MessageStopEvent(type="message_stop"), "claude-sonnet-4-5")
+
+    assert result.choices == []
+    assert result.usage is None
