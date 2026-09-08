@@ -16,21 +16,26 @@ on:
         description: the arg you want to pass to pytest filter (-k)
         type: string
 
-# This workflow uses pull_request_target so maintainers can request a run with a label. The
-# secret-bearing jobs must use the trusted base revision and never execute PR-head code.
+# This workflow uses pull_request_target so maintainers can request a run with a label. Applying
+# the label is an explicit approval to execute the reviewed PR-head code with provider secrets.
 #
 #   1. pull_request_target fires only when a repository member applies the run-integration-tests
 #      label.
 #   2. remove-label strips the label immediately, so each run needs a fresh, deliberate act.
-#   3. The jobs check out the base revision with persist-credentials: false.
+#   3. determine-jobs-to-run checks out the trusted base revision, while the labeled integration
+#      jobs check out the PR head so they test the proposed provider changes.
+#   4. The PR-head checkouts explicitly opt into actions/checkout's unsafe-checkout guard and keep
+#      persist-credentials disabled.
 #
-# The provider API keys are available only to the trusted base revision. PR changes are validated
-# by the normal pull_request checks and are not executed by this secret-bearing workflow.
+# The provider API keys are available to PR-head code only after a repository member has reviewed
+# the changes and applied the label. Treat that label as a credential-trust decision, not just a
+# request for CI minutes.
 #   - The gate is "any member who can label", not "write access". GitHub's triage role can apply
 #     and dismiss labels without write access, so anyone at triage or above can start a run. This
 #     workflow does not verify the labeler's permission level; if triage is ever granted to
 #     someone who should not reach the provider keys, add an explicit check on the label author.
-#   - determine-jobs-to-run runs the base revision's composite action.
+#   - determine-jobs-to-run runs the base revision's composite action, so a PR cannot replace the
+#     job-selection logic before the secret-bearing jobs start.
 #
 # Keep the explicit `ref:` inputs so push and manual runs retain their existing SHA behavior.
 
@@ -82,7 +87,8 @@ jobs:
       should_run_integration: ${{ steps.determine.outputs.should_run_integration }}
       should_run_local: ${{ steps.determine.outputs.should_run_local }}
     steps:
-      # The base revision is trusted; do not change this to the PR head.
+      # Keep job selection on the trusted base revision. The test jobs below intentionally run the
+      # labeled PR head with secrets.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.event.pull_request.base.sha || github.sha }}
@@ -105,10 +111,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # The base revision is trusted; do not change this to the PR head.
+      # The label is the maintainer approval to run the PR head with provider secrets.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          allow-unsafe-pr-checkout: true
 
           # Do not leave the token in .git/config for later steps to read.
           persist-credentials: false
@@ -186,10 +193,11 @@ jobs:
       LMSTUDIO_MODEL: qwen/qwen3-1.7b
 
     steps:
-      # The base revision is trusted; do not change this to the PR head.
+      # The label is the maintainer approval to run the PR head with provider secrets.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          allow-unsafe-pr-checkout: true
 
           # Do not leave the token in .git/config for later steps to read.
           persist-credentials: false
