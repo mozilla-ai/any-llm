@@ -334,24 +334,33 @@ def test_deepseek_thinking_respects_explicit_extra_body_override() -> None:
     assert result["extra_body"] == {"thinking": {"type": "disabled"}, "user_id": "caller-user"}
 
 
-def test_deepseek_does_not_mutate_extra_body_when_merging_controls() -> None:
-    extra_body = {"custom": "value", "user_id": "caller-user"}
-    params = CompletionParams(
-        model_id="deepseek-v4-flash",
-        messages=[{"role": "user", "content": "hi"}],
-        reasoning_effort="low",
-        user="normalized-user",
-    )
+def test_deepseek_does_not_mutate_reused_extra_body_when_mapping_user() -> None:
+    extra_body = {"custom": "value"}
+    results: list[dict[str, Any]] = []
 
-    result = DeepseekProvider._convert_completion_params(params, extra_body=extra_body)
+    for user in ("alice", "bob"):
+        params = CompletionParams(
+            model_id="deepseek-v4-flash",
+            messages=[{"role": "user", "content": "hi"}],
+            reasoning_effort="low",
+            user=user,
+        )
 
-    assert extra_body == {"custom": "value", "user_id": "caller-user"}
-    assert result["extra_body"] == {
+        results.append(DeepseekProvider._convert_completion_params(params, extra_body=extra_body))
+
+        assert extra_body == {"custom": "value"}
+
+    assert results[0]["extra_body"] == {
         "custom": "value",
         "thinking": {"type": "enabled"},
-        "user_id": "caller-user",
+        "user_id": "alice",
     }
-    assert result["extra_body"] is not extra_body
+    assert results[1]["extra_body"] == {
+        "custom": "value",
+        "thinking": {"type": "enabled"},
+        "user_id": "bob",
+    }
+    assert all(result["extra_body"] is not extra_body for result in results)
 
 
 @pytest.mark.asyncio
