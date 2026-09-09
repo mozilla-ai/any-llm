@@ -553,6 +553,7 @@ def test_reinject_reasoning_content_includes_assistant_turn_without_tool_call() 
     result = _reinject_reasoning_content(messages, replay_reasoning=True)
 
     assert result[1]["reasoning_content"] == "greeting"
+    # extra_content remains internal and is stripped after its reasoning is reinjected.
     assert "extra_content" not in result[1]
 
 
