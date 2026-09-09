@@ -585,6 +585,24 @@ def test_preprocess_messages_replays_all_assistant_reasoning_when_tools_are_pres
     assert "extra_content" not in processed.messages[0]
 
 
+def test_preprocess_messages_omits_assistant_reasoning_without_tools() -> None:
+    params = CompletionParams(
+        model_id="deepseek-v4-pro",
+        messages=[
+            {
+                "role": "assistant",
+                "content": "hello",
+                "extra_content": {"deepseek": {"reasoning_content": "greeting"}},
+            }
+        ],
+    )
+
+    processed = _preprocess_messages(params)
+
+    assert "reasoning_content" not in processed.messages[0]
+    assert "extra_content" not in processed.messages[0]
+
+
 def test_reinject_reasoning_content_omits_reasoning_without_tools() -> None:
     messages: list[dict[str, Any]] = [
         {
