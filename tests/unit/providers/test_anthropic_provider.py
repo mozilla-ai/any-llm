@@ -1877,3 +1877,95 @@ def test_stream_message_stop_without_message_has_no_choices_or_usage() -> None:
 
     assert result.choices == []
     assert result.usage is None
+
+
+@pytest.mark.asyncio
+async def test_stream_usage_reaches_openai_style_consumer() -> None:
+    """A loop written against OpenAI's stream contract must get text, finish_reason and usage from Anthropic.
+
+    OpenAI reports final usage on a trailing chunk with no choices, so callers read it with
+    ``if not chunk.choices``. The same loop has to work unchanged when the provider is Anthropic.
+    """
+    from typing import Self
+
+    from anthropic.lib.streaming import MessageStopEvent as StreamMessageStopEvent
+    from anthropic.types import (
+        ContentBlockDeltaEvent,
+        ContentBlockStartEvent,
+        ContentBlockStopEvent,
+        MessageDeltaEvent,
+        MessageDeltaUsage,
+        MessageStartEvent,
+        TextBlock,
+        TextDelta,
+        Usage,
+    )
+    from anthropic.types.raw_message_delta_event import Delta
+
+    final_message = Message(
+        id="msg_1",
+        type="message",
+        role="assistant",
+        model="claude-sonnet-4-6",
+        content=[TextBlock(type="text", text="Hi!")],
+        stop_reason="end_turn",
+        usage=Usage(input_tokens=13, output_tokens=5),
+    )
+    events: list[Any] = [
+        MessageStartEvent(
+            type="message_start",
+            message=final_message.model_copy(
+                update={"content": [], "stop_reason": None, "usage": Usage(input_tokens=13, output_tokens=0)}
+            ),
+        ),
+        ContentBlockStartEvent(type="content_block_start", index=0, content_block=TextBlock(type="text", text="")),
+        ContentBlockDeltaEvent(type="content_block_delta", index=0, delta=TextDelta(type="text_delta", text="Hi")),
+        ContentBlockDeltaEvent(type="content_block_delta", index=0, delta=TextDelta(type="text_delta", text="!")),
+        ContentBlockStopEvent(type="content_block_stop", index=0),
+        MessageDeltaEvent(
+            type="message_delta",
+            delta=Delta(stop_reason="end_turn", stop_sequence=None),
+            usage=MessageDeltaUsage(output_tokens=5),
+        ),
+        StreamMessageStopEvent(type="message_stop", message=final_message),
+    ]
+
+    class FakeMessageStream:
+        def __init__(self) -> None:
+            self._events = iter(events)
+
+        async def __aenter__(self) -> Self:
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            pass
+
+        def __aiter__(self) -> Self:
+            return self
+
+        async def __anext__(self) -> Any:
+            try:
+                return next(self._events)
+            except StopIteration:
+                raise StopAsyncIteration from None
+
+    provider = AnthropicProvider(api_key="sk-test")
+    with patch.object(provider.client.messages, "stream", return_value=FakeMessageStream()):
+        stream = await provider.acompletion(
+            model="claude-sonnet-4-6", messages=[{"role": "user", "content": "Say hi."}], stream=True
+        )
+        text = ""
+        finish_reasons: list[str] = []
+        usage = None
+        async for chunk in stream:
+            if chunk.choices:
+                text += chunk.choices[0].delta.content or ""
+                if chunk.choices[0].finish_reason:
+                    finish_reasons.append(chunk.choices[0].finish_reason)
+            else:
+                usage = chunk.usage
+
+    assert text == "Hi!"
+    assert finish_reasons == ["stop"]
+    assert usage is not None
+    assert (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens) == (13, 5, 18)
