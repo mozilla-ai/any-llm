@@ -20,6 +20,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     Function,
     Reasoning,
+    ReasoningEffort,
 )
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
@@ -51,6 +52,7 @@ if TYPE_CHECKING:
     from any_llm.types.batch import Batch, BatchResult
     from any_llm.types.model import Model
 
+# Keep the established budgets and aliases; the provider validates model-specific budget limits.
 REASONING_EFFORT_TO_THINKING_BUDGETS = {
     "minimal": 256,
     "low": 1024,
@@ -68,17 +70,103 @@ REASONING_EFFORT_TO_THINKING_LEVELS = {
     "max": types.ThinkingLevel.HIGH,
 }
 _SUPPORTED_BATCH_ENDPOINTS = frozenset({"/v1/chat/completions"})
+_ALL_THINKING_LEVELS = frozenset(REASONING_EFFORT_TO_THINKING_LEVELS.values())
+# Known model capabilities differ within the Gemini 3 family, so these exceptions refine rather than replace
+# the permissive version routing used for custom, dated, and newly released model IDs.
+# Source: https://ai.google.dev/gemini-api/docs/generate-content/thinking#thinking-levels
+_THINKING_LEVELS_BY_MODEL = {
+    "gemini-3.8-flash": frozenset({types.ThinkingLevel.LOW, types.ThinkingLevel.MEDIUM, types.ThinkingLevel.HIGH}),
+    "gemini-3.7-flash": frozenset({types.ThinkingLevel.LOW, types.ThinkingLevel.MEDIUM, types.ThinkingLevel.HIGH}),
+    "gemini-3.6-flash": _ALL_THINKING_LEVELS,
+    "gemini-3.5-flash": _ALL_THINKING_LEVELS,
+    "gemini-3.5-flash-lite": _ALL_THINKING_LEVELS,
+    "gemini-3.1-flash-lite": _ALL_THINKING_LEVELS,
+    "gemini-3.1-pro-preview": frozenset(
+        {types.ThinkingLevel.LOW, types.ThinkingLevel.MEDIUM, types.ThinkingLevel.HIGH}
+    ),
+    "gemini-3.1-flash-lite-image": frozenset({types.ThinkingLevel.MINIMAL, types.ThinkingLevel.HIGH}),
+    "gemini-3-flash-preview": _ALL_THINKING_LEVELS,
+}
 _THINKING_LEVEL_MIN_GEMINI_VERSION = (3, 5)
 _GEMINI_VERSION_PATTERN = re.compile(r"(?:^|/)gemini-(\d+)(?:\.(\d+))?")
 
 
 def _uses_thinking_level(model_id: str) -> bool:
-    """Gemini 3.5 and newer reject `thinking_budget` and expect `thinking_level` instead."""
+    """Route Gemini 3.5 and newer to `thinking_level`, including unlisted model IDs."""
     match = _GEMINI_VERSION_PATTERN.search(model_id.lower())
     if match is None:
         return False
     major, minor = int(match.group(1)), int(match.group(2) or 0)
     return (major, minor) >= _THINKING_LEVEL_MIN_GEMINI_VERSION
+
+
+def _matches_known_model(model_name: str, known_model: str) -> bool:
+    version_suffix = model_name.removeprefix(known_model)
+    return model_name == known_model or (
+        model_name.startswith(known_model) and re.fullmatch(r"(?:-\d+)+", version_suffix) is not None
+    )
+
+
+def _known_thinking_levels(model_name: str) -> frozenset[types.ThinkingLevel] | None:
+    for known_model, supported_levels in _THINKING_LEVELS_BY_MODEL.items():
+        if _matches_known_model(model_name, known_model):
+            return supported_levels
+    return None
+
+
+def _convert_reasoning_effort(
+    model_id: str,
+    reasoning_effort: ReasoningEffort | None,
+    provider_name: str,
+) -> types.ThinkingConfig | None:
+    if reasoning_effort == "auto":
+        return None
+    if reasoning_effort is None or reasoning_effort == "none":
+        # Preserve the historical wire shape: hide summaries without changing the model's thinking budget.
+        return types.ThinkingConfig(include_thoughts=False)
+
+    parameter_name = "reasoning_effort"
+    model_name = model_id.rsplit("/", maxsplit=1)[-1].lower()
+    supported_levels = _known_thinking_levels(model_name)
+    if supported_levels is not None or _uses_thinking_level(model_id):
+        thinking_level = REASONING_EFFORT_TO_THINKING_LEVELS.get(reasoning_effort)
+        # Google's OpenAI compatibility contract maps `minimal` to `low` for Gemini 3.1 Pro.
+        # Source: https://ai.google.dev/gemini-api/docs/openai#thinking
+        if _matches_known_model(model_name, "gemini-3.1-pro-preview") and reasoning_effort == "minimal":
+            thinking_level = types.ThinkingLevel.LOW
+        if thinking_level is None or (supported_levels is not None and thinking_level not in supported_levels):
+            raise UnsupportedParameterError(parameter_name, provider_name)
+        return types.ThinkingConfig(include_thoughts=True, thinking_level=thinking_level)
+
+    thinking_budget = REASONING_EFFORT_TO_THINKING_BUDGETS.get(reasoning_effort)
+    if thinking_budget is None:
+        raise UnsupportedParameterError(parameter_name, provider_name)
+    # Gemini 3 accepts thinking_budget for compatibility, while the legacy budget path remains necessary for
+    # unlisted and custom IDs that cannot be capability-classified locally.
+    return types.ThinkingConfig(include_thoughts=True, thinking_budget=thinking_budget)
+
+
+def _convert_response_format(response_format: dict[str, Any] | type | None) -> dict[str, Any]:
+    if is_structured_output_type(response_format):
+        schema = get_json_schema(response_format)
+        schema_key = "response_json_schema" if _has_additional_properties(schema) else "response_schema"
+        return {"response_mime_type": "application/json", schema_key: schema}
+    if not isinstance(response_format, dict):
+        return {}
+
+    response_type = response_format.get("type")
+    if response_type == "json_schema":
+        return {
+            "response_mime_type": "application/json",
+            "response_json_schema": response_format["json_schema"]["schema"],
+        }
+    if response_type == "json_object":
+        return {"response_mime_type": "application/json"}
+    if response_type in (None, "text"):
+        return {}
+
+    msg = f"Unsupported response_format type: {response_type}"
+    raise ValueError(msg)
 
 
 class GoogleProvider(AnyLLM):
@@ -140,61 +228,36 @@ class GoogleProvider(AnyLLM):
             error_message = "parallel_tool_calls"
             raise UnsupportedParameterError(error_message, provider_name)
 
-        if params.frequency_penalty is not None:
-            kwargs["frequency_penalty"] = params.frequency_penalty
-        if params.max_tokens is not None:
-            kwargs["max_output_tokens"] = params.max_tokens
-        if params.presence_penalty is not None:
-            kwargs["presence_penalty"] = params.presence_penalty
-        if params.reasoning_effort != "auto":
-            if params.reasoning_effort is None or params.reasoning_effort == "none":
-                kwargs["thinking_config"] = types.ThinkingConfig(include_thoughts=False)
-            elif _uses_thinking_level(params.model_id):
-                kwargs["thinking_config"] = types.ThinkingConfig(
-                    include_thoughts=True, thinking_level=REASONING_EFFORT_TO_THINKING_LEVELS[params.reasoning_effort]
+        kwargs.update(
+            {
+                option_name: option_value
+                for option_name, option_value in (
+                    ("frequency_penalty", params.frequency_penalty),
+                    ("max_output_tokens", params.max_tokens),
+                    ("presence_penalty", params.presence_penalty),
+                    ("seed", params.seed),
+                    ("service_tier", params.service_tier),
+                    ("temperature", params.temperature),
+                    ("top_p", params.top_p),
                 )
-            else:
-                kwargs["thinking_config"] = types.ThinkingConfig(
-                    include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort]
-                )
-        if params.seed is not None:
-            kwargs["seed"] = params.seed
-        if params.service_tier is not None:
-            kwargs["service_tier"] = params.service_tier
-        if params.temperature is not None:
-            kwargs["temperature"] = params.temperature
+                if option_value is not None
+            }
+        )
+
+        thinking_config = _convert_reasoning_effort(params.model_id, params.reasoning_effort, provider_name)
+        if thinking_config is not None:
+            kwargs["thinking_config"] = thinking_config
         if params.tools is not None:
             kwargs["tools"] = _convert_tool_spec(params.tools, provider_name)
         if params.tool_choice is not None:
             kwargs["tool_config"] = _convert_tool_choice(params.tool_choice, provider_name)
-        if params.top_p is not None:
-            kwargs["top_p"] = params.top_p
         if params.stop is not None:
             if isinstance(params.stop, str):
                 kwargs["stop_sequences"] = [params.stop]
             else:
                 kwargs["stop_sequences"] = params.stop
 
-        response_format = params.response_format
-        if is_structured_output_type(response_format):
-            kwargs["response_mime_type"] = "application/json"
-            schema = get_json_schema(response_format)
-            if _has_additional_properties(schema):
-                kwargs["response_json_schema"] = schema
-            else:
-                kwargs["response_schema"] = schema
-        elif isinstance(response_format, dict):
-            response_type = response_format.get("type")
-            if response_type == "json_schema":
-                kwargs["response_mime_type"] = "application/json"
-                kwargs["response_json_schema"] = response_format["json_schema"]["schema"]
-            elif response_type == "json_object":
-                kwargs["response_mime_type"] = "application/json"
-            elif response_type == "text":
-                pass
-            else:
-                msg = f"Unsupported response_format type: {response_type}"
-                raise ValueError(msg)
+        kwargs.update(_convert_response_format(params.response_format))
 
         formatted_messages, system_instruction = _convert_messages(params.messages, provider_name=provider_name)
         if system_instruction:
