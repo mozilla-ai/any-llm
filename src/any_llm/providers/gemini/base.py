@@ -135,9 +135,10 @@ def _convert_reasoning_effort(
     parameter_name = "reasoning_effort"
     model_name = model_id.rsplit("/", maxsplit=1)[-1].lower()
     supported_levels = _known_thinking_levels(model_name)
+    additional_message = f"'{reasoning_effort}' is not available for model '{model_id}'."
     if reasoning_effort == "none":
         if _uses_thinking_level(model_id) or _matches_known_model(model_name, "gemini-2.5-pro"):
-            raise UnsupportedParameterError(parameter_name, provider_name)
+            raise UnsupportedParameterError(parameter_name, provider_name, additional_message)
         return types.ThinkingConfig(thinking_budget=0)
 
     if supported_levels is not None or _uses_thinking_level(model_id):
@@ -147,12 +148,12 @@ def _convert_reasoning_effort(
         if _matches_known_model(model_name, "gemini-3.1-pro-preview") and reasoning_effort == "minimal":
             thinking_level = types.ThinkingLevel.LOW
         if thinking_level is None or (supported_levels is not None and thinking_level not in supported_levels):
-            raise UnsupportedParameterError(parameter_name, provider_name)
+            raise UnsupportedParameterError(parameter_name, provider_name, additional_message)
         return types.ThinkingConfig(include_thoughts=True, thinking_level=thinking_level)
 
     thinking_budget = REASONING_EFFORT_TO_THINKING_BUDGETS.get(reasoning_effort)
     if thinking_budget is None:
-        raise UnsupportedParameterError(parameter_name, provider_name)
+        raise UnsupportedParameterError(parameter_name, provider_name, additional_message)
     max_budget = _known_max_thinking_budget(model_name)
     if max_budget is not None:
         thinking_budget = min(thinking_budget, max_budget)

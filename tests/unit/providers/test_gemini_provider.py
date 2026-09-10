@@ -2,7 +2,7 @@ import base64
 import json
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
@@ -17,7 +17,7 @@ from any_llm.exceptions import (
     UnsupportedParameterError,
 )
 from any_llm.providers.gemini import GeminiProvider
-from any_llm.providers.gemini.base import GoogleProvider
+from any_llm.providers.gemini.base import GoogleProvider, _convert_reasoning_effort
 from any_llm.providers.gemini.utils import (
     _convert_messages,
     _convert_response_to_response_dict,
@@ -886,7 +886,7 @@ def test_gemini_rejects_undocumented_reasoning_effort(
     model_id: str,
     reasoning_effort: ReasoningEffort,
 ) -> None:
-    with pytest.raises(UnsupportedParameterError, match="reasoning_effort"):
+    with pytest.raises(UnsupportedParameterError) as exc_info:
         GoogleProvider._convert_completion_params(
             CompletionParams(
                 model_id=model_id,
@@ -895,6 +895,23 @@ def test_gemini_rejects_undocumented_reasoning_effort(
             ),
             provider_name="gemini",
         )
+
+    assert str(exc_info.value) == (
+        "[gemini] 'reasoning_effort' is not supported for gemini.\n"
+        f"'{reasoning_effort}' is not available for model '{model_id}'."
+    )
+
+
+def test_gemini_invalid_reasoning_effort_error_identifies_model_and_effort() -> None:
+    reasoning_effort = cast("ReasoningEffort", "invalid")
+
+    with pytest.raises(UnsupportedParameterError) as exc_info:
+        _convert_reasoning_effort("custom-gemini-model", reasoning_effort, "gemini")
+
+    assert str(exc_info.value) == (
+        "[gemini] 'reasoning_effort' is not supported for gemini.\n"
+        "'invalid' is not available for model 'custom-gemini-model'."
+    )
 
 
 @pytest.mark.parametrize(
@@ -959,7 +976,7 @@ async def test_gemini_reasoning_effort_reaches_official_sdk_wire(
             reasoning_effort=reasoning_effort,
         )
     )
-    provider.client.close()
+    await provider.client.aio.aclose()
 
     assert requests[0]["generationConfig"] == {"thinkingConfig": expected}
 
