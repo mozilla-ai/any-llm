@@ -2,15 +2,25 @@ import re
 from pathlib import Path
 
 WORKFLOW = Path(__file__).parents[2] / ".github" / "workflows" / "tests-integration.yaml"
+JOB_PATTERN = re.compile(
+    r"(?ms)^  (?P<name>[A-Za-z0-9-]+):\n"
+    r"(?P<body>.*?)(?=^  [A-Za-z0-9-]+:\n|\Z)"
+)
 
 
 def test_labeled_integration_workflow_checks_out_reviewed_pr_head() -> None:
     """Require labeled integration jobs to test the PR while preserving checkout safeguards."""
     workflow = WORKFLOW.read_text()
+    jobs = {match.group("name"): match.group("body") for match in JOB_PATTERN.finditer(workflow)}
 
     assert "pull_request_target:" in workflow
     assert "types: [labeled]" in workflow
-    assert "github.event.label.name == 'run-integration-tests'" in workflow
+    expected_providers_job = jobs["expected-providers"]
+    assert "github.event_name != 'pull_request_target'" in expected_providers_job
+    assert "github.event.label.name == 'run-integration-tests'" in expected_providers_job
+    for job_name in ("run-integration-tests", "run-local-integration-tests"):
+        assert "needs: [expected-providers, determine-jobs-to-run]" in jobs[job_name]
+
     checkout_steps = re.findall(
         r"(?ms)^(?P<indent>[ \t]*)- uses:\s*actions/checkout@(?P<commit>[^\s]+)\s*\n"
         r"(?P<body>.*?)(?=^(?P=indent)- |\Z)",
@@ -20,6 +30,9 @@ def test_labeled_integration_workflow_checks_out_reviewed_pr_head() -> None:
     assert len(checkout_steps) == len(checkout_commits) == 3
     base_ref = "${{ github.event.pull_request.base.sha || github.sha }}"
     pr_head_ref = "${{ github.event.pull_request.head.sha || github.sha }}"
+    assert f"ref: {base_ref}" in jobs["determine-jobs-to-run"]
+    assert f"ref: {pr_head_ref}" in jobs["run-integration-tests"]
+    assert f"ref: {pr_head_ref}" in jobs["run-local-integration-tests"]
     refs = []
     for _, _, body in checkout_steps:
         ref = re.search(r"(?m)^[ \t]+ref:\s*([^\r\n]+)", body)
