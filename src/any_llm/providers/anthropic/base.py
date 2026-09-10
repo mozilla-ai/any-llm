@@ -341,8 +341,7 @@ class BaseAnthropicProvider(AnyLLM, ABC):
             for name, value in (("temperature", params.temperature), ("top_p", params.top_p), ("top_k", params.top_k))
             if value is not None
         }
-        if sampling:
-            _set_deprecated_sampling_extra_body(kwargs, sampling)
+        _set_deprecated_sampling_extra_body(kwargs, sampling)
 
         # GA, beta, and Vertex resources have incompatible SDK method overloads.
         # Keep the dynamic boundary here rather than duplicating request handling.
