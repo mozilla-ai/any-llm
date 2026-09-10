@@ -15,11 +15,19 @@ def test_labeled_integration_workflow_checks_out_reviewed_pr_head() -> None:
 
     assert "pull_request_target:" in workflow
     assert "types: [labeled]" in workflow
+    authorization_job = jobs["authorize-label"]
+    assert "collaborators/${LABEL_ACTOR}/permission" in authorization_job
+    assert "LABEL_ACTOR: ${{ github.event.sender.login }}" in authorization_job
+    assert "admin|write" in authorization_job
+    assert "*)" in authorization_job
+    assert 'echo "approved=false"' in authorization_job
     expected_providers_job = jobs["expected-providers"]
+    assert "needs: authorize-label" in expected_providers_job
+    assert "needs.authorize-label.outputs.approved == 'true'" in expected_providers_job
     assert "github.event_name != 'pull_request_target'" in expected_providers_job
     assert "github.event.label.name == 'run-integration-tests'" in expected_providers_job
     for job_name in ("run-integration-tests", "run-local-integration-tests"):
-        assert "needs: [expected-providers, determine-jobs-to-run]" in jobs[job_name]
+        assert "needs: [authorize-label, expected-providers, determine-jobs-to-run]" in jobs[job_name]
 
     checkout_steps = re.findall(
         r"(?ms)^(?P<indent>[ \t]*)- uses:\s*actions/checkout@(?P<commit>[^\s]+)\s*\n"
