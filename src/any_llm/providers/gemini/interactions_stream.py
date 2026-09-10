@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from inspect import isawaitable
-from typing import TYPE_CHECKING, NoReturn, Protocol, assert_never, runtime_checkable
+from typing import TYPE_CHECKING, NoReturn, assert_never
 
 from google.genai.interactions import (
     ErrorEvent,
@@ -42,16 +42,11 @@ from any_llm.logging import logger
 from .interactions import convert_interaction_to_response
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, AsyncIterator, Awaitable
+    from collections.abc import AsyncGenerator, AsyncIterator
 
     from openai.types.responses import Response as OpenAIResponse
 
     from any_llm.types.responses import ResponseStreamEvent
-
-
-@runtime_checkable
-class _Closeable(Protocol):
-    def close(self) -> Awaitable[None] | None: ...
 
 
 def _terminal_event(response: OpenAIResponse, sequence_number: int) -> ResponseStreamEvent:
@@ -312,7 +307,8 @@ async def convert_interaction_stream(
         raise
     finally:
         try:
-            if isinstance(stream, _Closeable) and isawaitable(close_result := stream.close()):
+            close = getattr(stream, "close", None)
+            if callable(close) and isawaitable(close_result := close()):
                 await close_result
         except BaseException as close_error:
             if primary_error is None:
