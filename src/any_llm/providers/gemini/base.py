@@ -52,9 +52,8 @@ if TYPE_CHECKING:
     from any_llm.types.batch import Batch, BatchResult
     from any_llm.types.model import Model
 
-# Keep the established budgets and aliases; the provider validates model-specific budget limits.
 REASONING_EFFORT_TO_THINKING_BUDGETS = {
-    "minimal": 256,
+    "minimal": 1024,
     "low": 1024,
     "medium": 8192,
     "high": 24576,
@@ -84,20 +83,24 @@ _THINKING_LEVELS_BY_MODEL = {
     "gemini-3.1-pro-preview": frozenset(
         {types.ThinkingLevel.LOW, types.ThinkingLevel.MEDIUM, types.ThinkingLevel.HIGH}
     ),
+    "gemini-3.1-flash-image": frozenset({types.ThinkingLevel.MINIMAL, types.ThinkingLevel.HIGH}),
     "gemini-3.1-flash-lite-image": frozenset({types.ThinkingLevel.MINIMAL, types.ThinkingLevel.HIGH}),
     "gemini-3-flash-preview": _ALL_THINKING_LEVELS,
 }
-_THINKING_LEVEL_MIN_GEMINI_VERSION = (3, 5)
+_MAX_THINKING_BUDGET_BY_MODEL = {
+    "gemini-2.5-pro": 32768,
+    "gemini-2.5-flash": 24576,
+    "gemini-2.5-flash-lite": 24576,
+}
 _GEMINI_VERSION_PATTERN = re.compile(r"(?:^|/)gemini-(\d+)(?:\.(\d+))?")
 
 
 def _uses_thinking_level(model_id: str) -> bool:
-    """Route Gemini 3.5 and newer to `thinking_level`, including unlisted model IDs."""
+    """Route Gemini 3 and newer to `thinking_level`, including unlisted model IDs."""
     match = _GEMINI_VERSION_PATTERN.search(model_id.lower())
     if match is None:
         return False
-    major, minor = int(match.group(1)), int(match.group(2) or 0)
-    return (major, minor) >= _THINKING_LEVEL_MIN_GEMINI_VERSION
+    return int(match.group(1)) >= 3
 
 
 def _matches_known_model(model_name: str, known_model: str) -> bool:
@@ -114,20 +117,29 @@ def _known_thinking_levels(model_name: str) -> frozenset[types.ThinkingLevel] | 
     return None
 
 
+def _known_max_thinking_budget(model_name: str) -> int | None:
+    for known_model, max_budget in _MAX_THINKING_BUDGET_BY_MODEL.items():
+        if _matches_known_model(model_name, known_model):
+            return max_budget
+    return None
+
+
 def _convert_reasoning_effort(
     model_id: str,
     reasoning_effort: ReasoningEffort | None,
     provider_name: str,
 ) -> types.ThinkingConfig | None:
-    if reasoning_effort == "auto":
+    if reasoning_effort is None or reasoning_effort == "auto":
         return None
-    if reasoning_effort is None or reasoning_effort == "none":
-        # Preserve the historical wire shape: hide summaries without changing the model's thinking budget.
-        return types.ThinkingConfig(include_thoughts=False)
 
     parameter_name = "reasoning_effort"
     model_name = model_id.rsplit("/", maxsplit=1)[-1].lower()
     supported_levels = _known_thinking_levels(model_name)
+    if reasoning_effort == "none":
+        if _uses_thinking_level(model_id) or _matches_known_model(model_name, "gemini-2.5-pro"):
+            raise UnsupportedParameterError(parameter_name, provider_name)
+        return types.ThinkingConfig(thinking_budget=0)
+
     if supported_levels is not None or _uses_thinking_level(model_id):
         thinking_level = REASONING_EFFORT_TO_THINKING_LEVELS.get(reasoning_effort)
         # Google's OpenAI compatibility contract maps `minimal` to `low` for Gemini 3.1 Pro.
@@ -141,8 +153,9 @@ def _convert_reasoning_effort(
     thinking_budget = REASONING_EFFORT_TO_THINKING_BUDGETS.get(reasoning_effort)
     if thinking_budget is None:
         raise UnsupportedParameterError(parameter_name, provider_name)
-    # Gemini 3 accepts thinking_budget for compatibility, while the legacy budget path remains necessary for
-    # unlisted and custom IDs that cannot be capability-classified locally.
+    max_budget = _known_max_thinking_budget(model_name)
+    if max_budget is not None:
+        thinking_budget = min(thinking_budget, max_budget)
     return types.ThinkingConfig(include_thoughts=True, thinking_budget=thinking_budget)
 
 

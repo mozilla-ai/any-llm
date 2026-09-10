@@ -827,19 +827,24 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
         ("gemini-3.5-flash-lite", "minimal", {"includeThoughts": True, "thinkingLevel": "MINIMAL"}),
         ("gemini-3.1-flash-lite", "medium", {"includeThoughts": True, "thinkingLevel": "MEDIUM"}),
         ("models/gemini-3.1-pro-preview", "minimal", {"includeThoughts": True, "thinkingLevel": "LOW"}),
+        ("gemini-3.1-flash-image", "minimal", {"includeThoughts": True, "thinkingLevel": "MINIMAL"}),
         ("gemini-3.1-flash-lite-image", "high", {"includeThoughts": True, "thinkingLevel": "HIGH"}),
         ("gemini-3-flash-preview", "minimal", {"includeThoughts": True, "thinkingLevel": "MINIMAL"}),
-        ("gemini-2.5-flash", "none", {"includeThoughts": False}),
-        ("gemini-2.5-flash", "minimal", {"includeThoughts": True, "thinkingBudget": 256}),
+        ("gemini-2.5-flash", "none", {"thinkingBudget": 0}),
+        ("gemini-2.5-flash", "minimal", {"includeThoughts": True, "thinkingBudget": 1024}),
         ("gemini-2.5-flash", "low", {"includeThoughts": True, "thinkingBudget": 1024}),
+        ("gemini-2.5-flash-lite", "none", {"thinkingBudget": 0}),
+        ("gemini-2.5-flash-lite", "minimal", {"includeThoughts": True, "thinkingBudget": 1024}),
         ("gemini-2.5-flash-lite", "medium", {"includeThoughts": True, "thinkingBudget": 8192}),
-        ("gemini-2.5-pro", "minimal", {"includeThoughts": True, "thinkingBudget": 256}),
+        ("gemini-2.5-pro", "minimal", {"includeThoughts": True, "thinkingBudget": 1024}),
         ("gemini-2.5-pro", "high", {"includeThoughts": True, "thinkingBudget": 24576}),
         ("gemini-2.5-pro", "xhigh", {"includeThoughts": True, "thinkingBudget": 32768}),
-        ("gemini-2.5-flash", "max", {"includeThoughts": True, "thinkingBudget": 32768}),
+        ("gemini-2.5-flash", "max", {"includeThoughts": True, "thinkingBudget": 24576}),
+        ("gemini-2.5-flash-lite", "xhigh", {"includeThoughts": True, "thinkingBudget": 24576}),
         ("gemini-3.8-flash", "xhigh", {"includeThoughts": True, "thinkingLevel": "HIGH"}),
-        ("-001", "minimal", {"includeThoughts": True, "thinkingBudget": 256}),
-        ("custom-gemini-model", "minimal", {"includeThoughts": True, "thinkingBudget": 256}),
+        ("-001", "minimal", {"includeThoughts": True, "thinkingBudget": 1024}),
+        ("custom-gemini-model", "minimal", {"includeThoughts": True, "thinkingBudget": 1024}),
+        ("gemini-3.1-custom", "high", {"includeThoughts": True, "thinkingLevel": "HIGH"}),
         ("models/gemini-3.10-flash-preview-202609", "max", {"includeThoughts": True, "thinkingLevel": "HIGH"}),
         ("gemini-3.8-flash-custom", "minimal", {"includeThoughts": True, "thinkingLevel": "MINIMAL"}),
         (
@@ -869,8 +874,12 @@ def test_gemini_reasoning_effort_matches_documented_thinking_config(
     ("model_id", "reasoning_effort"),
     [
         ("gemini-3.8-flash", "minimal"),
+        ("gemini-3.1-flash-image", "low"),
         ("gemini-3.1-flash-lite-image", "low"),
         ("gemini-3.8-flash-001", "minimal"),
+        ("gemini-3.8-flash", "none"),
+        ("gemini-3.1-flash-image", "none"),
+        ("gemini-2.5-pro", "none"),
     ],
 )
 def test_gemini_rejects_undocumented_reasoning_effort(
@@ -890,7 +899,7 @@ def test_gemini_rejects_undocumented_reasoning_effort(
 
 @pytest.mark.parametrize(
     ("reasoning_effort", "expected"),
-    [(None, {"includeThoughts": False}), ("none", {"includeThoughts": False}), ("auto", None)],
+    [(None, None), ("auto", None)],
 )
 def test_gemini_preserves_default_thinking_config_wire_behavior(
     reasoning_effort: ReasoningEffort | None, expected: dict[str, object] | None
@@ -912,7 +921,7 @@ def test_gemini_preserves_default_thinking_config_wire_behavior(
     ("model_id", "reasoning_effort", "expected"),
     [
         ("gemini-3.8-flash", "high", {"include_thoughts": True, "thinking_level": "HIGH"}),
-        ("gemini-2.5-flash", "none", {"include_thoughts": False}),
+        ("gemini-2.5-flash", "none", {"thinking_budget": 0}),
     ],
 )
 @pytest.mark.asyncio
