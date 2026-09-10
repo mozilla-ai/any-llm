@@ -343,45 +343,35 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         }
         _set_deprecated_sampling_extra_body(kwargs, sampling)
 
+        api_kwargs = params.model_dump(
+            exclude_none=True,
+            exclude={"output_format", "stream", "betas", "temperature", "top_p", "top_k"},
+        )
+        if betas:
+            api_kwargs["betas"] = betas
+        api_kwargs.update(kwargs)
+
         # GA, beta, and Vertex resources have incompatible SDK method overloads.
         # Keep the dynamic boundary here rather than duplicating request handling.
         messages_resource: Any
         if params.output_format is not None:
             messages_resource = self.client.beta.messages if use_beta else self.client.messages
-            native_kwargs = params.model_dump(
-                exclude_none=True,
-                exclude={"output_format", "stream", "betas", "temperature", "top_p", "top_k"},
-            )
-            if betas:
-                native_kwargs["betas"] = betas
-            native_kwargs.update(kwargs)
             if params.stream:
                 if is_structured_output_type(params.output_format):
-                    native_kwargs["output_format"] = params.output_format
+                    api_kwargs["output_format"] = params.output_format
                 else:
-                    native_kwargs["output_config"] = normalize_output_config(
-                        cast("dict[str, Any]", params.output_format)
-                    )
-                return self._stream_messages_async(use_beta=use_beta, **native_kwargs)
+                    api_kwargs["output_config"] = normalize_output_config(cast("dict[str, Any]", params.output_format))
+                return self._stream_messages_async(use_beta=use_beta, **api_kwargs)
             if is_structured_output_type(params.output_format):
                 with _translating_nonstreaming_guard(self, params.max_tokens):
-                    parsed = await messages_resource.parse(output_format=params.output_format, **native_kwargs)
+                    parsed = await messages_resource.parse(output_format=params.output_format, **api_kwargs)
                 return cast("ParsedMessage[Any] | ParsedBetaMessage[Any]", parsed)
             # Normalize here as well as on the bridge so a bare format object means the same
             # thing on both paths; the native API requires the output_config nesting.
             output_config = normalize_output_config(cast("dict[str, Any]", params.output_format))
             with _translating_nonstreaming_guard(self, params.max_tokens):
-                message = await messages_resource.create(output_config=output_config, **native_kwargs)
+                message = await messages_resource.create(output_config=output_config, **api_kwargs)
             return self._convert_native_message_to_response(message)
-
-        api_kwargs = params.model_dump(
-            exclude_none=True,
-            exclude={"betas", "temperature", "top_p", "top_k"},
-        )
-        api_kwargs.pop("stream", None)
-        if betas:
-            api_kwargs["betas"] = betas
-        api_kwargs.update(kwargs)
 
         if params.stream:
             return self._stream_messages_async(use_beta=use_beta, **api_kwargs)
