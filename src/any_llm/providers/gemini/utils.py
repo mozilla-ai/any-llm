@@ -30,6 +30,7 @@ from any_llm.types.completion import (
 from any_llm.types.model import Model
 
 _INLINE_SIZE_LIMIT = 20 * 1024 * 1024
+_INLINE_SIZE_LIMIT_ENCODED = -(-_INLINE_SIZE_LIMIT * 4 // 3)  # base64 grows data by 4/3
 _GEMINI_CONTENT_FILTER_REFUSAL = "Response blocked by Gemini content filtering."
 
 
@@ -209,9 +210,17 @@ def _parse_data_uri(data_uri: str, field_name: str, provider_name: str) -> tuple
 
 
 def _decode_base64(encoded_data: str, field_name: str, provider_name: str) -> bytes:
-    """Decode strict base64, reporting empty, malformed, or non-ASCII input as an invalid request."""
+    """Decode strict base64 within the inline upload limit, reporting bad input as an invalid request.
+
+    The size check runs on the encoded length so an oversized payload is rejected before it is decoded.
+    """
     if not encoded_data:
         msg = f"{field_name} is missing base64 data"
+        raise InvalidRequestError(msg, provider_name=provider_name)
+    if len(encoded_data) > _INLINE_SIZE_LIMIT_ENCODED:
+        msg = (
+            f"{field_name} exceeds the 20 MB inline upload limit for {provider_name} ({len(encoded_data)} base64 chars)"
+        )
         raise InvalidRequestError(msg, provider_name=provider_name)
 
     try:
@@ -219,12 +228,6 @@ def _decode_base64(encoded_data: str, field_name: str, provider_name: str) -> by
     except (binascii.Error, ValueError) as exc:
         msg = f"{field_name} contains invalid base64 data"
         raise InvalidRequestError(msg, exc, provider_name) from exc
-
-
-def _validate_inline_size(raw_data: bytes, field_name: str, provider_name: str) -> None:
-    if len(raw_data) > _INLINE_SIZE_LIMIT:
-        msg = f"{field_name} exceeds the 20 MB inline upload limit for {provider_name} ({len(raw_data)} bytes)"
-        raise InvalidRequestError(msg, provider_name=provider_name)
 
 
 def _convert_image_url_to_part(block: dict[str, Any], provider_name: str) -> types.Part:
@@ -235,7 +238,6 @@ def _convert_image_url_to_part(block: dict[str, Any], provider_name: str) -> typ
 
     if url.startswith("data:"):
         mime_type, raw_data = _parse_data_uri(url, "image_url.url", provider_name)
-        _validate_inline_size(raw_data, "image_url.url", provider_name)
         return types.Part.from_bytes(data=raw_data, mime_type=mime_type)
 
     guessed_type, _ = mimetypes.guess_type(url)
@@ -245,13 +247,15 @@ def _convert_image_url_to_part(block: dict[str, Any], provider_name: str) -> typ
 def _convert_input_audio_to_part(block: dict[str, Any], provider_name: str) -> types.Part:
     """OpenAI's input_audio part: base64 data plus a format name, which Gemini spells as audio/<format>."""
     audio = block.get("input_audio")
-    if not isinstance(audio, dict) or not isinstance(audio.get("data"), str) or not audio.get("format"):
+    if not isinstance(audio, dict):
+        audio = {}
+    data = audio.get("data")
+    audio_format = audio.get("format")
+    if not isinstance(data, str) or not isinstance(audio_format, str) or not audio_format:
         msg = "input_audio.data and input_audio.format are required for audio content"
         raise InvalidRequestError(msg, provider_name=provider_name)
 
-    raw_data = _decode_base64(audio["data"], "input_audio.data", provider_name)
-    audio_format = str(audio["format"])
-    _validate_inline_size(raw_data, "input_audio.data", provider_name)
+    raw_data = _decode_base64(data, "input_audio.data", provider_name)
     return types.Part.from_bytes(data=raw_data, mime_type=f"audio/{audio_format.lower()}")
 
 
@@ -263,7 +267,6 @@ def _convert_file_to_part(block: dict[str, Any], provider_name: str) -> types.Pa
 
     if file_data.startswith("data:"):
         mime_type, raw_data = _parse_data_uri(file_data, "file.file_data", provider_name)
-        _validate_inline_size(raw_data, "file.file_data", provider_name)
         return types.Part.from_bytes(data=raw_data, mime_type=mime_type)
 
     guessed_type, _ = mimetypes.guess_type(file_data)

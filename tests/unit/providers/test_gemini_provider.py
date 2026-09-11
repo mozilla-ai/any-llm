@@ -2361,7 +2361,7 @@ def test_convert_messages_with_input_audio() -> None:
     assert audio_part.inline_data.data == TEST_AUDIO_BYTES
 
 
-@pytest.mark.parametrize("input_audio", [{"data": "AAAA"}, "AAAA", None])
+@pytest.mark.parametrize("input_audio", [{"data": "AAAA"}, {"data": "AAAA", "format": 1}, "AAAA", None])
 def test_convert_messages_malformed_input_audio_raises_invalid_request(input_audio: object) -> None:
     messages = [{"role": "user", "content": [{"type": "input_audio", "input_audio": input_audio}]}]
 
