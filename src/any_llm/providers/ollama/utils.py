@@ -27,6 +27,7 @@ from any_llm.types.completion import (
     Usage,
 )
 from any_llm.types.model import Model
+from any_llm.utils.reasoning import normalize_reasoning_from_provider_fields_and_xml_tags
 
 
 def _map_ollama_done_reason(
@@ -222,10 +223,18 @@ def _create_chat_completion_from_ollama_response(response: OllamaChatResponse) -
                 )
             )
     if not response_message.thinking and response_message.content:
-        # If it didn't come out right from ollama, also look for it in the content between <think> and </think>
-        if "<think>" in response_message.content and "</think>" in response_message.content:
-            response_message.thinking = response_message.content.split("<think>")[1].split("</think>")[0]
-            response_message.content = response_message.content.split("</think>")[1]
+        # Ollama does not always route reasoning to its own thinking field, so fall back to the
+        # tags in content. Parsing is delegated to the shared normalizer so this provider keeps
+        # the same semantics as the others: every tagged block is collected, the surrounding
+        # content survives instead of being truncated to whatever follows the last closing tag,
+        # and the tag names stay in step with REASONING_FIELD_NAMES rather than being just <think>.
+        message_dict: dict[str, Any] = {"content": response_message.content}
+        normalize_reasoning_from_provider_fields_and_xml_tags(message_dict)
+        reasoning = message_dict.get("reasoning")
+        reasoning_text = reasoning.get("content") if isinstance(reasoning, dict) else None
+        if reasoning_text:
+            response_message.thinking = reasoning_text
+        response_message.content = message_dict["content"]
 
     message = ChatCompletionMessage(
         role="assistant",
