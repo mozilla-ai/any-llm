@@ -1086,6 +1086,100 @@ def test_convert_response_tool_calls_extracts_cached_tokens() -> None:
     assert result.usage.prompt_tokens_details.cached_tokens == 80
 
 
+def test_convert_response_keeps_assistant_text_alongside_a_tool_call() -> None:
+    """A turn that speaks and then calls a tool keeps the sentence, the way Converse sent it.
+
+    Converse returns the model's own text as a separate text block in the same message as the
+    toolUse block, and the streaming converter forwards those deltas. The non-streaming path
+    used to hand back content=None, so the caller could not replay what the model already said
+    and the model would announce its plan a second time on the next turn.
+    """
+    response: dict[str, Any] = {
+        "output": {
+            "message": {
+                "content": [
+                    {"text": "I will look up the weather in Paris."},
+                    {
+                        "toolUse": {
+                            "toolUseId": "tool-123",
+                            "name": "get_weather",
+                            "input": {"location": "Paris"},
+                        }
+                    },
+                ]
+            }
+        },
+        "stopReason": "tool_use",
+    }
+
+    result = _convert_response(response)
+
+    message = result.choices[0].message
+    assert message.content == "I will look up the weather in Paris."
+    assert message.tool_calls is not None
+    assert len(message.tool_calls) == 1
+    tool_call = message.tool_calls[0]
+    assert isinstance(tool_call, ChatCompletionMessageFunctionToolCall)
+    assert tool_call.function.name == "get_weather"
+    assert result.choices[0].finish_reason == "tool_calls"
+
+
+def test_convert_response_joins_every_text_block_before_a_tool_call() -> None:
+    """Converse can split the model's text across several blocks; all of them are the answer."""
+    response: dict[str, Any] = {
+        "output": {
+            "message": {
+                "content": [
+                    {"text": "Let me check. "},
+                    {"text": "Paris first."},
+                    {
+                        "toolUse": {
+                            "toolUseId": "tool-456",
+                            "name": "get_weather",
+                            "input": {"location": "Paris"},
+                        }
+                    },
+                ]
+            }
+        },
+        "stopReason": "tool_use",
+    }
+
+    result = _convert_response(response)
+
+    assert result.choices[0].message.content == "Let me check. Paris first."
+
+
+def test_convert_response_tool_call_without_text_reports_no_content() -> None:
+    """A bare tool call still reports content None rather than an empty string.
+
+    This is the guard on the fix above: joining an empty list yields "", and a caller that
+    distinguishes "the model said nothing" from "the model said the empty string" would see a
+    behaviour change on every tool call that carried no text.
+    """
+    response: dict[str, Any] = {
+        "output": {
+            "message": {
+                "content": [
+                    {
+                        "toolUse": {
+                            "toolUseId": "tool-789",
+                            "name": "get_weather",
+                            "input": {"location": "Paris"},
+                        }
+                    }
+                ]
+            }
+        },
+        "stopReason": "tool_use",
+    }
+
+    result = _convert_response(response)
+
+    assert result.choices[0].message.content is None
+    assert result.choices[0].message.tool_calls is not None
+
+
 def test_streaming_metadata_chunk_extracts_cached_tokens() -> None:
     """Test that the metadata streaming event extracts cached tokens into usage."""
     chunk: dict[str, Any] = {
