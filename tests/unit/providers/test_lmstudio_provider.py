@@ -391,6 +391,13 @@ def test_map_stop_reason(stop_reason: str | None, expected: str) -> None:
         ("<think>because</think>final", "final", "because"),
         ("preface <think>because</think> final", "preface  final", "because"),
         ("no tags here", "no tags here", None),
+        # Every tagged block is collected and none is left behind in the content: splitting on
+        # the first tag pair alone used to return "middle<think>B</think>end" as the answer.
+        ("<think>A</think>middle<think>B</think>end", "middleend", "A\nB"),
+        # Tag names come from REASONING_FIELD_NAMES, so the other names the library recognises
+        # are handled here too rather than only <think>.
+        ("<thinking>alt</thinking>answer", "answer", "alt"),
+        ("<think></think>answer", "answer", None),
         # LM Studio's runtime ends an inline reasoning trace with a fixed synthetic marker
         # when response_format is set (see #1167). The value below is the real marker observed
         # in CI; the split must work for any hex nonce, so the next cases use a different
