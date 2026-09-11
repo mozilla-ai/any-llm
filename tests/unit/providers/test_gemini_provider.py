@@ -40,6 +40,7 @@ from any_llm.types.completion import (
 
 TEST_IMAGE_BYTES = b"test-image-bytes"
 TEST_PDF_BYTES = b"%PDF-1.4\ntest"
+TEST_AUDIO_BYTES = b"RIFF-test-audio"
 
 
 class StructuredAnswer(BaseModel):
@@ -2339,6 +2340,32 @@ def test_convert_messages_with_url_image() -> None:
     assert image_part.file_data is not None
     assert image_part.file_data.file_uri == "https://example.com/a.png"
     assert image_part.file_data.mime_type == "image/png"
+
+
+def test_convert_messages_with_input_audio() -> None:
+    audio_b64 = base64.b64encode(TEST_AUDIO_BYTES).decode("utf-8")
+    messages = [
+        {
+            "role": "user",
+            "content": [{"type": "input_audio", "input_audio": {"data": audio_b64, "format": "wav"}}],
+        }
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[0].parts
+    assert parts is not None
+    audio_part = parts[0]
+    assert audio_part.inline_data is not None
+    assert audio_part.inline_data.mime_type == "audio/wav"
+    assert audio_part.inline_data.data == TEST_AUDIO_BYTES
+
+
+def test_convert_messages_input_audio_without_format_raises_invalid_request() -> None:
+    messages = [{"role": "user", "content": [{"type": "input_audio", "input_audio": {"data": "AAAA"}}]}]
+
+    with pytest.raises(InvalidRequestError, match=r"input_audio\.data and input_audio\.format are required"):
+        _convert_messages(messages)
 
 
 def test_convert_messages_with_base64_pdf() -> None:

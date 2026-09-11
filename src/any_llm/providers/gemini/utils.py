@@ -205,17 +205,19 @@ def _parse_data_uri(data_uri: str, field_name: str, provider_name: str) -> tuple
         msg = f"{field_name} is missing a MIME type"
         raise InvalidRequestError(msg, provider_name=provider_name)
 
-    encoded_data = data_uri.split("base64,", 1)[1]
+    return mime_type, _decode_base64(data_uri.split("base64,", 1)[1], field_name, provider_name)
+
+
+def _decode_base64(encoded_data: str, field_name: str, provider_name: str) -> bytes:
     if not encoded_data:
         msg = f"{field_name} is missing base64 data"
         raise InvalidRequestError(msg, provider_name=provider_name)
 
     try:
-        raw_data = base64.b64decode(encoded_data, validate=True)
+        return base64.b64decode(encoded_data, validate=True)
     except binascii.Error as exc:
         msg = f"{field_name} contains invalid base64 data"
         raise InvalidRequestError(msg, exc, provider_name) from exc
-    return mime_type, raw_data
 
 
 def _validate_inline_size(raw_data: bytes, field_name: str, provider_name: str) -> None:
@@ -237,6 +239,20 @@ def _convert_image_url_to_part(block: dict[str, Any], provider_name: str) -> typ
 
     guessed_type, _ = mimetypes.guess_type(url)
     return types.Part.from_uri(file_uri=url, mime_type=guessed_type or "image/jpeg")
+
+
+def _convert_input_audio_to_part(block: dict[str, Any], provider_name: str) -> types.Part:
+    """OpenAI's input_audio part: base64 data plus a format name, which Gemini spells as audio/<format>."""
+    audio = block.get("input_audio", {})
+    data = audio.get("data")
+    audio_format = audio.get("format")
+    if not isinstance(data, str) or not isinstance(audio_format, str) or not audio_format:
+        msg = "input_audio.data and input_audio.format are required for audio content"
+        raise InvalidRequestError(msg, provider_name=provider_name)
+
+    raw_data = _decode_base64(data, "input_audio.data", provider_name)
+    _validate_inline_size(raw_data, "input_audio.data", provider_name)
+    return types.Part.from_bytes(data=raw_data, mime_type=f"audio/{audio_format.lower()}")
 
 
 def _convert_file_to_part(block: dict[str, Any], provider_name: str) -> types.Part:
@@ -320,6 +336,8 @@ def _convert_messages(
                         parts.append(_convert_image_url_to_part(content, provider_name))
                     elif content["type"] == "file":
                         parts.append(_convert_file_to_part(content, provider_name))
+                    elif content["type"] == "input_audio":
+                        parts.append(_convert_input_audio_to_part(content, provider_name))
                     else:
                         logger.debug("Skipping unsupported Gemini content block type: %s", content.get("type"))
             formatted_messages.append(types.Content(role="user", parts=parts))
