@@ -111,7 +111,11 @@ class OllamaProvider(AnyLLM):
             if requested_max_tokens is not None:
                 converted_params["num_predict"] = requested_max_tokens
 
-        converted_params["num_ctx"] = converted_params.get("num_ctx", 32000)
+        # Only forward num_ctx when the caller set it. Injecting 32000 OOMs small
+        # hosts and overrides Ollama defaults (see jonigl/mcp-client-for-ollama#305).
+        num_ctx = converted_params.pop("num_ctx", None)
+        if num_ctx is not None:
+            converted_params["num_ctx"] = num_ctx
         return converted_params
 
     @staticmethod
