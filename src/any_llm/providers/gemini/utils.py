@@ -30,7 +30,7 @@ from any_llm.types.completion import (
 from any_llm.types.model import Model
 
 _INLINE_SIZE_LIMIT = 20 * 1024 * 1024
-_INLINE_SIZE_LIMIT_ENCODED = -(-_INLINE_SIZE_LIMIT * 4 // 3)  # base64 grows data by 4/3
+_INLINE_SIZE_LIMIT_ENCODED = (_INLINE_SIZE_LIMIT + 2) // 3 * 4  # base64 emits 4 chars per 3 bytes, padded
 _GEMINI_CONTENT_FILTER_REFUSAL = "Response blocked by Gemini content filtering."
 
 

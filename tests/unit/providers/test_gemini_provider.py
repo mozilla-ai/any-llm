@@ -2433,6 +2433,24 @@ def test_convert_messages_mixed_text_and_media() -> None:
     assert parts[3].inline_data.mime_type == "image/jpeg"
 
 
+def test_convert_messages_image_at_inline_limit_is_accepted() -> None:
+    limit_bytes = b"a" * (20 * 1024 * 1024)
+    limit_b64 = base64.b64encode(limit_bytes).decode("utf-8")
+    messages = [
+        {
+            "role": "user",
+            "content": [{"type": "image_url", "image_url": {"url": f"data:image/png;base64,{limit_b64}"}}],
+        }
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[0].parts
+    assert parts is not None
+    assert parts[0].inline_data is not None
+    assert parts[0].inline_data.data == limit_bytes
+
+
 def test_convert_messages_oversized_image_raises_invalid_request() -> None:
     oversized_bytes = b"a" * (20 * 1024 * 1024 + 1)
     oversized_b64 = base64.b64encode(oversized_bytes).decode("utf-8")
