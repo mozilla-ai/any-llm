@@ -423,10 +423,10 @@ async def test_convert_interaction_stream_keeps_output_indices_contiguous() -> N
 
     added = next(event for event in result if isinstance(event, ResponseOutputItemAddedEvent))
     assert added.output_index == 0
-    assert added.item.id == "msg-0"
+    assert added.item.id == "msg-int-123-0"
     terminal = result[-1]
     assert isinstance(terminal, ResponseCompletedEvent)
-    assert terminal.response.output[0].id == "msg-0"
+    assert terminal.response.output[0].id == "msg-int-123-0"
 
 
 @pytest.mark.asyncio
@@ -454,7 +454,7 @@ async def test_convert_interaction_stream_orders_terminal_messages_by_output_ind
 
     terminal = result[-1]
     assert isinstance(terminal, ResponseCompletedEvent)
-    assert [message.id for message in terminal.response.output] == ["msg-0", "msg-1"]
+    assert [message.id for message in terminal.response.output] == ["msg-int-123-0", "msg-int-123-1"]
     assert terminal.response.output_text == "firstsecond"
 
 
@@ -473,8 +473,10 @@ async def test_convert_interaction_stream_uses_terminal_steps_when_present() -> 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["completed", "incomplete", "failed", "cancelled"])
+@pytest.mark.parametrize("terminal_id", ["int-123", None])
 async def test_convert_interaction_stream_normalizes_equivalent_terminal_snapshots(
     status: InteractionSseEventInteractionStatus,
+    terminal_id: str | None,
 ) -> None:
     streamed_steps: list[InteractionSSEEvent] = [
         StepStart(index=7, step=ModelOutputStep(content=[TextContent(text="first")])),
@@ -492,10 +494,25 @@ async def test_convert_interaction_stream_normalizes_equivalent_terminal_snapsho
         ModelOutputStep(content=[TextContent(text="third")]),
     ]
 
-    without_snapshot = await _converted_events(_created(), *streamed_steps, _completed(status))
+    terminal_event = _completed(status)
+    terminal_event.interaction = terminal_event.interaction.model_copy(update={"id": terminal_id})
+    without_snapshot = await _converted_events(_created(), *streamed_steps, terminal_event)
     with_snapshot = await _converted_events(_created(), *streamed_steps, _completed(status, steps=terminal_steps))
 
     assert without_snapshot[-1].model_dump(mode="json") == with_snapshot[-1].model_dump(mode="json")
+    terminal = without_snapshot[-1]
+    assert isinstance(terminal, ResponseCompletedEvent | ResponseFailedEvent | ResponseIncompleteEvent)
+    assert terminal.response.id == "int-123"
+    assert terminal.response.status == status
+    done_items = [event.item for event in without_snapshot if isinstance(event, ResponseOutputItemDoneEvent)]
+    assert terminal.response.output == done_items
+    for item in done_items:
+        assert isinstance(item, ResponseOutputMessage)
+        assert item.status == "completed"
+    assert [item.id for item in done_items] == ["msg-int-123-0", "msg-int-123-1", "msg-int-123-2"]
+    for event in without_snapshot:
+        if isinstance(event, ResponseTextDeltaEvent):
+            assert event.item_id == done_items[event.output_index].id
 
 
 @pytest.mark.asyncio
@@ -1062,7 +1079,7 @@ async def test_real_sdk_stream_keeps_interleaved_text_after_thought_metadata(
     assert [event.output_index for event in added] == [0, 1]
     terminal = events[-1]
     assert isinstance(terminal, ResponseCompletedEvent)
-    assert [item.id for item in terminal.response.output] == ["msg-0", "msg-1"]
+    assert [item.id for item in terminal.response.output] == ["msg-int-123-0", "msg-int-123-1"]
     assert terminal.response.output_text == "ACbb"
     assert terminal.response.usage is not None
     assert terminal.response.usage.output_tokens == 335
