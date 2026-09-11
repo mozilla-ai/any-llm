@@ -1,4 +1,5 @@
 import json
+import time
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -151,16 +152,44 @@ def test_convert_interaction_keeps_text_after_thought_output() -> None:
     assert response.output[0].id == "msg-0"
 
 
-def test_convert_interaction_maps_provider_error_without_raw_side_channel() -> None:
+@pytest.mark.parametrize(
+    ("error", "expected_message"),
+    [
+        (Error(code="gateway_timeout", message="deadline expired"), "deadline expired"),
+        (Error(code="gateway_timeout"), "gateway_timeout"),
+        (Error(), "Gemini interaction failed"),
+    ],
+)
+def test_convert_interaction_maps_provider_error_without_raw_side_channel(error: Error, expected_message: str) -> None:
     interaction = _interaction(status="failed", steps=[])
-    interaction.errors = [Error(code="gateway_timeout", message="deadline expired")]
+    interaction.errors = [error]
 
     response = convert_interaction_to_response(interaction)
 
     assert response.error is not None
     assert response.error.code == "server_error"
-    assert response.error.message == "deadline expired"
+    assert response.error.message == expected_message
     assert not any(name.startswith("gemini_") for name in response.model_dump())
+
+
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="Process timezone control requires time.tzset")
+@pytest.mark.parametrize("timezone", ["UTC0", "EST5"])
+@pytest.mark.parametrize(
+    "created",
+    ["2026-01-02T03:04:05", "2026-01-02T03:04:05Z", "2026-01-02T08:34:05+05:30"],
+)
+def test_convert_interaction_timestamp_is_independent_of_process_timezone(
+    monkeypatch: pytest.MonkeyPatch, timezone: str, created: str
+) -> None:
+    try:
+        with monkeypatch.context() as environment:
+            environment.setenv("TZ", timezone)
+            time.tzset()
+            response = convert_interaction_to_response(_interaction(created=created))
+    finally:
+        time.tzset()
+
+    assert response.created_at == 1767323045.0
 
 
 def test_convert_interaction_handles_unknown_status_and_invalid_timestamp() -> None:

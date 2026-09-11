@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 from google.genai.interactions import (
@@ -53,7 +53,10 @@ def _iso_to_epoch(value: str | None) -> float:
     if not value:
         return 0.0
     try:
-        return datetime.fromisoformat(value).timestamp()
+        parsed = datetime.fromisoformat(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.timestamp()
     except ValueError:
         return 0.0
 
