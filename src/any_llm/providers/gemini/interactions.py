@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
+from uuid import uuid4
 
 from google.genai.interactions import (
     InteractionSseEventInteraction,
@@ -97,6 +98,7 @@ def _message_status(status: ResponseStatus) -> Literal["completed", "in_progress
 def _messages_from_steps(
     steps: Sequence[object] | None,
     status: ResponseStatus,
+    interaction_id: str,
 ) -> list[ResponseOutputMessage]:
     messages: list[ResponseOutputMessage] = []
     for step in steps or []:
@@ -115,7 +117,7 @@ def _messages_from_steps(
         output_index = len(messages)
         messages.append(
             ResponseOutputMessage(
-                id=f"msg-{output_index}",
+                id=f"msg-{interaction_id}-{output_index}",
                 type="message",
                 role="assistant",
                 status=_message_status(status),
@@ -132,6 +134,7 @@ def convert_interaction_to_response(
 ) -> OpenAIResponse:
     """Normalize the text subset of a Gemini Interaction resource."""
     status = _map_status(interaction.status)
+    interaction_id = interaction.id or uuid4().hex
     previous_response_id = None
     instructions = None
     metadata = None
@@ -149,14 +152,14 @@ def convert_interaction_to_response(
 
     return OpenAIResponse.model_validate(
         {
-            "id": interaction.id or "",
+            "id": interaction_id,
             "created_at": _iso_to_epoch(interaction.created),
             "error": response_error,
             "instructions": instructions,
             "metadata": metadata,
             "model": str(interaction.model or fallback_model),
             "object": "response",
-            "output": _messages_from_steps(interaction.steps, status),
+            "output": _messages_from_steps(interaction.steps, status, interaction_id),
             "parallel_tool_calls": False,
             "status": status,
             "tool_choice": "auto",

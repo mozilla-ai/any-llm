@@ -81,7 +81,7 @@ def test_convert_interaction_maps_text_status_metadata_and_usage() -> None:
     assert response.output_text == "Hello"
     message = response.output[0]
     assert isinstance(message, ResponseOutputMessage)
-    assert message.id == "msg-0"
+    assert message.id == "msg-int-123-0"
     assert response.usage is not None
     assert response.usage.input_tokens == 4
     assert response.usage.output_tokens == 5
@@ -124,7 +124,7 @@ def test_convert_interaction_ignores_non_output_steps() -> None:
 
     assert response.output_text == "kept"
     assert len(response.output) == 1
-    assert response.output[0].id == "msg-0"
+    assert response.output[0].id == "msg-int-123-0"
 
 
 @pytest.mark.parametrize(
@@ -149,7 +149,26 @@ def test_convert_interaction_keeps_text_after_thought_output() -> None:
 
     assert response.output_text == "25"
     assert len(response.output) == 1
-    assert response.output[0].id == "msg-0"
+    assert response.output[0].id == "msg-int-123-0"
+
+
+@pytest.mark.parametrize("identifiers", [("first", "second"), (None, None)])
+def test_convert_interaction_message_ids_are_unique(identifiers: tuple[str | None, str | None]) -> None:
+    responses = [
+        convert_interaction_to_response(
+            _interaction(
+                steps=[
+                    ModelOutputStep(content=[TextContent(text="first part")]),
+                    ModelOutputStep(content=[TextContent(text="second part")]),
+                ]
+            ).model_copy(update={"id": identifier})
+        )
+        for identifier in identifiers
+    ]
+
+    assert len({item.id for response in responses for item in response.output}) == 4
+    for response in responses:
+        assert [item.id for item in response.output] == [f"msg-{response.id}-0", f"msg-{response.id}-1"]
 
 
 @pytest.mark.parametrize(
@@ -413,7 +432,7 @@ async def test_real_sdk_serializes_stable_interactions_path_and_body(total: int 
 
     assert isinstance(response, Response)
     assert response.output_text == "Hello"
-    assert response.output[0].id == "msg-0"
+    assert response.output[0].id == "msg-int-123-0"
     assert response.usage is not None
     assert response.usage.output_tokens == 335
     assert response.usage.output_tokens_details.reasoning_tokens == 245
