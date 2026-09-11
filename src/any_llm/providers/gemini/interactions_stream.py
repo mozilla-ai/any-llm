@@ -87,6 +87,7 @@ class _TextStreamState:
         self.model = model
         self.sequence = 0
         self.started = False
+        self.interaction_id = ""
         self.open_steps: set[int] = set()
         self.text_steps: dict[int, tuple[int, str]] = {}
 
@@ -129,6 +130,7 @@ class _TextStreamState:
             _raise_stream_error("Gemini interaction stream emitted interaction.created more than once")
         self.started = True
         response = convert_interaction_to_response(event.interaction, fallback_model=self.model)
+        self.interaction_id = response.id
         return [
             ResponseCreatedEvent(
                 type="response.created",
@@ -163,7 +165,7 @@ class _TextStreamState:
         prefix = "".join(part.text for part in content if isinstance(part, TextContent))
         output_index = len(self.text_steps)
         self.text_steps[event.index] = (output_index, prefix)
-        item_id = f"msg-{output_index}"
+        item_id = f"msg-{self.interaction_id}-{output_index}"
         events: list[ResponseStreamEvent] = [
             ResponseOutputItemAddedEvent(
                 type="response.output_item.added",
@@ -211,7 +213,7 @@ class _TextStreamState:
         return ResponseTextDeltaEvent(
             type="response.output_text.delta",
             sequence_number=self._next_sequence(),
-            item_id=f"msg-{output_index}",
+            item_id=f"msg-{self.interaction_id}-{output_index}",
             output_index=output_index,
             content_index=0,
             delta=text,
@@ -228,7 +230,7 @@ class _TextStreamState:
             return []
 
         output_index, text = self.text_steps[event.index]
-        item_id = f"msg-{output_index}"
+        item_id = f"msg-{self.interaction_id}-{output_index}"
         completed_part = ResponseOutputText(type="output_text", text=text, annotations=[])
         completed_item = ResponseOutputMessage(
             id=item_id,
@@ -268,14 +270,19 @@ class _TextStreamState:
             _raise_stream_error("Gemini interaction stream completed before interaction.created")
         if self.open_steps:
             _raise_stream_error(f"Gemini interaction stream completed before step.stop for step {min(self.open_steps)}")
-        response = convert_interaction_to_response(event.interaction, fallback_model=self.model)
+        interaction = event.interaction.model_copy(update={"id": self.interaction_id})
+        response = convert_interaction_to_response(interaction, fallback_model=self.model)
         if not response.output:
-            interaction = event.interaction.model_copy(
+            interaction = interaction.model_copy(
                 update={
                     "steps": [ModelOutputStep(content=[TextContent(text=text)]) for _, text in self.text_steps.values()]
                 }
             )
             response = convert_interaction_to_response(interaction, fallback_model=self.model)
+        # A stopped step remains complete even when the overall interaction fails.
+        for item in response.output[: len(self.text_steps)]:
+            if isinstance(item, ResponseOutputMessage):
+                item.status = "completed"
         return _terminal_event(response, self._next_sequence())
 
     @staticmethod
