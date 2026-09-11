@@ -209,13 +209,14 @@ def _parse_data_uri(data_uri: str, field_name: str, provider_name: str) -> tuple
 
 
 def _decode_base64(encoded_data: str, field_name: str, provider_name: str) -> bytes:
+    """Decode strict base64, reporting empty, malformed, or non-ASCII input as an invalid request."""
     if not encoded_data:
         msg = f"{field_name} is missing base64 data"
         raise InvalidRequestError(msg, provider_name=provider_name)
 
     try:
         return base64.b64decode(encoded_data, validate=True)
-    except binascii.Error as exc:
+    except (binascii.Error, ValueError) as exc:
         msg = f"{field_name} contains invalid base64 data"
         raise InvalidRequestError(msg, exc, provider_name) from exc
 
@@ -243,14 +244,13 @@ def _convert_image_url_to_part(block: dict[str, Any], provider_name: str) -> typ
 
 def _convert_input_audio_to_part(block: dict[str, Any], provider_name: str) -> types.Part:
     """OpenAI's input_audio part: base64 data plus a format name, which Gemini spells as audio/<format>."""
-    audio = block.get("input_audio", {})
-    data = audio.get("data")
-    audio_format = audio.get("format")
-    if not isinstance(data, str) or not isinstance(audio_format, str) or not audio_format:
+    audio = block.get("input_audio")
+    if not isinstance(audio, dict) or not isinstance(audio.get("data"), str) or not audio.get("format"):
         msg = "input_audio.data and input_audio.format are required for audio content"
         raise InvalidRequestError(msg, provider_name=provider_name)
 
-    raw_data = _decode_base64(data, "input_audio.data", provider_name)
+    raw_data = _decode_base64(audio["data"], "input_audio.data", provider_name)
+    audio_format = str(audio["format"])
     _validate_inline_size(raw_data, "input_audio.data", provider_name)
     return types.Part.from_bytes(data=raw_data, mime_type=f"audio/{audio_format.lower()}")
 

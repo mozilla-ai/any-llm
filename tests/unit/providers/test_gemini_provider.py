@@ -2361,10 +2361,18 @@ def test_convert_messages_with_input_audio() -> None:
     assert audio_part.inline_data.data == TEST_AUDIO_BYTES
 
 
-def test_convert_messages_input_audio_without_format_raises_invalid_request() -> None:
-    messages = [{"role": "user", "content": [{"type": "input_audio", "input_audio": {"data": "AAAA"}}]}]
+@pytest.mark.parametrize("input_audio", [{"data": "AAAA"}, "AAAA", None])
+def test_convert_messages_malformed_input_audio_raises_invalid_request(input_audio: object) -> None:
+    messages = [{"role": "user", "content": [{"type": "input_audio", "input_audio": input_audio}]}]
 
     with pytest.raises(InvalidRequestError, match=r"input_audio\.data and input_audio\.format are required"):
+        _convert_messages(messages)
+
+
+def test_convert_messages_non_ascii_base64_raises_invalid_request() -> None:
+    messages = [{"role": "user", "content": [{"type": "input_audio", "input_audio": {"data": "é", "format": "wav"}}]}]
+
+    with pytest.raises(InvalidRequestError, match="invalid base64"):
         _convert_messages(messages)
 
 
