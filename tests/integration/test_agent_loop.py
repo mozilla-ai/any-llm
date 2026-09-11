@@ -26,7 +26,8 @@ class CompletionClient(Protocol):
         model: str,
         messages: list[dict[str, Any] | ChatCompletionMessage],
         *,
-        tools: list[Callable[..., Any]] | None,
+        tools: list[Callable[..., Any]],
+        tool_choice: str | None,
     ) -> ChatCompletion: ...
 
 
@@ -71,8 +72,13 @@ async def _run_agent_loop(
     calls_made: list[tuple[str, dict[str, Any]]] = []
 
     for _ in range(max_iterations):
-        tools = None if calls_complete(calls_made) else list(available_tools.values())
-        result = await llm.acompletion(model=model_id, messages=messages, tools=tools)
+        tool_choice = "none" if calls_complete(calls_made) else None
+        result = await llm.acompletion(
+            model=model_id,
+            messages=messages,
+            tools=list(available_tools.values()),
+            tool_choice=tool_choice,
+        )
         message = result.choices[0].message
         tool_calls = message.tool_calls
 

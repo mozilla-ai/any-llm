@@ -16,17 +16,19 @@ from tests.integration.test_agent_loop import (
 class _StubCompletionClient:
     def __init__(self, responses: list[ChatCompletion]) -> None:
         self.responses = iter(responses)
-        self.tools_by_call: list[bool] = []
+        self.tool_choices: list[str | None] = []
 
     async def acompletion(
         self,
         model: str,
         messages: list[dict[str, Any] | ChatCompletionMessage],
         *,
-        tools: list[Callable[..., Any]] | None,
+        tools: list[Callable[..., Any]],
+        tool_choice: str | None,
     ) -> ChatCompletion:
         assert model == "test-model"
-        self.tools_by_call.append(tools is not None)
+        assert tools
+        self.tool_choices.append(tool_choice)
         return next(self.responses)
 
 
@@ -104,7 +106,7 @@ async def test_run_agent_loop_continues_sequential_calls_before_requesting_answe
         ("get_weather", {"location": "Paris"}),
         ("get_weather", {"location": "London"}),
     ]
-    assert client.tools_by_call == [True, True, False]
+    assert client.tool_choices == [None, None, "none"]
     tool_messages = [item for item in messages if isinstance(item, dict) and item.get("role") == "tool"]
     assert all("name" not in tool_message for tool_message in tool_messages)
 
@@ -138,7 +140,7 @@ async def test_run_agent_loop_can_include_tool_names() -> None:
     )
 
     assert message.content == "Paris is sunny at 15C."
-    assert client.tools_by_call == [True, False]
+    assert client.tool_choices == [None, "none"]
     tool_messages = [item for item in messages if isinstance(item, dict) and item.get("role") == "tool"]
     assert [tool_message["name"] for tool_message in tool_messages] == ["get_current_date", "get_weather"]
 
