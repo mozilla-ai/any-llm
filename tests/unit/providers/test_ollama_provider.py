@@ -229,6 +229,35 @@ async def test_think_extraction_handles_alternate_tag_names() -> None:
     assert result.choices[0].message.content == "The answer"
 
 
+@pytest.mark.asyncio
+async def test_think_extraction_leaves_no_reasoning_for_an_empty_block() -> None:
+    """An empty block is still a block: the tags have to come off the content, but an empty
+    string is not reasoning, so the field stays None rather than carrying "".
+    """
+    mock_message = Mock(spec=OllamaMessage)
+    mock_message.content = "<think></think>The answer"
+    mock_message.thinking = None
+    mock_message.tool_calls = None
+    mock_message.role = "assistant"
+
+    mock_response = Mock(spec=OllamaChatResponse)
+    mock_response.message = mock_message
+    mock_response.created_at = "2024-01-01T12:00:00.000000Z"
+    mock_response.prompt_eval_count = 10
+    mock_response.eval_count = 20
+    mock_response.model = "llama3.1"
+    mock_response.done_reason = "stop"
+    mock_response.total_duration = None
+    mock_response.load_duration = None
+    mock_response.prompt_eval_duration = None
+    mock_response.eval_duration = None
+
+    result = _create_chat_completion_from_ollama_response(mock_response)
+
+    assert result.choices[0].message.reasoning is None
+    assert result.choices[0].message.content == "The answer"
+
+
 def test_create_chat_completion_preserves_timing_details() -> None:
     """Provider timing fields survive normalization as extra usage fields."""
     response = OllamaChatResponse(
