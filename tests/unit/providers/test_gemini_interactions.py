@@ -563,22 +563,33 @@ async def test_convert_interaction_stream_logs_and_skips_unknown_event(caplog: p
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("delta", "message"),
-    [
-        (ArgumentsDelta(arguments="{}"), "non-text model output delta"),
-        (UnknownStepDeltaData(raw={"type": "future_delta", "value": 1}), "unknown model output delta"),
-    ],
-)
-async def test_convert_interaction_stream_rejects_unsupported_model_delta(
-    delta: object,
-    message: str,
+async def test_convert_interaction_stream_logs_and_skips_unknown_delta(
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    with pytest.raises(ProviderError, match=message):
+    prefix: list[InteractionSSEEvent] = [
+        _created(),
+        StepStart(index=7, step=ModelOutputStep(content=[TextContent(text="A")])),
+    ]
+    suffix: list[InteractionSSEEvent] = [StepDelta(index=7, delta=TextDelta(text="Z")), StepStop(index=7), _completed()]
+    unknown = StepDelta(index=7, delta=UnknownStepDeltaData(raw={"type": "future_delta", "value": 1}))
+    expected = await _converted_events(*prefix, *suffix)
+
+    with caplog.at_level(logging.WARNING, logger="any_llm"):
+        actual = await _converted_events(*prefix, unknown, *suffix)
+
+    assert [event.model_dump() for event in actual] == [event.model_dump() for event in expected]
+    assert isinstance(actual[-1], ResponseCompletedEvent)
+    assert actual[-1].response.output_text == "AZ"
+    assert "Skipping unknown Gemini Interactions delta" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_rejects_unsupported_model_delta() -> None:
+    with pytest.raises(ProviderError, match="non-text model output delta"):
         await _converted_events(
             _created(),
             StepStart(index=0, step=ModelOutputStep()),
-            StepDelta.model_validate({"index": 0, "delta": delta}),
+            StepDelta(index=0, delta=ArgumentsDelta(arguments="{}")),
         )
 
 
@@ -999,8 +1010,11 @@ async def test_real_sdk_serializes_stable_interactions_path_and_body(
 
 
 @pytest.mark.parametrize("total", [None, 0])
+@pytest.mark.parametrize("unknown_delta", [False, True])
 @pytest.mark.asyncio
-async def test_real_sdk_stream_keeps_interleaved_text_after_thought_metadata(total: int | None) -> None:
+async def test_real_sdk_stream_keeps_interleaved_text_after_thought_metadata(
+    total: int | None, unknown_delta: bool
+) -> None:
     requests: list[httpx.Request] = []
     event_payloads = [
         {
@@ -1046,6 +1060,8 @@ async def test_real_sdk_stream_keeps_interleaved_text_after_thought_metadata(tot
             },
         },
     ]
+    if unknown_delta:
+        event_payloads.insert(5, {"event_type": "step.delta", "index": 7, "delta": {"type": "future_metadata"}})
     body = "".join(f"data: {json.dumps(payload)}\n\n" for payload in event_payloads) + "data: [DONE]\n\n"
 
     async def handler(request: httpx.Request) -> httpx.Response:

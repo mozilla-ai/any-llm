@@ -197,9 +197,11 @@ class _TextStreamState:
             _raise_stream_error(f"Gemini interaction stream emitted a delta before step.start for step {event.index}")
         if event.index not in self.text_steps:
             return []
+        if isinstance(event.delta, UnknownStepDeltaData):
+            logger.warning("Skipping unknown Gemini Interactions delta")
+            return []
         if not isinstance(event.delta, TextDelta):
-            kind = "unknown" if isinstance(event.delta, UnknownStepDeltaData) else "non-text"
-            _raise_stream_error(f"Gemini interaction stream returned {kind} model output delta")
+            _raise_stream_error("Gemini interaction stream returned non-text model output delta")
         output_index, text = self.text_steps[event.index]
         self.text_steps[event.index] = (output_index, text + event.delta.text)
         return [self._text_delta(event.index, event.delta.text)]
