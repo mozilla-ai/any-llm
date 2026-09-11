@@ -30,7 +30,6 @@ from any_llm.types.completion import (
 from any_llm.types.model import Model
 
 _INLINE_SIZE_LIMIT = 20 * 1024 * 1024
-_INLINE_SIZE_LIMIT_ENCODED = (_INLINE_SIZE_LIMIT + 2) // 3 * 4  # base64 emits 4 chars per 3 bytes, padded
 _GEMINI_CONTENT_FILTER_REFUSAL = "Response blocked by Gemini content filtering."
 
 
@@ -212,15 +211,15 @@ def _parse_data_uri(data_uri: str, field_name: str, provider_name: str) -> tuple
 def _decode_base64(encoded_data: str, field_name: str, provider_name: str) -> bytes:
     """Decode strict base64 within the inline upload limit, reporting bad input as an invalid request.
 
-    The size check runs on the encoded length so an oversized payload is rejected before it is decoded.
+    The decoded size is computed from the encoded length and padding, so an oversized payload is
+    rejected before anything is decoded.
     """
     if not encoded_data:
         msg = f"{field_name} is missing base64 data"
         raise InvalidRequestError(msg, provider_name=provider_name)
-    if len(encoded_data) > _INLINE_SIZE_LIMIT_ENCODED:
-        msg = (
-            f"{field_name} exceeds the 20 MB inline upload limit for {provider_name} ({len(encoded_data)} base64 chars)"
-        )
+    decoded_size = len(encoded_data) * 3 // 4 - encoded_data[-2:].count("=")
+    if decoded_size > _INLINE_SIZE_LIMIT:
+        msg = f"{field_name} exceeds the 20 MB inline upload limit for {provider_name} ({decoded_size} bytes)"
         raise InvalidRequestError(msg, provider_name=provider_name)
 
     try:
