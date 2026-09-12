@@ -19,14 +19,12 @@ from any_llm.utils.structured_output import get_json_schema, is_structured_outpu
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
-    from openai import AsyncOpenAI
+    from portkey_ai import AsyncPortkey
 
 try:
-    import portkey_ai
-
-    AsyncPortkey: Any = portkey_ai.AsyncPortkey
+    from portkey_ai import AsyncPortkey
 except ImportError as e:  # pragma: no cover - exercised by the package guard
-    AsyncPortkey = None
+    AsyncPortkey = None  # type: ignore[misc, assignment]
     MISSING_PACKAGES_ERROR: ImportError | None = e
 else:
     MISSING_PACKAGES_ERROR = None
@@ -51,7 +49,7 @@ class PortkeyProvider(XMLReasoningOpenAIProvider):
     _DEFAULT_REASONING_EFFORT = None
     _DEFAULT_TIMEOUT = httpx.Timeout(600.0, connect=5.0)
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
-    client: AsyncOpenAI
+    client: AsyncPortkey  # type: ignore[assignment]
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:

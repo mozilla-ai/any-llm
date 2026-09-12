@@ -12,16 +12,36 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
 
-def _mock_portkey_http_client() -> httpx.AsyncClient:
+def _mock_portkey_http_client(requests: list[httpx.Request] | None = None) -> httpx.AsyncClient:
     """Create a real Portkey SDK client backed by deterministic HTTP responses."""
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if requests is not None:
+            requests.append(request)
+
         if request.url.path.endswith("/models"):
             return httpx.Response(
                 200,
                 json={
                     "object": "list",
                     "data": [{"id": "test-model", "object": "model", "created": 0, "owned_by": "portkey"}],
+                },
+            )
+
+        if request.url.path.endswith("/moderations"):
+            return httpx.Response(
+                200,
+                json={
+                    "id": "moderation-1",
+                    "model": "test-model",
+                    "results": [
+                        {
+                            "flagged": False,
+                            "categories": {"harassment": False},
+                            "category_scores": {"harassment": 0.01},
+                            "category_applied_input_types": {"harassment": ["text"]},
+                        }
+                    ],
                 },
             )
 
@@ -110,11 +130,9 @@ def test_convert_completion_params_with_dataclass_response_format() -> None:
 
 @pytest.mark.asyncio
 async def test_native_portkey_completion_converts_vendored_model_and_xml_reasoning() -> None:
-    from portkey_ai import AsyncPortkey
-
-    provider = PortkeyProvider(api_key="test-key")
-    http_client = _mock_portkey_http_client()
-    provider.client = cast("Any", AsyncPortkey(api_key="test-key", http_client=http_client))
+    requests: list[httpx.Request] = []
+    http_client = _mock_portkey_http_client(requests)
+    provider = PortkeyProvider(api_key="test-key", api_base="https://example.test/v1", http_client=http_client)
 
     try:
         result = await provider._acompletion(
@@ -127,15 +145,14 @@ async def test_native_portkey_completion_converts_vendored_model_and_xml_reasoni
     assert completion.choices[0].message.content == "answer"
     assert completion.choices[0].message.reasoning is not None
     assert completion.choices[0].message.reasoning.content == "because"
+    assert requests[0].url == "https://example.test/v1/chat/completions"
+    assert requests[0].headers["x-portkey-api-key"] == "test-key"
 
 
 @pytest.mark.asyncio
 async def test_native_portkey_stream_converts_vendored_chunks_and_xml_reasoning() -> None:
-    from portkey_ai import AsyncPortkey
-
-    provider = PortkeyProvider(api_key="test-key")
     http_client = _mock_portkey_http_client()
-    provider.client = cast("Any", AsyncPortkey(api_key="test-key", http_client=http_client))
+    provider = PortkeyProvider(api_key="test-key", http_client=http_client)
 
     try:
         result = await provider._acompletion(
@@ -156,11 +173,8 @@ async def test_native_portkey_stream_converts_vendored_chunks_and_xml_reasoning(
 
 @pytest.mark.asyncio
 async def test_native_portkey_list_models_converts_vendored_models() -> None:
-    from portkey_ai import AsyncPortkey
-
-    provider = PortkeyProvider(api_key="test-key")
     http_client = _mock_portkey_http_client()
-    provider.client = cast("Any", AsyncPortkey(api_key="test-key", http_client=http_client))
+    provider = PortkeyProvider(api_key="test-key", http_client=http_client)
 
     try:
         models = await provider._alist_models()
@@ -168,3 +182,21 @@ async def test_native_portkey_list_models_converts_vendored_models() -> None:
         await http_client.aclose()
 
     assert [(model.id, model.owned_by) for model in models] == [("test-model", "portkey")]
+
+
+@pytest.mark.asyncio
+async def test_native_portkey_moderation_converts_vendored_response() -> None:
+    http_client = _mock_portkey_http_client()
+    provider = PortkeyProvider(api_key="test-key", http_client=http_client)
+
+    try:
+        result = await provider._amoderation(model="test-model", input="Hello")
+    finally:
+        await http_client.aclose()
+
+    assert result.id == "moderation-1"
+    assert result.model == "test-model"
+    assert result.results[0].flagged is False
+    assert result.results[0].categories == {"harassment": False}
+    assert result.results[0].category_scores == {"harassment": 0.01}
+    assert result.results[0].category_applied_input_types == {"harassment": ["text"]}
