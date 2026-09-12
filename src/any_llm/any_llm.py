@@ -966,9 +966,10 @@ class AnyLLM(FilesMixin, ABC):
             output_format: Structured output, mirroring Anthropic's ``messages.parse``/
                 ``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed
                 ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic
-                JSON schemas (``parsed_output`` holds the parsed JSON). The call returns
-                Anthropic's ``ParsedMessage`` for non-streaming requests. Providers with native
-                support can stream schema-constrained Messages events instead.
+                JSON schemas (``parsed_output`` holds the parsed JSON). Non-streaming calls return
+                Anthropic's ``ParsedMessage`` for types or mappings with a non-empty schema dict;
+                mappings without one return ``MessageResponse``. Providers with native support
+                can stream schema-constrained Messages events instead.
             timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
                 An explicit ``None`` is treated the same as omitting it (the provider's default
                 applies), so it cannot request an unbounded timeout. Providers that have no
@@ -977,8 +978,8 @@ class AnyLLM(FilesMixin, ABC):
             **kwargs: Additional provider-specific arguments.
 
         Returns:
-            MessageResponse (or ParsedMessage when `output_format` is given), or an async
-            iterator of MessageStreamEvent (if streaming).
+            MessageResponse, or ParsedMessage for a typed or schema-backed `output_format`.
+            Streaming calls return an async iterator of MessageStreamEvent.
 
         Raises:
             ValueError: If `output_format` is combined with `stream=True` for a provider that

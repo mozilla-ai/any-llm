@@ -18,6 +18,7 @@ from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.utils import (
     DEFAULT_MAX_TOKENS,
     REASONING_EFFORT_TO_ANTHROPIC_EFFORT,
+    _convert_messages_for_anthropic,
     _convert_models_list,
     _convert_response_format,
     _convert_tool_spec,
@@ -1656,8 +1657,6 @@ def test_convert_messages_keeps_text_when_tool_calls_is_empty() -> None:
 
 
 def test_convert_messages_does_not_mutate_list_content() -> None:
-    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
-
     content = [{"type": "image_url", "image_url": {"url": "https://example.com/cat.png"}}]
     messages: list[dict[str, Any]] = [{"role": "user", "content": content}]
 

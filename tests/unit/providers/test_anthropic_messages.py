@@ -1252,6 +1252,29 @@ async def test_amessages_effort_only_output_config_reaches_create() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("output_config", [{"effort": "high"}, {"format": {"type": "json_schema", "schema": {}}}])
+async def test_public_amessages_without_schema_returns_message_response(output_config: dict[str, Any]) -> None:
+    provider = AnthropicProvider(api_key="test-key")
+    with patch.object(
+        provider.client.messages,
+        "create",
+        new_callable=AsyncMock,
+        return_value=_make_message(content=[TextBlock(type="text", text="Paris")]),
+    ) as create:
+        result = await provider.amessages(
+            model="test-model",
+            messages=[{"role": "user", "content": "Capital of France?"}],
+            max_tokens=128,
+            output_format=output_config,
+        )
+
+    assert isinstance(result, MessageResponse)
+    assert isinstance(result.content[0], TextBlock)
+    assert result.content[0].text == "Paris"
+    create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_amessages_non_object_format_raises() -> None:
     """A format value that is not an object is rejected rather than re-nested."""
     mock_client = Mock()
