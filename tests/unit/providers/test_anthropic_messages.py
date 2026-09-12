@@ -12,6 +12,8 @@ import pytest
 from anthropic import transform_schema
 from anthropic.types import Message, TextBlock, ThinkingBlock, ToolUseBlock, Usage
 from anthropic.types.beta import BetaMCPToolUseBlock, BetaMessage, BetaThinkingBlock, BetaUsage
+from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage
+from anthropic.types.parsed_message import ParsedMessage
 from pydantic import BaseModel
 
 from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
@@ -1515,6 +1517,34 @@ async def test_amessages_typed_output_format_streams_through_sdk_transport() -> 
     assert request_body["output_config"] == {
         "format": {"type": "json_schema", "schema": transform_schema(City.model_json_schema())}
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("beta_kwargs", [{}, {"betas": ["test-beta"]}, {"context_management": {"edits": []}}])
+@pytest.mark.parametrize("typed", [False, True])
+async def test_public_amessages_parsed_result_type(beta_kwargs: dict[str, Any], typed: bool) -> None:
+    class City(BaseModel):
+        city: str
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=_make_message(content=[TextBlock(type="text", text='{"city":"Paris"}')]).model_dump(mode="json"),
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = AnthropicProvider(api_key="test-key", http_client=client)
+        result = await provider.amessages(
+            model="test-model",
+            messages=[{"role": "user", "content": "Capital of France?"}],
+            max_tokens=128,
+            output_format=City if typed else {"format": {"type": "json_schema", "schema": City.model_json_schema()}},
+            **beta_kwargs,
+        )
+
+    expected = ParsedBetaMessage if typed and beta_kwargs else ParsedMessage
+    assert isinstance(result, expected)
+    assert result.parsed_output == (City(city="Paris") if typed else {"city": "Paris"})
 
 
 @pytest.mark.asyncio
