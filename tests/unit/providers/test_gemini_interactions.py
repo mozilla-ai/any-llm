@@ -32,7 +32,7 @@ from any_llm.types.responses import Response, ResponsesParams
 def _interaction(
     *,
     status: str = "completed",
-    created: str = "2026-01-02T03:04:05Z",
+    created: str | None = "2026-01-02T03:04:05Z",
     steps: list[object] | None = None,
     usage: Usage | None = None,
 ) -> Interaction:
@@ -211,8 +211,9 @@ def test_convert_interaction_timestamp_is_independent_of_process_timezone(
     assert response.created_at == 1767323045.0
 
 
-def test_convert_interaction_handles_unknown_status_and_invalid_timestamp() -> None:
-    response = convert_interaction_to_response(_interaction(status="future_status", created="invalid"))
+@pytest.mark.parametrize("created", ["invalid", None, ""])
+def test_convert_interaction_handles_unknown_status_and_invalid_timestamp(created: str | None) -> None:
+    response = convert_interaction_to_response(_interaction(status="future_status", created=created))
 
     assert response.status == "in_progress"
     assert response.created_at == 0.0
