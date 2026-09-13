@@ -2,9 +2,10 @@ import base64
 import json
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
-from typing import Any, get_args
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 from google.genai import types
 from pydantic import BaseModel, ConfigDict
@@ -16,13 +17,14 @@ from any_llm.exceptions import (
     UnsupportedParameterError,
 )
 from any_llm.providers.gemini import GeminiProvider
-from any_llm.providers.gemini.base import REASONING_EFFORT_TO_THINKING_BUDGETS, GoogleProvider
+from any_llm.providers.gemini.base import GoogleProvider, _convert_reasoning_effort
 from any_llm.providers.gemini.utils import (
     _convert_messages,
     _convert_response_to_response_dict,
     _convert_tool_spec,
     _create_openai_chunk_from_google_chunk,
     _has_additional_properties,
+    _has_type_unions,
     _map_finish_reason,
 )
 from any_llm.types.completion import (
@@ -302,6 +304,132 @@ async def test_completion_with_tool_choice_auto(tool_choice: str, expected_mode:
 
 
 @pytest.mark.asyncio
+async def test_completion_with_tool_choice_none_disables_function_calling() -> None:
+    """tool_choice='none' must map to Gemini's NONE mode instead of raising."""
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(model_id="gemini-pro", messages=messages, tool_choice="none"),
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        generation_config = call_kwargs["config"]
+
+        assert generation_config.tool_config.function_calling_config.mode.value == "NONE"
+
+
+@pytest.mark.asyncio
+async def test_completion_with_named_function_tool_choice() -> None:
+    """The OpenAI named-function tool_choice must force that function via allowed_function_names."""
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="gemini-pro",
+                messages=messages,
+                tool_choice={"type": "function", "function": {"name": "get_weather"}},
+            ),
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        function_calling_config = call_kwargs["config"].tool_config.function_calling_config
+
+        assert function_calling_config.mode.value == "ANY"
+        assert function_calling_config.allowed_function_names == ["get_weather"]
+
+
+@pytest.mark.asyncio
+async def test_completion_with_allowed_tools_tool_choice() -> None:
+    """A required allowed_tools choice must forward every listed name in ANY mode."""
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="gemini-pro",
+                messages=messages,
+                tool_choice={
+                    "type": "allowed_tools",
+                    "allowed_tools": {
+                        "mode": "required",
+                        "tools": [
+                            {"type": "function", "function": {"name": "get_weather"}},
+                            {"type": "function", "function": {"name": "get_time"}},
+                        ],
+                    },
+                },
+            ),
+        )
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        function_calling_config = call_kwargs["config"].tool_config.function_calling_config
+
+        assert function_calling_config.mode.value == "ANY"
+        assert function_calling_config.allowed_function_names == ["get_weather", "get_time"]
+
+
+@pytest.mark.parametrize(
+    "tool_choice",
+    [
+        "sometimes",
+        {"type": "custom", "custom": {"name": "get_weather"}},
+        {"type": "function"},
+        {"type": "function", "function": {"name": 1}},
+        # Gemini honors allowed_function_names only in ANY mode, so "auto" cannot be expressed.
+        {
+            "type": "allowed_tools",
+            "allowed_tools": {"mode": "auto", "tools": [{"type": "function", "function": {"name": "get_weather"}}]},
+        },
+        {"type": "allowed_tools", "allowed_tools": {"mode": "required", "tools": []}},
+        {"type": "allowed_tools", "allowed_tools": {"mode": "required"}},
+        {"type": "allowed_tools", "allowed_tools": {"mode": "required", "tools": None}},
+        {"type": "allowed_tools", "allowed_tools": {"mode": "required", "tools": 1}},
+        {
+            "type": "allowed_tools",
+            "allowed_tools": {
+                "mode": "required",
+                "tools": [{"type": "function", "function": {"name": "get_weather"}}, "get_time"],
+            },
+        },
+        {
+            "type": "allowed_tools",
+            "allowed_tools": {
+                "mode": "required",
+                "tools": [
+                    {"type": "function", "function": {"name": "get_weather"}},
+                    {"type": "function", "function": {"name": ""}},
+                ],
+            },
+        },
+        {
+            "type": "allowed_tools",
+            "allowed_tools": {"mode": "required", "tools": [{"type": "function", "function": {"name": 1}}]},
+        },
+        {
+            "type": "allowed_tools",
+            "allowed_tools": {"mode": "required", "tools": [{"type": "custom", "function": {"name": "get_weather"}}]},
+        },
+    ],
+)
+@pytest.mark.asyncio
+async def test_completion_with_unsupported_tool_choice_raises(tool_choice: str | dict[str, Any]) -> None:
+    """Unrecognized tool_choice values report the offending value rather than leaking a KeyError."""
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_gemini_provider():
+        provider = GeminiProvider(api_key="test-api-key")
+        with pytest.raises(UnsupportedParameterError, match="tool_choice"):
+            await provider._acompletion(
+                CompletionParams(model_id="gemini-pro", messages=messages, tool_choice=tool_choice),
+            )
+
+
+@pytest.mark.asyncio
 async def test_completion_without_tool_choice() -> None:
     """Test that completion works correctly without tool_choice."""
     api_key = "test-api-key"
@@ -358,6 +486,106 @@ async def test_completion_with_dataclass_response_format() -> None:
 )
 def test_has_additional_properties(schema: Any, expected: bool) -> None:
     assert _has_additional_properties(schema) is expected
+
+
+@pytest.mark.parametrize(
+    ("schema", "expected"),
+    [
+        ({"type": ["string", "null"]}, True),
+        ({"type": "object", "properties": {"a": {"type": ["string", "null"]}}}, True),
+        # The union that matters in practice sits inside array items, which the
+        # OpenAPI path copies verbatim into types.Schema.
+        (
+            {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {"type": "object", "properties": {"a": {"type": ["string", "null"]}}},
+                    }
+                },
+            },
+            True,
+        ),
+        # A single-element list is still a list and still unrepresentable.
+        ({"type": ["string"]}, True),
+        # Lists that are not type declarations must not trigger the routing.
+        ({"type": "object", "required": ["a", "b"], "properties": {"a": {"type": "string"}}}, False),
+        ({"type": "string", "enum": ["a", "b"]}, False),
+        ({"anyOf": [{"type": "string"}, {"type": "null"}]}, False),
+        ({"anyOf": [{"type": ["string", "null"]}]}, True),
+        ("not-a-schema", False),
+    ],
+)
+def test_has_type_unions(schema: Any, expected: bool) -> None:
+    assert _has_type_unions(schema) is expected
+
+
+def test_convert_tool_spec_type_union_routes_through_json_schema() -> None:
+    """A nullable field written as ``{"type": ["string", "null"]}`` must not be reshaped.
+
+    ``types.Schema.type`` is a single ``types.Type`` enum, so the OpenAPI path serializes
+    the list into a field that cannot hold it and Gemini answers 400. The union survives
+    only through ``parameters_json_schema``.
+    """
+    raw_params = {
+        "type": "object",
+        "properties": {
+            "candidates": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "content": {"type": "string"},
+                        "category": {"type": "string", "enum": ["preference", "fact"]},
+                        "valid_from_date": {"type": ["string", "null"]},
+                    },
+                    "required": ["content", "category"],
+                },
+            }
+        },
+        "required": ["candidates"],
+    }
+    openai_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "submit_candidates",
+                "description": "Submit candidates.",
+                "parameters": raw_params,
+            },
+        }
+    ]
+
+    tools = _convert_tool_spec(openai_tools, "gemini")
+
+    decl = tools[0].function_declarations[0]  # type: ignore[index]
+    assert decl.parameters is None
+    assert decl.parameters_json_schema == raw_params
+
+
+def test_convert_tool_spec_without_type_unions_still_uses_openapi_path() -> None:
+    """The reshaping path is unchanged for schemas types.Schema can represent."""
+    openai_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "echo",
+                "description": "Echo a word.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"word": {"type": "string"}},
+                    "required": ["word"],
+                },
+            },
+        }
+    ]
+
+    tools = _convert_tool_spec(openai_tools, "gemini")
+
+    decl = tools[0].function_declarations[0]  # type: ignore[index]
+    assert decl.parameters_json_schema is None
+    assert decl.parameters is not None
 
 
 @pytest.mark.asyncio
@@ -589,45 +817,47 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
         assert contents[2].role == "function"
 
 
-@pytest.mark.parametrize("reasoning_effort", [None, *get_args(ReasoningEffort)])
-@pytest.mark.asyncio
-async def test_completion_with_custom_reasoning_effort(reasoning_effort: ReasoningEffort | None) -> None:
-    api_key = "test-api-key"
-    model = "model-id"
-    messages = [{"role": "user", "content": "Hello"}]
-
-    with mock_gemini_provider() as mock_genai:
-        provider = GeminiProvider(api_key=api_key)
-        await provider._acompletion(
-            CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort)
-        )
-
-        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
-        thinking_config = call_kwargs["config"].thinking_config
-
-        if reasoning_effort == "auto":
-            assert thinking_config is None
-        elif reasoning_effort is None or reasoning_effort == "none":
-            assert thinking_config == types.ThinkingConfig(include_thoughts=False)
-        else:
-            assert thinking_config == types.ThinkingConfig(
-                include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[reasoning_effort]
-            )
-
-
 @pytest.mark.parametrize(
-    ("model_id", "reasoning_effort", "expected_level"),
+    ("model_id", "reasoning_effort", "expected"),
     [
-        ("gemini-3.5-flash", "xhigh", types.ThinkingLevel.HIGH),
-        ("gemini-3.5-flash", "max", types.ThinkingLevel.HIGH),
-        ("gemini-3.5-pro", "low", types.ThinkingLevel.LOW),
-        ("models/gemini-3.5-flash", "medium", types.ThinkingLevel.MEDIUM),
-        ("gemini-3.10-flash", "minimal", types.ThinkingLevel.MINIMAL),
-        ("gemini-4-pro", "high", types.ThinkingLevel.HIGH),
+        ("gemini-3.8-flash", "low", {"includeThoughts": True, "thinkingLevel": "LOW"}),
+        ("gemini-3.7-flash", "medium", {"includeThoughts": True, "thinkingLevel": "MEDIUM"}),
+        ("gemini-3.6-flash", "minimal", {"includeThoughts": True, "thinkingLevel": "MINIMAL"}),
+        ("gemini-3.5-flash", "high", {"includeThoughts": True, "thinkingLevel": "HIGH"}),
+        ("gemini-3.5-flash-lite", "minimal", {"includeThoughts": True, "thinkingLevel": "MINIMAL"}),
+        ("gemini-3.1-flash-lite", "medium", {"includeThoughts": True, "thinkingLevel": "MEDIUM"}),
+        ("models/gemini-3.1-pro-preview", "minimal", {"includeThoughts": True, "thinkingLevel": "LOW"}),
+        ("gemini-3.1-flash-image", "minimal", {"includeThoughts": True, "thinkingLevel": "MINIMAL"}),
+        ("gemini-3.1-flash-lite-image", "high", {"includeThoughts": True, "thinkingLevel": "HIGH"}),
+        ("gemini-3-flash-preview", "minimal", {"includeThoughts": True, "thinkingLevel": "MINIMAL"}),
+        ("gemini-2.5-flash", "none", {"thinkingBudget": 0}),
+        ("gemini-2.5-flash", "minimal", {"includeThoughts": True, "thinkingBudget": 1024}),
+        ("gemini-2.5-flash", "low", {"includeThoughts": True, "thinkingBudget": 1024}),
+        ("gemini-2.5-flash-lite", "none", {"thinkingBudget": 0}),
+        ("gemini-2.5-flash-lite", "minimal", {"includeThoughts": True, "thinkingBudget": 1024}),
+        ("gemini-2.5-flash-lite", "medium", {"includeThoughts": True, "thinkingBudget": 8192}),
+        ("gemini-2.5-pro", "minimal", {"includeThoughts": True, "thinkingBudget": 1024}),
+        ("gemini-2.5-pro", "high", {"includeThoughts": True, "thinkingBudget": 24576}),
+        ("gemini-2.5-pro", "xhigh", {"includeThoughts": True, "thinkingBudget": 32768}),
+        ("gemini-2.5-flash", "max", {"includeThoughts": True, "thinkingBudget": 24576}),
+        ("gemini-2.5-flash-lite", "xhigh", {"includeThoughts": True, "thinkingBudget": 24576}),
+        ("gemini-3.8-flash", "xhigh", {"includeThoughts": True, "thinkingLevel": "HIGH"}),
+        ("-001", "minimal", {"includeThoughts": True, "thinkingBudget": 1024}),
+        ("custom-gemini-model", "minimal", {"includeThoughts": True, "thinkingBudget": 1024}),
+        ("gemini-3.1-custom", "high", {"includeThoughts": True, "thinkingLevel": "HIGH"}),
+        ("models/gemini-3.10-flash-preview-202609", "max", {"includeThoughts": True, "thinkingLevel": "HIGH"}),
+        ("gemini-3.8-flash-custom", "minimal", {"includeThoughts": True, "thinkingLevel": "MINIMAL"}),
+        (
+            "projects/p/locations/l/publishers/google/models/gemini-3.8-flash-001",
+            "low",
+            {"includeThoughts": True, "thinkingLevel": "LOW"},
+        ),
     ],
 )
-def test_new_gemini_models_use_thinking_level(
-    model_id: str, reasoning_effort: ReasoningEffort, expected_level: types.ThinkingLevel
+def test_gemini_reasoning_effort_matches_documented_thinking_config(
+    model_id: str,
+    reasoning_effort: ReasoningEffort,
+    expected: dict[str, object],
 ) -> None:
     result = GoogleProvider._convert_completion_params(
         CompletionParams(
@@ -636,29 +866,119 @@ def test_new_gemini_models_use_thinking_level(
         provider_name="gemini",
     )
 
-    assert result["config"].thinking_config == types.ThinkingConfig(
-        include_thoughts=True, thinking_level=expected_level
+    config = result["config"].model_dump(by_alias=True, exclude_none=True)
+    assert config["thinkingConfig"] == expected
+
+
+@pytest.mark.parametrize(
+    ("model_id", "reasoning_effort"),
+    [
+        ("gemini-3.8-flash", "minimal"),
+        ("gemini-3.1-flash-image", "low"),
+        ("gemini-3.1-flash-lite-image", "low"),
+        ("gemini-3.8-flash-001", "minimal"),
+        ("gemini-3.8-flash", "none"),
+        ("gemini-3.1-flash-image", "none"),
+        ("gemini-2.5-pro", "none"),
+    ],
+)
+def test_gemini_rejects_undocumented_reasoning_effort(
+    model_id: str,
+    reasoning_effort: ReasoningEffort,
+) -> None:
+    with pytest.raises(UnsupportedParameterError) as exc_info:
+        GoogleProvider._convert_completion_params(
+            CompletionParams(
+                model_id=model_id,
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort=reasoning_effort,
+            ),
+            provider_name="gemini",
+        )
+
+    assert str(exc_info.value) == (
+        "[gemini] 'reasoning_effort' is not supported for gemini.\n"
+        f"'{reasoning_effort}' is not available for model '{model_id}'."
+    )
+
+
+def test_gemini_invalid_reasoning_effort_error_identifies_model_and_effort() -> None:
+    reasoning_effort = cast("ReasoningEffort", "invalid")
+
+    with pytest.raises(UnsupportedParameterError) as exc_info:
+        _convert_reasoning_effort("custom-gemini-model", reasoning_effort, "gemini")
+
+    assert str(exc_info.value) == (
+        "[gemini] 'reasoning_effort' is not supported for gemini.\n"
+        "'invalid' is not available for model 'custom-gemini-model'."
     )
 
 
 @pytest.mark.parametrize(
-    "model_id",
-    [
-        "gemini-3.0-flash",
-        "gemini-3.4-flash",
-        "gemini-3-pro-preview",
-        "gemini-2.5-flash",
-        "gemini-pro",
-        "projects/p/locations/l/publishers/google/models/gemini-3-pro",
-    ],
+    ("reasoning_effort", "expected"),
+    [(None, None), ("auto", None)],
 )
-def test_older_gemini_models_keep_thinking_budget(model_id: str) -> None:
+def test_gemini_preserves_default_thinking_config_wire_behavior(
+    reasoning_effort: ReasoningEffort | None, expected: dict[str, object] | None
+) -> None:
     result = GoogleProvider._convert_completion_params(
-        CompletionParams(model_id=model_id, messages=[{"role": "user", "content": "Hello"}], reasoning_effort="high"),
+        CompletionParams(
+            model_id="gemini-3.8-flash",
+            messages=[{"role": "user", "content": "Hello"}],
+            reasoning_effort=reasoning_effort,
+        ),
         provider_name="gemini",
     )
 
-    assert result["config"].thinking_config == types.ThinkingConfig(include_thoughts=True, thinking_budget=24576)
+    config = result["config"].model_dump(by_alias=True, exclude_none=True)
+    assert config.get("thinkingConfig") == expected
+
+
+@pytest.mark.parametrize(
+    ("model_id", "reasoning_effort", "expected"),
+    [
+        ("gemini-3.8-flash", "high", {"include_thoughts": True, "thinking_level": "HIGH"}),
+        ("gemini-2.5-flash", "none", {"thinking_budget": 0}),
+    ],
+)
+@pytest.mark.asyncio
+async def test_gemini_reasoning_effort_reaches_official_sdk_wire(
+    model_id: str,
+    reasoning_effort: ReasoningEffort,
+    expected: dict[str, object],
+) -> None:
+    requests: list[dict[str, object]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "content": {"parts": [{"text": "ok"}], "role": "model"},
+                        "finishReason": "STOP",
+                    }
+                ]
+            },
+        )
+
+    provider = GeminiProvider(
+        api_key="test-api-key",
+        http_options=types.HttpOptions(
+            async_client_args={"transport": httpx.MockTransport(handler)},
+        ),
+    )
+    await provider._acompletion(
+        CompletionParams(
+            model_id=model_id,
+            messages=[{"role": "user", "content": "Hello"}],
+            reasoning_effort=reasoning_effort,
+        )
+    )
+    await provider.client.aio.aclose()
+
+    assert requests[0]["generationConfig"] == {"thinkingConfig": expected}
 
 
 @pytest.mark.asyncio
@@ -700,6 +1020,7 @@ def test_convert_response_single_tool_call() -> None:
     mock_response.usage_metadata.total_token_count = 25
     mock_response.usage_metadata.cached_content_token_count = None
     mock_response.usage_metadata.thoughts_token_count = None
+    mock_response.usage_metadata.tool_use_prompt_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -763,6 +1084,7 @@ def test_convert_response_multiple_parallel_tool_calls() -> None:
     mock_response.usage_metadata.total_token_count = 50
     mock_response.usage_metadata.cached_content_token_count = None
     mock_response.usage_metadata.thoughts_token_count = None
+    mock_response.usage_metadata.tool_use_prompt_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -929,6 +1251,24 @@ def test_convert_response_accumulates_multiple_text_parts() -> None:
     assert message["reasoning"] is None
 
 
+def test_convert_response_keeps_text_alongside_function_call() -> None:
+    """A turn that speaks and then calls a tool reports both, as the streaming converter already does."""
+    response = _make_gemini_response(
+        [
+            types.Part(text="I will look up the weather in Paris."),
+            types.Part(function_call=types.FunctionCall(name="get_weather", args={"location": "Paris"})),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    message = response_dict["choices"][0]["message"]
+    assert message["content"] == "I will look up the weather in Paris."
+    assert [tool_call["function"]["name"] for tool_call in message["tool_calls"]] == ["get_weather"]
+    assert response_dict["choices"][0]["finish_reason"] == "tool_calls"
+
+
 def test_convert_response_skips_parts_without_text_or_function_call() -> None:
     """A candidate can mix in parts that carry neither text nor a tool call, e.g. inline image
     data; those must not disturb the accumulated text."""
@@ -945,6 +1285,168 @@ def test_convert_response_skips_parts_without_text_or_function_call() -> None:
     message = response_dict["choices"][0]["message"]
     assert message["content"] == "Described."
     assert message["tool_calls"] is None
+    assert message["images"][0]["image_url"]["url"] == "data:image/png;base64,iVBORw=="
+
+
+def test_convert_response_emits_choice_for_image_only_response() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"))],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert len(response_dict["choices"]) == 1
+    message = response_dict["choices"][0]["message"]
+    assert message["content"] is None
+    assert message["images"][0]["image_url"]["url"] == "data:image/png;base64,iVBORw=="
+
+
+@pytest.mark.parametrize(
+    "blob",
+    [
+        types.Blob(mime_type="image/png", data=b""),
+        types.Blob(mime_type="image/png", data=None),
+        types.Blob(mime_type=None, data=b"data"),
+        types.Blob(mime_type="application/pdf", data=b"data"),
+    ],
+)
+def test_convert_response_skips_inline_data_without_image_payload(blob: types.Blob) -> None:
+    response = _make_gemini_response([types.Part(inline_data=blob)], types.FinishReason.STOP)
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert response_dict["choices"] == []
+
+
+def test_streaming_completion_with_inline_image() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"))],
+        types.FinishReason.STOP,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    images = chunk.choices[0].delta.images
+    assert images is not None
+    assert images[0].image_url.url == "data:image/png;base64,iVBORw=="
+
+
+def test_convert_response_preserves_inline_audio() -> None:
+    response = _make_gemini_response(
+        [
+            types.Part(text="Here is the audio."),
+            types.Part(inline_data=types.Blob(mime_type="audio/wav", data=b"WAVE")),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    result = GoogleProvider._convert_completion_response(
+        (_convert_response_to_response_dict(response), "gemini-2.5-flash")
+    )
+
+    assert result.choices[0].message.audio is not None
+    assert result.choices[0].message.audio.data == "V0FWRQ=="
+    assert result.choices[0].message.audio.transcript == "Here is the audio."
+
+
+def test_convert_response_emits_choice_for_audio_only_response() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="audio/wav", data=b"WAVE"))],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert len(response_dict["choices"]) == 1
+    message = response_dict["choices"][0]["message"]
+    assert message["content"] is None
+    assert message["audio"]["data"] == "V0FWRQ=="
+
+
+def test_streaming_completion_with_inline_audio() -> None:
+    response = _make_gemini_response(
+        [
+            types.Part(text="Here is the audio."),
+            types.Part(inline_data=types.Blob(mime_type="audio/wav", data=b"WAVE")),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    assert chunk.choices[0].delta.audio is not None
+    assert chunk.choices[0].delta.audio.data == "V0FWRQ=="
+    assert chunk.choices[0].delta.audio.transcript == "Here is the audio."
+
+
+def test_streaming_completion_emits_choice_for_audio_only_response() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="audio/wav", data=b"WAVE"))],
+        types.FinishReason.STOP,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    assert chunk.choices[0].delta.audio is not None
+    assert chunk.choices[0].delta.audio.data == "V0FWRQ=="
+
+
+def _wav_fields(wav: bytes) -> tuple[bytes, int, int, bytes]:
+    """Return the RIFF tag, sample rate, data length, and payload from a WAV file."""
+    return wav[:4], int.from_bytes(wav[24:28], "little"), int.from_bytes(wav[40:44], "little"), wav[44:]
+
+
+@pytest.mark.parametrize("rate", [24000, 16000])
+def test_convert_response_wraps_pcm_audio_as_wav(rate: int) -> None:
+    """Complete Gemini TTS responses expose all PCM parts as a playable WAV."""
+    mime_type = f"audio/L16;codec=pcm;rate={rate}"
+    response = _make_gemini_response(
+        [
+            types.Part(inline_data=types.Blob(mime_type=mime_type, data=b"\x01\x02")),
+            types.Part(inline_data=types.Blob(mime_type=mime_type, data=b"\x03\x04")),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    result = GoogleProvider._convert_completion_response(
+        (_convert_response_to_response_dict(response), "gemini-2.5-flash-preview-tts")
+    )
+
+    audio = result.choices[0].message.audio
+    assert audio is not None
+    assert _wav_fields(base64.b64decode(audio.data)) == (b"RIFF", rate, 4, b"\x01\x02\x03\x04")
+    assert result.choices[0].message.content is None
+    assert result.choices[0].finish_reason == "stop"
+
+
+def test_streaming_completion_keeps_pcm_audio_raw() -> None:
+    """Streaming Gemini TTS parts stay raw and are joined in their original order."""
+    mime_type = "audio/L16;codec=pcm;rate=24000"
+    response = _make_gemini_response(
+        [
+            types.Part(inline_data=types.Blob(mime_type=mime_type, data=b"\x01\x02")),
+            types.Part(inline_data=types.Blob(mime_type=mime_type, data=b"\x03\x04")),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    audio = chunk.choices[0].delta.audio
+    assert audio is not None
+    assert audio.data is not None
+    assert base64.b64decode(audio.data) == b"\x01\x02\x03\x04"
+
+
+def test_convert_response_skips_empty_audio_blob() -> None:
+    """Empty inline audio must not create an otherwise empty completion choice."""
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="audio/L16;codec=pcm;rate=24000", data=b""))],
+        types.FinishReason.STOP,
+    )
+
+    assert _convert_response_to_response_dict(response)["choices"] == []
 
 
 def test_convert_response_emits_choice_for_filtered_response_without_content() -> None:
@@ -992,6 +1494,20 @@ def test_google_provider_preserves_prompt_block_as_refusal() -> None:
 
     assert result.choices[0].finish_reason == "content_filter"
     assert result.choices[0].message.refusal == "Response blocked by Gemini content filtering."
+
+
+def test_google_provider_preserves_images_on_completion_message() -> None:
+    response_dict = _convert_response_to_response_dict(
+        _make_gemini_response(
+            [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"))],
+            types.FinishReason.STOP,
+        )
+    )
+
+    result = GoogleProvider._convert_completion_response((response_dict, "gemini-2.5-flash-image"))
+
+    assert result.choices[0].message.images is not None
+    assert result.choices[0].message.images[0].image_url.url == "data:image/png;base64,iVBORw=="
 
 
 def test_convert_response_without_content_and_terminal_reason_has_no_choices() -> None:
@@ -1258,6 +1774,7 @@ async def test_streaming_completion_includes_usage_data() -> None:
     mock_response.usage_metadata.total_token_count = 15
     mock_response.usage_metadata.cached_content_token_count = None
     mock_response.usage_metadata.thoughts_token_count = None
+    mock_response.usage_metadata.tool_use_prompt_token_count = None
 
     chunk = _create_openai_chunk_from_google_chunk(mock_response)
 
@@ -1589,6 +2106,7 @@ def test_convert_response_preserves_thought_signature() -> None:
     mock_response.usage_metadata.total_token_count = 25
     mock_response.usage_metadata.cached_content_token_count = None
     mock_response.usage_metadata.thoughts_token_count = None
+    mock_response.usage_metadata.tool_use_prompt_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -1623,6 +2141,7 @@ def test_convert_response_no_thought_signature() -> None:
     mock_response.usage_metadata.total_token_count = 25
     mock_response.usage_metadata.cached_content_token_count = None
     mock_response.usage_metadata.thoughts_token_count = None
+    mock_response.usage_metadata.tool_use_prompt_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -1819,6 +2338,38 @@ def test_convert_messages_accepts_json_or_parsed_tool_call_arguments(
     function_call = formatted_messages[0].parts[0].function_call
     assert function_call is not None
     assert function_call.args == expected_args
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected_exception"),
+    [
+        ("{not-json", json.JSONDecodeError),
+        (b"\xff", UnicodeDecodeError),
+        (bytearray(b"\xff"), UnicodeDecodeError),
+    ],
+)
+def test_convert_messages_rejects_malformed_serialized_tool_call_arguments(
+    arguments: str | bytes | bytearray, expected_exception: type[Exception]
+) -> None:
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": arguments},
+                }
+            ],
+        }
+    ]
+
+    with pytest.raises(InvalidRequestError, match="must be valid JSON") as exc_info:
+        _convert_messages(messages)
+
+    assert isinstance(exc_info.value.original_exception, expected_exception)
+    assert isinstance(exc_info.value.__cause__, expected_exception)
 
 
 def test_convert_messages_with_thought_signature_in_extra_content() -> None:
@@ -2047,6 +2598,103 @@ def test_convert_messages_invalid_base64_raises_invalid_request() -> None:
 
     with pytest.raises(InvalidRequestError, match="invalid base64"):
         _convert_messages(messages)
+
+
+def test_convert_messages_replays_assistant_text_ahead_of_its_tool_calls() -> None:
+    """A turn that spoke and then called a tool replays as [text, function_call], signatures on their own parts."""
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Tell me your plan, then get the weather."},
+        {
+            "role": "assistant",
+            "content": "I will look up the weather in Paris.",
+            "extra_content": {"google": {"thought_signature": "dGV4dA=="}},
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": '{"location": "Paris"}'},
+                    "extra_content": {"google": {"thought_signature": "Y2FsbA=="}},
+                }
+            ],
+        },
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[1].parts
+    assert parts is not None
+    assert [part.text for part in parts] == ["I will look up the weather in Paris.", None]
+    assert parts[0].function_call is None
+    assert parts[0].thought_signature == b"text"
+    assert parts[1].function_call is not None
+    assert parts[1].function_call.name == "get_weather"
+    assert parts[1].thought_signature == b"call"
+
+
+@pytest.mark.parametrize("content", [None, "", [{"type": "text", "text": "ignored"}]])
+def test_convert_messages_tool_call_turn_without_text_emits_only_function_calls(content: Any) -> None:
+    """Only a non-empty string adds a text part to a tool-call turn; the first call keeps the skip sentinel."""
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": content,
+            "tool_calls": [
+                {"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}},
+            ],
+        },
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[0].parts
+    assert parts is not None
+    assert len(parts) == 1
+    assert parts[0].function_call is not None
+    assert parts[0].thought_signature is not None
+
+
+def test_convert_messages_tool_call_turn_rejects_an_undecodable_text_signature() -> None:
+    """The text part of a tool-call turn goes through the same signature check as a text-only turn."""
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": "I will look up the weather.",
+            "extra_content": {"google": {"thought_signature": 12345}},
+            "tool_calls": [
+                {"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}},
+            ],
+        },
+    ]
+
+    with pytest.raises(InvalidRequestError, match="thought_signature"):
+        _convert_messages(messages)
+
+
+def test_convert_messages_round_trips_a_text_and_tool_call_turn() -> None:
+    """Response -> ChatCompletionMessage -> dump (as acompletion replays it) -> model turn keeps text and both signatures."""
+    response = _make_gemini_response(
+        [
+            types.Part(text="I will look up the weather in Paris.", thought_signature=b"text-sig"),
+            types.Part(
+                function_call=types.FunctionCall(name="get_weather", args={"location": "Paris"}),
+                thought_signature=b"call-sig",
+            ),
+        ],
+        types.FinishReason.STOP,
+    )
+    message = ChatCompletionMessage.model_validate(
+        _convert_response_to_response_dict(response)["choices"][0]["message"]
+    )
+    replayed = message.model_dump(exclude_none=True, exclude={"reasoning"})
+
+    formatted_messages, _ = _convert_messages([{"role": "user", "content": "Plan, then weather?"}, replayed])
+
+    parts = formatted_messages[1].parts
+    assert parts is not None
+    assert [part.text for part in parts] == ["I will look up the weather in Paris.", None]
+    assert parts[0].thought_signature == b"text-sig"
+    assert parts[1].function_call is not None
+    assert parts[1].thought_signature == b"call-sig"
 
 
 def test_convert_messages_without_thought_signature_uses_skip_sentinel() -> None:
@@ -2283,12 +2931,32 @@ def test_convert_response_extracts_cached_tokens() -> None:
     mock_response.usage_metadata.total_token_count = 150
     mock_response.usage_metadata.cached_content_token_count = 80
     mock_response.usage_metadata.thoughts_token_count = None
+    mock_response.usage_metadata.tool_use_prompt_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
     assert response_dict["usage"]["prompt_tokens"] == 100
     assert response_dict["usage"]["completion_tokens"] == 50
     assert response_dict["usage"]["total_tokens"] == 150
+    assert response_dict["usage"]["prompt_tokens_details"].cached_tokens == 80
+
+
+def test_convert_response_includes_tool_use_prompt_tokens() -> None:
+    response = _make_gemini_response([types.Part(text="Hello!")], types.FinishReason.STOP)
+    response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=100,
+        cached_content_token_count=80,
+        candidates_token_count=20,
+        thoughts_token_count=None,
+        tool_use_prompt_token_count=10,
+        total_token_count=130,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert response_dict["usage"]["prompt_tokens"] == 110
+    assert response_dict["usage"]["completion_tokens"] == 20
+    assert response_dict["usage"]["total_tokens"] == 130
     assert response_dict["usage"]["prompt_tokens_details"].cached_tokens == 80
 
 
@@ -2310,6 +2978,7 @@ def test_convert_response_without_cached_tokens() -> None:
     mock_response.usage_metadata.total_token_count = 150
     mock_response.usage_metadata.cached_content_token_count = None
     mock_response.usage_metadata.thoughts_token_count = None
+    mock_response.usage_metadata.tool_use_prompt_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -2337,12 +3006,35 @@ def test_streaming_chunk_extracts_cached_tokens() -> None:
     mock_response.usage_metadata.total_token_count = 150
     mock_response.usage_metadata.cached_content_token_count = 80
     mock_response.usage_metadata.thoughts_token_count = None
+    mock_response.usage_metadata.tool_use_prompt_token_count = None
 
     chunk = _create_openai_chunk_from_google_chunk(mock_response)
 
     assert chunk.usage is not None
     assert chunk.usage.prompt_tokens == 100
     assert chunk.usage.completion_tokens == 50
+    assert chunk.usage.prompt_tokens_details is not None
+    assert chunk.usage.prompt_tokens_details.cached_tokens == 80
+
+
+def test_streaming_chunk_includes_tool_use_prompt_tokens() -> None:
+    response = _make_gemini_response([types.Part(text="Hello!")], types.FinishReason.STOP)
+    response.model_version = "gemini-2.5-flash"
+    response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=100,
+        cached_content_token_count=80,
+        candidates_token_count=20,
+        thoughts_token_count=None,
+        tool_use_prompt_token_count=10,
+        total_token_count=130,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    assert chunk.usage is not None
+    assert chunk.usage.prompt_tokens == 110
+    assert chunk.usage.completion_tokens == 20
+    assert chunk.usage.total_tokens == 130
     assert chunk.usage.prompt_tokens_details is not None
     assert chunk.usage.prompt_tokens_details.cached_tokens == 80
 
@@ -2367,6 +3059,7 @@ def test_streaming_chunk_without_cached_tokens() -> None:
     mock_response.usage_metadata.total_token_count = 150
     mock_response.usage_metadata.cached_content_token_count = None
     mock_response.usage_metadata.thoughts_token_count = None
+    mock_response.usage_metadata.tool_use_prompt_token_count = None
 
     chunk = _create_openai_chunk_from_google_chunk(mock_response)
 
@@ -2393,6 +3086,7 @@ def test_convert_response_includes_thought_tokens() -> None:
     mock_response.usage_metadata.thoughts_token_count = 405
     mock_response.usage_metadata.total_token_count = 623
     mock_response.usage_metadata.cached_content_token_count = None
+    mock_response.usage_metadata.tool_use_prompt_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -2422,6 +3116,7 @@ def test_streaming_chunk_includes_thought_tokens() -> None:
     mock_response.usage_metadata.thoughts_token_count = 405
     mock_response.usage_metadata.total_token_count = 623
     mock_response.usage_metadata.cached_content_token_count = None
+    mock_response.usage_metadata.tool_use_prompt_token_count = None
 
     chunk = _create_openai_chunk_from_google_chunk(mock_response)
 
@@ -2450,6 +3145,7 @@ def test_convert_response_without_thought_tokens() -> None:
     mock_response.usage_metadata.thoughts_token_count = None
     mock_response.usage_metadata.total_token_count = 150
     mock_response.usage_metadata.cached_content_token_count = None
+    mock_response.usage_metadata.tool_use_prompt_token_count = None
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -2477,6 +3173,7 @@ def test_streaming_chunk_without_thought_tokens() -> None:
     mock_response.usage_metadata.thoughts_token_count = None
     mock_response.usage_metadata.total_token_count = 150
     mock_response.usage_metadata.cached_content_token_count = None
+    mock_response.usage_metadata.tool_use_prompt_token_count = None
 
     chunk = _create_openai_chunk_from_google_chunk(mock_response)
 

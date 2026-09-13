@@ -16,9 +16,9 @@ def setup_logger(
     """Configure the any_llm logger with the specified settings.
 
     Args:
-        level: The logging level to use (default: logging.INFO)
+        level: The logging level to use (default: logging.WARNING)
         rich_tracebacks: Whether to enable rich tracebacks (default: True)
-        log_format: Optional custom log format string
+        log_format: Optional custom log format string (default: None)
         propagate: Whether to propagate logs to parent loggers (default: False)
         **kwargs: Additional keyword arguments to pass to RichHandler
 

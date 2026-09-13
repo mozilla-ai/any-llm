@@ -84,12 +84,16 @@ def _extract_reasoning_text(message: dict[str, Any]) -> str:
 
     ``reasoning`` may be a plain string (the OpenAI-wire-compatible serialized form) or a
     ``{"content": str}`` dict, depending on how the caller constructed the message.
+    ``reasoning_content`` is the wire spelling, which is what arrives on a message replayed
+    from a backend that reports reasoning there and on one built by the Messages bridge.
     """
     reasoning = message.get("reasoning")
     if isinstance(reasoning, str):
         return reasoning
     if isinstance(reasoning, dict) and isinstance(content := reasoning.get("content"), str):
         return content
+    if isinstance(reasoning_content := message.get("reasoning_content"), str):
+        return reasoning_content
     return ""
 
 
@@ -176,6 +180,10 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
                 content_blocks: list[dict[str, Any]] = []
                 if thinking_block := _build_anthropic_thinking_block(message):
                     content_blocks.append(thinking_block)
+                # The model's own text belongs in its turn, between the thinking and the tool_use blocks.
+                content = message.get("content")
+                if isinstance(content, str) and content:
+                    content_blocks.append({"type": "text", "text": content})
                 for tool_call in message["tool_calls"]:
                     content_blocks.append(
                         {

@@ -12,7 +12,7 @@ dependencies = [
   "pydantic>2,<3",
   "openai>=2.18.0",
   "openresponses-types>=2.4.0,<3",
-  "anthropic>=0.119.0",
+  "anthropic>=0.119.0,<1",
   "rich",
   "httpx",
   "typing_extensions>=4.5.0",
@@ -39,21 +39,21 @@ mistral = [
 anthropic = []
 
 gemini = [
-  "google-genai>=1.51.0",
+  "google-genai>=1.70.0",
   "google-cloud-storage",
 ]
 
 vertexai = [
-  "google-genai>=1.51.0",
+  "google-genai>=1.70.0",
   "google-cloud-storage",
 ]
 
 vertexaianthropic = [
-  "anthropic[vertex]>=0.119.0",
+  "anthropic[vertex]>=0.119.0,<1",
 ]
 
 azureanthropic = [
-  "anthropic>=0.119.0",
+  "anthropic>=0.119.0,<1",
 ]
 
 huggingface = [
@@ -97,7 +97,7 @@ voyage = [
 ]
 
 xai = [
-  "xai-sdk>=1.0.1",
+  "xai-sdk>=1.6.0",
 ]
 
 sagemaker = [
@@ -274,7 +274,7 @@ docs = [
 
 
 lint = [
-  "pre-commit==4.6.1",
+  "pre-commit==4.6.2",
   "pre-commit-uv==4.3.0",
   "mypy",
   "types-aiofiles",
@@ -291,7 +291,7 @@ tests = [
   "pytest-timeout",
   "debugpy",
   "aiofiles",
-
+  "httpx2",
 ]
 
 # For completeness, but 'uv sync --group dev' currently installs the others too.

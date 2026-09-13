@@ -10,12 +10,13 @@ from google.genai import types
 from google.genai.pagers import Pager
 from pydantic import ValidationError
 
-from any_llm.exceptions import InvalidRequestError
+from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.logging import logger
 from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.completion import (
     ChatCompletionChunk,
     ChoiceDelta,
+    ChoiceDeltaAudio,
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
     ChunkChoice,
@@ -23,6 +24,7 @@ from any_llm.types.completion import (
     CompletionUsage,
     CreateEmbeddingResponse,
     Embedding,
+    ImageContent,
     PromptTokensDetails,
     Reasoning,
     Usage,
@@ -46,6 +48,24 @@ def _has_json_schema_refs(schema: Any) -> bool:
         return any(_has_json_schema_refs(v) for v in schema.values())
     if isinstance(schema, list):
         return any(_has_json_schema_refs(v) for v in schema)
+    return False
+
+
+def _has_type_unions(schema: Any) -> bool:
+    """Return True if *schema* declares a type as a list, e.g. ``["string", "null"]``.
+
+    ``google.genai.types.Schema.type`` is a single ``types.Type`` enum, so the OpenAPI
+    3.0 shape cannot express a union and the API rejects the request. JSON Schema does
+    allow the list form, so such schemas must be routed through
+    ``FunctionDeclaration.parameters_json_schema``, which the SDK forwards to the
+    server as raw JSON Schema.
+    """
+    if isinstance(schema, dict):
+        if isinstance(schema.get("type"), list):
+            return True
+        return any(_has_type_unions(v) for v in schema.values())
+    if isinstance(schema, list):
+        return any(_has_type_unions(v) for v in schema)
     return False
 
 
@@ -86,7 +106,7 @@ def _convert_tool_spec(tools: list[dict[str, Any] | Any], provider_name: str) ->
         function = tool["function"]
         params: dict[str, Any] = function.get("parameters") or {}
 
-        if _has_json_schema_refs(params):
+        if _has_json_schema_refs(params) or _has_type_unions(params):
             function_declarations.append(
                 types.FunctionDeclaration(
                     name=function["name"],
@@ -128,13 +148,48 @@ def _convert_tool_spec(tools: list[dict[str, Any] | Any], provider_name: str) ->
     return converted_tools
 
 
-def _convert_tool_choice(tool_choice: str) -> types.ToolConfig:
+def _convert_tool_choice(tool_choice: str | dict[str, Any], provider_name: str) -> types.ToolConfig:
+    error_message = "tool_choice"
+    additional_message = f"Unsupported tool_choice: {tool_choice}"
+
+    if isinstance(tool_choice, dict):
+        if tool_choice.get("type") == "allowed_tools":
+            allowed = tool_choice.get("allowed_tools")
+            # Gemini only honors allowed_function_names in ANY mode, so mode="auto" has no equivalent.
+            if not isinstance(allowed, dict) or allowed.get("mode") != "required":
+                raise UnsupportedParameterError(error_message, provider_name, additional_message)
+            allowed_tools = allowed.get("tools")
+            if not isinstance(allowed_tools, list):
+                raise UnsupportedParameterError(error_message, provider_name, additional_message)
+            # Every entry is kept so that an unusable one fails the name check below rather than
+            # being dropped, which would silently narrow the set of tools the caller asked for.
+            functions = [
+                tool.get("function") if isinstance(tool, dict) and tool.get("type") == "function" else None
+                for tool in allowed_tools
+            ]
+        else:
+            functions = [tool_choice.get("function")] if tool_choice.get("type") == "function" else []
+        raw_names = [function.get("name") if isinstance(function, dict) else None for function in functions]
+        names = [name for name in raw_names if isinstance(name, str) and name]
+        if not names or len(names) != len(raw_names):
+            raise UnsupportedParameterError(error_message, provider_name, additional_message)
+        return types.ToolConfig(
+            function_calling_config=types.FunctionCallingConfig(
+                mode=types.FunctionCallingConfigMode.ANY,
+                allowed_function_names=names,
+            )
+        )
+
     tool_choice_to_mode = {
         "required": types.FunctionCallingConfigMode.ANY,
         "auto": types.FunctionCallingConfigMode.AUTO,
+        "none": types.FunctionCallingConfigMode.NONE,
     }
+    mode = tool_choice_to_mode.get(tool_choice)
+    if mode is None:
+        raise UnsupportedParameterError(error_message, provider_name, additional_message)
 
-    return types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode=tool_choice_to_mode[tool_choice]))
+    return types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode=mode))
 
 
 def _parse_data_uri(data_uri: str, field_name: str, provider_name: str) -> tuple[str, bytes]:
@@ -271,18 +326,34 @@ def _convert_messages(
                         logger.debug("Skipping unsupported Gemini content block type: %s", content.get("type"))
             formatted_messages.append(types.Content(role="user", parts=parts))
         elif message["role"] == "assistant":
+            parts = []
+            # The model's own text belongs in its turn, ahead of any function calls it made.
+            content = message.get("content")
+            has_text = isinstance(content, str) and content
+            if has_text or not message.get("tool_calls"):
+                parts.append(
+                    types.Part(
+                        text=content,
+                        # The SDK field is typed bytes but its validator decodes a base64 str.
+                        thought_signature=cast(
+                            "bytes | None", _extract_google_thought_signature(message, provider_name)
+                        ),
+                    )
+                )
             if message.get("tool_calls"):
-                parts = []
                 for i, tool_call in enumerate(message["tool_calls"]):
                     function_call = tool_call["function"]
                     if tool_call_id := tool_call.get("id"):
                         tool_names[tool_call_id] = function_call["name"]
                     arguments = function_call.get("arguments")
-                    args = (
-                        json.loads(arguments)
-                        if isinstance(arguments, (str, bytes, bytearray)) and arguments
-                        else arguments or {}
-                    )
+                    if isinstance(arguments, (str, bytes, bytearray)) and arguments:
+                        try:
+                            args = json.loads(arguments)
+                        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                            msg = f"Tool call arguments for {function_call['name']!r} must be valid JSON"
+                            raise InvalidRequestError(msg, exc, provider_name) from exc
+                    else:
+                        args = arguments or {}
 
                     # Extract thought_signature if present (OpenAI compatibility format)
                     # SDK accepts base64 string or bytes
@@ -300,16 +371,6 @@ def _convert_messages(
                             thought_signature=cast("bytes | None", thought_signature),
                         )
                     )
-            else:
-                parts = [
-                    types.Part(
-                        text=message["content"],
-                        # The SDK field is typed bytes but its validator decodes a base64 str.
-                        thought_signature=cast(
-                            "bytes | None", _extract_google_thought_signature(message, provider_name)
-                        ),
-                    )
-                ]
 
             formatted_messages.append(types.Content(role="model", parts=parts))
         elif message["role"] == "tool":
@@ -331,19 +392,20 @@ def _normalize_tool_response(response: Any) -> dict[str, Any]:
 
 
 def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, Any]:
-    """Extract usage from a Gemini response as a dict.
+    """Extract Gemini usage using OpenAI-compatible inclusive token counts.
 
     Gemini's ``prompt_token_count`` already includes cached tokens
-    (``cached_content_token_count`` is a subset).
+    (``cached_content_token_count`` is a subset). Gemini reports tool-use prompt
+    tokens and thinking tokens separately, while OpenAI includes those categories
+    in ``prompt_tokens`` and ``completion_tokens`` respectively.
 
-    Reference: https://ai.google.dev/gemini-api/docs/caching
+    Reference: https://ai.google.dev/api/generate-content#UsageMetadata
     """
     metadata = response.usage_metadata
     if metadata is None:
         return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     usage: dict[str, Any] = {
-        "prompt_tokens": metadata.prompt_token_count or 0,
-        # thoughts_token_count is billed output and already counted in total_token_count
+        "prompt_tokens": (metadata.prompt_token_count or 0) + (metadata.tool_use_prompt_token_count or 0),
         "completion_tokens": (metadata.candidates_token_count or 0) + (metadata.thoughts_token_count or 0),
         "total_tokens": metadata.total_token_count or 0,
     }
@@ -363,6 +425,86 @@ def _thought_signature_extra_content(part: types.Part) -> dict[str, Any] | None:
     if part.thought_signature is not None and isinstance(part.thought_signature, bytes):
         return {"google": {"thought_signature": base64.b64encode(part.thought_signature).decode("utf-8")}}
     return None
+
+
+def _inline_data_image(part: types.Part) -> dict[str, Any] | None:
+    """Convert Gemini inline data into an OpenAI-compatible data URL."""
+    blob = part.inline_data
+    if (
+        blob is None
+        or not isinstance(blob.data, bytes)
+        or not blob.data
+        or not isinstance(blob.mime_type, str)
+        or not blob.mime_type.startswith("image/")
+    ):
+        return None
+    return {
+        "type": "image_url",
+        "image_url": {"url": f"data:{blob.mime_type};base64,{base64.b64encode(blob.data).decode('ascii')}"},
+    }
+
+
+def _inline_audio_blob(part: types.Part) -> types.Blob | None:
+    """Return the part's non-empty audio blob, if it has one."""
+    blob = part.inline_data
+    if (
+        blob is None
+        or not isinstance(blob.data, bytes)
+        or not blob.data
+        or not isinstance(blob.mime_type, str)
+        or not blob.mime_type.startswith("audio/")
+    ):
+        return None
+    return blob
+
+
+def _wav_from_pcm(pcm: bytes, mime_type: str) -> bytes:
+    """Wrap headerless 16-bit mono PCM in a WAV header."""
+    rate = 24000
+    for parameter in mime_type.split(";"):
+        parameter = parameter.strip()
+        if parameter.startswith("rate="):
+            with suppress(ValueError):
+                parsed_rate = int(parameter.removeprefix("rate="))
+                if parsed_rate > 0:
+                    rate = parsed_rate
+            break
+    return (
+        b"RIFF"
+        + (36 + len(pcm)).to_bytes(4, "little")
+        + b"WAVE"
+        + b"fmt "
+        + (16).to_bytes(4, "little")
+        + (1).to_bytes(2, "little")
+        + (1).to_bytes(2, "little")
+        + rate.to_bytes(4, "little")
+        + (rate * 2).to_bytes(4, "little")
+        + (2).to_bytes(2, "little")
+        + (16).to_bytes(2, "little")
+        + b"data"
+        + len(pcm).to_bytes(4, "little")
+        + pcm
+    )
+
+
+def _inline_data_audio(blobs: list[types.Blob], transcript: str, *, playable: bool) -> dict[str, Any] | None:
+    """Convert Gemini audio blobs into an OpenAI-compatible audio object.
+
+    Complete audio/L16 responses are wrapped as WAV so the sample rate from the MIME
+    type is retained. Streaming chunks stay raw because their total length is unknown.
+    """
+    if not blobs:
+        return None
+    data = b"".join(cast("bytes", blob.data) for blob in blobs)
+    mime_type = cast("str", blobs[0].mime_type)
+    if playable and mime_type.startswith("audio/L16"):
+        data = _wav_from_pcm(data, mime_type)
+    return {
+        "id": "google_genai_audio",
+        "data": base64.b64encode(data).decode("ascii"),
+        "expires_at": 0,
+        "transcript": transcript,
+    }
 
 
 _FINISH_REASON_MAP: dict[types.FinishReason, Literal["stop", "length", "content_filter"]] = {
@@ -432,15 +574,17 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
         reasoning = None
         tool_calls_list: list[dict[str, Any]] = []
         text_content = None
+        images: list[dict[str, Any]] = []
+        audio_blobs: list[types.Blob] = []
         # Gemini 3 signs the last non-function-call part of a text answer. It rides message.extra_content,
         # the same spelling Google's OpenAI-compatible endpoint uses.
         message_extra_content = None
         parts = candidate.content.parts if candidate.content else None
 
         for part in parts or []:
-            if getattr(part, "thought", None):
+            if part.thought:
                 reasoning = (reasoning or "") + (part.text or "")
-            elif function_call := getattr(part, "function_call", None):
+            elif function_call := part.function_call:
                 args_dict = {}
                 if args := getattr(function_call, "args", None):
                     for key, value in args.items():
@@ -461,21 +605,29 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
 
                 tool_calls_list.append(tool_call_dict)
             else:
+                if image := _inline_data_image(part):
+                    images.append(image)
+                if audio_blob := _inline_audio_blob(part):
+                    audio_blobs.append(audio_blob)
                 if part.text:
                     text_content = (text_content or "") + part.text
                 message_extra_content = _thought_signature_extra_content(part) or message_extra_content
 
+        audio = _inline_data_audio(audio_blobs, text_content or "", playable=True)
+
         # Truncated or filtered responses produce a choice even without content or tool
         # calls, e.g. a thinking model that spent the whole max_output_tokens budget on
         # reasoning, so callers see the terminal reason instead of an empty choices list.
-        if tool_calls_list or text_content or mapped_finish_reason in ("length", "content_filter"):
+        if tool_calls_list or text_content or images or audio or mapped_finish_reason in ("length", "content_filter"):
             choices.append(
                 {
                     "message": {
                         "role": "assistant",
-                        "content": None if tool_calls_list else text_content,
+                        "content": text_content,
                         "reasoning": reasoning or None,
                         "tool_calls": tool_calls_list or None,
+                        "images": images or None,
+                        "audio": audio,
                         "extra_content": message_extra_content,
                         "refusal": _GEMINI_CONTENT_FILTER_REFUSAL if mapped_finish_reason == "content_filter" else None,
                     },
@@ -553,6 +705,8 @@ def _create_openai_chunk_from_google_chunk(
     reasoning_content = ""
     tool_calls_list: list[ChoiceDeltaToolCall] = []
     message_extra_content = None
+    images: list[dict[str, Any]] = []
+    audio_blobs: list[types.Blob] = []
 
     # Content can be absent on terminal chunks, e.g. when the response is truncated or
     # filtered before any part is produced; the finish reason must still be surfaced.
@@ -587,8 +741,16 @@ def _create_openai_chunk_from_google_chunk(
                 )
             )
         else:
+            if image := _inline_data_image(part):
+                images.append(image)
+            if audio_blob := _inline_audio_blob(part):
+                audio_blobs.append(audio_blob)
             content += part.text or ""  # the signed final part may carry empty text
             message_extra_content = _thought_signature_extra_content(part) or message_extra_content
+
+    audio = None
+    if converted_audio := _inline_data_audio(audio_blobs, content, playable=False):
+        audio = ChoiceDeltaAudio(data=converted_audio["data"], transcript=converted_audio["transcript"] or None)
 
     # Unmapped reasons stay None so non-final chunks are not forced to a terminal reason.
     mapped_finish_reason = _map_finish_reason(candidate.finish_reason) if candidate else None
@@ -604,6 +766,8 @@ def _create_openai_chunk_from_google_chunk(
         reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
         tool_calls=tool_calls_list or None,
         extra_content=message_extra_content,
+        images=cast("list[ImageContent] | None", images or None),
+        audio=audio,
     )
 
     choice = ChunkChoice(
@@ -617,7 +781,8 @@ def _create_openai_chunk_from_google_chunk(
         cached_tokens = response.usage_metadata.cached_content_token_count
         thought_tokens = response.usage_metadata.thoughts_token_count
         usage = CompletionUsage(
-            prompt_tokens=response.usage_metadata.prompt_token_count or 0,
+            prompt_tokens=(response.usage_metadata.prompt_token_count or 0)
+            + (response.usage_metadata.tool_use_prompt_token_count or 0),
             completion_tokens=(response.usage_metadata.candidates_token_count or 0) + (thought_tokens or 0),
             total_tokens=response.usage_metadata.total_token_count or 0,
             prompt_tokens_details=PromptTokensDetails(cached_tokens=cached_tokens) if cached_tokens else None,

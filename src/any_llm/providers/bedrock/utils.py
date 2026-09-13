@@ -36,6 +36,23 @@ INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
 # Titan, Llama, ...) have no equivalent verified mechanism, so they keep raising.
 _STRUCTURED_OUTPUT_TOOL_NAME = "any_llm_structured_output"
 
+_FinishReason = Literal["stop", "length", "tool_calls", "content_filter", "function_call"]
+
+# The Converse API reports nine stop reasons (botocore's bedrock-runtime service model, shape
+# "StopReason"). OpenAI has no counterpart for "stop_sequence", "malformed_model_output" and
+# "malformed_tool_use", so those fall through to the "stop" default along with any reason a
+# future service model adds. The rest do have one, and without it a guardrail block or a
+# context overflow looks like a normal completion to callers, including the structured-output
+# guard in any_llm.py that is supposed to raise ContentFilterFinishReasonError.
+BEDROCK_STOP_REASON_TO_FINISH_REASON: dict[str, _FinishReason] = {
+    "end_turn": "stop",
+    "max_tokens": "length",
+    "model_context_window_exceeded": "length",
+    "tool_use": "tool_calls",
+    "content_filtered": "content_filter",
+    "guardrail_intervened": "content_filter",
+}
+
 REASONING_EFFORT_TO_THINKING_BUDGETS = {
     "minimal": 1024,
     "low": 2048,
@@ -44,6 +61,13 @@ REASONING_EFFORT_TO_THINKING_BUDGETS = {
     "xhigh": 32768,
     "max": 32768,
 }
+
+
+def _map_stop_reason(stop_reason: Any) -> _FinishReason:
+    """Map a Converse API stopReason onto the OpenAI finish_reason vocabulary."""
+    if not isinstance(stop_reason, str):
+        return "stop"
+    return BEDROCK_STOP_REASON_TO_FINISH_REASON.get(stop_reason, "stop")
 
 
 def _is_anthropic_model(model_id: str) -> bool:
@@ -294,7 +318,8 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, An
 
     Bedrock requires that consecutive tool results are merged into a single user message.
     This is necessary because Bedrock expects all toolResult blocks that correspond to
-    tool calls from a single assistant message to be grouped together.
+    tool calls from a single assistant message to be grouped together. Consecutive user
+    messages are merged for the same reason: Bedrock rejects two user turns in a row.
     """
     system_message = []
     if messages and messages[0]["role"] == "system":
@@ -332,12 +357,19 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, An
             else:
                 # Simple text content
                 converted_content = [{"text": content}]
-            formatted_messages.append(
-                {
-                    "role": message["role"],
-                    "content": converted_content,
-                }
-            )
+            # Bedrock requires alternating roles, so a user turn landing straight after another
+            # one extends it instead of starting a second. Reachable whenever a user message
+            # follows a tool-result flush, as it does for an attachment carried out of a tool
+            # result by the Anthropic Messages bridge.
+            if formatted_messages and formatted_messages[-1]["role"] == "user":
+                formatted_messages[-1]["content"].extend(converted_content)
+            else:
+                formatted_messages.append(
+                    {
+                        "role": message["role"],
+                        "content": converted_content,
+                    }
+                )
 
     # Flush any remaining tool results at the end
     flush_tool_results()
@@ -513,8 +545,7 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
         )
 
     content = "".join(content_parts)
-    stop_reason = response.get("stopReason")
-    finish_reason: Literal["stop", "length"] = "length" if stop_reason == "max_tokens" else "stop"
+    finish_reason = _map_stop_reason(response.get("stopReason"))
 
     message = ChatCompletionMessage(
         role="assistant",
@@ -526,9 +557,7 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
     choices_out.append(
         Choice(
             index=0,
-            finish_reason=cast(
-                "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']", finish_reason
-            ),
+            finish_reason=finish_reason,
             message=message,
         )
     )
@@ -562,7 +591,7 @@ def _create_openai_chunk_from_aws_chunk(
 
     content: str | None = None
     reasoning_content: str | None = None
-    finish_reason: Literal["stop", "length", "tool_calls"] | None = None
+    finish_reason: _FinishReason | None = None
     tool_call: ChoiceDeltaToolCall | None = None
     usage: CompletionUsage | None = None
 
@@ -608,13 +637,7 @@ def _create_openai_chunk_from_aws_chunk(
                 ),
             )
     elif "messageStop" in chunk:
-        stop_reason = chunk["messageStop"]["stopReason"]
-        if stop_reason == "max_tokens":
-            finish_reason = "length"
-        elif stop_reason == "tool_use":
-            finish_reason = "tool_calls"
-        else:
-            finish_reason = "stop"
+        finish_reason = _map_stop_reason(chunk["messageStop"]["stopReason"])
     elif "messageStart" in chunk:
         content = ""
     elif "metadata" in chunk:

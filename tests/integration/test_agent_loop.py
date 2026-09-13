@@ -1,4 +1,8 @@
+import inspect
 import json
+import re
+import warnings
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -13,8 +17,6 @@ from any_llm.exceptions import MissingApiKeyError
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
 
 
@@ -32,12 +34,51 @@ def get_weather(location: str) -> str:
     return json.dumps({"location": location, "temperature": "15C", "condition": "sunny"})
 
 
+def _call_tool(tool_fn: Callable[..., str], args: dict[str, Any]) -> str:
+    """Call a model-selected tool without passing arguments it does not accept."""
+    accepted = inspect.signature(tool_fn).parameters
+    unexpected = set(args) - set(accepted)
+    if unexpected:
+        warnings.warn(
+            f"Ignoring unexpected arguments for {tool_fn.__name__}: {', '.join(sorted(unexpected))}",
+            UserWarning,
+            stacklevel=2,
+        )
+    return tool_fn(**{name: value for name, value in args.items() if name in accepted})
+
+
+def _mentions_tool_result(content: str | None) -> bool:
+    """The weather tool returns 15C and sunny, so an answer built on it repeats one of them.
+
+    ``15`` must not run into another digit, so ``150F`` does not count; ``15C``, ``15°C`` and
+    ``15 degrees`` all do.
+    """
+    return content is not None and re.search(r"\b15(?!\d)|\bsunny\b", content, re.IGNORECASE) is not None
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        (None, False),
+        ("", False),
+        ("It rains in Paris.", False),
+        ("It is 150F in Paris.", False),
+        ("It is 15C in Paris.", True),
+        ("It is 15°C in Paris.", True),
+        ("Sunny in London.", True),
+    ],
+)
+def test_mentions_tool_result(content: str | None, expected: bool) -> None:
+    assert _mentions_tool_result(content) is expected
+
+
 @pytest.mark.asyncio
 async def test_agent_loop_parallel_tool_calls(
     provider: LLMProvider,
     provider_model_map: dict[LLMProvider, str],
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
+    """Execute multiple model-selected tool calls and return their results."""
     if provider in (*LOCAL_PROVIDERS, LLMProvider.PERPLEXITY):
         pytest.skip(f"{provider} does not support tools, skipping")
 
@@ -70,14 +111,13 @@ async def test_agent_loop_parallel_tool_calls(
                 continue
             assert tool_call.function.name == "get_weather"
             args = json.loads(tool_call.function.arguments)
-            tool_result = get_weather(**args)
+            tool_result = _call_tool(get_weather, args)
 
             messages.append(
                 {
                     "role": "tool",
                     "content": tool_result,
                     "tool_call_id": tool_call.id,
-                    "name": tool_call.function.name,
                 }
             )
 
@@ -87,7 +127,8 @@ async def test_agent_loop_parallel_tool_calls(
             tools=[get_weather],
         )
 
-        assert second_result.choices[0].message.content is not None or second_result.choices[0].message.tool_calls
+        message = second_result.choices[0].message
+        assert _mentions_tool_result(message.content), f"Expected an answer from the tool results, got: {message}"
 
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:
@@ -105,6 +146,7 @@ async def test_agent_loop_sequential_tool_calls(
     provider_model_map: dict[LLMProvider, str],
     provider_client_config: dict[LLMProvider, dict[str, Any]],
 ) -> None:
+    """Execute model-selected tools over several agent-loop iterations."""
     if provider in (*LOCAL_PROVIDERS, LLMProvider.PERPLEXITY):
         pytest.skip(f"{provider} does not support tools, skipping")
 
@@ -128,11 +170,9 @@ async def test_agent_loop_sequential_tool_calls(
         }
 
         max_iterations = 5
-        iteration = 0
+        answered = False
 
-        while iteration < max_iterations:
-            iteration += 1
-
+        for _ in range(max_iterations):
             result: ChatCompletion = await llm.acompletion(
                 model=model_id,
                 messages=messages,
@@ -142,7 +182,11 @@ async def test_agent_loop_sequential_tool_calls(
             tool_calls = result.choices[0].message.tool_calls
 
             if tool_calls is None:
-                assert result.choices[0].message.content is not None
+                message = result.choices[0].message
+                assert _mentions_tool_result(message.content), (
+                    f"Expected an answer from the tool results, got: {message}"
+                )
+                answered = True
                 break
 
             messages.append(result.choices[0].message)
@@ -155,18 +199,19 @@ async def test_agent_loop_sequential_tool_calls(
                 tool_fn = available_tools[tool_name]
 
                 args = json.loads(tool_call.function.arguments) if tool_call.function.arguments else {}
-                tool_result = tool_fn(**args)
+                tool_result = _call_tool(tool_fn, args)
 
+                # Callers may still send name on tool messages, so one loop keeps that shape on the wire.
                 messages.append(
                     {
                         "role": "tool",
                         "content": tool_result,
                         "tool_call_id": tool_call.id,
-                        "name": tool_call.function.name,
+                        "name": tool_name,
                     }
                 )
 
-        assert iteration <= max_iterations, "Agent loop did not complete within max iterations"
+        assert answered, "Agent loop did not answer within max iterations"
 
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:

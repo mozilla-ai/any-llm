@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from typing import Any, Self, cast
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
-import httpx2 as httpx
+import httpx
 import pytest
+from anthropic import transform_schema
 from anthropic.types import Message, TextBlock, ThinkingBlock, ToolUseBlock, Usage
 from anthropic.types.beta import BetaMCPToolUseBlock, BetaMessage, BetaThinkingBlock, BetaUsage
 from pydantic import BaseModel
@@ -16,6 +17,7 @@ from pydantic import BaseModel
 from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.base import BaseAnthropicProvider, _messages_betas, _pop_anthropic_beta_header
+from any_llm.types.completion import CompletionParams
 from any_llm.types.messages import (
     CompactionDelta,
     ContentBlockDeltaEvent,
@@ -64,6 +66,19 @@ def _make_message(**overrides: Any) -> Message:
     }
     defaults.update(overrides)
     return Message(**defaults)
+
+
+def _sdk_message_response() -> dict[str, Any]:
+    return {
+        "id": "msg_test123",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-3-5-sonnet",
+        "stop_reason": "end_turn",
+        "stop_sequence": None,
+        "content": [{"type": "text", "text": "Hello!"}],
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+    }
 
 
 def test_convert_native_message_to_response_text() -> None:
@@ -245,6 +260,7 @@ async def test_amessages_non_streaming() -> None:
         model="claude-3-5-sonnet",
         messages=[{"role": "user", "content": "Hello"}],
         max_tokens=1024,
+        container="container_123",
     )
     result = await BaseAnthropicProvider._amessages(provider, params)
     assert isinstance(result, MessageResponse)
@@ -256,6 +272,66 @@ async def test_amessages_non_streaming() -> None:
     call_kwargs = mock_client.messages.create.call_args.kwargs
     assert call_kwargs["model"] == "claude-3-5-sonnet"
     assert call_kwargs["max_tokens"] == 1024
+    assert call_kwargs["container"] == "container_123"
+
+
+@pytest.mark.asyncio
+async def test_anthropic_sdk_accepts_completion_sampling_parameters() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=_sdk_message_response())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+        await provider._acompletion(
+            CompletionParams(
+                model_id="claude-3-5-sonnet",
+                messages=[{"role": "user", "content": "Hello"}],
+                max_tokens=1024,
+                temperature=0.7,
+                top_p=0.9,
+            )
+        )
+
+    assert len(requests) == 1
+    request_body = json.loads(requests[0].content)
+    assert request_body["temperature"] == 0.7
+    assert request_body["top_p"] == 0.9
+
+
+@pytest.mark.asyncio
+async def test_anthropic_sdk_accepts_native_messages_parameters() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=_sdk_message_response())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+        result = await provider._amessages(
+            MessagesParams(
+                model="claude-3-5-sonnet",
+                messages=[{"role": "user", "content": "Hello"}],
+                max_tokens=1024,
+                temperature=0.7,
+                top_p=0.9,
+                top_k=40,
+                container="container_123",
+                service_tier="standard_only",
+            )
+        )
+
+    assert isinstance(result, MessageResponse)
+    assert len(requests) == 1
+    request_body = json.loads(requests[0].content)
+    assert request_body["temperature"] == 0.7
+    assert request_body["top_p"] == 0.9
+    assert request_body["top_k"] == 40
+    assert request_body["container"] == "container_123"
+    assert request_body["service_tier"] == "standard_only"
 
 
 @pytest.mark.asyncio
@@ -1007,6 +1083,80 @@ async def test_amessages_output_format_uses_native_parse() -> None:
 
 
 @pytest.mark.asyncio
+async def test_amessages_bare_output_format_object_is_nested_before_create() -> None:
+    """The bare format object is wrapped before the native call, which requires the nesting.
+
+    The bridge accepts either shape, so the field would otherwise mean two different things
+    depending on which provider served the request.
+    """
+    mock_message = _make_message(content=[TextBlock(type="text", text='{"city_name": "Paris"}')])
+
+    mock_client = Mock()
+    mock_client.messages.create = AsyncMock(return_value=mock_message)
+    mock_client.messages.parse = AsyncMock()
+
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = mock_client
+    provider._convert_native_message_to_response = BaseAnthropicProvider._convert_native_message_to_response
+
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=1024,
+        output_format={"type": "json_schema", "schema": {"type": "object"}},
+    )
+    await BaseAnthropicProvider._amessages(provider, params)
+
+    call_kwargs = mock_client.messages.create.call_args.kwargs
+    assert call_kwargs["output_config"] == {"format": {"type": "json_schema", "schema": {"type": "object"}}}
+
+
+@pytest.mark.asyncio
+async def test_amessages_effort_only_output_config_reaches_create() -> None:
+    """Every output_config field is optional, so effort alone is a valid native request."""
+    mock_message = _make_message(content=[TextBlock(type="text", text="Paris")])
+
+    mock_client = Mock()
+    mock_client.messages.create = AsyncMock(return_value=mock_message)
+    mock_client.messages.parse = AsyncMock()
+
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = mock_client
+    provider._convert_native_message_to_response = BaseAnthropicProvider._convert_native_message_to_response
+
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=1024,
+        output_format={"effort": "high"},
+    )
+    await BaseAnthropicProvider._amessages(provider, params)
+
+    assert mock_client.messages.create.call_args.kwargs["output_config"] == {"effort": "high"}
+
+
+@pytest.mark.asyncio
+async def test_amessages_non_object_format_raises() -> None:
+    """A format value that is not an object is rejected rather than re-nested."""
+    mock_client = Mock()
+    mock_client.messages.create = AsyncMock()
+    mock_client.messages.parse = AsyncMock()
+
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = mock_client
+
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=1024,
+        output_format={"format": "json_schema"},
+    )
+    with pytest.raises(InvalidRequestError, match="non-object format value"):
+        await BaseAnthropicProvider._amessages(provider, params)
+    mock_client.messages.create.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_amessages_output_config_dict_passes_through_to_create() -> None:
     """A raw output_config dict goes to native messages.create(output_config=...), not parse."""
     output_config = {"format": {"type": "json_schema", "schema": {"type": "object"}}}
@@ -1037,6 +1187,195 @@ async def test_amessages_output_config_dict_passes_through_to_create() -> None:
     assert "output_format" not in call_kwargs
     assert call_kwargs["model"] == "claude-3-5-sonnet"
     assert call_kwargs["max_tokens"] == 1024
+
+
+@pytest.mark.asyncio
+async def test_amessages_output_config_dict_streams_with_anthropic_fields() -> None:
+    output_config = {"format": {"type": "json_schema", "schema": {"type": "object"}}}
+    stream_result = AsyncMock()
+    mock_client = Mock()
+    mock_client.beta.messages.create = AsyncMock(
+        return_value=_make_message(content=[TextBlock(type="text", text="{}")])
+    )
+
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = mock_client
+    provider._stream_messages_async = Mock(return_value=stream_result)
+    provider._convert_native_message_to_response = BaseAnthropicProvider._convert_native_message_to_response
+    context_management = {"edits": [{"type": "compact_20260112"}]}
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=1024,
+        stream=True,
+        output_format=output_config,
+        context_management=context_management,
+        betas=["compact-2026-01-12"],
+        cache_control={"type": "ephemeral"},
+    )
+
+    result = await BaseAnthropicProvider._amessages(provider, params)
+
+    assert result is stream_result
+    provider._stream_messages_async.assert_called_once()
+    call_kwargs = provider._stream_messages_async.call_args.kwargs
+    assert call_kwargs["use_beta"] is True
+    assert call_kwargs["output_config"] == output_config
+    assert call_kwargs["context_management"] == context_management
+    assert call_kwargs["betas"] == ["compact-2026-01-12"]
+    assert call_kwargs["cache_control"] == {"type": "ephemeral"}
+    mock_client.beta.messages.create.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_amessages_bare_output_config_is_normalized_for_streaming() -> None:
+    output_format = {"type": "json_schema", "schema": {"type": "object"}}
+    stream_result = AsyncMock()
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = Mock()
+    provider._stream_messages_async = Mock(return_value=stream_result)
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=1024,
+        stream=True,
+        output_format=output_format,
+    )
+
+    result = await BaseAnthropicProvider._amessages(provider, params)
+
+    assert result is stream_result
+    call_kwargs = provider._stream_messages_async.call_args.kwargs
+    assert call_kwargs["output_config"] == {"format": output_format}
+
+
+@pytest.mark.asyncio
+async def test_amessages_typed_output_format_streams_with_sdk_parser() -> None:
+    class City(BaseModel):
+        city: str
+
+    stream_result = AsyncMock()
+    mock_client = Mock()
+    mock_client.messages.parse = AsyncMock(
+        return_value=_make_message(content=[TextBlock(type="text", text='{"city": "Paris"}')])
+    )
+
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = mock_client
+    provider._stream_messages_async = Mock(return_value=stream_result)
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=1024,
+        stream=True,
+        output_format=City,
+    )
+
+    result = await BaseAnthropicProvider._amessages(provider, params)
+
+    assert result is stream_result
+    call_kwargs = provider._stream_messages_async.call_args.kwargs
+    assert call_kwargs["use_beta"] is False
+    assert call_kwargs["output_format"] is City
+    mock_client.messages.parse.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_anthropic_provider_allows_streaming_output_format() -> None:
+    class City(BaseModel):
+        city: str
+
+    async def events() -> AsyncIterator[MessageStopEvent]:
+        yield MessageStopEvent(type="message_stop")
+
+    with patch("any_llm.providers.anthropic.anthropic.AsyncAnthropic"):
+        provider = AnthropicProvider(api_key="test-key")
+    provider._stream_messages_async = Mock(return_value=events())  # type: ignore[method-assign]
+
+    result = await provider.amessages(
+        model="claude-3-5-sonnet",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=1024,
+        stream=True,
+        output_format=City,
+    )
+    collected = [event async for event in cast("AsyncIterator[MessageStopEvent]", result)]
+
+    assert [event.type for event in collected] == ["message_stop"]
+
+
+@pytest.mark.asyncio
+async def test_amessages_typed_output_format_streams_through_sdk_transport() -> None:
+    class City(BaseModel):
+        city: str
+
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        events = [
+            (
+                "message_start",
+                {
+                    "type": "message_start",
+                    "message": {
+                        "id": "msg_structured",
+                        "type": "message",
+                        "role": "assistant",
+                        "model": "claude-3-5-sonnet",
+                        "stop_reason": None,
+                        "stop_sequence": None,
+                        "content": [],
+                        "usage": {"input_tokens": 1, "output_tokens": 0},
+                    },
+                },
+            ),
+            (
+                "content_block_start",
+                {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+            ),
+            (
+                "content_block_delta",
+                {
+                    "type": "content_block_delta",
+                    "index": 0,
+                    "delta": {"type": "text_delta", "text": '{"city":"Paris"}'},
+                },
+            ),
+            ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+            (
+                "message_delta",
+                {
+                    "type": "message_delta",
+                    "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+                    "usage": {"output_tokens": 1},
+                },
+            ),
+            ("message_stop", {"type": "message_stop"}),
+        ]
+        body = "".join(f"event: {name}\ndata: {json.dumps(payload)}\n\n" for name, payload in events)
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body.encode())
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+    try:
+        result = await provider.amessages(
+            model="claude-3-5-sonnet",
+            messages=[{"role": "user", "content": "Capital of France?"}],
+            max_tokens=1024,
+            stream=True,
+            output_format=City,
+        )
+        collected = [event async for event in cast("AsyncIterator[Any]", result)]
+    finally:
+        await http_client.aclose()
+
+    assert collected[-1].type == "message_stop"
+    assert len(requests) == 1
+    request_body = json.loads(requests[0].content)
+    assert request_body["output_config"] == {
+        "format": {"type": "json_schema", "schema": transform_schema(City.model_json_schema())}
+    }
 
 
 @pytest.mark.asyncio
@@ -1223,6 +1562,10 @@ async def test_amessages_stream_preserves_accumulated_stop_event_payloads() -> N
 
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.query == b""
+        request_body = json.loads(request.content)
+        assert request_body["temperature"] == 0.7
+        assert request_body["top_p"] == 0.9
+        assert request_body["top_k"] == 40
         events = [
             (
                 "message_start",
@@ -1268,6 +1611,9 @@ async def test_amessages_stream_preserves_accumulated_stop_event_payloads() -> N
         model="claude-opus-5",
         messages=[{"role": "user", "content": "Hello"}],
         max_tokens=1024,
+        temperature=0.7,
+        top_p=0.9,
+        top_k=40,
         stream=True,
     )
 
