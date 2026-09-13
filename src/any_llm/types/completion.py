@@ -73,6 +73,33 @@ class ChatCompletionMessageFunctionToolCall(OpenAIChatCompletionMessageFunctionT
 ChatCompletionMessageToolCall = ChatCompletionMessageFunctionToolCall | OpenAIChatCompletionMessageToolCall
 
 
+class ImageURL(BaseModel):
+    """OpenAI-compatible URL for an image response part."""
+
+    url: str
+
+
+class ImageContent(BaseModel):
+    """OpenAI-compatible image response content."""
+
+    type: Literal["image_url"]
+    image_url: ImageURL
+
+
+class ChoiceDeltaAudio(BaseModel):
+    """Partial audio object emitted by a streaming chat completion.
+
+    Providers may send the identifier, transcript, data, and expiration timestamp in
+    separate chunks, so every field is optional. The data field contains the
+    base64-encoded bytes for the current chunk.
+    """
+
+    id: str | None = None
+    data: str | None = None
+    transcript: str | None = None
+    expires_at: int | None = None
+
+
 class ChatCompletionMessage(OpenAIChatCompletionMessage):
     tool_calls: list[ChatCompletionMessageToolCall] | None = None  # type: ignore[assignment]
     reasoning: Reasoning | None = None
@@ -86,6 +113,8 @@ class ChatCompletionMessage(OpenAIChatCompletionMessage):
     Example extra_content structure for Anthropic:
         {"anthropic": {"signature": "<encrypted-signature>"}}
     """
+
+    images: list[ImageContent] | None = None
 
 
 class Choice(OpenAIChoice):
@@ -132,6 +161,9 @@ class ChoiceDelta(OpenAIChoiceDelta):
     Carries provider-specific metadata (e.g. Anthropic's thinking block ``signature``)
     that arrives as part of a streaming delta rather than the final message.
     """
+
+    images: list[ImageContent] | None = None
+    audio: ChoiceDeltaAudio | None = None
 
 
 class ChunkChoice(OpenAIChunkChoice):

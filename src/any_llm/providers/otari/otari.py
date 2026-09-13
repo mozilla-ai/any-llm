@@ -5,10 +5,11 @@ import json
 import os
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
+from anthropic import transform_schema
 from pydantic import BaseModel
 from typing_extensions import override
 
-from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError
+from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError, UnsupportedParameterError
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.openai.utils import _convert_moderation_response_from_openai
 from any_llm.types.batch import Batch, BatchResult, BatchResultError, BatchResultItem
@@ -36,6 +37,7 @@ from any_llm.utils.structured_output import (
     build_responses_text_format,
     get_json_schema,
     is_structured_output_type,
+    normalize_output_config,
     parse_json_content,
 )
 
@@ -179,6 +181,7 @@ class OtariProvider(BaseOpenAIProvider):
     SUPPORTS_AUDIO_TRANSCRIPTION = True
     SUPPORTS_AUDIO_SPEECH = True
     SUPPORTS_RERANK = True
+    SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING = True
 
     otari_client: Any
 
@@ -348,23 +351,24 @@ class OtariProvider(BaseOpenAIProvider):
         The base implementation converts Messages to Chat Completions, which silently
         drops Anthropic-only features (``cache_control`` on system blocks, ``thinking``
         config). otari's gateway serves /messages natively, so delegate to the otari
-        SDK's ``message()`` to preserve them.
+        SDK's ``message()`` to preserve them. Otari SDK 0.3.0 drops ``container`` while
+        constructing non-streaming requests, so reject it until the supported SDK serializes
+        the field.
         """
-        if params.output_format is not None:
-            # Structured output is handled by the base Messages<->Completions bridge, which
-            # routes output_format through otari's completion path. A follow-up could adopt
-            # otari's native /messages structured-output support directly.
-            if params.context_management is not None or params.betas:
-                msg = (
-                    "output_format cannot be combined with context_management or betas on otari: "
-                    "structured output routes through the Completions bridge, which drops both. "
-                    "Send them in separate requests until otari's native /messages structured "
-                    "output is adopted."
-                )
-                raise NotImplementedError(msg)
-            return await super()._amessages(params, **kwargs)
+        if params.container is not None:
+            parameter_name = "container"
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
 
-        api_kwargs = params.model_dump(exclude_none=True)
+        api_kwargs = params.model_dump(exclude_none=True, exclude={"output_format"})
+        if is_structured_output_type(params.output_format):
+            api_kwargs["output_format"] = {
+                "format": {
+                    "type": "json_schema",
+                    "schema": transform_schema(get_json_schema(params.output_format)),
+                }
+            }
+        elif isinstance(params.output_format, dict):
+            api_kwargs["output_format"] = normalize_output_config(params.output_format)
         api_kwargs.update(kwargs)
         api_kwargs.pop("stream", None)
 
