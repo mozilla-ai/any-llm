@@ -307,7 +307,6 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
             delta["extra_content"] = {"anthropic": {"stop_details": stop_details}}
 
     elif isinstance(chunk, MessageStopEvent):
-        finish_reason = None
         if hasattr(chunk, "message") and chunk.message.usage:
             anthropic_usage = chunk.message.usage
             cache_read = anthropic_usage.cache_read_input_tokens or 0
@@ -319,6 +318,9 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
                 "total_tokens": total_prompt_tokens + anthropic_usage.output_tokens,
                 "prompt_tokens_details": PromptTokensDetails(cached_tokens=cache_read) if cache_read else None,
             }
+        # The stop event carries no delta or finish_reason, only usage. Leave choices
+        # empty so it matches the trailing usage-only chunk OpenAI-compatible providers emit.
+        return ChatCompletionChunk.model_validate(chunk_dict)
 
     choice = {
         "index": 0,
