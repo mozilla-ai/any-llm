@@ -738,7 +738,7 @@ def test_nested_private_loop_is_torn_down_when_closed_on_its_own_thread() -> Non
 
 @pytest.mark.parametrize("on_demand", [False, True])
 @pytest.mark.parametrize("cancel_at_open", [False, True])
-def test_sync_bridge_propagates_source_cancellation(on_demand: bool, cancel_at_open: bool) -> None:
+def test_sync_bridge_source_cancellation_behavior(on_demand: bool, cancel_at_open: bool) -> None:
     cleaned = threading.Event()
     finished = threading.Event()
     errors: list[BaseException] = []
@@ -767,6 +767,36 @@ def test_sync_bridge_propagates_source_cancellation(on_demand: bool, cancel_at_o
     thread.start()
     assert finished.wait(2), "Sync consumer hung after source cancellation"
     thread.join()
-    assert len(errors) == 1
-    assert isinstance(errors[0], asyncio.CancelledError)
+    if on_demand:
+        assert len(errors) == 1
+        assert isinstance(errors[0], asyncio.CancelledError)
+    else:
+        assert errors == []
     assert cleaned.is_set() is not cancel_at_open
+
+
+@pytest.mark.parametrize("on_demand", [False, True])
+def test_sync_bridge_initializes_iterator(on_demand: bool) -> None:
+    class Source:
+        def __init__(self) -> None:
+            self.initializations = 0
+            self.remaining = 0
+
+        def __aiter__(self) -> "Source":
+            self.initializations += 1
+            self.remaining = 2
+            return self
+
+        async def __anext__(self) -> int:
+            if not self.remaining:
+                raise StopAsyncIteration
+            self.remaining -= 1
+            return self.remaining
+
+    source = Source()
+
+    async def get_source() -> AsyncIterator[int]:
+        return source
+
+    assert list(_async_source_to_sync_iter(get_source, on_demand=on_demand)) == [1, 0]
+    assert source.initializations == 1

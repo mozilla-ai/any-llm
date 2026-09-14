@@ -287,12 +287,13 @@ def _async_source_to_sync_iter(
         try:
             async_iter = await get_async_iter()
             try:
+                iterator = aiter(async_iter)
                 while True:
                     if demand is not None:
                         await demand.wait()
                         demand.clear()
                     try:
-                        item = await anext(async_iter)
+                        item = await anext(iterator)
                     except StopAsyncIteration:
                         break
                     if cancel_event.is_set():
@@ -301,7 +302,7 @@ def _async_source_to_sync_iter(
             finally:
                 await aclose_quietly(async_iter)
         except asyncio.CancelledError as exc:
-            if not cancel_event.is_set():
+            if on_demand and not cancel_event.is_set():
                 output_queue.put(exc)
         except Exception as exc:
             output_queue.put(exc)
