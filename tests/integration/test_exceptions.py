@@ -32,14 +32,20 @@ TESTABLE_PROVIDERS = [
 
 
 @pytest.mark.parametrize("provider", TESTABLE_PROVIDERS)
+@pytest.mark.parametrize("instance_override", [False, True])
 @pytest.mark.asyncio
 async def test_bad_api_key_raises_authentication_error(
     provider: LLMProvider,
     provider_model_map: dict[LLMProvider, str],
     monkeypatch: pytest.MonkeyPatch,
+    instance_override: bool,
 ) -> None:
-    monkeypatch.setenv(ANY_LLM_UNIFIED_EXCEPTIONS_ENV, "1")
-    llm = AnyLLM.create(provider, api_key="invalid-api-key-for-testing-12345")
+    monkeypatch.setenv(ANY_LLM_UNIFIED_EXCEPTIONS_ENV, "0" if instance_override else "1")
+    llm = AnyLLM.create(
+        provider,
+        api_key="invalid-api-key-for-testing-12345",
+        unified_exceptions=True if instance_override else None,
+    )
 
     if not llm.SUPPORTS_COMPLETION:
         pytest.skip(f"{provider.value} does not support completion, skipping")
