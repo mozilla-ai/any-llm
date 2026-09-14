@@ -108,8 +108,10 @@ async def test_anthropic_generated_file_download() -> None:
         for file_id in output_ids:
             metadata = await provider.aretrieve_file(file_id)
             assert metadata.downloadable is True
-            async with provider.adownload_file(file_id, chunk_size=1024) as chunks:
-                contents.append(b"".join([chunk async for chunk in chunks]))
+            async with provider.adownload_file(file_id, chunk_size=1024) as download:
+                assert download.status_code == 200
+                assert download.headers.get("content-type")
+                contents.append(b"".join([chunk async for chunk in download]))
         assert b"any-llm Files test\n" in contents
     finally:
         await cleanup_files(provider, output_ids)

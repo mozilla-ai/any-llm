@@ -9,9 +9,10 @@ from typing import Any
 
 import httpx
 import pytest
+from anthropic import APIStatusError
 from typing_extensions import override
 
-from any_llm import AnyLLM
+from any_llm import AnyLLM, AsyncFileDownload, FileDownload
 from any_llm.exceptions import (
     AnyLLMError,
     InvalidRequestError,
@@ -585,3 +586,190 @@ async def test_actual_task_cancellation_closes_stream() -> None:
         assert stream.closed
     finally:
         await provider.client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reads", [0, 1, 100])
+async def test_async_download_exposes_headers_on_entry_without_reading_body(reads: int) -> None:
+    stream = CountingStream()
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            headers={
+                "Content-Type": "text/csv",
+                "Content-Length": "400",
+                "Content-Disposition": 'attachment; filename="data.csv"',
+            },
+            stream=stream,
+        )
+
+    provider = provider_for(handle)
+    try:
+        context = provider.adownload_file("file_123", chunk_size=4)
+        assert requests == []
+        async with context as download:
+            assert isinstance(download, AsyncFileDownload)
+            assert len(requests) == 1
+            assert download.status_code == 200
+            assert download.headers["content-type"] == "text/csv"
+            assert download.headers["Content-Length"] == "400"
+            assert download.headers["content-disposition"] == 'attachment; filename="data.csv"'
+            assert stream.reads == 0
+            assert not stream.closed
+            for _ in range(reads):
+                assert await anext(download) == b"data"
+            assert stream.reads == reads
+        assert stream.closed
+        with pytest.raises(StopAsyncIteration):
+            await anext(download)
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.parametrize("reads", [0, 1, 100])
+def test_sync_download_exposes_headers_on_entry_without_reading_body(reads: int) -> None:
+    stream = CountingStream()
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, headers={"Content-Type": "text/csv", "Content-Length": "400"}, stream=stream)
+
+    provider = provider_for(handle)
+    try:
+        context = provider.download_file("file_123", chunk_size=4)
+        assert requests == []
+        with context as download:
+            assert isinstance(download, FileDownload)
+            assert len(requests) == 1
+            assert download.status_code == 200
+            assert download.headers["content-type"] == "text/csv"
+            assert download.headers["Content-Length"] == "400"
+            assert stream.reads == 0
+            for _ in range(reads):
+                assert next(download) == b"data"
+            assert stream.reads == reads
+        assert stream.closed
+        with pytest.raises(StopIteration):
+            next(download)
+    finally:
+        run_async_in_sync(provider.client.close())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [400, 401, 404, 413, 429])
+@pytest.mark.parametrize("unified", [False, True])
+async def test_download_http_errors_raise_on_context_entry(
+    monkeypatch: pytest.MonkeyPatch, status_code: int, unified: bool
+) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1" if unified else "0")
+    responses: list[httpx.Response] = []
+
+    def handle(_: httpx.Request) -> httpx.Response:
+        response = httpx.Response(
+            status_code,
+            headers={"retry-after": "3"},
+            json={"type": "error", "error": {"type": "api_error", "message": "download refused"}},
+        )
+        responses.append(response)
+        return response
+
+    provider = provider_for(handle)
+    try:
+        for sync in (False, True):
+            with pytest.raises((AnyLLMError, APIStatusError), match="download refused") as error:
+                if sync:
+                    with provider.download_file("file_123", max_retries=0, allow_running_loop=True):
+                        pytest.fail("Failed download entered the consumer context")
+                else:
+                    async with provider.adownload_file("file_123", max_retries=0):
+                        pytest.fail("Failed download entered the consumer context")
+            assert isinstance(error.value, (AnyLLMError, APIStatusError))
+            assert error.value.status_code == status_code
+            assert isinstance(error.value, AnyLLMError) is unified
+            if unified and status_code == 404:
+                assert isinstance(error.value, ProviderFileNotFoundError)
+            if unified and status_code == 429:
+                assert isinstance(error.value, RateLimitError)
+                assert error.value.retry_after == "3"
+        assert len(responses) == 2
+        assert all(response.is_closed for response in responses)
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
+async def test_download_consumer_errors_are_not_unified(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
+    streams: list[CountingStream] = []
+
+    def handle(_: httpx.Request) -> httpx.Response:
+        stream = CountingStream()
+        streams.append(stream)
+        return httpx.Response(200, stream=stream)
+
+    provider = provider_for(handle)
+    failure = RuntimeError("consumer failed")
+    try:
+        for sync in (False, True):
+            with pytest.raises(RuntimeError) as error:
+                if sync:
+                    with provider.download_file("file_123", allow_running_loop=True):
+                        raise failure
+                else:
+                    async with provider.adownload_file("file_123"):
+                        raise failure
+            assert error.value is failure
+        assert all(stream.closed and stream.reads == 0 for stream in streams)
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
+async def test_empty_download_exposes_headers_and_closes() -> None:
+    provider = provider_for(lambda _: httpx.Response(200, headers={"content-length": "0"}, content=b""))
+    try:
+        async with provider.adownload_file("file_123") as download:
+            assert download.status_code == 200
+            assert download.headers["content-length"] == "0"
+            assert [chunk async for chunk in download] == []
+        with provider.download_file("file_123", allow_running_loop=True) as sync_download:
+            assert sync_download.status_code == 200
+            assert list(sync_download) == []
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.parametrize("reads", [0, 1])
+def test_sync_download_opens_and_closes_in_same_task(reads: int) -> None:
+    active = contextvars.ContextVar("download_open", default=False)
+    token: contextvars.Token[bool] | None = None
+
+    class TracedStream(CountingStream):
+        @override
+        async def aclose(self) -> None:
+            assert token is not None
+            assert active.get()
+            active.reset(token)
+            await super().aclose()
+
+    stream = TracedStream()
+
+    def handle(_: httpx.Request) -> httpx.Response:
+        nonlocal token
+        token = active.set(True)
+        return httpx.Response(200, stream=stream)
+
+    provider = provider_for(handle)
+    try:
+        with provider.download_file("file_123", chunk_size=4) as download:
+            assert download.status_code == 200
+            for _ in range(reads):
+                assert next(download) == b"data"
+        assert stream.closed
+        assert not active.get()
+    finally:
+        run_async_in_sync(provider.client.close())

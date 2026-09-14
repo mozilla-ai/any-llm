@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 import httpx
 from typing_extensions import override
 
-from any_llm.types.files import FileDeleted, FileInput, FileMetadata, FileOperation, FilePage
+from any_llm.types.files import AsyncFileDownload, FileDeleted, FileInput, FileMetadata, FileOperation, FilePage
 
 from .base import BaseAnthropicProvider
 from .files import file_path, list_files, reject_unsupported, request_options, upload_file
@@ -86,13 +86,17 @@ class AnthropicProvider(BaseAnthropicProvider):
     @asynccontextmanager
     async def _adownload_file(
         self, file_id: str, *, chunk_size: int, **kwargs: Any
-    ) -> AsyncIterator[AsyncIterator[bytes]]:
+    ) -> AsyncIterator[AsyncFileDownload]:
         client, options = request_options(self.client, kwargs)
         reject_unsupported(kwargs)
         response = await client.get(
             file_path(file_id) + "/content", cast_to=httpx.Response, options=options, stream=True
         )
         try:
-            yield response.aiter_bytes(chunk_size)
+            yield AsyncFileDownload(
+                status_code=response.status_code,
+                headers=response.headers.copy(),
+                chunks=response.aiter_bytes(chunk_size),
+            )
         finally:
             await response.aclose()

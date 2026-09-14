@@ -1,10 +1,18 @@
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator
-from contextlib import aclosing, asynccontextmanager, contextmanager
-from typing import Any, ClassVar
+from contextlib import AsyncExitStack, aclosing, asynccontextmanager, contextmanager
+from typing import Any, ClassVar, cast
 
 from any_llm.constants import INSIDE_NOTEBOOK
 from any_llm.exceptions import InvalidRequestError
-from any_llm.types.files import FileDeleted, FileInput, FileMetadata, FileOperation, FilePage
+from any_llm.types.files import (
+    AsyncFileDownload,
+    FileDeleted,
+    FileDownload,
+    FileInput,
+    FileMetadata,
+    FileOperation,
+    FilePage,
+)
 from any_llm.utils.aio import _async_source_to_sync_iter, run_async_in_sync
 from any_llm.utils.exception_handler import _handle_exception, handle_exceptions
 
@@ -83,29 +91,37 @@ class FilesMixin:
     @asynccontextmanager
     async def adownload_file(
         self, file_id: str, *, chunk_size: int = 65536, **kwargs: Any
-    ) -> AsyncIterator[AsyncIterator[bytes]]:
-        """Stream binary chunks inside ``async with``; exiting always closes the response.
+    ) -> AsyncIterator[AsyncFileDownload]:
+        """Open a download on context entry, exposing headers before reading body chunks.
 
         Only one chunk is requested at a time. Provider failures are handled
         during iteration as well as when opening the download.
         """
         self._validate_chunk_size(chunk_size)
 
-        async def iterate() -> AsyncGenerator[bytes, None]:
+        async with AsyncExitStack() as stack:
             try:
-                async with self._adownload_file(file_id, chunk_size=chunk_size, **kwargs) as chunks:
-                    async for chunk in chunks:
-                        yield chunk
+                response = await stack.enter_async_context(
+                    self._adownload_file(file_id, chunk_size=chunk_size, **kwargs)
+                )
             except Exception as exc:
                 _handle_exception(exc, self.PROVIDER_NAME, file_operation=True)
+                return  # pragma: no cover
 
-        async with aclosing(iterate()) as chunks:
-            yield chunks
+            async def iterate() -> AsyncGenerator[bytes, None]:
+                try:
+                    async for chunk in response:
+                        yield chunk
+                except Exception as exc:
+                    _handle_exception(exc, self.PROVIDER_NAME, file_operation=True)
+
+            async with aclosing(iterate()) as chunks:
+                yield AsyncFileDownload(status_code=response.status_code, headers=response.headers, chunks=chunks)
 
     @asynccontextmanager
     async def _adownload_file(
         self, file_id: str, *, chunk_size: int, **kwargs: Any
-    ) -> AsyncIterator[AsyncIterator[bytes]]:
+    ) -> AsyncIterator[AsyncFileDownload]:
         message = "Provider does not support file downloads"
         raise NotImplementedError(message)
         yield  # pragma: no cover
@@ -116,8 +132,8 @@ class FilesMixin:
             raise InvalidRequestError(message, provider_name=self.PROVIDER_NAME)
 
     @contextmanager
-    def download_file(self, file_id: str, *, chunk_size: int = 65536, **kwargs: Any) -> Iterator[Iterator[bytes]]:
-        """Stream binary chunks inside ``with`` without prefetching the whole file.
+    def download_file(self, file_id: str, *, chunk_size: int = 65536, **kwargs: Any) -> Iterator[FileDownload]:
+        """Open a download on context entry without prefetching body chunks.
 
         One task on the runner loop owns the download from start to finish, so the response and any
         contextvar tokens its transport sets are opened, advanced and closed in a single context.
@@ -126,16 +142,21 @@ class FilesMixin:
         allow = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
         self._validate_chunk_size(chunk_size)
 
-        async def open_stream() -> AsyncIterator[bytes]:
-            async def stream() -> AsyncGenerator[bytes, None]:
-                async with self.adownload_file(file_id, chunk_size=chunk_size, **kwargs) as chunks:
-                    async for chunk in chunks:
+        async def open_stream() -> AsyncIterator[AsyncFileDownload | bytes]:
+            async def stream() -> AsyncGenerator[AsyncFileDownload | bytes, None]:
+                async with self.adownload_file(file_id, chunk_size=chunk_size, **kwargs) as response:
+                    yield response
+                    async for chunk in response:
                         yield chunk
 
             return stream()
 
         chunks = _async_source_to_sync_iter(open_stream, allow_running_loop=allow, on_demand=True)
         try:
-            yield chunks
+            # The first handoff carries headers; later reads request body chunks in the same task.
+            response = cast("AsyncFileDownload", next(chunks))
+            yield FileDownload(
+                status_code=response.status_code, headers=response.headers, chunks=cast("Iterator[bytes]", chunks)
+            )
         finally:
             chunks.close()

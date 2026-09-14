@@ -67,7 +67,7 @@ resident in memory. Async iterators are not supported upload inputs.
 | `upload_file(file, filename=None, mime_type=None, **kwargs)` | `await aupload_file(...)` | `FileMetadata` |
 | `list_files(limit=None, **kwargs)` | `await alist_files(...)` | `FilePage` |
 | `retrieve_file(file_id, **kwargs)` | `await aretrieve_file(...)` | `FileMetadata` |
-| `download_file(file_id, chunk_size=65536, **kwargs)` | `adownload_file(...)` | Context manager yielding binary chunks |
+| `download_file(file_id, chunk_size=65536, **kwargs)` | `adownload_file(...)` | Context manager yielding `FileDownload` / `AsyncFileDownload` |
 | `delete_file(file_id, **kwargs)` | `await adelete_file(...)` | `FileDeleted` |
 
 These are instance methods. Reuse the instance configured for the originating
@@ -144,15 +144,33 @@ For an async caller with a generated file ID:
 
 ```python
 async def download_to_writer(provider, file_id, consume):
-    async with provider.adownload_file(file_id, chunk_size=65536, timeout=30) as chunks:
-        async for chunk in chunks:
+    async with provider.adownload_file(file_id, chunk_size=65536, timeout=30) as download:
+        content_type = download.headers.get("content-type", "application/octet-stream")
+        async for chunk in download:
             await consume(chunk)  # Your async writer
 ```
 
-The request starts when iteration starts. Always use `with` or `async with` so
-early exit and cancellation close the response. The sync bridge requests one
-chunk at a time rather than prefetching the entire response. Exceptions raised
-by consumer code are not converted into provider errors.
+The request starts on entering `with` or `async with`. Connection failures and
+HTTP errors are raised before the context body runs, so a gateway can return the
+correct error status before committing its downstream response.
+
+The public `FileDownload` and `AsyncFileDownload` types expose `status_code` and
+`headers` as soon as the context is entered. Anthropic response header lookup is
+case-insensitive. Both objects remain directly iterable over bytes, so existing
+`for chunk in download` and `async for chunk in download` loops keep working.
+They are exported from `any_llm` and `any_llm.types.files`.
+
+Body reads begin only on iteration. Always use the context manager, even if you
+only inspect headers: exiting closes the upstream response after full
+consumption, early exit, or cancellation. The sync bridge requests one chunk at
+a time without prefetching the body. Exceptions raised by consumer code are not
+converted into provider errors.
+
+Headers describe the upstream response, while body chunks use the transport's
+content decoding. A proxy must choose an explicit response-header allowlist;
+it must not blindly forward `Content-Encoding` or a compressed `Content-Length`
+for decoded bytes. Header values can include sensitive metadata such as filenames
+and should not be logged indiscriminately.
 
 ## Provider options and errors
 
