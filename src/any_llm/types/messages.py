@@ -236,12 +236,18 @@ class MessagesParams(BaseModel):
     Either a Pydantic ``BaseModel`` subclass or dataclass **type**, or a raw Anthropic
     ``output_config`` **dict** (e.g. ``{"format": {"type": "json_schema", "schema": {...}}}``)
     for non-Pydantic JSON schemas. The bare ``format`` object
-    (``{"type": "json_schema", "schema": {...}}``) is accepted as well. A type goes to native
-    ``messages.parse`` on Anthropic; a dict is passed through to native
-    ``messages.create(output_config=...)``. Other providers route either form through the
-    completion bridge. The result is Anthropic's ``ParsedMessage``: its ``parsed_output`` holds
-    the typed object for a type, or the parsed JSON (plain ``dict``/``list``) for a raw schema.
+    (``{"type": "json_schema", "schema": {...}}``) is accepted as well. Anthropic sends a type
+    to native ``messages.parse`` and a dict to native
+    ``messages.create(output_config=...)``. Providers with native Messages structured-output
+    support, such as Anthropic and Otari, keep these requests on their Messages APIs; other
+    providers route schema-backed forms through the completion bridge. Non-streaming
+    schema-backed requests return Anthropic's ``ParsedMessage``: its ``parsed_output`` holds the
+    typed object for a type, or the parsed JSON (plain ``dict``/``list``) for a raw schema.
+    Providers with native streaming support return schema-constrained Messages events when
+    ``stream=True``.
 
-    A dict that carries no schema in either shape raises ``InvalidRequestError`` on the bridged
-    path rather than sending a ``response_format`` that constrains nothing.
+    A dict that names a format but carries no usable schema raises ``InvalidRequestError`` on the
+    bridged path rather than sending a ``response_format`` that constrains nothing. A dict without
+    a format remains a provider-specific output configuration and returns a regular
+    ``MessageResponse``.
     """

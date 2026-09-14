@@ -2,9 +2,10 @@ import base64
 import json
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
-from typing import Any, get_args
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 from google.genai import types
 from pydantic import BaseModel, ConfigDict
@@ -16,7 +17,7 @@ from any_llm.exceptions import (
     UnsupportedParameterError,
 )
 from any_llm.providers.gemini import GeminiProvider
-from any_llm.providers.gemini.base import REASONING_EFFORT_TO_THINKING_BUDGETS, GoogleProvider
+from any_llm.providers.gemini.base import GoogleProvider, _convert_reasoning_effort
 from any_llm.providers.gemini.utils import (
     _convert_messages,
     _convert_response_to_response_dict,
@@ -816,45 +817,47 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
         assert contents[2].role == "function"
 
 
-@pytest.mark.parametrize("reasoning_effort", [None, *get_args(ReasoningEffort)])
-@pytest.mark.asyncio
-async def test_completion_with_custom_reasoning_effort(reasoning_effort: ReasoningEffort | None) -> None:
-    api_key = "test-api-key"
-    model = "model-id"
-    messages = [{"role": "user", "content": "Hello"}]
-
-    with mock_gemini_provider() as mock_genai:
-        provider = GeminiProvider(api_key=api_key)
-        await provider._acompletion(
-            CompletionParams(model_id=model, messages=messages, reasoning_effort=reasoning_effort)
-        )
-
-        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
-        thinking_config = call_kwargs["config"].thinking_config
-
-        if reasoning_effort == "auto":
-            assert thinking_config is None
-        elif reasoning_effort is None or reasoning_effort == "none":
-            assert thinking_config == types.ThinkingConfig(include_thoughts=False)
-        else:
-            assert thinking_config == types.ThinkingConfig(
-                include_thoughts=True, thinking_budget=REASONING_EFFORT_TO_THINKING_BUDGETS[reasoning_effort]
-            )
-
-
 @pytest.mark.parametrize(
-    ("model_id", "reasoning_effort", "expected_level"),
+    ("model_id", "reasoning_effort", "expected"),
     [
-        ("gemini-3.5-flash", "xhigh", types.ThinkingLevel.HIGH),
-        ("gemini-3.5-flash", "max", types.ThinkingLevel.HIGH),
-        ("gemini-3.5-pro", "low", types.ThinkingLevel.LOW),
-        ("models/gemini-3.5-flash", "medium", types.ThinkingLevel.MEDIUM),
-        ("gemini-3.10-flash", "minimal", types.ThinkingLevel.MINIMAL),
-        ("gemini-4-pro", "high", types.ThinkingLevel.HIGH),
+        ("gemini-3.8-flash", "low", {"includeThoughts": True, "thinkingLevel": "LOW"}),
+        ("gemini-3.7-flash", "medium", {"includeThoughts": True, "thinkingLevel": "MEDIUM"}),
+        ("gemini-3.6-flash", "minimal", {"includeThoughts": True, "thinkingLevel": "MINIMAL"}),
+        ("gemini-3.5-flash", "high", {"includeThoughts": True, "thinkingLevel": "HIGH"}),
+        ("gemini-3.5-flash-lite", "minimal", {"includeThoughts": True, "thinkingLevel": "MINIMAL"}),
+        ("gemini-3.1-flash-lite", "medium", {"includeThoughts": True, "thinkingLevel": "MEDIUM"}),
+        ("models/gemini-3.1-pro-preview", "minimal", {"includeThoughts": True, "thinkingLevel": "LOW"}),
+        ("gemini-3.1-flash-image", "minimal", {"includeThoughts": True, "thinkingLevel": "MINIMAL"}),
+        ("gemini-3.1-flash-lite-image", "high", {"includeThoughts": True, "thinkingLevel": "HIGH"}),
+        ("gemini-3-flash-preview", "minimal", {"includeThoughts": True, "thinkingLevel": "MINIMAL"}),
+        ("gemini-2.5-flash", "none", {"thinkingBudget": 0}),
+        ("gemini-2.5-flash", "minimal", {"includeThoughts": True, "thinkingBudget": 1024}),
+        ("gemini-2.5-flash", "low", {"includeThoughts": True, "thinkingBudget": 1024}),
+        ("gemini-2.5-flash-lite", "none", {"thinkingBudget": 0}),
+        ("gemini-2.5-flash-lite", "minimal", {"includeThoughts": True, "thinkingBudget": 1024}),
+        ("gemini-2.5-flash-lite", "medium", {"includeThoughts": True, "thinkingBudget": 8192}),
+        ("gemini-2.5-pro", "minimal", {"includeThoughts": True, "thinkingBudget": 1024}),
+        ("gemini-2.5-pro", "high", {"includeThoughts": True, "thinkingBudget": 24576}),
+        ("gemini-2.5-pro", "xhigh", {"includeThoughts": True, "thinkingBudget": 32768}),
+        ("gemini-2.5-flash", "max", {"includeThoughts": True, "thinkingBudget": 24576}),
+        ("gemini-2.5-flash-lite", "xhigh", {"includeThoughts": True, "thinkingBudget": 24576}),
+        ("gemini-3.8-flash", "xhigh", {"includeThoughts": True, "thinkingLevel": "HIGH"}),
+        ("-001", "minimal", {"includeThoughts": True, "thinkingBudget": 1024}),
+        ("custom-gemini-model", "minimal", {"includeThoughts": True, "thinkingBudget": 1024}),
+        ("gemini-3.1-custom", "high", {"includeThoughts": True, "thinkingLevel": "HIGH"}),
+        ("models/gemini-3.10-flash-preview-202609", "max", {"includeThoughts": True, "thinkingLevel": "HIGH"}),
+        ("gemini-3.8-flash-custom", "minimal", {"includeThoughts": True, "thinkingLevel": "MINIMAL"}),
+        (
+            "projects/p/locations/l/publishers/google/models/gemini-3.8-flash-001",
+            "low",
+            {"includeThoughts": True, "thinkingLevel": "LOW"},
+        ),
     ],
 )
-def test_new_gemini_models_use_thinking_level(
-    model_id: str, reasoning_effort: ReasoningEffort, expected_level: types.ThinkingLevel
+def test_gemini_reasoning_effort_matches_documented_thinking_config(
+    model_id: str,
+    reasoning_effort: ReasoningEffort,
+    expected: dict[str, object],
 ) -> None:
     result = GoogleProvider._convert_completion_params(
         CompletionParams(
@@ -863,29 +866,119 @@ def test_new_gemini_models_use_thinking_level(
         provider_name="gemini",
     )
 
-    assert result["config"].thinking_config == types.ThinkingConfig(
-        include_thoughts=True, thinking_level=expected_level
+    config = result["config"].model_dump(by_alias=True, exclude_none=True)
+    assert config["thinkingConfig"] == expected
+
+
+@pytest.mark.parametrize(
+    ("model_id", "reasoning_effort"),
+    [
+        ("gemini-3.8-flash", "minimal"),
+        ("gemini-3.1-flash-image", "low"),
+        ("gemini-3.1-flash-lite-image", "low"),
+        ("gemini-3.8-flash-001", "minimal"),
+        ("gemini-3.8-flash", "none"),
+        ("gemini-3.1-flash-image", "none"),
+        ("gemini-2.5-pro", "none"),
+    ],
+)
+def test_gemini_rejects_undocumented_reasoning_effort(
+    model_id: str,
+    reasoning_effort: ReasoningEffort,
+) -> None:
+    with pytest.raises(UnsupportedParameterError) as exc_info:
+        GoogleProvider._convert_completion_params(
+            CompletionParams(
+                model_id=model_id,
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort=reasoning_effort,
+            ),
+            provider_name="gemini",
+        )
+
+    assert str(exc_info.value) == (
+        "[gemini] 'reasoning_effort' is not supported for gemini.\n"
+        f"'{reasoning_effort}' is not available for model '{model_id}'."
+    )
+
+
+def test_gemini_invalid_reasoning_effort_error_identifies_model_and_effort() -> None:
+    reasoning_effort = cast("ReasoningEffort", "invalid")
+
+    with pytest.raises(UnsupportedParameterError) as exc_info:
+        _convert_reasoning_effort("custom-gemini-model", reasoning_effort, "gemini")
+
+    assert str(exc_info.value) == (
+        "[gemini] 'reasoning_effort' is not supported for gemini.\n"
+        "'invalid' is not available for model 'custom-gemini-model'."
     )
 
 
 @pytest.mark.parametrize(
-    "model_id",
-    [
-        "gemini-3.0-flash",
-        "gemini-3.4-flash",
-        "gemini-3-pro-preview",
-        "gemini-2.5-flash",
-        "gemini-pro",
-        "projects/p/locations/l/publishers/google/models/gemini-3-pro",
-    ],
+    ("reasoning_effort", "expected"),
+    [(None, None), ("auto", None)],
 )
-def test_older_gemini_models_keep_thinking_budget(model_id: str) -> None:
+def test_gemini_preserves_default_thinking_config_wire_behavior(
+    reasoning_effort: ReasoningEffort | None, expected: dict[str, object] | None
+) -> None:
     result = GoogleProvider._convert_completion_params(
-        CompletionParams(model_id=model_id, messages=[{"role": "user", "content": "Hello"}], reasoning_effort="high"),
+        CompletionParams(
+            model_id="gemini-3.8-flash",
+            messages=[{"role": "user", "content": "Hello"}],
+            reasoning_effort=reasoning_effort,
+        ),
         provider_name="gemini",
     )
 
-    assert result["config"].thinking_config == types.ThinkingConfig(include_thoughts=True, thinking_budget=24576)
+    config = result["config"].model_dump(by_alias=True, exclude_none=True)
+    assert config.get("thinkingConfig") == expected
+
+
+@pytest.mark.parametrize(
+    ("model_id", "reasoning_effort", "expected"),
+    [
+        ("gemini-3.8-flash", "high", {"include_thoughts": True, "thinking_level": "HIGH"}),
+        ("gemini-2.5-flash", "none", {"thinking_budget": 0}),
+    ],
+)
+@pytest.mark.asyncio
+async def test_gemini_reasoning_effort_reaches_official_sdk_wire(
+    model_id: str,
+    reasoning_effort: ReasoningEffort,
+    expected: dict[str, object],
+) -> None:
+    requests: list[dict[str, object]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "content": {"parts": [{"text": "ok"}], "role": "model"},
+                        "finishReason": "STOP",
+                    }
+                ]
+            },
+        )
+
+    provider = GeminiProvider(
+        api_key="test-api-key",
+        http_options=types.HttpOptions(
+            async_client_args={"transport": httpx.MockTransport(handler)},
+        ),
+    )
+    await provider._acompletion(
+        CompletionParams(
+            model_id=model_id,
+            messages=[{"role": "user", "content": "Hello"}],
+            reasoning_effort=reasoning_effort,
+        )
+    )
+    await provider.client.aio.aclose()
+
+    assert requests[0]["generationConfig"] == {"thinkingConfig": expected}
 
 
 @pytest.mark.asyncio
@@ -1192,6 +1285,168 @@ def test_convert_response_skips_parts_without_text_or_function_call() -> None:
     message = response_dict["choices"][0]["message"]
     assert message["content"] == "Described."
     assert message["tool_calls"] is None
+    assert message["images"][0]["image_url"]["url"] == "data:image/png;base64,iVBORw=="
+
+
+def test_convert_response_emits_choice_for_image_only_response() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"))],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert len(response_dict["choices"]) == 1
+    message = response_dict["choices"][0]["message"]
+    assert message["content"] is None
+    assert message["images"][0]["image_url"]["url"] == "data:image/png;base64,iVBORw=="
+
+
+@pytest.mark.parametrize(
+    "blob",
+    [
+        types.Blob(mime_type="image/png", data=b""),
+        types.Blob(mime_type="image/png", data=None),
+        types.Blob(mime_type=None, data=b"data"),
+        types.Blob(mime_type="application/pdf", data=b"data"),
+    ],
+)
+def test_convert_response_skips_inline_data_without_image_payload(blob: types.Blob) -> None:
+    response = _make_gemini_response([types.Part(inline_data=blob)], types.FinishReason.STOP)
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert response_dict["choices"] == []
+
+
+def test_streaming_completion_with_inline_image() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"))],
+        types.FinishReason.STOP,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    images = chunk.choices[0].delta.images
+    assert images is not None
+    assert images[0].image_url.url == "data:image/png;base64,iVBORw=="
+
+
+def test_convert_response_preserves_inline_audio() -> None:
+    response = _make_gemini_response(
+        [
+            types.Part(text="Here is the audio."),
+            types.Part(inline_data=types.Blob(mime_type="audio/wav", data=b"WAVE")),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    result = GoogleProvider._convert_completion_response(
+        (_convert_response_to_response_dict(response), "gemini-2.5-flash")
+    )
+
+    assert result.choices[0].message.audio is not None
+    assert result.choices[0].message.audio.data == "V0FWRQ=="
+    assert result.choices[0].message.audio.transcript == "Here is the audio."
+
+
+def test_convert_response_emits_choice_for_audio_only_response() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="audio/wav", data=b"WAVE"))],
+        types.FinishReason.STOP,
+    )
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert len(response_dict["choices"]) == 1
+    message = response_dict["choices"][0]["message"]
+    assert message["content"] is None
+    assert message["audio"]["data"] == "V0FWRQ=="
+
+
+def test_streaming_completion_with_inline_audio() -> None:
+    response = _make_gemini_response(
+        [
+            types.Part(text="Here is the audio."),
+            types.Part(inline_data=types.Blob(mime_type="audio/wav", data=b"WAVE")),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    assert chunk.choices[0].delta.audio is not None
+    assert chunk.choices[0].delta.audio.data == "V0FWRQ=="
+    assert chunk.choices[0].delta.audio.transcript == "Here is the audio."
+
+
+def test_streaming_completion_emits_choice_for_audio_only_response() -> None:
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="audio/wav", data=b"WAVE"))],
+        types.FinishReason.STOP,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    assert chunk.choices[0].delta.audio is not None
+    assert chunk.choices[0].delta.audio.data == "V0FWRQ=="
+
+
+def _wav_fields(wav: bytes) -> tuple[bytes, int, int, bytes]:
+    """Return the RIFF tag, sample rate, data length, and payload from a WAV file."""
+    return wav[:4], int.from_bytes(wav[24:28], "little"), int.from_bytes(wav[40:44], "little"), wav[44:]
+
+
+@pytest.mark.parametrize("rate", [24000, 16000])
+def test_convert_response_wraps_pcm_audio_as_wav(rate: int) -> None:
+    """Complete Gemini TTS responses expose all PCM parts as a playable WAV."""
+    mime_type = f"audio/L16;codec=pcm;rate={rate}"
+    response = _make_gemini_response(
+        [
+            types.Part(inline_data=types.Blob(mime_type=mime_type, data=b"\x01\x02")),
+            types.Part(inline_data=types.Blob(mime_type=mime_type, data=b"\x03\x04")),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    result = GoogleProvider._convert_completion_response(
+        (_convert_response_to_response_dict(response), "gemini-2.5-flash-preview-tts")
+    )
+
+    audio = result.choices[0].message.audio
+    assert audio is not None
+    assert _wav_fields(base64.b64decode(audio.data)) == (b"RIFF", rate, 4, b"\x01\x02\x03\x04")
+    assert result.choices[0].message.content is None
+    assert result.choices[0].finish_reason == "stop"
+
+
+def test_streaming_completion_keeps_pcm_audio_raw() -> None:
+    """Streaming Gemini TTS parts stay raw and are joined in their original order."""
+    mime_type = "audio/L16;codec=pcm;rate=24000"
+    response = _make_gemini_response(
+        [
+            types.Part(inline_data=types.Blob(mime_type=mime_type, data=b"\x01\x02")),
+            types.Part(inline_data=types.Blob(mime_type=mime_type, data=b"\x03\x04")),
+        ],
+        types.FinishReason.STOP,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    audio = chunk.choices[0].delta.audio
+    assert audio is not None
+    assert audio.data is not None
+    assert base64.b64decode(audio.data) == b"\x01\x02\x03\x04"
+
+
+def test_convert_response_skips_empty_audio_blob() -> None:
+    """Empty inline audio must not create an otherwise empty completion choice."""
+    response = _make_gemini_response(
+        [types.Part(inline_data=types.Blob(mime_type="audio/L16;codec=pcm;rate=24000", data=b""))],
+        types.FinishReason.STOP,
+    )
+
+    assert _convert_response_to_response_dict(response)["choices"] == []
 
 
 def test_convert_response_emits_choice_for_filtered_response_without_content() -> None:
@@ -1239,6 +1494,20 @@ def test_google_provider_preserves_prompt_block_as_refusal() -> None:
 
     assert result.choices[0].finish_reason == "content_filter"
     assert result.choices[0].message.refusal == "Response blocked by Gemini content filtering."
+
+
+def test_google_provider_preserves_images_on_completion_message() -> None:
+    response_dict = _convert_response_to_response_dict(
+        _make_gemini_response(
+            [types.Part(inline_data=types.Blob(mime_type="image/png", data=b"\x89PNG"))],
+            types.FinishReason.STOP,
+        )
+    )
+
+    result = GoogleProvider._convert_completion_response((response_dict, "gemini-2.5-flash-image"))
+
+    assert result.choices[0].message.images is not None
+    assert result.choices[0].message.images[0].image_url.url == "data:image/png;base64,iVBORw=="
 
 
 def test_convert_response_without_content_and_terminal_reason_has_no_choices() -> None:
