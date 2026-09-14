@@ -1,9 +1,10 @@
 import json
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from any_llm import AnyLLM
 from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
 from tests.integration.test_agent_loop import (
     _call_tool,
@@ -12,24 +13,8 @@ from tests.integration.test_agent_loop import (
     get_weather,
 )
 
-
-class _StubCompletionClient:
-    def __init__(self, responses: list[ChatCompletion]) -> None:
-        self.responses = iter(responses)
-        self.tool_choices: list[str | None] = []
-
-    async def acompletion(
-        self,
-        model: str,
-        messages: list[dict[str, Any] | ChatCompletionMessage],
-        *,
-        tools: list[Callable[..., Any]],
-        tool_choice: str | None,
-    ) -> ChatCompletion:
-        assert model == "test-model"
-        assert tools
-        self.tool_choices.append(tool_choice)
-        return next(self.responses)
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def _completion(
@@ -58,7 +43,7 @@ def _completion(
                     "message": {
                         "role": "assistant",
                         "content": content,
-                        "tool_calls": serialized_tool_calls or None,
+                        "tool_calls": serialized_tool_calls if tool_calls is not None else None,
                     },
                 }
             ],
@@ -79,12 +64,16 @@ def test_call_tool_preserves_declared_tool_arguments() -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_agent_loop_continues_sequential_calls_before_requesting_answer() -> None:
-    client = _StubCompletionClient(
-        [
+@pytest.mark.parametrize("empty_tool_calls", [None, []])
+async def test_run_agent_loop_continues_sequential_calls_before_answering(
+    empty_tool_calls: list[tuple[str, dict[str, Any]]] | None,
+) -> None:
+    client = MagicMock(spec=AnyLLM)
+    client.acompletion = AsyncMock(
+        side_effect=[
             _completion(tool_calls=[("get_weather", {"location": "Paris"})]),
             _completion(tool_calls=[("get_weather", {"location": "London"})]),
-            _completion(content="Paris and London are sunny at 15C."),
+            _completion(content="Paris and London are sunny at 15C.", tool_calls=empty_tool_calls),
         ]
     )
     messages: list[dict[str, Any] | ChatCompletionMessage] = [{"role": "user", "content": "Weather?"}]
@@ -106,15 +95,17 @@ async def test_run_agent_loop_continues_sequential_calls_before_requesting_answe
         ("get_weather", {"location": "Paris"}),
         ("get_weather", {"location": "London"}),
     ]
-    assert client.tool_choices == [None, None, "none"]
+    assert client.acompletion.await_count == 3
+    assert all("tool_choice" not in call.kwargs for call in client.acompletion.await_args_list)
     tool_messages = [item for item in messages if isinstance(item, dict) and item.get("role") == "tool"]
     assert all("name" not in tool_message for tool_message in tool_messages)
 
 
 @pytest.mark.asyncio
 async def test_run_agent_loop_can_include_tool_names() -> None:
-    client = _StubCompletionClient(
-        [
+    client = MagicMock(spec=AnyLLM)
+    client.acompletion = AsyncMock(
+        side_effect=[
             _completion(
                 tool_calls=[
                     ("get_current_date", {}),
@@ -140,14 +131,15 @@ async def test_run_agent_loop_can_include_tool_names() -> None:
     )
 
     assert message.content == "Paris is sunny at 15C."
-    assert client.tool_choices == [None, "none"]
+    assert client.acompletion.await_count == 2
     tool_messages = [item for item in messages if isinstance(item, dict) and item.get("role") == "tool"]
     assert [tool_message["name"] for tool_message in tool_messages] == ["get_current_date", "get_weather"]
 
 
 @pytest.mark.asyncio
 async def test_run_agent_loop_rejects_answer_before_required_calls() -> None:
-    client = _StubCompletionClient([_completion(content="No tools needed.")])
+    client = MagicMock(spec=AnyLLM)
+    client.acompletion = AsyncMock(side_effect=[_completion(content="No tools needed.")])
 
     with pytest.raises(AssertionError, match="answered before making the required tool calls"):
         await _run_agent_loop(
@@ -162,8 +154,9 @@ async def test_run_agent_loop_rejects_answer_before_required_calls() -> None:
 
 @pytest.mark.asyncio
 async def test_run_agent_loop_rejects_repeated_calls_at_iteration_limit() -> None:
-    client = _StubCompletionClient(
-        [
+    client = MagicMock(spec=AnyLLM)
+    client.acompletion = AsyncMock(
+        side_effect=[
             _completion(tool_calls=[("get_weather", {"location": "Paris"})]),
             _completion(tool_calls=[("get_weather", {"location": "Paris"})]),
         ]

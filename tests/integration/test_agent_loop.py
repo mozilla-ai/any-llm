@@ -3,7 +3,7 @@ import json
 import re
 import warnings
 from collections.abc import Callable
-from typing import Any, Protocol
+from typing import Any
 
 import httpx
 import pytest
@@ -14,21 +14,8 @@ from openai.types.chat.chat_completion_message_function_tool_call import (
 
 from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.types.completion import ChatCompletion, ChatCompletionMessage
+from any_llm.types.completion import ChatCompletionMessage
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
-
-
-class CompletionClient(Protocol):
-    """Minimal async completion interface used by the agent-loop test helper."""
-
-    async def acompletion(
-        self,
-        model: str,
-        messages: list[dict[str, Any] | ChatCompletionMessage],
-        *,
-        tools: list[Callable[..., Any]],
-        tool_choice: str | None,
-    ) -> ChatCompletion: ...
 
 
 def get_current_date() -> str:
@@ -59,7 +46,7 @@ def _call_tool(tool_fn: Callable[..., str], args: dict[str, Any]) -> str:
 
 
 async def _run_agent_loop(
-    llm: CompletionClient,
+    llm: AnyLLM,
     model_id: str,
     messages: list[dict[str, Any] | ChatCompletionMessage],
     available_tools: dict[str, Callable[..., str]],
@@ -72,17 +59,15 @@ async def _run_agent_loop(
     calls_made: list[tuple[str, dict[str, Any]]] = []
 
     for _ in range(max_iterations):
-        tool_choice = "none" if calls_complete(calls_made) else None
         result = await llm.acompletion(
             model=model_id,
             messages=messages,
             tools=list(available_tools.values()),
-            tool_choice=tool_choice,
         )
         message = result.choices[0].message
         tool_calls = message.tool_calls
 
-        if tool_calls is None:
+        if not tool_calls:
             assert calls_complete(calls_made), f"Model answered before making the required tool calls: {calls_made}"
             return message, calls_made
 
