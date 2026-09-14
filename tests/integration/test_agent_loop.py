@@ -167,7 +167,7 @@ async def test_agent_loop_multiple_tool_calls(
 
 
 @pytest.mark.asyncio
-async def test_agent_loop_sequential_tool_calls(
+async def test_agent_loop_multiple_tool_types(
     provider: LLMProvider,
     provider_model_map: dict[LLMProvider, str],
     provider_client_config: dict[LLMProvider, dict[str, Any]],
