@@ -175,6 +175,14 @@ def test_convert_exception_carries_status_code_from_response() -> None:
     assert result.status_code == 400
 
 
+def test_convert_exception_carries_status_from_aiohttp_style_response() -> None:
+    """aiohttp responses spell it ``status``, which google-genai attaches on its async path."""
+    error = _ResponseStatusError(400, "Invalid request")
+    del error.response.status_code  # type: ignore[attr-defined]
+    error.response.status = 400  # type: ignore[attr-defined]
+    assert convert_exception(error, "openai").status_code == 400
+
+
 def test_convert_exception_prefers_status_code_attribute_over_response() -> None:
     error = _ResponseStatusError(500, "Invalid request")
     error.status_code = 400  # type: ignore[attr-defined]
