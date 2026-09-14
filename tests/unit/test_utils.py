@@ -8,7 +8,14 @@ from typing import Any, cast
 
 import pytest
 
-from any_llm.utils.aio import _get_runner_loop, _runner, aclose_quietly, async_iter_to_sync_iter, run_async_in_sync
+from any_llm.utils.aio import (
+    _async_source_to_sync_iter,
+    _get_runner_loop,
+    _runner,
+    aclose_quietly,
+    async_iter_to_sync_iter,
+    run_async_in_sync,
+)
 
 
 def test_run_async_in_sync_fails_with_background_task_state() -> None:
@@ -441,6 +448,85 @@ def test_async_iter_to_sync_iter_preserves_contextvars() -> None:
     assert current_context.get() == "unset"
 
 
+def test_on_demand_bridge_preserves_contextvars() -> None:
+    current_context = contextvars.ContextVar("on_demand_context", default="unset")
+
+    async def source() -> AsyncIterator[str]:
+        token = current_context.set("active")
+        try:
+            yield "one"
+            yield "two"
+        finally:
+            current_context.reset(token)
+
+    async def get_source() -> AsyncIterator[str]:
+        return source()
+
+    chunks = list(_async_source_to_sync_iter(get_source, on_demand=True))
+
+    assert chunks == ["one", "two"]
+    assert current_context.get() == "unset"
+
+
+def test_on_demand_bridge_reads_nothing_ahead_of_the_consumer() -> None:
+    produced = {"count": 0}
+
+    async def source() -> AsyncIterator[int]:
+        for index in range(500):
+            produced["count"] += 1
+            yield index
+
+    async def get_source() -> AsyncIterator[int]:
+        return source()
+
+    iterator = _async_source_to_sync_iter(get_source, on_demand=True)
+    try:
+        assert next(iterator) == 0
+        time.sleep(0.05)
+        assert produced["count"] == 1
+        assert next(iterator) == 1
+        assert produced["count"] == 2
+    finally:
+        iterator.close()
+
+
+def test_on_demand_bridge_runs_the_whole_source_in_one_task() -> None:
+    tasks: set[asyncio.Task[Any] | None] = set()
+
+    async def source() -> AsyncIterator[int]:
+        for index in range(3):
+            tasks.add(asyncio.current_task())
+            yield index
+
+    async def get_source() -> AsyncIterator[int]:
+        return source()
+
+    assert list(_async_source_to_sync_iter(get_source, on_demand=True)) == [0, 1, 2]
+    assert len(tasks) == 1
+
+
+def test_on_demand_bridge_propagates_source_errors_and_closes() -> None:
+    cleanup = {"done": False}
+    message = "source failed"
+
+    async def source() -> AsyncIterator[int]:
+        try:
+            yield 1
+            raise RuntimeError(message)
+        finally:
+            cleanup["done"] = True
+
+    async def get_source() -> AsyncIterator[int]:
+        return source()
+
+    iterator = _async_source_to_sync_iter(get_source, on_demand=True)
+
+    assert next(iterator) == 1
+    with pytest.raises(RuntimeError, match=message):
+        next(iterator)
+    assert cleanup["done"] is True
+
+
 def test_async_iter_to_sync_iter_closes_cleanly_on_generator_close() -> None:
     cleanup = {"done": False}
 
@@ -648,3 +734,39 @@ def test_nested_private_loop_is_torn_down_when_closed_on_its_own_thread() -> Non
         time.sleep(0.05)
 
     assert live_nested_threads() == []
+
+
+@pytest.mark.parametrize("on_demand", [False, True])
+@pytest.mark.parametrize("cancel_at_open", [False, True])
+def test_sync_bridge_propagates_source_cancellation(on_demand: bool, cancel_at_open: bool) -> None:
+    cleaned = threading.Event()
+    finished = threading.Event()
+    errors: list[BaseException] = []
+
+    async def source() -> AsyncIterator[int]:
+        try:
+            yield 1
+            raise asyncio.CancelledError
+        finally:
+            cleaned.set()
+
+    async def get_source() -> AsyncIterator[int]:
+        if cancel_at_open:
+            raise asyncio.CancelledError
+        return source()
+
+    def consume() -> None:
+        try:
+            list(_async_source_to_sync_iter(get_source, on_demand=on_demand))
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            finished.set()
+
+    thread = threading.Thread(target=consume, daemon=True)
+    thread.start()
+    assert finished.wait(2), "Sync consumer hung after source cancellation"
+    thread.join()
+    assert len(errors) == 1
+    assert isinstance(errors[0], asyncio.CancelledError)
+    assert cleaned.is_set() is not cancel_at_open

@@ -1,5 +1,6 @@
 # ruff: noqa: PT012
 import asyncio
+import contextvars
 import warnings
 from collections.abc import AsyncIterator, Callable
 from io import BytesIO
@@ -308,6 +309,34 @@ async def test_argument_errors_survive_unified_exceptions_without_warning(monkey
         assert [str(entry.message) for entry in caught] == []
     finally:
         await provider.client.close()
+
+
+def test_sync_download_runs_in_one_context() -> None:
+    """A transport that brackets its stream with a contextvar must be able to reset its token.
+
+    The sync bridge advances the response in a single task for this reason; a bridge that used a
+    fresh task per chunk fails here with "Token was created in a different Context".
+    """
+    active = contextvars.ContextVar("download_active", default="unset")
+
+    class TracedStream(httpx.AsyncByteStream):
+        @override
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            token = active.set("streaming")
+            try:
+                for _ in range(3):
+                    yield b"data"
+            finally:
+                active.reset(token)
+
+    provider = provider_for(lambda _: httpx.Response(200, stream=TracedStream()))
+    try:
+        with provider.download_file("file_123", chunk_size=4) as chunks:
+            assert list(chunks) == [b"data"] * 3
+    finally:
+        run_async_in_sync(provider.client.close())
+
+    assert active.get() == "unset"
 
 
 def test_public_file_types_are_exported() -> None:

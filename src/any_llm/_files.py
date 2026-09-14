@@ -5,7 +5,7 @@ from typing import Any, ClassVar
 from any_llm.constants import INSIDE_NOTEBOOK
 from any_llm.exceptions import InvalidRequestError
 from any_llm.types.files import FileDeleted, FileInput, FileMetadata, FileOperation, FilePage
-from any_llm.utils.aio import run_async_in_sync
+from any_llm.utils.aio import _async_source_to_sync_iter, run_async_in_sync
 from any_llm.utils.exception_handler import _handle_exception, handle_exceptions
 
 
@@ -89,9 +89,7 @@ class FilesMixin:
         Only one chunk is requested at a time. Provider failures are handled
         during iteration as well as when opening the download.
         """
-        if chunk_size <= 0:
-            message = "chunk_size must be positive"
-            raise InvalidRequestError(message, provider_name=self.PROVIDER_NAME)
+        self._validate_chunk_size(chunk_size)
 
         async def iterate() -> AsyncGenerator[bytes, None]:
             try:
@@ -112,21 +110,32 @@ class FilesMixin:
         raise NotImplementedError(message)
         yield  # pragma: no cover
 
+    def _validate_chunk_size(self, chunk_size: int) -> None:
+        if chunk_size <= 0:
+            message = "chunk_size must be positive"
+            raise InvalidRequestError(message, provider_name=self.PROVIDER_NAME)
+
     @contextmanager
     def download_file(self, file_id: str, *, chunk_size: int = 65536, **kwargs: Any) -> Iterator[Iterator[bytes]]:
-        """Stream binary chunks inside ``with`` without prefetching the whole file."""
+        """Stream binary chunks inside ``with`` without prefetching the whole file.
+
+        One task on the runner loop owns the download from start to finish, so the response and any
+        contextvar tokens its transport sets are opened, advanced and closed in a single context.
+        The handoff to this thread carries one chunk at a time, so the producer never runs ahead.
+        """
         allow = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
-        manager = self.adownload_file(file_id, chunk_size=chunk_size, **kwargs)
-        source = run_async_in_sync(manager.__aenter__(), allow_running_loop=allow)
+        self._validate_chunk_size(chunk_size)
 
-        async def pull() -> bytes | None:
-            return await anext(source, None)
+        async def open_stream() -> AsyncIterator[bytes]:
+            async def stream() -> AsyncGenerator[bytes, None]:
+                async with self.adownload_file(file_id, chunk_size=chunk_size, **kwargs) as chunks:
+                    async for chunk in chunks:
+                        yield chunk
 
-        def iterate() -> Iterator[bytes]:
-            while (chunk := run_async_in_sync(pull(), allow_running_loop=allow)) is not None:
-                yield chunk
+            return stream()
 
+        chunks = _async_source_to_sync_iter(open_stream, allow_running_loop=allow, on_demand=True)
         try:
-            yield iterate()
+            yield chunks
         finally:
-            run_async_in_sync(manager.__aexit__(None, None, None), allow_running_loop=allow)
+            chunks.close()
