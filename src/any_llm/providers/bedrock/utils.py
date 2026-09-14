@@ -514,9 +514,12 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
         )
 
     if response.get("stopReason") == "tool_use" and tool_calls_list:
+        # The model's own text belongs in its turn, alongside the tool calls it made. Converse
+        # returns it as a separate text block in the same message, and the streaming converter
+        # already forwards those deltas, so dropping it here made the two paths disagree.
         message = ChatCompletionMessage(
             role="assistant",
-            content=None,
+            content="".join(content_parts) or None,
             reasoning=Reasoning(content=reasoning_content) if reasoning_content else None,
             tool_calls=[
                 ChatCompletionMessageFunctionToolCall(
