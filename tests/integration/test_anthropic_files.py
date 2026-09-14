@@ -1,5 +1,7 @@
 import os
+import sys
 import uuid
+from collections.abc import Iterable
 
 import pytest
 
@@ -7,6 +9,27 @@ from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.types.messages import MessageResponse
 from tests.constants import EXPECTED_PROVIDERS
+
+
+async def cleanup_files(provider: AnthropicProvider, file_ids: Iterable[str]) -> None:
+    primary_error = sys.exc_info()[1]
+    errors: list[Exception] = []
+    for file_id in file_ids:
+        try:
+            await provider.adelete_file(file_id)
+        except Exception as exc:
+            errors.append(exc)
+    try:
+        await provider.client.close()
+    except Exception as exc:
+        errors.append(exc)
+    if errors:
+        if primary_error is not None:
+            for error in errors:
+                primary_error.add_note(f"Files cleanup failed: {error!r}")
+        else:
+            message = "Files cleanup failed"
+            raise ExceptionGroup(message, errors)
 
 
 @pytest.mark.asyncio
@@ -36,14 +59,13 @@ async def test_anthropic_files_lifecycle() -> None:
         legacy = await provider.alist_files(limit=1, betas=["files-api-2025-04-14"])
         assert len(legacy.data) <= 1
         deleted = await provider.adelete_file(file_id)
-        assert deleted.id == file_id
-        absent = await provider.alist_files(ids=[file_id])
-        assert absent.data == []
+        deleted_file_id = file_id
         file_id = None
+        assert deleted.id == deleted_file_id
+        absent = await provider.alist_files(ids=[deleted_file_id])
+        assert absent.data == []
     finally:
-        if file_id is not None:
-            await provider.adelete_file(file_id)
-        await provider.client.close()
+        await cleanup_files(provider, [file_id] if file_id is not None else [])
 
 
 @pytest.mark.asyncio
@@ -90,8 +112,4 @@ async def test_anthropic_generated_file_download() -> None:
                 contents.append(b"".join([chunk async for chunk in chunks]))
         assert b"any-llm Files test\n" in contents
     finally:
-        try:
-            for file_id in output_ids:
-                await provider.adelete_file(file_id)
-        finally:
-            await provider.client.close()
+        await cleanup_files(provider, output_ids)
