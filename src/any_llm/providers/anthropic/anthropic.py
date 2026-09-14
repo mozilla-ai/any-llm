@@ -9,7 +9,7 @@ from typing_extensions import override
 from any_llm.types.files import FileDeleted, FileInput, FileMetadata, FileOperation, FilePage
 
 from .base import BaseAnthropicProvider
-from .files import file_path, list_files, request_options, upload_file
+from .files import file_path, list_files, reject_unsupported, request_options, upload_file
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -71,18 +71,14 @@ class AnthropicProvider(BaseAnthropicProvider):
     @override
     async def _aretrieve_file(self, file_id: str, **kwargs: Any) -> FileMetadata:
         client, options = request_options(self.client, kwargs)
-        if kwargs:
-            message = f"Unsupported Files options: {', '.join(sorted(kwargs))}"
-            raise TypeError(message)
+        reject_unsupported(kwargs)
         result = await client.get(file_path(file_id), cast_to=dict[str, Any], options=options)
         return FileMetadata.model_validate(result)
 
     @override
     async def _adelete_file(self, file_id: str, **kwargs: Any) -> FileDeleted:
         client, options = request_options(self.client, kwargs)
-        if kwargs:
-            message = f"Unsupported Files options: {', '.join(sorted(kwargs))}"
-            raise TypeError(message)
+        reject_unsupported(kwargs)
         result = await client.delete(file_path(file_id), cast_to=dict[str, Any], options=options)
         return FileDeleted.model_validate(result)
 
@@ -92,9 +88,7 @@ class AnthropicProvider(BaseAnthropicProvider):
         self, file_id: str, *, chunk_size: int, **kwargs: Any
     ) -> AsyncIterator[AsyncIterator[bytes]]:
         client, options = request_options(self.client, kwargs)
-        if kwargs:
-            message = f"Unsupported Files options: {', '.join(sorted(kwargs))}"
-            raise TypeError(message)
+        reject_unsupported(kwargs)
         response = await client.get(
             file_path(file_id) + "/content", cast_to=httpx.Response, options=options, stream=True
         )

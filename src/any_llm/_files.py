@@ -3,6 +3,7 @@ from contextlib import aclosing, asynccontextmanager, contextmanager
 from typing import Any, ClassVar
 
 from any_llm.constants import INSIDE_NOTEBOOK
+from any_llm.exceptions import InvalidRequestError
 from any_llm.types.files import FileDeleted, FileInput, FileMetadata, FileOperation, FilePage
 from any_llm.utils.aio import run_async_in_sync
 from any_llm.utils.exception_handler import _handle_exception, handle_exceptions
@@ -90,7 +91,7 @@ class FilesMixin:
         """
         if chunk_size <= 0:
             message = "chunk_size must be positive"
-            raise ValueError(message)
+            raise InvalidRequestError(message, provider_name=self.PROVIDER_NAME)
 
         async def iterate() -> AsyncGenerator[bytes, None]:
             try:

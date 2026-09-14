@@ -1,5 +1,6 @@
 # ruff: noqa: PT012
 import asyncio
+import warnings
 from collections.abc import AsyncIterator, Callable
 from io import BytesIO
 from pathlib import Path
@@ -10,7 +11,14 @@ import pytest
 from typing_extensions import override
 
 from any_llm import AnyLLM
-from any_llm.exceptions import ProviderError, ProviderFileNotFoundError, RateLimitError
+from any_llm.exceptions import (
+    AnyLLMError,
+    InvalidRequestError,
+    ProviderError,
+    ProviderFileNotFoundError,
+    RateLimitError,
+    UnsupportedParameterError,
+)
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.utils.aio import run_async_in_sync
 
@@ -201,7 +209,7 @@ async def test_invalid_list_options_fail_before_network(kwargs: dict[str, Any]) 
 
     provider = provider_for(handle)
     try:
-        with pytest.raises(ValueError, match=r"(ids|limit|Unsupported)"):
+        with pytest.raises(AnyLLMError, match=r"(ids|limit|not supported)"):
             await provider.alist_files(**kwargs)
     finally:
         await provider.client.close()
@@ -252,14 +260,15 @@ async def test_upload_does_not_retry_and_retains_rate_limit(monkeypatch: pytest.
 async def test_invalid_upload_options_are_not_silently_forwarded(kwargs: dict[str, Any]) -> None:
     provider = provider_for(lambda _: pytest.fail("Invalid upload reached network"))
     try:
-        with pytest.raises(ValueError, match=r"(Unsupported|expires_in_seconds)"):
+        with pytest.raises(AnyLLMError, match=r"(not supported|expires_in_seconds)"):
             await provider.aupload_file(b"data", **kwargs)
     finally:
         await provider.client.close()
 
 
 @pytest.mark.asyncio
-async def test_beta_header_matching_is_case_insensitive() -> None:
+@pytest.mark.parametrize("beta_header", ["files-api-2025-04-14", "other-beta, files-api-2025-04-14"])
+async def test_beta_header_matching_is_case_insensitive(beta_header: str) -> None:
     requests: list[httpx.Request] = []
 
     def handle(request: httpx.Request) -> httpx.Response:
@@ -268,11 +277,35 @@ async def test_beta_header_matching_is_case_insensitive() -> None:
 
     provider = provider_for(handle)
     try:
-        result = await provider.alist_files(
-            after_id="file_123", extra_headers={"Anthropic-Beta": "files-api-2025-04-14"}
-        )
+        result = await provider.alist_files(after_id="file_123", extra_headers={"Anthropic-Beta": beta_header})
         assert result.has_more is False
         assert len(requests) == 1
+        assert requests[0].url.params["after_id"] == "file_123"
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
+async def test_argument_errors_survive_unified_exceptions_without_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
+    provider = provider_for(lambda _: pytest.fail("Invalid options reached the provider"))
+    try:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with pytest.raises(UnsupportedParameterError, match="purpose"):
+                await provider.aupload_file(b"data", purpose="batch")
+            with pytest.raises(UnsupportedParameterError, match="purpose"):
+                await provider.aretrieve_file("file_123", purpose="batch")
+            with pytest.raises(UnsupportedParameterError, match="purpose"):
+                await provider.adelete_file("file_123", purpose="batch")
+            with pytest.raises(InvalidRequestError, match="limit"):
+                await provider.alist_files(limit=0)
+            with pytest.raises(InvalidRequestError, match="nonempty"):
+                await provider.aretrieve_file("")
+            with pytest.raises(InvalidRequestError, match="chunk_size"):
+                async with provider.adownload_file("file_123", chunk_size=0):
+                    pass
+        assert [str(entry.message) for entry in caught] == []
     finally:
         await provider.client.close()
 
@@ -370,7 +403,7 @@ async def test_download_network_error_during_iteration_is_unified(monkeypatch: p
 async def test_invalid_file_ids_are_rejected(file_id: str) -> None:
     provider = provider_for(lambda _: pytest.fail("Invalid file ID reached network"))
     try:
-        with pytest.raises(ValueError, match="file ID"):
+        with pytest.raises(InvalidRequestError, match="file ID"):
             await provider.aretrieve_file(file_id)
     finally:
         await provider.client.close()
@@ -441,7 +474,7 @@ async def test_file_handle_upload_is_bounded_and_does_not_close_callers_handle()
 async def test_unknown_options_rejected(operation: str) -> None:
     provider = provider_for(lambda _: pytest.fail("Unknown option reached network"))
     try:
-        with pytest.raises(TypeError, match="Unsupported Files options"):
+        with pytest.raises(UnsupportedParameterError, match="unknown"):
             if operation == "retrieve":
                 await provider.aretrieve_file("file_123", unknown=True)
             elif operation == "delete":
@@ -457,7 +490,7 @@ async def test_unknown_options_rejected(operation: str) -> None:
 async def test_invalid_download_chunk_size() -> None:
     provider = provider_for(lambda _: pytest.fail("Invalid chunk size reached network"))
     try:
-        with pytest.raises(ValueError, match="chunk_size"):
+        with pytest.raises(InvalidRequestError, match="chunk_size"):
             async with provider.adownload_file("file_123", chunk_size=0):
                 pass
     finally:

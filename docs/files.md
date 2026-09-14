@@ -162,6 +162,12 @@ accepts `expires_in_seconds`, an integer from 3,600 to 7,776,000. Omission leave
 retention to the provider. Unsupported upload options such as OpenAI's `purpose`
 are rejected rather than ignored.
 
+Caller mistakes are reported as any-llm exceptions regardless of
+`ANY_LLM_UNIFIED_EXCEPTIONS`: an option the provider does not accept raises
+`UnsupportedParameterError`, and an out-of-range value (`limit`,
+`expires_in_seconds`, `chunk_size`) or an empty file ID raises
+`InvalidRequestError`. Neither is converted into a provider error.
+
 Uploads default to **zero automatic retries**, even if the provider instance
 has retries enabled. A caller can explicitly override `max_retries`, but a lost
 response can follow successful creation: retrying can create another file.
