@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any
 
 import pytest
@@ -21,6 +22,7 @@ from any_llm.utils.exception_handler import (
     _STATUS_ERROR_CLASSES,
     _handle_exception,
     convert_exception,
+    handle_exceptions,
 )
 
 
@@ -54,6 +56,124 @@ class _BodyError(Exception):
     def __init__(self, body: Any, message: str = "boom") -> None:
         super().__init__(message)
         self.body = body
+
+
+class _StreamingProvider:
+    PROVIDER_NAME = "test"
+
+    def __init__(self, stream: Any) -> None:
+        self.stream = stream
+
+    @handle_exceptions(wrap_streaming=True)
+    async def request(self) -> Any:
+        return self.stream
+
+
+class _CloseableStream:
+    def __init__(
+        self, *, iteration_error: BaseException | None = None, close_error: BaseException | None = None
+    ) -> None:
+        self.iteration_error = iteration_error
+        self.close_error = close_error
+        self.closed = 0
+
+    def __aiter__(self) -> "_CloseableStream":
+        return self
+
+    async def __anext__(self) -> str:
+        if self.iteration_error is not None:
+            raise self.iteration_error
+        self.iteration_error = StopAsyncIteration()
+        return "event"
+
+    async def aclose(self) -> None:
+        self.closed += 1
+        if self.close_error is not None:
+            raise self.close_error
+
+
+@pytest.mark.asyncio
+async def test_stream_wrapper_closes_source_after_explicit_close() -> None:
+    source = _CloseableStream()
+    stream = await _StreamingProvider(source).request()
+    assert await anext(stream) == "event"
+    await stream.aclose()
+    assert source.closed == 1
+
+
+@pytest.mark.asyncio
+async def test_stream_wrapper_closes_source_after_exhaustion() -> None:
+    source = _CloseableStream()
+    assert [item async for item in await _StreamingProvider(source).request()] == ["event"]
+    assert source.closed == 1
+
+
+@pytest.mark.asyncio
+async def test_stream_wrapper_preserves_cancellation_when_close_fails(caplog: pytest.LogCaptureFixture) -> None:
+    source = _CloseableStream(iteration_error=asyncio.CancelledError(), close_error=RuntimeError("close failed"))
+    stream = await _StreamingProvider(source).request()
+    with pytest.raises(asyncio.CancelledError):
+        await anext(stream)
+    assert source.closed == 1
+    assert "Failed to close provider stream while handling another error" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_stream_wrapper_preserves_iteration_error_when_close_fails(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
+    source = _CloseableStream(iteration_error=ValueError("iteration failed"), close_error=RuntimeError("close failed"))
+    stream = await _StreamingProvider(source).request()
+    with pytest.raises(ProviderError, match="iteration failed") as raised:
+        await anext(stream)
+    assert isinstance(raised.value.original_exception, ValueError)
+    assert source.closed == 1
+    assert "Failed to close provider stream while handling another error" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_stream_wrapper_translates_close_only_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
+    source = _CloseableStream(close_error=RuntimeError("close failed"))
+    stream = await _StreamingProvider(source).request()
+    assert await anext(stream) == "event"
+    with pytest.raises(ProviderError, match="close failed") as raised:
+        await stream.aclose()
+    assert isinstance(raised.value.original_exception, RuntimeError)
+
+
+@pytest.mark.asyncio
+async def test_stream_wrapper_closes_source_with_sync_close() -> None:
+    class Source:
+        closed = 0
+
+        def __aiter__(self) -> "Source":
+            return self
+
+        async def __anext__(self) -> str:
+            return "event"
+
+        def close(self) -> None:
+            self.closed += 1
+
+    source = Source()
+    stream = await _StreamingProvider(source).request()
+    assert await anext(stream) == "event"
+    await stream.aclose()
+    assert source.closed == 1
+
+
+@pytest.mark.asyncio
+async def test_stream_wrapper_accepts_source_without_close_protocol() -> None:
+    class Source:
+        def __aiter__(self) -> "Source":
+            return self
+
+        async def __anext__(self) -> str:
+            raise StopAsyncIteration
+
+    assert [item async for item in await _StreamingProvider(Source()).request()] == []
 
 
 def test_validation_error_bubbles_up_unchanged() -> None:

@@ -1,6 +1,7 @@
 import dataclasses
 import json
 import logging
+from collections.abc import AsyncGenerator, AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -8,6 +9,7 @@ import pytest
 from openai.types.responses import ResponseCompactionItem, ResponseOutputMessage, ResponseOutputText
 from openresponses_types import CompactionBody, ResponseResource
 from pydantic import BaseModel
+from typing_extensions import override
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.openai.openai import OpenaiProvider
@@ -15,6 +17,48 @@ from any_llm.types.completion import CompletionParams
 from any_llm.types.model import Model
 from any_llm.types.responses import ParsedResponse, Response
 from any_llm.utils.structured_output import parse_responses_output
+
+
+class _TrackedResponseBody(httpx.AsyncByteStream):
+    def __init__(self) -> None:
+        self.closed = 0
+
+    @override
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        response = {
+            "id": "resp-test",
+            "object": "response",
+            "created_at": 0,
+            "status": "in_progress",
+            "model": "test-model",
+            "error": None,
+            "output": [],
+            "parallel_tool_calls": False,
+            "tool_choice": "auto",
+            "tools": [],
+        }
+        event = {"type": "response.created", "sequence_number": 0, "response": response}
+        yield f"data: {json.dumps(event)}\n\n".encode()
+
+    @override
+    async def aclose(self) -> None:
+        self.closed += 1
+
+
+@pytest.mark.asyncio
+async def test_openai_public_response_stream_close_reaches_transport_body() -> None:
+    body = _TrackedResponseBody()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=body)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        provider = OpenaiProvider(api_key="test-key", http_client=http_client)
+        stream = await provider.aresponses("test-model", "hello", stream=True)
+        assert isinstance(stream, AsyncGenerator)
+        assert (await anext(stream)).type == "response.created"
+        await stream.aclose()
+        assert body.closed == 1
 
 
 def test_prompt_cache_key_capability_is_opt_in() -> None:

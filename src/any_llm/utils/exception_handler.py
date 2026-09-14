@@ -4,6 +4,7 @@ import functools
 import os
 import re
 import warnings
+from inspect import isawaitable
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
 from pydantic import ValidationError
@@ -21,6 +22,7 @@ from any_llm.exceptions import (
     RateLimitError,
     UpstreamProviderError,
 )
+from any_llm.logging import logger
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -335,11 +337,32 @@ def handle_exceptions(*, wrap_streaming: bool = False) -> Callable[[F], F]:
                 provider_name: str,
             ) -> Any:
                 """Wrap an async iterator to handle exceptions during iteration."""
+                primary_error: BaseException | None = None
                 try:
                     async for item in async_iter:
                         yield item
-                except Exception as e:
-                    _handle_exception(e, provider_name)
+                except BaseException as error:
+                    if not isinstance(error, GeneratorExit):
+                        primary_error = error
+                    if isinstance(error, Exception):
+                        _handle_exception(error, provider_name)
+                    raise
+                finally:
+                    try:
+                        close = getattr(async_iter, "aclose", None)
+                        if not callable(close):
+                            close = getattr(async_iter, "close", None)
+                        if callable(close) and isawaitable(close_result := close()):
+                            await close_result
+                    except BaseException as close_error:
+                        if primary_error is None:
+                            if isinstance(close_error, Exception):
+                                _handle_exception(close_error, provider_name)
+                            raise
+                        logger.warning(
+                            "Failed to close provider stream while handling another error",
+                            exc_info=close_error,
+                        )
 
             @functools.wraps(func)
             async def streaming_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
