@@ -104,6 +104,10 @@ export MISTRAL_API_KEY="your-key-here"
 
 Alternatively, pass API keys directly in your code (see [Usage](#usage) examples).
 
+## Provider Files
+
+Manage Anthropic-hosted files through an `AnyLLM` instance: upload, list, retrieve metadata, stream downloads, and delete. See the [Files guide](docs/files.md) for examples and provider-specific limits.
+
 ## Otari Gateway
 
 For budget management, API key management, usage analytics, and multi-tenant support, see [mozilla-ai/otari](https://github.com/mozilla-ai/otari).

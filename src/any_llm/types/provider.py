@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 
 from any_llm.constants import ProviderTier
+from any_llm.types.files import FileOperation
 
 
 class ProviderMetadata(BaseModel):
@@ -27,3 +28,6 @@ class ProviderMetadata(BaseModel):
     audio_transcription: bool = False
     audio_speech: bool = False
     rerank: bool = False
+
+    files: bool = False
+    file_operations: tuple[FileOperation, ...] = ()

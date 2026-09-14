@@ -1,0 +1,179 @@
+---
+title: Files
+description: Manage provider-hosted files through an AnyLLM instance
+---
+
+# Files
+
+The Files API exposes upload, listing, metadata retrieval, streamed download, and
+deletion on an `AnyLLM` instance. Anthropic is the first supported provider.
+Other providers, including OpenAI-compatible endpoints, do not automatically
+inherit Files support.
+
+```python
+from any_llm import AnyLLM
+
+provider = AnyLLM.create("anthropic")  # ANTHROPIC_API_KEY
+capabilities = provider.get_provider_metadata()
+print(capabilities.files)
+print(capabilities.file_operations)
+```
+
+## Upload and use a file
+
+```python
+from pathlib import Path
+from any_llm import AnyLLM
+
+provider = AnyLLM.create("anthropic")
+uploaded = provider.upload_file(
+    Path("report.pdf"),
+    mime_type="application/pdf",
+    expires_in_seconds=3600,
+)
+try:
+    response = provider.messages(
+        model="claude-sonnet-4-6",
+        max_tokens=1024,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "document", "source": {"type": "file", "file_id": uploaded.id}},
+                {"type": "text", "text": "Summarize this report."},
+            ],
+        }],
+    )
+    print(response.content)
+finally:
+    provider.delete_file(uploaded.id)
+```
+
+`file` accepts a path (`str` or `PathLike`), `bytes`, or a binary file handle.
+`filename` and `mime_type` override the multipart part's metadata. The default
+filename is the path's basename, or `upload` for bytes and handles; the default
+MIME type is `application/octet-stream`. Supply the actual MIME type for inputs
+whose interpretation depends on it.
+
+Path uploads open a binary handle and close it after the request. Caller-owned
+handles remain open. The SDK multipart encoder reads handles in bounded chunks;
+any-llm does not read the entire path into bytes first. These file reads are
+synchronous SDK I/O even for an asynchronous upload. Bytes inputs are already
+resident in memory. Async iterators are not supported upload inputs.
+
+## Methods
+
+| Synchronous | Asynchronous | Result |
+| --- | --- | --- |
+| `upload_file(file, filename=None, mime_type=None, **kwargs)` | `await aupload_file(...)` | `FileMetadata` |
+| `list_files(limit=None, **kwargs)` | `await alist_files(...)` | `FilePage` |
+| `retrieve_file(file_id, **kwargs)` | `await aretrieve_file(...)` | `FileMetadata` |
+| `download_file(file_id, chunk_size=65536, **kwargs)` | `adownload_file(...)` | Context manager yielding binary chunks |
+| `delete_file(file_id, **kwargs)` | `await adelete_file(...)` | `FileDeleted` |
+
+These are instance methods. Reuse the instance configured for the originating
+provider account; file IDs are not portable to another provider or account.
+Use async methods inside an event loop. Sync methods honor the existing
+`allow_running_loop` option.
+
+`FileMetadata`, `FilePage`, and `FileDeleted` are exported from `any_llm` and
+`any_llm.types.files`. Metadata uses `size_bytes`, `mime_type`, and parsed
+`datetime` timestamps. Fields a provider omits remain `None`. Provider-specific
+fields survive in `model_extra` and `model_dump()`. A deletion acknowledgement
+preserves its native fields, without inventing a `deleted` flag if absent.
+
+## Pagination
+
+Listing fetches exactly one page, including when `has_more` is true. It never
+uses account-wide auto-pagination. Current Anthropic pagination uses `page` and
+`next_page`:
+
+```python
+page = provider.list_files(limit=20)
+if page.next_page is not None:
+    next_page = provider.list_files(limit=20, page=page.next_page)
+```
+
+For a known set of IDs, use `ids=[...]`. Anthropic omits missing or inaccessible
+IDs; this is not an existence check for other accounts. `ids` cannot be combined
+with `page` or `limit`. At most 100 distinct IDs are supported. `limit` is 1 to 1,000; when
+omitted, the provider default applies.
+
+Legacy callers can select the `files-api-2025-04-14` beta header:
+
+```python
+page = provider.list_files(limit=20, betas=["files-api-2025-04-14"])
+if page.has_more:
+    next_page = provider.list_files(
+        limit=20,
+        after_id=page.last_id,
+        betas=["files-api-2025-04-14"],
+    )
+```
+
+Legacy pages preserve `has_more`, `first_id`, and `last_id`; they do not fabricate
+`next_page`. Legacy queries accept `before_id`, `after_id`, `order`, and `limit`.
+Do not mix current and legacy pagination arguments.
+
+## Download generated outputs
+
+Anthropic marks user uploads as non-downloadable. Download files returned by
+native code execution or supported skills, using their structured `file_id`.
+For example, after a Messages request using the native code execution tool:
+
+```python
+response = provider.messages(
+    model="claude-sonnet-4-6",
+    max_tokens=2048,
+    tools=[{"type": "code_execution_20250825", "name": "code_execution"}],
+    messages=[{"role": "user", "content": "Create a small CSV in /mnt/data and return it as a downloadable file."}],
+    timeout=90,
+)
+for block in response.content:
+    if block.type == "bash_code_execution_tool_result":
+        for output in block.content.content:
+            if output.type == "bash_code_execution_output":
+                metadata = provider.retrieve_file(output.file_id)
+                if metadata.downloadable:
+                    with provider.download_file(output.file_id) as chunks:
+                        with open("result.bin", "wb") as destination:
+                            for chunk in chunks:
+                                destination.write(chunk)
+```
+
+For an async caller with a generated file ID:
+
+```python
+async def download_to_writer(provider, file_id, consume):
+    async with provider.adownload_file(file_id, chunk_size=65536, timeout=30) as chunks:
+        async for chunk in chunks:
+            await consume(chunk)  # Your async writer
+```
+
+The request starts when iteration starts. Always use `with` or `async with` so
+early exit and cancellation close the response. The sync bridge requests one
+chunk at a time rather than prefetching the entire response. Exceptions raised
+by consumer code are not converted into provider errors.
+
+## Provider options and errors
+
+All Anthropic Files methods accept `timeout`, `max_retries`, `betas`, and
+`extra_headers` (for example, `{"anthropic-version": "2023-06-01"}`). Upload also
+accepts `expires_in_seconds`, an integer from 3,600 to 7,776,000. Omission leaves
+retention to the provider. Unsupported upload options such as OpenAI's `purpose`
+are rejected rather than ignored.
+
+Uploads default to **zero automatic retries**, even if the provider instance
+has retries enabled. A caller can explicitly override `max_retries`, but a lost
+response can follow successful creation: retrying can create another file.
+Other operations inherit the configured SDK retry policy unless overridden.
+Timeouts do not prove that an upload failed before creation.
+
+Errors follow the existing `ANY_LLM_UNIFIED_EXCEPTIONS` setting. When enabled,
+a Files HTTP 404 becomes `ProviderFileNotFoundError`, authentication errors
+remain `AuthenticationError`, and `RateLimitError` retains `retry_after`.
+Streaming failures are converted during iteration. Without unified errors,
+SDK exceptions retain their existing behavior.
+
+Applications remain responsible for authorization, ownership, cleanup jobs,
+credential rotation, and provider-account selection. This API neither stores
+application copies nor makes provider files shareable between tenants.

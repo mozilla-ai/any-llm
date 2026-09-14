@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Any, ClassVar
 
+import httpx
 from typing_extensions import override
 
+from any_llm.types.files import FileDeleted, FileInput, FileMetadata, FileOperation, FilePage
+
 from .base import BaseAnthropicProvider
+from .files import file_path, list_files, request_options, upload_file
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -13,7 +18,7 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import AsyncIterator, Sequence
 
     from any_llm.types.model import Model
 
@@ -34,6 +39,10 @@ class AnthropicProvider(BaseAnthropicProvider):
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
+    SUPPORTED_FILE_OPERATIONS: ClassVar[frozenset[FileOperation]] = frozenset(
+        {"upload", "list", "retrieve", "download", "delete"}
+    )
+
     client: AsyncAnthropic
 
     @override
@@ -48,3 +57,48 @@ class AnthropicProvider(BaseAnthropicProvider):
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(models_list.data)
+
+    @override
+    async def _aupload_file(
+        self, file: FileInput, *, filename: str | None = None, mime_type: str | None = None, **kwargs: Any
+    ) -> FileMetadata:
+        return await upload_file(self.client, file, filename, mime_type, kwargs)
+
+    @override
+    async def _alist_files(self, *, limit: int | None = None, **kwargs: Any) -> FilePage:
+        return await list_files(self.client, limit, kwargs)
+
+    @override
+    async def _aretrieve_file(self, file_id: str, **kwargs: Any) -> FileMetadata:
+        client, options = request_options(self.client, kwargs)
+        if kwargs:
+            message = f"Unsupported Files options: {', '.join(sorted(kwargs))}"
+            raise TypeError(message)
+        result = await client.get(file_path(file_id), cast_to=dict[str, Any], options=options)
+        return FileMetadata.model_validate(result)
+
+    @override
+    async def _adelete_file(self, file_id: str, **kwargs: Any) -> FileDeleted:
+        client, options = request_options(self.client, kwargs)
+        if kwargs:
+            message = f"Unsupported Files options: {', '.join(sorted(kwargs))}"
+            raise TypeError(message)
+        result = await client.delete(file_path(file_id), cast_to=dict[str, Any], options=options)
+        return FileDeleted.model_validate(result)
+
+    @override
+    @asynccontextmanager
+    async def _adownload_file(
+        self, file_id: str, *, chunk_size: int, **kwargs: Any
+    ) -> AsyncIterator[AsyncIterator[bytes]]:
+        client, options = request_options(self.client, kwargs)
+        if kwargs:
+            message = f"Unsupported Files options: {', '.join(sorted(kwargs))}"
+            raise TypeError(message)
+        response = await client.get(
+            file_path(file_id) + "/content", cast_to=httpx.Response, options=options, stream=True
+        )
+        try:
+            yield response.aiter_bytes(chunk_size)
+        finally:
+            await response.aclose()
