@@ -207,23 +207,28 @@ def _parse_data_uri(data_uri: str, field_name: str, provider_name: str) -> tuple
         msg = f"{field_name} is missing a MIME type"
         raise InvalidRequestError(msg, provider_name=provider_name)
 
-    encoded_data = data_uri.split("base64,", 1)[1]
+    return mime_type, _decode_base64(data_uri.split("base64,", 1)[1], field_name, provider_name)
+
+
+def _decode_base64(encoded_data: str, field_name: str, provider_name: str) -> bytes:
+    """Decode strict base64 within the inline upload limit, reporting bad input as an invalid request.
+
+    The decoded size is computed from the encoded length and padding, so an oversized payload is
+    rejected before anything is decoded.
+    """
     if not encoded_data:
         msg = f"{field_name} is missing base64 data"
         raise InvalidRequestError(msg, provider_name=provider_name)
+    decoded_size = len(encoded_data) * 3 // 4 - encoded_data[-2:].count("=")
+    if decoded_size > _INLINE_SIZE_LIMIT:
+        msg = f"{field_name} exceeds the 20 MB inline upload limit for {provider_name} ({decoded_size} bytes)"
+        raise InvalidRequestError(msg, provider_name=provider_name)
 
     try:
-        raw_data = base64.b64decode(encoded_data, validate=True)
-    except binascii.Error as exc:
+        return base64.b64decode(encoded_data, validate=True)
+    except (binascii.Error, ValueError) as exc:
         msg = f"{field_name} contains invalid base64 data"
         raise InvalidRequestError(msg, exc, provider_name) from exc
-    return mime_type, raw_data
-
-
-def _validate_inline_size(raw_data: bytes, field_name: str, provider_name: str) -> None:
-    if len(raw_data) > _INLINE_SIZE_LIMIT:
-        msg = f"{field_name} exceeds the 20 MB inline upload limit for {provider_name} ({len(raw_data)} bytes)"
-        raise InvalidRequestError(msg, provider_name=provider_name)
 
 
 def _convert_image_url_to_part(block: dict[str, Any], provider_name: str) -> types.Part:
@@ -234,11 +239,25 @@ def _convert_image_url_to_part(block: dict[str, Any], provider_name: str) -> typ
 
     if url.startswith("data:"):
         mime_type, raw_data = _parse_data_uri(url, "image_url.url", provider_name)
-        _validate_inline_size(raw_data, "image_url.url", provider_name)
         return types.Part.from_bytes(data=raw_data, mime_type=mime_type)
 
     guessed_type, _ = mimetypes.guess_type(url)
     return types.Part.from_uri(file_uri=url, mime_type=guessed_type or "image/jpeg")
+
+
+def _convert_input_audio_to_part(block: dict[str, Any], provider_name: str) -> types.Part:
+    """OpenAI's input_audio part: base64 data plus a format name, which Gemini spells as audio/<format>."""
+    audio = block.get("input_audio")
+    if not isinstance(audio, dict):
+        audio = {}
+    data = audio.get("data")
+    audio_format = audio.get("format")
+    if not isinstance(data, str) or not isinstance(audio_format, str) or not audio_format:
+        msg = "input_audio.data and input_audio.format are required for audio content"
+        raise InvalidRequestError(msg, provider_name=provider_name)
+
+    raw_data = _decode_base64(data, "input_audio.data", provider_name)
+    return types.Part.from_bytes(data=raw_data, mime_type=f"audio/{audio_format.lower()}")
 
 
 def _convert_file_to_part(block: dict[str, Any], provider_name: str) -> types.Part:
@@ -249,7 +268,6 @@ def _convert_file_to_part(block: dict[str, Any], provider_name: str) -> types.Pa
 
     if file_data.startswith("data:"):
         mime_type, raw_data = _parse_data_uri(file_data, "file.file_data", provider_name)
-        _validate_inline_size(raw_data, "file.file_data", provider_name)
         return types.Part.from_bytes(data=raw_data, mime_type=mime_type)
 
     guessed_type, _ = mimetypes.guess_type(file_data)
@@ -322,6 +340,8 @@ def _convert_messages(
                         parts.append(_convert_image_url_to_part(content, provider_name))
                     elif content["type"] == "file":
                         parts.append(_convert_file_to_part(content, provider_name))
+                    elif content["type"] == "input_audio":
+                        parts.append(_convert_input_audio_to_part(content, provider_name))
                     else:
                         logger.debug("Skipping unsupported Gemini content block type: %s", content.get("type"))
             formatted_messages.append(types.Content(role="user", parts=parts))

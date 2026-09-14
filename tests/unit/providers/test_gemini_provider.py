@@ -40,6 +40,7 @@ from any_llm.types.completion import (
 
 TEST_IMAGE_BYTES = b"test-image-bytes"
 TEST_PDF_BYTES = b"%PDF-1.4\ntest"
+TEST_AUDIO_BYTES = b"RIFF-test-audio"
 
 
 class StructuredAnswer(BaseModel):
@@ -2517,6 +2518,40 @@ def test_convert_messages_with_url_image() -> None:
     assert image_part.file_data.mime_type == "image/png"
 
 
+def test_convert_messages_with_input_audio() -> None:
+    audio_b64 = base64.b64encode(TEST_AUDIO_BYTES).decode("utf-8")
+    messages = [
+        {
+            "role": "user",
+            "content": [{"type": "input_audio", "input_audio": {"data": audio_b64, "format": "wav"}}],
+        }
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[0].parts
+    assert parts is not None
+    audio_part = parts[0]
+    assert audio_part.inline_data is not None
+    assert audio_part.inline_data.mime_type == "audio/wav"
+    assert audio_part.inline_data.data == TEST_AUDIO_BYTES
+
+
+@pytest.mark.parametrize("input_audio", [{"data": "AAAA"}, {"data": "AAAA", "format": 1}, "AAAA", None])
+def test_convert_messages_malformed_input_audio_raises_invalid_request(input_audio: object) -> None:
+    messages = [{"role": "user", "content": [{"type": "input_audio", "input_audio": input_audio}]}]
+
+    with pytest.raises(InvalidRequestError, match=r"input_audio\.data and input_audio\.format are required"):
+        _convert_messages(messages)
+
+
+def test_convert_messages_non_ascii_base64_raises_invalid_request() -> None:
+    messages = [{"role": "user", "content": [{"type": "input_audio", "input_audio": {"data": "é", "format": "wav"}}]}]
+
+    with pytest.raises(InvalidRequestError, match="invalid base64"):
+        _convert_messages(messages)
+
+
 def test_convert_messages_with_base64_pdf() -> None:
     pdf_b64 = base64.b64encode(TEST_PDF_BYTES).decode("utf-8")
     messages = [
@@ -2572,6 +2607,24 @@ def test_convert_messages_mixed_text_and_media() -> None:
     assert parts[2].inline_data.mime_type == "application/pdf"
     assert parts[3].inline_data is not None
     assert parts[3].inline_data.mime_type == "image/jpeg"
+
+
+def test_convert_messages_image_at_inline_limit_is_accepted() -> None:
+    limit_bytes = b"a" * (20 * 1024 * 1024)
+    limit_b64 = base64.b64encode(limit_bytes).decode("utf-8")
+    messages = [
+        {
+            "role": "user",
+            "content": [{"type": "image_url", "image_url": {"url": f"data:image/png;base64,{limit_b64}"}}],
+        }
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[0].parts
+    assert parts is not None
+    assert parts[0].inline_data is not None
+    assert parts[0].inline_data.data == limit_bytes
 
 
 def test_convert_messages_oversized_image_raises_invalid_request() -> None:
