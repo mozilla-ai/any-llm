@@ -1,8 +1,10 @@
+import json
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 from ollama import ChatResponse as OllamaChatResponse
 from ollama import Message as OllamaMessage
@@ -12,7 +14,7 @@ from any_llm.providers.ollama.utils import (
     _create_chat_completion_from_ollama_response,
     _create_openai_chunk_from_ollama_chunk,
 )
-from any_llm.types.completion import CompletionParams
+from any_llm.types.completion import ChatCompletion, CompletionParams
 
 
 @pytest.mark.asyncio
@@ -458,6 +460,7 @@ async def test_streaming_assigns_distinct_tool_call_indices() -> None:
         chunk.message = message
         chunk.created_at = None
         chunk.model = "llama3.1"
+        chunk.done = False
         chunk.done_reason = None
         chunk.prompt_eval_count = None
         chunk.eval_count = None
@@ -780,3 +783,92 @@ async def test_tool_call_arguments_are_converted_to_a_mapping(arguments: Any, ex
     )
 
     assert sent[1]["tool_calls"] == [{"function": {"name": "get_weather", "arguments": expected}}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    ("reason_fields", "expected"),
+    [
+        ({}, "stop"),
+        ({"done_reason": None}, "stop"),
+        ({"done_reason": "load"}, "stop"),
+        ({"done_reason": "unload"}, "stop"),
+        ({"done_reason": "stop"}, "stop"),
+        ({"done_reason": "length"}, "length"),
+        ({"done_reason": "future_reason"}, "stop"),
+        ({"done_reason": "tool_calls"}, "tool_calls"),
+        ({"done_reason": "content_filter"}, "content_filter"),
+        ({"done_reason": "function_call"}, "function_call"),
+    ],
+)
+async def test_completion_normalizes_sdk_done_reason(
+    stream: bool, reason_fields: dict[str, str | None], expected: str
+) -> None:
+    """Exercise JSON and NDJSON decoding through the real Ollama SDK and provider."""
+    terminal = {
+        "model": "llama3.2",
+        "created_at": "2024-09-12T21:17:29.110811Z",
+        "message": {"role": "assistant", "content": ""},
+        "done": True,
+        **reason_fields,
+    }
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/chat"
+        assert json.loads(request.content)["stream"] is stream
+        if stream:
+            partial = {**terminal, "done": False, "message": {"role": "assistant", "content": "Hello"}}
+            partial.pop("done_reason", None)
+            return httpx.Response(
+                200,
+                content="\n".join(json.dumps(item) for item in [partial, terminal]) + "\n",
+                headers={"content-type": "application/x-ndjson"},
+            )
+        return httpx.Response(200, json=terminal)
+
+    provider = OllamaProvider(api_base="http://ollama.test", transport=httpx.MockTransport(handle))
+    try:
+        result = await provider.acompletion(
+            model="llama3.2", messages=[{"role": "user", "content": "Hello"}], stream=stream
+        )
+        if stream:
+            assert isinstance(result, AsyncIterator)
+            chunks = [chunk async for chunk in result]
+            assert len(chunks) == 2
+            assert chunks[0].choices[0].delta.content == "Hello"
+            assert chunks[0].choices[0].finish_reason is None
+            assert chunks[1].choices[0].delta.content == ""
+            assert chunks[1].choices[0].finish_reason == expected
+        else:
+            assert isinstance(result, ChatCompletion)
+            assert result.choices[0].message.content == ""
+            assert result.choices[0].finish_reason == expected
+    finally:
+        await provider.client._client.aclose()
+
+
+@pytest.mark.parametrize("done_reason", [None, "load", "unload", "stop", "length"])
+def test_completion_normalization_preserves_tool_call_precedence(done_reason: str | None) -> None:
+    response = OllamaChatResponse(
+        model="llama3.2",
+        created_at="2024-09-12T21:17:29.110811Z",
+        done=True,
+        done_reason=done_reason,
+        message=OllamaMessage(
+            role="assistant",
+            content="",
+            tool_calls=[
+                OllamaMessage.ToolCall(
+                    function=OllamaMessage.ToolCall.Function(name="get_weather", arguments={"city": "Paris"})
+                )
+            ],
+        ),
+    )
+    completion = _create_chat_completion_from_ollama_response(response)
+    assert completion.choices[0].finish_reason == "tool_calls"
+    calls = completion.choices[0].message.tool_calls
+    assert calls is not None
+    assert calls[0].type == "function"
+    assert calls[0].function.name == "get_weather"
+    assert json.loads(calls[0].function.arguments) == {"city": "Paris"}

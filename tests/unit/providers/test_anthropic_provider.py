@@ -3,13 +3,14 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
-from typing import Any, cast, get_args
-from unittest.mock import AsyncMock, Mock, patch
+from typing import Any, Self, cast, get_args
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from anthropic import transform_schema
 from anthropic.types import Message
 from anthropic.types.model_info import ModelInfo
+from anthropic.types.stop_reason import StopReason
 from pydantic import BaseModel
 
 from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
@@ -20,6 +21,7 @@ from any_llm.providers.anthropic.utils import (
     _convert_models_list,
     _convert_response_format,
     _convert_tool_spec,
+    _create_openai_chunk_from_anthropic_chunk,
 )
 from any_llm.types.completion import ChatCompletionMessageFunctionToolCall, CompletionParams, ReasoningEffort
 
@@ -929,6 +931,7 @@ def test_streaming_chunk_includes_cache_tokens_in_usage() -> None:
     assert result.usage.total_tokens == expected_total_tokens
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 13332
+    assert result.choices == []
 
 
 @pytest.mark.asyncio
@@ -998,6 +1001,7 @@ def test_streaming_chunk_without_cache_tokens() -> None:
     assert result.usage.completion_tokens == 50
     assert result.usage.total_tokens == 150
     assert result.usage.prompt_tokens_details is None
+    assert result.choices == []
 
 
 def test_streaming_tool_chunks_preserve_parallel_tool_index() -> None:
@@ -1096,6 +1100,193 @@ def test_non_streaming_response_preserves_multiple_tool_calls() -> None:
     assert isinstance(result.choices[0].message.tool_calls[1], ChatCompletionMessageFunctionToolCall)
     assert result.choices[0].message.tool_calls[1].function is not None
     assert result.choices[0].message.tool_calls[1].function.name == "get_time"
+
+
+@pytest.mark.parametrize("stop_reason", get_args(StopReason))
+def test_non_streaming_response_maps_every_anthropic_stop_reason(stop_reason: StopReason) -> None:
+    """Every stop reason the API can return needs an explicit OpenAI finish_reason.
+
+    An unmapped one falls back to "stop", which tells callers the model answered normally
+    when it actually refused or ran out of context.
+    """
+    from anthropic.types import Message, TextBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    expected_finish_reasons: dict[str, str] = {
+        "end_turn": "stop",
+        "stop_sequence": "stop",
+        "pause_turn": "stop",
+        "max_tokens": "length",
+        "model_context_window_exceeded": "length",
+        "tool_use": "tool_calls",
+        "refusal": "content_filter",
+    }
+    assert stop_reason in expected_finish_reasons, (
+        f"New Anthropic stop reason {stop_reason!r} needs a finish_reason mapping."
+    )
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason=stop_reason,
+        content=[TextBlock(type="text", text="Hello")],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].finish_reason == expected_finish_reasons[stop_reason]
+    assert result.choices[0].message.refusal == (
+        "Response blocked by Anthropic content filtering." if stop_reason == "refusal" else None
+    )
+
+
+def test_non_streaming_response_without_stop_reason_finishes_as_stop() -> None:
+    """A response with no stop_reason at all still needs a valid finish_reason."""
+    from anthropic.types import Message, TextBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        model="claude-3-haiku",
+        stop_reason=None,
+        content=[TextBlock(type="text", text="Hello")],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].finish_reason == "stop"
+    assert result.choices[0].message.refusal is None
+
+
+@pytest.mark.parametrize(
+    ("stop_reason", "expected_finish_reason", "expected_refusal"),
+    [
+        ("end_turn", "stop", None),
+        ("max_tokens", "length", None),
+        ("stop_sequence", "stop", None),
+        ("pause_turn", "stop", None),
+        ("tool_use", "tool_calls", None),
+        ("model_context_window_exceeded", "length", None),
+        ("refusal", "content_filter", "Response blocked by Anthropic content filtering."),
+        (None, None, None),
+    ],
+)
+def test_streaming_message_delta_preserves_terminal_reason(
+    stop_reason: StopReason | None, expected_finish_reason: str | None, expected_refusal: str | None
+) -> None:
+    from anthropic.types import MessageDeltaEvent, MessageDeltaUsage
+    from anthropic.types.raw_message_delta_event import Delta
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    chunk = MessageDeltaEvent(
+        type="message_delta",
+        delta=Delta(stop_reason=stop_reason, stop_sequence=None),
+        usage=MessageDeltaUsage(output_tokens=5),
+    )
+
+    result = _create_openai_chunk_from_anthropic_chunk(chunk, "claude-sonnet-4-5")
+
+    assert result.choices[0].finish_reason == expected_finish_reason
+    assert result.choices[0].delta.refusal == expected_refusal
+
+
+def test_non_streaming_refusal_preserves_stop_details() -> None:
+    from anthropic.types import Message, RefusalStopDetails, TextBlock, Usage
+
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    response = Message(
+        id="msg_refusal",
+        type="message",
+        role="assistant",
+        model="claude-sonnet-4-5",
+        stop_reason="refusal",
+        stop_details=RefusalStopDetails(type="refusal", category="bio", explanation="Request declined."),
+        content=[TextBlock(type="text", text="Request declined.")],
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+
+    result = _convert_response(response)
+
+    assert result.choices[0].message.extra_content == {
+        "anthropic": {
+            "stop_details": {
+                "type": "refusal",
+                "category": "bio",
+                "explanation": "Request declined.",
+            }
+        }
+    }
+
+
+def test_streaming_refusal_preserves_stop_details() -> None:
+    from anthropic.types import MessageDeltaEvent, MessageDeltaUsage, RefusalStopDetails
+    from anthropic.types.raw_message_delta_event import Delta
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    chunk = MessageDeltaEvent(
+        type="message_delta",
+        delta=Delta(
+            stop_reason="refusal",
+            stop_sequence=None,
+            stop_details=RefusalStopDetails(type="refusal", category="bio", explanation="Request declined."),
+        ),
+        usage=MessageDeltaUsage(output_tokens=5),
+    )
+
+    result = _create_openai_chunk_from_anthropic_chunk(chunk, "claude-sonnet-4-5")
+
+    assert result.choices[0].delta.extra_content == {
+        "anthropic": {
+            "stop_details": {
+                "type": "refusal",
+                "category": "bio",
+                "explanation": "Request declined.",
+            }
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    ("stop_reason", "expected_finish_reason"),
+    [("end_turn", "stop"), ("tool_use", "tool_calls"), ("refusal", "content_filter")],
+)
+def test_stream_sequence_has_one_terminal_reason(stop_reason: StopReason, expected_finish_reason: str) -> None:
+    from anthropic.types import (
+        ContentBlockStopEvent,
+        MessageDeltaEvent,
+        MessageDeltaUsage,
+        MessageStopEvent,
+    )
+    from anthropic.types.raw_message_delta_event import Delta
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    events = [
+        ContentBlockStopEvent(type="content_block_stop", index=0),
+        MessageDeltaEvent(
+            type="message_delta",
+            delta=Delta(stop_reason=stop_reason, stop_sequence=None),
+            usage=MessageDeltaUsage(output_tokens=1),
+        ),
+        MessageStopEvent(type="message_stop"),
+    ]
+
+    results = [_create_openai_chunk_from_anthropic_chunk(event, "claude-sonnet-4-5") for event in events]
+
+    assert [choice.finish_reason for result in results for choice in result.choices if choice.finish_reason] == [
+        expected_finish_reason
+    ]
 
 
 def test_non_streaming_response_preserves_thinking_signature() -> None:
@@ -1304,6 +1495,64 @@ def test_convert_messages_replays_thinking_block_with_tool_call() -> None:
         "name": "get_weather",
         "input": {"city": "Paris"},
     }
+
+
+def test_convert_messages_replays_assistant_text_between_thinking_and_tool_use() -> None:
+    """A turn that thought, spoke and then called a tool replays in that order, as Claude produced it."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Tell me your plan, then get the weather."},
+        {
+            "role": "assistant",
+            "content": "I will look up the weather in Paris.",
+            "reasoning": "The user wants a plan first.",
+            "extra_content": {"anthropic": {"signature": "sig-12345"}},
+            "tool_calls": [
+                {
+                    "id": "toolu_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'},
+                }
+            ],
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assert [block["type"] for block in converted[1]["content"]] == ["thinking", "text", "tool_use"]
+    assert converted[1]["content"][1] == {"type": "text", "text": "I will look up the weather in Paris."}
+
+
+@pytest.mark.parametrize("content", [None, ""])
+def test_convert_messages_tool_call_turn_without_text_emits_only_tool_use(content: str | None) -> None:
+    """No empty text block is fabricated for a tool-call turn with nothing to say (Anthropic rejects them)."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": content,
+            "tool_calls": [
+                {"id": "toolu_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}},
+            ],
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assert [block["type"] for block in converted[0]["content"]] == ["tool_use"]
+
+
+def test_convert_messages_keeps_text_when_tool_calls_is_empty() -> None:
+    """An assistant turn with text and an empty tool_calls list keeps its text instead of sending content: []."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [{"role": "assistant", "content": "I will check the weather.", "tool_calls": []}]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assert converted[0]["content"] == [{"type": "text", "text": "I will check the weather."}]
 
 
 def test_convert_messages_replays_thinking_block_with_text() -> None:
@@ -1576,3 +1825,140 @@ def test_convert_response_non_datetime_created_at(created_at: Any) -> None:
 
     assert result.created == 0
     assert result.choices[0].message.content == "hello"
+
+
+def test_stream_trailing_usage_chunk_has_no_choices() -> None:
+    """Usage arrives on the message_stop chunk after finish_reason, with choices left empty like OpenAI."""
+    from anthropic.types import (
+        ContentBlockDeltaEvent,
+        ContentBlockStopEvent,
+        MessageDeltaEvent,
+        MessageDeltaUsage,
+        MessageStopEvent,
+        TextDelta,
+        Usage,
+    )
+    from anthropic.types.raw_message_delta_event import Delta
+
+    stop_event = MessageStopEvent(type="message_stop")
+    stop_event.message = MagicMock(usage=Usage(input_tokens=12, output_tokens=7))  # type: ignore[attr-defined]
+    events = [
+        ContentBlockDeltaEvent(type="content_block_delta", index=0, delta=TextDelta(type="text_delta", text="hi")),
+        ContentBlockStopEvent(type="content_block_stop", index=0),
+        MessageDeltaEvent(
+            type="message_delta",
+            delta=Delta(stop_reason="end_turn", stop_sequence=None),
+            usage=MessageDeltaUsage(output_tokens=7),
+        ),
+        stop_event,
+    ]
+
+    results = [_create_openai_chunk_from_anthropic_chunk(event, "claude-sonnet-4-5") for event in events]
+
+    finish_index = next(i for i, r in enumerate(results) if r.choices and r.choices[0].finish_reason == "stop")
+    usage_chunks = [r for r in results if r.usage is not None]
+    assert len(usage_chunks) == 1
+    assert results.index(usage_chunks[0]) > finish_index
+    assert usage_chunks[0].choices == []
+    assert usage_chunks[0].usage is not None
+    assert usage_chunks[0].usage.total_tokens == 19
+
+
+def test_stream_message_stop_without_message_has_no_choices_or_usage() -> None:
+    """A raw message_stop event with no accumulated message yields neither choices nor usage."""
+    from anthropic.types import MessageStopEvent
+
+    result = _create_openai_chunk_from_anthropic_chunk(MessageStopEvent(type="message_stop"), "claude-sonnet-4-5")
+
+    assert result.choices == []
+    assert result.usage is None
+
+
+@pytest.mark.asyncio
+async def test_stream_usage_reaches_openai_style_consumer() -> None:
+    """A loop written against OpenAI's stream contract must get text, finish_reason and usage from Anthropic.
+
+    OpenAI reports final usage on a trailing chunk with no choices, so callers read it with
+    ``if not chunk.choices``. The same loop has to work unchanged when the provider is Anthropic.
+    """
+    from anthropic.lib.streaming import MessageStopEvent as StreamMessageStopEvent
+    from anthropic.types import (
+        ContentBlockDeltaEvent,
+        ContentBlockStartEvent,
+        ContentBlockStopEvent,
+        MessageDeltaEvent,
+        MessageDeltaUsage,
+        MessageStartEvent,
+        TextBlock,
+        TextDelta,
+        Usage,
+    )
+    from anthropic.types.raw_message_delta_event import Delta
+
+    final_message = Message(
+        id="msg_1",
+        type="message",
+        role="assistant",
+        model="claude-sonnet-4-6",
+        content=[TextBlock(type="text", text="Hi!")],
+        stop_reason="end_turn",
+        usage=Usage(input_tokens=13, output_tokens=5),
+    )
+    events: list[Any] = [
+        MessageStartEvent(
+            type="message_start",
+            message=final_message.model_copy(
+                update={"content": [], "stop_reason": None, "usage": Usage(input_tokens=13, output_tokens=0)}
+            ),
+        ),
+        ContentBlockStartEvent(type="content_block_start", index=0, content_block=TextBlock(type="text", text="")),
+        ContentBlockDeltaEvent(type="content_block_delta", index=0, delta=TextDelta(type="text_delta", text="Hi")),
+        ContentBlockDeltaEvent(type="content_block_delta", index=0, delta=TextDelta(type="text_delta", text="!")),
+        ContentBlockStopEvent(type="content_block_stop", index=0),
+        MessageDeltaEvent(
+            type="message_delta",
+            delta=Delta(stop_reason="end_turn", stop_sequence=None),
+            usage=MessageDeltaUsage(output_tokens=5),
+        ),
+        StreamMessageStopEvent(type="message_stop", message=final_message),
+    ]
+
+    class FakeMessageStream:
+        def __init__(self) -> None:
+            self._events = iter(events)
+
+        async def __aenter__(self) -> Self:
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            pass
+
+        def __aiter__(self) -> Self:
+            return self
+
+        async def __anext__(self) -> Any:
+            try:
+                return next(self._events)
+            except StopIteration:
+                raise StopAsyncIteration from None
+
+    provider = AnthropicProvider(api_key="sk-test")
+    with patch.object(provider.client.messages, "stream", return_value=FakeMessageStream()):
+        stream = await provider.acompletion(
+            model="claude-sonnet-4-6", messages=[{"role": "user", "content": "Say hi."}], stream=True
+        )
+        text = ""
+        finish_reasons: list[str] = []
+        usage = None
+        async for chunk in stream:
+            if chunk.choices:
+                text += chunk.choices[0].delta.content or ""
+                if chunk.choices[0].finish_reason:
+                    finish_reasons.append(chunk.choices[0].finish_reason)
+            else:
+                usage = chunk.usage
+
+    assert text == "Hi!"
+    assert finish_reasons == ["stop"]
+    assert usage is not None
+    assert (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens) == (13, 5, 18)

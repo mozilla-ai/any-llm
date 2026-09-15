@@ -599,6 +599,7 @@ def messages(
     service_tier: str | None = None,
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
+    container: str | None = None,
     output_format: type | dict[str, Any] | None = None,
     timeout: float | None = None,
     api_key: str | None = None,
@@ -631,11 +632,12 @@ def messages(
             strategy requires a supported model. Its `input_tokens` trigger value must be at
             least 50,000 when provided; see [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction).
         betas: Anthropic beta identifiers.
+        container: Container identifier for continuing a previous top-level container.
         output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
             Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
-            holds the parsed JSON). The call returns Anthropic's ``ParsedMessage``. Not supported
-            with streaming.
+            holds the parsed JSON). Non-streaming calls return Anthropic's ``ParsedMessage``;
+            providers with native support can stream schema-constrained Messages events.
         timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
             An explicit ``None`` is treated the same as omitting it (the provider's default
             applies), so it cannot request an unbounded timeout. Providers that have no
@@ -677,6 +679,7 @@ def messages(
         service_tier=service_tier,
         context_management=context_management,
         betas=betas,
+        container=container,
         output_format=output_format,
         timeout=timeout,
         **kwargs,
@@ -704,6 +707,7 @@ async def amessages(
     service_tier: str | None = None,
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
+    container: str | None = None,
     output_format: type | dict[str, Any] | None = None,
     timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
     api_key: str | None = None,
@@ -736,11 +740,12 @@ async def amessages(
             strategy requires a supported model. Its `input_tokens` trigger value must be at
             least 50,000 when provided; see [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction).
         betas: Anthropic beta identifiers.
+        container: Container identifier for continuing a previous top-level container.
         output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
             Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
-            holds the parsed JSON). The call returns Anthropic's ``ParsedMessage``. Not supported
-            with streaming.
+            holds the parsed JSON). Non-streaming calls return Anthropic's ``ParsedMessage``;
+            providers with native support can stream schema-constrained Messages events.
         timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
             An explicit ``None`` is treated the same as omitting it (the provider's default
             applies), so it cannot request an unbounded timeout. Providers that have no
@@ -782,6 +787,7 @@ async def amessages(
         service_tier=service_tier,
         context_management=context_management,
         betas=betas,
+        container=container,
         output_format=output_format,
         timeout=timeout,
         **kwargs,
@@ -1586,7 +1592,7 @@ def list_batches(
     Args:
         provider: Provider name to use for the request (e.g., 'openai', 'mistral')
         after: A cursor for pagination. Returns batches after this batch ID.
-        limit: Maximum number of batches to return (default: 20)
+        limit: Maximum number of batches to return. When omitted, the provider's own default applies.
         api_key: API key for the provider
         api_base: Base URL for the provider API
         client_args: Additional provider-specific arguments for client instantiation
@@ -1615,7 +1621,7 @@ async def alist_batches(
     Args:
         provider: Provider name to use for the request (e.g., 'openai', 'mistral')
         after: A cursor for pagination. Returns batches after this batch ID.
-        limit: Maximum number of batches to return (default: 20)
+        limit: Maximum number of batches to return. When omitted, the provider's own default applies.
         api_key: API key for the provider
         api_base: Base URL for the provider API
         client_args: Additional provider-specific arguments for client instantiation

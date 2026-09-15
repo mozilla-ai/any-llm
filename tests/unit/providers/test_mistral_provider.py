@@ -1351,6 +1351,69 @@ def test_create_openai_chunk_captures_thinking_signature() -> None:
     assert chunk.choices[0].delta.extra_content == {"mistral": {"signature": "sig-abc"}}
 
 
+def test_create_openai_chunk_strips_response_block_from_reasoning() -> None:
+    """Streaming must recover a <response>-wrapped answer the same way non-streaming does.
+
+    #1302 fixed this for `_create_mistral_completion_from_response` but left the streaming
+    converter untouched, so `stream=True` silently returned an empty `delta.content` for the
+    same payload. This is the streaming half of that fix.
+    """
+    pytest.importorskip("mistralai")
+    from mistralai.client.models import TextChunk, ThinkChunk
+
+    from any_llm.providers.mistral.utils import _create_openai_chunk_from_mistral_chunk
+
+    choice = Mock()
+    choice.index = 0
+    choice.delta.content = [
+        ThinkChunk(thinking=[TextChunk(text="Let me work it out.<response>The answer is 42.</response>")])
+    ]
+    choice.delta.role = "assistant"
+    choice.delta.tool_calls = None
+    choice.finish_reason = None
+
+    event = Mock()
+    event.data.id = "chatcmpl-abc"
+    event.data.created = 1_700_000_000
+    event.data.model = "magistral-medium-latest"
+    event.data.choices = [choice]
+    event.data.usage = None
+
+    chunk = _create_openai_chunk_from_mistral_chunk(event)
+
+    assert chunk.choices[0].delta.content == "The answer is 42."
+    assert chunk.choices[0].delta.reasoning is not None
+    assert chunk.choices[0].delta.reasoning.content == "Let me work it out."
+
+
+def test_create_openai_chunk_leaves_plain_reasoning_unchanged() -> None:
+    """Regression: a normal streaming chunk with plain reasoning and no tags is unaffected."""
+    pytest.importorskip("mistralai")
+    from mistralai.client.models import TextChunk, ThinkChunk
+
+    from any_llm.providers.mistral.utils import _create_openai_chunk_from_mistral_chunk
+
+    choice = Mock()
+    choice.index = 0
+    choice.delta.content = [ThinkChunk(thinking=[TextChunk(text="just thinking, nothing special")])]
+    choice.delta.role = "assistant"
+    choice.delta.tool_calls = None
+    choice.finish_reason = None
+
+    event = Mock()
+    event.data.id = "chatcmpl-abc"
+    event.data.created = 1_700_000_000
+    event.data.model = "mistral-medium-3-5"
+    event.data.choices = [choice]
+    event.data.usage = None
+
+    chunk = _create_openai_chunk_from_mistral_chunk(event)
+
+    assert chunk.choices[0].delta.content is None
+    assert chunk.choices[0].delta.reasoning is not None
+    assert chunk.choices[0].delta.reasoning.content == "just thinking, nothing special"
+
+
 @pytest.mark.asyncio
 async def test_timeout_is_translated_to_timeout_ms() -> None:
     """The seconds-based any-llm ``timeout`` must become the SDK's ``timeout_ms``.

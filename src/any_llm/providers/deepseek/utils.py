@@ -44,15 +44,13 @@ Return the JSON object only, no other text, do not wrap it in ```json or ```.
     return modified_messages
 
 
-def _reinject_reasoning_content(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Restore ``reasoning_content`` on replayed assistant tool-call turns.
+def _reinject_reasoning_content(messages: list[dict[str, Any]], *, replay_reasoning: bool) -> list[dict[str, Any]]:
+    """Restore ``reasoning_content`` when the current request carries tools.
 
-    DeepSeek's thinking mode requires ``reasoning_content`` to be passed back verbatim on any
-    assistant turn that performed a tool call, or the API returns a 400. any_llm's shared
-    message serialization (``AnyLLM.acompletion``) strips the normalized ``reasoning`` field
-    before replaying a ``ChatCompletionMessage`` back as a request message, so we restore it
-    here from the ``extra_content["deepseek"]`` side-channel populated by
-    ``_inject_reasoning_extra_content`` when the response was first received.
+    DeepSeek requires all previous assistant reasoning to be replayed when ``tools`` is present,
+    including turns that did not call a tool. any_llm's shared message serialization strips the
+    normalized ``reasoning`` field, so this restores it from the provider side-channel populated
+    by ``_inject_reasoning_extra_content``.
 
     Reference: https://api-docs.deepseek.com/guides/thinking_mode#tool-calls
 
@@ -64,7 +62,7 @@ def _reinject_reasoning_content(messages: list[dict[str, Any]]) -> list[dict[str
     for message in messages:
         extra_content = message.get("extra_content")
         cleaned = {k: v for k, v in message.items() if k != "extra_content"} if extra_content is not None else message
-        if message.get("role") == "assistant" and message.get("tool_calls") is not None:
+        if replay_reasoning and message.get("role") == "assistant":
             deepseek_extra = extra_content.get("deepseek") if isinstance(extra_content, dict) else None
             if isinstance(deepseek_extra, dict) and isinstance(deepseek_extra.get("reasoning_content"), str):
                 result.append({**cleaned, "reasoning_content": deepseek_extra["reasoning_content"]})
@@ -81,7 +79,7 @@ def _preprocess_messages(params: CompletionParams) -> CompletionParams:
             params.response_format = {"type": "json_object"}
             params.messages = modified_messages
 
-    params.messages = _reinject_reasoning_content(params.messages)
+    params.messages = _reinject_reasoning_content(params.messages, replay_reasoning=params.tools is not None)
 
     return params
 
