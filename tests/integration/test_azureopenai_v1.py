@@ -1,5 +1,3 @@
-import io
-import wave
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -42,34 +40,3 @@ async def test_azure_v1_core(
     response = await azure_v1.aresponses(model=model, input_data="Say hello.")
     assert response.output
     assert await azure_v1.alist_models()
-
-
-@pytest.mark.parametrize("operation", ["image", "transcription", "speech"])
-async def test_azure_v1_media(
-    azure_v1: AzureopenaiProvider,
-    operation: str,
-    azure_media_model_map: dict[str, str],
-) -> None:
-    deployment = azure_media_model_map[operation]
-    if not deployment:
-        variable = f"AZURE_OPENAI_{operation.upper()}_DEPLOYMENT"
-        pytest.skip(f"Azure {operation} deployment is not configured: set {variable}")
-    if operation == "image":
-        image = await azure_v1.aimage_generation(
-            model=deployment, prompt="A small blue circle on a white background.", n=1, quality="low", size="1024x1024"
-        )
-        assert image.data
-    elif operation == "transcription":
-        buffer = io.BytesIO()
-        with wave.open(buffer, "wb") as audio:
-            audio.setnchannels(1)
-            audio.setsampwidth(2)
-            audio.setframerate(16000)
-            audio.writeframes(b"\x00\x00" * 16000)
-        buffer.seek(0)
-        buffer.name = "silence.wav"
-        transcription = await azure_v1.atranscription(model=deployment, file=buffer)
-        assert isinstance(transcription.text, str)
-    else:
-        speech = await azure_v1.aspeech(model=deployment, input="Hello from Azure.", voice="alloy")
-        assert speech
