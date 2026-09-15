@@ -18,6 +18,7 @@ from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.utils import (
     DEFAULT_MAX_TOKENS,
     REASONING_EFFORT_TO_ANTHROPIC_EFFORT,
+    _convert_messages_for_anthropic,
     _convert_models_list,
     _convert_response_format,
     _convert_tool_spec,
@@ -109,7 +110,7 @@ async def test_completion_with_multiple_system_messages() -> None:
 
 
 @pytest.mark.asyncio
-async def test_completion_with_kwargs() -> None:
+async def test_completion_sends_deprecated_sampling_through_sdk_extra_body() -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
@@ -121,7 +122,10 @@ async def test_completion_with_kwargs() -> None:
         )
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
-            model=model, messages=messages, max_tokens=100, temperature=0.5
+            model=model,
+            messages=messages,
+            max_tokens=100,
+            extra_body={"temperature": 0.5},
         )
 
 
@@ -255,15 +259,31 @@ async def test_completion_with_tool_choice_required() -> None:
         {"type": "custom", "custom": {"name": "FOO"}},
     ],
 )
-async def test_completion_with_tool_choice_specific_tool(tool_choice: dict[str, Any]) -> None:
+@pytest.mark.parametrize("parallel_tool_calls", [True, False])
+async def test_completion_with_tool_choice_specific_tool(
+    tool_choice: dict[str, Any], parallel_tool_calls: bool
+) -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(api_key=api_key)
-        await provider._acompletion(CompletionParams(model_id=model, messages=messages, tool_choice=tool_choice))
+        await provider._acompletion(
+            CompletionParams(
+                model_id=model,
+                messages=messages,
+                tool_choice=tool_choice,
+                parallel_tool_calls=parallel_tool_calls,
+            )
+        )
 
-        expected_kwargs = {"tool_choice": {"type": "tool", "name": "FOO"}}
+        expected_kwargs = {
+            "tool_choice": {
+                "type": "tool",
+                "name": "FOO",
+                "disable_parallel_tool_use": not parallel_tool_calls,
+            }
+        }
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
@@ -681,6 +701,29 @@ async def test_completion_with_response_format_and_reasoning_effort() -> None:
             "effort": "medium",
         }
         assert call_kwargs["thinking"] == {"type": "adaptive"}
+
+
+@pytest.mark.asyncio
+async def test_completion_merges_reasoning_effort_without_mutating_output_config() -> None:
+    output_config = {"format": {"type": "json_schema", "schema": {"type": "object"}}}
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="claude-opus-4-6",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort="medium",
+            ),
+            output_config=output_config,
+        )
+
+        call_kwargs = mock_anthropic.return_value.messages.create.call_args.kwargs
+        assert call_kwargs["output_config"] == {
+            "format": {"type": "json_schema", "schema": {"type": "object"}},
+            "effort": "medium",
+        }
+        assert output_config == {"format": {"type": "json_schema", "schema": {"type": "object"}}}
 
 
 @pytest.mark.asyncio
@@ -1267,12 +1310,13 @@ def test_stream_sequence_has_one_terminal_reason(stop_reason: StopReason, expect
         MessageDeltaEvent,
         MessageDeltaUsage,
         MessageStopEvent,
+        RawMessageStreamEvent,
     )
     from anthropic.types.raw_message_delta_event import Delta
 
     from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
 
-    events = [
+    events: list[RawMessageStreamEvent] = [
         ContentBlockStopEvent(type="content_block_stop", index=0),
         MessageDeltaEvent(
             type="message_delta",
@@ -1555,6 +1599,22 @@ def test_convert_messages_keeps_text_when_tool_calls_is_empty() -> None:
     assert converted[0]["content"] == [{"type": "text", "text": "I will check the weather."}]
 
 
+def test_convert_messages_does_not_mutate_list_content() -> None:
+    content = [{"type": "image_url", "image_url": {"url": "https://example.com/cat.png"}}]
+    messages: list[dict[str, Any]] = [{"role": "user", "content": content}]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assert messages[0]["content"] is content
+    assert messages == [{"role": "user", "content": content}]
+    assert converted == [
+        {
+            "role": "user",
+            "content": [{"type": "image", "source": {"type": "url", "url": "https://example.com/cat.png"}}],
+        }
+    ]
+
+
 def test_convert_messages_replays_thinking_block_with_text() -> None:
     """A plain-text assistant message that carries a thinking signature should also replay it.
 
@@ -1723,6 +1783,25 @@ def test_convert_tool_spec_parameters_missing_properties() -> None:
     tools = _convert_tool_spec([{"type": "function", "function": {"name": "ping", "parameters": {"type": "object"}}}])
     assert len(tools) == 1
     assert tools[0]["input_schema"]["properties"] == {}
+
+
+def test_convert_tool_spec_preserves_complete_schema() -> None:
+    schema = {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "$defs": {"count": {"type": "integer", "minimum": 9007199254740993}},
+        "additionalProperties": False,
+        "x-future": {"enabled": False},
+    }
+    tools = _convert_tool_spec(
+        [
+            {"type": "function", "function": {"name": "ping", "parameters": schema}},
+        ]
+    )
+
+    assert tools[0]["input_schema"] == schema
+    assert tools[0]["input_schema"] is not schema
 
 
 def test_convert_models_list_uses_created_at() -> None:

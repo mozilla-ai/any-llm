@@ -201,6 +201,7 @@ def build_parsed_message(message: AnthropicMessage, output_format: type | dict[s
     ``dict``/``list``) and the generics are parametrized as ``Any``.
     """
     from anthropic.types import TextBlock
+    from anthropic.types.beta import BetaTextBlock
     from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
 
     def _parse(text: str) -> object:
@@ -219,6 +220,8 @@ def build_parsed_message(message: AnthropicMessage, output_format: type | dict[s
 
     content: list[Any] = []
     for block in message.content:
+        if isinstance(block, BetaTextBlock):
+            block = TextBlock.model_validate(block.model_dump())
         if isinstance(block, TextBlock):
             parsed = _parse(block.text) if block.text else None
             content.append(

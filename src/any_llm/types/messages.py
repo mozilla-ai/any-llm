@@ -186,13 +186,13 @@ class MessagesParams(BaseModel):
     """System prompt (string or list of content blocks with optional cache_control)"""
 
     temperature: float | None = None
-    """Controls randomness in the response (0.0 to 1.0)"""
+    """Controls randomness in the response (0.0 to 1.0); Anthropic deprecates this for current Claude models."""
 
     top_p: float | None = None
-    """Controls diversity via nucleus sampling"""
+    """Controls diversity via nucleus sampling; Anthropic deprecates this for current Claude models."""
 
     top_k: int | None = None
-    """Only sample from the top K options for each subsequent token"""
+    """Only sample from the top K options for each subsequent token; Anthropic deprecates this for current Claude models."""
 
     stream: bool | None = None
     """Whether to stream the response"""

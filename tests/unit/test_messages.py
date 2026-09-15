@@ -15,7 +15,6 @@ from anthropic.types.beta import (
     BetaIterationsUsage,
     BetaMessage,
     BetaMessageDeltaUsage,
-    BetaSkill,
     BetaStopReason,
     BetaUsage,
 )
@@ -397,7 +396,11 @@ def test_message_response_preserves_beta_usage_speed_and_container_skills() -> N
     assert response.usage.speed == "fast"
     assert isinstance(response.container, BetaContainer)
     assert response.container.skills is not None
-    assert isinstance(response.container.skills[0], BetaSkill)
+    assert beta_message.container is not None
+    assert beta_message.container.skills is not None
+    # SDK 1.2 renamed this generated response model from BetaSkill to BetaContainerSkill:
+    # https://github.com/anthropics/anthropic-sdk-python/blob/370ee927ca8a8d3b5d4f907555e890b2df685786/src/anthropic/types/beta/beta_container.py
+    assert type(response.container.skills[0]) is type(beta_message.container.skills[0])
     assert response.container.skills[0].skill_id == "pdf"
 
 
