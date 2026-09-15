@@ -24,25 +24,45 @@ class FilesMixin:
 
     SUPPORTED_FILE_OPERATIONS: ClassVar[frozenset[FileOperation]] = frozenset()
 
-    @handle_exceptions(file_operation=True)
+    @handle_exceptions()
     async def aupload_file(
-        self, file: FileInput, *, filename: str | None = None, mime_type: str | None = None, **kwargs: Any
+        self,
+        file: FileInput,
+        *,
+        filename: str | None = None,
+        mime_type: str | None = None,
+        purpose: str | None = None,
+        expires_in: int | None = None,
+        **kwargs: Any,
     ) -> FileMetadata:
-        """Upload a file; provider-specific options are passed as keyword arguments."""
-        return await self._aupload_file(file, filename=filename, mime_type=mime_type, **kwargs)
+        """Upload a file with an optional purpose and expiry duration in seconds."""
+        return await self._aupload_file(
+            file, filename=filename, mime_type=mime_type, purpose=purpose, expires_in=expires_in, **kwargs
+        )
 
     async def _aupload_file(
-        self, file: FileInput, *, filename: str | None = None, mime_type: str | None = None, **kwargs: Any
+        self,
+        file: FileInput,
+        *,
+        filename: str | None = None,
+        mime_type: str | None = None,
+        purpose: str | None = None,
+        expires_in: int | None = None,
+        **kwargs: Any,
     ) -> FileMetadata:
         message = "Provider does not support file uploads"
         raise NotImplementedError(message)
 
-    @handle_exceptions(file_operation=True)
-    async def alist_files(self, *, limit: int | None = None, **kwargs: Any) -> FilePage:
-        """Retrieve one page of files; never automatically fetch subsequent pages."""
-        return await self._alist_files(limit=limit, **kwargs)
+    @handle_exceptions()
+    async def alist_files(
+        self, *, limit: int | None = None, cursor: str | None = None, purpose: str | None = None, **kwargs: Any
+    ) -> FilePage:
+        """Retrieve one page using an opaque cursor; never automatically fetch subsequent pages."""
+        return await self._alist_files(limit=limit, cursor=cursor, purpose=purpose, **kwargs)
 
-    async def _alist_files(self, *, limit: int | None = None, **kwargs: Any) -> FilePage:
+    async def _alist_files(
+        self, *, limit: int | None = None, cursor: str | None = None, purpose: str | None = None, **kwargs: Any
+    ) -> FilePage:
         message = "Provider does not support file listing"
         raise NotImplementedError(message)
 
@@ -65,18 +85,32 @@ class FilesMixin:
         raise NotImplementedError(message)
 
     def upload_file(
-        self, file: FileInput, *, filename: str | None = None, mime_type: str | None = None, **kwargs: Any
+        self,
+        file: FileInput,
+        *,
+        filename: str | None = None,
+        mime_type: str | None = None,
+        purpose: str | None = None,
+        expires_in: int | None = None,
+        **kwargs: Any,
     ) -> FileMetadata:
         """Run the synchronous counterpart of :meth:`aupload_file`."""
         allow = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
         return run_async_in_sync(
-            self.aupload_file(file, filename=filename, mime_type=mime_type, **kwargs), allow_running_loop=allow
+            self.aupload_file(
+                file, filename=filename, mime_type=mime_type, purpose=purpose, expires_in=expires_in, **kwargs
+            ),
+            allow_running_loop=allow,
         )
 
-    def list_files(self, *, limit: int | None = None, **kwargs: Any) -> FilePage:
+    def list_files(
+        self, *, limit: int | None = None, cursor: str | None = None, purpose: str | None = None, **kwargs: Any
+    ) -> FilePage:
         """Run the synchronous counterpart of :meth:`alist_files`."""
         allow = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
-        return run_async_in_sync(self.alist_files(limit=limit, **kwargs), allow_running_loop=allow)
+        return run_async_in_sync(
+            self.alist_files(limit=limit, cursor=cursor, purpose=purpose, **kwargs), allow_running_loop=allow
+        )
 
     def retrieve_file(self, file_id: str, **kwargs: Any) -> FileMetadata:
         """Run the synchronous counterpart of :meth:`aretrieve_file`."""

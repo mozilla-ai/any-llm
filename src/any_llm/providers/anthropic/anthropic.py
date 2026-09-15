@@ -3,13 +3,12 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, ClassVar
 
-import httpx
 from typing_extensions import override
 
 from any_llm.types.files import AsyncFileDownload, FileDeleted, FileInput, FileMetadata, FileOperation, FilePage
 
 from .base import BaseAnthropicProvider
-from .files import file_path, list_files, reject_unsupported, request_options, upload_file
+from .files import convert_metadata, list_files, reject_unsupported, request_options, upload_file, validate_file_id
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -60,27 +59,38 @@ class AnthropicProvider(BaseAnthropicProvider):
 
     @override
     async def _aupload_file(
-        self, file: FileInput, *, filename: str | None = None, mime_type: str | None = None, **kwargs: Any
+        self,
+        file: FileInput,
+        *,
+        filename: str | None = None,
+        mime_type: str | None = None,
+        purpose: str | None = None,
+        expires_in: int | None = None,
+        **kwargs: Any,
     ) -> FileMetadata:
-        return await upload_file(self.client, file, filename, mime_type, kwargs)
+        return await upload_file(self.client, file, filename, mime_type, purpose, expires_in, kwargs)
 
     @override
-    async def _alist_files(self, *, limit: int | None = None, **kwargs: Any) -> FilePage:
-        return await list_files(self.client, limit, kwargs)
+    async def _alist_files(
+        self, *, limit: int | None = None, cursor: str | None = None, purpose: str | None = None, **kwargs: Any
+    ) -> FilePage:
+        return await list_files(self.client, limit, cursor, purpose, kwargs)
 
     @override
     async def _aretrieve_file(self, file_id: str, **kwargs: Any) -> FileMetadata:
         client, options = request_options(self.client, kwargs)
         reject_unsupported(kwargs)
-        result = await client.get(file_path(file_id), cast_to=dict[str, Any], options=options)
-        return FileMetadata.model_validate(result)
+        validate_file_id(file_id)
+        result = await client.files.retrieve_metadata(file_id, **options)
+        return convert_metadata(result)
 
     @override
     async def _adelete_file(self, file_id: str, **kwargs: Any) -> FileDeleted:
         client, options = request_options(self.client, kwargs)
         reject_unsupported(kwargs)
-        result = await client.delete(file_path(file_id), cast_to=dict[str, Any], options=options)
-        return FileDeleted.model_validate(result)
+        validate_file_id(file_id)
+        result = await client.files.delete(file_id, **options)
+        return FileDeleted.model_validate(result.model_dump(exclude_unset=True))
 
     @override
     @asynccontextmanager
@@ -89,14 +99,10 @@ class AnthropicProvider(BaseAnthropicProvider):
     ) -> AsyncIterator[AsyncFileDownload]:
         client, options = request_options(self.client, kwargs)
         reject_unsupported(kwargs)
-        response = await client.get(
-            file_path(file_id) + "/content", cast_to=httpx.Response, options=options, stream=True
-        )
-        try:
+        validate_file_id(file_id)
+        async with client.files.with_streaming_response.download(file_id, **options) as response:
             yield AsyncFileDownload(
                 status_code=response.status_code,
                 headers=response.headers.copy(),
-                chunks=response.aiter_bytes(chunk_size),
+                chunks=response.iter_bytes(chunk_size),
             )
-        finally:
-            await response.aclose()

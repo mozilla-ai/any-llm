@@ -29,7 +29,7 @@ provider = AnyLLM.create("anthropic")
 uploaded = provider.upload_file(
     Path("report.pdf"),
     mime_type="application/pdf",
-    expires_in_seconds=3600,
+    expires_in=3600,
 )
 try:
     response = provider.messages(
@@ -64,8 +64,8 @@ resident in memory. Async iterators are not supported upload inputs.
 
 | Synchronous | Asynchronous | Result |
 | --- | --- | --- |
-| `upload_file(file, filename=None, mime_type=None, **kwargs)` | `await aupload_file(...)` | `FileMetadata` |
-| `list_files(limit=None, **kwargs)` | `await alist_files(...)` | `FilePage` |
+| `upload_file(file, filename=None, mime_type=None, purpose=None, expires_in=None, **kwargs)` | `await aupload_file(...)` | `FileMetadata` |
+| `list_files(limit=None, cursor=None, purpose=None, **kwargs)` | `await alist_files(...)` | `FilePage` |
 | `retrieve_file(file_id, **kwargs)` | `await aretrieve_file(...)` | `FileMetadata` |
 | `download_file(file_id, chunk_size=65536, **kwargs)` | `adownload_file(...)` | Context manager yielding `FileDownload` / `AsyncFileDownload` |
 | `delete_file(file_id, **kwargs)` | `await adelete_file(...)` | `FileDeleted` |
@@ -77,42 +77,29 @@ Use async methods inside an event loop. Sync methods honor the existing
 
 `FileMetadata`, `FilePage`, and `FileDeleted` are exported from `any_llm` and
 `any_llm.types.files`. Metadata uses `size_bytes`, `mime_type`, and parsed
-`datetime` timestamps. Fields a provider omits remain `None`. Provider-specific
+`datetime` timestamps, plus `purpose`, `status`, and `downloadable`.
+Fields a provider omits remain `None`. Each provider normalizes its own responses. Provider-specific
 fields survive in `model_extra` and `model_dump()`. A deletion acknowledgement
 preserves its native fields, without inventing a `deleted` flag if absent.
 
 ## Pagination
 
-Listing fetches exactly one page, including when `has_more` is true. It never
-uses account-wide auto-pagination. Current Anthropic pagination uses `page` and
-`next_page`:
+Listing fetches exactly one page. Use the opaque `next_cursor` with the same
+provider, account, and filters to continue; `None` marks the final page.
 
 ```python
 page = provider.list_files(limit=20)
-if page.next_page is not None:
-    next_page = provider.list_files(limit=20, page=page.next_page)
+if page.next_cursor is not None:
+    next_page = provider.list_files(limit=20, cursor=page.next_cursor)
 ```
 
-For a known set of IDs, use `ids=[...]`. Anthropic omits missing or inaccessible
-IDs; this is not an existence check for other accounts. `ids` cannot be combined
-with `page` or `limit`. At most 100 distinct IDs are supported. `limit` is 1 to 1,000; when
-omitted, the provider default applies.
+Providers translate their native pagination into `cursor` and `next_cursor`.
+Anthropic maps these to `page` and `next_page` internally. Legacy Files beta
+pagination and native cursor keyword arguments are not supported.
 
-Legacy callers can select the `files-api-2025-04-14` beta header:
-
-```python
-page = provider.list_files(limit=20, betas=["files-api-2025-04-14"])
-if page.has_more:
-    next_page = provider.list_files(
-        limit=20,
-        after_id=page.last_id,
-        betas=["files-api-2025-04-14"],
-    )
-```
-
-Legacy pages preserve `has_more`, `first_id`, and `last_id`; they do not fabricate
-`next_page`. Legacy queries accept `before_id`, `after_id`, `order`, and `limit`.
-Do not mix current and legacy pagination arguments.
+For a known set of IDs, Anthropic accepts the provider-specific `ids=[...]`
+option. The server validates its limits and combinations with other parameters.
+Missing or inaccessible IDs are omitted.
 
 ## Download generated outputs
 
@@ -176,15 +163,18 @@ and should not be logged indiscriminately.
 
 All Anthropic Files methods accept `timeout`, `max_retries`, `betas`, and
 `extra_headers` (for example, `{"anthropic-version": "2023-06-01"}`). Upload also
-accepts `expires_in_seconds`, an integer from 3,600 to 7,776,000. Omission leaves
-retention to the provider. Unsupported upload options such as OpenAI's `purpose`
-are rejected rather than ignored.
+accepts the shared `expires_in` parameter, a positive integer duration in seconds,
+which maps to Anthropic's `expires_in_seconds`. Omission leaves retention to the
+provider. The shared `purpose` parameter is available for upload and listing;
+Anthropic rejects non-`None` values. Provider-specific options remain in `**kwargs`.
+Beta values from configured headers, request headers, and `betas` are merged.
+Anthropic SDK 0.124.0 or newer is required.
 
-Caller mistakes are reported as any-llm exceptions regardless of
-`ANY_LLM_UNIFIED_EXCEPTIONS`: an option the provider does not accept raises
-`UnsupportedParameterError`, and an out-of-range value (`limit`,
-`expires_in_seconds`, `chunk_size`) or an empty file ID raises
-`InvalidRequestError`. Neither is converted into a provider error.
+Unsupported options raise `UnsupportedParameterError`. Nonpositive `limit`,
+invalid `expires_in`, nonpositive `chunk_size`, and invalid file IDs raise
+`InvalidRequestError`. Provider-specific numeric limits and option combinations
+are validated by the server, so SDK updates do not require copying server limits
+into any-llm.
 
 Uploads default to **zero automatic retries**, even if the provider instance
 has retries enabled. A caller can explicitly override `max_retries`, but a lost
@@ -193,8 +183,9 @@ Other operations inherit the configured SDK retry policy unless overridden.
 Timeouts do not prove that an upload failed before creation.
 
 Errors follow the existing `ANY_LLM_UNIFIED_EXCEPTIONS` setting. When enabled,
-a Files HTTP 404 becomes `ProviderFileNotFoundError`, authentication errors
+a retrieve, download, or delete HTTP 404 becomes `ProviderFileNotFoundError`, authentication errors
 remain `AuthenticationError`, and `RateLimitError` retains `retry_after`.
+Upload and list 404s retain the existing general error mapping.
 Streaming failures are converted during iteration. Without unified errors,
 SDK exceptions retain their existing behavior.
 

@@ -12,7 +12,7 @@ dependencies = [
   "pydantic>2,<3",
   "openai>=2.18.0",
   "openresponses-types>=2.4.0,<3",
-  "anthropic>=0.119.0,<1",
+  "anthropic>=0.124.0,<1",
   "rich",
   "httpx",
   "typing_extensions>=4.5.0",
@@ -53,7 +53,7 @@ vertexaianthropic = [
 ]
 
 azureanthropic = [
-  "anthropic>=0.119.0,<1",
+  "anthropic>=0.124.0,<1",
 ]
 
 huggingface = [

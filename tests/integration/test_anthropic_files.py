@@ -46,7 +46,7 @@ async def test_anthropic_files_lifecycle() -> None:
             b"name,value\nexample,1\n",
             filename=f"any-llm-test-{uuid.uuid4().hex}.csv",
             mime_type="text/csv",
-            expires_in_seconds=3600,
+            expires_in=3600,
         )
         file_id = uploaded.id
         assert uploaded.size_bytes == 21
@@ -55,9 +55,12 @@ async def test_anthropic_files_lifecycle() -> None:
         assert retrieved.id == file_id
         page = await provider.alist_files(ids=[file_id])
         assert [file.id for file in page.data] == [file_id]
-        assert page.next_page is None
-        legacy = await provider.alist_files(limit=1, betas=["files-api-2025-04-14"])
-        assert len(legacy.data) <= 1
+        assert page.next_cursor is None
+        first_page = await provider.alist_files(limit=1)
+        assert len(first_page.data) <= 1
+        if first_page.next_cursor is not None:
+            next_page = await provider.alist_files(limit=1, cursor=first_page.next_cursor)
+            assert len(next_page.data) <= 1
         deleted = await provider.adelete_file(file_id)
         deleted_file_id = file_id
         file_id = None

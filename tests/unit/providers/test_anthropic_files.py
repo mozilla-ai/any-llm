@@ -56,11 +56,11 @@ async def test_upload_preserves_metadata_and_sends_multipart(tmp_path: Path) -> 
 
     provider = provider_for(handle)
     try:
-        result = await provider.aupload_file(path, mime_type="text/csv", expires_in_seconds=3600)
+        result = await provider.aupload_file(path, mime_type="text/csv", expires_in=3600)
         assert result.id == "file_123"
         assert result.size_bytes == 4
         assert result.downloadable is False
-        assert result.model_extra == {"future_field": "preserved"}
+        assert result.model_extra == {"type": "file", "future_field": "preserved"}
         assert len(requests) == 1
         assert requests[0].url.path == "/v1/files"
         assert requests[0].headers["x-api-key"] == "test-key"
@@ -85,37 +85,22 @@ async def test_retrieve_leaves_missing_metadata_unknown() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("legacy", [False, True])
-async def test_list_returns_one_page_without_auto_pagination(legacy: bool) -> None:
+@pytest.mark.parametrize("next_cursor", [None, "page_next"])
+async def test_list_returns_one_page_without_auto_pagination(next_cursor: str | None) -> None:
     requests: list[httpx.Request] = []
-    page = (
-        {"data": [META], "has_more": True, "first_id": "file_123", "last_id": "file_123"}
-        if legacy
-        else {"data": [META], "next_page": "page_next"}
-    )
 
     def handle(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        return httpx.Response(200, json=page)
+        return httpx.Response(200, json={"data": [META], "next_page": next_cursor, "future": "value"})
 
     provider = provider_for(handle)
-    kwargs: dict[str, Any] = (
-        {"after_id": "file_before", "betas": ["files-api-2025-04-14"]} if legacy else {"page": "page_before"}
-    )
     try:
-        result = await provider.alist_files(limit=1, **kwargs)
-        assert result.data[0].id == "file_123"
+        result = await provider.alist_files(limit=1, cursor="page_before")
+        assert result.data[0].size_bytes == 4
+        assert result.next_cursor == next_cursor
+        assert result.model_extra == {"future": "value"}
         assert len(requests) == 1
-        assert requests[0].url.params["limit"] == "1"
-        if legacy:
-            assert result.has_more is True
-            assert result.last_id == "file_123"
-            assert requests[0].headers["anthropic-beta"] == "files-api-2025-04-14"
-            assert requests[0].url.params["after_id"] == "file_before"
-        else:
-            assert result.next_page == "page_next"
-            assert "anthropic-beta" not in requests[0].headers
-            assert requests[0].url.params["page"] == "page_before"
+        assert requests[0].url.params == httpx.QueryParams(limit=1, page="page_before")
     finally:
         await provider.client.close()
 
@@ -203,7 +188,7 @@ def test_sync_calls_share_the_provider_and_download_without_prefetch() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "kwargs", [{"ids": ["file_123"], "limit": 2}, {"limit": 0}, {"after_id": "x"}, {"purpose": "batch"}]
+    "kwargs", [{"page": "x"}, {"limit": 0}, {"limit": True}, {"limit": "1"}, {"after_id": "x"}, {"purpose": "batch"}]
 )
 async def test_invalid_list_options_fail_before_network(kwargs: dict[str, Any]) -> None:
     def handle(_: httpx.Request) -> httpx.Response:
@@ -258,31 +243,41 @@ async def test_upload_does_not_retry_and_retains_rate_limit(monkeypatch: pytest.
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kwargs", [{"purpose": "batch"}, {"expires_in_seconds": 0}, {"expires_in_seconds": 7776001}])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"purpose": "batch"},
+        {"expires_in": 0},
+        {"expires_in": True},
+        {"expires_in": "3600"},
+        {"expires_in_seconds": 3600},
+    ],
+)
 async def test_invalid_upload_options_are_not_silently_forwarded(kwargs: dict[str, Any]) -> None:
     provider = provider_for(lambda _: pytest.fail("Invalid upload reached network"))
     try:
-        with pytest.raises(AnyLLMError, match=r"(not supported|expires_in_seconds)"):
+        with pytest.raises(AnyLLMError, match=r"(not supported|expires_in)"):
             await provider.aupload_file(b"data", **kwargs)
     finally:
         await provider.client.close()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("beta_header", ["files-api-2025-04-14", "other-beta, files-api-2025-04-14"])
-async def test_beta_header_matching_is_case_insensitive(beta_header: str) -> None:
+async def test_beta_headers_merge_with_explicit_and_default_betas() -> None:
     requests: list[httpx.Request] = []
 
     def handle(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        return httpx.Response(200, json={"data": [], "has_more": False})
+        return httpx.Response(200, json={"data": [], "next_page": None})
 
     provider = provider_for(handle)
+    provider.client = provider.client.with_options(default_headers={"anthropic-beta": "default-beta"})
+    headers = {"Anthropic-Beta": "other-beta, shared-beta", "x-custom": "value"}
     try:
-        result = await provider.alist_files(after_id="file_123", extra_headers={"Anthropic-Beta": beta_header})
-        assert result.has_more is False
-        assert len(requests) == 1
-        assert requests[0].url.params["after_id"] == "file_123"
+        await provider.alist_files(betas=["shared-beta", "new-beta"], extra_headers=headers)
+        assert requests[0].headers["anthropic-beta"] == "default-beta,other-beta,shared-beta,new-beta"
+        assert requests[0].headers["x-custom"] == "value"
+        assert headers["Anthropic-Beta"] == "other-beta, shared-beta"
     finally:
         await provider.client.close()
 
@@ -528,33 +523,56 @@ async def test_invalid_download_chunk_size() -> None:
 
 
 @pytest.mark.asyncio
-async def test_legacy_pagination_uses_configured_default_headers() -> None:
-    provider = AnthropicProvider(
-        api_key="test",
-        default_headers={"anthropic-beta": "files-api-2025-04-14"},
-        http_client=httpx.AsyncClient(
-            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"data": [], "has_more": False}))
-        ),
-    )
+@pytest.mark.parametrize("source", ["default", "headers", "betas"])
+async def test_legacy_pagination_is_rejected(source: str) -> None:
+    provider = provider_for(lambda _: pytest.fail("Legacy request reached network"))
+    kwargs: dict[str, Any] = {}
+    if source == "default":
+        provider.client = provider.client.with_options(default_headers={"anthropic-beta": "files-api-2025-04-14"})
+    elif source == "headers":
+        kwargs["extra_headers"] = {"Anthropic-Beta": "other, files-api-2025-04-14"}
+    else:
+        kwargs["betas"] = ["files-api-2025-04-14"]
     try:
-        result = await provider.alist_files(after_id="file_123")
-        assert result.has_more is False
+        with pytest.raises(UnsupportedParameterError, match="Legacy"):
+            await provider.alist_files(**kwargs)
     finally:
         await provider.client.close()
 
 
 @pytest.mark.asyncio
-async def test_list_deduplicates_ids_before_enforcing_limit() -> None:
+async def test_server_limits_are_not_duplicated_in_client() -> None:
     requests: list[httpx.Request] = []
 
     def handle(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        return httpx.Response(200, json={"data": [META], "next_page": None})
+        return httpx.Response(200, json=META if request.method == "POST" else {"data": [], "next_page": None})
 
     provider = provider_for(handle)
     try:
+        await provider.aupload_file(b"data", expires_in=7776001)
+        await provider.alist_files(limit=1001)
         await provider.alist_files(ids=["file_123"] * 101)
-        assert requests[0].url.params.get_list("ids[]") == ["file_123"]
+        assert b"7776001" in requests[0].content
+        assert requests[1].url.params["limit"] == "1001"
+        assert len(requests[2].url.params.get_list("ids[]")) == 101
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["upload", "list"])
+async def test_collection_404_is_not_a_missing_file(operation: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
+    provider = provider_for(lambda _: httpx.Response(404, json={"error": {"message": "Wrong endpoint"}}))
+    try:
+        with pytest.raises(AnyLLMError) as error:
+            if operation == "upload":
+                await provider.aupload_file(b"data")
+            else:
+                await provider.alist_files()
+        assert not isinstance(error.value, ProviderFileNotFoundError)
+        assert error.value.status_code == 404
     finally:
         await provider.client.close()
 

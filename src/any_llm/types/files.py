@@ -69,19 +69,17 @@ class FileMetadata(BaseModel):
     created_at: datetime | None = None
     expires_at: datetime | None = None
     downloadable: bool | None = None
-    type: str | None = None
+    purpose: str | None = None
+    status: str | None = None
 
 
 class FilePage(BaseModel):
-    """One bounded page, retaining the provider's continuation format."""
+    """One bounded page with an opaque continuation cursor; None means the final page."""
 
     model_config = ConfigDict(extra="allow")
 
     data: list[FileMetadata]
-    next_page: str | None = None
-    has_more: bool | None = None
-    first_id: str | None = None
-    last_id: str | None = None
+    next_cursor: str | None = None
 
 
 class FileDeleted(BaseModel):
