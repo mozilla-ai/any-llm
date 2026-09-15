@@ -150,6 +150,7 @@ def test_providers_raise_MissingApiKeyError(provider: LLMProvider) -> None:
         LLMProvider.BEDROCK,
         LLMProvider.LLAMACPP,
         LLMProvider.LLAMAFILE,
+        LLMProvider.LLMMAN,
         LLMProvider.LMSTUDIO,
         LLMProvider.OLLAMA,
         LLMProvider.SAGEMAKER,
