@@ -1,9 +1,26 @@
+import subprocess
+import sys
 from unittest.mock import patch
 
 from google.genai import types
 
 from any_llm.providers.vertexai import VertexaiProvider
 from any_llm.types.completion import CompletionParams
+
+
+def test_vertexai_import_does_not_load_gemini_interactions() -> None:
+    script = """
+import sys
+from any_llm.providers.vertexai import VertexaiProvider
+
+assert VertexaiProvider.PROVIDER_NAME == "vertexai"
+assert not any(name.startswith("any_llm.providers.gemini.interactions") for name in sys.modules)
+"""
+    # S603: the command uses this interpreter and a fixed script, with no external input.
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", script], capture_output=True, text=True, timeout=30, check=False
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_vertexai_initialization_without_api_key() -> None:

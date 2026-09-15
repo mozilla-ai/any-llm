@@ -1,11 +1,13 @@
 import os
+from collections.abc import AsyncIterator
 from typing import Any
 
 from google import genai
 from google.genai import types
 from typing_extensions import override
 
-from any_llm.exceptions import MissingApiKeyError
+from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
+from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
 from .base import GoogleProvider
 
@@ -17,6 +19,9 @@ class GeminiProvider(GoogleProvider):
     PROVIDER_DOCUMENTATION_URL = "https://ai.google.dev/gemini-api/docs"
     ENV_API_KEY_NAME = "GEMINI_API_KEY/GOOGLE_API_KEY"
     ENV_API_BASE_NAME = "GOOGLE_GEMINI_BASE_URL"
+    SUPPORTS_RESPONSES = True
+
+    _interactions_api_version: str
 
     @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
@@ -29,6 +34,18 @@ class GeminiProvider(GoogleProvider):
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        http_options = kwargs.get("http_options")
+        if isinstance(http_options, dict):
+            configured_api_version = http_options.get("api_version")
+        elif isinstance(http_options, types.HttpOptions):
+            configured_api_version = http_options.api_version
+        else:
+            configured_api_version = None
+        # Interactions is GA in v1, while the SDK defaults the shared Gemini
+        # Developer API client to v1beta for generateContent preview features.
+        # https://ai.google.dev/gemini-api/docs/api-versions
+        self._interactions_api_version = configured_api_version or "v1"
+
         if api_base:
             http_options = kwargs.pop("http_options", None)
             if http_options is None:
@@ -44,3 +61,36 @@ class GeminiProvider(GoogleProvider):
             GoogleProvider._merge_timeout_into_http_options(timeout, kwargs)
 
         self.client = genai.Client(api_key=api_key, **kwargs)
+
+    @override
+    async def _aresponses(
+        self, params: ResponsesParams, **kwargs: Any
+    ) -> Response | AsyncIterator[ResponseStreamEvent]:
+        if params.stream:
+            parameter_name = "stream"
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+        if kwargs.pop("extra_body", None) is not None:
+            parameter_name = "extra_body"
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+        timeout = kwargs.pop("timeout", None)
+        create_kwargs = {name: value for name, value in kwargs.items() if value is not None}
+        unsupported_parameters = create_kwargs.keys() - {"extra_headers", "extra_query"}
+        if unsupported_parameters:
+            parameter_name = min(unsupported_parameters)
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+
+        # Vertex shares this package without requiring the Interactions SDK.
+        from .interactions import convert_interaction_to_response, convert_responses_params
+
+        create_kwargs = (
+            convert_responses_params(
+                params,
+                self.PROVIDER_NAME,
+                api_version=self._interactions_api_version,
+            )
+            | create_kwargs
+        )
+        if timeout is not None:
+            create_kwargs["timeout"] = timeout
+        interaction = await self.client.aio.interactions.create(**create_kwargs)
+        return convert_interaction_to_response(interaction)
