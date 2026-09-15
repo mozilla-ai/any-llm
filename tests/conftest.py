@@ -183,7 +183,7 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.LLAMACPP: "N/A",
         # otari intentionally omitted: the test account has no embedding model (see otari-ai #1036),
         # so test_embedding skips otari.
-        LLMProvider.AZUREOPENAI: "gpt-4.1-nano",  # Not an embedding model but it's the only one we have deployed in Azure OpenAI
+        LLMProvider.AZUREOPENAI: os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", ""),
         LLMProvider.OPENROUTER: "qwen/qwen3-embedding-8b",
         LLMProvider.DEEPINFRA: "BAAI/bge-base-en-v1.5",
         LLMProvider.TOGETHER: "intfloat/multilingual-e5-large-instruct",
@@ -220,8 +220,9 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         },
         LLMProvider.XAI: {"timeout": 100},
         LLMProvider.AZUREOPENAI: {
-            "api_base": "https://mlrun-me8bof5t-eastus2.cognitiveservices.azure.com/",
-            "api_version": "2025-03-01-preview",
+            "api_base": os.getenv("AZURE_OPENAI_ENDPOINT")
+            or "https://mlrun-me8bof5t-eastus2.cognitiveservices.azure.com/",
+            "api_version": "v1",
         },
     }
 

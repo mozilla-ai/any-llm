@@ -164,6 +164,7 @@ def test_image_generation_params_rejects_extra_fields() -> None:
 def test_supports_image_generation_only_on_expected_providers() -> None:
     expected_supported = {
         LLMProvider.OPENAI,
+        LLMProvider.AZUREOPENAI,
         LLMProvider.NEOSANTARA,
         LLMProvider.OTARI,
     }

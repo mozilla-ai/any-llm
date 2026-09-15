@@ -1,13 +1,18 @@
 import asyncio
 import os
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from typing import Any
 
-from openai import AsyncOpenAI, OpenAIError
+from openai import AsyncOpenAI, AsyncStream, OpenAIError
+from openai.types.chat import ChatCompletion as OpenAIChatCompletion
+from openai.types.chat import ChatCompletionChunk as OpenAIChatCompletionChunk
 from typing_extensions import override
 
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+from any_llm.types.image import ImageGenerationParams, ImagesResponse
 
 _AzureADTokenProvider = Callable[[], str | Awaitable[str]]
 _PROVIDER_NAME = "azureopenai"
@@ -23,21 +28,20 @@ def _resolve_credential(
     # Match the official Azure client's explicit-credential and Entra-first
     # environment precedence, while treating empty environment values as absent.
     # https://github.com/openai/openai-python/blob/88391abf981df3ea395ca1b5bf55ec6a4011ea93/src/openai/lib/azure.py
-    explicit_credential = any(value is not None for value in (api_key, azure_ad_token, azure_ad_token_provider))
-    api_key = api_key or None
-    azure_ad_token = azure_ad_token or None
-    if not explicit_credential:
-        azure_ad_token = os.getenv(_AD_TOKEN_ENV_NAME) or None
-        if azure_ad_token is None:
-            api_key = os.getenv(_API_KEY_ENV_NAME) or None
-
-    configured_credentials = sum(value is not None for value in (api_key, azure_ad_token, azure_ad_token_provider))
-    if configured_credentials > 1:
+    explicit_credentials = sum(value is not None for value in (api_key, azure_ad_token, azure_ad_token_provider))
+    if explicit_credentials > 1:
         message = (
             "The `api_key`, `azure_ad_token` and `azure_ad_token_provider` arguments are mutually exclusive; "
             "only one can be passed at a time."
         )
         raise OpenAIError(message)
+
+    api_key = api_key or None
+    azure_ad_token = azure_ad_token or None
+    if not explicit_credentials:
+        azure_ad_token = os.getenv(_AD_TOKEN_ENV_NAME) or None
+        if azure_ad_token is None:
+            api_key = os.getenv(_API_KEY_ENV_NAME) or None
 
     if azure_ad_token_provider is not None:
 
@@ -60,7 +64,12 @@ def _resolve_credential(
 
 
 class AzureopenaiProvider(BaseOpenAIProvider):
-    """Azure OpenAI provider using Azure's GA v1 OpenAI-compatible API."""
+    """Azure OpenAI v1 with GA core routes and operation-scoped preview media.
+
+    Supply deployment names as request models, not as client routing options.
+    Explicit credentials and endpoint arguments take precedence over Azure
+    environment settings. Dated API versions are not supported.
+    """
 
     ENV_API_KEY_NAME = _API_KEY_ENV_NAME
     ENV_API_BASE_NAME = "AZURE_OPENAI_ENDPOINT"
@@ -69,8 +78,9 @@ class AzureopenaiProvider(BaseOpenAIProvider):
     SUPPORTS_RESPONSES = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_COMPLETION_PDF = False
-    # Azure media remains a dated preview API. Inheriting the false media
-    # capability defaults prevents GA v1 requests from being misrouted there.
+    SUPPORTS_IMAGE_GENERATION = True
+    SUPPORTS_AUDIO_TRANSCRIPTION = True
+    SUPPORTS_AUDIO_SPEECH = True
     SUPPORTS_MODERATION = False
 
     client: AsyncOpenAI
@@ -105,22 +115,32 @@ class AzureopenaiProvider(BaseOpenAIProvider):
         # deployment name in `model`. Rejecting legacy routing options prevents
         # a dated-route configuration from appearing to work while being ignored.
         # https://learn.microsoft.com/azure/foundry/openai/api-version-lifecycle
-        if api_version not in (None, "v1"):
-            parameter_name = "api_version"
-            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
-        if os.getenv("OPENAI_API_VERSION") not in (None, "", "v1"):
-            parameter_name = "OPENAI_API_VERSION"
-            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+        selected_version = api_version if api_version is not None else os.getenv("OPENAI_API_VERSION") or None
+        if selected_version not in (None, "v1"):
+            parameter_name = "api_version" if api_version is not None else "OPENAI_API_VERSION"
+            raise UnsupportedParameterError(
+                parameter_name,
+                self.PROVIDER_NAME,
+                'Azure OpenAI now uses /openai/v1/. Remove the dated version or set api_version="v1".',
+            )
         if azure_deployment is not None:
             parameter_name = "azure_deployment"
-            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+            raise UnsupportedParameterError(
+                parameter_name,
+                self.PROVIDER_NAME,
+                "Pass your Azure deployment name as `model` on each request instead of `azure_deployment`.",
+            )
         # The GA schema still permits an explicit `api-version=v1`, even though
         # the lifecycle guide recommends omitting it. Dated values belong to the
         # retired route family, and preview features now use headers or paths.
         # https://learn.microsoft.com/rest/api/microsoft-foundry/azureopenai/chat
         if default_query is not None and default_query.get("api-version", "v1") != "v1":
             parameter_name = "default_query['api-version']"
-            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+            raise UnsupportedParameterError(
+                parameter_name,
+                self.PROVIDER_NAME,
+                "Remove this query entry or use 'v1'. Media preview options are scoped to individual requests.",
+            )
 
         client_api_key = _resolve_credential(api_key, azure_ad_token, azure_ad_token_provider)
 
@@ -145,3 +165,45 @@ class AzureopenaiProvider(BaseOpenAIProvider):
             default_query=default_query,
             **kwargs,
         )
+
+    @override
+    def _convert_completion_response_async(
+        self, response: OpenAIChatCompletion | AsyncStream[OpenAIChatCompletionChunk]
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        if isinstance(response, OpenAIChatCompletion):
+            return self._convert_completion_response(response)
+
+        async def chunks() -> AsyncIterator[ChatCompletionChunk]:
+            try:
+                async for chunk in response:
+                    yield self._convert_completion_chunk_response(chunk)
+            finally:
+                await response.close()
+
+        return chunks()
+
+    def _media_options(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        # Azure documents these routes under the v1 preview reference, not the
+        # dated deployment API. Keep preview local to media on the same client.
+        # https://learn.microsoft.com/azure/ai-foundry/openai/reference-preview-latest
+        query = {"api-version": "preview", **(kwargs.get("extra_query") or {})}
+        if query["api-version"] not in ("v1", "preview"):
+            parameter_name = "extra_query['api-version']"
+            raise UnsupportedParameterError(
+                parameter_name,
+                self.PROVIDER_NAME,
+                "Media uses /openai/v1/. Use 'preview' (default) or 'v1', not a dated API version.",
+            )
+        return {**kwargs, "extra_query": query}
+
+    @override
+    async def _aimage_generation(self, params: ImageGenerationParams, **kwargs: Any) -> ImagesResponse:
+        return await super()._aimage_generation(params, **self._media_options(kwargs))
+
+    @override
+    async def _atranscription(self, params: AudioTranscriptionParams, **kwargs: Any) -> Transcription:
+        return await super()._atranscription(params, **self._media_options(kwargs))
+
+    @override
+    async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
+        return await super()._aspeech(params, **self._media_options(kwargs))
