@@ -564,8 +564,32 @@ def test_split_cached_input_tokens_floors_negative_cached_at_zero() -> None:
 
 
 def test_split_cached_input_tokens_excludes_cache_buckets_when_not_in_prompt() -> None:
-    """An explicit false inclusion flag keeps cache buckets outside the prompt total."""
-    assert split_cached_input_tokens(100, 20, 12, False) == (100, None)
+    """An explicit false inclusion flag keeps cache buckets outside the prompt total without dropping them."""
+    assert split_cached_input_tokens(100, 20, 12, False) == (100, 20)
+    assert split_cached_input_tokens(100, 0, None, False) == (100, 0)
+    assert split_cached_input_tokens(100, None, 12, False) == (100, None)
+    assert split_cached_input_tokens(100, -1, None, False) == (100, None)
+
+
+def test_chat_completion_additive_cache_usage_keeps_read_meter() -> None:
+    """A read meter reported outside prompt_tokens survives the Messages bridge unchanged."""
+    completion = ChatCompletion(
+        id="cmpl-additive",
+        model="some-model",
+        created=0,
+        object="chat.completion",
+        choices=[Choice(index=0, finish_reason="stop", message=ChatCompletionMessage(role="assistant", content="hi"))],
+        usage=CompletionUsage(
+            prompt_tokens=100,
+            completion_tokens=5,
+            total_tokens=105,
+            cache_usage={"read_input_tokens": 20, "included_in_prompt_tokens": False},
+        ),
+    )
+
+    usage = chat_completion_to_message_response(completion).usage
+    assert usage.input_tokens == 100
+    assert usage.cache_read_input_tokens == 20
 
 
 def test_streaming_message_start_cached_without_prompt_total_is_not_negative() -> None:
@@ -1894,11 +1918,58 @@ def test_streaming_usage_preserves_cache_creation_details() -> None:
     events = chat_completion_chunk_to_message_stream_events(chunk, state)
 
     assert state.cache_creation_input_tokens == 12
-    cache_creation = cast("dict[str, int]", state.cache_creation)
-    assert cache_creation["ephemeral_5m_input_tokens"] == 7
+    assert state.cache_creation is not None
+    assert state.cache_creation.ephemeral_5m_input_tokens == 7
     first_event = cast("Any", events[0])
     assert first_event.message.usage.cache_creation_input_tokens == 12
     assert first_event.message.usage.cache_creation.ephemeral_1h_input_tokens == 5
+
+
+def test_partial_cache_creation_ttl_does_not_break_messages_bridge() -> None:
+    """A single reported TTL bucket cannot fill Anthropic's two-field CacheCreation, so it is omitted."""
+    usage = CompletionUsage(
+        prompt_tokens=100,
+        completion_tokens=5,
+        total_tokens=105,
+        cache_creation_input_tokens=12,
+        cache_creation={"ephemeral_5m_input_tokens": 12},
+    )
+    completion = ChatCompletion(
+        id="cmpl-partial-ttl",
+        model="some-model",
+        created=0,
+        object="chat.completion",
+        choices=[Choice(index=0, finish_reason="stop", message=ChatCompletionMessage(role="assistant", content="hi"))],
+        usage=usage,
+    )
+    message_usage = chat_completion_to_message_response(completion).usage
+    assert message_usage.cache_creation_input_tokens == 12
+    assert message_usage.cache_creation is None
+
+    chunk = ChatCompletionChunk(
+        id="c-partial-ttl",
+        model="some-model",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
+        usage=CompletionUsage(
+            prompt_tokens=100,
+            completion_tokens=5,
+            total_tokens=105,
+            cache_usage={
+                "creation_input_tokens": 12,
+                "creation_1h_input_tokens": 12,
+                "included_in_prompt_tokens": True,
+            },
+        ),
+    )
+    state = StreamingState()
+    start = next(
+        e for e in chat_completion_chunk_to_message_stream_events(chunk, state) if isinstance(e, MessageStartEvent)
+    )
+    assert start.message.usage.cache_creation_input_tokens == 12
+    assert start.message.usage.cache_creation is None
+    assert state.cache_creation is None
 
 
 def test_output_config_bare_format_object_translated_to_json_schema_response_format() -> None:

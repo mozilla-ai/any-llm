@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any, cast
 
+from anthropic.types import CacheCreation
+from pydantic import BaseModel
+
 from any_llm.exceptions import InvalidRequestError
 from any_llm.types.messages import (
     ContentBlockDeltaEvent,
@@ -439,7 +442,7 @@ def split_cached_input_tokens(
     prompt_tokens: int,
     cached_tokens: int | None,
     cache_creation_tokens: int | None = 0,
-    creation_in_prompt: bool | None = None,
+    cache_included_in_prompt: bool | None = None,
 ) -> tuple[int, int | None]:
     """Split an OpenAI prompt-token total into disjoint Anthropic input/cache-read counts.
 
@@ -449,23 +452,24 @@ def split_cached_input_tokens(
     that sums the fields over-count, and would bill cached tokens twice in a cost model that prices
     the two at different rates.
 
-    The cached count comes back as ``None`` rather than 0 when there was no cache hit, so a response
-    from a provider that reports no cache accounting looks exactly as it did before this mapping
-    existed. ``cache_creation_input_tokens`` is left unset rather than synthesized because no provider
-    in this repo populates ``prompt_tokens_details.cache_write_tokens``, which is the field a cache
-    write would arrive on.
+    The cached count comes back as ``None`` when the provider reported no read meter, and as 0 when it
+    reported an explicit zero, so consumers can tell "no cache hit" from "no cache accounting".
+
+    ``cache_included_in_prompt`` follows ``CacheUsageDetails.included_in_prompt_tokens``. When true, the
+    cache-creation count is also carved out of ``prompt_tokens`` so it is not counted twice alongside
+    ``cache_creation_input_tokens``. When false, the cache buckets are additive: ``prompt_tokens`` is
+    already the uncached input and the read meter passes through unchanged.
 
     The cached count is clamped into ``[0, prompt_tokens]`` so a provider that reports the two
     inconsistently cannot push ``input_tokens`` negative (cached above the total) or above the prompt
     total (cached below zero). Clamping the subtrahend rather than flooring the result keeps the sum
     invariant intact: the two returned values still add up to ``prompt_tokens``.
     """
-    cached = min(max(cached_tokens or 0, 0), prompt_tokens)
-    if creation_in_prompt is False:
-        cached = 0
-    elif creation_in_prompt is True:
+    if cache_included_in_prompt is False:
+        return prompt_tokens, cached_tokens if cached_tokens is not None and cached_tokens >= 0 else None
+    if cache_included_in_prompt is True:
         prompt_tokens = max(prompt_tokens - max(cache_creation_tokens or 0, 0), 0)
-        cached = min(cached, prompt_tokens)
+    cached = min(max(cached_tokens or 0, 0), prompt_tokens)
     cache_read = cached if cached_tokens is not None and (cached_tokens == 0 or cached > 0) else None
     return prompt_tokens - cached, cache_read
 
@@ -487,11 +491,16 @@ def _cache_creation_from_usage(usage: Any) -> int | None:
     return getattr(usage, "cache_creation_input_tokens", None)
 
 
-def _cache_creation_details_from_usage(usage: Any) -> dict[str, int] | None:
-    """Read canonical TTL meters, falling back to the raw compatibility field."""
+def _cache_creation_details_from_usage(usage: Any) -> CacheCreation | None:
+    """Read canonical TTL meters, falling back to the raw compatibility field.
+
+    Anthropic's ``CacheCreation`` requires both buckets, so a usage that reports only one yields ``None``
+    rather than a fabricated zero; the creation total still travels on ``cache_creation_input_tokens``.
+    """
     raw = getattr(usage, "cache_creation", None)
-    details = raw.model_dump() if hasattr(raw, "model_dump") else raw
-    details = dict(details) if isinstance(details, dict) else {}
+    if isinstance(raw, BaseModel):
+        raw = raw.model_dump()
+    details = dict(raw) if isinstance(raw, dict) else {}
     cache_usage = getattr(usage, "cache_usage", None)
     if cache_usage is not None:
         for field, key in (
@@ -501,7 +510,11 @@ def _cache_creation_details_from_usage(usage: Any) -> dict[str, int] | None:
             value = getattr(cache_usage, field, None)
             if value is not None:
                 details[key] = int(value)
-    return details or None
+    five_minute = details.get("ephemeral_5m_input_tokens")
+    one_hour = details.get("ephemeral_1h_input_tokens")
+    if five_minute is None or one_hour is None:
+        return None
+    return CacheCreation(ephemeral_5m_input_tokens=five_minute, ephemeral_1h_input_tokens=one_hour)
 
 
 def _cache_included_in_prompt(usage: Any) -> bool | None:
@@ -603,7 +616,7 @@ class StreamingState:
         self.output_tokens = 0
         self.cache_read_input_tokens: int | None = None
         self.cache_creation_input_tokens: int | None = None
-        self.cache_creation: Any | None = None
+        self.cache_creation: CacheCreation | None = None
         self.cache_included_in_prompt: bool | None = None
         self.stop_reason: StopReason | None = None
         self.tool_call_id: str | None = None
