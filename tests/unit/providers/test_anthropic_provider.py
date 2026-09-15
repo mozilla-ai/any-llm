@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from anthropic import transform_schema
-from anthropic.types import Message
+from anthropic.types import CacheCreation, Message
 from anthropic.types.model_info import ModelInfo
 from anthropic.types.stop_reason import StopReason
 from pydantic import BaseModel
@@ -811,9 +811,6 @@ def test_convert_response_includes_cache_tokens_in_usage() -> None:
     these should be added to prompt_tokens and total_tokens for accurate reporting.
     See: https://github.com/mozilla-ai/any-llm/issues/622
     """
-    from datetime import datetime
-    from unittest.mock import MagicMock
-
     from any_llm.providers.anthropic.utils import _convert_response
 
     mock_response = MagicMock()
@@ -827,6 +824,7 @@ def test_convert_response_includes_cache_tokens_in_usage() -> None:
     mock_response.usage.output_tokens = 122
     mock_response.usage.cache_read_input_tokens = 13332
     mock_response.usage.cache_creation_input_tokens = 0
+    mock_response.usage.cache_creation = None
 
     result = _convert_response(mock_response)
 
@@ -839,13 +837,11 @@ def test_convert_response_includes_cache_tokens_in_usage() -> None:
     assert result.usage.total_tokens == expected_total_tokens
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 13332
+    assert result.usage.prompt_tokens_details.cache_write_tokens == 0
 
 
 def test_convert_response_includes_cache_creation_tokens() -> None:
     """Test that cache_creation_input_tokens are included in usage when writing to cache."""
-    from datetime import datetime
-    from unittest.mock import MagicMock
-
     from any_llm.providers.anthropic.utils import _convert_response
 
     mock_response = MagicMock()
@@ -859,6 +855,10 @@ def test_convert_response_includes_cache_creation_tokens() -> None:
     mock_response.usage.output_tokens = 122
     mock_response.usage.cache_read_input_tokens = 0
     mock_response.usage.cache_creation_input_tokens = 13332
+    mock_response.usage.cache_creation = CacheCreation(
+        ephemeral_5m_input_tokens=12000,
+        ephemeral_1h_input_tokens=1332,
+    )
 
     result = _convert_response(mock_response)
 
@@ -868,14 +868,17 @@ def test_convert_response_includes_cache_creation_tokens() -> None:
     assert result.usage is not None
     assert result.usage.prompt_tokens == expected_prompt_tokens
     assert result.usage.total_tokens == expected_total_tokens
-    assert result.usage.prompt_tokens_details is None
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 0
+    assert result.usage.prompt_tokens_details.cache_write_tokens == 13332
+    ttl = result.usage.prompt_tokens_details.cache_creation_token_details
+    assert ttl is not None
+    assert ttl.ephemeral_5m_input_tokens == 12000
+    assert ttl.ephemeral_1h_input_tokens == 1332
 
 
 def test_convert_response_without_cache_tokens() -> None:
     """Test that usage is correct when no cache tokens are present."""
-    from datetime import datetime
-    from unittest.mock import MagicMock
-
     from any_llm.providers.anthropic.utils import _convert_response
 
     mock_response = MagicMock()
@@ -889,6 +892,7 @@ def test_convert_response_without_cache_tokens() -> None:
     mock_response.usage.output_tokens = 50
     mock_response.usage.cache_read_input_tokens = None
     mock_response.usage.cache_creation_input_tokens = None
+    mock_response.usage.cache_creation = None
 
     result = _convert_response(mock_response)
 
@@ -899,10 +903,31 @@ def test_convert_response_without_cache_tokens() -> None:
     assert result.usage.prompt_tokens_details is None
 
 
+def test_convert_response_preserves_zero_cache_read_tokens() -> None:
+    """An explicit zero cache read remains distinguishable from an absent meter."""
+    from any_llm.providers.anthropic.utils import _convert_response
+
+    mock_response = MagicMock()
+    mock_response.id = "msg_zero-read"
+    mock_response.model = "claude-3-haiku"
+    mock_response.stop_reason = "end_turn"
+    mock_response.content = [MagicMock(type="text", text="Hello!")]
+    mock_response.created_at = datetime.now(UTC)
+    mock_response.usage.input_tokens = 3
+    mock_response.usage.output_tokens = 1
+    mock_response.usage.cache_read_input_tokens = 0
+    mock_response.usage.cache_creation_input_tokens = None
+    mock_response.usage.cache_creation = None
+
+    result = _convert_response(mock_response)
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 0
+
+
 def test_streaming_chunk_includes_cache_tokens_in_usage() -> None:
     """Test that streaming chunks correctly include cache tokens in usage."""
-    from unittest.mock import MagicMock
-
     from anthropic.types import MessageStopEvent, Usage
 
     from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
@@ -931,7 +956,38 @@ def test_streaming_chunk_includes_cache_tokens_in_usage() -> None:
     assert result.usage.total_tokens == expected_total_tokens
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 13332
+    assert result.usage.prompt_tokens_details.cache_write_tokens == 0
     assert result.choices == []
+
+
+def test_streaming_chunk_includes_cache_creation_tokens_in_usage() -> None:
+    from anthropic.types import MessageStopEvent, Usage
+
+    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
+
+    usage = Usage(
+        input_tokens=3,
+        output_tokens=5,
+        cache_read_input_tokens=None,
+        cache_creation_input_tokens=12,
+        cache_creation=CacheCreation(ephemeral_5m_input_tokens=7, ephemeral_1h_input_tokens=5),
+    )
+    message = MagicMock(usage=usage)
+    chunk = MessageStopEvent(type="message_stop")
+    chunk.message = message  # type: ignore[attr-defined]
+
+    result = _create_openai_chunk_from_anthropic_chunk(chunk, "claude-3-haiku")
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 15
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens is None
+    assert result.usage.prompt_tokens_details.cache_write_tokens == 12
+    ttl = result.usage.prompt_tokens_details.cache_creation_token_details
+    assert ttl is not None
+    assert ttl.ephemeral_5m_input_tokens == 7
+    assert ttl.ephemeral_1h_input_tokens == 5
+    assert "cache_creation_input_tokens" not in result.usage.model_dump()
 
 
 @pytest.mark.asyncio
@@ -975,8 +1031,6 @@ async def test_completion_strips_openai_specific_fields() -> None:
 
 def test_streaming_chunk_without_cache_tokens() -> None:
     """Test that streaming chunks work correctly without cache tokens."""
-    from unittest.mock import MagicMock
-
     from anthropic.types import MessageStopEvent, Usage
 
     from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk

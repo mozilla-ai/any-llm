@@ -10,6 +10,7 @@ from anthropic.types import (
     Message,
     MessageDeltaEvent,
     MessageStopEvent,
+    Usage,
 )
 from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
 from pydantic import BaseModel
@@ -17,6 +18,7 @@ from pydantic import BaseModel
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.logging import logger
 from any_llm.types.completion import (
+    CacheCreationTokenDetails,
     ChatCompletion,
     ChatCompletionChunk,
     ChatCompletionMessage,
@@ -308,16 +310,7 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
 
     elif isinstance(chunk, MessageStopEvent):
         if hasattr(chunk, "message") and chunk.message.usage:
-            anthropic_usage = chunk.message.usage
-            cache_read = anthropic_usage.cache_read_input_tokens or 0
-            cache_creation = anthropic_usage.cache_creation_input_tokens or 0
-            total_prompt_tokens = anthropic_usage.input_tokens + cache_read + cache_creation
-            chunk_dict["usage"] = {
-                "prompt_tokens": total_prompt_tokens,
-                "completion_tokens": anthropic_usage.output_tokens,
-                "total_tokens": total_prompt_tokens + anthropic_usage.output_tokens,
-                "prompt_tokens_details": PromptTokensDetails(cached_tokens=cache_read) if cache_read else None,
-            }
+            chunk_dict["usage"] = _convert_usage(chunk.message.usage)
         # The stop event carries no delta or finish_reason, only usage. Leave choices
         # empty so it matches the trailing usage-only chunk OpenAI-compatible providers emit.
         return ChatCompletionChunk.model_validate(chunk_dict)
@@ -332,6 +325,39 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
     chunk_dict["choices"] = [choice]
 
     return ChatCompletionChunk.model_validate(chunk_dict)
+
+
+def _convert_usage(usage: Usage) -> CompletionUsage:
+    """Convert Anthropic usage to OpenAI usage.
+
+    Anthropic reports cache reads and writes beside ``input_tokens``. OpenAI counts them inside
+    ``prompt_tokens`` and breaks them out in ``prompt_tokens_details``, so both are folded into the total.
+    See: https://github.com/mozilla-ai/any-llm/issues/622
+    """
+    cache_read = usage.cache_read_input_tokens
+    cache_write = usage.cache_creation_input_tokens
+    ttl = usage.cache_creation
+    prompt_tokens = usage.input_tokens + (cache_read or 0) + (cache_write or 0)
+    details = None
+    if cache_read is not None or cache_write is not None or ttl is not None:
+        details = PromptTokensDetails(
+            cached_tokens=cache_read,
+            cache_write_tokens=cache_write,
+            cache_creation_token_details=(
+                CacheCreationTokenDetails(
+                    ephemeral_5m_input_tokens=ttl.ephemeral_5m_input_tokens,
+                    ephemeral_1h_input_tokens=ttl.ephemeral_1h_input_tokens,
+                )
+                if ttl is not None
+                else None
+            ),
+        )
+    return CompletionUsage(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=usage.output_tokens,
+        total_tokens=prompt_tokens + usage.output_tokens,
+        prompt_tokens_details=details,
+    )
 
 
 def _convert_response(response: Message) -> ChatCompletion:
@@ -392,16 +418,7 @@ def _convert_response(response: Message) -> ChatCompletion:
         extra_content={"anthropic": anthropic_extra_content} if anthropic_extra_content else None,
     )
 
-    cache_read = response.usage.cache_read_input_tokens or 0
-    cache_creation = response.usage.cache_creation_input_tokens or 0
-    total_prompt_tokens = response.usage.input_tokens + cache_read + cache_creation
-
-    usage = CompletionUsage(
-        completion_tokens=response.usage.output_tokens,
-        prompt_tokens=total_prompt_tokens,
-        total_tokens=total_prompt_tokens + response.usage.output_tokens,
-        prompt_tokens_details=PromptTokensDetails(cached_tokens=cache_read) if cache_read else None,
-    )
+    usage = _convert_usage(response.usage)
 
     from typing import Literal
 
