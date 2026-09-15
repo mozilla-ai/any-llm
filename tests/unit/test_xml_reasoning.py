@@ -15,7 +15,7 @@ from any_llm.types.completion import (
     ChunkChoice,
     Reasoning,
 )
-from any_llm.utils.reasoning import partial_reasoning_tag_suffix_len
+from any_llm.utils.reasoning import partial_reasoning_tag_suffix_len, replay_reasoning_content_as_reasoning
 
 
 def _make_chunk(
@@ -427,3 +427,40 @@ def test_partial_reasoning_tag_suffix_len(
     expected: int,
 ) -> None:
     assert partial_reasoning_tag_suffix_len(text, tag_kind=tag_kind) == expected
+
+
+def test_replay_reasoning_content_as_reasoning_renames_field_and_drops_extra_content() -> None:
+    messages = [
+        {
+            "role": "assistant",
+            "content": None,
+            "reasoning_content": "thought",
+            "extra_content": {"anthropic": {"signature": "sig"}},
+        }
+    ]
+    assert replay_reasoning_content_as_reasoning(messages) == [
+        {"role": "assistant", "content": None, "reasoning": "thought"}
+    ]
+
+
+def test_replay_reasoning_content_as_reasoning_leaves_other_messages_untouched() -> None:
+    message = {"role": "user", "content": "hi"}
+    assert replay_reasoning_content_as_reasoning([message])[0] is message
+
+
+def test_replay_reasoning_content_as_reasoning_drops_extra_content_without_reasoning() -> None:
+    messages = [{"role": "assistant", "content": "ok", "extra_content": {"anthropic": {"signature": "sig"}}}]
+    assert replay_reasoning_content_as_reasoning(messages) == [{"role": "assistant", "content": "ok"}]
+
+
+@pytest.mark.parametrize("reasoning_content", ["", None])
+def test_replay_reasoning_content_as_reasoning_drops_empty_reasoning_content(reasoning_content: str | None) -> None:
+    messages = [{"role": "assistant", "content": "ok", "reasoning_content": reasoning_content}]
+    assert replay_reasoning_content_as_reasoning(messages) == [{"role": "assistant", "content": "ok"}]
+
+
+def test_replay_reasoning_content_as_reasoning_keeps_explicit_reasoning() -> None:
+    messages = [{"role": "assistant", "content": "ok", "reasoning": "caller", "reasoning_content": "bridge"}]
+    assert replay_reasoning_content_as_reasoning(messages) == [
+        {"role": "assistant", "content": "ok", "reasoning": "caller"}
+    ]

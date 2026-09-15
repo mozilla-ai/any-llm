@@ -182,6 +182,28 @@ async def process_streaming_reasoning_chunks(
         yield held_chunk
 
 
+def replay_reasoning_content_as_reasoning(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rename a replayed ``reasoning_content`` to ``reasoning`` and drop ``extra_content``.
+
+    For providers whose SDK names the assistant reasoning field ``reasoning`` and whose API rejects
+    any other message key: Groq and Cerebras return 400 ``property 'reasoning_content' is
+    unsupported`` for the field the Messages bridge emits from a replayed ``thinking`` block.
+    ``extra_content`` is an any_llm side-channel that never belongs on their wire. An explicit
+    ``reasoning`` the caller already set wins over ``reasoning_content``.
+    """
+    result = []
+    for message in messages:
+        if "reasoning_content" not in message and "extra_content" not in message:
+            result.append(message)
+            continue
+        cleaned = {key: value for key, value in message.items() if key not in ("reasoning_content", "extra_content")}
+        reasoning_content = message.get("reasoning_content")
+        if isinstance(reasoning_content, str) and reasoning_content and "reasoning" not in cleaned:
+            cleaned["reasoning"] = reasoning_content
+        result.append(cleaned)
+    return result
+
+
 def normalize_reasoning_from_provider_fields_and_xml_tags(message_dict: dict[str, Any]) -> None:
     """Extract and normalize reasoning from provider fields and XML tags.
 

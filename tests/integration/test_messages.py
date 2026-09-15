@@ -7,7 +7,7 @@ from openai import APIConnectionError
 
 from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.types.messages import MessageResponse, MessageStreamEvent
+from any_llm.types.messages import MessageResponse, MessageStreamEvent, ToolUseBlock
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 
@@ -157,3 +157,66 @@ async def test_messages_with_system_prompt(
     assert len(result.content) >= 1
     assert result.usage.input_tokens >= 0
     assert result.usage.output_tokens >= 0
+
+
+_WEATHER_TOOL = {
+    "name": "get_weather",
+    "description": "Get the weather for a location.",
+    "input_schema": {
+        "type": "object",
+        "properties": {"location": {"type": "string", "description": "The city name."}},
+        "required": ["location"],
+    },
+}
+
+
+@pytest.mark.asyncio
+async def test_messages_tool_result_is_error(
+    provider: LLMProvider,
+    provider_model_map: dict[LLMProvider, str],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
+) -> None:
+    """A failed tool result replays through the Messages API without the provider rejecting the request."""
+    if provider in (*LOCAL_PROVIDERS, LLMProvider.PERPLEXITY):
+        pytest.skip(f"{provider} does not support tools, skipping")
+
+    try:
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
+        if not llm.SUPPORTS_COMPLETION:
+            pytest.skip(f"{provider.value} does not support completion, skipping")
+        model_id = provider_model_map[provider]
+        messages: list[dict[str, Any]] = [
+            {"role": "user", "content": "What is the weather in Paris? Use the get_weather tool."},
+        ]
+        first = await llm.amessages(model=model_id, messages=messages, max_tokens=1024, tools=[_WEATHER_TOOL])
+        assert isinstance(first, MessageResponse)
+        tool_use = next((block for block in first.content if isinstance(block, ToolUseBlock)), None)
+        assert tool_use is not None, f"Expected a get_weather tool call, got: {first.content}"
+
+        messages.append(
+            {"role": "assistant", "content": [block.model_dump(exclude_none=True) for block in first.content]}
+        )
+        messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_use.id,
+                        "content": "weather service unavailable",
+                        "is_error": True,
+                    }
+                ],
+            }
+        )
+        result = await llm.amessages(model=model_id, messages=messages, max_tokens=1024, tools=[_WEATHER_TOOL])
+    except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} API key not provided, skipping")
+    except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
+            pytest.skip("Local Model host is not set up, skipping")
+        raise
+    assert isinstance(result, MessageResponse)
+    assert len(result.content) >= 1
