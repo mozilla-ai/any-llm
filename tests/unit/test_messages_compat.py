@@ -5,11 +5,12 @@ from typing import Any
 
 import pytest
 from openai.types.completion_usage import CompletionUsage as OpenAICompletionUsage
+from openai.types.completion_usage import PromptTokensDetails as OpenAIPromptTokensDetails
 from pydantic import BaseModel
 
 from any_llm.exceptions import InvalidRequestError
 from any_llm.types.completion import (
-    CacheUsageDetails,
+    CacheCreationTokenDetails,
     ChatCompletion,
     ChatCompletionChunk,
     ChatCompletionMessage,
@@ -471,7 +472,7 @@ def test_chat_completion_cache_creation_tokens_never_synthesized() -> None:
 
 
 def test_chat_completion_preserves_canonical_cache_creation_tokens() -> None:
-    """Canonical cache-creation meters survive the completion-to-Messages bridge."""
+    """Cache writes reported in prompt_tokens_details survive the completion-to-Messages bridge."""
     completion = ChatCompletion(
         id="cmpl-cache-write",
         model="some-model",
@@ -482,7 +483,7 @@ def test_chat_completion_preserves_canonical_cache_creation_tokens() -> None:
             prompt_tokens=100,
             completion_tokens=5,
             total_tokens=105,
-            cache_usage=CacheUsageDetails(creation_input_tokens=12, included_in_prompt_tokens=True),
+            prompt_tokens_details=PromptTokensDetails(cache_write_tokens=12),
         ),
     )
 
@@ -565,33 +566,12 @@ def test_split_cached_input_tokens_floors_negative_cached_at_zero() -> None:
     assert cache_read is None
 
 
-def test_split_cached_input_tokens_excludes_cache_buckets_when_not_in_prompt() -> None:
-    """An explicit false inclusion flag keeps cache buckets outside the prompt total without dropping them."""
-    assert split_cached_input_tokens(100, 20, 12, False) == (100, 20)
-    assert split_cached_input_tokens(100, 0, None, False) == (100, 0)
-    assert split_cached_input_tokens(100, None, 12, False) == (100, None)
-    assert split_cached_input_tokens(100, -1, None, False) == (100, None)
-
-
-def test_chat_completion_additive_cache_usage_keeps_read_meter() -> None:
-    """A read meter reported outside prompt_tokens survives the Messages bridge unchanged."""
-    completion = ChatCompletion(
-        id="cmpl-additive",
-        model="some-model",
-        created=0,
-        object="chat.completion",
-        choices=[Choice(index=0, finish_reason="stop", message=ChatCompletionMessage(role="assistant", content="hi"))],
-        usage=CompletionUsage(
-            prompt_tokens=100,
-            completion_tokens=5,
-            total_tokens=105,
-            cache_usage=CacheUsageDetails(read_input_tokens=20, included_in_prompt_tokens=False),
-        ),
-    )
-
-    usage = chat_completion_to_message_response(completion).usage
-    assert usage.input_tokens == 100
-    assert usage.cache_read_input_tokens == 20
+def test_split_cached_input_tokens_subtracts_cache_writes() -> None:
+    """Cache writes are part of the OpenAI prompt total, so they come out of input_tokens too."""
+    assert split_cached_input_tokens(100, 20, 12) == (68, 20)
+    assert split_cached_input_tokens(100, None, 12) == (88, None)
+    assert split_cached_input_tokens(100, 0, 0) == (100, 0)
+    assert split_cached_input_tokens(10, 20, 30) == (0, None)
 
 
 def test_streaming_message_start_cached_without_prompt_total_is_not_negative() -> None:
@@ -1544,29 +1524,6 @@ def test_streaming_usage_no_prompt_tokens_details_leaves_cache_read_unset() -> N
     assert state.cache_read_input_tokens is None
 
 
-def test_streaming_message_start_respects_explicit_cache_inclusion() -> None:
-    """A provider can report creation meters without including them in prompt_tokens."""
-    state = StreamingState()
-    chunk = ChatCompletionChunk(
-        id="chunk-cache-write",
-        model="gpt-4",
-        created=0,
-        object="chat.completion.chunk",
-        choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
-        usage=CompletionUsage(
-            prompt_tokens=100,
-            completion_tokens=20,
-            total_tokens=120,
-            cache_usage=CacheUsageDetails(creation_input_tokens=12, included_in_prompt_tokens=False),
-        ),
-    )
-
-    events = chat_completion_chunk_to_message_stream_events(chunk, state)
-    start = next(e for e in events if isinstance(e, MessageStartEvent))
-    assert start.message.usage.input_tokens == 100
-    assert start.message.usage.cache_creation_input_tokens == 12
-
-
 def test_close_current_block_when_none() -> None:
     """Test _close_current_block does nothing when no block is open."""
     from any_llm.utils.messages_compat import _close_current_block
@@ -1732,8 +1689,44 @@ def test_streaming_usage_with_zero_tokens() -> None:
     assert state.output_tokens == 50
 
 
-def test_completion_usage_keeps_unrecognized_cache_token_meters() -> None:
-    """Integer cache token counters with no stable mapping survive in provider_meters."""
+def test_completion_usage_accepts_nested_openai_parent_models() -> None:
+    """OpenAI SDK instances validate into the extended usage and prompt details types."""
+    source = OpenAICompletionUsage(
+        prompt_tokens=10,
+        completion_tokens=1,
+        total_tokens=11,
+        prompt_tokens_details=OpenAIPromptTokensDetails(cached_tokens=4, cache_write_tokens=2),
+    )
+
+    from_model = CompletionUsage.model_validate(source)
+    from_field = CompletionUsage.model_validate(
+        {
+            "prompt_tokens": 10,
+            "completion_tokens": 1,
+            "total_tokens": 11,
+            "prompt_tokens_details": OpenAIPromptTokensDetails(cached_tokens=4),
+        }
+    )
+    completion = ChatCompletion.model_validate(
+        {
+            "id": "cmpl-parent",
+            "model": "some-model",
+            "created": 0,
+            "object": "chat.completion",
+            "choices": [],
+            "usage": source,
+        }
+    )
+
+    assert isinstance(from_model.prompt_tokens_details, PromptTokensDetails)
+    assert from_model.prompt_tokens_details.cache_write_tokens == 2
+    assert isinstance(from_field.prompt_tokens_details, PromptTokensDetails)
+    assert from_field.prompt_tokens_details.cached_tokens == 4
+    assert isinstance(completion.usage, CompletionUsage)
+
+
+def test_completion_usage_keeps_provider_cache_meters_on_the_wire() -> None:
+    """Provider counters with no OpenAI equivalent survive serialization unchanged."""
     usage = CompletionUsage.model_validate(
         {
             "prompt_tokens": 100,
@@ -1741,43 +1734,12 @@ def test_completion_usage_keeps_unrecognized_cache_token_meters() -> None:
             "total_tokens": 105,
             "prompt_cache_hit_tokens": 80,
             "prompt_cache_miss_tokens": 20,
-            "cache_hit_rate": 1,
-            "cache_warm_tokens": True,
-            "cache_label_tokens": "n/a",
         }
     )
 
-    assert usage.cache_usage is not None
-    assert usage.cache_usage.read_input_tokens is None
-    assert usage.cache_usage.included_in_prompt_tokens is None
-    assert usage.cache_usage.provider_meters == {
-        "prompt_cache_hit_tokens": 80,
-        "prompt_cache_miss_tokens": 20,
-    }
-
-
-def test_completion_usage_normalization_preserves_existing_and_openai_cache_details() -> None:
-    existing = CompletionUsage(
-        prompt_tokens=10,
-        completion_tokens=1,
-        total_tokens=11,
-        prompt_tokens_details=PromptTokensDetails(cached_tokens=4),
-        cache_usage=CacheUsageDetails(read_input_tokens=2, included_in_prompt_tokens=False),
-    )
-    assert existing.cache_usage is not None
-    assert existing.cache_usage.read_input_tokens == 2
-    assert existing.cache_usage.included_in_prompt_tokens is False
-
-    openai_usage = CompletionUsage(
-        prompt_tokens=10,
-        completion_tokens=1,
-        total_tokens=11,
-        prompt_tokens_details=PromptTokensDetails(cached_tokens=0),
-    )
-    assert openai_usage.cache_usage is not None
-    assert openai_usage.cache_usage.read_input_tokens == 0
-    assert openai_usage.cache_usage.included_in_prompt_tokens is True
-    assert openai_usage.cache_usage.provider_meters is None
+    dumped = usage.model_dump()
+    assert dumped["prompt_cache_hit_tokens"] == 80
+    assert dumped["prompt_cache_miss_tokens"] == 20
 
 
 def test_completion_usage_without_cache_data_serializes_unchanged() -> None:
@@ -1785,36 +1747,33 @@ def test_completion_usage_without_cache_data_serializes_unchanged() -> None:
     plain = CompletionUsage(prompt_tokens=10, completion_tokens=1, total_tokens=11)
     openai_shape = OpenAICompletionUsage(prompt_tokens=10, completion_tokens=1, total_tokens=11)
 
-    assert plain.cache_usage is None
     assert plain.model_dump() == openai_shape.model_dump()
     assert json.loads(plain.model_dump_json()) == json.loads(openai_shape.model_dump_json())
 
-    completion = ChatCompletion(
-        id="cmpl-plain",
-        model="some-model",
-        created=0,
-        object="chat.completion",
-        choices=[],
-        usage=plain,
-    )
-    assert "cache_usage" not in completion.model_dump()["usage"]
 
-
-def test_completion_usage_serializes_reported_cache_usage() -> None:
+def test_prompt_tokens_details_round_trips_cache_write_ttl() -> None:
     usage = CompletionUsage(
         prompt_tokens=10,
         completion_tokens=1,
         total_tokens=11,
-        cache_usage=CacheUsageDetails(read_input_tokens=0, included_in_prompt_tokens=True),
+        prompt_tokens_details=PromptTokensDetails(
+            cached_tokens=0,
+            cache_write_tokens=6,
+            cache_creation_token_details=CacheCreationTokenDetails(ephemeral_5m_input_tokens=6),
+        ),
     )
 
     dumped = usage.model_dump(exclude_none=True)
-    assert dumped["cache_usage"] == {"read_input_tokens": 0, "included_in_prompt_tokens": True}
+    assert dumped["prompt_tokens_details"] == {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6,
+        "cache_creation_token_details": {"ephemeral_5m_input_tokens": 6},
+    }
     assert CompletionUsage.model_validate(json.loads(usage.model_dump_json())) == usage
 
 
-def test_chat_completion_preserves_canonical_cache_creation_ttl_details() -> None:
-    """Canonical TTL meters survive the completion-to-Messages bridge."""
+def test_chat_completion_preserves_cache_creation_ttl_details() -> None:
+    """Cache write totals and TTL buckets survive the completion-to-Messages bridge."""
     completion = ChatCompletion(
         id="cmpl-cache-write",
         model="some-model",
@@ -1825,24 +1784,35 @@ def test_chat_completion_preserves_canonical_cache_creation_ttl_details() -> Non
             prompt_tokens=100,
             completion_tokens=5,
             total_tokens=105,
-            cache_usage=CacheUsageDetails(creation_5m_input_tokens=7, creation_1h_input_tokens=5),
+            prompt_tokens_details=PromptTokensDetails(
+                cache_write_tokens=12,
+                cache_creation_token_details=CacheCreationTokenDetails(
+                    ephemeral_5m_input_tokens=7,
+                    ephemeral_1h_input_tokens=5,
+                ),
+            ),
         ),
     )
 
     usage = chat_completion_to_message_response(completion).usage
+    assert usage.input_tokens == 88
+    assert usage.cache_creation_input_tokens == 12
     assert usage.cache_creation is not None
     assert usage.cache_creation.ephemeral_5m_input_tokens == 7
     assert usage.cache_creation.ephemeral_1h_input_tokens == 5
 
 
-def test_chat_completion_wrappers_normalize_raw_cache_usage() -> None:
-    """Cache meters are normalized when wrappers validate raw dictionaries."""
+def test_chat_completion_wrappers_validate_raw_cache_details() -> None:
+    """Raw dictionaries produce the typed prompt details on completions and chunks."""
     usage = {
         "prompt_tokens": 10,
         "completion_tokens": 1,
         "total_tokens": 11,
-        "prompt_tokens_details": {"cached_tokens": 4},
-        "prompt_cache_hit_tokens": 4,
+        "prompt_tokens_details": {
+            "cached_tokens": 4,
+            "cache_write_tokens": 3,
+            "cache_creation_token_details": {"ephemeral_1h_input_tokens": 3},
+        },
     }
     completion = ChatCompletion.model_validate(
         {
@@ -1867,17 +1837,11 @@ def test_chat_completion_wrappers_normalize_raw_cache_usage() -> None:
 
     for wrapped in (completion.usage, chunk.usage):
         assert wrapped is not None
-        assert wrapped.cache_usage is not None
-        assert wrapped.cache_usage.read_input_tokens == 4
-        assert wrapped.cache_usage.provider_meters == {"prompt_cache_hit_tokens": 4}
-
-
-def test_cached_tokens_from_usage_falls_back_to_prompt_tokens_details_set_after_validation() -> None:
-    usage = CompletionUsage(prompt_tokens=10, completion_tokens=1, total_tokens=11)
-    usage.prompt_tokens_details = PromptTokensDetails(cached_tokens=3)
-
-    assert usage.cache_usage is None
-    assert _cached_tokens_from_usage(usage) == 3
+        assert wrapped.prompt_tokens_details is not None
+        assert wrapped.prompt_tokens_details.cache_write_tokens == 3
+        ttl = wrapped.prompt_tokens_details.cache_creation_token_details
+        assert isinstance(ttl, CacheCreationTokenDetails)
+        assert ttl.ephemeral_1h_input_tokens == 3
 
 
 def test_streaming_usage_preserves_cache_creation_details() -> None:
@@ -1891,11 +1855,12 @@ def test_streaming_usage_preserves_cache_creation_details() -> None:
             prompt_tokens=100,
             completion_tokens=5,
             total_tokens=105,
-            cache_usage=CacheUsageDetails(
-                creation_input_tokens=12,
-                creation_5m_input_tokens=7,
-                creation_1h_input_tokens=5,
-                included_in_prompt_tokens=True,
+            prompt_tokens_details=PromptTokensDetails(
+                cache_write_tokens=12,
+                cache_creation_token_details=CacheCreationTokenDetails(
+                    ephemeral_5m_input_tokens=7,
+                    ephemeral_1h_input_tokens=5,
+                ),
             ),
         ),
     )
@@ -1914,18 +1879,17 @@ def test_streaming_usage_preserves_cache_creation_details() -> None:
 
 def test_partial_cache_creation_ttl_does_not_break_messages_bridge() -> None:
     """A single reported TTL bucket cannot fill Anthropic's two-field CacheCreation, so it is omitted."""
+    details = PromptTokensDetails(
+        cache_write_tokens=12,
+        cache_creation_token_details=CacheCreationTokenDetails(ephemeral_5m_input_tokens=12),
+    )
     completion = ChatCompletion(
         id="cmpl-partial-ttl",
         model="some-model",
         created=0,
         object="chat.completion",
         choices=[Choice(index=0, finish_reason="stop", message=ChatCompletionMessage(role="assistant", content="hi"))],
-        usage=CompletionUsage(
-            prompt_tokens=100,
-            completion_tokens=5,
-            total_tokens=105,
-            cache_usage=CacheUsageDetails(creation_input_tokens=12, creation_5m_input_tokens=12),
-        ),
+        usage=CompletionUsage(prompt_tokens=100, completion_tokens=5, total_tokens=105, prompt_tokens_details=details),
     )
     message_usage = chat_completion_to_message_response(completion).usage
     assert message_usage.cache_creation_input_tokens == 12
@@ -1937,16 +1901,7 @@ def test_partial_cache_creation_ttl_does_not_break_messages_bridge() -> None:
         created=0,
         object="chat.completion.chunk",
         choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
-        usage=CompletionUsage(
-            prompt_tokens=100,
-            completion_tokens=5,
-            total_tokens=105,
-            cache_usage=CacheUsageDetails(
-                creation_input_tokens=12,
-                creation_1h_input_tokens=12,
-                included_in_prompt_tokens=True,
-            ),
-        ),
+        usage=CompletionUsage(prompt_tokens=100, completion_tokens=5, total_tokens=105, prompt_tokens_details=details),
     )
     state = StreamingState()
     start = next(

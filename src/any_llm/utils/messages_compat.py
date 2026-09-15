@@ -440,77 +440,55 @@ def _budget_to_reasoning_effort(budget: int) -> str:
 def split_cached_input_tokens(
     prompt_tokens: int,
     cached_tokens: int | None,
-    cache_creation_tokens: int | None = 0,
-    cache_included_in_prompt: bool | None = None,
+    cache_write_tokens: int | None = None,
 ) -> tuple[int, int | None]:
     """Split an OpenAI prompt-token total into disjoint Anthropic input/cache-read counts.
 
-    OpenAI reports ``prompt_tokens`` as the whole prompt with ``prompt_tokens_details.cached_tokens``
-    as a subset of it, while Anthropic's ``input_tokens`` and ``cache_read_input_tokens`` are disjoint
-    and sum to the prompt. Copying the cached count across without subtracting would make any consumer
-    that sums the fields over-count, and would bill cached tokens twice in a cost model that prices
-    the two at different rates.
+    OpenAI reports ``prompt_tokens`` as the whole prompt, with ``prompt_tokens_details.cached_tokens`` and
+    ``prompt_tokens_details.cache_write_tokens`` as subsets of it, while Anthropic's ``input_tokens``,
+    ``cache_read_input_tokens`` and ``cache_creation_input_tokens`` are disjoint and sum to the prompt.
+    Copying the cache counts across without subtracting would make any consumer that sums the fields
+    over-count, and would bill cached tokens twice in a cost model that prices them at different rates.
 
     The cached count comes back as ``None`` when the provider reported no read meter, and as 0 when it
     reported an explicit zero, so consumers can tell "no cache hit" from "no cache accounting".
 
-    ``cache_included_in_prompt`` follows ``CacheUsageDetails.included_in_prompt_tokens``. When true, the
-    cache-creation count is also carved out of ``prompt_tokens`` so it is not counted twice alongside
-    ``cache_creation_input_tokens``. When false, the cache buckets are additive: ``prompt_tokens`` is
-    already the uncached input and the read meter passes through unchanged.
-
-    The cached count is clamped into ``[0, prompt_tokens]`` so a provider that reports the two
-    inconsistently cannot push ``input_tokens`` negative (cached above the total) or above the prompt
-    total (cached below zero). Clamping the subtrahend rather than flooring the result keeps the sum
-    invariant intact: the two returned values still add up to ``prompt_tokens``.
+    Each cache count is clamped into what remains of ``prompt_tokens`` so a provider that reports them
+    inconsistently cannot push ``input_tokens`` negative or above the prompt total. Clamping the
+    subtrahends rather than flooring the result keeps the returned input and cached counts summing to
+    ``prompt_tokens`` minus the cache writes.
     """
-    if cache_included_in_prompt is False:
-        return prompt_tokens, cached_tokens if cached_tokens is not None and cached_tokens >= 0 else None
-    if cache_included_in_prompt is True:
-        prompt_tokens = max(prompt_tokens - max(cache_creation_tokens or 0, 0), 0)
-    cached = min(max(cached_tokens or 0, 0), prompt_tokens)
+    remaining = prompt_tokens - min(max(cache_write_tokens or 0, 0), prompt_tokens)
+    cached = min(max(cached_tokens or 0, 0), remaining)
     cache_read = cached if cached_tokens is not None and (cached_tokens == 0 or cached > 0) else None
-    return prompt_tokens - cached, cache_read
+    return remaining - cached, cache_read
 
 
 def _cached_tokens_from_usage(usage: CompletionUsage) -> int | None:
-    """Read the cache-read meter, preserving absent versus zero.
-
-    ``prompt_tokens_details`` is the fallback for converters that set it after validation, when the
-    normalized meter could not be derived from it.
-    """
-    if usage.cache_usage is not None and usage.cache_usage.read_input_tokens is not None:
-        return usage.cache_usage.read_input_tokens
-    if usage.prompt_tokens_details is None:
-        return None
-    return usage.prompt_tokens_details.cached_tokens
+    """Read ``prompt_tokens_details.cached_tokens``, preserving absent versus zero."""
+    details = usage.prompt_tokens_details
+    return details.cached_tokens if details is not None else None
 
 
-def _cache_creation_from_usage(usage: CompletionUsage) -> int | None:
-    return usage.cache_usage.creation_input_tokens if usage.cache_usage is not None else None
+def _cache_write_tokens_from_usage(usage: CompletionUsage) -> int | None:
+    details = usage.prompt_tokens_details
+    return details.cache_write_tokens if details is not None else None
 
 
 def _cache_creation_details_from_usage(usage: CompletionUsage) -> CacheCreation | None:
-    """Build Anthropic's TTL breakdown from the normalized meters.
+    """Build Anthropic's TTL breakdown from ``prompt_tokens_details.cache_creation_token_details``.
 
     ``CacheCreation`` requires both buckets, so a usage that reports only one yields ``None`` rather than a
-    fabricated zero; the creation total still travels on ``cache_creation_input_tokens``.
+    fabricated zero; the write total still travels on ``cache_creation_input_tokens``.
     """
-    cache_usage = usage.cache_usage
-    if (
-        cache_usage is None
-        or cache_usage.creation_5m_input_tokens is None
-        or cache_usage.creation_1h_input_tokens is None
-    ):
+    details = usage.prompt_tokens_details
+    ttl = details.cache_creation_token_details if details is not None else None
+    if ttl is None or ttl.ephemeral_5m_input_tokens is None or ttl.ephemeral_1h_input_tokens is None:
         return None
     return CacheCreation(
-        ephemeral_5m_input_tokens=cache_usage.creation_5m_input_tokens,
-        ephemeral_1h_input_tokens=cache_usage.creation_1h_input_tokens,
+        ephemeral_5m_input_tokens=ttl.ephemeral_5m_input_tokens,
+        ephemeral_1h_input_tokens=ttl.ephemeral_1h_input_tokens,
     )
-
-
-def _cache_included_in_prompt(usage: CompletionUsage) -> bool | None:
-    return usage.cache_usage.included_in_prompt_tokens if usage.cache_usage is not None else None
 
 
 def chat_completion_to_message_response(completion: ChatCompletion) -> MessageResponse:
@@ -557,14 +535,13 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
         input_tokens, cache_read = split_cached_input_tokens(
             completion.usage.prompt_tokens,
             _cached_tokens_from_usage(completion.usage),
-            _cache_creation_from_usage(completion.usage),
-            _cache_included_in_prompt(completion.usage),
+            _cache_write_tokens_from_usage(completion.usage),
         )
         usage = MessageUsage(
             input_tokens=input_tokens,
             cache_read_input_tokens=cache_read,
             output_tokens=completion.usage.completion_tokens,
-            cache_creation_input_tokens=_cache_creation_from_usage(completion.usage),
+            cache_creation_input_tokens=_cache_write_tokens_from_usage(completion.usage),
             cache_creation=_cache_creation_details_from_usage(completion.usage),
         )
 
@@ -605,7 +582,6 @@ class StreamingState:
         self.cache_read_input_tokens: int | None = None
         self.cache_creation_input_tokens: int | None = None
         self.cache_creation: CacheCreation | None = None
-        self.cache_included_in_prompt: bool | None = None
         self.stop_reason: StopReason | None = None
         self.tool_call_id: str | None = None
         self.tool_call_name: str | None = None
@@ -633,12 +609,9 @@ def chat_completion_chunk_to_message_stream_events(
         cached = _cached_tokens_from_usage(chunk.usage)
         if cached is not None:
             state.cache_read_input_tokens = cached
-        cache_creation = _cache_creation_from_usage(chunk.usage)
-        if cache_creation is not None:
-            state.cache_creation_input_tokens = cache_creation
-        included_in_prompt = _cache_included_in_prompt(chunk.usage)
-        if included_in_prompt is not None:
-            state.cache_included_in_prompt = included_in_prompt
+        cache_write = _cache_write_tokens_from_usage(chunk.usage)
+        if cache_write is not None:
+            state.cache_creation_input_tokens = cache_write
         cache_creation_details = _cache_creation_details_from_usage(chunk.usage)
         if cache_creation_details is not None:
             state.cache_creation = cache_creation_details
@@ -649,7 +622,6 @@ def chat_completion_chunk_to_message_stream_events(
             state.input_tokens,
             state.cache_read_input_tokens,
             state.cache_creation_input_tokens,
-            state.cache_included_in_prompt,
         )
         usage = MessageUsage(
             input_tokens=input_tokens,

@@ -133,17 +133,13 @@ def test_convert_completion_response_extracts_cached_tokens() -> None:
     assert result.usage.total_tokens == 150
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 80
-    assert result.usage.cache_usage is not None
-    assert result.usage.cache_usage.read_input_tokens == 80
-    assert result.usage.cache_usage.included_in_prompt_tokens is True
-    assert result.usage.cache_usage.provider_meters == {
-        "prompt_cache_hit_tokens": 80,
-        "prompt_cache_miss_tokens": 20,
-    }
+    dumped = result.usage.model_dump()
+    assert dumped["prompt_cache_hit_tokens"] == 80
+    assert dumped["prompt_cache_miss_tokens"] == 20
 
 
 def test_convert_completion_response_preserves_zero_cache_hit_tokens() -> None:
-    """A reported zero hit count is kept as a read meter without synthesizing prompt_tokens_details."""
+    """A reported zero hit count stays distinguishable from a response without cache accounting."""
     response = OpenAIChatCompletion.model_validate(
         {
             "id": "chatcmpl-123",
@@ -170,10 +166,8 @@ def test_convert_completion_response_preserves_zero_cache_hit_tokens() -> None:
     result = DeepseekProvider._convert_completion_response(response)
 
     assert result.usage is not None
-    assert result.usage.prompt_tokens_details is None
-    assert result.usage.cache_usage is not None
-    assert result.usage.cache_usage.read_input_tokens == 0
-    assert result.usage.cache_usage.included_in_prompt_tokens is True
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 0
 
 
 def test_convert_completion_response_without_cached_tokens() -> None:
@@ -203,7 +197,6 @@ def test_convert_completion_response_without_cached_tokens() -> None:
 
     assert result.usage is not None
     assert result.usage.prompt_tokens_details is None
-    assert result.usage.cache_usage is None
 
 
 def test_convert_chunk_response_extracts_cached_tokens() -> None:
@@ -237,8 +230,6 @@ def test_convert_chunk_response_extracts_cached_tokens() -> None:
     assert result.usage.prompt_tokens == 100
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 80
-    assert result.usage.cache_usage is not None
-    assert result.usage.cache_usage.read_input_tokens == 80
 
 
 def test_convert_chunk_response_without_cached_tokens() -> None:

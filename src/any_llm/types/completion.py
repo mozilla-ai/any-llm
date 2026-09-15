@@ -1,4 +1,4 @@
-from typing import Any, Generic, Literal, TypeVar, cast
+from typing import Any, Generic, Literal, TypeVar
 
 from openai.types import CreateEmbeddingResponse as OpenAICreateEmbeddingResponse
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
@@ -23,78 +23,46 @@ from openai.types.completion_usage import CompletionUsage as OpenAICompletionUsa
 from openai.types.completion_usage import PromptTokensDetails as OpenAIPromptTokensDetails
 from openai.types.create_embedding_response import Usage as OpenAIUsage
 from openai.types.embedding import Embedding as OpenAIEmbedding
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    SerializerFunctionWrapHandler,
-    field_validator,
-    model_serializer,
-    model_validator,
-)
+from pydantic import BaseModel, ConfigDict, field_validator, model_serializer, model_validator
 
 
-class CacheUsageDetails(BaseModel):
-    """Provider-neutral cache meters preserved alongside completion usage.
+class CacheCreationTokenDetails(BaseModel):
+    """Cache writes split by time-to-live, as Anthropic reports them."""
 
-    ``included_in_prompt_tokens`` describes any-llm's ``CompletionUsage.prompt_tokens``, not the provider's
-    wire payload: converters for providers that report cache buckets beside the prompt (Anthropic) fold
-    them into ``prompt_tokens`` and therefore report ``True``.
+    ephemeral_5m_input_tokens: int | None = None
+    ephemeral_1h_input_tokens: int | None = None
+
+
+def _dump_foreign_model(model_cls: type[BaseModel], value: Any) -> Any:
+    # A field typed as an any-llm subclass rejects instances of the OpenAI parent model.
+    if isinstance(value, BaseModel) and not isinstance(value, model_cls):
+        return value.model_dump()
+    return value
+
+
+class PromptTokensDetails(OpenAIPromptTokensDetails):
+    """OpenAI prompt token breakdown extended with the TTL split of cache writes.
+
+    As in OpenAI, ``cached_tokens`` and ``cache_write_tokens`` are subsets of ``prompt_tokens``.
     """
 
-    read_input_tokens: int | None = None
-    creation_input_tokens: int | None = None
-    creation_5m_input_tokens: int | None = None
-    creation_1h_input_tokens: int | None = None
-    included_in_prompt_tokens: bool | None = None
-    provider_meters: dict[str, int] | None = None
-
-
-class CompletionUsage(OpenAICompletionUsage):
-    """OpenAI-compatible usage with optional provider cache accounting.
-
-    Provider converters that understand their own cache fields set ``cache_usage`` directly. Otherwise it is
-    derived from what any OpenAI-compatible payload can carry: ``prompt_tokens_details.cached_tokens`` and
-    unrecognized integer ``prompt_cache_*``/``cache_*`` token counters, which land in ``provider_meters``.
-    """
-
-    cache_usage: CacheUsageDetails | None = None
+    # Declared here because older openai-python releases do not define it on the parent model.
+    cache_write_tokens: int | None = None
+    cache_creation_token_details: CacheCreationTokenDetails | None = None
 
     @model_validator(mode="before")
     @classmethod
-    def _derive_cache_usage(cls, value: Any) -> Any:
-        if isinstance(value, BaseModel):
-            value = value.model_dump()
-        if not isinstance(value, dict) or value.get("cache_usage") is not None:
-            return value
-        details = value.get("prompt_tokens_details")
-        cached = details.get("cached_tokens") if isinstance(details, dict) else getattr(details, "cached_tokens", None)
-        meters = {
-            key: meter
-            for key, meter in value.items()
-            if isinstance(key, str)
-            and key.startswith(("prompt_cache_", "cache_"))
-            and key.endswith("_tokens")
-            and isinstance(meter, int)
-            and not isinstance(meter, bool)
-        }
-        if cached is None and not meters:
-            return value
-        return {
-            **value,
-            "cache_usage": CacheUsageDetails(
-                read_input_tokens=cached,
-                included_in_prompt_tokens=True if cached is not None else None,
-                provider_meters=meters or None,
-            ),
-        }
+    def _accept_openai_model(cls, value: Any) -> Any:
+        return _dump_foreign_model(cls, value)
 
-    # Keeps the serialized shape unchanged for providers that report no cache accounting.
-    @model_serializer(mode="wrap")
-    def _omit_absent_cache_usage(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        data = cast("dict[str, Any]", handler(self))
-        if self.cache_usage is None:
-            data.pop("cache_usage", None)
-        return data
+
+class CompletionUsage(OpenAICompletionUsage):
+    prompt_tokens_details: PromptTokensDetails | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_openai_model(cls, value: Any) -> Any:
+        return _dump_foreign_model(cls, value)
 
 
 # See https://github.com/mozilla-ai/any-llm/issues/95:
@@ -251,7 +219,6 @@ class ChatCompletionChunk(OpenAIChatCompletionChunk):
 
 Function = OpenAIFunction
 CompletionTokensDetails = OpenAICompletionTokensDetails
-PromptTokensDetails = OpenAIPromptTokensDetails
 CreateEmbeddingResponse = OpenAICreateEmbeddingResponse
 Embedding = OpenAIEmbedding
 Usage = OpenAIUsage

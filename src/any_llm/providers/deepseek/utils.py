@@ -2,7 +2,6 @@ import json
 from typing import Any
 
 from any_llm.types.completion import (
-    CacheUsageDetails,
     ChatCompletion,
     ChatCompletionChunk,
     CompletionParams,
@@ -92,22 +91,20 @@ def _preprocess_messages(params: CompletionParams) -> CompletionParams:
 
 
 def _apply_cache_hit_tokens(usage: CompletionUsage) -> None:
-    """Map DeepSeek's ``prompt_cache_hit_tokens`` onto the OpenAI and normalized cache-read meters.
+    """Populate ``prompt_tokens_details.cached_tokens`` from DeepSeek's ``prompt_cache_hit_tokens``.
 
     DeepSeek's ``prompt_tokens`` already includes cached tokens
-    (``prompt_tokens = prompt_cache_hit_tokens + prompt_cache_miss_tokens``). The raw hit and miss
-    counters stay in ``cache_usage.provider_meters``.
+    (``prompt_tokens = prompt_cache_hit_tokens + prompt_cache_miss_tokens``). A reported zero is kept so
+    it stays distinguishable from a response without cache accounting.
 
     Reference: https://api-docs.deepseek.com/api/create-chat-completion
     """
     cached = getattr(usage, "prompt_cache_hit_tokens", None)
     if not isinstance(cached, int):
         return
-    if cached:
-        usage.prompt_tokens_details = PromptTokensDetails(cached_tokens=cached)
-    usage.cache_usage = (usage.cache_usage or CacheUsageDetails()).model_copy(
-        update={"read_input_tokens": cached, "included_in_prompt_tokens": True}
-    )
+    details = usage.prompt_tokens_details or PromptTokensDetails()
+    details.cached_tokens = cached
+    usage.prompt_tokens_details = details
 
 
 def _inject_cached_tokens(completion: ChatCompletion) -> ChatCompletion:

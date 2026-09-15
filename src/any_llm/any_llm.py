@@ -1080,7 +1080,6 @@ class AnyLLM(FilesMixin, ABC):
                     state.input_tokens,
                     state.cache_read_input_tokens,
                     state.cache_creation_input_tokens,
-                    state.cache_included_in_prompt,
                 )
                 return MessageDeltaEvent(
                     type="message_delta",

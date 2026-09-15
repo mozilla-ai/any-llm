@@ -837,8 +837,7 @@ def test_convert_response_includes_cache_tokens_in_usage() -> None:
     assert result.usage.total_tokens == expected_total_tokens
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 13332
-    assert result.usage.cache_usage is not None
-    assert result.usage.cache_usage.read_input_tokens == 13332
+    assert result.usage.prompt_tokens_details.cache_write_tokens == 0
 
 
 def test_convert_response_includes_cache_creation_tokens() -> None:
@@ -869,11 +868,13 @@ def test_convert_response_includes_cache_creation_tokens() -> None:
     assert result.usage is not None
     assert result.usage.prompt_tokens == expected_prompt_tokens
     assert result.usage.total_tokens == expected_total_tokens
-    assert result.usage.prompt_tokens_details is None
-    assert result.usage.cache_usage is not None
-    assert result.usage.cache_usage.creation_input_tokens == 13332
-    assert result.usage.cache_usage.creation_5m_input_tokens == 12000
-    assert result.usage.cache_usage.creation_1h_input_tokens == 1332
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 0
+    assert result.usage.prompt_tokens_details.cache_write_tokens == 13332
+    ttl = result.usage.prompt_tokens_details.cache_creation_token_details
+    assert ttl is not None
+    assert ttl.ephemeral_5m_input_tokens == 12000
+    assert ttl.ephemeral_1h_input_tokens == 1332
 
 
 def test_convert_response_without_cache_tokens() -> None:
@@ -900,7 +901,6 @@ def test_convert_response_without_cache_tokens() -> None:
     assert result.usage.completion_tokens == 50
     assert result.usage.total_tokens == 150
     assert result.usage.prompt_tokens_details is None
-    assert result.usage.cache_usage is None
 
 
 def test_convert_response_preserves_zero_cache_read_tokens() -> None:
@@ -922,8 +922,8 @@ def test_convert_response_preserves_zero_cache_read_tokens() -> None:
     result = _convert_response(mock_response)
 
     assert result.usage is not None
-    assert result.usage.cache_usage is not None
-    assert result.usage.cache_usage.read_input_tokens == 0
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 0
 
 
 def test_streaming_chunk_includes_cache_tokens_in_usage() -> None:
@@ -956,10 +956,7 @@ def test_streaming_chunk_includes_cache_tokens_in_usage() -> None:
     assert result.usage.total_tokens == expected_total_tokens
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 13332
-    assert result.usage.cache_usage is not None
-    assert result.usage.cache_usage.read_input_tokens == 13332
-    assert result.usage.cache_usage.creation_input_tokens == 0
-    assert result.usage.cache_usage.included_in_prompt_tokens is True
+    assert result.usage.prompt_tokens_details.cache_write_tokens == 0
     assert result.choices == []
 
 
@@ -983,11 +980,13 @@ def test_streaming_chunk_includes_cache_creation_tokens_in_usage() -> None:
 
     assert result.usage is not None
     assert result.usage.prompt_tokens == 15
-    assert result.usage.cache_usage is not None
-    assert result.usage.cache_usage.read_input_tokens is None
-    assert result.usage.cache_usage.creation_input_tokens == 12
-    assert result.usage.cache_usage.creation_5m_input_tokens == 7
-    assert result.usage.cache_usage.creation_1h_input_tokens == 5
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens is None
+    assert result.usage.prompt_tokens_details.cache_write_tokens == 12
+    ttl = result.usage.prompt_tokens_details.cache_creation_token_details
+    assert ttl is not None
+    assert ttl.ephemeral_5m_input_tokens == 7
+    assert ttl.ephemeral_1h_input_tokens == 5
     assert "cache_creation_input_tokens" not in result.usage.model_dump()
 
 
