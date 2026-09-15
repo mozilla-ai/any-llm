@@ -24,7 +24,7 @@ from any_llm.types.messages import (
 from any_llm.utils.structured_output import is_structured_output_type, normalize_output_config
 
 if TYPE_CHECKING:
-    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionUsage
+    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
     from any_llm.types.messages import MessageContentBlock, MessagesParams
 
 
@@ -435,7 +435,12 @@ def _budget_to_reasoning_effort(budget: int) -> str:
     return "xhigh"
 
 
-def split_cached_input_tokens(prompt_tokens: int, cached_tokens: int) -> tuple[int, int | None]:
+def split_cached_input_tokens(
+    prompt_tokens: int,
+    cached_tokens: int | None,
+    cache_creation_tokens: int | None = 0,
+    creation_in_prompt: bool | None = None,
+) -> tuple[int, int | None]:
     """Split an OpenAI prompt-token total into disjoint Anthropic input/cache-read counts.
 
     OpenAI reports ``prompt_tokens`` as the whole prompt with ``prompt_tokens_details.cached_tokens``
@@ -455,15 +460,56 @@ def split_cached_input_tokens(prompt_tokens: int, cached_tokens: int) -> tuple[i
     total (cached below zero). Clamping the subtrahend rather than flooring the result keeps the sum
     invariant intact: the two returned values still add up to ``prompt_tokens``.
     """
-    cached = min(max(cached_tokens, 0), prompt_tokens)
-    return prompt_tokens - cached, cached or None
+    cached = min(max(cached_tokens or 0, 0), prompt_tokens)
+    if creation_in_prompt is False:
+        cached = 0
+    elif creation_in_prompt is True:
+        prompt_tokens = max(prompt_tokens - max(cache_creation_tokens or 0, 0), 0)
+        cached = min(cached, prompt_tokens)
+    cache_read = cached if cached_tokens is not None and (cached_tokens == 0 or cached > 0) else None
+    return prompt_tokens - cached, cache_read
 
 
-def _cached_tokens_from_usage(usage: CompletionUsage) -> int:
-    """Read ``prompt_tokens_details.cached_tokens`` off a usage object, defaulting to 0."""
+def _cached_tokens_from_usage(usage: Any) -> int | None:
+    """Read ``prompt_tokens_details.cached_tokens`` while preserving absent versus zero."""
+    if usage.cache_usage is not None and usage.cache_usage.read_input_tokens is not None:
+        return int(usage.cache_usage.read_input_tokens)
     if usage.prompt_tokens_details is None:
-        return 0
-    return usage.prompt_tokens_details.cached_tokens or 0
+        return None
+    cached = usage.prompt_tokens_details.cached_tokens
+    return int(cached) if isinstance(cached, int) else None
+
+
+def _cache_creation_from_usage(usage: Any) -> int | None:
+    """Read canonical cache-creation tokens with a raw-field compatibility fallback."""
+    if usage.cache_usage is not None and usage.cache_usage.creation_input_tokens is not None:
+        return int(usage.cache_usage.creation_input_tokens)
+    return getattr(usage, "cache_creation_input_tokens", None)
+
+
+def _cache_creation_details_from_usage(usage: Any) -> dict[str, int] | None:
+    """Read canonical TTL meters, falling back to the raw compatibility field."""
+    raw = getattr(usage, "cache_creation", None)
+    details = raw.model_dump() if hasattr(raw, "model_dump") else raw
+    details = dict(details) if isinstance(details, dict) else {}
+    cache_usage = getattr(usage, "cache_usage", None)
+    if cache_usage is not None:
+        for field, key in (
+            ("creation_5m_input_tokens", "ephemeral_5m_input_tokens"),
+            ("creation_1h_input_tokens", "ephemeral_1h_input_tokens"),
+        ):
+            value = getattr(cache_usage, field, None)
+            if value is not None:
+                details[key] = int(value)
+    return details or None
+
+
+def _cache_included_in_prompt(usage: Any) -> bool | None:
+    """Return whether cache creation is included in the provider prompt total."""
+    if usage.cache_usage is None:
+        return None
+    included = usage.cache_usage.included_in_prompt_tokens
+    return bool(included) if included is not None else None
 
 
 def chat_completion_to_message_response(completion: ChatCompletion) -> MessageResponse:
@@ -510,11 +556,15 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
         input_tokens, cache_read = split_cached_input_tokens(
             completion.usage.prompt_tokens,
             _cached_tokens_from_usage(completion.usage),
+            _cache_creation_from_usage(completion.usage),
+            _cache_included_in_prompt(completion.usage),
         )
         usage = MessageUsage(
             input_tokens=input_tokens,
             cache_read_input_tokens=cache_read,
             output_tokens=completion.usage.completion_tokens,
+            cache_creation_input_tokens=_cache_creation_from_usage(completion.usage),
+            cache_creation=_cache_creation_details_from_usage(completion.usage),
         )
 
     return MessageResponse(
@@ -551,7 +601,10 @@ class StreamingState:
         self.model = "unknown"
         self.input_tokens = 0
         self.output_tokens = 0
-        self.cache_read_input_tokens = 0
+        self.cache_read_input_tokens: int | None = None
+        self.cache_creation_input_tokens: int | None = None
+        self.cache_creation: Any | None = None
+        self.cache_included_in_prompt: bool | None = None
         self.stop_reason: StopReason | None = None
         self.tool_call_id: str | None = None
         self.tool_call_name: str | None = None
@@ -577,16 +630,32 @@ def chat_completion_chunk_to_message_stream_events(
         if chunk.usage.completion_tokens:
             state.output_tokens = chunk.usage.completion_tokens
         cached = _cached_tokens_from_usage(chunk.usage)
-        if cached:
+        if cached is not None:
             state.cache_read_input_tokens = cached
+        cache_creation = _cache_creation_from_usage(chunk.usage)
+        if cache_creation is not None:
+            state.cache_creation_input_tokens = cache_creation
+        included_in_prompt = _cache_included_in_prompt(chunk.usage)
+        if included_in_prompt is not None:
+            state.cache_included_in_prompt = included_in_prompt
+        cache_creation_details = _cache_creation_details_from_usage(chunk.usage)
+        if cache_creation_details is not None:
+            state.cache_creation = cache_creation_details
 
     if not state.started:
         state.started = True
-        input_tokens, cache_read = split_cached_input_tokens(state.input_tokens, state.cache_read_input_tokens)
+        input_tokens, cache_read = split_cached_input_tokens(
+            state.input_tokens,
+            state.cache_read_input_tokens,
+            state.cache_creation_input_tokens,
+            state.cache_included_in_prompt,
+        )
         usage = MessageUsage(
             input_tokens=input_tokens,
             cache_read_input_tokens=cache_read,
             output_tokens=0,
+            cache_creation_input_tokens=state.cache_creation_input_tokens,
+            cache_creation=state.cache_creation,
         )
         msg = MessageResponse(
             id=chunk.id,

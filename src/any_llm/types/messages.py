@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
+from anthropic.types import CacheCreation, InputJSONDelta, RawContentBlockDelta, TextDelta, ThinkingDelta
 from anthropic.types import ContentBlock as AnthropicContentBlock
-from anthropic.types import InputJSONDelta, RawContentBlockDelta, TextDelta, ThinkingDelta
 from anthropic.types import Message as AnthropicMessage
 from anthropic.types import MessageDeltaUsage as AnthropicMessageDeltaUsage
 from anthropic.types import RawContentBlockDeltaEvent as AnthropicContentBlockDeltaEvent
@@ -128,6 +128,7 @@ class MessageDelta(AnthropicMessageDelta):
 
 class MessageDeltaUsage(AnthropicMessageDeltaUsage):
     iterations: BetaIterationsUsage | None = None
+    cache_creation: CacheCreation | None = None
 
 
 class MessageStartEvent(AnthropicMessageStartEvent):

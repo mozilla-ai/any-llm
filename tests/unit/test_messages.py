@@ -1067,6 +1067,8 @@ async def test_default_amessages_streaming_usage_from_trailing_chunk() -> None:
                 completion_tokens=50,
                 total_tokens=150,
                 prompt_tokens_details=PromptTokensDetails(cached_tokens=80),
+                cache_creation_input_tokens=12,
+                cache_creation={"ephemeral_5m_input_tokens": 7, "ephemeral_1h_input_tokens": 5},
             ),
         )
 
@@ -1087,10 +1089,19 @@ async def test_default_amessages_streaming_usage_from_trailing_chunk() -> None:
     # Anthropic's input_tokens and cache_read_input_tokens are disjoint, so the cached
     # count is subtracted out of the 100-token OpenAI prompt total rather than copied
     # alongside it.
-    assert delta.usage.input_tokens == 20
+    assert delta.usage.input_tokens == 8
     assert delta.usage.output_tokens == 50
     assert delta.usage.cache_read_input_tokens == 80
-    assert delta.usage.input_tokens + delta.usage.cache_read_input_tokens == 100
+    assert delta.usage.cache_creation_input_tokens == 12
+    assert delta.usage.cache_creation is not None
+    assert delta.usage.cache_creation.ephemeral_5m_input_tokens == 7
+    assert delta.usage.cache_creation.ephemeral_1h_input_tokens == 5
+    assert (
+        delta.usage.input_tokens
+        + (delta.usage.cache_read_input_tokens or 0)
+        + (delta.usage.cache_creation_input_tokens or 0)
+        == 100
+    )
     assert delta.delta.stop_reason == "end_turn"
     assert events[-1].type == "message_stop"
 
@@ -1106,7 +1117,13 @@ async def test_default_amessages_streaming_flushes_usage_when_stream_fails() -> 
             created=0,
             object="chat.completion.chunk",
             choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
-            usage=CompletionUsage(prompt_tokens=100, completion_tokens=10, total_tokens=110),
+            usage=CompletionUsage(
+                prompt_tokens=100,
+                completion_tokens=10,
+                total_tokens=110,
+                cache_creation_input_tokens=12,
+                cache_creation={"ephemeral_5m_input_tokens": 7, "ephemeral_1h_input_tokens": 5},
+            ),
         )
         msg = "provider stream dropped"
         raise RuntimeError(msg)
@@ -1133,8 +1150,12 @@ async def test_default_amessages_streaming_flushes_usage_when_stream_fails() -> 
         await consume()
 
     delta = next(e for e in seen if isinstance(e, MessageDeltaEvent))
-    assert delta.usage.input_tokens == 100
+    assert delta.usage.input_tokens == 88
     assert delta.usage.output_tokens == 10
+    assert delta.usage.cache_creation_input_tokens == 12
+    assert delta.usage.cache_creation is not None
+    assert delta.usage.cache_creation.ephemeral_5m_input_tokens == 7
+    assert delta.usage.cache_creation.ephemeral_1h_input_tokens == 5
     assert delta.delta.stop_reason is None
     assert all(e.type not in ("message_stop", "content_block_stop") for e in seen)
 

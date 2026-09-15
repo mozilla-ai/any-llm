@@ -1076,7 +1076,12 @@ class AnyLLM(FilesMixin, ABC):
             state = StreamingState()
 
             def usage_delta(stop_reason: StopReason | None) -> MessageDeltaEvent:
-                input_tokens, cache_read = split_cached_input_tokens(state.input_tokens, state.cache_read_input_tokens)
+                input_tokens, cache_read = split_cached_input_tokens(
+                    state.input_tokens,
+                    state.cache_read_input_tokens,
+                    state.cache_creation_input_tokens,
+                    state.cache_included_in_prompt,
+                )
                 return MessageDeltaEvent(
                     type="message_delta",
                     delta=MessageDelta(stop_reason=stop_reason),
@@ -1084,6 +1089,8 @@ class AnyLLM(FilesMixin, ABC):
                         output_tokens=state.output_tokens,
                         input_tokens=input_tokens,
                         cache_read_input_tokens=cache_read,
+                        cache_creation_input_tokens=state.cache_creation_input_tokens,
+                        cache_creation=state.cache_creation,
                     ),
                 )
 
