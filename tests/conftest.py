@@ -221,7 +221,7 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         LLMProvider.XAI: {"timeout": 100},
         LLMProvider.AZUREOPENAI: {
             "api_base": "https://mlrun-me8bof5t-eastus2.cognitiveservices.azure.com/",
-            "api_version": "2025-03-01-preview",
+            "api_version": "v1",
         },
     }
 
