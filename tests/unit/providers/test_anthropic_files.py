@@ -3,6 +3,7 @@ import asyncio
 import contextvars
 import warnings
 from collections.abc import AsyncIterator, Callable
+from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -85,6 +86,26 @@ async def test_retrieve_leaves_missing_metadata_unknown() -> None:
 
 
 @pytest.mark.asyncio
+async def test_retrieve_keeps_timestamps_aware_and_preserves_extras() -> None:
+    payload = {
+        **META,
+        "created_at": "2026-09-14T12:00:00.123456+02:00",
+        "expires_at": "2026-09-15T12:00:00Z",
+        "downloadable": True,
+        "future_field": {"nested": ["value"]},
+    }
+    provider = provider_for(lambda _: httpx.Response(200, json=payload))
+    try:
+        result = await provider.aretrieve_file("file_123")
+        assert result.created_at == datetime(2026, 9, 14, 10, 0, 0, 123456, tzinfo=UTC)
+        assert result.expires_at == datetime(2026, 9, 15, 12, tzinfo=UTC)
+        assert result.downloadable is True
+        assert result.model_extra == {"type": "file", "future_field": {"nested": ["value"]}}
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("next_cursor", [None, "page_next"])
 async def test_list_returns_one_page_without_auto_pagination(next_cursor: str | None) -> None:
     requests: list[httpx.Request] = []
@@ -106,17 +127,20 @@ async def test_list_returns_one_page_without_auto_pagination(next_cursor: str | 
 
 
 @pytest.mark.asyncio
-async def test_delete_returns_provider_id() -> None:
+async def test_delete_preserves_acknowledgement_fields() -> None:
     requests: list[httpx.Request] = []
 
     def handle(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        return httpx.Response(200, json={"id": "file_123", "type": "file_deleted"})
+        return httpx.Response(200, json={"id": "file_123", "type": "file_deleted", "future_field": "preserved"})
 
     provider = provider_for(handle)
     try:
         result = await provider.adelete_file("file_123")
         assert result.id == "file_123"
+        assert result.type == "file_deleted"
+        assert result.deleted is None
+        assert result.model_extra == {"future_field": "preserved"}
         assert requests[0].method == "DELETE"
         assert requests[0].url.path == "/v1/files/file_123"
     finally:
