@@ -27,6 +27,7 @@ AnyLLMError
 ├── MissingApiKeyError
 ├── ModelNotFoundError
 ├── ProviderError
+├── ProviderFileNotFoundError
 ├── RateLimitError
 ├── UnsupportedParameterError
 ├── UnsupportedProviderError

@@ -34,6 +34,8 @@ A Pydantic `BaseModel` containing provider information and feature flags.
 | `audio_transcription` | `bool` |  |
 | `audio_speech` | `bool` |  |
 | `rerank` | `bool` |  |
+| `files` | `bool` |  |
+| `file_operations` | `tuple[Literal['upload', 'list', 'retrieve', 'download', 'delete'], ...]` |  |
 
 ## Usage
 

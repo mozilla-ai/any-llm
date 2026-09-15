@@ -3,6 +3,7 @@
 * [Introduction](index.md)
 * [Quickstart](quickstart.md)
 * [Providers](providers.md)
+* [Files](files.md)
 
 ## Cookbooks
 
