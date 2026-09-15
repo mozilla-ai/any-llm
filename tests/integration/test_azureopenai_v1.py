@@ -51,6 +51,9 @@ async def test_azure_v1_media(
     azure_media_model_map: dict[str, str],
 ) -> None:
     deployment = azure_media_model_map[operation]
+    if not deployment:
+        variable = f"AZURE_OPENAI_{operation.upper()}_DEPLOYMENT"
+        pytest.skip(f"Azure {operation} deployment is not configured: set {variable}")
     if operation == "image":
         image = await azure_v1.aimage_generation(
             model=deployment, prompt="A small blue circle on a white background.", n=1, quality="low", size="1024x1024"
