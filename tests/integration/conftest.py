@@ -1,9 +1,22 @@
 import os
+from pathlib import Path
 
 import pytest
 
 from any_llm.constants import LLMProvider
 from tests.constants import EXPECTED_PROVIDERS
+
+_INTEGRATION_DIR = Path(__file__).parent
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Retry integration tests, which fail transiently on provider overload and rate limits."""
+    # This hook receives every item collected in the session, including tests/unit and tests/docs
+    # when they run together, so the retry is limited to items under this directory.
+    for item in items:
+        if _INTEGRATION_DIR in item.path.parents:
+            item.add_marker(pytest.mark.flaky(reruns=5, reruns_delay=10))
+
 
 # otari is a hosted gateway (like openrouter). It has no server started in CI by default, so its
 # integration tests can only run against a real endpoint. otari authenticates with a platform
