@@ -88,5 +88,4 @@ class FileDeleted(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     id: str
-    type: str | None = None
     deleted: bool | None = None
