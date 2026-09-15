@@ -12,6 +12,7 @@ from openai import OpenAIError
 from pydantic import BaseModel
 from typing_extensions import override
 
+from any_llm.constants import LLMProvider
 from any_llm.exceptions import (
     AuthenticationError,
     MissingApiKeyError,
@@ -39,6 +40,25 @@ def clear_azure_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "AZURE_OPENAI_ENDPOINT",
     ):
         monkeypatch.delenv(name, raising=False)
+
+
+def test_azure_ci_models_match_deployment_names(
+    embedding_provider_model_map: dict[LLMProvider, str],
+    azure_media_model_map: dict[str, str],
+) -> None:
+    assert embedding_provider_model_map[LLMProvider.AZUREOPENAI] == "text-embedding-3-small"
+    assert azure_media_model_map == {
+        "image": "gpt-image-2",
+        "transcription": "gpt-4o-mini-transcribe",
+        "speech": "gpt-4o-mini-tts",
+    }
+
+
+def test_azure_ci_endpoint_is_fixed(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://unrelated.example")
+    config = request.getfixturevalue("provider_client_config")[LLMProvider.AZUREOPENAI]
+    assert config["api_base"] == "https://mlrun-me8bof5t-eastus2.cognitiveservices.azure.com/"
+    assert config["api_version"] == "v1"
 
 
 @pytest.mark.parametrize(

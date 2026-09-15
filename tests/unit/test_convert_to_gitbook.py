@@ -108,3 +108,9 @@ def test_run_generator_invokes_subprocess(monkeypatch: pytest.MonkeyPatch, tmp_p
 
 def test_files_guide_is_in_navigation() -> None:
     assert "* [Files](files.md)" in convert_to_gitbook.build_summary()
+
+
+def test_azure_migration_guide_is_in_navigation() -> None:
+    summary = convert_to_gitbook.build_summary()
+    assert "## Migrations\n\n* [Azure OpenAI v1](migrations/azure-openai-v1.md)" in summary
+    assert (convert_to_gitbook.DOCS_SRC / "migrations" / "azure-openai-v1.md").is_file()
