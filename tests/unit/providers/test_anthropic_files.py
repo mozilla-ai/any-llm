@@ -13,6 +13,7 @@ import pytest
 from anthropic import APIStatusError
 from typing_extensions import override
 
+import any_llm
 from any_llm import AnyLLM, AsyncFileDownload, FileDownload
 from any_llm.exceptions import (
     AnyLLMError,
@@ -360,8 +361,6 @@ def test_sync_download_runs_in_one_context() -> None:
 
 
 def test_public_file_types_are_exported() -> None:
-    import any_llm
-
     assert any_llm.FileMetadata(id="file_123").id == "file_123"
     assert any_llm.FilePage(data=[]).data == []
     assert any_llm.FileDeleted(id="file_123").id == "file_123"
