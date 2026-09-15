@@ -1031,7 +1031,7 @@ def test_finish_reason_content_filter() -> None:
     """Test content_filter and function_call finish_reason mappings."""
     from any_llm.utils.messages_compat import _finish_reason_to_stop_reason
 
-    assert _finish_reason_to_stop_reason("content_filter") == "end_turn"
+    assert _finish_reason_to_stop_reason("content_filter") == "refusal"
     assert _finish_reason_to_stop_reason("function_call") == "tool_use"
 
 
@@ -1380,6 +1380,81 @@ def test_streaming_finish_reason_length() -> None:
 
     assert [e.type for e in events] == ["content_block_stop"]
     assert state.stop_reason == "max_tokens"
+
+
+def test_finish_reason_content_filter_maps_to_refusal() -> None:
+    """Test finish_reason='content_filter' maps to stop_reason='refusal'."""
+    completion = ChatCompletion(
+        id="chatcmpl-blocked",
+        model="gpt-4",
+        created=0,
+        object="chat.completion",
+        choices=[
+            Choice(
+                index=0,
+                finish_reason="content_filter",
+                message=ChatCompletionMessage(role="assistant", content="Blocked content"),
+            )
+        ],
+        usage=CompletionUsage(prompt_tokens=10, completion_tokens=0, total_tokens=10),
+    )
+    result = chat_completion_to_message_response(completion)
+    assert result.stop_reason == "refusal"
+
+
+def test_message_refusal_maps_to_stop_reason_refusal_with_text_preserved() -> None:
+    """Test a completion with message.refusal maps to stop_reason='refusal' with refusal text preserved."""
+    completion = ChatCompletion(
+        id="chatcmpl-refused",
+        model="gpt-4",
+        created=0,
+        object="chat.completion",
+        choices=[
+            Choice(
+                index=0,
+                finish_reason="stop",
+                message=ChatCompletionMessage(
+                    role="assistant",
+                    content=None,
+                    refusal="I cannot help with that request.",
+                ),
+            )
+        ],
+        usage=CompletionUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+    )
+    result = chat_completion_to_message_response(completion)
+    assert result.stop_reason == "refusal"
+    assert len(result.content) == 1
+    assert result.content[0].type == "text"
+    assert result.content[0].text == "I cannot help with that request."
+
+
+def test_streaming_refusal_delta_maps_to_stop_reason_refusal() -> None:
+    """Test streaming refusal delta maps to stop_reason='refusal' with refusal text in content."""
+    state = StreamingState()
+
+    chunk = ChatCompletionChunk(
+        id="chunk-refusal",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[
+            ChunkChoice(
+                index=0,
+                delta=ChoiceDelta(refusal="I cannot assist with that."),
+                finish_reason=None,
+            )
+        ],
+    )
+    events = chat_completion_chunk_to_message_stream_events(chunk, state)
+
+    assert any(e.type == "content_block_start" for e in events)
+    assert any(e.type == "content_block_delta" for e in events)
+    delta_event = next(e for e in events if e.type == "content_block_delta")
+    assert isinstance(delta_event, ContentBlockDeltaEvent)
+    assert delta_event.delta.type == "text_delta"
+    assert delta_event.delta.text == "I cannot assist with that."
+    assert state.stop_reason == "refusal"
 
 
 def test_streaming_usage_cache_read_from_prompt_tokens_details() -> None:
