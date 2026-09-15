@@ -1099,9 +1099,7 @@ async def test_default_amessages_streaming_usage_from_trailing_chunk() -> None:
     assert delta.usage.output_tokens == 50
     assert delta.usage.cache_read_input_tokens == 80
     assert delta.usage.cache_creation_input_tokens == 12
-    assert delta.usage.cache_creation is not None
-    assert delta.usage.cache_creation.ephemeral_5m_input_tokens == 7
-    assert delta.usage.cache_creation.ephemeral_1h_input_tokens == 5
+    assert "cache_creation" not in delta.usage.model_dump()
     assert (
         delta.usage.input_tokens
         + (delta.usage.cache_read_input_tokens or 0)
@@ -1164,9 +1162,7 @@ async def test_default_amessages_streaming_flushes_usage_when_stream_fails() -> 
     assert delta.usage.input_tokens == 88
     assert delta.usage.output_tokens == 10
     assert delta.usage.cache_creation_input_tokens == 12
-    assert delta.usage.cache_creation is not None
-    assert delta.usage.cache_creation.ephemeral_5m_input_tokens == 7
-    assert delta.usage.cache_creation.ephemeral_1h_input_tokens == 5
+    assert "cache_creation" not in delta.usage.model_dump()
     assert delta.delta.stop_reason is None
     assert all(e.type not in ("message_stop", "content_block_stop") for e in seen)
 
