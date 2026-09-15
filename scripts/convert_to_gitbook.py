@@ -60,6 +60,10 @@ def build_summary() -> str:
 * [Providers](providers.md)
 * [Files](files.md)
 
+## Migrations
+
+* [Azure OpenAI v1](migrations/azure-openai-v1.md)
+
 ## Cookbooks
 
 {cookbook_section}

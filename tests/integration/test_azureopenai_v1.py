@@ -1,5 +1,4 @@
 import io
-import os
 import wave
 from collections.abc import AsyncIterator
 from typing import Any
@@ -46,14 +45,15 @@ async def test_azure_v1_core(
 
 
 @pytest.mark.parametrize("operation", ["image", "transcription", "speech"])
-async def test_azure_v1_media(azure_v1: AzureopenaiProvider, operation: str) -> None:
-    variable = f"AZURE_OPENAI_{operation.upper()}_DEPLOYMENT"
-    deployment = os.getenv(variable)
-    if not deployment:
-        pytest.skip(f"Azure {operation} deployment not configured: set {variable}; v1 media remains unverified")
+async def test_azure_v1_media(
+    azure_v1: AzureopenaiProvider,
+    operation: str,
+    azure_media_model_map: dict[str, str],
+) -> None:
+    deployment = azure_media_model_map[operation]
     if operation == "image":
         image = await azure_v1.aimage_generation(
-            model=deployment, prompt="A small blue circle on a white background.", n=1
+            model=deployment, prompt="A small blue circle on a white background.", n=1, quality="low", size="1024x1024"
         )
         assert image.data
     elif operation == "transcription":

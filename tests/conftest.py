@@ -183,11 +183,20 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.LLAMACPP: "N/A",
         # otari intentionally omitted: the test account has no embedding model (see otari-ai #1036),
         # so test_embedding skips otari.
-        LLMProvider.AZUREOPENAI: os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", ""),
+        LLMProvider.AZUREOPENAI: "text-embedding-3-small",
         LLMProvider.OPENROUTER: "qwen/qwen3-embedding-8b",
         LLMProvider.DEEPINFRA: "BAAI/bge-base-en-v1.5",
         LLMProvider.TOGETHER: "intfloat/multilingual-e5-large-instruct",
         LLMProvider.EDENAI: "openai/text-embedding-3-small",
+    }
+
+
+@pytest.fixture
+def azure_media_model_map() -> dict[str, str]:
+    return {
+        "image": "gpt-image-2",
+        "transcription": "gpt-4o-mini-transcribe",
+        "speech": "gpt-4o-mini-tts",
     }
 
 
@@ -220,8 +229,7 @@ def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
         },
         LLMProvider.XAI: {"timeout": 100},
         LLMProvider.AZUREOPENAI: {
-            "api_base": os.getenv("AZURE_OPENAI_ENDPOINT")
-            or "https://mlrun-me8bof5t-eastus2.cognitiveservices.azure.com/",
+            "api_base": "https://mlrun-me8bof5t-eastus2.cognitiveservices.azure.com/",
             "api_version": "v1",
         },
     }
