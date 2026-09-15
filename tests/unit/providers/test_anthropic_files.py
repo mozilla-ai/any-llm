@@ -139,9 +139,8 @@ async def test_delete_preserves_acknowledgement_fields() -> None:
     try:
         result = await provider.adelete_file("file_123")
         assert result.id == "file_123"
-        assert result.type == "file_deleted"
         assert result.deleted is None
-        assert result.model_extra == {"future_field": "preserved"}
+        assert result.model_extra == {"type": "file_deleted", "future_field": "preserved"}
         assert requests[0].method == "DELETE"
         assert requests[0].url.path == "/v1/files/file_123"
     finally:
@@ -591,6 +590,30 @@ async def test_legacy_pagination_is_rejected(source: str) -> None:
     try:
         with pytest.raises(UnsupportedParameterError, match="Legacy"):
             await provider.alist_files(**kwargs)
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
+async def test_legacy_beta_in_default_headers_only_blocks_listing() -> None:
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "DELETE":
+            return httpx.Response(200, json={"id": "file_123", "type": "file_deleted"})
+        return httpx.Response(200, json=META)
+
+    provider = provider_for(handle)
+    provider.client = provider.client.with_options(default_headers={"anthropic-beta": "files-api-2025-04-14"})
+    try:
+        await provider.aupload_file(b"data")
+        await provider.aretrieve_file("file_123")
+        await provider.adelete_file("file_123")
+        assert [request.method for request in requests] == ["POST", "GET", "DELETE"]
+        assert all(request.headers["anthropic-beta"] == "files-api-2025-04-14" for request in requests)
+        with pytest.raises(UnsupportedParameterError, match="listing"):
+            await provider.alist_files()
     finally:
         await provider.client.close()
 

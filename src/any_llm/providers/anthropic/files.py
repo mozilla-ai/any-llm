@@ -46,8 +46,6 @@ def request_options(client: AsyncAnthropic, kwargs: dict[str, Any]) -> tuple[Asy
             ]
         )
     )
-    if _LEGACY_BETA in betas:
-        reject_unsupported(["betas"], "Legacy Files pagination is not supported.")
     headers = dict(kwargs.pop("extra_headers", None) or {})
     if betas:
         headers["anthropic-beta"] = ",".join(betas)
@@ -57,6 +55,13 @@ def request_options(client: AsyncAnthropic, kwargs: dict[str, Any]) -> tuple[Asy
     if "max_retries" in kwargs:
         client = client.with_options(max_retries=kwargs.pop("max_retries"))
     return client, options
+
+
+def reject_legacy_pagination(options: dict[str, Any]) -> None:
+    """Reject the pre-GA beta only where it changes the response shape, which is listing."""
+    header = options["extra_headers"].get("anthropic-beta", "")
+    if _LEGACY_BETA in (beta.strip() for beta in header.split(",")):
+        reject_unsupported(["betas"], "Legacy Files pagination is not supported when listing files.")
 
 
 def convert_metadata(result: AnthropicFileMetadata) -> FileMetadata:
@@ -114,6 +119,7 @@ async def list_files(
     if purpose is not None:
         reject_unsupported(["purpose"])
     client, options = request_options(client, kwargs)
+    reject_legacy_pagination(options)
     reject_unsupported(set(kwargs) - {"ids"})
     if limit is not None:
         if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:

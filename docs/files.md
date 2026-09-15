@@ -94,8 +94,10 @@ if page.next_cursor is not None:
 ```
 
 Providers translate their native pagination into `cursor` and `next_cursor`.
-Anthropic maps these to `page` and `next_page` internally. Legacy Files beta
-pagination and native cursor keyword arguments are not supported.
+Anthropic maps these to `page` and `next_page` internally. Native cursor
+keyword arguments are not supported, and listing rejects the legacy
+`files-api-2025-04-14` beta because it changes the page shape. Other Files
+operations forward that beta unchanged.
 
 For a known set of IDs, Anthropic accepts the provider-specific `ids=[...]`
 option. The server validates its limits and combinations with other parameters.
