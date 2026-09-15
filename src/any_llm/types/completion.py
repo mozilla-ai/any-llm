@@ -1,4 +1,4 @@
-from typing import Any, Generic, Literal, TypeVar
+from typing import Any, Generic, Literal, TypeVar, cast
 
 from openai.types import CreateEmbeddingResponse as OpenAICreateEmbeddingResponse
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
@@ -23,11 +23,23 @@ from openai.types.completion_usage import CompletionUsage as OpenAICompletionUsa
 from openai.types.completion_usage import PromptTokensDetails as OpenAIPromptTokensDetails
 from openai.types.create_embedding_response import Usage as OpenAIUsage
 from openai.types.embedding import Embedding as OpenAIEmbedding
-from pydantic import BaseModel, ConfigDict, field_validator, model_serializer, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 
 class CacheUsageDetails(BaseModel):
-    """Provider-neutral cache meters preserved alongside completion usage."""
+    """Provider-neutral cache meters preserved alongside completion usage.
+
+    ``included_in_prompt_tokens`` describes any-llm's ``CompletionUsage.prompt_tokens``, not the provider's
+    wire payload: converters for providers that report cache buckets beside the prompt (Anthropic) fold
+    them into ``prompt_tokens`` and therefore report ``True``.
+    """
 
     read_input_tokens: int | None = None
     creation_input_tokens: int | None = None
@@ -38,79 +50,51 @@ class CacheUsageDetails(BaseModel):
 
 
 class CompletionUsage(OpenAICompletionUsage):
-    """OpenAI-compatible usage with optional provider cache accounting."""
+    """OpenAI-compatible usage with optional provider cache accounting.
+
+    Provider converters that understand their own cache fields set ``cache_usage`` directly. Otherwise it is
+    derived from what any OpenAI-compatible payload can carry: ``prompt_tokens_details.cached_tokens`` and
+    unrecognized integer ``prompt_cache_*``/``cache_*`` token counters, which land in ``provider_meters``.
+    """
 
     cache_usage: CacheUsageDetails | None = None
-    cache_creation_input_tokens: int | None = None
-    cache_creation: dict[str, int] | None = None
-
-    def __init__(self, **data: Any) -> None:
-        super().__init__(**data)
 
     @model_validator(mode="before")
     @classmethod
-    def _preserve_cache_usage(cls, value: Any) -> Any:
+    def _derive_cache_usage(cls, value: Any) -> Any:
         if isinstance(value, BaseModel):
             value = value.model_dump()
-        if not isinstance(value, dict):
+        if not isinstance(value, dict) or value.get("cache_usage") is not None:
             return value
-        if value.get("cache_usage") is not None:
-            return value
-
-        def first(*names: str) -> int | None:
-            for name in names:
-                meter = value.get(name)
-                if isinstance(meter, int):
-                    return meter
-            return None
-
-        read = first("cache_read_input_tokens", "prompt_cache_hit_tokens")
-        creation = first("cache_creation_input_tokens", "prompt_cache_write_tokens")
-        details = value.get("prompt_tokens_details") or {}
+        details = value.get("prompt_tokens_details")
         cached = details.get("cached_tokens") if isinstance(details, dict) else getattr(details, "cached_tokens", None)
-        if read is None and cached is not None:
-            read = cached
-
-        raw_creation = value.get("cache_creation")
-        ttl = raw_creation.model_dump() if isinstance(raw_creation, BaseModel) else raw_creation or {}
-        if isinstance(ttl, dict):
-            ttl = {key: meter for key, meter in ttl.items() if meter is not None}
-        else:
-            ttl = {}
-        invalid_creation = raw_creation is not None and not isinstance(raw_creation, (dict, BaseModel))
         meters = {
             key: meter
             for key, meter in value.items()
             if isinstance(key, str)
-            and key
-            not in {
-                "cache_read_input_tokens",
-                "cache_creation_input_tokens",
-                "prompt_cache_write_tokens",
-                "cache_creation",
-                "prompt_tokens_details",
-                "cache_usage",
-            }
             and key.startswith(("prompt_cache_", "cache_"))
+            and key.endswith("_tokens")
             and isinstance(meter, int)
+            and not isinstance(meter, bool)
         }
-        if read is None and creation is None and not ttl and not meters and not invalid_creation:
-            if raw_creation is not None and ttl != raw_creation:
-                value = dict(value)
-                value["cache_creation"] = ttl or None
+        if cached is None and not meters:
             return value
-        value = dict(value)
-        value["cache_usage"] = {
-            "read_input_tokens": read,
-            "creation_input_tokens": creation,
-            "creation_5m_input_tokens": ttl.get("ephemeral_5m_input_tokens"),
-            "creation_1h_input_tokens": ttl.get("ephemeral_1h_input_tokens"),
-            "included_in_prompt_tokens": True if any(m is not None for m in (read, creation, cached)) else None,
-            "provider_meters": meters or None,
+        return {
+            **value,
+            "cache_usage": CacheUsageDetails(
+                read_input_tokens=cached,
+                included_in_prompt_tokens=True if cached is not None else None,
+                provider_meters=meters or None,
+            ),
         }
-        if not invalid_creation:
-            value["cache_creation"] = ttl or None
-        return value
+
+    # Keeps the serialized shape unchanged for providers that report no cache accounting.
+    @model_serializer(mode="wrap")
+    def _omit_absent_cache_usage(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data = cast("dict[str, Any]", handler(self))
+        if self.cache_usage is None:
+            data.pop("cache_usage", None)
+        return data
 
 
 # See https://github.com/mozilla-ai/any-llm/issues/95:
@@ -212,7 +196,7 @@ class Choice(OpenAIChoice):
 class ChatCompletion(OpenAIChatCompletion):
     choices: list[Choice]  # type: ignore[assignment]
     service_tier: str | None = None  # type: ignore[assignment]
-    usage: "CompletionUsage | None" = None
+    usage: CompletionUsage | None = None
 
 
 ContentType = TypeVar("ContentType")
@@ -262,17 +246,12 @@ class ChunkChoice(OpenAIChunkChoice):
 class ChatCompletionChunk(OpenAIChatCompletionChunk):
     choices: list[ChunkChoice]  # type: ignore[assignment]
     service_tier: str | None = None  # type: ignore[assignment]
-    usage: "CompletionUsage | None" = None
+    usage: CompletionUsage | None = None
 
 
 Function = OpenAIFunction
-
-
 CompletionTokensDetails = OpenAICompletionTokensDetails
 PromptTokensDetails = OpenAIPromptTokensDetails
-
-ChatCompletion.model_rebuild()
-ChatCompletionChunk.model_rebuild()
 CreateEmbeddingResponse = OpenAICreateEmbeddingResponse
 Embedding = OpenAIEmbedding
 Usage = OpenAIUsage

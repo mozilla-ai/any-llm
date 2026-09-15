@@ -6,7 +6,6 @@ import json
 from typing import TYPE_CHECKING, Any, cast
 
 from anthropic.types import CacheCreation
-from pydantic import BaseModel
 
 from any_llm.exceptions import InvalidRequestError
 from any_llm.types.messages import (
@@ -27,7 +26,7 @@ from any_llm.types.messages import (
 from any_llm.utils.structured_output import is_structured_output_type, normalize_output_config
 
 if TYPE_CHECKING:
-    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
+    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionUsage
     from any_llm.types.messages import MessageContentBlock, MessagesParams
 
 
@@ -474,55 +473,44 @@ def split_cached_input_tokens(
     return prompt_tokens - cached, cache_read
 
 
-def _cached_tokens_from_usage(usage: Any) -> int | None:
-    """Read ``prompt_tokens_details.cached_tokens`` while preserving absent versus zero."""
+def _cached_tokens_from_usage(usage: CompletionUsage) -> int | None:
+    """Read the cache-read meter, preserving absent versus zero.
+
+    ``prompt_tokens_details`` is the fallback for converters that set it after validation, when the
+    normalized meter could not be derived from it.
+    """
     if usage.cache_usage is not None and usage.cache_usage.read_input_tokens is not None:
-        return int(usage.cache_usage.read_input_tokens)
+        return usage.cache_usage.read_input_tokens
     if usage.prompt_tokens_details is None:
         return None
-    cached = usage.prompt_tokens_details.cached_tokens
-    return int(cached) if isinstance(cached, int) else None
+    return usage.prompt_tokens_details.cached_tokens
 
 
-def _cache_creation_from_usage(usage: Any) -> int | None:
-    """Read canonical cache-creation tokens with a raw-field compatibility fallback."""
-    if usage.cache_usage is not None and usage.cache_usage.creation_input_tokens is not None:
-        return int(usage.cache_usage.creation_input_tokens)
-    return getattr(usage, "cache_creation_input_tokens", None)
+def _cache_creation_from_usage(usage: CompletionUsage) -> int | None:
+    return usage.cache_usage.creation_input_tokens if usage.cache_usage is not None else None
 
 
-def _cache_creation_details_from_usage(usage: Any) -> CacheCreation | None:
-    """Read canonical TTL meters, falling back to the raw compatibility field.
+def _cache_creation_details_from_usage(usage: CompletionUsage) -> CacheCreation | None:
+    """Build Anthropic's TTL breakdown from the normalized meters.
 
-    Anthropic's ``CacheCreation`` requires both buckets, so a usage that reports only one yields ``None``
-    rather than a fabricated zero; the creation total still travels on ``cache_creation_input_tokens``.
+    ``CacheCreation`` requires both buckets, so a usage that reports only one yields ``None`` rather than a
+    fabricated zero; the creation total still travels on ``cache_creation_input_tokens``.
     """
-    raw = getattr(usage, "cache_creation", None)
-    if isinstance(raw, BaseModel):
-        raw = raw.model_dump()
-    details = dict(raw) if isinstance(raw, dict) else {}
-    cache_usage = getattr(usage, "cache_usage", None)
-    if cache_usage is not None:
-        for field, key in (
-            ("creation_5m_input_tokens", "ephemeral_5m_input_tokens"),
-            ("creation_1h_input_tokens", "ephemeral_1h_input_tokens"),
-        ):
-            value = getattr(cache_usage, field, None)
-            if value is not None:
-                details[key] = int(value)
-    five_minute = details.get("ephemeral_5m_input_tokens")
-    one_hour = details.get("ephemeral_1h_input_tokens")
-    if five_minute is None or one_hour is None:
+    cache_usage = usage.cache_usage
+    if (
+        cache_usage is None
+        or cache_usage.creation_5m_input_tokens is None
+        or cache_usage.creation_1h_input_tokens is None
+    ):
         return None
-    return CacheCreation(ephemeral_5m_input_tokens=five_minute, ephemeral_1h_input_tokens=one_hour)
+    return CacheCreation(
+        ephemeral_5m_input_tokens=cache_usage.creation_5m_input_tokens,
+        ephemeral_1h_input_tokens=cache_usage.creation_1h_input_tokens,
+    )
 
 
-def _cache_included_in_prompt(usage: Any) -> bool | None:
-    """Return whether cache creation is included in the provider prompt total."""
-    if usage.cache_usage is None:
-        return None
-    included = usage.cache_usage.included_in_prompt_tokens
-    return bool(included) if included is not None else None
+def _cache_included_in_prompt(usage: CompletionUsage) -> bool | None:
+    return usage.cache_usage.included_in_prompt_tokens if usage.cache_usage is not None else None
 
 
 def chat_completion_to_message_response(completion: ChatCompletion) -> MessageResponse:

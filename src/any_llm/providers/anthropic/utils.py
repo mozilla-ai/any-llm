@@ -10,6 +10,7 @@ from anthropic.types import (
     Message,
     MessageDeltaEvent,
     MessageStopEvent,
+    Usage,
 )
 from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
 from pydantic import BaseModel
@@ -17,6 +18,7 @@ from pydantic import BaseModel
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.logging import logger
 from any_llm.types.completion import (
+    CacheUsageDetails,
     ChatCompletion,
     ChatCompletionChunk,
     ChatCompletionMessage,
@@ -317,9 +319,7 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
                 "completion_tokens": anthropic_usage.output_tokens,
                 "total_tokens": total_prompt_tokens + anthropic_usage.output_tokens,
                 "prompt_tokens_details": PromptTokensDetails(cached_tokens=cache_read) if cache_read else None,
-                "cache_read_input_tokens": anthropic_usage.cache_read_input_tokens,
-                "cache_creation_input_tokens": anthropic_usage.cache_creation_input_tokens,
-                "cache_creation": anthropic_usage.cache_creation,
+                "cache_usage": _convert_cache_usage(anthropic_usage),
             }
         # The stop event carries no delta or finish_reason, only usage. Leave choices
         # empty so it matches the trailing usage-only chunk OpenAI-compatible providers emit.
@@ -335,6 +335,26 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
     chunk_dict["choices"] = [choice]
 
     return ChatCompletionChunk.model_validate(chunk_dict)
+
+
+def _convert_cache_usage(usage: Usage) -> CacheUsageDetails | None:
+    """Map Anthropic's cache meters onto ``CacheUsageDetails``.
+
+    Anthropic reports cache reads and writes beside ``input_tokens``; the converters fold both into
+    ``prompt_tokens``, so the normalized meters are marked as included in it.
+    """
+    read = usage.cache_read_input_tokens
+    creation = usage.cache_creation_input_tokens
+    ttl = usage.cache_creation
+    if read is None and creation is None and ttl is None:
+        return None
+    return CacheUsageDetails(
+        read_input_tokens=read,
+        creation_input_tokens=creation,
+        creation_5m_input_tokens=ttl.ephemeral_5m_input_tokens if ttl is not None else None,
+        creation_1h_input_tokens=ttl.ephemeral_1h_input_tokens if ttl is not None else None,
+        included_in_prompt_tokens=True,
+    )
 
 
 def _convert_response(response: Message) -> ChatCompletion:
@@ -396,8 +416,7 @@ def _convert_response(response: Message) -> ChatCompletion:
     )
 
     cache_read = response.usage.cache_read_input_tokens or 0
-    cache_creation_value = response.usage.cache_creation_input_tokens
-    cache_creation = cache_creation_value or 0
+    cache_creation = response.usage.cache_creation_input_tokens or 0
     total_prompt_tokens = response.usage.input_tokens + cache_read + cache_creation
 
     usage = CompletionUsage(
@@ -405,15 +424,7 @@ def _convert_response(response: Message) -> ChatCompletion:
         prompt_tokens=total_prompt_tokens,
         total_tokens=total_prompt_tokens + response.usage.output_tokens,
         prompt_tokens_details=PromptTokensDetails(cached_tokens=cache_read) if cache_read else None,
-        cache_read_input_tokens=response.usage.cache_read_input_tokens,
-        cache_creation_input_tokens=cache_creation_value,
-        cache_creation=(
-            response.usage.cache_creation.model_dump()
-            if isinstance(response.usage.cache_creation, BaseModel)
-            else response.usage.cache_creation
-            if isinstance(response.usage.cache_creation, dict)
-            else None
-        ),
+        cache_usage=_convert_cache_usage(response.usage),
     )
 
     from typing import Literal

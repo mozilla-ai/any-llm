@@ -28,6 +28,7 @@ from any_llm.any_llm import AnyLLM
 from any_llm.api import amessages, messages
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.types.completion import (
+    CacheUsageDetails,
     ChatCompletion,
     ChatCompletionChunk,
     ChatCompletionMessage,
@@ -1067,8 +1068,13 @@ async def test_default_amessages_streaming_usage_from_trailing_chunk() -> None:
                 completion_tokens=50,
                 total_tokens=150,
                 prompt_tokens_details=PromptTokensDetails(cached_tokens=80),
-                cache_creation_input_tokens=12,
-                cache_creation={"ephemeral_5m_input_tokens": 7, "ephemeral_1h_input_tokens": 5},
+                cache_usage=CacheUsageDetails(
+                    read_input_tokens=80,
+                    creation_input_tokens=12,
+                    creation_5m_input_tokens=7,
+                    creation_1h_input_tokens=5,
+                    included_in_prompt_tokens=True,
+                ),
             ),
         )
 
@@ -1121,8 +1127,12 @@ async def test_default_amessages_streaming_flushes_usage_when_stream_fails() -> 
                 prompt_tokens=100,
                 completion_tokens=10,
                 total_tokens=110,
-                cache_creation_input_tokens=12,
-                cache_creation={"ephemeral_5m_input_tokens": 7, "ephemeral_1h_input_tokens": 5},
+                cache_usage=CacheUsageDetails(
+                    creation_input_tokens=12,
+                    creation_5m_input_tokens=7,
+                    creation_1h_input_tokens=5,
+                    included_in_prompt_tokens=True,
+                ),
             ),
         )
         msg = "provider stream dropped"

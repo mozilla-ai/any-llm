@@ -956,6 +956,10 @@ def test_streaming_chunk_includes_cache_tokens_in_usage() -> None:
     assert result.usage.total_tokens == expected_total_tokens
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 13332
+    assert result.usage.cache_usage is not None
+    assert result.usage.cache_usage.read_input_tokens == 13332
+    assert result.usage.cache_usage.creation_input_tokens == 0
+    assert result.usage.cache_usage.included_in_prompt_tokens is True
     assert result.choices == []
 
 
@@ -978,10 +982,13 @@ def test_streaming_chunk_includes_cache_creation_tokens_in_usage() -> None:
     result = _create_openai_chunk_from_anthropic_chunk(chunk, "claude-3-haiku")
 
     assert result.usage is not None
-    assert result.usage.cache_creation_input_tokens == 12
-    assert result.usage.cache_creation is not None
-    assert result.usage.cache_creation["ephemeral_5m_input_tokens"] == 7
-    assert result.usage.cache_creation["ephemeral_1h_input_tokens"] == 5
+    assert result.usage.prompt_tokens == 15
+    assert result.usage.cache_usage is not None
+    assert result.usage.cache_usage.read_input_tokens is None
+    assert result.usage.cache_usage.creation_input_tokens == 12
+    assert result.usage.cache_usage.creation_5m_input_tokens == 7
+    assert result.usage.cache_usage.creation_1h_input_tokens == 5
+    assert "cache_creation_input_tokens" not in result.usage.model_dump()
 
 
 @pytest.mark.asyncio

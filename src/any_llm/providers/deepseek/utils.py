@@ -1,7 +1,14 @@
 import json
 from typing import Any
 
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, PromptTokensDetails
+from any_llm.types.completion import (
+    CacheUsageDetails,
+    ChatCompletion,
+    ChatCompletionChunk,
+    CompletionParams,
+    CompletionUsage,
+    PromptTokensDetails,
+)
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 
@@ -84,29 +91,34 @@ def _preprocess_messages(params: CompletionParams) -> CompletionParams:
     return params
 
 
-def _inject_cached_tokens(completion: ChatCompletion) -> ChatCompletion:
-    """Populate ``prompt_tokens_details.cached_tokens`` from DeepSeek's ``prompt_cache_hit_tokens``.
+def _apply_cache_hit_tokens(usage: CompletionUsage) -> None:
+    """Map DeepSeek's ``prompt_cache_hit_tokens`` onto the OpenAI and normalized cache-read meters.
 
     DeepSeek's ``prompt_tokens`` already includes cached tokens
-    (``prompt_tokens = prompt_cache_hit_tokens + prompt_cache_miss_tokens``).
+    (``prompt_tokens = prompt_cache_hit_tokens + prompt_cache_miss_tokens``). The raw hit and miss
+    counters stay in ``cache_usage.provider_meters``.
 
     Reference: https://api-docs.deepseek.com/api/create-chat-completion
     """
-    if completion.usage is None:
-        return completion
-    cached = getattr(completion.usage, "prompt_cache_hit_tokens", None)
+    cached = getattr(usage, "prompt_cache_hit_tokens", None)
+    if not isinstance(cached, int):
+        return
     if cached:
-        completion.usage.prompt_tokens_details = PromptTokensDetails(cached_tokens=cached)
+        usage.prompt_tokens_details = PromptTokensDetails(cached_tokens=cached)
+    usage.cache_usage = (usage.cache_usage or CacheUsageDetails()).model_copy(
+        update={"read_input_tokens": cached, "included_in_prompt_tokens": True}
+    )
+
+
+def _inject_cached_tokens(completion: ChatCompletion) -> ChatCompletion:
+    if completion.usage is not None:
+        _apply_cache_hit_tokens(completion.usage)
     return completion
 
 
 def _inject_cached_tokens_chunk(chunk: ChatCompletionChunk) -> ChatCompletionChunk:
-    """Same as ``_inject_cached_tokens`` but for streaming chunks."""
-    if chunk.usage is None:
-        return chunk
-    cached = getattr(chunk.usage, "prompt_cache_hit_tokens", None)
-    if cached:
-        chunk.usage.prompt_tokens_details = PromptTokensDetails(cached_tokens=cached)
+    if chunk.usage is not None:
+        _apply_cache_hit_tokens(chunk.usage)
     return chunk
 
 
