@@ -1,3 +1,5 @@
+# Copyright 2026 Mozilla
+
 import json
 import re
 import threading
@@ -53,6 +55,17 @@ _RESPONSES_RESPONSE = {
     "tools": [],
     "future_response_field": True,
 }
+
+
+@pytest.fixture(autouse=True)
+def clear_azure_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "OPENAI_API_VERSION",
+        "AZURE_OPENAI_API_KEY",
+        "AZURE_OPENAI_AD_TOKEN",
+        "AZURE_OPENAI_ENDPOINT",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
 
 def _azure_transport(

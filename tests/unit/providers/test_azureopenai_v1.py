@@ -1,7 +1,9 @@
+# Copyright 2026 Mozilla
+
 import asyncio
 import copy
 import json
-from collections.abc import AsyncGenerator, AsyncIterator, Coroutine
+from collections.abc import AsyncIterator, Coroutine
 from dataclasses import dataclass
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -551,7 +553,7 @@ class TrackedStream(httpx.AsyncByteStream):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["exhaustion", "early_exit", "failure", "cancellation"])
+@pytest.mark.parametrize("mode", ["exhaustion", "early_exit", "failure", "cancellation", "zero_consumption"])
 @pytest.mark.parametrize("api", ["chat", "responses"])
 async def test_stream_releases_transport(mode: str, api: str) -> None:
     body = TrackedStream(mode, api)
@@ -574,10 +576,13 @@ async def test_stream_releases_transport(mode: str, api: str) -> None:
             if api == "chat"
             else await provider.aresponses(model="deployment", input_data="Hi", stream=True)
         )
-        assert isinstance(stream, AsyncGenerator)
-        await anext(stream)
+        assert isinstance(stream, AsyncIterator)
+        if mode == "zero_consumption":
+            await stream.aclose()  # type: ignore[union-attr]
+        else:
+            await anext(stream)
         if mode == "early_exit":
-            await stream.aclose()
+            await stream.aclose()  # type: ignore[union-attr]
         elif mode == "failure":
             with (
                 pytest.warns(DeprecationWarning, match="Provider-specific exceptions"),
@@ -590,7 +595,7 @@ async def test_stream_releases_transport(mode: str, api: str) -> None:
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
-        else:
+        elif mode == "exhaustion":
             assert [chunk async for chunk in stream] == []
         assert body.closed
     finally:

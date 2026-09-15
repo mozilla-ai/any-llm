@@ -1,3 +1,5 @@
+# Copyright 2026 Mozilla
+
 import asyncio
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
@@ -61,6 +63,34 @@ def _resolve_credential(
         raise MissingApiKeyError(_PROVIDER_NAME, env_var_name)
 
     return credential
+
+
+class _AzureOpenAIStream(AsyncIterator[ChatCompletionChunk]):
+    """Convert and close an Azure OpenAI stream, including before first use."""
+
+    def __init__(self, response: AsyncStream[OpenAIChatCompletionChunk], provider: "AzureopenaiProvider") -> None:
+        self._response = response
+        self._iterator = aiter(response)
+        self._provider = provider
+        self._closed = False
+
+    @override
+    def __aiter__(self) -> "_AzureOpenAIStream":
+        return self
+
+    @override
+    async def __anext__(self) -> ChatCompletionChunk:
+        try:
+            chunk = await anext(self._iterator)
+            return self._provider._convert_completion_chunk_response(chunk)
+        except BaseException:
+            await self.aclose()
+            raise
+
+    async def aclose(self) -> None:
+        if not self._closed:
+            self._closed = True
+            await self._response.close()
 
 
 class AzureopenaiProvider(BaseOpenAIProvider):
@@ -173,14 +203,7 @@ class AzureopenaiProvider(BaseOpenAIProvider):
         if isinstance(response, OpenAIChatCompletion):
             return self._convert_completion_response(response)
 
-        async def chunks() -> AsyncIterator[ChatCompletionChunk]:
-            try:
-                async for chunk in response:
-                    yield self._convert_completion_chunk_response(chunk)
-            finally:
-                await response.close()
-
-        return chunks()
+        return _AzureOpenAIStream(response, self)
 
     def _media_options(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         # Azure documents these routes under the v1 preview reference, not the
