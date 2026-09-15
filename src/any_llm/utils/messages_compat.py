@@ -341,13 +341,13 @@ def _convert_user_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[dict[st
 
     Handles tool_result blocks (→ role:tool messages) and content blocks (text, image).
 
-    A tool result marked ``is_error`` keeps that marker on the emitted ``role: tool`` message.
-    OpenAI has no field for it, and the OpenAI SDK forwards unknown message keys verbatim, so
-    the flag reaches any backend reached through an OpenAI-shaped request and is inert on one
-    that does not read it. It travels no further than that: a provider that rebuilds the
-    message from known keys, as ``bedrock``, ``gemini`` and ``ollama`` do, drops it again.
-    Mapping it onto each of those representations, such as ``toolResult.status`` on Bedrock,
-    is left to a follow-up.
+    A tool result marked ``is_error`` has its text prefixed with ``Error: `` rather than carrying
+    the flag as a message key. OpenAI has no field for it, the OpenAI SDK forwards unknown message
+    keys verbatim, and strict OpenAI-compatible backends such as Fireworks reject the whole request
+    over an unknown key. The text is the one place the signal reaches the model on every backend,
+    including providers that rebuild the message from known keys, as ``bedrock``, ``gemini`` and
+    ``ollama`` do. Mapping it onto a native representation, such as ``toolResult.status`` on
+    Bedrock, is left to a follow-up.
 
     A tool result carrying image or document blocks emits the text as the ``role: tool``
     message and holds the remaining parts back, because OpenAI accepts text only on a tool
@@ -371,14 +371,15 @@ def _convert_user_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[dict[st
                 results.append({"role": "user", "content": content_blocks})
                 content_blocks = []
             tool_text, extra_parts = _convert_tool_result_content(block.get("content", ""))
-            tool_message: dict[str, Any] = {
-                "role": "tool",
-                "tool_call_id": block.get("tool_use_id", ""),
-                "content": tool_text,
-            }
             if block.get("is_error") is True:
-                tool_message["is_error"] = True
-            results.append(tool_message)
+                tool_text = f"Error: {tool_text}" if tool_text else "Error"
+            results.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": block.get("tool_use_id", ""),
+                    "content": tool_text,
+                }
+            )
             held_parts.extend(extra_parts)
         elif block_type == "text":
             content_blocks.append({"type": "text", "text": block.get("text", "")})
