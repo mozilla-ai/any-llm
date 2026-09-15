@@ -10,6 +10,7 @@ from typing import IO, TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, ove
 from openresponses_types import ResponseResource
 from pydantic import BaseModel
 
+from any_llm._files import FilesMixin
 from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider, get_provider_tier
 from any_llm.exceptions import (
     ContentFilterFinishReasonError,
@@ -71,7 +72,7 @@ if TYPE_CHECKING:
     from any_llm.types.rerank import RerankResponse
 
 
-class AnyLLM(ABC):
+class AnyLLM(FilesMixin, ABC):
     """Provider for the LLM."""
 
     # === Provider-specific configuration (to be overridden by subclasses) ===
@@ -527,6 +528,8 @@ class AnyLLM(ABC):
             audio_transcription=cls.SUPPORTS_AUDIO_TRANSCRIPTION,
             audio_speech=cls.SUPPORTS_AUDIO_SPEECH,
             rerank=cls.SUPPORTS_RERANK,
+            files=bool(cls.SUPPORTED_FILE_OPERATIONS),
+            file_operations=tuple(sorted(cls.SUPPORTED_FILE_OPERATIONS)),
             messages=cls.SUPPORTS_MESSAGES,
             class_name=cls.__name__,
         )

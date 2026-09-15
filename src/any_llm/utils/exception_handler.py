@@ -18,6 +18,7 @@ from any_llm.exceptions import (
     InvalidRequestError,
     ModelNotFoundError,
     ProviderError,
+    ProviderFileNotFoundError,
     RateLimitError,
     UpstreamProviderError,
 )
@@ -273,12 +274,13 @@ def convert_exception(
     return error
 
 
-def _handle_exception(exception: Exception, provider_name: str) -> None:
+def _handle_exception(exception: Exception, provider_name: str, *, file_operation: bool = False) -> None:
     """Handle an exception based on the unified exceptions flag.
 
     Args:
         exception: The original exception
         provider_name: Name of the provider for error context
+        file_operation: Whether a missing resource refers to a file.
 
     Raises:
         AnyLLMError: If unified exceptions are enabled
@@ -300,6 +302,16 @@ def _handle_exception(exception: Exception, provider_name: str) -> None:
 
     if os.environ.get(ANY_LLM_UNIFIED_EXCEPTIONS_ENV, "").lower() in ("1", "true", "yes", "on"):
         converted = convert_exception(exception, provider_name)
+        if file_operation and converted.status_code == 404:
+            converted = ProviderFileNotFoundError(
+                message=converted.message,
+                original_exception=exception,
+                provider_name=provider_name,
+                status_code=404,
+                code=converted.code,
+                param=converted.param,
+                error_type=converted.error_type,
+            )
         raise converted from exception
 
     warnings.warn(
@@ -310,7 +322,7 @@ def _handle_exception(exception: Exception, provider_name: str) -> None:
     raise exception
 
 
-def handle_exceptions(*, wrap_streaming: bool = False) -> Callable[[F], F]:
+def handle_exceptions(*, wrap_streaming: bool = False, file_operation: bool = False) -> Callable[[F], F]:
     """Handle exceptions in async methods.
 
     This decorator wraps async methods to catch provider-specific exceptions
@@ -319,6 +331,7 @@ def handle_exceptions(*, wrap_streaming: bool = False) -> Callable[[F], F]:
     `PROVIDER_NAME` attribute.
 
     Args:
+        file_operation: Classify a missing resource as a file rather than a model.
         wrap_streaming: If True, the result will be wrapped with an async iterator
             wrapper if it's an async iterator. This is useful for streaming responses
             where exceptions may occur during iteration.
@@ -340,7 +353,7 @@ def handle_exceptions(*, wrap_streaming: bool = False) -> Callable[[F], F]:
                     async for item in async_iter:
                         yield item
                 except Exception as e:
-                    _handle_exception(e, provider_name)
+                    _handle_exception(e, provider_name, file_operation=file_operation)
                 finally:
                     await aclose_quietly(async_iter)
 
@@ -350,7 +363,7 @@ def handle_exceptions(*, wrap_streaming: bool = False) -> Callable[[F], F]:
                 try:
                     result = await func(self, *args, **kwargs)
                 except Exception as e:
-                    _handle_exception(e, provider_name)
+                    _handle_exception(e, provider_name, file_operation=file_operation)
                     return None  # unreachable, but helps type checkers
 
                 # Check if result is an async iterator (streaming response)
@@ -369,7 +382,7 @@ def handle_exceptions(*, wrap_streaming: bool = False) -> Callable[[F], F]:
             try:
                 return await func(self, *args, **kwargs)
             except Exception as e:
-                _handle_exception(e, provider_name)
+                _handle_exception(e, provider_name, file_operation=file_operation)
 
         return wrapper  # type: ignore[return-value]
 

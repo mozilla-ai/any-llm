@@ -125,6 +125,12 @@ class ContentFilterError(AnyLLMError):
     default_message = "Content blocked by safety filter"
 
 
+class ProviderFileNotFoundError(AnyLLMError):
+    """Raised when a provider-hosted file is missing or inaccessible."""
+
+    default_message = "File not found"
+
+
 class ModelNotFoundError(AnyLLMError):
     """Raised when the requested model is not found or not available."""
 
