@@ -512,14 +512,28 @@ async def test_unknown_options_rejected(operation: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_invalid_download_chunk_size() -> None:
+@pytest.mark.parametrize("chunk_size", [0, -1, None, "64", True, 1.5])
+async def test_invalid_download_chunk_size(chunk_size: Any) -> None:
     provider = provider_for(lambda _: pytest.fail("Invalid chunk size reached network"))
     try:
         with pytest.raises(InvalidRequestError, match="chunk_size"):
-            async with provider.adownload_file("file_123", chunk_size=0):
+            async with provider.adownload_file("file_123", chunk_size=chunk_size):
                 pass
     finally:
         await provider.client.close()
+
+
+@pytest.mark.parametrize("chunk_size", [0, None, "64", True, 1.5])
+def test_invalid_sync_download_chunk_size(chunk_size: Any) -> None:
+    provider = provider_for(lambda _: pytest.fail("Invalid chunk size reached network"))
+    try:
+        with (
+            pytest.raises(InvalidRequestError, match="chunk_size"),
+            provider.download_file("file_123", chunk_size=chunk_size),
+        ):
+            pass
+    finally:
+        asyncio.run(provider.client.close())
 
 
 @pytest.mark.asyncio

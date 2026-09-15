@@ -161,8 +161,8 @@ class FilesMixin:
         yield  # pragma: no cover
 
     def _validate_chunk_size(self, chunk_size: int) -> None:
-        if chunk_size <= 0:
-            message = "chunk_size must be positive"
+        if isinstance(chunk_size, bool) or not isinstance(chunk_size, int) or chunk_size <= 0:
+            message = "chunk_size must be a positive integer"
             raise InvalidRequestError(message, provider_name=self.PROVIDER_NAME)
 
     @contextmanager
