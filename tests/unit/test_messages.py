@@ -1582,8 +1582,8 @@ def test_messages_bridge_forwards_thinking_tool_result_and_parallel_flag_on_the_
 
     tool_message = body["messages"][2]
     assert tool_message["role"] == "tool"
-    assert tool_message["content"] == "partial capture:"
-    assert tool_message["is_error"] is True
+    assert tool_message["content"] == "Error: partial capture:"
+    assert "is_error" not in tool_message
 
     attachment = body["messages"][3]
     assert attachment["role"] == "user"

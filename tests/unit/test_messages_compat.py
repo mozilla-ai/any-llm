@@ -2282,8 +2282,8 @@ def test_assistant_blocks_thinking_alongside_tool_use_preserved() -> None:
     assert result[0]["tool_calls"][0]["function"]["name"] == "get_weather"
 
 
-def test_user_blocks_tool_result_is_error_preserved() -> None:
-    """A failed tool result stays distinguishable from a successful one."""
+def test_user_blocks_tool_result_is_error_prefixes_content() -> None:
+    """A failed tool result carries the error in its text, never as a message key strict backends reject."""
     result = _convert_user_blocks_to_openai(
         [
             {
@@ -2294,29 +2294,37 @@ def test_user_blocks_tool_result_is_error_preserved() -> None:
             },
         ]
     )
-    assert result[0]["role"] == "tool"
-    assert result[0]["content"] == "permission denied"
-    assert result[0]["is_error"] is True
+    assert result == [{"role": "tool", "tool_call_id": "call_1", "content": "Error: permission denied"}]
 
 
-def test_user_blocks_tool_result_without_is_error_omits_flag() -> None:
+def test_user_blocks_tool_result_is_error_with_empty_content() -> None:
+    """A failed tool result with no text still reads as an error."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {"type": "tool_result", "tool_use_id": "call_1", "is_error": True, "content": ""},
+        ]
+    )
+    assert result == [{"role": "tool", "tool_call_id": "call_1", "content": "Error"}]
+
+
+def test_user_blocks_tool_result_without_is_error_leaves_content() -> None:
     """A successful tool result carries no error marker."""
     result = _convert_user_blocks_to_openai(
         [
             {"type": "tool_result", "tool_use_id": "call_1", "content": "ok"},
         ]
     )
-    assert "is_error" not in result[0]
+    assert result == [{"role": "tool", "tool_call_id": "call_1", "content": "ok"}]
 
 
-def test_user_blocks_tool_result_is_error_false_omits_flag() -> None:
+def test_user_blocks_tool_result_is_error_false_leaves_content() -> None:
     """An explicit false is not an error marker."""
     result = _convert_user_blocks_to_openai(
         [
             {"type": "tool_result", "tool_use_id": "call_1", "is_error": False, "content": "ok"},
         ]
     )
-    assert "is_error" not in result[0]
+    assert result == [{"role": "tool", "tool_call_id": "call_1", "content": "ok"}]
 
 
 def test_user_blocks_tool_result_image_emitted_as_following_user_message() -> None:
