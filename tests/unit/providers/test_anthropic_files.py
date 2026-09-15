@@ -424,7 +424,7 @@ async def test_download_network_error_during_iteration_is_unified(monkeypatch: p
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("file_id", ["", ".", ".."])
+@pytest.mark.parametrize("file_id", ["", ".", "..", "../models", "file/../../x", "file\\x", " file_abc", "file_abc\n"])
 async def test_invalid_file_ids_are_rejected(file_id: str) -> None:
     provider = provider_for(lambda _: pytest.fail("Invalid file ID reached network"))
     try:

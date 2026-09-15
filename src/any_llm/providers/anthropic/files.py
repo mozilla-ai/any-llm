@@ -28,9 +28,9 @@ def reject_unsupported(names: Iterable[str], additional_message: str | None = No
 
 
 def validate_file_id(file_id: str) -> None:
-    """Reject empty IDs and path traversal components before calling the SDK."""
-    if not file_id or file_id in {".", ".."}:
-        message = "A nonempty provider file ID is required"
+    """Reject IDs that are empty, dot segments, or carry path separators or whitespace."""
+    if not file_id or file_id in {".", ".."} or "/" in file_id or "\\" in file_id or file_id != file_id.strip():
+        message = "A nonempty provider file ID without path separators is required"
         raise InvalidRequestError(message, provider_name=PROVIDER_NAME)
 
 
