@@ -10,6 +10,7 @@ from typing import IO, TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, ove
 from openresponses_types import ResponseResource
 from pydantic import BaseModel
 
+from any_llm._files import FilesMixin
 from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider, get_provider_tier
 from any_llm.exceptions import (
     ContentFilterFinishReasonError,
@@ -49,11 +50,12 @@ from any_llm.types.responses import (
     ResponsesParams,
     ResponseStreamEvent,
 )
-from any_llm.utils.aio import async_coro_to_sync_iter, async_iter_to_sync_iter, run_async_in_sync
+from any_llm.utils.aio import aclose_quietly, async_coro_to_sync_iter, async_iter_to_sync_iter, run_async_in_sync
 from any_llm.utils.exception_handler import handle_exceptions
 from any_llm.utils.structured_output import (
     build_parsed_message,
     is_structured_output_type,
+    normalize_output_config,
     parse_json_content,
     parse_responses_output,
 )
@@ -70,7 +72,7 @@ if TYPE_CHECKING:
     from any_llm.types.rerank import RerankResponse
 
 
-class AnyLLM(ABC):
+class AnyLLM(FilesMixin, ABC):
     """Provider for the LLM."""
 
     # === Provider-specific configuration (to be overridden by subclasses) ===
@@ -131,6 +133,9 @@ class AnyLLM(ABC):
 
     SUPPORTS_MESSAGES: bool = True
     """Anthropic Messages API (all providers support it via conversion)"""
+
+    SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING: bool = False
+    """Whether Messages structured output can be streamed by this provider."""
 
     PROMPT_CACHE_KEY_SUPPORT: Literal["unsupported", "supported", "passthrough"] = "unsupported"
     """Whether prompt_cache_key is supported, forwarded to a router, or rejected."""
@@ -523,6 +528,8 @@ class AnyLLM(ABC):
             audio_transcription=cls.SUPPORTS_AUDIO_TRANSCRIPTION,
             audio_speech=cls.SUPPORTS_AUDIO_SPEECH,
             rerank=cls.SUPPORTS_RERANK,
+            files=bool(cls.SUPPORTED_FILE_OPERATIONS),
+            file_operations=tuple(sorted(cls.SUPPORTED_FILE_OPERATIONS)),
             messages=cls.SUPPORTS_MESSAGES,
             class_name=cls.__name__,
         )
@@ -850,6 +857,7 @@ class AnyLLM(ABC):
         service_tier: str | None = None,
         context_management: dict[str, Any] | None = None,
         betas: list[str] | None = None,
+        container: str | None = None,
         timeout: float | None = None,
         **kwargs: Any,
     ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | Iterator[MessageStreamEvent]:
@@ -876,6 +884,7 @@ class AnyLLM(ABC):
                         service_tier=service_tier,
                         context_management=context_management,
                         betas=betas,
+                        container=container,
                         timeout=timeout,
                         **kwargs,
                     ),
@@ -889,6 +898,7 @@ class AnyLLM(ABC):
                 service_tier=service_tier,
                 context_management=context_management,
                 betas=betas,
+                container=container,
                 timeout=timeout,
                 **kwargs,
             ),
@@ -920,6 +930,7 @@ class AnyLLM(ABC):
         service_tier: str | None = None,
         context_management: dict[str, Any] | None = None,
         betas: list[str] | None = None,
+        container: str | None = None,
         output_format: type | dict[str, Any] | None = None,
         timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
         **kwargs: Any,
@@ -951,11 +962,13 @@ class AnyLLM(ABC):
                 trigger value must be at least 50,000 when provided; see
                 [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction).
             betas: Anthropic beta identifiers.
+            container: Container identifier for continuing a previous top-level container.
             output_format: Structured output, mirroring Anthropic's ``messages.parse``/
                 ``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed
                 ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic
                 JSON schemas (``parsed_output`` holds the parsed JSON). The call returns
-                Anthropic's ``ParsedMessage``. Not supported with ``stream=True``.
+                Anthropic's ``ParsedMessage`` for non-streaming requests. Providers with native
+                support can stream schema-constrained Messages events instead.
             timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
                 An explicit ``None`` is treated the same as omitting it (the provider's default
                 applies), so it cannot request an unbounded timeout. Providers that have no
@@ -968,12 +981,13 @@ class AnyLLM(ABC):
             iterator of MessageStreamEvent (if streaming).
 
         Raises:
-            ValueError: If `output_format` is combined with `stream=True`.
-            NotImplementedError: If `context_management` or `betas` is used with a
-                provider that has no native Anthropic Messages API.
+            ValueError: If `output_format` is combined with `stream=True` for a provider that
+                does not support streaming structured output.
+            NotImplementedError: If `container`, `context_management`, or `betas` is used
+                with a provider that has no native Anthropic Messages API.
 
         """
-        if output_format is not None and stream:
+        if output_format is not None and stream and not self.SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING:
             msg = "stream is not supported for output_format"
             raise ValueError(msg)
 
@@ -996,6 +1010,7 @@ class AnyLLM(ABC):
             service_tier=service_tier,
             context_management=context_management,
             betas=betas,
+            container=container,
             output_format=output_format,
         )
         self._validate_prompt_cache_key(prompt_cache_key)
@@ -1008,6 +1023,11 @@ class AnyLLM(ABC):
         # case); for the raw-dict case and for all bridged providers it returns a MessageResponse,
         # so build the same ParsedMessage shape from the response's JSON text here.
         if output_format is not None and isinstance(result, MessageResponse):
+            if isinstance(output_format, dict):
+                format_config = normalize_output_config(output_format).get("format")
+                schema = format_config.get("schema") if isinstance(format_config, dict) else None
+                if not isinstance(schema, dict) or not schema:
+                    return result
             return build_parsed_message(result, output_format)
 
         return result
@@ -1020,6 +1040,9 @@ class AnyLLM(ABC):
         Providers with native Messages API support (e.g., Anthropic) override this
         for direct pass-through.
         """
+        if params.container is not None:
+            msg = "container requires a provider with a native Anthropic Messages API"
+            raise NotImplementedError(msg)
         if params.context_management is not None or params.betas:
             msg = "context_management and betas require a provider with a native Anthropic Messages API"
             raise NotImplementedError(msg)
@@ -1036,7 +1059,15 @@ class AnyLLM(ABC):
 
         completion_kwargs = messages_params_to_completion_params(params)
         completion_params = CompletionParams(**completion_kwargs)
-        result = await self._acompletion(completion_params, **kwargs)
+        try:
+            result = await self._acompletion(completion_params, **kwargs)
+        except UnsupportedParameterError as exc:
+            # parallel_tool_calls is synthesized here from Anthropic's tool_choice, so a
+            # provider that rejects it would otherwise name a parameter the caller never sent.
+            if exc.parameter_name != "parallel_tool_calls" or "parallel_tool_calls" not in completion_kwargs:
+                raise
+            msg = "tool_choice.disable_parallel_tool_use"
+            raise UnsupportedParameterError(msg, self.PROVIDER_NAME) from exc
 
         if isinstance(result, ChatCompletion):
             return chat_completion_to_message_response(result)
@@ -1067,6 +1098,9 @@ class AnyLLM(ABC):
                 if state.started:
                     yield usage_delta(None)
                 raise
+            finally:
+                await aclose_quietly(result)
+
             # Emit the closing events after the full stream is consumed so trailing-chunk usage is included.
             if state.started:
                 for stop_event in close_open_blocks(state):
@@ -1704,7 +1738,7 @@ class AnyLLM(ABC):
 
         Args:
             after: A cursor for pagination. Returns batches after this batch ID.
-            limit: Maximum number of batches to return (default: 20)
+            limit: Maximum number of batches to return. When omitted, the provider's own default applies.
             **kwargs: Additional provider-specific arguments
 
         Returns:

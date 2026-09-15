@@ -29,6 +29,22 @@ from any_llm.types.completion import (
 from any_llm.types.model import Model
 
 
+def _map_ollama_done_reason(
+    done_reason: str | None,
+) -> Literal["stop", "length", "tool_calls", "content_filter", "function_call"]:
+    """Normalize a terminal reason, using stop when Ollama has no OpenAI equivalent.
+
+    Ollama's load/unload responses complete a model lifecycle operation without
+    generating text. Missing and unknown reasons use the same stop fallback as
+    other providers; they do not imply truncation, filtering, or a tool call.
+    """
+    match done_reason:
+        case "stop" | "length" | "tool_calls" | "content_filter" | "function_call":
+            return done_reason
+        case _:
+            return "stop"
+
+
 def _convert_tool_calls(tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Convert OpenAI tool calls to the shape Ollama expects.
 
@@ -130,9 +146,10 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
     choice = ChunkChoice(
         index=0,
         delta=delta,
-        finish_reason=cast(
-            "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call'] | None",
-            ollama_chunk.done_reason,
+        finish_reason=(
+            _map_ollama_done_reason(ollama_chunk.done_reason)
+            if ollama_chunk.done or ollama_chunk.done_reason is not None
+            else None
         ),
     )
 
@@ -217,7 +234,7 @@ def _create_chat_completion_from_ollama_response(response: OllamaChatResponse) -
         reasoning=Reasoning(content=response_message.thinking) if response_message.thinking else None,
     )
 
-    finish_reason: Any = "tool_calls" if openai_tool_calls else response.done_reason
+    finish_reason = "tool_calls" if openai_tool_calls else _map_ollama_done_reason(response.done_reason)
 
     choice = Choice(index=0, finish_reason=finish_reason, message=message)
 

@@ -25,7 +25,7 @@ from any_llm.types.messages import (
     MessageStopEvent,
     MessageStreamEvent,
 )
-from any_llm.utils.structured_output import is_structured_output_type
+from any_llm.utils.structured_output import is_structured_output_type, normalize_output_config
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -236,6 +236,7 @@ class BaseAnthropicProvider(AnyLLM, ABC):
     SUPPORTS_LIST_MODELS = False
     SUPPORTS_BATCH = True
     SUPPORTS_RERANK = False
+    SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING = True
 
     # The Anthropic SDK accepts a per-request `timeout` on messages.create, so it forwards unchanged.
     TIMEOUT_SUPPORT = "native"
@@ -322,7 +323,8 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         (which drives the GA ``output_config`` primitive) and returns the SDK's ``ParsedMessage``
         unchanged. When it is a raw ``output_config`` dict, passes it straight to native
         ``messages.create(output_config=...)`` and returns a ``MessageResponse`` (the base layer
-        then builds the matching ``ParsedMessage`` from its JSON text).
+        then builds the matching ``ParsedMessage`` from its JSON text). Streaming requests use
+        ``messages.stream`` with the matching typed or raw output configuration.
         """
         header_betas = _pop_anthropic_beta_header(kwargs)
         betas = _messages_betas(params, header_betas)
@@ -335,14 +337,23 @@ class BaseAnthropicProvider(AnyLLM, ABC):
             if betas:
                 native_kwargs["betas"] = betas
             native_kwargs.update(kwargs)
+            if params.stream:
+                if is_structured_output_type(params.output_format):
+                    native_kwargs["output_format"] = params.output_format
+                else:
+                    native_kwargs["output_config"] = normalize_output_config(
+                        cast("dict[str, Any]", params.output_format)
+                    )
+                return self._stream_messages_async(use_beta=use_beta, **native_kwargs)
             if is_structured_output_type(params.output_format):
                 with _translating_nonstreaming_guard(self, params.max_tokens):
                     parsed = await messages_resource.parse(output_format=params.output_format, **native_kwargs)
                 return cast("ParsedMessage[Any] | ParsedBetaMessage[Any]", parsed)
+            # Normalize here as well as on the bridge so a bare format object means the same
+            # thing on both paths; the native API requires the output_config nesting.
+            output_config = normalize_output_config(cast("dict[str, Any]", params.output_format))
             with _translating_nonstreaming_guard(self, params.max_tokens):
-                message = await messages_resource.create(
-                    output_config=cast("Any", params.output_format), **native_kwargs
-                )
+                message = await messages_resource.create(output_config=cast("Any", output_config), **native_kwargs)
             return self._convert_native_message_to_response(message)
 
         api_kwargs = params.model_dump(exclude_none=True, exclude={"betas"})

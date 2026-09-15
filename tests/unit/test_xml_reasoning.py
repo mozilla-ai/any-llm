@@ -359,6 +359,49 @@ async def test_wrap_chunks_preserves_metadata_order_around_partial_tag() -> None
 
 
 @pytest.mark.asyncio
+async def test_wrap_chunks_aclose_closes_the_source() -> None:
+    """Closing the wrapped stream early must close the chunk source underneath it."""
+    closed = False
+
+    async def source() -> AsyncIterator[ChatCompletionChunk]:
+        nonlocal closed
+        try:
+            for text in ("one", "two", "three"):
+                yield _make_chunk(text)
+        finally:
+            closed = True
+
+    wrapped = wrap_chunks_with_xml_reasoning(source())
+    await anext(wrapped)
+    assert not closed
+    await wrapped.aclose()  # type: ignore[attr-defined]
+
+    assert closed
+
+
+@pytest.mark.asyncio
+async def test_wrap_chunks_closes_the_source_on_exhaustion_before_the_flush() -> None:
+    """Running the source dry closes it, and the held reasoning still flushes afterwards."""
+    closed = False
+
+    async def source() -> AsyncIterator[ChatCompletionChunk]:
+        nonlocal closed
+        try:
+            yield _make_chunk("<think>unterminated reasoning")
+        finally:
+            closed = True
+
+    wrapped = wrap_chunks_with_xml_reasoning(source())
+    first = await anext(wrapped)
+    flushed = [chunk async for chunk in wrapped]
+
+    assert closed
+    assert first.choices[0].delta.content is None
+    assert len(flushed) == 1
+    assert flushed[0].choices[0].delta.reasoning is not None
+
+
+@pytest.mark.asyncio
 async def test_wrap_chunks_empty_stream_yields_nothing() -> None:
     """No chunks in means no chunks out, including no flush chunk."""
     result = await _collect_chunks(wrap_chunks_with_xml_reasoning(_async_iter_chunks([])))

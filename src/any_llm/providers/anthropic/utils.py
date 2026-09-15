@@ -84,12 +84,16 @@ def _extract_reasoning_text(message: dict[str, Any]) -> str:
 
     ``reasoning`` may be a plain string (the OpenAI-wire-compatible serialized form) or a
     ``{"content": str}`` dict, depending on how the caller constructed the message.
+    ``reasoning_content`` is the wire spelling, which is what arrives on a message replayed
+    from a backend that reports reasoning there and on one built by the Messages bridge.
     """
     reasoning = message.get("reasoning")
     if isinstance(reasoning, str):
         return reasoning
     if isinstance(reasoning, dict) and isinstance(content := reasoning.get("content"), str):
         return content
+    if isinstance(reasoning_content := message.get("reasoning_content"), str):
+        return reasoning_content
     return ""
 
 
@@ -176,6 +180,10 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
                 content_blocks: list[dict[str, Any]] = []
                 if thinking_block := _build_anthropic_thinking_block(message):
                     content_blocks.append(thinking_block)
+                # The model's own text belongs in its turn, between the thinking and the tool_use blocks.
+                content = message.get("content")
+                if isinstance(content, str) and content:
+                    content_blocks.append({"type": "text", "text": content})
                 for tool_call in message["tool_calls"]:
                     content_blocks.append(
                         {
@@ -299,7 +307,6 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
             delta["extra_content"] = {"anthropic": {"stop_details": stop_details}}
 
     elif isinstance(chunk, MessageStopEvent):
-        finish_reason = None
         if hasattr(chunk, "message") and chunk.message.usage:
             anthropic_usage = chunk.message.usage
             cache_read = anthropic_usage.cache_read_input_tokens or 0
@@ -311,6 +318,9 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
                 "total_tokens": total_prompt_tokens + anthropic_usage.output_tokens,
                 "prompt_tokens_details": PromptTokensDetails(cached_tokens=cache_read) if cache_read else None,
             }
+        # The stop event carries no delta or finish_reason, only usage. Leave choices
+        # empty so it matches the trailing usage-only chunk OpenAI-compatible providers emit.
+        return ChatCompletionChunk.model_validate(chunk_dict)
 
     choice = {
         "index": 0,

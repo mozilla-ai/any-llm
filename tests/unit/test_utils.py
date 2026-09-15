@@ -8,7 +8,14 @@ from typing import Any, cast
 
 import pytest
 
-from any_llm.utils.aio import _get_runner_loop, _runner, async_iter_to_sync_iter, run_async_in_sync
+from any_llm.utils.aio import (
+    _async_source_to_sync_iter,
+    _get_runner_loop,
+    _runner,
+    aclose_quietly,
+    async_iter_to_sync_iter,
+    run_async_in_sync,
+)
 
 
 def test_run_async_in_sync_fails_with_background_task_state() -> None:
@@ -346,6 +353,84 @@ def test_run_async_in_sync_disallows_running_loop_when_requested() -> None:
     asyncio.run(call_from_async_context())
 
 
+class _Closable:
+    """A stream double whose close method is chosen per test: aclose, close, sync or async, or failing."""
+
+    def __init__(self, *, aclose: bool = False, close: bool = False, sync: bool = False, fail: bool = False) -> None:
+        self.calls: list[str] = []
+
+        async def _aclose() -> None:
+            self.calls.append("aclose")
+            if fail:
+                msg = "close failed"
+                raise RuntimeError(msg)
+
+        def _close_sync() -> None:
+            self.calls.append("close")
+            if fail:
+                msg = "close failed"
+                raise RuntimeError(msg)
+
+        async def _close_async() -> None:
+            self.calls.append("close")
+            if fail:
+                msg = "close failed"
+                raise RuntimeError(msg)
+
+        if aclose:
+            self.aclose = _aclose
+        if close:
+            self.close = _close_sync if sync else _close_async
+
+
+@pytest.mark.asyncio
+async def test_aclose_quietly_prefers_aclose_over_close() -> None:
+    """An async generator style aclose() wins when both spellings exist."""
+    stream = _Closable(aclose=True, close=True)
+
+    await aclose_quietly(stream)
+
+    assert stream.calls == ["aclose"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sync", [True, False])
+async def test_aclose_quietly_calls_close_sync_or_async(sync: bool) -> None:
+    """SDK streams spell it close(); both the sync and the awaitable form run exactly once."""
+    stream = _Closable(close=True, sync=sync)
+
+    await aclose_quietly(stream)
+
+    assert stream.calls == ["close"]
+
+
+@pytest.mark.asyncio
+async def test_aclose_quietly_ignores_an_iterator_without_close() -> None:
+    """A plain iterable with nothing to close is left alone."""
+    await aclose_quietly(object())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sync", [True, False])
+async def test_aclose_quietly_suppresses_a_failing_close(sync: bool) -> None:
+    """A close that raises is swallowed so it can never replace the stream's own outcome."""
+    stream = _Closable(close=True, sync=sync, fail=True)
+
+    await aclose_quietly(stream)
+
+    assert stream.calls == ["close"]
+
+
+@pytest.mark.asyncio
+async def test_aclose_quietly_suppresses_a_failing_aclose() -> None:
+    """The preferred aclose() gets the same treatment: its error is swallowed and it runs once."""
+    stream = _Closable(aclose=True, fail=True)
+
+    await aclose_quietly(stream)
+
+    assert stream.calls == ["aclose"]
+
+
 def test_async_iter_to_sync_iter_preserves_contextvars() -> None:
     current_context = contextvars.ContextVar("current_context", default="unset")
 
@@ -361,6 +446,85 @@ def test_async_iter_to_sync_iter_preserves_contextvars() -> None:
 
     assert chunks == ["one", "two"]
     assert current_context.get() == "unset"
+
+
+def test_on_demand_bridge_preserves_contextvars() -> None:
+    current_context = contextvars.ContextVar("on_demand_context", default="unset")
+
+    async def source() -> AsyncIterator[str]:
+        token = current_context.set("active")
+        try:
+            yield "one"
+            yield "two"
+        finally:
+            current_context.reset(token)
+
+    async def get_source() -> AsyncIterator[str]:
+        return source()
+
+    chunks = list(_async_source_to_sync_iter(get_source, on_demand=True))
+
+    assert chunks == ["one", "two"]
+    assert current_context.get() == "unset"
+
+
+def test_on_demand_bridge_reads_nothing_ahead_of_the_consumer() -> None:
+    produced = {"count": 0}
+
+    async def source() -> AsyncIterator[int]:
+        for index in range(500):
+            produced["count"] += 1
+            yield index
+
+    async def get_source() -> AsyncIterator[int]:
+        return source()
+
+    iterator = _async_source_to_sync_iter(get_source, on_demand=True)
+    try:
+        assert next(iterator) == 0
+        time.sleep(0.05)
+        assert produced["count"] == 1
+        assert next(iterator) == 1
+        assert produced["count"] == 2
+    finally:
+        iterator.close()
+
+
+def test_on_demand_bridge_runs_the_whole_source_in_one_task() -> None:
+    tasks: set[asyncio.Task[Any] | None] = set()
+
+    async def source() -> AsyncIterator[int]:
+        for index in range(3):
+            tasks.add(asyncio.current_task())
+            yield index
+
+    async def get_source() -> AsyncIterator[int]:
+        return source()
+
+    assert list(_async_source_to_sync_iter(get_source, on_demand=True)) == [0, 1, 2]
+    assert len(tasks) == 1
+
+
+def test_on_demand_bridge_propagates_source_errors_and_closes() -> None:
+    cleanup = {"done": False}
+    message = "source failed"
+
+    async def source() -> AsyncIterator[int]:
+        try:
+            yield 1
+            raise RuntimeError(message)
+        finally:
+            cleanup["done"] = True
+
+    async def get_source() -> AsyncIterator[int]:
+        return source()
+
+    iterator = _async_source_to_sync_iter(get_source, on_demand=True)
+
+    assert next(iterator) == 1
+    with pytest.raises(RuntimeError, match=message):
+        next(iterator)
+    assert cleanup["done"] is True
 
 
 def test_async_iter_to_sync_iter_closes_cleanly_on_generator_close() -> None:
@@ -570,3 +734,69 @@ def test_nested_private_loop_is_torn_down_when_closed_on_its_own_thread() -> Non
         time.sleep(0.05)
 
     assert live_nested_threads() == []
+
+
+@pytest.mark.parametrize("on_demand", [False, True])
+@pytest.mark.parametrize("cancel_at_open", [False, True])
+def test_sync_bridge_source_cancellation_behavior(on_demand: bool, cancel_at_open: bool) -> None:
+    cleaned = threading.Event()
+    finished = threading.Event()
+    errors: list[BaseException] = []
+
+    async def source() -> AsyncIterator[int]:
+        try:
+            yield 1
+            raise asyncio.CancelledError
+        finally:
+            cleaned.set()
+
+    async def get_source() -> AsyncIterator[int]:
+        if cancel_at_open:
+            raise asyncio.CancelledError
+        return source()
+
+    def consume() -> None:
+        try:
+            list(_async_source_to_sync_iter(get_source, on_demand=on_demand))
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            finished.set()
+
+    thread = threading.Thread(target=consume, daemon=True)
+    thread.start()
+    assert finished.wait(2), "Sync consumer hung after source cancellation"
+    thread.join()
+    if on_demand:
+        assert len(errors) == 1
+        assert isinstance(errors[0], asyncio.CancelledError)
+    else:
+        assert errors == []
+    assert cleaned.is_set() is not cancel_at_open
+
+
+@pytest.mark.parametrize("on_demand", [False, True])
+def test_sync_bridge_initializes_iterator(on_demand: bool) -> None:
+    class Source:
+        def __init__(self) -> None:
+            self.initializations = 0
+            self.remaining = 0
+
+        def __aiter__(self) -> "Source":
+            self.initializations += 1
+            self.remaining = 2
+            return self
+
+        async def __anext__(self) -> int:
+            if not self.remaining:
+                raise StopAsyncIteration
+            self.remaining -= 1
+            return self.remaining
+
+    source = Source()
+
+    async def get_source() -> AsyncIterator[int]:
+        return source
+
+    assert list(_async_source_to_sync_iter(get_source, on_demand=on_demand)) == [1, 0]
+    assert source.initializations == 1

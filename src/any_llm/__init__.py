@@ -46,6 +46,7 @@ from any_llm.exceptions import (
     MissingApiKeyError,
     ModelNotFoundError,
     ProviderError,
+    ProviderFileNotFoundError,
     RateLimitError,
     UnsupportedParameterError,
     UnsupportedProviderError,
@@ -53,6 +54,15 @@ from any_llm.exceptions import (
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription, TranscriptionVerbose
 from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.completion import ParsedChatCompletion, ParsedChatCompletionMessage, ParsedChoice
+from any_llm.types.files import (
+    AsyncFileDownload,
+    FileDeleted,
+    FileDownload,
+    FileInput,
+    FileMetadata,
+    FileOperation,
+    FilePage,
+)
 from any_llm.types.responses import ParsedResponse
 
 try:
@@ -64,6 +74,7 @@ except PackageNotFoundError:
 __all__ = [
     "AnyLLM",
     "AnyLLMError",
+    "AsyncFileDownload",
     "AudioSpeechParams",
     "AudioTranscriptionParams",
     "AuthenticationError",
@@ -76,6 +87,12 @@ __all__ = [
     "ContentFilterError",
     "ContentFilterFinishReasonError",
     "ContextLengthExceededError",
+    "FileDeleted",
+    "FileDownload",
+    "FileInput",
+    "FileMetadata",
+    "FileOperation",
+    "FilePage",
     "InvalidRequestError",
     "LLMProvider",
     "LengthFinishReasonError",
@@ -86,6 +103,7 @@ __all__ = [
     "ParsedChoice",
     "ParsedResponse",
     "ProviderError",
+    "ProviderFileNotFoundError",
     "RateLimitError",
     "Transcription",
     "TranscriptionVerbose",

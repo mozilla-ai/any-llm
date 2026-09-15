@@ -3,6 +3,7 @@ from collections.abc import AsyncIterator, Callable
 from typing import Any, Literal, TypeVar
 
 from any_llm.constants import REASONING_FIELD_NAMES
+from any_llm.utils.aio import aclose_quietly
 
 T = TypeVar("T")
 
@@ -77,76 +78,79 @@ async def process_streaming_reasoning_chunks(
     held_chunks: list[T] = []
     last_chunk_was_yielded = False
 
-    async for original_chunk in chunks:
-        content = get_content(original_chunk)
+    try:
+        async for original_chunk in chunks:
+            content = get_content(original_chunk)
 
-        if not content:
+            if not content:
+                if is_terminal(original_chunk) and (buffer or reasoning_buffer):
+                    held_chunks.append(original_chunk)
+                else:
+                    yield original_chunk
+                continue
+
+            last_chunk = original_chunk
+            last_chunk_was_yielded = False
+            buffer += content
+            content_parts = []
+            reasoning_parts = []
+
+            while buffer:
+                if current_tag is None:
+                    tag_info = find_reasoning_tag(buffer, opening=True)
+                    if tag_info:
+                        tag_start, tag_name = tag_info
+                        if tag_start > 0:
+                            content_parts.append(buffer[:tag_start])
+                        tag_full = f"<{tag_name}>"
+                        buffer = buffer[tag_start + len(tag_full) :]
+                        current_tag = tag_name
+                    else:
+                        partial_len = partial_reasoning_tag_suffix_len(buffer, tag_kind="opening")
+                        if partial_len:
+                            if partial_len < len(buffer):
+                                content_parts.append(buffer[:-partial_len])
+                            buffer = buffer[len(buffer) - partial_len :]
+                            break
+                        content_parts.append(buffer)
+                        buffer = ""
+                else:
+                    tag_close = f"</{current_tag}>"
+                    tag_end = buffer.find(tag_close)
+                    if tag_end != -1:
+                        reasoning_parts.append(reasoning_buffer + buffer[:tag_end])
+                        reasoning_buffer = ""
+                        buffer = buffer[tag_end + len(tag_close) :]
+                        current_tag = None
+                    else:
+                        partial_len = partial_reasoning_tag_suffix_len(buffer, tag_kind="closing")
+                        if partial_len:
+                            reasoning_buffer += buffer[: len(buffer) - partial_len]
+                            buffer = buffer[len(buffer) - partial_len :]
+                            break
+                        reasoning_buffer += buffer
+                        buffer = ""
+
             if is_terminal(original_chunk) and (buffer or reasoning_buffer):
-                held_chunks.append(original_chunk)
-            else:
-                yield original_chunk
-            continue
+                terminal_chunk = original_chunk
+                terminal_content_parts.extend(content_parts)
+                terminal_reasoning_parts.extend(reasoning_parts)
+                continue
 
-        last_chunk = original_chunk
-        last_chunk_was_yielded = False
-        buffer += content
-        content_parts = []
-        reasoning_parts = []
-
-        while buffer:
-            if current_tag is None:
-                tag_info = find_reasoning_tag(buffer, opening=True)
-                if tag_info:
-                    tag_start, tag_name = tag_info
-                    if tag_start > 0:
-                        content_parts.append(buffer[:tag_start])
-                    tag_full = f"<{tag_name}>"
-                    buffer = buffer[tag_start + len(tag_full) :]
-                    current_tag = tag_name
-                else:
-                    partial_len = partial_reasoning_tag_suffix_len(buffer, tag_kind="opening")
-                    if partial_len:
-                        if partial_len < len(buffer):
-                            content_parts.append(buffer[:-partial_len])
-                        buffer = buffer[len(buffer) - partial_len :]
-                        break
-                    content_parts.append(buffer)
-                    buffer = ""
-            else:
-                tag_close = f"</{current_tag}>"
-                tag_end = buffer.find(tag_close)
-                if tag_end != -1:
-                    reasoning_parts.append(reasoning_buffer + buffer[:tag_end])
-                    reasoning_buffer = ""
-                    buffer = buffer[tag_end + len(tag_close) :]
-                    current_tag = None
-                else:
-                    partial_len = partial_reasoning_tag_suffix_len(buffer, tag_kind="closing")
-                    if partial_len:
-                        reasoning_buffer += buffer[: len(buffer) - partial_len]
-                        buffer = buffer[len(buffer) - partial_len :]
-                        break
-                    reasoning_buffer += buffer
-                    buffer = ""
-
-        if is_terminal(original_chunk) and (buffer or reasoning_buffer):
-            terminal_chunk = original_chunk
-            terminal_content_parts.extend(content_parts)
-            terminal_reasoning_parts.extend(reasoning_parts)
-            continue
-
-        if content_parts or reasoning_parts:
-            modified_chunk = original_chunk.model_copy(deep=True)  # type: ignore[attr-defined]
-            modified_chunk = set_content(modified_chunk, "".join(content_parts) if content_parts else None)
-            if reasoning_parts:
-                modified_chunk = set_reasoning(modified_chunk, "".join(reasoning_parts))
-            yield modified_chunk
-            last_chunk_was_yielded = True
-        elif not buffer:
-            modified_chunk = original_chunk.model_copy(deep=True)  # type: ignore[attr-defined]
-            modified_chunk = set_content(modified_chunk, None)
-            yield modified_chunk
-            last_chunk_was_yielded = True
+            if content_parts or reasoning_parts:
+                modified_chunk = original_chunk.model_copy(deep=True)  # type: ignore[attr-defined]
+                modified_chunk = set_content(modified_chunk, "".join(content_parts) if content_parts else None)
+                if reasoning_parts:
+                    modified_chunk = set_reasoning(modified_chunk, "".join(reasoning_parts))
+                yield modified_chunk
+                last_chunk_was_yielded = True
+            elif not buffer:
+                modified_chunk = original_chunk.model_copy(deep=True)  # type: ignore[attr-defined]
+                modified_chunk = set_content(modified_chunk, None)
+                yield modified_chunk
+                last_chunk_was_yielded = True
+    finally:
+        await aclose_quietly(chunks)
 
     if terminal_chunk is not None:
         final_chunk = terminal_chunk.model_copy(deep=True)  # type: ignore[attr-defined]
