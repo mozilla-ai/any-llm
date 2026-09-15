@@ -44,23 +44,25 @@ def clear_azure_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
-def test_azure_ci_models_match_deployment_names(
-    embedding_provider_model_map: dict[LLMProvider, str],
-    azure_media_model_map: dict[str, str],
-) -> None:
-    assert embedding_provider_model_map[LLMProvider.AZUREOPENAI] == "text-embedding-3-small"
-    assert azure_media_model_map == {
-        "image": "gpt-image-2",
-        "transcription": "gpt-4o-mini-transcribe",
-        "speech": "gpt-4o-mini-tts",
+def test_azure_ci_deployments_use_environment(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
+    deployments = {
+        "AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "ci-embedding",
+        "AZURE_OPENAI_IMAGE_DEPLOYMENT": "ci-image",
+        "AZURE_OPENAI_TRANSCRIPTION_DEPLOYMENT": "ci-transcription",
+        "AZURE_OPENAI_SPEECH_DEPLOYMENT": "ci-speech",
     }
+    for variable, deployment in deployments.items():
+        monkeypatch.setenv(variable, deployment)
 
+    embedding_provider_model_map = request.getfixturevalue("embedding_provider_model_map")
+    azure_media_model_map = request.getfixturevalue("azure_media_model_map")
 
-def test_azure_ci_endpoint_is_fixed(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
-    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://unrelated.example")
-    config = request.getfixturevalue("provider_client_config")[LLMProvider.AZUREOPENAI]
-    assert config["api_base"] == "https://mlrun-me8bof5t-eastus2.cognitiveservices.azure.com/"
-    assert config["api_version"] == "v1"
+    assert embedding_provider_model_map[LLMProvider.AZUREOPENAI] == "ci-embedding"
+    assert azure_media_model_map == {
+        "image": "ci-image",
+        "transcription": "ci-transcription",
+        "speech": "ci-speech",
+    }
 
 
 @pytest.mark.parametrize(

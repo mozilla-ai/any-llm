@@ -23,6 +23,8 @@ async def test_embedding_providers_async(
             pytest.skip(f"{provider.value} does not support embeddings, skipping")
 
         model_id = embedding_provider_model_map[provider]
+        if provider == LLMProvider.AZUREOPENAI and not model_id:
+            pytest.skip("Azure embedding deployment is not configured: set AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
         result = await llm.aembedding(model=model_id, inputs="Hello world")
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:
