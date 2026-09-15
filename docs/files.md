@@ -171,10 +171,10 @@ Beta values from configured headers, request headers, and `betas` are merged.
 Anthropic SDK 0.124.0 or newer is required.
 
 Unsupported options raise `UnsupportedParameterError`. Nonpositive `limit`,
-invalid `expires_in`, nonpositive `chunk_size`, and invalid file IDs raise
-`InvalidRequestError`. Provider-specific numeric limits and option combinations
-are validated by the server, so SDK updates do not require copying server limits
-into any-llm.
+invalid `expires_in`, nonpositive `chunk_size`, invalid file IDs, and upload
+paths that cannot be opened raise `InvalidRequestError`. Provider-specific
+numeric limits and option combinations are validated by the server, so SDK
+updates do not require copying server limits into any-llm.
 
 Uploads default to **zero automatic retries**, even if the provider instance
 has retries enabled. A caller can explicitly override `max_retries`, but a lost

@@ -518,6 +518,24 @@ async def test_file_handle_upload_is_bounded_and_does_not_close_callers_handle()
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("unified", ["0", "1"])
+async def test_unreadable_upload_path_is_a_request_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unified: str
+) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", unified)
+    provider = provider_for(lambda _: pytest.fail("Unreadable path reached network"))
+    try:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with pytest.raises(InvalidRequestError, match=r"missing\.pdf") as error:
+                await provider.aupload_file(tmp_path / "missing.pdf")
+        assert isinstance(error.value.original_exception, FileNotFoundError)
+        assert [str(entry.message) for entry in caught] == []
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ["retrieve", "delete", "download"])
 async def test_unknown_options_rejected(operation: str) -> None:
     provider = provider_for(lambda _: pytest.fail("Unknown option reached network"))
