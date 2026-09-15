@@ -19,6 +19,7 @@ Key fields:
 |-------|------|-------------|
 | `choices` | `list[Choice]` |  |
 | `service_tier` | `str \| None` |  |
+| `usage` | `CompletionUsage \| None` |  |
 
 ### `ChatCompletionChunk`
 
