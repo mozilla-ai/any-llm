@@ -238,7 +238,8 @@ class BaseOpenAIProvider(AnyLLM):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         if params.reasoning_effort == "auto":
             params.reasoning_effort = self._DEFAULT_REASONING_EFFORT
-        params.messages = strip_extra_content(params.messages)
+        # An OpenAI-compatible base URL may be Gemini's, which needs its thought signatures back.
+        params.messages = strip_extra_content(params.messages, keep_namespaces=("google",))
 
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 

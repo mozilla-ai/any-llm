@@ -528,3 +528,44 @@ def test_strip_extra_content_returns_untouched_messages_as_same_objects() -> Non
     result = strip_extra_content([plain, with_tool_calls])
     assert result[0] is plain
     assert result[1] is with_tool_calls
+
+
+def test_strip_extra_content_keeps_listed_namespaces_on_messages_and_tool_calls() -> None:
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": "ok",
+            "extra_content": {"google": {"thought_signature": "bXNn"}, "anthropic": {"signature": "sig"}},
+            "tool_calls": [
+                {"id": "call_1", "extra_content": {"google": {"thought_signature": "c2ln"}}},
+                {"id": "call_2", "extra_content": {"anthropic": {"signature": "sig"}}},
+            ],
+        }
+    ]
+    assert strip_extra_content(messages, keep_namespaces=("google",)) == [
+        {
+            "role": "assistant",
+            "content": "ok",
+            "extra_content": {"google": {"thought_signature": "bXNn"}},
+            "tool_calls": [
+                {"id": "call_1", "extra_content": {"google": {"thought_signature": "c2ln"}}},
+                {"id": "call_2"},
+            ],
+        }
+    ]
+
+
+def test_strip_extra_content_returns_fully_kept_message_as_same_object() -> None:
+    message = {
+        "role": "assistant",
+        "content": None,
+        "extra_content": {"google": {"thought_signature": "bXNn"}},
+        "tool_calls": [{"id": "call_1", "extra_content": {"google": {"thought_signature": "c2ln"}}}],
+    }
+    assert strip_extra_content([message], keep_namespaces=("google",))[0] is message
+
+
+@pytest.mark.parametrize("extra_content", [{}, None, "not-a-dict"])
+def test_strip_extra_content_drops_empty_or_malformed_side_channel(extra_content: object) -> None:
+    messages: list[dict[str, Any]] = [{"role": "assistant", "content": "ok", "extra_content": extra_content}]
+    assert strip_extra_content(messages, keep_namespaces=("google",)) == [{"role": "assistant", "content": "ok"}]

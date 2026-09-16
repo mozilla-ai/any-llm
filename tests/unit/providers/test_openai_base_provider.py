@@ -509,8 +509,8 @@ async def test_stream_with_basemodel_response_format_uses_create_json_schema() -
 
 
 @pytest.mark.asyncio
-async def test_acompletion_strips_extra_content_from_messages_and_tool_calls() -> None:
-    """extra_content is an any_llm side-channel; strict OpenAI-compatible backends reject it."""
+async def test_acompletion_strips_extra_content_but_keeps_gemini_thought_signatures() -> None:
+    """Strict OpenAI-compatible backends reject extra_content, but Gemini's needs its google namespace back."""
 
     class TestProvider(BaseOpenAIProvider):
         PROVIDER_NAME = "TestProvider"
@@ -550,7 +550,12 @@ async def test_acompletion_strips_extra_content_from_messages_and_tool_calls() -
             "role": "assistant",
             "content": None,
             "tool_calls": [
-                {"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}}
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": "{}"},
+                    "extra_content": {"google": {"thought_signature": "c2ln"}},
+                }
             ],
         }
 
