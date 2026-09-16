@@ -15,6 +15,9 @@ from any_llm.providers.openai.openai import OpenaiProvider
 from any_llm.utils.aio import run_async_in_sync
 from tests.constants import EXPECTED_PROVIDERS
 
+# Azure batch uploads require at least three days; OpenAI accepts the same duration.
+BATCH_EXPIRY_SECONDS = 3 * 24 * 60 * 60
+
 # Uploading a batch input does not submit a batch or invoke a model.
 BATCH_CONTENT = (
     json.dumps(
@@ -95,14 +98,14 @@ async def test_openai_files_lifecycle(
     path = tmp_path / f"any-llm-test-{uuid.uuid4().hex}.jsonl"
     try:
         path.write_bytes(BATCH_CONTENT)
-        uploaded = await provider.aupload_file(path, purpose="batch", expires_in=3600)
+        uploaded = await provider.aupload_file(path, purpose="batch", expires_in=BATCH_EXPIRY_SECONDS)
         file_ids.append(uploaded.id)
         assert uploaded.filename == path.name
         assert uploaded.size_bytes == len(BATCH_CONTENT)
         assert uploaded.purpose == "batch"
         assert uploaded.created_at is not None
         assert uploaded.expires_at is not None
-        assert (uploaded.expires_at - uploaded.created_at).total_seconds() == 3600
+        assert (uploaded.expires_at - uploaded.created_at).total_seconds() == BATCH_EXPIRY_SECONDS
         retrieved = await provider.aretrieve_file(uploaded.id)
         assert retrieved.id == uploaded.id
         assert retrieved.size_bytes == uploaded.size_bytes
@@ -112,7 +115,7 @@ async def test_openai_files_lifecycle(
             BATCH_CONTENT,
             filename=f"any-llm-test-{uuid.uuid4().hex}.jsonl",
             purpose="batch",
-            expires_in=3600,
+            expires_in=BATCH_EXPIRY_SECONDS,
         )
         file_ids.append(second.id)
         first_page = await provider.alist_files(limit=1, purpose="batch", order="desc")
@@ -147,7 +150,7 @@ async def test_openai_batch_file_download(
             BATCH_CONTENT,
             filename=f"any-llm-test-{uuid.uuid4().hex}.jsonl",
             purpose="batch",
-            expires_in=3600,
+            expires_in=BATCH_EXPIRY_SECONDS,
         )
         file_id = uploaded.id
         async with provider.adownload_file(file_id, chunk_size=8) as download:
@@ -193,7 +196,7 @@ def test_openai_files_sync_lifecycle(files_provider: OpenaiProvider | Azureopena
             BATCH_CONTENT,
             filename=f"any-llm-test-{uuid.uuid4().hex}.jsonl",
             purpose="batch",
-            expires_in=3600,
+            expires_in=BATCH_EXPIRY_SECONDS,
         )
         file_id = uploaded.id
         assert uploaded.size_bytes == len(BATCH_CONTENT)
