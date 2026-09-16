@@ -18,34 +18,6 @@ from any_llm.types.image import ImageGenerationParams, ImagesResponse
 _AzureADTokenProvider = Callable[[], str | Awaitable[str]]
 
 
-class _AzureOpenAIStream(AsyncIterator[ChatCompletionChunk]):
-    """Convert and close an Azure OpenAI stream, including before first use."""
-
-    def __init__(self, response: AsyncStream[OpenAIChatCompletionChunk], provider: "AzureopenaiProvider") -> None:
-        self._response = response
-        self._iterator = aiter(response)
-        self._provider = provider
-        self._closed = False
-
-    @override
-    def __aiter__(self) -> "_AzureOpenAIStream":
-        return self
-
-    @override
-    async def __anext__(self) -> ChatCompletionChunk:
-        try:
-            chunk = await anext(self._iterator)
-            return self._provider._convert_completion_chunk_response(chunk)
-        except BaseException:
-            await self.aclose()
-            raise
-
-    async def aclose(self) -> None:
-        if not self._closed:
-            self._closed = True
-            await self._response.close()
-
-
 class AzureopenaiProvider(BaseOpenAIProvider):
     """Azure OpenAI v1 with GA core routes and operation-scoped preview media.
 
@@ -194,7 +166,15 @@ class AzureopenaiProvider(BaseOpenAIProvider):
         if isinstance(response, OpenAIChatCompletion):
             return self._convert_completion_response(response)
 
-        return _AzureOpenAIStream(response, self)
+        async def chunks() -> AsyncIterator[ChatCompletionChunk]:
+            # Close the SDK stream on every exit; the base generator leaves it to the GC.
+            try:
+                async for chunk in response:
+                    yield self._convert_completion_chunk_response(chunk)
+            finally:
+                await response.close()
+
+        return chunks()
 
     def _media_options(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         # Azure documents these routes under the v1 preview reference, not the
