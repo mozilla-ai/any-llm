@@ -174,7 +174,7 @@ response = llm.responses(
 print(response.output_text)
 ```
 
-Gemini text Interactions accept string input, instructions, maximum output tokens, and per-request timeouts. This first slice does not expose `store`, so Google's default storage behavior applies. Other Responses parameters, including media, tools, reasoning controls, structured output, chaining, metadata, background execution, and streaming raise `UnsupportedParameterError`.
+Gemini text Interactions accept string input, instructions, maximum output tokens, and per-request timeouts. Omitting `store` uses Google's default storage behavior. Passing `store=True` or `store=False` raises `UnsupportedParameterError`. Other unsupported Responses parameters include media, tools, reasoning controls, structured output, chaining, metadata, background execution, and streaming.
 
 ## Embeddings
 

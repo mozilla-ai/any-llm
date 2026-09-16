@@ -93,4 +93,4 @@ class GeminiProvider(GoogleProvider):
         if timeout is not None:
             create_kwargs["timeout"] = timeout
         interaction = await self.client.aio.interactions.create(**create_kwargs)
-        return convert_interaction_to_response(interaction)
+        return convert_interaction_to_response(interaction, fallback_model=params.model)
