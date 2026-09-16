@@ -155,6 +155,8 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --group tests --extra all
+          uv pip install --no-deps "otari==0.3.0"
+          python -c "from importlib.metadata import version; print('Otari:', version('otari')); assert version('otari') == '0.3.0'"
 
       - name: Run Integration tests (parallel with xdist)
         env:
