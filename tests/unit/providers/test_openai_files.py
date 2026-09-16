@@ -316,7 +316,7 @@ async def test_missing_file_error_is_operation_specific(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("retries", [None, 1])
+@pytest.mark.parametrize("retries", [None, 0, 1])
 async def test_upload_retry_override_and_rate_limit_metadata(
     retries: int | None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -332,7 +332,7 @@ async def test_upload_retry_override_and_rate_limit_metadata(
     async with provider.client:
         with pytest.raises(RateLimitError) as error:
             await provider.aupload_file(b"data", purpose="batch", **options)
-    assert len(requests) == (1 if retries is None else 2)
+    assert len(requests) == (1 if retries is None else retries + 1)
     assert error.value.retry_after == "0"
 
 

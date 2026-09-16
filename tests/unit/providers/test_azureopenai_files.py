@@ -184,8 +184,8 @@ async def test_azure_files_error_mapping(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("retries", [0, 1])
-async def test_azure_file_upload_retry_override_refreshes_entra_token(retries: int) -> None:
+@pytest.mark.parametrize("retries", [None, 0, 1])
+async def test_azure_file_upload_retry_override_refreshes_entra_token(retries: int | None) -> None:
     requests: list[httpx.Request] = []
     tokens = iter(["first-token", "second-token"])
 
@@ -199,13 +199,14 @@ async def test_azure_file_upload_retry_override_refreshes_entra_token(retries: i
         max_retries=3,
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)),
     )
-    options: dict[str, Any] = {"max_retries": retries} if retries else {}
+    options: dict[str, Any] = {} if retries is None else {"max_retries": retries}
     async with provider.client:
         with pytest.raises(APIStatusError):
             await provider.aupload_file(b"{}\n", purpose="batch", **options)
-    assert len(requests) == retries + 1
+    expected_requests = 1 if retries is None else retries + 1
+    assert len(requests) == expected_requests
     assert [request.headers["authorization"] for request in requests] == ["Bearer first-token", "Bearer second-token"][
-        : retries + 1
+        :expected_requests
     ]
 
 
