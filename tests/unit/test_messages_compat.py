@@ -1,7 +1,7 @@
 """Tests for bidirectional Anthropic Messages ↔ OpenAI Chat Completions conversion."""
 
 import json
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 from openai.types.completion_usage import CompletionUsage as OpenAICompletionUsage
@@ -1497,6 +1497,88 @@ def test_streaming_refusal_delta_maps_to_stop_reason_refusal() -> None:
     assert isinstance(delta_event, ContentBlockDeltaEvent)
     assert delta_event.delta.type == "text_delta"
     assert delta_event.delta.text == "I cannot assist with that."
+    assert state.stop_reason == "refusal"
+
+
+def test_content_filter_with_partial_content_keeps_content_and_refusal() -> None:
+    """A filtered completion keeps its partial answer and appends the refusal as a separate block."""
+    completion = ChatCompletion(
+        id="chatcmpl-filtered",
+        model="gemini-2.5-flash",
+        created=0,
+        object="chat.completion",
+        choices=[
+            Choice(
+                index=0,
+                finish_reason="content_filter",
+                message=ChatCompletionMessage(
+                    role="assistant",
+                    content="partial answer",
+                    refusal="Response blocked by Gemini content filtering.",
+                ),
+            )
+        ],
+    )
+    result = chat_completion_to_message_response(completion)
+    assert result.stop_reason == "refusal"
+    assert [block.model_dump(include={"type", "text"}) for block in result.content] == [
+        {"type": "text", "text": "partial answer"},
+        {"type": "text", "text": "Response blocked by Gemini content filtering."},
+    ]
+
+
+def _refusal_chunk(
+    delta: ChoiceDelta, finish_reason: Literal["stop", "content_filter"] | None = None
+) -> ChatCompletionChunk:
+    return ChatCompletionChunk(
+        id="chunk-refusal",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[ChunkChoice(index=0, delta=delta, finish_reason=finish_reason)],
+    )
+
+
+def test_streaming_refusal_survives_terminal_stop_chunk() -> None:
+    """OpenAI ends a streamed refusal with finish_reason='stop'; the stop_reason must stay 'refusal'."""
+    state = StreamingState()
+    events = []
+    for chunk in (
+        _refusal_chunk(ChoiceDelta(role="assistant", refusal="")),
+        _refusal_chunk(ChoiceDelta(refusal="I cannot ")),
+        _refusal_chunk(ChoiceDelta(refusal="assist with that.")),
+        _refusal_chunk(ChoiceDelta(), finish_reason="stop"),
+    ):
+        events.extend(chat_completion_chunk_to_message_stream_events(chunk, state))
+
+    assert state.stop_reason == "refusal"
+    assert [e.type for e in events] == [
+        "message_start",
+        "content_block_start",
+        "content_block_delta",
+        "content_block_delta",
+        "content_block_stop",
+    ]
+
+
+def test_streaming_content_and_refusal_in_one_chunk_use_separate_blocks() -> None:
+    """A chunk carrying both partial content and a refusal emits both, each in its own text block."""
+    state = StreamingState()
+    events = chat_completion_chunk_to_message_stream_events(
+        _refusal_chunk(
+            ChoiceDelta(content="partial", refusal="Response blocked by Gemini content filtering."),
+            finish_reason="content_filter",
+        ),
+        state,
+    )
+
+    starts = [e for e in events if isinstance(e, ContentBlockStartEvent)]
+    deltas = [e for e in events if isinstance(e, ContentBlockDeltaEvent)]
+    assert [e.index for e in starts] == [0, 1]
+    assert [(e.index, e.delta.text) for e in deltas if e.delta.type == "text_delta"] == [
+        (0, "partial"),
+        (1, "Response blocked by Gemini content filtering."),
+    ]
     assert state.stop_reason == "refusal"
 
 

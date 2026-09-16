@@ -503,11 +503,11 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
         if msg.reasoning:
             content_blocks.append(ThinkingBlock(type="thinking", thinking=msg.reasoning.content))
 
+        if msg.content:
+            content_blocks.append(TextBlock(type="text", text=msg.content))
+
         if msg.refusal:
             content_blocks.append(TextBlock(type="text", text=msg.refusal))
-            stop_reason = "refusal"
-        elif msg.content:
-            content_blocks.append(TextBlock(type="text", text=msg.content))
 
         if msg.tool_calls:
             for tc in msg.tool_calls:
@@ -527,9 +527,7 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
                     )
                 )
 
-        if not msg.refusal:
-            finish_reason = choice.finish_reason
-            stop_reason = _finish_reason_to_stop_reason(finish_reason)
+        stop_reason = "refusal" if msg.refusal else _finish_reason_to_stop_reason(choice.finish_reason)
 
     if not content_blocks:
         content_blocks.append(TextBlock(type="text", text=""))
@@ -671,28 +669,7 @@ def chat_completion_chunk_to_message_stream_events(
             )
         )
 
-    if delta.refusal is not None:
-        if state.current_block_type != "text":
-            _close_current_block(state, events)
-            state.current_block_index += 1
-            state.current_block_type = "text"
-            events.append(
-                ContentBlockStartEvent(
-                    type="content_block_start",
-                    index=state.current_block_index,
-                    content_block=TextBlock(type="text", text=""),
-                )
-            )
-        if delta.refusal:
-            state.stop_reason = "refusal"
-            events.append(
-                ContentBlockDeltaEvent(
-                    type="content_block_delta",
-                    index=state.current_block_index,
-                    delta=TextDelta(type="text_delta", text=delta.refusal),
-                )
-            )
-    elif delta.content is not None:
+    if delta.content is not None:
         if state.current_block_type != "text":
             _close_current_block(state, events)
             state.current_block_index += 1
@@ -712,6 +689,29 @@ def chat_completion_chunk_to_message_stream_events(
                     delta=TextDelta(type="text_delta", text=delta.content),
                 )
             )
+
+    if delta.refusal:
+        state.stop_reason = "refusal"
+        # A distinct block type keeps refusal text out of the block holding any partial answer,
+        # matching the separate TextBlock the non-streaming conversion produces.
+        if state.current_block_type != "refusal":
+            _close_current_block(state, events)
+            state.current_block_index += 1
+            state.current_block_type = "refusal"
+            events.append(
+                ContentBlockStartEvent(
+                    type="content_block_start",
+                    index=state.current_block_index,
+                    content_block=TextBlock(type="text", text=""),
+                )
+            )
+        events.append(
+            ContentBlockDeltaEvent(
+                type="content_block_delta",
+                index=state.current_block_index,
+                delta=TextDelta(type="text_delta", text=delta.refusal),
+            )
+        )
 
     if delta.tool_calls:
         for tc in delta.tool_calls:
@@ -751,7 +751,9 @@ def chat_completion_chunk_to_message_stream_events(
 
     if choice.finish_reason:
         _close_current_block(state, events)
-        state.stop_reason = _finish_reason_to_stop_reason(choice.finish_reason)
+        # OpenAI ends a streamed refusal with finish_reason="stop", which must not mask the refusal.
+        if state.stop_reason != "refusal":
+            state.stop_reason = _finish_reason_to_stop_reason(choice.finish_reason)
 
     return events
 
