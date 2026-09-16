@@ -1371,6 +1371,7 @@ class AnyLLM(FilesMixin, ABC):
                 _flatten_responses_tool(tool) for tool in prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
             ]
 
+        provider_kwargs = {name: kwargs.pop(name) for name in ("extra_headers", "extra_query") if name in kwargs}
         params = ResponsesParams(
             model=model,
             input=cast("ResponseInputPayload", input_data),
@@ -1404,7 +1405,6 @@ class AnyLLM(FilesMixin, ABC):
             **kwargs,
         )
 
-        provider_kwargs: dict[str, Any] = {}
         self._validate_and_forward_timeout(timeout, provider_kwargs)
         if extra_body is not None:
             provider_kwargs["extra_body"] = extra_body
