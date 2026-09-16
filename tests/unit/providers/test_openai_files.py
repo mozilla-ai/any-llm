@@ -250,7 +250,7 @@ async def test_delete_preserves_acknowledgement() -> None:
     async with provider.client:
         result = await provider.adelete_file("file-test")
     assert result.deleted is True
-    assert result.type is None
+    assert "type" not in result.model_dump()
     assert result.model_extra == {"object": "file", "future": 1}
 
 
