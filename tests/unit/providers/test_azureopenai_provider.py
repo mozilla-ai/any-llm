@@ -151,7 +151,6 @@ def test_azureopenai_explicit_azure_arguments_override_environment(monkeypatch: 
     [
         ({"api_version": "2024-10-21"}, "api_version"),
         ({"azure_deployment": "deployment-name"}, "azure_deployment"),
-        ({"default_query": {"api-version": "2024-10-21"}}, "default_query['api-version']"),
     ],
 )
 def test_azureopenai_rejects_legacy_routing_options(legacy_options: dict[str, object], expected_parameter: str) -> None:

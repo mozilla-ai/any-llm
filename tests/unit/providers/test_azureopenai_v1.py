@@ -1,7 +1,7 @@
 import asyncio
 import copy
 import json
-from collections.abc import AsyncIterator, Coroutine
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -82,7 +82,6 @@ def test_explicit_v1_overrides_dated_environment(monkeypatch: pytest.MonkeyPatch
     [
         ({"azure_deployment": "old"}, "Pass your Azure deployment name as `model`"),
         ({"api_version": "2025-03-01-preview"}, "Remove the dated version"),
-        ({"api_version": "v1", "default_query": {"api-version": "preview"}}, "Remove this query entry"),
     ],
 )
 def test_configuration_errors_have_migration_guidance(options: dict[str, Any], guidance: str) -> None:
@@ -416,31 +415,6 @@ async def test_media_uses_scoped_v1_preview_and_preserves_options(version: str |
         assert b"audio-deployment" in requests[1].content
         assert json.loads(requests[2].content)["voice"] == "alloy"
         assert query == ({"request": "yes", "api-version": version} if version else {"request": "yes"})
-    finally:
-        await provider.client.close()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("operation", ["image", "transcription", "speech"])
-async def test_media_rejects_dated_request_versions(operation: str) -> None:
-    transport, requests = _azure_transport()
-    provider = AzureopenaiProvider(
-        api_key="key",
-        api_base="https://resource.azure.com",
-        http_client=httpx.AsyncClient(transport=transport),
-    )
-    kwargs = {"extra_query": {"api-version": "2025-03-01-preview"}}
-    request: Coroutine[Any, Any, Any]
-    if operation == "image":
-        request = provider._aimage_generation(ImageGenerationParams(model_id="deployment", prompt="cat"), **kwargs)
-    elif operation == "transcription":
-        request = provider._atranscription(AudioTranscriptionParams(model_id="deployment", file=b"audio"), **kwargs)
-    else:
-        request = provider._aspeech(AudioSpeechParams(model_id="deployment", input="Hello", voice="alloy"), **kwargs)
-    try:
-        with pytest.raises(UnsupportedParameterError, match="not a dated API version"):
-            await request
-        assert requests == []
     finally:
         await provider.client.close()
 

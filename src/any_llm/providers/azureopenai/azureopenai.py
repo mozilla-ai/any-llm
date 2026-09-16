@@ -163,18 +163,6 @@ class AzureopenaiProvider(BaseOpenAIProvider):
                 environment_version,
                 self.PROVIDER_NAME,
             )
-        # The GA schema still permits an explicit `api-version=v1`, even though
-        # the lifecycle guide recommends omitting it. Dated values belong to the
-        # retired route family, and preview features now use headers or paths.
-        # https://learn.microsoft.com/rest/api/microsoft-foundry/azureopenai/chat
-        if default_query is not None and default_query.get("api-version", "v1") != "v1":
-            parameter_name = "default_query['api-version']"
-            raise UnsupportedParameterError(
-                parameter_name,
-                self.PROVIDER_NAME,
-                "Remove this query entry or use 'v1'. Media preview options are scoped to individual requests.",
-            )
-
         client_api_key = self._resolve_credential(api_key, azure_ad_token, azure_ad_token_provider)
 
         endpoint = api_base or azure_endpoint or os.getenv(self.ENV_API_BASE_NAME)
@@ -213,13 +201,6 @@ class AzureopenaiProvider(BaseOpenAIProvider):
         # dated deployment API. Keep preview local to media on the same client.
         # https://learn.microsoft.com/azure/ai-foundry/openai/reference-preview-latest
         query = {"api-version": "preview", **(kwargs.get("extra_query") or {})}
-        if query["api-version"] not in ("v1", "preview"):
-            parameter_name = "extra_query['api-version']"
-            raise UnsupportedParameterError(
-                parameter_name,
-                self.PROVIDER_NAME,
-                "Media uses /openai/v1/. Use 'preview' (default) or 'v1', not a dated API version.",
-            )
         return {**kwargs, "extra_query": query}
 
     @override
