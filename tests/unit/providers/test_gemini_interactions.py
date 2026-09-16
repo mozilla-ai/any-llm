@@ -4,7 +4,7 @@ import logging
 import time
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
@@ -751,16 +751,19 @@ async def test_convert_interaction_stream_rejects_malformed_order(
 
 
 @pytest.mark.asyncio
-async def test_convert_interaction_stream_closes_source_when_consumer_stops() -> None:
+@pytest.mark.parametrize("synchronous_close", [False, True], ids=["async-close", "sync-close"])
+async def test_convert_interaction_stream_closes_source_when_consumer_stops(*, synchronous_close: bool) -> None:
     stream = AsyncMock()
-    stream.close = AsyncMock()
+    stream.close = Mock(return_value=None) if synchronous_close else AsyncMock()
     stream.__aiter__.return_value = [_created()]
 
     converted = convert_interaction_stream(stream, model="requested")
     await anext(converted)
     await converted.aclose()
 
-    stream.close.assert_awaited_once_with()
+    stream.close.assert_called_once_with()
+    if not synchronous_close:
+        stream.close.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio
