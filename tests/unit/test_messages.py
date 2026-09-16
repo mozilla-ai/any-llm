@@ -1796,6 +1796,50 @@ async def test_amessages_output_format_empty_content_leaves_parsed_none() -> Non
 
 
 @pytest.mark.asyncio
+async def test_amessages_output_format_refusal_returns_parsed_message() -> None:
+    """A refused structured-output turn returns stop_reason='refusal' with the refusal text instead of raising."""
+    from pydantic import BaseModel
+
+    from any_llm.types.completion import ChatCompletion
+
+    class City(BaseModel):
+        city_name: str
+
+    provider = _openai_provider()
+    provider._acompletion = AsyncMock(
+        return_value=ChatCompletion.model_validate(
+            {
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "test-model",
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": None, "refusal": "I cannot help with that."},
+                    }
+                ],
+            }
+        )
+    )
+
+    result = await provider.amessages(
+        model="test-model",
+        messages=[{"role": "user", "content": "Hi"}],
+        max_tokens=128,
+        output_format=City,
+    )
+
+    assert isinstance(result, ParsedMessage)
+    assert result.stop_reason == "refusal"
+    assert result.parsed_output is None
+    block = result.content[0]
+    assert isinstance(block, ParsedTextBlock)
+    assert block.text == "I cannot help with that."
+
+
+@pytest.mark.asyncio
 async def test_amessages_output_format_rejects_streaming() -> None:
     """output_format combined with stream=True raises ValueError."""
     from pydantic import BaseModel

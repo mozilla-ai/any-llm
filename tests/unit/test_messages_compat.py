@@ -1561,6 +1561,25 @@ def test_streaming_refusal_survives_terminal_stop_chunk() -> None:
     ]
 
 
+def test_streaming_content_filter_without_refusal_text_maps_to_refusal() -> None:
+    """A provider that reports only finish_reason='content_filter' (no refusal text) still ends with 'refusal'."""
+    state = StreamingState()
+    events = []
+    for chunk in (
+        _refusal_chunk(ChoiceDelta(role="assistant", content="partial")),
+        _refusal_chunk(ChoiceDelta(), finish_reason="content_filter"),
+    ):
+        events.extend(chat_completion_chunk_to_message_stream_events(chunk, state))
+
+    assert state.stop_reason == "refusal"
+    assert [e.type for e in events] == [
+        "message_start",
+        "content_block_start",
+        "content_block_delta",
+        "content_block_stop",
+    ]
+
+
 def test_streaming_content_and_refusal_in_one_chunk_use_separate_blocks() -> None:
     """A chunk carrying both partial content and a refusal emits both, each in its own text block."""
     state = StreamingState()
