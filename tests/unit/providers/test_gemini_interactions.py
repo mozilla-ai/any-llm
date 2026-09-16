@@ -637,6 +637,23 @@ async def test_convert_interaction_stream_raises_error_event() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "expected_code"),
+    [(None, None), (Error(code="gateway_timeout", message=""), "gateway_timeout")],
+    ids=["absent-error", "empty-message"],
+)
+async def test_convert_interaction_stream_uses_fallback_error_message(
+    error: Error | None, expected_code: str | None
+) -> None:
+    event = ErrorEvent(error=error)
+
+    with pytest.raises(ProviderError, match="Gemini interaction failed") as raised:
+        _ = [item async for item in convert_interaction_stream(_events(event), model="requested")]
+
+    assert raised.value.code == expected_code
+
+
+@pytest.mark.asyncio
 async def test_convert_interaction_stream_rejects_missing_terminal_event() -> None:
     with pytest.raises(ProviderError, match=r"before interaction\.completed"):
         await _converted_events(_created())
