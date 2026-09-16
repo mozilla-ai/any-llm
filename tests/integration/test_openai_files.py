@@ -128,9 +128,9 @@ async def test_openai_files_lifecycle(
         assert next_page.data[0].id != first_page.data[0].id
 
         deleted = await provider.adelete_file(uploaded.id)
-        file_ids.remove(uploaded.id)
         assert deleted.id == uploaded.id
         assert deleted.deleted is True
+        file_ids.remove(uploaded.id)
         with pytest.raises(ProviderFileNotFoundError) as error:
             await provider.aretrieve_file(uploaded.id)
         assert error.value.status_code == 404
@@ -213,9 +213,9 @@ def test_openai_files_sync_lifecycle(files_provider: OpenaiProvider | Azureopena
         with provider.download_file(file_id, chunk_size=8) as download:
             assert next(download) == BATCH_CONTENT[:8]
         deleted = provider.delete_file(file_id)
-        file_id = None
         assert deleted.id == uploaded.id
         assert deleted.deleted is True
+        file_id = None
     finally:
         run_async_in_sync(
             cleanup_files(provider, [file_id] if file_id is not None else [], primary_error=sys.exc_info()[1])

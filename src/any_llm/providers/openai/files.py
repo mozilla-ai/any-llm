@@ -78,7 +78,13 @@ class OpenAIFileMethods(FilesMixin):
         with ExitStack() as stack:
             if isinstance(file, (str, PathLike)):
                 path = Path(file)
-                content = stack.enter_context(path.open("rb"))  # noqa: ASYNC230 (SDK multipart encoding uses synchronous handles)
+                try:
+                    content = stack.enter_context(path.open("rb"))  # noqa: ASYNC230 (SDK multipart encoding uses synchronous handles)
+                except OSError as exc:
+                    message = f"Cannot open upload path {str(path)!r}: {exc.strerror or exc}"
+                    raise InvalidRequestError(
+                        message, original_exception=exc, provider_name=self.PROVIDER_NAME
+                    ) from exc
                 filename = filename or path.name
             else:
                 content = file

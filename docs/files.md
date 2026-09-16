@@ -282,9 +282,9 @@ Beta values from configured headers, request headers, and `betas` are merged.
 Anthropic SDK 0.124.0 or newer is required.
 
 Unsupported options raise `UnsupportedParameterError`. Nonpositive `limit`,
-invalid `expires_in`, nonpositive `chunk_size`, and invalid file IDs raise
-`InvalidRequestError`. Anthropic also converts unreadable upload paths to
-`InvalidRequestError`; OpenAI and Azure OpenAI currently propagate the local file-opening error.
+invalid `expires_in`, nonpositive `chunk_size`, invalid file IDs, and upload
+paths that cannot be opened raise `InvalidRequestError`. Local file-opening
+errors are preserved in `original_exception`, regardless of the unified-exceptions setting.
 Provider-specific numeric limits and option combinations are validated by the server, so SDK
 updates do not require copying server limits into any-llm.
 

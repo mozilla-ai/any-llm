@@ -1,5 +1,6 @@
 # ruff: noqa: PT012
 import asyncio
+import warnings
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from io import BytesIO
@@ -127,6 +128,48 @@ async def test_upload_closes_owned_handle_on_error() -> None:
         with patch.object(Path, "open", return_value=handle), pytest.raises(APIStatusError):
             await provider.aupload_file(Path("input.jsonl"), purpose="batch")
     assert handle.closed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider_class", [OpenaiProvider, AzureopenaiProvider])
+@pytest.mark.parametrize("unified", ["0", "1"])
+@pytest.mark.parametrize("synchronous", [False, True])
+@pytest.mark.parametrize(
+    "local_error",
+    [
+        FileNotFoundError(2, "No such file or directory"),
+        PermissionError(13, "Permission denied"),
+        OSError("cannot open"),
+    ],
+)
+async def test_upload_path_errors_are_invalid_requests(
+    provider_class: type[OpenaiProvider] | type[AzureopenaiProvider],
+    unified: str,
+    synchronous: bool,
+    local_error: OSError,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", unified)
+    provider = provider_class(
+        api_key="test-key",
+        api_base="https://files.test/openai/v1",
+        http_client=httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda _: pytest.fail("Unreadable upload path reached the network"))
+        ),
+    )
+    async with provider.client:
+        with patch.object(Path, "open", side_effect=local_error), warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with pytest.raises(InvalidRequestError, match=r"Cannot open upload path 'input\.jsonl'") as error:
+                if synchronous:
+                    provider.upload_file(Path("input.jsonl"), purpose="batch", allow_running_loop=True)
+                else:
+                    await provider.aupload_file(Path("input.jsonl"), purpose="batch")
+    assert error.value.original_exception is local_error
+    assert error.value.__cause__ is local_error
+    assert error.value.provider_name == provider.PROVIDER_NAME
+    assert error.value.status_code is None
+    assert not caught
 
 
 @pytest.mark.asyncio
