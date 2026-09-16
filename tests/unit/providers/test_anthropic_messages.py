@@ -1235,6 +1235,7 @@ async def test_public_amessages_without_schema_returns_message_response() -> Non
     """amessages with an effort-only output config takes the create path and returns a plain MessageResponse."""
 
     async def handler(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.content)["output_config"] == {"effort": "high"}
         return httpx.Response(200, json=_sdk_message_response())
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:

@@ -8,8 +8,24 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from anthropic import transform_schema
-from anthropic.types import CacheCreation, Message
+from anthropic.lib.streaming import MessageStopEvent as StreamMessageStopEvent
+from anthropic.types import (
+    CacheCreation,
+    ContentBlockDeltaEvent,
+    ContentBlockStartEvent,
+    ContentBlockStopEvent,
+    Message,
+    MessageDeltaEvent,
+    MessageDeltaUsage,
+    MessageStartEvent,
+    MessageStopEvent,
+    RawMessageStreamEvent,
+    TextBlock,
+    TextDelta,
+    Usage,
+)
 from anthropic.types.model_info import ModelInfo
+from anthropic.types.raw_message_delta_event import Delta
 from anthropic.types.stop_reason import StopReason
 from pydantic import BaseModel
 
@@ -20,6 +36,7 @@ from any_llm.providers.anthropic.utils import (
     REASONING_EFFORT_TO_ANTHROPIC_EFFORT,
     _convert_messages_for_anthropic,
     _convert_models_list,
+    _convert_response,
     _convert_response_format,
     _convert_tool_spec,
     _create_openai_chunk_from_anthropic_chunk,
@@ -951,8 +968,6 @@ def test_convert_response_without_cache_tokens() -> None:
 
 def test_convert_response_preserves_zero_cache_read_tokens() -> None:
     """An explicit zero cache read remains distinguishable from an absent meter."""
-    from any_llm.providers.anthropic.utils import _convert_response
-
     mock_response = MagicMock()
     mock_response.id = "msg_zero-read"
     mock_response.model = "claude-3-haiku"
@@ -1007,10 +1022,6 @@ def test_streaming_chunk_includes_cache_tokens_in_usage() -> None:
 
 
 def test_streaming_chunk_includes_cache_creation_tokens_in_usage() -> None:
-    from anthropic.types import MessageStopEvent, Usage
-
-    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
-
     usage = Usage(
         input_tokens=3,
         output_tokens=5,
@@ -1965,18 +1976,6 @@ def test_convert_response_non_datetime_created_at(created_at: Any) -> None:
 
 def test_stream_trailing_usage_chunk_has_no_choices() -> None:
     """Usage arrives on the message_stop chunk after finish_reason, with choices left empty like OpenAI."""
-    from anthropic.types import (
-        ContentBlockDeltaEvent,
-        ContentBlockStopEvent,
-        MessageDeltaEvent,
-        MessageDeltaUsage,
-        MessageStopEvent,
-        RawMessageStreamEvent,
-        TextDelta,
-        Usage,
-    )
-    from anthropic.types.raw_message_delta_event import Delta
-
     stop_event = MessageStopEvent(type="message_stop")
     stop_event.message = MagicMock(usage=Usage(input_tokens=12, output_tokens=7))  # type: ignore[attr-defined]
     events: list[RawMessageStreamEvent | MessageStreamEvent] = [
@@ -2003,8 +2002,6 @@ def test_stream_trailing_usage_chunk_has_no_choices() -> None:
 
 def test_stream_message_stop_without_message_has_no_choices_or_usage() -> None:
     """A raw message_stop event with no accumulated message yields neither choices nor usage."""
-    from anthropic.types import MessageStopEvent
-
     result = _create_openai_chunk_from_anthropic_chunk(MessageStopEvent(type="message_stop"), "claude-sonnet-4-5")
 
     assert result.choices == []
@@ -2018,20 +2015,6 @@ async def test_stream_usage_reaches_openai_style_consumer() -> None:
     OpenAI reports final usage on a trailing chunk with no choices, so callers read it with
     ``if not chunk.choices``. The same loop has to work unchanged when the provider is Anthropic.
     """
-    from anthropic.lib.streaming import MessageStopEvent as StreamMessageStopEvent
-    from anthropic.types import (
-        ContentBlockDeltaEvent,
-        ContentBlockStartEvent,
-        ContentBlockStopEvent,
-        MessageDeltaEvent,
-        MessageDeltaUsage,
-        MessageStartEvent,
-        TextBlock,
-        TextDelta,
-        Usage,
-    )
-    from anthropic.types.raw_message_delta_event import Delta
-
     final_message = Message(
         id="msg_1",
         type="message",
