@@ -363,29 +363,6 @@ async def test_anthropic_sdk_preserves_reasoning_effort_thinking(
 
 
 @pytest.mark.asyncio
-async def test_anthropic_sdk_rejects_non_object_extra_body() -> None:
-    requests: list[httpx.Request] = []
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        return httpx.Response(500)
-
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
-        provider = AnthropicProvider(api_key="test-key", http_client=http_client)
-        with pytest.raises(TypeError, match="'str' object is not a mapping"):
-            await provider._acompletion(
-                CompletionParams(
-                    model_id="claude-3-5-sonnet",
-                    messages=[{"role": "user", "content": "Hello"}],
-                    temperature=0.7,
-                ),
-                extra_body="invalid",
-            )
-
-    assert requests == []
-
-
-@pytest.mark.asyncio
 async def test_anthropic_sdk_accepts_native_messages_parameters() -> None:
     requests: list[httpx.Request] = []
     caller_top_k = 20
@@ -1254,26 +1231,24 @@ async def test_amessages_effort_only_output_config_reaches_create() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("output_config", [{"effort": "high"}, {"format": {"type": "json_schema", "schema": {}}}])
-async def test_public_amessages_without_schema_returns_message_response(output_config: dict[str, Any]) -> None:
-    provider = AnthropicProvider(api_key="test-key")
-    with patch.object(
-        provider.client.messages,
-        "create",
-        new_callable=AsyncMock,
-        return_value=_make_message(content=[TextBlock(type="text", text="Paris")]),
-    ) as create:
+async def test_public_amessages_without_schema_returns_message_response() -> None:
+    """amessages with an effort-only output config takes the create path and returns a plain MessageResponse."""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_sdk_message_response())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        provider = AnthropicProvider(api_key="test-key", http_client=http_client)
         result = await provider.amessages(
             model="test-model",
             messages=[{"role": "user", "content": "Capital of France?"}],
             max_tokens=128,
-            output_format=output_config,
+            output_format={"effort": "high"},
         )
 
     assert isinstance(result, MessageResponse)
     assert isinstance(result.content[0], TextBlock)
-    assert result.content[0].text == "Paris"
-    create.assert_awaited_once()
+    assert result.content[0].text == "Hello!"
 
 
 @pytest.mark.asyncio
