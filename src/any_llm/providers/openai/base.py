@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -37,11 +37,50 @@ from any_llm.types.image import ImageGenerationParams, ImagesResponse
 from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
 from any_llm.types.responses import ParsedResponse, Response, ResponsesParams, ResponseStreamEvent
+from any_llm.utils.aio import aclose_quietly
 from any_llm.utils.structured_output import (
     build_responses_text_format,
     get_json_schema,
     is_structured_output_type,
 )
+
+
+class OpenAIChunkStream(AsyncIterator[ChatCompletionChunk]):
+    """Convert an OpenAI SDK chunk stream and close it on every exit.
+
+    A generator over ``response`` cannot release the HTTP response when it is closed before its
+    first read, since ``aclose()`` never enters its body. This iterator holds the SDK stream
+    directly, so ``aclose()`` reaches it whether or not anything was read.
+    """
+
+    def __init__(
+        self,
+        response: AsyncStream[OpenAIChatCompletionChunk],
+        convert: Callable[[OpenAIChatCompletionChunk], ChatCompletionChunk],
+    ) -> None:
+        self._response = response
+        self._iterator = aiter(response)
+        self._convert = convert
+        self._closed = False
+
+    @override
+    def __aiter__(self) -> "OpenAIChunkStream":
+        return self
+
+    @override
+    async def __anext__(self) -> ChatCompletionChunk:
+        if self._closed:
+            raise StopAsyncIteration
+        try:
+            return self._convert(await anext(self._iterator))
+        except BaseException:
+            await self.aclose()
+            raise
+
+    async def aclose(self) -> None:
+        if not self._closed:
+            self._closed = True
+            await aclose_quietly(self._response)
 
 
 class BaseOpenAIProvider(AnyLLM):
@@ -190,11 +229,7 @@ class BaseOpenAIProvider(AnyLLM):
         if isinstance(response, OpenAIChatCompletion):
             return self._convert_completion_response(response)
 
-        async def chunk_iterator() -> AsyncIterator[ChatCompletionChunk]:
-            async for chunk in response:
-                yield self._convert_completion_chunk_response(chunk)
-
-        return chunk_iterator()
+        return OpenAIChunkStream(response, self._convert_completion_chunk_response)
 
     @override
     async def _acompletion(
