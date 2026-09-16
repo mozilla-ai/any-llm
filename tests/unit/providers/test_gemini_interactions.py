@@ -437,6 +437,8 @@ async def test_real_sdk_serializes_stable_interactions_path_and_body(total: int 
             "Hello",
             instructions="",
             max_output_tokens=0,
+            extra_headers={"x-request-id": "request-123"},
+            extra_query={"trace": "enabled"},
         )
     finally:
         await http_client.aclose()
@@ -449,7 +451,8 @@ async def test_real_sdk_serializes_stable_interactions_path_and_body(total: int 
     assert response.usage.output_tokens_details.reasoning_tokens == 245
     assert response.usage.total_tokens == (346 if total is None else total)
     assert len(requests) == 1
-    assert str(requests[0].url) == "https://example.test/v1/interactions"
+    assert str(requests[0].url) == "https://example.test/v1/interactions?trace=enabled"
+    assert requests[0].headers["x-request-id"] == "request-123"
     assert requests[0].headers["x-goog-api-key"] == "test-key"
     assert json.loads(requests[0].content) == {
         "input": "Hello",
