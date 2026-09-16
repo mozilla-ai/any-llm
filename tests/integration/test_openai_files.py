@@ -1,12 +1,16 @@
 import json
+import os
 import sys
 import uuid
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from any_llm.constants import LLMProvider
 from any_llm.exceptions import InvalidRequestError, MissingApiKeyError, ProviderFileNotFoundError
+from any_llm.providers.azureopenai.azureopenai import AzureopenaiProvider
 from any_llm.providers.openai.openai import OpenaiProvider
 from any_llm.utils.aio import run_async_in_sync
 from tests.constants import EXPECTED_PROVIDERS
@@ -34,8 +38,31 @@ def create_provider() -> OpenaiProvider:
         pytest.skip("OPENAI_API_KEY is not configured")
 
 
+@pytest.fixture(params=[LLMProvider.OPENAI, LLMProvider.AZUREOPENAI], ids=lambda provider: provider.value)
+def files_provider(
+    request: pytest.FixtureRequest, provider_client_config: dict[LLMProvider, dict[str, Any]]
+) -> OpenaiProvider | AzureopenaiProvider:
+    if request.param == LLMProvider.OPENAI:
+        return create_provider()
+    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+    if not endpoint and "azureopenai" not in EXPECTED_PROVIDERS:
+        pytest.skip("AZURE_OPENAI_ENDPOINT is not configured")
+    config = {**provider_client_config[LLMProvider.AZUREOPENAI], "max_retries": 0, "timeout": 30}
+    if endpoint:
+        config["api_base"] = endpoint
+    try:
+        return AzureopenaiProvider(**config)
+    except MissingApiKeyError:
+        if "azureopenai" in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip("Azure Files credentials missing: set AZURE_OPENAI_API_KEY or AZURE_OPENAI_AD_TOKEN")
+
+
 async def cleanup_files(
-    provider: OpenaiProvider, file_ids: Iterable[str], *, primary_error: BaseException | None = None
+    provider: OpenaiProvider | AzureopenaiProvider,
+    file_ids: Iterable[str],
+    *,
+    primary_error: BaseException | None = None,
 ) -> None:
     if primary_error is None:
         primary_error = sys.exc_info()[1]
@@ -59,9 +86,11 @@ async def cleanup_files(
 
 
 @pytest.mark.asyncio
-async def test_openai_files_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_openai_files_lifecycle(
+    files_provider: OpenaiProvider | AzureopenaiProvider, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
-    provider = create_provider()
+    provider = files_provider
     file_ids: list[str] = []
     path = tmp_path / f"any-llm-test-{uuid.uuid4().hex}.jsonl"
     try:
@@ -108,8 +137,10 @@ async def test_openai_files_lifecycle(tmp_path: Path, monkeypatch: pytest.Monkey
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("consumption", ["unread", "early", "full"])
-async def test_openai_batch_file_download(consumption: str) -> None:
-    provider = create_provider()
+async def test_openai_batch_file_download(
+    files_provider: OpenaiProvider | AzureopenaiProvider, consumption: str
+) -> None:
+    provider = files_provider
     file_id: str | None = None
     try:
         uploaded = await provider.aupload_file(
@@ -154,8 +185,8 @@ async def test_openai_user_data_download_is_rejected(monkeypatch: pytest.MonkeyP
         await cleanup_files(provider, [file_id] if file_id is not None else [])
 
 
-def test_openai_files_sync_lifecycle() -> None:
-    provider = create_provider()
+def test_openai_files_sync_lifecycle(files_provider: OpenaiProvider | AzureopenaiProvider) -> None:
+    provider = files_provider
     file_id: str | None = None
     try:
         uploaded = provider.upload_file(

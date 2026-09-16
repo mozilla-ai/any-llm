@@ -403,9 +403,11 @@ def test_sync_operations_use_same_contract_and_download_is_lazy() -> None:
         run_async_in_sync(provider.client.close())
 
 
-def test_files_capabilities_do_not_leak_to_azure_or_compatible_providers() -> None:
-    assert set(OpenaiProvider.get_provider_metadata().file_operations) == set(OPERATIONS)
-    assert not AzureopenaiProvider.get_provider_metadata().files
+def test_files_capabilities_are_explicit_on_openai_and_azure() -> None:
+    for provider_class in (OpenaiProvider, AzureopenaiProvider):
+        metadata = provider_class.get_provider_metadata()
+        assert metadata.files
+        assert set(metadata.file_operations) == set(OPERATIONS)
     assert not AnyLLM.get_provider_class("deepseek").get_provider_metadata().files
     custom = AnyLLM.create_openai_compatible(name="custom", api_base="https://custom.test/v1", api_key="test")
     assert isinstance(custom, OpenAICompatibleProvider)
