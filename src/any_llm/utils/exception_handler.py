@@ -25,7 +25,7 @@ from any_llm.exceptions import (
 from any_llm.utils.aio import aclose_quietly
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import AsyncIterator, Callable
 
 F = TypeVar("F", bound="Callable[..., Any]")
 
@@ -327,7 +327,7 @@ class _ExceptionHandlingAsyncIterator:
 
     def __init__(self, async_iter: Any, provider_name: str, file_operation: bool) -> None:
         self._async_iter = async_iter
-        self._iterator = aiter(async_iter)
+        self._iterator: AsyncIterator[Any] | None = None
         self._provider_name = provider_name
         self._file_operation = file_operation
         self._closed = False
@@ -339,6 +339,8 @@ class _ExceptionHandlingAsyncIterator:
         if self._closed:
             raise StopAsyncIteration
         try:
+            if self._iterator is None:
+                self._iterator = aiter(self._async_iter)
             return await anext(self._iterator)
         except StopAsyncIteration:
             await self.aclose()

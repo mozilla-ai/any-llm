@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -693,3 +694,45 @@ async def test_closed_wrapper_never_resumes_source(consume_first: bool) -> None:
     with pytest.raises(StopAsyncIteration):
         await anext(wrapped)
     assert source.close_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unified", [False, True])
+async def test_iterator_startup_failure_is_handled_and_closed(unified: bool, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1" if unified else "0")
+    error = _StatusError(429, "rate limit exceeded")
+    source = MagicMock(spec=["__aiter__", "close"])
+    source.__aiter__.side_effect = error
+    source.close = AsyncMock()
+    wrapped = await _wrapped(source)
+    source.__aiter__.assert_not_called()
+
+    if unified:
+        with pytest.raises(RateLimitError) as caught:
+            await anext(wrapped)
+        assert caught.value.original_exception is error
+    else:
+        with (
+            pytest.warns(DeprecationWarning, match="Provider-specific exceptions"),
+            pytest.raises(_StatusError) as original,
+        ):
+            await anext(wrapped)
+        assert original.value is error
+
+    with pytest.raises(StopAsyncIteration):
+        await anext(wrapped)
+    source.__aiter__.assert_called_once()
+    source.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_close_before_read_does_not_initialize_iterator() -> None:
+    source = MagicMock(spec=["__aiter__", "close"])
+    source.__aiter__.side_effect = AssertionError("must not initialize a closed stream")
+    source.close = AsyncMock()
+    wrapped = await _wrapped(source)
+    await wrapped.aclose()
+    with pytest.raises(StopAsyncIteration):
+        await anext(wrapped)
+    source.__aiter__.assert_not_called()
+    source.close.assert_awaited_once()
