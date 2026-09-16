@@ -182,22 +182,54 @@ async def process_streaming_reasoning_chunks(
         yield held_chunk
 
 
+def strip_extra_content(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop the ``extra_content`` side-channel from messages and from their tool calls.
+
+    any_llm keeps provider signatures and replayed reasoning in ``extra_content``: on a message
+    (Anthropic thinking signatures, DeepSeek reasoning) and on a tool call (Gemini thought
+    signatures). It is not part of the OpenAI schema, the OpenAI SDK forwards unknown message keys
+    verbatim, and strict OpenAI-compatible backends reject the whole request over one, so a
+    conversation carrying another provider's signature would fail on its next turn. A provider
+    that reads the side-channel has to do so before calling this. The input is never mutated, and
+    a message with nothing to strip is returned as the same object.
+    """
+    result = []
+    for message in messages:
+        raw_tool_calls = message.get("tool_calls")
+        tool_calls: list[Any] = raw_tool_calls if isinstance(raw_tool_calls, list) else []
+        tool_calls_carry_extra = any(isinstance(call, dict) and "extra_content" in call for call in tool_calls)
+        if "extra_content" not in message and not tool_calls_carry_extra:
+            result.append(message)
+            continue
+        cleaned = {key: value for key, value in message.items() if key != "extra_content"}
+        if tool_calls_carry_extra:
+            cleaned["tool_calls"] = [
+                {key: value for key, value in call.items() if key != "extra_content"}
+                if isinstance(call, dict)
+                else call
+                for call in tool_calls
+            ]
+        result.append(cleaned)
+    return result
+
+
 def replay_reasoning_content_as_reasoning(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Rename a replayed ``reasoning_content`` to ``reasoning`` and drop ``extra_content``.
 
     For providers whose SDK names the assistant reasoning field ``reasoning`` and whose API rejects
     any other message key: Groq and Cerebras return 400 ``property 'reasoning_content' is
-    unsupported`` for the field the Messages bridge emits from a replayed ``thinking`` block.
-    ``extra_content`` is an any_llm side-channel that never belongs on their wire. An explicit
-    ``reasoning`` the caller already set wins over ``reasoning_content``.
+    unsupported``. The Messages bridge emits ``reasoning_content`` from a replayed ``thinking``
+    block, and a caller of plain ``completion()`` may send it directly in the shape DeepSeek
+    expects; both are renamed. An explicit ``reasoning`` the caller already set wins over
+    ``reasoning_content``.
     """
     result = []
-    for message in messages:
-        if "reasoning_content" not in message and "extra_content" not in message:
+    for message in strip_extra_content(messages):
+        if "reasoning_content" not in message:
             result.append(message)
             continue
-        cleaned = {key: value for key, value in message.items() if key not in ("reasoning_content", "extra_content")}
-        reasoning_content = message.get("reasoning_content")
+        cleaned = {key: value for key, value in message.items() if key != "reasoning_content"}
+        reasoning_content = message["reasoning_content"]
         if isinstance(reasoning_content, str) and reasoning_content and "reasoning" not in cleaned:
             cleaned["reasoning"] = reasoning_content
         result.append(cleaned)

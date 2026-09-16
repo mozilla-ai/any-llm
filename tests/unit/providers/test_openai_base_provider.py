@@ -508,6 +508,53 @@ async def test_stream_with_basemodel_response_format_uses_create_json_schema() -
         mock_client.chat.completions.parse.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_acompletion_strips_extra_content_from_messages_and_tool_calls() -> None:
+    """extra_content is an any_llm side-channel; strict OpenAI-compatible backends reject it."""
+
+    class TestProvider(BaseOpenAIProvider):
+        PROVIDER_NAME = "TestProvider"
+        ENV_API_KEY_NAME = "TEST_API_KEY"
+        PROVIDER_DOCUMENTATION_URL = "https://example.com"
+
+    with patch("any_llm.providers.openai.base.AsyncOpenAI") as mock_openai_class:
+        mock_client = AsyncMock()
+        mock_openai_class.return_value = mock_client
+        mock_client.chat.completions.create = AsyncMock(return_value=MagicMock())
+
+        provider = TestProvider(api_key="test-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="test-model",
+                messages=[
+                    {"role": "user", "content": "Weather?"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "extra_content": {"anthropic": {"signature": "sig"}},
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {"name": "get_weather", "arguments": "{}"},
+                                "extra_content": {"google": {"thought_signature": "c2ln"}},
+                            }
+                        ],
+                    },
+                ],
+            )
+        )
+
+        sent = mock_client.chat.completions.create.call_args.kwargs["messages"]
+        assert sent[1] == {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}}
+            ],
+        }
+
+
 def test_base_provider_maps_max_tokens_to_max_completion_tokens() -> None:
     params = CompletionParams(model_id="model", messages=[{"role": "user", "content": "hi"}], max_tokens=8192)
     result = BaseOpenAIProvider._convert_completion_params(params)

@@ -16,7 +16,11 @@ from any_llm.types.completion import (
     ChunkChoice,
     Reasoning,
 )
-from any_llm.utils.reasoning import partial_reasoning_tag_suffix_len, replay_reasoning_content_as_reasoning
+from any_llm.utils.reasoning import (
+    partial_reasoning_tag_suffix_len,
+    replay_reasoning_content_as_reasoning,
+    strip_extra_content,
+)
 
 
 def _make_chunk(
@@ -481,3 +485,46 @@ def test_replay_reasoning_content_as_reasoning_keeps_explicit_reasoning() -> Non
     assert replay_reasoning_content_as_reasoning(messages) == [
         {"role": "assistant", "content": "ok", "reasoning": "caller"}
     ]
+
+
+def test_strip_extra_content_from_message_and_tool_calls() -> None:
+    tool_call_object = object()
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": None,
+            "extra_content": {"anthropic": {"signature": "sig"}},
+            "tool_calls": [
+                {"id": "call_1", "type": "function", "extra_content": {"google": {"thought_signature": "c2ln"}}},
+                tool_call_object,
+            ],
+        }
+    ]
+    assert strip_extra_content(messages) == [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"id": "call_1", "type": "function"}, tool_call_object],
+        }
+    ]
+    assert "extra_content" in messages[0]
+    assert "extra_content" in messages[0]["tool_calls"][0]
+
+
+def test_strip_extra_content_only_on_tool_calls() -> None:
+    messages = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"id": "call_1", "extra_content": {"google": {"thought_signature": "c2ln"}}}],
+        }
+    ]
+    assert strip_extra_content(messages) == [{"role": "assistant", "content": None, "tool_calls": [{"id": "call_1"}]}]
+
+
+def test_strip_extra_content_returns_untouched_messages_as_same_objects() -> None:
+    plain = {"role": "user", "content": "hi"}
+    with_tool_calls = {"role": "assistant", "content": None, "tool_calls": [{"id": "call_1"}]}
+    result = strip_extra_content([plain, with_tool_calls])
+    assert result[0] is plain
+    assert result[1] is with_tool_calls

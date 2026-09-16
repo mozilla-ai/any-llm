@@ -1578,7 +1578,7 @@ def test_messages_bridge_forwards_thinking_tool_result_and_parallel_flag_on_the_
 
     assistant = body["messages"][1]
     assert assistant["reasoning_content"] == "call the tool"
-    assert assistant["extra_content"] == {"anthropic": {"signature": "sig-abc"}}
+    assert "extra_content" not in assistant
 
     tool_message = body["messages"][2]
     assert tool_message["role"] == "tool"

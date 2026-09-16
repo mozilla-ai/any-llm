@@ -2317,6 +2317,85 @@ def test_user_blocks_tool_result_without_is_error_leaves_content() -> None:
     assert result == [{"role": "tool", "tool_call_id": "call_1", "content": "ok"}]
 
 
+def test_user_blocks_tool_result_is_error_does_not_double_prefix() -> None:
+    """Tool text that already carries the marker is left as it is."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {"type": "tool_result", "tool_use_id": "call_1", "is_error": True, "content": "Error: timed out"},
+        ]
+    )
+    assert result == [{"role": "tool", "tool_call_id": "call_1", "content": "Error: timed out"}]
+
+
+def test_user_blocks_tool_result_search_result_rendered_as_text() -> None:
+    """A search_result block has no OpenAI part, so its title, source and text ride the tool message."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": [
+                    {"type": "text", "text": "Found:"},
+                    {
+                        "type": "search_result",
+                        "title": "Paris weather",
+                        "source": "https://example.com/paris",
+                        "content": [{"type": "text", "text": "Sunny, "}, {"type": "text", "text": "15C"}],
+                    },
+                    {"type": "text", "text": "Done."},
+                ],
+            },
+        ]
+    )
+    assert result[0]["content"] == "Found:\nParis weather\nhttps://example.com/paris\nSunny, 15C\nDone."
+
+
+def test_user_blocks_tool_result_search_result_skips_missing_fields_and_non_text_parts() -> None:
+    """Absent fields leave no blank lines, and only text parts of a search result are kept."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": [
+                    {
+                        "type": "search_result",
+                        "source": "https://example.com",
+                        "content": [{"type": "image", "source": {}}, {"type": "text", "text": "body"}],
+                    },
+                ],
+            },
+        ]
+    )
+    assert result[0]["content"] == "https://example.com\nbody"
+
+
+def test_user_blocks_tool_result_tool_reference_and_browser_state_rendered_as_text() -> None:
+    """Consecutive rendered blocks are separated by newlines; browser_state keeps only its data fields."""
+    tabs = [{"id": "t1", "url": "https://example.com", "title": "Example", "active": True}]
+    changes = [{"type": "tab_opened", "tab_id": "t1"}]
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": [
+                    {"type": "tool_reference", "tool_name": "get_weather"},
+                    {"type": "browser_state", "tabs": tabs, "state_changes": changes, "cache_control": None},
+                    {"type": "browser_state", "tabs": []},
+                ],
+            },
+        ]
+    )
+    assert result[0]["content"] == "\n".join(
+        [
+            "Tool reference: get_weather",
+            json.dumps({"tabs": tabs, "state_changes": changes}),
+            json.dumps({"tabs": []}),
+        ]
+    )
+
+
 def test_user_blocks_tool_result_is_error_false_leaves_content() -> None:
     """An explicit false is not an error marker."""
     result = _convert_user_blocks_to_openai(
