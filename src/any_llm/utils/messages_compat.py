@@ -185,10 +185,10 @@ def _convert_assistant_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[di
     request that later reaches an Anthropic-native provider can rebuild the block whole.
     Anthropic requires that signature back unmodified while extended thinking is on.
 
-    Neither key reaches every backend as emitted here. ``BaseOpenAIProvider``, ``groq`` and
-    ``cerebras`` drop ``extra_content`` through ``strip_extra_content``, and ``groq`` and
-    ``cerebras``, whose APIs name the field ``reasoning``, rename ``reasoning_content`` through
-    ``replay_reasoning_content_as_reasoning``.
+    Neither key reaches every backend as emitted here. ``BaseOpenAIProvider`` (but not ``otari``,
+    which overrides ``_acompletion``), ``groq`` and ``cerebras`` drop ``extra_content`` through
+    ``strip_extra_content``, and ``groq`` and ``cerebras``, whose APIs name the field
+    ``reasoning``, rename ``reasoning_content`` through ``replay_reasoning_content_as_reasoning``.
 
     A signature is emitted only when the turn holds a single ``thinking`` block. Interleaved
     thinking can put several in one turn, and the OpenAI wire has one ``reasoning_content``
@@ -334,16 +334,17 @@ def _convert_tool_result_content(tool_content: Any) -> tuple[str, list[dict[str,
     for block in tool_content:
         block_type = block.get("type", "")
         if block_type == "text":
-            if after_rendered_block:
+            text = block.get("text", "")
+            if after_rendered_block and text:
                 text_parts.append("\n")
                 after_rendered_block = False
-            text_parts.append(block.get("text", ""))
+            text_parts.append(text)
         elif block_type == "image":
             extra_parts.append(_convert_image_block_to_openai(block))
         elif block_type == "document":
             extra_parts.append(_convert_document_block_to_openai(block))
-        elif (rendered := _render_tool_result_block_as_text(block)) is not None:
-            if text_parts:
+        elif rendered := _render_tool_result_block_as_text(block):
+            if any(text_parts):
                 text_parts.append("\n")
             text_parts.append(rendered)
             after_rendered_block = True

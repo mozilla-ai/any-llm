@@ -2370,6 +2370,22 @@ def test_user_blocks_tool_result_search_result_skips_missing_fields_and_non_text
     assert result[0]["content"] == "https://example.com\nbody"
 
 
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        ([{"type": "text", "text": ""}, {"type": "tool_reference", "tool_name": "t"}], "Tool reference: t"),
+        ([{"type": "search_result", "title": "", "source": "", "content": []}, {"type": "text", "text": "x"}], "x"),
+        ([{"type": "tool_reference", "tool_name": "t"}, {"type": "text", "text": ""}], "Tool reference: t"),
+    ],
+)
+def test_user_blocks_tool_result_rendered_block_separators_skip_empty_neighbours(
+    content: list[dict[str, Any]], expected: str
+) -> None:
+    """A newline separates rendered text only from non-empty text, never from an empty block."""
+    result = _convert_user_blocks_to_openai([{"type": "tool_result", "tool_use_id": "call_1", "content": content}])
+    assert result[0]["content"] == expected
+
+
 def test_user_blocks_tool_result_tool_reference_and_browser_state_rendered_as_text() -> None:
     """Consecutive rendered blocks are separated by newlines; browser_state keeps only its data fields."""
     tabs = [{"id": "t1", "url": "https://example.com", "title": "Example", "active": True}]
