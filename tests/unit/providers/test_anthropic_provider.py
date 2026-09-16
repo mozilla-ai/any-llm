@@ -1373,17 +1373,6 @@ def test_streaming_refusal_preserves_stop_details() -> None:
     [("end_turn", "stop"), ("tool_use", "tool_calls"), ("refusal", "content_filter")],
 )
 def test_stream_sequence_has_one_terminal_reason(stop_reason: StopReason, expected_finish_reason: str) -> None:
-    from anthropic.types import (
-        ContentBlockStopEvent,
-        MessageDeltaEvent,
-        MessageDeltaUsage,
-        MessageStopEvent,
-        RawMessageStreamEvent,
-    )
-    from anthropic.types.raw_message_delta_event import Delta
-
-    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
-
     events: list[RawMessageStreamEvent] = [
         ContentBlockStopEvent(type="content_block_stop", index=0),
         MessageDeltaEvent(
