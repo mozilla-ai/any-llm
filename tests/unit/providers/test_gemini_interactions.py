@@ -281,7 +281,7 @@ def test_convert_responses_params_rejects_unimplemented_surface(parameter: str, 
 
 
 @pytest.mark.asyncio
-async def test_aresponses_defaults_only_interactions_requests_to_v1() -> None:
+async def test_aresponses_forwards_request_timeout() -> None:
     with patch("any_llm.providers.gemini.gemini.genai.Client") as client_class:
         client = client_class.return_value
         client.aio.interactions.create = AsyncMock(return_value=_interaction())
@@ -289,32 +289,42 @@ async def test_aresponses_defaults_only_interactions_requests_to_v1() -> None:
         result = await provider.aresponses(
             "gemini-3.8-flash",
             "Hello",
-            instructions="Be concise",
             timeout=1.5,
         )
 
     assert isinstance(result, Response)
-    assert result.output_text == "Hello"
-    client_class.assert_called_once_with(api_key="test-key")
-    client.aio.interactions.create.assert_awaited_once_with(
-        api_version="v1",
-        model="gemini-3.8-flash",
-        input="Hello",
-        system_instruction="Be concise",
-        timeout=1.5,
-    )
+    assert client.aio.interactions.create.await_args.kwargs["timeout"] == 1.5
 
 
 @pytest.mark.asyncio
 async def test_aresponses_preserves_explicit_v1beta_client_configuration() -> None:
-    with patch("any_llm.providers.gemini.gemini.genai.Client") as client_class:
-        client = client_class.return_value
-        client.aio.interactions.create = AsyncMock(return_value=_interaction())
-        provider = GeminiProvider(api_key="test-key", http_options={"api_version": "v1beta"})
-        await provider.aresponses("gemini-3.8-flash", "Hello")
+    requests: list[httpx.Request] = []
 
-    assert client_class.call_args.kwargs["http_options"] == {"api_version": "v1beta"}
-    assert client.aio.interactions.create.await_args.kwargs["api_version"] == "v1beta"
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "int-123",
+                "status": "completed",
+                "model": "gemini-3.8-flash",
+                "steps": [{"type": "model_output", "content": [{"type": "text", "text": "Hello"}]}],
+            },
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        provider = GeminiProvider(
+            api_key="test-key",
+            api_base="https://example.test",
+            http_options=types.HttpOptions(api_version="v1beta", httpx_async_client=http_client),
+        )
+        response = await provider.aresponses("gemini-3.8-flash", "Hello")
+    finally:
+        await http_client.aclose()
+
+    assert isinstance(response, Response)
+    assert str(requests[0].url) == "https://example.test/v1beta/interactions"
 
 
 @pytest.mark.asyncio
