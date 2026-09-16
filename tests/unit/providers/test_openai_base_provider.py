@@ -1,6 +1,8 @@
+import asyncio
 import dataclasses
 import json
 import logging
+from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -8,6 +10,7 @@ import pytest
 from openai.types.responses import ResponseCompactionItem, ResponseOutputMessage, ResponseOutputText
 from openresponses_types import CompactionBody, ResponseResource
 from pydantic import BaseModel
+from typing_extensions import override
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.openai.openai import OpenaiProvider
@@ -610,3 +613,83 @@ async def test_acompletion_with_dataclass_uses_create_not_parse() -> None:
 
         mock_client.chat.completions.create.assert_called_once()
         mock_client.chat.completions.parse.assert_not_called()
+
+
+class _TrackedStream(httpx.AsyncByteStream):
+    """An SSE body that records whether the SDK released it."""
+
+    def __init__(self, mode: str, api: str) -> None:
+        self.closed = False
+        self.mode = mode
+        self.api = api
+        self.waiting = asyncio.Event()
+
+    @override
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        if self.api == "chat":
+            yield (
+                b'data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"gpt-5.6",'
+                b'"choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}\n\n'
+            )
+        else:
+            yield (
+                b'data: {"type":"response.output_text.delta","sequence_number":1,"item_id":"msg",'
+                b'"output_index":0,"content_index":0,"delta":"Hi"}\n\n'
+            )
+        if self.mode == "failure":
+            message = "stream failed"
+            raise ValueError(message)
+        if self.mode == "cancellation":
+            self.waiting.set()
+            await asyncio.Event().wait()
+        yield b"data: [DONE]\n\n"
+
+    @override
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["exhaustion", "early_exit", "failure", "cancellation", "zero_consumption"])
+@pytest.mark.parametrize("api", ["chat", "responses"])
+async def test_stream_releases_transport(mode: str, api: str) -> None:
+    """Every way a caller can leave a stream, including before the first read, releases the HTTP body."""
+    body = _TrackedStream(mode, api)
+    provider = OpenaiProvider(
+        api_key="key",
+        http_client=httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=body)
+            )
+        ),
+    )
+    try:
+        stream = (
+            await provider.acompletion(model="gpt-5.6", messages=[{"role": "user", "content": "Hi"}], stream=True)
+            if api == "chat"
+            else await provider.aresponses(model="gpt-5.6", input_data="Hi", stream=True)
+        )
+        assert isinstance(stream, AsyncIterator)
+        if mode == "zero_consumption":
+            await stream.aclose()  # type: ignore[union-attr]
+        else:
+            await anext(stream)
+        if mode == "early_exit":
+            await stream.aclose()  # type: ignore[union-attr]
+        elif mode == "failure":
+            with (
+                pytest.warns(DeprecationWarning, match="Provider-specific exceptions"),
+                pytest.raises(ValueError, match="stream failed"),
+            ):
+                await anext(stream)
+        elif mode == "cancellation":
+            task = asyncio.ensure_future(anext(stream))
+            await body.waiting.wait()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        elif mode == "exhaustion":
+            assert [chunk async for chunk in stream] == []
+        assert body.closed
+    finally:
+        await provider.client.close()

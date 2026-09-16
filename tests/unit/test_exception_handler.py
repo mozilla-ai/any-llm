@@ -619,6 +619,15 @@ async def test_closing_the_wrapped_stream_closes_the_provider_stream() -> None:
 
 
 @pytest.mark.asyncio
+async def test_closing_before_the_first_read_closes_the_provider_stream() -> None:
+    """aclose() on a stream nothing has read still reaches the SDK stream."""
+    sdk_stream = _SdkStream()
+    wrapped = await _wrapped(sdk_stream)
+    await wrapped.aclose()
+    assert sdk_stream.close_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_provider_stream_closes_after_exhaustion() -> None:
     """Reading a stream to the end closes the SDK stream beneath it."""
     sdk_stream = _SdkStream()

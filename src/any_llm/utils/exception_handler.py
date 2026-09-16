@@ -322,6 +322,40 @@ def _handle_exception(exception: Exception, provider_name: str, *, file_operatio
     raise exception
 
 
+class _ExceptionHandlingAsyncIterator:
+    """Handle streaming exceptions while allowing immediate cleanup before iteration."""
+
+    def __init__(self, async_iter: Any, provider_name: str, file_operation: bool) -> None:
+        self._async_iter = async_iter
+        self._iterator = aiter(async_iter)
+        self._provider_name = provider_name
+        self._file_operation = file_operation
+        self._closed = False
+
+    def __aiter__(self) -> _ExceptionHandlingAsyncIterator:
+        return self
+
+    async def __anext__(self) -> Any:
+        try:
+            return await anext(self._iterator)
+        except StopAsyncIteration:
+            await self.aclose()
+            raise
+        except Exception as exc:
+            try:
+                _handle_exception(exc, self._provider_name, file_operation=self._file_operation)
+            finally:
+                await self.aclose()
+        except BaseException:
+            await self.aclose()
+            raise
+
+    async def aclose(self) -> None:
+        if not self._closed:
+            self._closed = True
+            await aclose_quietly(self._async_iter)
+
+
 def handle_exceptions(*, wrap_streaming: bool = False, file_operation: bool = False) -> Callable[[F], F]:
     """Handle exceptions in async methods.
 
@@ -344,19 +378,6 @@ def handle_exceptions(*, wrap_streaming: bool = False, file_operation: bool = Fa
     def decorator(func: F) -> F:
         if wrap_streaming:
 
-            async def _wrap_async_iterator(
-                async_iter: Any,
-                provider_name: str,
-            ) -> Any:
-                """Wrap an async iterator to handle exceptions during iteration."""
-                try:
-                    async for item in async_iter:
-                        yield item
-                except Exception as e:
-                    _handle_exception(e, provider_name, file_operation=file_operation)
-                finally:
-                    await aclose_quietly(async_iter)
-
             @functools.wraps(func)
             async def streaming_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
                 provider_name = getattr(self, "PROVIDER_NAME", "unknown")
@@ -369,7 +390,7 @@ def handle_exceptions(*, wrap_streaming: bool = False, file_operation: bool = Fa
                 # Check if result is an async iterator (streaming response)
                 # If so, wrap it to handle exceptions during iteration
                 if hasattr(result, "__aiter__"):
-                    return _wrap_async_iterator(result, provider_name)
+                    return _ExceptionHandlingAsyncIterator(result, provider_name, file_operation)
 
                 # Non-streaming response, return as-is
                 return result

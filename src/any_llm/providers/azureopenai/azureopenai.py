@@ -1,18 +1,15 @@
 import asyncio
 import os
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
-from openai import AsyncOpenAI, AsyncStream
-from openai.types.chat import ChatCompletion as OpenAIChatCompletion
-from openai.types.chat import ChatCompletionChunk as OpenAIChatCompletionChunk
+from openai import AsyncOpenAI
 from typing_extensions import override
 
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.logging import logger
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 from any_llm.types.image import ImageGenerationParams, ImagesResponse
 
 _AzureADTokenProvider = Callable[[], str | Awaitable[str]]
@@ -158,23 +155,6 @@ class AzureopenaiProvider(BaseOpenAIProvider):
             default_query=default_query,
             **kwargs,
         )
-
-    @override
-    def _convert_completion_response_async(
-        self, response: OpenAIChatCompletion | AsyncStream[OpenAIChatCompletionChunk]
-    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        if isinstance(response, OpenAIChatCompletion):
-            return self._convert_completion_response(response)
-
-        async def chunks() -> AsyncIterator[ChatCompletionChunk]:
-            # Close the SDK stream on every exit; the base generator leaves it to the GC.
-            try:
-                async for chunk in response:
-                    yield self._convert_completion_chunk_response(chunk)
-            finally:
-                await response.close()
-
-        return chunks()
 
     def _media_options(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         # Azure documents these routes under the v1 preview reference, not the

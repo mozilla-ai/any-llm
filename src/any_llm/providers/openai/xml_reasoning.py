@@ -12,7 +12,7 @@ from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatComple
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from typing_extensions import override
 
-from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.providers.openai.base import BaseOpenAIProvider, OpenAIChunkStream
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, Reasoning
 from any_llm.utils.reasoning import process_streaming_reasoning_chunks
 
@@ -110,8 +110,4 @@ class XMLReasoningOpenAIProvider(BaseOpenAIProvider):
         if isinstance(response, OpenAIChatCompletion):
             return self._convert_completion_response(response)
 
-        async def chunk_iterator() -> AsyncIterator[ChatCompletionChunk]:
-            async for chunk in response:
-                yield self._convert_completion_chunk_response(chunk)
-
-        return wrap_chunks_with_xml_reasoning(chunk_iterator())
+        return wrap_chunks_with_xml_reasoning(OpenAIChunkStream(response, self._convert_completion_chunk_response))
