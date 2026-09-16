@@ -1,68 +1,21 @@
-# Copyright 2026 Mozilla
-
 import asyncio
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from typing import Any
 
-from openai import AsyncOpenAI, AsyncStream, OpenAIError
+from openai import AsyncOpenAI, AsyncStream
 from openai.types.chat import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat import ChatCompletionChunk as OpenAIChatCompletionChunk
 from typing_extensions import override
 
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
+from any_llm.logging import logger
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk
 from any_llm.types.image import ImageGenerationParams, ImagesResponse
 
 _AzureADTokenProvider = Callable[[], str | Awaitable[str]]
-_PROVIDER_NAME = "azureopenai"
-_API_KEY_ENV_NAME = "AZURE_OPENAI_API_KEY"
-_AD_TOKEN_ENV_NAME = "AZURE_OPENAI_AD_TOKEN"  # noqa: S105, environment variable name, not a credential
-
-
-def _resolve_credential(
-    api_key: str | None,
-    azure_ad_token: str | None,
-    azure_ad_token_provider: _AzureADTokenProvider | None,
-) -> str | Callable[[], Awaitable[str]]:
-    # Match the official Azure client's explicit-credential and Entra-first
-    # environment precedence, while treating empty environment values as absent.
-    # https://github.com/openai/openai-python/blob/88391abf981df3ea395ca1b5bf55ec6a4011ea93/src/openai/lib/azure.py
-    explicit_credentials = sum(value is not None for value in (api_key, azure_ad_token, azure_ad_token_provider))
-    if explicit_credentials > 1:
-        message = (
-            "The `api_key`, `azure_ad_token` and `azure_ad_token_provider` arguments are mutually exclusive; "
-            "only one can be passed at a time."
-        )
-        raise OpenAIError(message)
-
-    api_key = api_key or None
-    azure_ad_token = azure_ad_token or None
-    if not explicit_credentials:
-        azure_ad_token = os.getenv(_AD_TOKEN_ENV_NAME) or None
-        if azure_ad_token is None:
-            api_key = os.getenv(_API_KEY_ENV_NAME) or None
-
-    if azure_ad_token_provider is not None:
-
-        async def get_token() -> str:
-            token = await asyncio.to_thread(azure_ad_token_provider)
-            resolved_token = await token if isinstance(token, Awaitable) else token
-            if not isinstance(resolved_token, str) or not resolved_token:
-                message = "Expected `azure_ad_token_provider` to return a non-empty string."
-                raise ValueError(message)
-            return resolved_token
-
-        return get_token
-
-    credential = api_key or azure_ad_token
-    if credential is None:
-        env_var_name = f"{_API_KEY_ENV_NAME} or {_AD_TOKEN_ENV_NAME}"
-        raise MissingApiKeyError(_PROVIDER_NAME, env_var_name)
-
-    return credential
 
 
 class _AzureOpenAIStream(AsyncIterator[ChatCompletionChunk]):
@@ -101,9 +54,10 @@ class AzureopenaiProvider(BaseOpenAIProvider):
     environment settings. Dated API versions are not supported.
     """
 
-    ENV_API_KEY_NAME = _API_KEY_ENV_NAME
+    ENV_API_KEY_NAME = "AZURE_OPENAI_API_KEY"
+    ENV_AD_TOKEN_NAME = "AZURE_OPENAI_AD_TOKEN"  # noqa: S105, environment variable name, not a credential
     ENV_API_BASE_NAME = "AZURE_OPENAI_ENDPOINT"
-    PROVIDER_NAME = _PROVIDER_NAME
+    PROVIDER_NAME = "azureopenai"
     PROVIDER_DOCUMENTATION_URL = "https://learn.microsoft.com/azure/foundry/openai/api-version-lifecycle"
     SUPPORTS_RESPONSES = True
     SUPPORTS_LIST_MODELS = True
@@ -123,9 +77,50 @@ class AzureopenaiProvider(BaseOpenAIProvider):
 
     @override
     def _resolve_api_base(self, api_base: str | None = None) -> str | None:
-        # Defer the environment fallback until _init_client can apply precedence
-        # between api_base and the Azure-specific azure_endpoint argument.
+        # Deferred so an explicit azure_endpoint argument beats the environment.
         return api_base
+
+    def _resolve_credential(
+        self,
+        api_key: str | None,
+        azure_ad_token: str | None,
+        azure_ad_token_provider: _AzureADTokenProvider | None,
+    ) -> str | Callable[[], Awaitable[str]]:
+        # Match the official Azure client's explicit-credential and Entra-first
+        # environment precedence, while treating empty environment values as absent.
+        # https://github.com/openai/openai-python/blob/88391abf981df3ea395ca1b5bf55ec6a4011ea93/src/openai/lib/azure.py
+        explicit_credentials = sum(value is not None for value in (api_key, azure_ad_token, azure_ad_token_provider))
+        if explicit_credentials > 1:
+            message = (
+                "The `api_key`, `azure_ad_token` and `azure_ad_token_provider` arguments are mutually exclusive; "
+                "only one can be passed at a time."
+            )
+            raise ValueError(message)
+
+        api_key = api_key or None
+        azure_ad_token = azure_ad_token or None
+        if not explicit_credentials:
+            azure_ad_token = os.getenv(self.ENV_AD_TOKEN_NAME) or None
+            if azure_ad_token is None:
+                api_key = os.getenv(self.ENV_API_KEY_NAME) or None
+
+        if azure_ad_token_provider is not None:
+
+            async def get_token() -> str:
+                token = await asyncio.to_thread(azure_ad_token_provider)
+                resolved_token = await token if isinstance(token, Awaitable) else token
+                if not isinstance(resolved_token, str) or not resolved_token:
+                    message = "Expected `azure_ad_token_provider` to return a non-empty string."
+                    raise ValueError(message)
+                return resolved_token
+
+            return get_token
+
+        credential = api_key or azure_ad_token
+        if credential is None:
+            raise MissingApiKeyError(self.PROVIDER_NAME, f"{self.ENV_API_KEY_NAME} or {self.ENV_AD_TOKEN_NAME}")
+
+        return credential
 
     @override
     def _init_client(
@@ -145,9 +140,8 @@ class AzureopenaiProvider(BaseOpenAIProvider):
         # deployment name in `model`. Rejecting legacy routing options prevents
         # a dated-route configuration from appearing to work while being ignored.
         # https://learn.microsoft.com/azure/foundry/openai/api-version-lifecycle
-        selected_version = api_version if api_version is not None else os.getenv("OPENAI_API_VERSION") or None
-        if selected_version not in (None, "v1"):
-            parameter_name = "api_version" if api_version is not None else "OPENAI_API_VERSION"
+        if api_version not in (None, "v1"):
+            parameter_name = "api_version"
             raise UnsupportedParameterError(
                 parameter_name,
                 self.PROVIDER_NAME,
@@ -159,6 +153,15 @@ class AzureopenaiProvider(BaseOpenAIProvider):
                 parameter_name,
                 self.PROVIDER_NAME,
                 "Pass your Azure deployment name as `model` on each request instead of `azure_deployment`.",
+            )
+        # OPENAI_API_VERSION belongs to the legacy AzureOpenAI client and may be
+        # set for other tooling, so a dated value is reported rather than fatal.
+        environment_version = os.getenv("OPENAI_API_VERSION")
+        if environment_version and environment_version != "v1":
+            logger.warning(
+                "Ignoring OPENAI_API_VERSION=%s: the %s provider always uses /openai/v1/.",
+                environment_version,
+                self.PROVIDER_NAME,
             )
         # The GA schema still permits an explicit `api-version=v1`, even though
         # the lifecycle guide recommends omitting it. Dated values belong to the
@@ -172,7 +175,7 @@ class AzureopenaiProvider(BaseOpenAIProvider):
                 "Remove this query entry or use 'v1'. Media preview options are scoped to individual requests.",
             )
 
-        client_api_key = _resolve_credential(api_key, azure_ad_token, azure_ad_token_provider)
+        client_api_key = self._resolve_credential(api_key, azure_ad_token, azure_ad_token_provider)
 
         endpoint = api_base or azure_endpoint or os.getenv(self.ENV_API_BASE_NAME)
         if not endpoint:

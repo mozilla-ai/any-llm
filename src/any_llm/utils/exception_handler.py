@@ -1,5 +1,3 @@
-# Copyright 2026 Mozilla
-
 from __future__ import annotations
 
 import functools

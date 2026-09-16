@@ -1,5 +1,3 @@
-# Copyright 2026 Mozilla
-
 import asyncio
 import copy
 import json
@@ -10,7 +8,6 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from openai import OpenAIError
 from pydantic import BaseModel
 from typing_extensions import override
 
@@ -105,12 +102,12 @@ def test_empty_explicit_credentials_never_fall_back(
 
 @pytest.mark.parametrize("api_key", ["", "key"])
 def test_conflicting_explicit_credentials_including_empty(api_key: str) -> None:
-    with pytest.raises(OpenAIError, match="mutually exclusive"):
+    with pytest.raises(ValueError, match="mutually exclusive"):
         AzureopenaiProvider(api_base="https://resource.azure.com", api_key=api_key, azure_ad_token="token")  # noqa: S106
 
 
 def test_conflicting_explicit_entra_credentials() -> None:
-    with pytest.raises(OpenAIError, match="mutually exclusive"):
+    with pytest.raises(ValueError, match="mutually exclusive"):
         AzureopenaiProvider(
             api_base="https://resource.azure.com",
             azure_ad_token="token",  # noqa: S106

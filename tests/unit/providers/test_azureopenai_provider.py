@@ -1,13 +1,11 @@
-# Copyright 2026 Mozilla
-
 import json
+import logging
 import re
 import threading
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from openai import OpenAIError
 
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.providers.azureopenai.azureopenai import AzureopenaiProvider
@@ -165,11 +163,20 @@ def test_azureopenai_rejects_legacy_routing_options(legacy_options: dict[str, ob
         )
 
 
-def test_azureopenai_rejects_legacy_api_version_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_azureopenai_warns_and_ignores_legacy_api_version_environment(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     monkeypatch.setenv("OPENAI_API_VERSION", "2024-10-21")
 
-    with pytest.raises(UnsupportedParameterError, match="OPENAI_API_VERSION"):
+    with (
+        patch("any_llm.providers.azureopenai.azureopenai.AsyncOpenAI") as sdk_client,
+        caplog.at_level(logging.WARNING, logger="any_llm"),
+    ):
         AzureopenaiProvider(api_key="key", api_base="https://resource.openai.azure.com")
+
+    assert "Ignoring OPENAI_API_VERSION=2024-10-21" in caplog.text
+    assert sdk_client.call_args.kwargs["base_url"] == "https://resource.openai.azure.com/openai/v1/"
+    assert sdk_client.call_args.kwargs["default_query"] is None
 
 
 @pytest.mark.parametrize(
@@ -202,13 +209,13 @@ def test_azureopenai_requires_one_endpoint_and_credential(monkeypatch: pytest.Mo
     with pytest.raises(MissingApiKeyError, match="AZURE_OPENAI_API_KEY or AZURE_OPENAI_AD_TOKEN"):
         AzureopenaiProvider(api_base="https://resource.openai.azure.com")
     token = "token"  # noqa: S105
-    with pytest.raises(OpenAIError, match="mutually exclusive"):
+    with pytest.raises(ValueError, match="mutually exclusive"):
         AzureopenaiProvider(
             api_key="key",
             api_base="https://resource.openai.azure.com",
             azure_ad_token=token,
         )
-    with pytest.raises(OpenAIError, match="mutually exclusive"):
+    with pytest.raises(ValueError, match="mutually exclusive"):
         AzureopenaiProvider(
             api_key="key",
             api_base="https://resource.openai.azure.com",
