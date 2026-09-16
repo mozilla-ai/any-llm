@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -917,18 +917,6 @@ async def test_aresponses_ignores_none_transport_parameters() -> None:
 
 
 @pytest.mark.asyncio
-async def test_private_stream_close_before_iteration_does_not_acquire_source() -> None:
-    with patch("any_llm.providers.gemini.gemini.genai.Client") as client_class:
-        client = client_class.return_value
-        provider = GeminiProvider(api_key="test-key")
-        response = await provider._aresponses(ResponsesParams(model="gemini-3.8-flash", input="Hello", stream=True))
-        assert isinstance(response, AsyncGenerator)
-        await response.aclose()
-
-    client.aio.interactions.create.assert_not_called()
-
-
-@pytest.mark.asyncio
 async def test_public_stream_close_before_iteration_does_not_acquire_source() -> None:
     with patch("any_llm.providers.gemini.gemini.genai.Client") as client_class:
         client = client_class.return_value
@@ -940,23 +928,6 @@ async def test_public_stream_close_before_iteration_does_not_acquire_source() ->
         await response.aclose()
 
     client.aio.interactions.create.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_private_stream_close_after_iteration_closes_source() -> None:
-    stream = AsyncMock()
-    stream.close = AsyncMock()
-    stream.__aiter__.side_effect = lambda: _events(_created())
-    with patch("any_llm.providers.gemini.gemini.genai.Client") as client_class:
-        client = client_class.return_value
-        client.aio.interactions.create = AsyncMock(return_value=stream)
-        provider = GeminiProvider(api_key="test-key")
-        response = await provider._aresponses(ResponsesParams(model="gemini-3.8-flash", input="Hello", stream=True))
-        assert isinstance(response, AsyncGenerator)
-        await anext(response)
-        await response.aclose()
-
-    stream.close.assert_awaited_once_with()
 
 
 @pytest.mark.parametrize("total", [None, 0, 346])
