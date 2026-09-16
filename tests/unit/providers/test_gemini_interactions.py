@@ -3,12 +3,12 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 from google.genai import types
-from google.genai._gaos.types.interactions import Interaction
 from google.genai.interactions import (
     ArgumentsDelta,
     Error,
@@ -61,6 +61,11 @@ from any_llm.providers.gemini.interactions_stream import convert_interaction_str
 from any_llm.providers.vertexai import VertexaiProvider
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.exception_handler import _ExceptionHandlingAsyncIterator
+
+if TYPE_CHECKING:
+    from google.genai._gaos.types.interactions import Interaction
+else:
+    from google.genai.interactions import Interaction
 
 
 def _interaction(
