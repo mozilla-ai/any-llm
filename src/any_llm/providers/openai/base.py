@@ -37,6 +37,7 @@ from any_llm.types.image import ImageGenerationParams, ImagesResponse
 from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
 from any_llm.types.responses import ParsedResponse, Response, ResponsesParams, ResponseStreamEvent
+from any_llm.utils.aio import aclose_quietly
 from any_llm.utils.structured_output import (
     build_responses_text_format,
     get_json_schema,
@@ -68,6 +69,8 @@ class OpenAIChunkStream(AsyncIterator[ChatCompletionChunk]):
 
     @override
     async def __anext__(self) -> ChatCompletionChunk:
+        if self._closed:
+            raise StopAsyncIteration
         try:
             return self._convert(await anext(self._iterator))
         except BaseException:
@@ -77,7 +80,7 @@ class OpenAIChunkStream(AsyncIterator[ChatCompletionChunk]):
     async def aclose(self) -> None:
         if not self._closed:
             self._closed = True
-            await self._response.close()
+            await aclose_quietly(self._response)
 
 
 class BaseOpenAIProvider(AnyLLM):

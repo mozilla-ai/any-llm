@@ -336,6 +336,8 @@ class _ExceptionHandlingAsyncIterator:
         return self
 
     async def __anext__(self) -> Any:
+        if self._closed:
+            raise StopAsyncIteration
         try:
             return await anext(self._iterator)
         except StopAsyncIteration:

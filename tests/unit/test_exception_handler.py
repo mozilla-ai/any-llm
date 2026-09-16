@@ -680,3 +680,16 @@ async def test_a_failing_close_never_outranks_the_stream_outcome() -> None:
 async def test_iterator_without_a_close_method_is_left_alone() -> None:
     """A source with neither aclose() nor close() streams through untouched."""
     assert [item async for item in await _wrapped(_PlainIterable())] == [1, 2]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("consume_first", [False, True])
+async def test_closed_wrapper_never_resumes_source(consume_first: bool) -> None:
+    source = _SdkStream()
+    wrapped = await _wrapped(source)
+    if consume_first:
+        await anext(wrapped)
+    await wrapped.aclose()
+    with pytest.raises(StopAsyncIteration):
+        await anext(wrapped)
+    assert source.close_calls == 1

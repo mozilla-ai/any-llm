@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from typing import Any, Literal
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -427,3 +428,19 @@ def test_partial_reasoning_tag_suffix_len(
     expected: int,
 ) -> None:
     assert partial_reasoning_tag_suffix_len(text, tag_kind=tag_kind) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("consume_first", [False, True])
+async def test_xml_stream_close_is_terminal(consume_first: bool) -> None:
+    source = MagicMock()
+    source.__aiter__.return_value = [_make_chunk("Hello"), _make_chunk("again")]
+    source.aclose = AsyncMock()
+    stream = wrap_chunks_with_xml_reasoning(source)
+    if consume_first:
+        await anext(stream)
+    await stream.aclose()  # type: ignore[attr-defined]
+    await stream.aclose()  # type: ignore[attr-defined]
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+    source.aclose.assert_awaited_once()

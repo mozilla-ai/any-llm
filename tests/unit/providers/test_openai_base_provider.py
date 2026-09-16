@@ -7,13 +7,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from openai import AsyncStream
 from openai.types.responses import ResponseCompactionItem, ResponseOutputMessage, ResponseOutputText
 from openresponses_types import CompactionBody, ResponseResource
 from pydantic import BaseModel
 from typing_extensions import override
 
-from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.providers.openai.base import BaseOpenAIProvider, OpenAIChunkStream
 from any_llm.providers.openai.openai import OpenaiProvider
+from any_llm.providers.sambanova.sambanova import SambanovaProvider
 from any_llm.types.completion import CompletionParams
 from any_llm.types.model import Model
 from any_llm.types.responses import ParsedResponse, Response
@@ -652,10 +654,13 @@ class _TrackedStream(httpx.AsyncByteStream):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["exhaustion", "early_exit", "failure", "cancellation", "zero_consumption"])
 @pytest.mark.parametrize("api", ["chat", "responses"])
-async def test_stream_releases_transport(mode: str, api: str) -> None:
+@pytest.mark.parametrize("provider_type", [OpenaiProvider, SambanovaProvider])
+async def test_stream_releases_transport(mode: str, api: str, provider_type: type[BaseOpenAIProvider]) -> None:
     """Every way a caller can leave a stream, including before the first read, releases the HTTP body."""
+    if provider_type is SambanovaProvider and api == "responses":
+        pytest.skip("SambaNova does not support the Responses API")
     body = _TrackedStream(mode, api)
-    provider = OpenaiProvider(
+    provider = provider_type(
         api_key="key",
         http_client=httpx.AsyncClient(
             transport=httpx.MockTransport(
@@ -693,3 +698,51 @@ async def test_stream_releases_transport(mode: str, api: str) -> None:
         assert body.closed
     finally:
         await provider.client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["exhaustion", "read_error", "conversion_error", "cancellation"])
+async def test_chunk_stream_preserves_outcome_when_close_fails(outcome: str) -> None:
+    error = ValueError("original failure")
+
+    async def chunks() -> AsyncIterator[MagicMock]:
+        if outcome == "read_error":
+            raise error
+        if outcome == "cancellation":
+            raise asyncio.CancelledError
+        if outcome == "conversion_error":
+            yield MagicMock()
+
+    response = MagicMock(spec=AsyncStream)
+    response.__aiter__.side_effect = chunks
+    response.close = AsyncMock(side_effect=RuntimeError("cleanup failure"))
+    convert = MagicMock(side_effect=error)
+    stream = OpenAIChunkStream(response, convert)
+    expected = (
+        StopAsyncIteration
+        if outcome == "exhaustion"
+        else asyncio.CancelledError
+        if outcome == "cancellation"
+        else ValueError
+    )
+    with pytest.raises(expected):
+        await anext(stream)
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+    await stream.aclose()
+    response.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("consume_first", [False, True])
+async def test_chunk_stream_stops_after_close(consume_first: bool) -> None:
+    response = MagicMock(spec=AsyncStream)
+    response.__aiter__.return_value = [MagicMock(), MagicMock()]
+    response.close = AsyncMock()
+    stream = OpenAIChunkStream(response, MagicMock())
+    if consume_first:
+        await anext(stream)
+    await stream.aclose()
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+    response.close.assert_awaited_once()
