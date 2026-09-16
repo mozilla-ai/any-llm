@@ -42,7 +42,7 @@ def _interaction(
         usage = Usage(
             total_input_tokens=4,
             total_output_tokens=2,
-            total_tokens=6,
+            total_tokens=9,
             total_cached_tokens=1,
             total_thought_tokens=3,
         )
@@ -85,7 +85,7 @@ def test_convert_interaction_maps_text_status_metadata_and_usage() -> None:
     assert response.usage is not None
     assert response.usage.input_tokens == 4
     assert response.usage.output_tokens == 5
-    assert response.usage.total_tokens == 6
+    assert response.usage.total_tokens == 9
     assert response.usage.input_tokens_details.cached_tokens == 1
     assert response.usage.output_tokens_details.reasoning_tokens == 3
 
@@ -400,8 +400,11 @@ async def test_aresponses_ignores_none_transport_parameters() -> None:
 
 
 @pytest.mark.parametrize("total", [None, 0, 346])
+@pytest.mark.parametrize("returned_model", [None, "gemini-3.8-flash-001"])
 @pytest.mark.asyncio
-async def test_real_sdk_serializes_stable_interactions_path_and_body(total: int | None) -> None:
+async def test_real_sdk_serializes_stable_interactions_path_and_body(
+    total: int | None, returned_model: str | None
+) -> None:
     requests: list[httpx.Request] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -411,7 +414,7 @@ async def test_real_sdk_serializes_stable_interactions_path_and_body(total: int 
             json={
                 "id": "int-123",
                 "status": "completed",
-                "model": "gemini-3.8-flash",
+                "model": returned_model,
                 "steps": [
                     {"type": "thought", "signature": "opaque"},
                     {"type": "model_output", "content": [{"type": "text", "text": "Hello"}]},
@@ -445,6 +448,7 @@ async def test_real_sdk_serializes_stable_interactions_path_and_body(total: int 
 
     assert isinstance(response, Response)
     assert response.output_text == "Hello"
+    assert response.model == (returned_model or "gemini-3.8-flash")
     assert response.output[0].id == "msg-int-123-0"
     assert response.usage is not None
     assert response.usage.output_tokens == 335
