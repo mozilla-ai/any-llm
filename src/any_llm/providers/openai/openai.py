@@ -1,7 +1,12 @@
+from typing import ClassVar
+
+from any_llm.types.files import FileOperation
+
 from .base import BaseOpenAIProvider
+from .files import OpenAIFileMethods
 
 
-class OpenaiProvider(BaseOpenAIProvider):
+class OpenaiProvider(OpenAIFileMethods, BaseOpenAIProvider):
     API_BASE = "https://api.openai.com/v1"
 
     ENV_API_KEY_NAME = "OPENAI_API_KEY"
@@ -15,3 +20,6 @@ class OpenaiProvider(BaseOpenAIProvider):
     SUPPORTS_IMAGE_GENERATION = True
     SUPPORTS_AUDIO_TRANSCRIPTION = True
     SUPPORTS_AUDIO_SPEECH = True
+    SUPPORTED_FILE_OPERATIONS: ClassVar[frozenset[FileOperation]] = frozenset(
+        {"upload", "list", "retrieve", "download", "delete"}
+    )

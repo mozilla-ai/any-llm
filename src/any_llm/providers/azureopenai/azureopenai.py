@@ -1,7 +1,7 @@
 import asyncio
 import os
 from collections.abc import Awaitable, Callable, Mapping
-from typing import Any
+from typing import Any, ClassVar
 
 from openai import AsyncOpenAI
 from typing_extensions import override
@@ -9,13 +9,15 @@ from typing_extensions import override
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.logging import logger
 from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.providers.openai.files import OpenAIFileMethods
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
+from any_llm.types.files import FileOperation
 from any_llm.types.image import ImageGenerationParams, ImagesResponse
 
 _AzureADTokenProvider = Callable[[], str | Awaitable[str]]
 
 
-class AzureopenaiProvider(BaseOpenAIProvider):
+class AzureopenaiProvider(OpenAIFileMethods, BaseOpenAIProvider):
     """Azure OpenAI v1 with GA core routes and operation-scoped preview media.
 
     Supply deployment names as request models, not as client routing options.
@@ -35,6 +37,9 @@ class AzureopenaiProvider(BaseOpenAIProvider):
     SUPPORTS_AUDIO_TRANSCRIPTION = True
     SUPPORTS_AUDIO_SPEECH = True
     SUPPORTS_MODERATION = False
+    SUPPORTED_FILE_OPERATIONS: ClassVar[frozenset[FileOperation]] = frozenset(
+        {"upload", "list", "retrieve", "download", "delete"}
+    )
 
     client: AsyncOpenAI
 
