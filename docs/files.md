@@ -127,9 +127,13 @@ that OpenAI's `user_data` or `vision` upload purposes are available on Azure.
 Azure validates accepted purposes, file formats, expiry durations, and download
 permissions on the server. `expires_in` uses the same `expires_after` mapping as
 OpenAI; the adapter does not invent an expiry when it is omitted. For batch
-uploads, Azure requires 259,200 to 2,592,000 seconds (3 to 30 days); a one-hour
-expiry accepted by OpenAI is rejected by Azure with HTTP 400. Verify the
-retention behavior for the purpose and Azure resource you use.
+uploads, [Microsoft documents](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/batch)
+1,209,600 to 2,592,000 seconds (14 to 30 days). The Azure resource used by our
+integration tests also accepted 259,200 seconds (3 days), but this does not
+establish a universal minimum. Use 14 to 30 days unless you have confirmed a
+lower minimum on your resource. A one-hour expiry accepted by OpenAI was
+rejected by our Azure resource with HTTP 400. Verify the retention behavior
+for the purpose and Azure resource you use.
 
 Azure shares the `cursor`/`next_cursor` pagination contract and supports the
 `purpose` filter and `order` option. File IDs remain scoped to their originating

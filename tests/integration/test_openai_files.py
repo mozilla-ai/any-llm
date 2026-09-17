@@ -15,8 +15,8 @@ from any_llm.providers.openai.openai import OpenaiProvider
 from any_llm.utils.aio import run_async_in_sync
 from tests.constants import EXPECTED_PROVIDERS
 
-# Azure batch uploads require at least three days; OpenAI accepts the same duration.
-BATCH_EXPIRY_SECONDS = 3 * 24 * 60 * 60
+# Use Azure's documented batch expiry minimum rather than a resource-specific lower value.
+BATCH_EXPIRY_SECONDS = 14 * 24 * 60 * 60
 
 # Uploading a batch input does not submit a batch or invoke a model.
 BATCH_CONTENT = (
