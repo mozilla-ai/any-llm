@@ -44,7 +44,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         # with reasoning_effort set: OpenAI reasoning_effort is not mapped to Anthropic extended
         # thinking). gpt-oss-120b does emit reasoning, which needs the otari SDK reasoning-string
         # fix (mozilla-ai/otari#145) to deserialize.
-        LLMProvider.OTARI: "mzai:openai/gpt-oss-120b",
+        LLMProvider.OTARI: "nebius:openai/gpt-oss-120b",
         LLMProvider.VERTEXAI: "gemini-2.5-flash",
         LLMProvider.GITHUB: "openai/gpt-4.1-nano",
         LLMProvider.GROQ: "openai/gpt-oss-20b",
