@@ -217,10 +217,13 @@ def build_parsed_message(message: AnthropicMessage, output_format: type | dict[s
     text_block_cls = parsed_text_block[type_param]
     message_cls = parsed_message[type_param]
 
+    # A refused turn's text is the refusal or a partial answer, never the requested JSON, so it is
+    # left unparsed, as the completion and Responses paths leave refusals unparsed.
+    refused = message.stop_reason == "refusal"
     content: list[Any] = []
     for block in message.content:
         if isinstance(block, TextBlock):
-            parsed = _parse(block.text) if block.text else None
+            parsed = _parse(block.text) if block.text and not refused else None
             content.append(
                 text_block_cls(type="text", text=block.text, citations=block.citations, parsed_output=parsed)
             )
