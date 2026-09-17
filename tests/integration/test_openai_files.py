@@ -139,6 +139,26 @@ async def test_openai_files_lifecycle(
 
 
 @pytest.mark.asyncio
+async def test_openai_files_upload_without_expiry(files_provider: OpenaiProvider | AzureopenaiProvider) -> None:
+    provider = files_provider
+    file_id: str | None = None
+    try:
+        uploaded = await provider.aupload_file(
+            BATCH_CONTENT,
+            filename=f"any-llm-test-{uuid.uuid4().hex}.jsonl",
+            purpose="batch",
+        )
+        file_id = uploaded.id
+        assert uploaded.size_bytes == len(BATCH_CONTENT)
+        assert uploaded.purpose == "batch"
+        retrieved = await provider.aretrieve_file(file_id)
+        assert retrieved.id == file_id
+        assert retrieved.size_bytes == len(BATCH_CONTENT)
+    finally:
+        await cleanup_files(provider, [file_id] if file_id is not None else [])
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("consumption", ["unread", "early", "full"])
 async def test_openai_batch_file_download(
     files_provider: OpenaiProvider | AzureopenaiProvider, consumption: str
