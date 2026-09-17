@@ -221,8 +221,11 @@ Before requesting or implementing:
 - [ ] Provider is actively maintained and supported
 - [ ] Provider's interface is compatible with any-llm's design
 - [ ] No existing issue/PR for adding this provider
+- [ ] Someone who does not work on the provider has asked for it
 
-A provider that needs a **code folder** must also clear a usage bar: a substantial user base or unique capabilities. A folder is the expensive category, in review attention now and in maintenance and eventual cleanup later, so it carries that bar in both tiers. Registry rows waive it because a row costs one line to add and one line to remove. Asking for the **verified** tier raises the bar further, since it commits us to holding a key and fixing breakage.
+**Demand comes before cost.** Being listed is an endorsement, and the endorsement does not shrink with the diff. We add a gateway when an any-llm user who does not work on it has asked for it, in an issue or a discussion, or when a maintainer picks it up. A row submitted by the gateway's own operator with no such request is closed regardless of how clean it is, and regardless of how cheap it is to remove later. Disclose an affiliation in the PR; contributing your own gateway is welcome once someone has asked for it.
+
+A provider that needs a **code folder** carries a further bar: a substantial user base or unique capabilities. A folder is the expensive category, in review attention now and in maintenance and eventual cleanup later, so it carries that bar in both tiers. Registry rows do not carry the usage bar, since a row costs one line to add and one line to remove, but they still carry the demand requirement above. Asking for the **verified** tier raises the bar further, since it commits us to holding a key and fixing breakage.
 
 ### 2a. Config-only Gateways: Add a Registry Row
 
@@ -241,6 +244,8 @@ Add one row to `PROVIDER_REGISTRY` in `src/any_llm/providers/registry.py`:
 That row is the whole change. There is no provider class, no folder, no `__init__.py`, no `pyproject.toml` extra, and no `LLMProvider` member: the name resolves by string everywhere a provider name is accepted, including `AnyLLM.create("examplegw")`, `"examplegw:model"`, and `provider="examplegw"`.
 
 - [ ] Add the row, setting capability flags for what the gateway actually supports. Flags default to the conservative baseline of completion, streaming, and model listing; everything else is opt-in. Do not set a flag you have not exercised against the live endpoint.
+- [ ] Link the issue or discussion where someone asked for this gateway.
+- [ ] Disclose it in the PR if you work on the gateway.
 - [ ] Paste live verification output in the PR (see below).
 
 Two things you may notice in the tree that do *not* apply to a new row. The registry providers already there carry a package directory and an `LLMProvider` member; those are compatibility shims from before they were migrated to rows, kept so their deep-import paths and `LLMProvider.<NAME>` references keep working. And a row is not added to the `tests/conftest.py` model maps, because a community gateway has no CI key.
