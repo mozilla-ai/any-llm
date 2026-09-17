@@ -143,8 +143,9 @@ _OTARI_ENV_CLEARED = {
 
 @pytest.mark.parametrize("source", ["explicit", "OTARI_API_BASE", "GATEWAY_API_BASE"])
 @pytest.mark.parametrize("suffix", ["/v1", "/v1/", "/api/v1", "/api/v1/"])
-def test_otari_rejects_api_base_with_api_prefix(source: str, suffix: str) -> None:
-    api_base = f"https://self.example.com{suffix}"
+@pytest.mark.parametrize("ending", ["", "?x=1", "#tag", "?x=1#tag"])
+def test_otari_rejects_api_base_with_api_prefix(source: str, suffix: str, ending: str) -> None:
+    api_base = f"https://self.example.com{suffix}{ending}"
     env = {**_OTARI_ENV_CLEARED}
     if source != "explicit":
         env[source] = api_base
@@ -160,6 +161,23 @@ def test_otari_rejects_api_base_with_api_prefix(source: str, suffix: str) -> Non
 
 
 @pytest.mark.parametrize("source", ["explicit", "OTARI_API_BASE", "GATEWAY_API_BASE"])
+@pytest.mark.parametrize("ending", ["?x=1", "#tag", "/?x=1#tag"])
+def test_otari_rejects_api_base_with_query_or_fragment(source: str, ending: str) -> None:
+    api_base = f"https://self.example.com{ending}"
+    env = {**_OTARI_ENV_CLEARED}
+    if source != "explicit":
+        env[source] = api_base
+    with (
+        patch.dict("os.environ", env, clear=False),
+        patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_client,
+        pytest.raises(ValueError, match="without a query string or fragment"),
+    ):
+        OtariProvider(api_base=api_base if source == "explicit" else None)
+
+    mock_client.assert_not_called()
+
+
+@pytest.mark.parametrize("source", ["explicit", "OTARI_API_BASE", "GATEWAY_API_BASE"])
 @pytest.mark.parametrize("api_base", ["https://self.example.com", "https://self.example.com/"])
 def test_otari_accepts_gateway_origin(source: str, api_base: str) -> None:
     env = {**_OTARI_ENV_CLEARED}
@@ -171,7 +189,7 @@ def test_otari_accepts_gateway_origin(source: str, api_base: str) -> None:
     ):
         OtariProvider(api_base=api_base if source == "explicit" else None)
 
-    assert mock_client.call_args.kwargs["api_base"] == api_base
+    assert mock_client.call_args.kwargs["api_base"] == "https://self.example.com"
 
 
 @patch.dict("os.environ", {**_OTARI_ENV_CLEARED, "OTARI_API_BASE": "https://ignored.example.com/v1"}, clear=False)

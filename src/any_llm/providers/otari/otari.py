@@ -4,6 +4,7 @@ import importlib
 import json
 import os
 from typing import TYPE_CHECKING, Any, TypedDict, cast
+from urllib.parse import urlsplit
 
 from anthropic import transform_schema
 from pydantic import BaseModel
@@ -207,16 +208,19 @@ class OtariProvider(BaseOpenAIProvider):
     @override
     def _resolve_api_base(self, api_base: str | None = None) -> str | None:
         resolved = api_base or self._resolve_env_api_base()
-        if resolved:
-            cleaned = resolved.rstrip("/")
-            for suffix in ("/api/v1", "/v1"):
-                if cleaned.endswith(suffix):
-                    msg = (
-                        f"api_base must be the gateway origin, without the {suffix} path prefix. "
-                        f"Pass {cleaned.removesuffix(suffix).rstrip('/')!r} instead."
-                    )
-                    raise ValueError(msg)
-        return resolved
+        if not resolved:
+            return resolved
+        parsed = urlsplit(resolved)
+        path = parsed.path.rstrip("/")
+        for suffix in ("/api/v1", "/v1"):
+            if path.endswith(suffix):
+                origin = parsed._replace(path=path.removesuffix(suffix).rstrip("/"), query="", fragment="").geturl()
+                msg = f"api_base must be the gateway origin, without the {suffix} path prefix. Pass {origin!r} instead."
+                raise ValueError(msg)
+        if parsed.query or parsed.fragment:
+            msg = "api_base must be the gateway origin, without a query string or fragment."
+            raise ValueError(msg)
+        return parsed._replace(path=path).geturl()
 
     @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str:
