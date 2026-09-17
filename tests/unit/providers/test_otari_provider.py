@@ -10,7 +10,7 @@ import pytest
 from anthropic import transform_schema
 from pydantic import BaseModel
 
-from any_llm.exceptions import BatchNotCompleteError, UnsupportedParameterError
+from any_llm.exceptions import BatchNotCompleteError
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams
 from any_llm.types.batch import BatchResult
 from any_llm.types.completion import ChatCompletion, CompletionParams
@@ -139,6 +139,47 @@ _OTARI_ENV_CLEARED = {
     "OTARI_API_BASE": "",
     "GATEWAY_API_BASE": "",
 }
+
+
+@pytest.mark.parametrize("source", ["explicit", "OTARI_API_BASE", "GATEWAY_API_BASE"])
+@pytest.mark.parametrize("suffix", ["/v1", "/v1/", "/api/v1", "/api/v1/"])
+def test_otari_rejects_api_base_with_api_prefix(source: str, suffix: str) -> None:
+    api_base = f"https://self.example.com{suffix}"
+    env = {**_OTARI_ENV_CLEARED}
+    if source != "explicit":
+        env[source] = api_base
+    with (
+        patch.dict("os.environ", env, clear=False),
+        patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_client,
+        pytest.raises(ValueError, match="api_base must be the gateway origin") as exc_info,
+    ):
+        OtariProvider(api_base=api_base if source == "explicit" else None)
+
+    assert "Pass 'https://self.example.com' instead." in str(exc_info.value)
+    mock_client.assert_not_called()
+
+
+@pytest.mark.parametrize("source", ["explicit", "OTARI_API_BASE", "GATEWAY_API_BASE"])
+@pytest.mark.parametrize("api_base", ["https://self.example.com", "https://self.example.com/"])
+def test_otari_accepts_gateway_origin(source: str, api_base: str) -> None:
+    env = {**_OTARI_ENV_CLEARED}
+    if source != "explicit":
+        env[source] = api_base
+    with (
+        patch.dict("os.environ", env, clear=False),
+        patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_client,
+    ):
+        OtariProvider(api_base=api_base if source == "explicit" else None)
+
+    assert mock_client.call_args.kwargs["api_base"] == api_base
+
+
+@patch.dict("os.environ", {**_OTARI_ENV_CLEARED, "OTARI_API_BASE": "https://ignored.example.com/v1"}, clear=False)
+def test_otari_explicit_origin_takes_precedence_over_env() -> None:
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_client:
+        OtariProvider(api_base="https://self.example.com")
+
+    assert mock_client.call_args.kwargs["api_base"] == "https://self.example.com"
 
 
 @patch.dict("os.environ", {**_OTARI_ENV_CLEARED, "OTARI_API_KEY": "tk_platform"}, clear=False)
@@ -817,20 +858,40 @@ async def test_otari_amessages_delegates_to_native_endpoint_preserving_anthropic
 
 
 @pytest.mark.asyncio
-async def test_otari_amessages_rejects_container_until_sdk_supports_it() -> None:
+@pytest.mark.parametrize("stream", [False, True])
+async def test_otari_amessages_forwards_container(stream: bool) -> None:
     client = _mock_otari_client()
+    client.message.return_value = (
+        _MockMetadataStream([{"type": "message_stop"}])
+        if stream
+        else SimpleNamespace(data=_message_response_payload(), request_id=None)
+    )
     provider = _build_provider(client)
     params = MessagesParams(
         model="claude-sonnet-4-5",
         messages=[{"role": "user", "content": "Continue"}],
         max_tokens=100,
         container="container_123",
+        stream=stream,
     )
 
-    with pytest.raises(UnsupportedParameterError, match="container"):
-        await provider._amessages(params)
+    result = await provider._amessages(params)
+    if stream:
+        assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+        collected = [event async for event in result]
+        assert len(collected) == 1
+        assert isinstance(collected[0], MessageStopEvent)
+    else:
+        assert isinstance(result, MessageResponse)
+        assert result.id == "msg_1"
 
-    client.with_response_metadata.message.assert_not_called()
+    client.message.assert_awaited_once()
+    call_kwargs = client.message.call_args.kwargs
+    assert call_kwargs["container"] == "container_123"
+    if stream:
+        assert call_kwargs["stream"] is True
+    else:
+        assert "stream" not in call_kwargs
 
 
 @pytest.mark.asyncio

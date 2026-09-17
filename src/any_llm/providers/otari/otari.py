@@ -9,7 +9,7 @@ from anthropic import transform_schema
 from pydantic import BaseModel
 from typing_extensions import override
 
-from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError, UnsupportedParameterError
+from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.openai.utils import _convert_moderation_response_from_openai
 from any_llm.types.batch import Batch, BatchResult, BatchResultError, BatchResultItem
@@ -206,9 +206,17 @@ class OtariProvider(BaseOpenAIProvider):
 
     @override
     def _resolve_api_base(self, api_base: str | None = None) -> str | None:
-        if api_base:
-            return api_base
-        return self._resolve_env_api_base()
+        resolved = api_base or self._resolve_env_api_base()
+        if resolved:
+            cleaned = resolved.rstrip("/")
+            for suffix in ("/api/v1", "/v1"):
+                if cleaned.endswith(suffix):
+                    msg = (
+                        f"api_base must be the gateway origin, without the {suffix} path prefix. "
+                        f"Pass {cleaned.removesuffix(suffix).rstrip('/')!r} instead."
+                    )
+                    raise ValueError(msg)
+        return resolved
 
     @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str:
@@ -351,14 +359,9 @@ class OtariProvider(BaseOpenAIProvider):
         The base implementation converts Messages to Chat Completions, which silently
         drops Anthropic-only features (``cache_control`` on system blocks, ``thinking``
         config). otari's gateway serves /messages natively, so delegate to the otari
-        SDK's ``message()`` to preserve them. Otari SDK 0.3.0 drops ``container`` while
-        constructing non-streaming requests, so reject it until the supported SDK serializes
-        the field.
+        SDK's ``message()`` to preserve them. The gateway enforces route-specific
+        restrictions on ``container`` reuse.
         """
-        if params.container is not None:
-            parameter_name = "container"
-            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
-
         api_kwargs = params.model_dump(exclude_none=True, exclude={"output_format"})
         if is_structured_output_type(params.output_format):
             api_kwargs["output_format"] = {
