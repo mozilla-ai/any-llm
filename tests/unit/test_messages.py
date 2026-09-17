@@ -103,6 +103,83 @@ def test_messages_params_exposes_container_in_schema() -> None:
     assert "container" in MessagesParams.model_json_schema()["properties"]
 
 
+def test_messages_params_accepts_container_skills_object() -> None:
+    """The public Messages API must accept Anthropic's container object, not only a string ID."""
+    from pydantic import ValidationError
+
+    container = {
+        "skills": [
+            {"type": "anthropic", "skill_id": "xlsx", "version": "latest"},
+        ]
+    }
+
+    try:
+        params = MessagesParams(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": "Create an Excel spreadsheet."}],
+            tools=[{"type": "code_execution_20250825", "name": "code_execution"}],
+            container=container,
+        )
+    except ValidationError as exc:
+        pytest.fail(f"container skills object should validate, got {exc}")
+
+    dumped = params.model_dump(exclude_none=True)["container"]
+    assert dumped == container
+    assert params.container == dumped
+
+
+def test_messages_params_accepts_container_reuse_and_custom_skills() -> None:
+    container = {
+        "id": "container_123",
+        "skills": [
+            {"type": "custom", "skill_id": "skill_abc"},
+            {"type": "anthropic", "skill_id": "pdf", "version": "latest"},
+        ],
+    }
+
+    params = MessagesParams(
+        model="claude-sonnet-4-6",
+        messages=[{"role": "user", "content": "Continue in the same container."}],
+        max_tokens=1024,
+        container=container,
+    )
+
+    dumped = params.model_dump(exclude_none=True)["container"]
+    assert dumped["id"] == "container_123"
+    assert dumped["skills"][0] == {"type": "custom", "skill_id": "skill_abc"}
+    assert dumped["skills"][1]["skill_id"] == "pdf"
+    assert dumped["skills"][1]["version"] == "latest"
+
+
+def test_messages_params_rejects_malformed_container_skills() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="skill_id"):
+        MessagesParams(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            container={"skills": [{"type": "anthropic"}]},
+        )
+
+    with pytest.raises(ValidationError):
+        MessagesParams(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            container={"skills": [{"type": "unknown", "skill_id": "xlsx"}]},
+        )
+
+    with pytest.raises(ValidationError):
+        MessagesParams(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            container=123,  # type: ignore[arg-type]
+        )
+
+
 @pytest.mark.asyncio
 async def test_amessages_rejects_container_for_bridged_provider() -> None:
     provider = AnyLLM.create("openai", api_key="sk-test")
@@ -116,6 +193,24 @@ async def test_amessages_rejects_container_for_bridged_provider() -> None:
             messages=[{"role": "user", "content": "Hello"}],
             max_tokens=100,
             container="container_123",
+        )
+
+    mock_acompletion.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_amessages_rejects_container_skills_object_for_bridged_provider() -> None:
+    provider = AnyLLM.create("openai", api_key="sk-test")
+
+    with (
+        patch.object(provider, "_acompletion", new=AsyncMock()) as mock_acompletion,
+        pytest.raises(NotImplementedError, match="container"),
+    ):
+        await provider.amessages(
+            model="gpt-4",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=100,
+            container={"skills": [{"type": "anthropic", "skill_id": "xlsx", "version": "latest"}]},
         )
 
     mock_acompletion.assert_not_called()

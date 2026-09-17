@@ -102,6 +102,36 @@ def _normalize_thinking_block(value: object) -> object:
     return value
 
 
+class _MessageContainerSkill(BaseModel):
+    """Anthropic Messages container skill entry."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["anthropic", "custom"]
+    skill_id: str
+    version: str | None = None
+
+
+class _MessageContainer(BaseModel):
+    """Anthropic Messages container object with optional id and skills."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str | None = None
+    skills: list[_MessageContainerSkill] | None = None
+
+
+def _normalize_container(value: object) -> object:
+    if value is None or isinstance(value, str):
+        return value
+    if isinstance(value, _MessageContainer):
+        return value.model_dump(exclude_none=True)
+    if isinstance(value, dict):
+        return _MessageContainer.model_validate(value).model_dump(exclude_none=True)
+    msg = "container must be a string container ID or an object with optional id and skills"
+    raise ValueError(msg)
+
+
 MessageContentBlock = Annotated[
     ThinkingBlock | AnthropicContentBlock | BetaContentBlock,
     BeforeValidator(_normalize_thinking_block),
@@ -221,8 +251,20 @@ class MessagesParams(BaseModel):
     service_tier: str | None = None
     """The service tier to use for this request."""
 
-    container: str | None = None
-    """Container identifier for continuing a previous top-level container."""
+    container: Annotated[str | dict[str, Any] | None, BeforeValidator(_normalize_container)] = None
+    """Container identifier, or an object with optional ``id`` and ``skills``.
+
+    A string reuses an existing container. An object selects Skills for a fresh
+    container (``skills`` without ``id``) or reuses a container while attaching
+    Skills (``id`` plus ``skills``). Each skill requires ``type`` (``anthropic``
+    or ``custom``) and ``skill_id``; ``version`` is optional.
+
+    This matches Anthropic SDK ``MessageCreateParamsContainerParam``
+    (``str | ContainerParams``) on the pinned ``anthropic>=0.124`` Messages
+    contract. ``messages.create`` accepts the object on the GA path; any-llm
+    does not infer a skills beta header. Tenant ownership, authorization,
+    persistence, and cleanup remain application responsibilities.
+    """
 
     context_management: dict[str, Any] | None = None
     """Anthropic context management configuration"""

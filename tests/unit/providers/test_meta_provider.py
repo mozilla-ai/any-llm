@@ -191,6 +191,7 @@ async def test_amessages_rejects_betas() -> None:
     ("field_name", "value"),
     [
         ("container", "container_123"),
+        ("container", {"skills": [{"type": "anthropic", "skill_id": "xlsx"}]}),
         ("prompt_cache_key", "my-app"),
         ("stop_sequences", ["STOP"]),
         ("top_k", 5),

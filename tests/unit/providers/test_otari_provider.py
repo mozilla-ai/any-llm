@@ -913,6 +913,42 @@ async def test_otari_amessages_forwards_container(stream: bool) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_otari_amessages_forwards_container_skills_object(stream: bool) -> None:
+    client = _mock_otari_client()
+    client.message.return_value = (
+        _MockMetadataStream([{"type": "message_stop"}])
+        if stream
+        else SimpleNamespace(data=_message_response_payload(), request_id=None)
+    )
+    provider = _build_provider(client)
+    container = {
+        "id": "container_123",
+        "skills": [{"type": "anthropic", "skill_id": "xlsx", "version": "latest"}],
+    }
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Continue"}],
+        max_tokens=100,
+        container=container,
+        stream=stream,
+    )
+
+    result = await provider._amessages(params)
+    if stream:
+        assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+        collected = [event async for event in result]
+        assert len(collected) == 1
+        assert isinstance(collected[0], MessageStopEvent)
+    else:
+        assert isinstance(result, MessageResponse)
+        assert result.id == "msg_1"
+
+    client.message.assert_awaited_once()
+    assert client.message.call_args.kwargs["container"] == container
+
+
+@pytest.mark.asyncio
 async def test_otari_amessages_preserves_request_id() -> None:
     client = _mock_otari_client()
     client.with_response_metadata.message = AsyncMock(
