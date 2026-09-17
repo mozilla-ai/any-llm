@@ -65,7 +65,7 @@ class OpenAIFileMethods(FilesMixin):
         expires_in: int | None = None,
         **kwargs: Any,
     ) -> FileMetadata:
-        if purpose is None or not purpose.strip():
+        if not isinstance(purpose, str) or not purpose.strip():
             message = "purpose is required for file uploads"
             raise InvalidRequestError(message, provider_name=self.PROVIDER_NAME)
         client, options = self._file_request_options(kwargs, upload=True)

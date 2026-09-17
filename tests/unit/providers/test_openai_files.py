@@ -173,15 +173,34 @@ async def test_upload_path_errors_are_invalid_requests(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("purpose", [None, "", "  "])
-async def test_upload_requires_explicit_purpose(purpose: str | None) -> None:
+@pytest.mark.parametrize("provider_class", [OpenaiProvider, AzureopenaiProvider])
+@pytest.mark.parametrize("unified", ["0", "1"])
+@pytest.mark.parametrize("synchronous", [False, True])
+@pytest.mark.parametrize("purpose", [None, "", "  ", 123, True, 1.5, b"batch", [], {}])
+async def test_upload_requires_explicit_purpose(
+    provider_class: type[OpenaiProvider] | type[AzureopenaiProvider],
+    unified: str,
+    synchronous: bool,
+    purpose: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", unified)
+
     def unexpected(_: httpx.Request) -> httpx.Response:
         pytest.fail("Invalid purpose must fail before network access")
 
-    provider = provider_for(unexpected)
+    provider = provider_class(
+        api_key="test-key",
+        api_base="https://files.test/openai/v1",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(unexpected)),
+    )
     async with provider.client:
-        with pytest.raises(InvalidRequestError, match="purpose is required"):
-            await provider.aupload_file(b"data", purpose=purpose)
+        with pytest.raises(InvalidRequestError, match="purpose is required") as error:
+            if synchronous:
+                provider.upload_file(b"data", purpose=purpose, allow_running_loop=True)
+            else:
+                await provider.aupload_file(b"data", purpose=purpose)
+    assert error.value.provider_name == provider.PROVIDER_NAME
 
 
 @pytest.mark.asyncio
