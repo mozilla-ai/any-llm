@@ -185,6 +185,12 @@ def _convert_assistant_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[di
     request that later reaches an Anthropic-native provider can rebuild the block whole.
     Anthropic requires that signature back unmodified while extended thinking is on.
 
+    Neither key reaches every backend as emitted here. ``strip_extra_content`` drops the
+    ``anthropic`` side-channel in ``BaseOpenAIProvider`` (but not ``otari``, which overrides
+    ``_acompletion``), ``groq`` and ``cerebras``, and ``groq`` and ``cerebras``, whose APIs name
+    the field ``reasoning``, rename ``reasoning_content`` through
+    ``replay_reasoning_content_as_reasoning``.
+
     A signature is emitted only when the turn holds a single ``thinking`` block. Interleaved
     thinking can put several in one turn, and the OpenAI wire has one ``reasoning_content``
     string to hold them, so the joined text is not what any one signature signs. Emitting one
@@ -325,15 +331,45 @@ def _convert_tool_result_content(tool_content: Any) -> tuple[str, list[dict[str,
         return str(tool_content), []
     text_parts: list[str] = []
     extra_parts: list[dict[str, Any]] = []
+    after_rendered_block = False
     for block in tool_content:
         block_type = block.get("type", "")
         if block_type == "text":
-            text_parts.append(block.get("text", ""))
+            text = block.get("text", "")
+            if after_rendered_block and text:
+                text_parts.append("\n")
+                after_rendered_block = False
+            text_parts.append(text)
         elif block_type == "image":
             extra_parts.append(_convert_image_block_to_openai(block))
         elif block_type == "document":
             extra_parts.append(_convert_document_block_to_openai(block))
+        elif rendered := _render_tool_result_block_as_text(block):
+            if any(text_parts):
+                text_parts.append("\n")
+            text_parts.append(rendered)
+            after_rendered_block = True
     return "".join(text_parts), extra_parts
+
+
+def _render_tool_result_block_as_text(block: dict[str, Any]) -> str | None:
+    """Render a tool result block that has no OpenAI part as text, or return ``None`` for an unknown type.
+
+    Anthropic also allows ``search_result``, ``tool_reference`` and ``browser_state`` blocks in a
+    ``tool_result``. None has an OpenAI equivalent, and dropping them loses the tool's output, so
+    each becomes text on the ``role: tool`` message, set off from neighbouring text by newlines.
+    Anthropic renders ``browser_state`` into model-visible text server-side; no other backend
+    does, so its fields are sent as JSON.
+    """
+    block_type = block.get("type", "")
+    if block_type == "search_result":
+        body = "".join(part.get("text", "") for part in block.get("content", []) if part.get("type") == "text")
+        return "\n".join(part for part in (block.get("title", ""), block.get("source", ""), body) if part)
+    if block_type == "tool_reference":
+        return f"Tool reference: {block.get('tool_name', '')}"
+    if block_type == "browser_state":
+        return json.dumps({key: block[key] for key in ("tabs", "state_changes") if key in block})
+    return None
 
 
 def _convert_user_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -341,13 +377,13 @@ def _convert_user_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[dict[st
 
     Handles tool_result blocks (→ role:tool messages) and content blocks (text, image).
 
-    A tool result marked ``is_error`` keeps that marker on the emitted ``role: tool`` message.
-    OpenAI has no field for it, and the OpenAI SDK forwards unknown message keys verbatim, so
-    the flag reaches any backend reached through an OpenAI-shaped request and is inert on one
-    that does not read it. It travels no further than that: a provider that rebuilds the
-    message from known keys, as ``bedrock``, ``gemini`` and ``ollama`` do, drops it again.
-    Mapping it onto each of those representations, such as ``toolResult.status`` on Bedrock,
-    is left to a follow-up.
+    A tool result marked ``is_error`` has its text prefixed with ``Error: ``, unless it already
+    starts with one, rather than carrying the flag as a message key. OpenAI has no field for it, the OpenAI SDK forwards unknown message
+    keys verbatim, and strict OpenAI-compatible backends such as Fireworks reject the whole request
+    over an unknown key. The text is the one place the signal reaches the model on every backend,
+    including providers that rebuild the message from known keys, as ``bedrock``, ``gemini`` and
+    ``ollama`` do. Mapping it onto a native representation, such as ``toolResult.status`` on
+    Bedrock, is left to a follow-up.
 
     A tool result carrying image or document blocks emits the text as the ``role: tool``
     message and holds the remaining parts back, because OpenAI accepts text only on a tool
@@ -371,14 +407,18 @@ def _convert_user_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[dict[st
                 results.append({"role": "user", "content": content_blocks})
                 content_blocks = []
             tool_text, extra_parts = _convert_tool_result_content(block.get("content", ""))
-            tool_message: dict[str, Any] = {
-                "role": "tool",
-                "tool_call_id": block.get("tool_use_id", ""),
-                "content": tool_text,
-            }
             if block.get("is_error") is True:
-                tool_message["is_error"] = True
-            results.append(tool_message)
+                if not tool_text:
+                    tool_text = "Error"
+                elif not tool_text.startswith("Error:"):
+                    tool_text = f"Error: {tool_text}"
+            results.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": block.get("tool_use_id", ""),
+                    "content": tool_text,
+                }
+            )
             held_parts.extend(extra_parts)
         elif block_type == "text":
             content_blocks.append({"type": "text", "text": block.get("text", "")})

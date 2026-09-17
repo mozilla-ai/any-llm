@@ -533,3 +533,40 @@ async def test_groq_aresponses_without_response_format(mock_openai_class: Mock) 
 
     client.responses.parse.assert_not_called()
     assert "text" not in client.responses.create.call_args.kwargs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_replayed_reasoning_content_sent_as_reasoning(stream: bool) -> None:
+    """Groq rejects reasoning_content and extra_content on a message, so a bridged replay carries reasoning instead."""
+    from any_llm.providers.groq.groq import GroqProvider
+
+    tool_calls = [{"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}}]
+    with (
+        patch("any_llm.providers.groq.groq.AsyncGroq") as mocked_groq,
+        patch("any_llm.providers.groq.groq.to_chat_completion") as mocked_to_chat_completion,
+    ):
+        provider = GroqProvider(api_key="test-api-key")
+        mocked_groq.return_value.chat.completions.create = AsyncMock(return_value=Mock())
+        mocked_to_chat_completion.return_value = Mock()
+
+        await provider._acompletion(
+            CompletionParams(
+                model_id="openai/gpt-oss-120b",
+                messages=[
+                    {"role": "user", "content": "Weather in Paris?"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": tool_calls,
+                        "reasoning_content": "need the tool",
+                        "extra_content": {"anthropic": {"signature": "sig"}},
+                    },
+                    {"role": "tool", "tool_call_id": "call_1", "content": "Error: unavailable"},
+                ],
+                stream=stream,
+            ),
+        )
+
+        sent = mocked_groq.return_value.chat.completions.create.call_args[1]["messages"]
+        assert sent[1] == {"role": "assistant", "content": None, "tool_calls": tool_calls, "reasoning": "need the tool"}

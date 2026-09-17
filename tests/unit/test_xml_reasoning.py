@@ -16,7 +16,11 @@ from any_llm.types.completion import (
     ChunkChoice,
     Reasoning,
 )
-from any_llm.utils.reasoning import partial_reasoning_tag_suffix_len
+from any_llm.utils.reasoning import (
+    partial_reasoning_tag_suffix_len,
+    replay_reasoning_content_as_reasoning,
+    strip_extra_content,
+)
 
 
 def _make_chunk(
@@ -444,3 +448,124 @@ async def test_xml_stream_close_is_terminal(consume_first: bool) -> None:
     with pytest.raises(StopAsyncIteration):
         await anext(stream)
     source.aclose.assert_awaited_once()
+
+
+def test_replay_reasoning_content_as_reasoning_renames_field_and_drops_extra_content() -> None:
+    messages = [
+        {
+            "role": "assistant",
+            "content": None,
+            "reasoning_content": "thought",
+            "extra_content": {"anthropic": {"signature": "sig"}},
+        }
+    ]
+    assert replay_reasoning_content_as_reasoning(messages) == [
+        {"role": "assistant", "content": None, "reasoning": "thought"}
+    ]
+
+
+def test_replay_reasoning_content_as_reasoning_leaves_other_messages_untouched() -> None:
+    message = {"role": "user", "content": "hi"}
+    assert replay_reasoning_content_as_reasoning([message])[0] is message
+
+
+def test_replay_reasoning_content_as_reasoning_drops_extra_content_without_reasoning() -> None:
+    messages = [{"role": "assistant", "content": "ok", "extra_content": {"anthropic": {"signature": "sig"}}}]
+    assert replay_reasoning_content_as_reasoning(messages) == [{"role": "assistant", "content": "ok"}]
+
+
+@pytest.mark.parametrize("reasoning_content", ["", None])
+def test_replay_reasoning_content_as_reasoning_drops_empty_reasoning_content(reasoning_content: str | None) -> None:
+    messages = [{"role": "assistant", "content": "ok", "reasoning_content": reasoning_content}]
+    assert replay_reasoning_content_as_reasoning(messages) == [{"role": "assistant", "content": "ok"}]
+
+
+def test_replay_reasoning_content_as_reasoning_keeps_explicit_reasoning() -> None:
+    messages = [{"role": "assistant", "content": "ok", "reasoning": "caller", "reasoning_content": "bridge"}]
+    assert replay_reasoning_content_as_reasoning(messages) == [
+        {"role": "assistant", "content": "ok", "reasoning": "caller"}
+    ]
+
+
+def test_strip_extra_content_from_message_and_tool_calls() -> None:
+    tool_call_object = object()
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": None,
+            "extra_content": {"anthropic": {"signature": "sig"}},
+            "tool_calls": [
+                {"id": "call_1", "type": "function", "extra_content": {"google": {"thought_signature": "c2ln"}}},
+                tool_call_object,
+            ],
+        }
+    ]
+    assert strip_extra_content(messages) == [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"id": "call_1", "type": "function"}, tool_call_object],
+        }
+    ]
+    assert "extra_content" in messages[0]
+    assert "extra_content" in messages[0]["tool_calls"][0]
+
+
+def test_strip_extra_content_only_on_tool_calls() -> None:
+    messages = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"id": "call_1", "extra_content": {"google": {"thought_signature": "c2ln"}}}],
+        }
+    ]
+    assert strip_extra_content(messages) == [{"role": "assistant", "content": None, "tool_calls": [{"id": "call_1"}]}]
+
+
+def test_strip_extra_content_returns_untouched_messages_as_same_objects() -> None:
+    plain = {"role": "user", "content": "hi"}
+    with_tool_calls = {"role": "assistant", "content": None, "tool_calls": [{"id": "call_1"}]}
+    result = strip_extra_content([plain, with_tool_calls])
+    assert result[0] is plain
+    assert result[1] is with_tool_calls
+
+
+def test_strip_extra_content_keeps_listed_namespaces_on_messages_and_tool_calls() -> None:
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": "ok",
+            "extra_content": {"google": {"thought_signature": "bXNn"}, "anthropic": {"signature": "sig"}},
+            "tool_calls": [
+                {"id": "call_1", "extra_content": {"google": {"thought_signature": "c2ln"}}},
+                {"id": "call_2", "extra_content": {"anthropic": {"signature": "sig"}}},
+            ],
+        }
+    ]
+    assert strip_extra_content(messages, keep_namespaces=("google",)) == [
+        {
+            "role": "assistant",
+            "content": "ok",
+            "extra_content": {"google": {"thought_signature": "bXNn"}},
+            "tool_calls": [
+                {"id": "call_1", "extra_content": {"google": {"thought_signature": "c2ln"}}},
+                {"id": "call_2"},
+            ],
+        }
+    ]
+
+
+def test_strip_extra_content_returns_fully_kept_message_as_same_object() -> None:
+    message = {
+        "role": "assistant",
+        "content": None,
+        "extra_content": {"google": {"thought_signature": "bXNn"}},
+        "tool_calls": [{"id": "call_1", "extra_content": {"google": {"thought_signature": "c2ln"}}}],
+    }
+    assert strip_extra_content([message], keep_namespaces=("google",))[0] is message
+
+
+@pytest.mark.parametrize("extra_content", [{}, None, "not-a-dict"])
+def test_strip_extra_content_drops_empty_or_malformed_side_channel(extra_content: object) -> None:
+    messages: list[dict[str, Any]] = [{"role": "assistant", "content": "ok", "extra_content": extra_content}]
+    assert strip_extra_content(messages, keep_namespaces=("google",)) == [{"role": "assistant", "content": "ok"}]
