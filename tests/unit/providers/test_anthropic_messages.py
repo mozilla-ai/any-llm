@@ -472,6 +472,51 @@ async def test_anthropic_sdk_forwards_container_skills_object() -> None:
 
 
 @pytest.mark.asyncio
+async def test_amessages_entrypoint_forwards_container_skills_object() -> None:
+    mock_message = _make_message(content=[TextBlock(type="text", text="Hi!")])
+    provider = AnthropicProvider(api_key="test-key")
+    container = {
+        "skills": [
+            {"type": "anthropic", "skill_id": "xlsx", "version": "latest"},
+        ]
+    }
+
+    with patch.object(provider.client.messages, "create", new=AsyncMock(return_value=mock_message)) as mock_create:
+        result = await provider.amessages(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "Create an Excel spreadsheet."}],
+            max_tokens=1024,
+            container=container,
+        )
+
+    assert isinstance(result, MessageResponse)
+    mock_create.assert_called_once()
+    assert mock_create.call_args.kwargs["container"] == container
+
+
+def test_messages_entrypoint_forwards_container_skills_object() -> None:
+    mock_message = _make_message(content=[TextBlock(type="text", text="Hi!")])
+    provider = AnthropicProvider(api_key="test-key")
+    container = {
+        "skills": [
+            {"type": "anthropic", "skill_id": "xlsx", "version": "latest"},
+        ]
+    }
+
+    with patch.object(provider.client.messages, "create", new=AsyncMock(return_value=mock_message)) as mock_create:
+        result = provider.messages(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "Create an Excel spreadsheet."}],
+            max_tokens=1024,
+            container=container,
+        )
+
+    assert isinstance(result, MessageResponse)
+    mock_create.assert_called_once()
+    assert mock_create.call_args.kwargs["container"] == container
+
+
+@pytest.mark.asyncio
 async def test_amessages_rejects_prompt_cache_key_before_client_call() -> None:
     requests: list[httpx.Request] = []
 

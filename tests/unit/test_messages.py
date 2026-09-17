@@ -21,7 +21,7 @@ from anthropic.types.beta import (
 )
 from anthropic.types.beta.beta_context_management_response import BetaContextManagementResponse
 from anthropic.types.beta.parsed_beta_message import ParsedBetaTextBlock
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
@@ -105,8 +105,6 @@ def test_messages_params_exposes_container_in_schema() -> None:
 
 def test_messages_params_accepts_container_skills_object() -> None:
     """The public Messages API must accept Anthropic's container object, not only a string ID."""
-    from pydantic import ValidationError
-
     container = {
         "skills": [
             {"type": "anthropic", "skill_id": "xlsx", "version": "latest"},
@@ -153,8 +151,6 @@ def test_messages_params_accepts_container_reuse_and_custom_skills() -> None:
 
 
 def test_messages_params_rejects_malformed_container_skills() -> None:
-    from pydantic import ValidationError
-
     with pytest.raises(ValidationError, match="skill_id"):
         MessagesParams(
             model="claude-sonnet-4-6",
@@ -177,6 +173,22 @@ def test_messages_params_rejects_malformed_container_skills() -> None:
             messages=[{"role": "user", "content": "Hello"}],
             max_tokens=1024,
             container=123,  # type: ignore[arg-type]
+        )
+
+    with pytest.raises(ValidationError, match="extra"):
+        MessagesParams(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            container={"skills": [{"type": "anthropic", "skill_id": "xlsx"}], "unexpected": True},
+        )
+
+    with pytest.raises(ValidationError, match="extra"):
+        MessagesParams(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            container={"skills": [{"type": "anthropic", "skill_id": "xlsx", "unexpected": True}]},
         )
 
 
@@ -385,8 +397,6 @@ def test_messages_params_accepts_context_management_and_betas() -> None:
 
 def test_messages_params_rejects_extra_fields() -> None:
     """Test MessagesParams rejects unknown fields (extra='forbid')."""
-    from pydantic import ValidationError
-
     from any_llm.types.messages import MessagesParams
 
     with pytest.raises(ValidationError):
