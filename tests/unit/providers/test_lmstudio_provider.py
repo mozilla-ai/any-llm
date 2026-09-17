@@ -397,6 +397,7 @@ def test_map_stop_reason(stop_reason: str | None, expected: str) -> None:
         # Tag names come from REASONING_FIELD_NAMES, so the other names the library recognises
         # are handled here too rather than only <think>.
         ("<thinking>alt</thinking>answer", "answer", "alt"),
+        ("<think>first</think>middle<thinking>second</thinking>end", "middleend", "first\nsecond"),
         ("<think></think>answer", "answer", None),
         # LM Studio's runtime ends an inline reasoning trace with a fixed synthetic marker
         # when response_format is set (see #1167). The value below is the real marker observed
