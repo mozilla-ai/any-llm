@@ -258,6 +258,26 @@ async def test_think_extraction_leaves_no_reasoning_for_an_empty_block() -> None
     assert result.choices[0].message.content == "The answer"
 
 
+@pytest.mark.parametrize("native_thinking", [None, "native reasoning"])
+def test_think_extraction_keeps_mixed_tags_in_textual_order(native_thinking: str | None) -> None:
+    content = "<think>first</think>middle<thinking>second</thinking>end"
+    response = OllamaChatResponse(
+        model="llama3.1",
+        created_at="2024-01-01T12:00:00.000000Z",
+        message=OllamaMessage(role="assistant", content=content, thinking=native_thinking),
+        done_reason="stop",
+        prompt_eval_count=10,
+        eval_count=20,
+    )
+
+    result = _create_chat_completion_from_ollama_response(response)
+
+    message = result.choices[0].message
+    assert message.reasoning is not None
+    assert message.reasoning.content == (native_thinking or "first\nsecond")
+    assert message.content == (content if native_thinking else "middleend")
+
+
 def test_create_chat_completion_preserves_timing_details() -> None:
     """Provider timing fields survive normalization as extra usage fields."""
     response = OllamaChatResponse(

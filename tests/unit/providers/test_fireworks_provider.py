@@ -67,6 +67,22 @@ def test_extract_reasoning_from_response_handles_multiple_tagged_blocks() -> Non
     assert "<think>" not in mock_content.text
 
 
+def test_extract_reasoning_from_response_keeps_mixed_tags_in_textual_order() -> None:
+    mock_content = Mock()
+    mock_content.text = "<think>first</think>middle<thinking>second</thinking>end"
+    mock_output_item = Mock()
+    mock_output_item.content = [mock_content]
+    mock_response = Mock(spec=Response)
+    mock_response.output = [mock_output_item]
+    mock_response.reasoning = None
+
+    result = extract_reasoning_from_response(mock_response)
+
+    assert isinstance(result.reasoning, Reasoning)
+    assert result.reasoning.content == "first\nsecond"
+    assert mock_content.text == "middleend"
+
+
 def test_extract_reasoning_from_response_handles_alternate_tag_names() -> None:
     """Reasoning tags other than <think> are recognised, matching the shared normalizer."""
     mock_content = Mock()
