@@ -491,7 +491,7 @@ async def test_all_providers_can_be_loaded(provider: str) -> None:
         kwargs["project"] = "test-project"
         kwargs["location"] = "test-location"
     if provider == "otari":
-        kwargs["api_base"] = "http://127.0.0.1:8080/v1"
+        kwargs["api_base"] = "http://127.0.0.1:8080"
 
     provider_instance = AnyLLM.create(provider, **kwargs)
 
@@ -549,7 +549,7 @@ async def test_provider_factory_can_create_all_supported_providers() -> None:
         if sys.version_info >= (3, 14) and provider_name in _PYTHON_314_INCOMPATIBLE_PROVIDERS:
             continue
         if provider_name == "otari":
-            kwargs["api_base"] = "http://127.0.0.1:8080/v1"
+            kwargs["api_base"] = "http://127.0.0.1:8080"
         provider_instance = AnyLLM.create(provider_name, **kwargs)
 
         assert isinstance(provider_instance, AnyLLM), f"Failed to create valid AnyLLM instance for {provider_name}"
