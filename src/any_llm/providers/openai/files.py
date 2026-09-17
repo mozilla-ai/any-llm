@@ -115,6 +115,9 @@ class OpenAIFileMethods(FilesMixin):
             self._validate_file_id(cursor)
             options["after"] = cursor
         if purpose is not None:
+            if not isinstance(purpose, str):
+                message = "purpose must be a string"
+                raise InvalidRequestError(message, provider_name=self.PROVIDER_NAME)
             options["purpose"] = purpose
         page = await client.files.list(**options)
         if page.has_more is None or (page.has_more and not page.data):
