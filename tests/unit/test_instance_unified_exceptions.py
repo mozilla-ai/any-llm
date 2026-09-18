@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -120,3 +121,32 @@ async def test_successful_response_passes_through(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(provider, "_acompletion", AsyncMock(return_value=response))
 
     assert await provider.acompletion(model="test", messages=[{"role": "user", "content": "Hello"}]) is response
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+@pytest.mark.asyncio
+async def test_download_file_honors_instance_option(monkeypatch: pytest.MonkeyPatch, enabled: bool) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "0" if enabled else "1")
+    with patch.object(OpenaiProvider, "_init_client"):
+        provider = AnyLLM.create("openai", api_key="test", unified_exceptions=enabled)
+    original = RuntimeError("Invalid API key")
+
+    @asynccontextmanager
+    async def failing_download(*_args: Any, **_kwargs: Any) -> AsyncIterator[Any]:
+        raise original
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(provider, "_adownload_file", failing_download)
+
+    if enabled:
+        with pytest.raises(AuthenticationError):
+            async with provider.adownload_file("file-1"):
+                pass  # pragma: no cover
+    else:
+        with (
+            pytest.warns(DeprecationWarning, match="Provider-specific exceptions"),
+            pytest.raises(RuntimeError) as error,
+        ):
+            async with provider.adownload_file("file-1"):
+                pass  # pragma: no cover
+        assert error.value is original

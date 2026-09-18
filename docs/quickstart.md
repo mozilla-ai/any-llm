@@ -266,7 +266,8 @@ llm = AnyLLM.create("openai", unified_exceptions=True)
 ```
 
 An explicit `True` or `False` takes precedence over the environment variable for that
-instance, including errors raised while iterating a streaming response. Omitting the
+instance, including errors raised while iterating a streaming response or downloading
+a file. Omitting the
 argument, or passing `None`, preserves the environment-controlled behavior. This option
 is also accepted by provider constructors and `AnyLLM.create_openai_compatible()`.
 

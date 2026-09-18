@@ -167,6 +167,13 @@ class AnyLLM(FilesMixin, ABC):
     For example, in `gemini` provider, this could include `google.genai.types.Tool`.
     """
 
+    _unified_exceptions: bool | None = None
+    """Per-instance override for unified exception conversion.
+
+    ``None`` defers to ``ANY_LLM_UNIFIED_EXCEPTIONS`` at raise time. Declared here so
+    every provider carries the attribute even if a subclass skips ``super().__init__``.
+    """
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -253,7 +260,8 @@ class AnyLLM(FilesMixin, ABC):
             name: Identifier for the endpoint (e.g. ``"mygateway"``). Reported as the provider name.
             api_base: Base URL of the OpenAI-compatible endpoint (e.g. ``"https://mygateway.example/v1"``).
             api_key: API key, if the endpoint requires one. Optional for keyless local servers.
-            **kwargs: Additional arguments forwarded to the underlying OpenAI client.
+            **kwargs: Additional provider arguments. ``unified_exceptions`` is consumed by the
+                provider; everything else is forwarded to the underlying OpenAI client.
 
         Returns:
             A provider instance bound to the given endpoint.

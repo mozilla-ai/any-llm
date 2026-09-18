@@ -40,6 +40,8 @@ async def test_bad_api_key_raises_authentication_error(
     monkeypatch: pytest.MonkeyPatch,
     instance_override: bool,
 ) -> None:
+    # With the override set, the environment says "off", so only the instance option can
+    # produce the unified error.
     monkeypatch.setenv(ANY_LLM_UNIFIED_EXCEPTIONS_ENV, "0" if instance_override else "1")
     llm = AnyLLM.create(
         provider,
