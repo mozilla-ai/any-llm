@@ -19,6 +19,7 @@ try:
     from .utils import (
         _convert_batch_job_to_openai,
         _convert_models_list,
+        _convert_together_rerank_response,
         _convert_together_response_to_chat_completion,
         _create_openai_chunk_from_together_chunk,
         _create_openai_embedding_response_from_together,
@@ -44,6 +45,7 @@ if TYPE_CHECKING:
         CreateEmbeddingResponse,
     )
     from any_llm.types.model import Model
+    from any_llm.types.rerank import RerankResponse
 
 DEFAULT_SCHEMA_NAME = "response_schema"
 _SCHEMA_METADATA_KEYS = ("name", "description", "strict")
@@ -87,7 +89,7 @@ class TogetherProvider(AnyLLM):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
-    SUPPORTS_RERANK = False
+    SUPPORTS_RERANK = True
 
     # The Together SDK accepts a per-request `timeout` on its client calls, so it forwards unchanged.
     TIMEOUT_SUPPORT = "native"
@@ -153,6 +155,39 @@ class TogetherProvider(AnyLLM):
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Together list models response to OpenAI format."""
         return _convert_models_list(response)
+
+    @staticmethod
+    @override
+    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
+        """Convert rerank parameters for the Together API.
+
+        Raises:
+            UnsupportedParameterError: If `max_tokens_per_doc` is provided.
+        """
+        if kwargs.get("max_tokens_per_doc") is not None:
+            msg = "max_tokens_per_doc"
+            raise UnsupportedParameterError(
+                msg,
+                "together",
+                "Together's rerank endpoint has no per-document truncation limit.",
+            )
+
+        params: dict[str, Any] = {
+            "query": query,
+            "documents": documents,
+        }
+        if kwargs.get("top_n") is not None:
+            params["top_n"] = kwargs["top_n"]
+        for key in ("return_documents", "rank_fields"):
+            if key in kwargs:
+                params[key] = kwargs[key]
+        return params
+
+    @staticmethod
+    @override
+    def _convert_rerank_response(response: Any) -> RerankResponse:
+        """Convert a Together rerank response to a normalized RerankResponse."""
+        return _convert_together_rerank_response(response)
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
@@ -226,6 +261,21 @@ class TogetherProvider(AnyLLM):
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(models_list)
+
+    @override
+    async def _arerank(
+        self,
+        model: str,
+        query: str,
+        documents: list[str],
+        **kwargs: Any,
+    ) -> RerankResponse:
+        rerank_kwargs = self._convert_rerank_params(model, query, documents, **kwargs)
+        response = await self.client.rerank.create(
+            model=model,
+            **rerank_kwargs,
+        )
+        return self._convert_rerank_response(response)
 
     @override
     async def _acreate_batch(
