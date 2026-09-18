@@ -782,9 +782,25 @@ def test_convert_response_format_rejects_type_array_composition_with_ref(composi
         _convert_response_format(response_format, "anthropic")
 
 
+@pytest.mark.parametrize(
+    "schema_with_ref",
+    [
+        {"properties": {"value": {"$ref": "#/$defs/Value"}}},
+        {"items": [{"$ref": "#/$defs/Value"}]},
+        {"not": {"$ref": "#/$defs/Value"}},
+    ],
+)
+def test_normalize_anthropic_type_arrays_rejects_nested_composition_refs(schema_with_ref: dict[str, Any]) -> None:
+    schema = {"type": ["object", "null"], "anyOf": [schema_with_ref]}
+
+    with pytest.raises(ValueError, match=r"composition constraints containing \$ref"):
+        _normalize_anthropic_type_arrays(schema)
+
+
 def test_normalize_anthropic_type_arrays_ignores_refs_in_instance_values_and_property_names() -> None:
     composition_schema = {
         "type": "object",
+        "additionalProperties": False,
         "properties": {"$ref": {"type": "string"}},
         "const": {"$ref": "literal const"},
         "default": {"$ref": "literal default"},
