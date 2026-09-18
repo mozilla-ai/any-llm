@@ -256,6 +256,20 @@ export ANY_LLM_UNIFIED_EXCEPTIONS=1
 
 When enabled, provider-specific exceptions are automatically converted to `any-llm` exception types. When disabled (default), the original provider exceptions are raised with a deprecation warning.
 
+To configure a single client without changing the environment for other callers, pass
+`unified_exceptions` when creating the provider:
+
+```python
+from any_llm import AnyLLM
+
+llm = AnyLLM.create("openai", unified_exceptions=True)
+```
+
+An explicit `True` or `False` takes precedence over the environment variable for that
+instance, including errors raised while iterating a streaming response. Omitting the
+argument, or passing `None`, preserves the environment-controlled behavior. This option
+is also accepted by provider constructors and `AnyLLM.create_openai_compatible()`.
+
 ### Basic Usage
 
 ```python
