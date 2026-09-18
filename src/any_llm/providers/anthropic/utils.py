@@ -551,10 +551,24 @@ def _normalize_anthropic_schema_keyword(keyword: str, value: Any) -> Any:
 
 def _contains_json_schema_ref(value: Any) -> bool:
     """Return whether a schema fragment contains a ``$ref`` keyword."""
-    if isinstance(value, dict):
-        return "$ref" in value or any(_contains_json_schema_ref(item) for item in value.values())
-    if isinstance(value, list):
-        return any(_contains_json_schema_ref(item) for item in value)
+    if not isinstance(value, dict):
+        return False
+    if "$ref" in value:
+        return True
+
+    for keyword, item in value.items():
+        if keyword in _JSON_SCHEMA_MAPPING_KEYWORDS and isinstance(item, dict):
+            if any(_contains_json_schema_ref(schema) for schema in item.values()):
+                return True
+        elif keyword in _JSON_SCHEMA_SEQUENCE_KEYWORDS and isinstance(item, list):
+            if any(_contains_json_schema_ref(schema) for schema in item):
+                return True
+        elif keyword == "items" and isinstance(item, list):
+            if any(_contains_json_schema_ref(schema) for schema in item):
+                return True
+        elif keyword == "items" or keyword in _JSON_SCHEMA_VALUE_KEYWORDS:
+            if _contains_json_schema_ref(item):
+                return True
     return False
 
 

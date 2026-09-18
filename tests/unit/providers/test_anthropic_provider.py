@@ -782,6 +782,22 @@ def test_convert_response_format_rejects_type_array_composition_with_ref(composi
         _convert_response_format(response_format, "anthropic")
 
 
+def test_normalize_anthropic_type_arrays_ignores_refs_in_instance_values_and_property_names() -> None:
+    composition_schema = {
+        "type": "object",
+        "properties": {"$ref": {"type": "string"}},
+        "const": {"$ref": "literal const"},
+        "default": {"$ref": "literal default"},
+        "examples": [{"$ref": "literal example"}],
+        "enum": [{"$ref": "literal enum"}],
+    }
+    schema = {"type": ["object", "null"], "anyOf": [composition_schema]}
+
+    normalized = _normalize_anthropic_type_arrays(schema)
+
+    assert normalized["allOf"][1] == {"anyOf": [composition_schema]}
+
+
 def test_normalize_anthropic_type_arrays_keeps_nested_nullable_objects_linear() -> None:
     schema: dict[str, Any] = {"type": "string"}
     for _ in range(16):
