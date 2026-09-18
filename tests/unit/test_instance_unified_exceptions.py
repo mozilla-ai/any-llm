@@ -13,13 +13,17 @@ from any_llm.types.completion import ChatCompletionChunk
 
 
 @pytest.mark.parametrize("enabled", [True, False, None])
-@pytest.mark.parametrize("factory", ["create", "constructor", "compatible"])
+@pytest.mark.parametrize("factory", ["constructor", "compatible"])
 def test_instance_option_is_not_forwarded_to_sdk(enabled: bool | None, factory: str) -> None:
+    """Cover the two construction paths that bypass ``AnyLLM.create``.
+
+    ``AnyLLM.create`` itself is covered for every provider by
+    ``tests/unit/test_client_args.py::test_default_headers_passed_to_init_client``.
+    """
     provider_class = OpenAICompatibleProvider if factory == "compatible" else OpenaiProvider
+    provider: AnyLLM
     with patch.object(provider_class, "_init_client") as init_client:
-        if factory == "create":
-            provider = AnyLLM.create("openai", api_key="test", unified_exceptions=enabled, timeout=3)
-        elif factory == "constructor":
+        if factory == "constructor":
             provider = OpenaiProvider(api_key="test", unified_exceptions=enabled, timeout=3)
         else:
             provider = AnyLLM.create_openai_compatible(
