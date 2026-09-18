@@ -539,6 +539,15 @@ def _normalize_anthropic_schema_keyword(keyword: str, value: Any) -> Any:
     return value
 
 
+def _contains_json_schema_ref(value: Any) -> bool:
+    """Return whether a schema fragment contains a ``$ref`` keyword."""
+    if isinstance(value, dict):
+        return "$ref" in value or any(_contains_json_schema_ref(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_json_schema_ref(item) for item in value)
+    return False
+
+
 def _normalize_anthropic_type_arrays(value: Any) -> Any:
     """Rewrite JSON Schema type arrays that ``anthropic.transform_schema`` rejects."""
     if not isinstance(value, dict):
@@ -555,6 +564,12 @@ def _normalize_anthropic_type_arrays(value: Any) -> Any:
     composition_constraints = [
         {keyword: normalized[keyword]} for keyword in _JSON_SCHEMA_COMPOSITION_KEYWORDS if keyword in normalized
     ]
+    if any(_contains_json_schema_ref(constraint) for constraint in composition_constraints):
+        msg = (
+            "Anthropic structured outputs do not support combining type arrays "
+            "with composition constraints containing $ref"
+        )
+        raise ValueError(msg)
     branch_siblings = {
         key: item
         for key, item in normalized.items()

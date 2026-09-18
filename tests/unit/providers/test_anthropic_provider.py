@@ -764,6 +764,22 @@ def test_convert_response_format_keeps_type_arrays_separate_from_composition(
     }
 
 
+@pytest.mark.parametrize("composition_keyword", ["anyOf", "oneOf", "allOf"])
+def test_convert_response_format_rejects_type_array_composition_with_ref(composition_keyword: str) -> None:
+    schema = {
+        "$defs": {"Value": {"type": "string"}},
+        "type": ["string", "null"],
+        composition_keyword: [{"$ref": "#/$defs/Value"}],
+    }
+    response_format = {"type": "json_schema", "json_schema": {"name": "Composed", "schema": schema}}
+
+    with pytest.raises(
+        ValueError,
+        match=r"Anthropic structured outputs do not support combining type arrays with composition constraints containing \$ref",
+    ):
+        _convert_response_format(response_format, "anthropic")
+
+
 def test_normalize_anthropic_type_arrays_preserves_instance_values() -> None:
     schema = {
         "type": "object",
