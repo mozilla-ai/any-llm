@@ -1,6 +1,7 @@
 import dataclasses
 import json
 import logging
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
@@ -799,11 +800,49 @@ def test_normalize_anthropic_type_arrays_keeps_nested_nullable_objects_linear() 
     assert "properties" in normalized["anyOf"][0]
 
 
+def test_convert_response_format_rejects_legacy_definitions() -> None:
+    schema = {
+        "type": ["object", "null"],
+        "definitions": {"Value": {"type": "string"}},
+        "properties": {"value": {"$ref": "#/definitions/Value"}},
+    }
+    response_format = {"type": "json_schema", "json_schema": {"name": "LegacyDefinitions", "schema": schema}}
+
+    expected_error = (
+        "The Anthropic SDK schema transformer does not support legacy 'definitions'; "
+        "use '$defs' and update '#/definitions/...' references to '#/$defs/...'"
+    )
+    with pytest.raises(ValueError, match=rf"^{re.escape(expected_error)}$"):
+        _convert_response_format(response_format, "anthropic")
+
+
+def test_convert_response_format_accepts_defs() -> None:
+    schema = {
+        "$defs": {"Value": {"type": "string"}},
+        "type": "object",
+        "properties": {"value": {"$ref": "#/$defs/Value"}},
+        "required": ["value"],
+    }
+
+    result = _convert_response_format(
+        {"type": "json_schema", "json_schema": {"name": "ModernDefinitions", "schema": schema}},
+        "anthropic",
+    )
+
+    assert result["format"]["schema"] == {
+        "$defs": {"Value": {"type": "string"}},
+        "type": "object",
+        "properties": {"value": {"$ref": "#/$defs/Value"}},
+        "additionalProperties": False,
+        "required": ["value"],
+    }
+
+
 def test_normalize_anthropic_type_arrays_preserves_instance_values() -> None:
     schema = {
         "type": "object",
         "examples": [{"type": []}],
-        "default": {"type": ["string", "null"]},
+        "default": {"type": ["string", "null"], "definitions": {}},
         "const": {"type": ["integer", "null"]},
         "enum": [{"type": []}, {"type": ["number", "null"]}],
     }

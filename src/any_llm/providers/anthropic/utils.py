@@ -60,7 +60,6 @@ REASONING_EFFORT_TO_ANTHROPIC_EFFORT = {
 _JSON_SCHEMA_MAPPING_KEYWORDS = frozenset(
     {
         "$defs",
-        "definitions",
         "dependencies",
         "dependentSchemas",
         "patternProperties",
@@ -563,6 +562,12 @@ def _normalize_anthropic_type_arrays(value: Any) -> Any:
     """Rewrite JSON Schema type arrays that ``anthropic.transform_schema`` rejects."""
     if not isinstance(value, dict):
         return value
+    if "definitions" in value:
+        msg = (
+            "The Anthropic SDK schema transformer does not support legacy 'definitions'; "
+            "use '$defs' and update '#/definitions/...' references to '#/$defs/...'"
+        )
+        raise ValueError(msg)
 
     normalized = {key: _normalize_anthropic_schema_keyword(key, item) for key, item in value.items()}
     type_value = value.get("type")
