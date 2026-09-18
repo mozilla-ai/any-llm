@@ -1,4 +1,5 @@
 import dataclasses
+import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, contextmanager
@@ -778,6 +779,24 @@ def test_convert_response_format_rejects_type_array_composition_with_ref(composi
         match=r"Anthropic structured outputs do not support combining type arrays with composition constraints containing \$ref",
     ):
         _convert_response_format(response_format, "anthropic")
+
+
+def test_normalize_anthropic_type_arrays_keeps_nested_nullable_objects_linear() -> None:
+    schema: dict[str, Any] = {"type": "string"}
+    for _ in range(16):
+        schema = {
+            "type": ["object", "null"],
+            "properties": {"child": schema},
+            "required": ["child"],
+            "description": "Nullable node",
+        }
+
+    normalized = _normalize_anthropic_type_arrays(schema)
+
+    assert len(json.dumps(normalized)) < len(json.dumps(schema)) * 3
+    assert normalized["description"] == "Nullable node"
+    assert normalized["anyOf"][1] == {"type": "null"}
+    assert "properties" in normalized["anyOf"][0]
 
 
 def test_normalize_anthropic_type_arrays_preserves_instance_values() -> None:

@@ -84,6 +84,17 @@ _JSON_SCHEMA_VALUE_KEYWORDS = frozenset(
         "unevaluatedProperties",
     }
 )
+_JSON_SCHEMA_TYPE_SPECIFIC_KEYWORDS: dict[str, frozenset[str]] = {
+    "object": frozenset(
+        {"properties", "additionalProperties", "required", "patternProperties", "minProperties", "maxProperties"}
+    ),
+    "array": frozenset({"items", "minItems", "maxItems", "uniqueItems", "contains"}),
+    "string": frozenset({"format", "pattern", "minLength", "maxLength"}),
+    "integer": frozenset({"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"}),
+    "number": frozenset({"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"}),
+    "boolean": frozenset(),
+    "null": frozenset(),
+}
 
 
 def _refusal_stop_details(value: object) -> dict[str, Any] | None:
@@ -570,15 +581,30 @@ def _normalize_anthropic_type_arrays(value: Any) -> Any:
             "with composition constraints containing $ref"
         )
         raise ValueError(msg)
-    branch_siblings = {
+    type_names = cast("list[str]", type_value)
+    type_specific_keywords = {
+        keyword
+        for type_name in type_names
+        for keyword in _JSON_SCHEMA_TYPE_SPECIFIC_KEYWORDS.get(type_name, ())
+        if keyword in normalized
+    }
+    branches = [
+        {
+            "type": type_name,
+            **{
+                keyword: normalized[keyword]
+                for keyword in _JSON_SCHEMA_TYPE_SPECIFIC_KEYWORDS.get(type_name, ())
+                if keyword in normalized
+            },
+        }
+        for type_name in type_names
+    ]
+    type_union: dict[str, Any] = {"anyOf": branches}
+    root_keywords = {
         key: item
         for key, item in normalized.items()
-        if key not in {"type", "$defs", *_JSON_SCHEMA_COMPOSITION_KEYWORDS}
+        if key not in {"type", *_JSON_SCHEMA_COMPOSITION_KEYWORDS, *type_specific_keywords}
     }
-    type_union: dict[str, Any] = {
-        "anyOf": [{"type": item, **branch_siblings} for item in cast("list[str]", type_value)]
-    }
-    root_keywords: dict[str, Any] = {"$defs": normalized["$defs"]} if "$defs" in normalized else {}
     if composition_constraints:
         return {**root_keywords, "allOf": [type_union, *composition_constraints]}
     return {**root_keywords, **type_union}
