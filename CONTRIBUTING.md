@@ -220,7 +220,7 @@ Before requesting or implementing:
 - [ ] Provider has an official Python SDK **OR** well-documented REST API
 - [ ] Provider is actively maintained and supported
 - [ ] Provider's interface is compatible with any-llm's design
-- [ ] No existing issue/PR for adding this provider
+- [ ] No existing duplicate implementation issue/PR for adding this provider
 - [ ] Someone who does not work on the provider has asked for it
 
 **Demand comes before cost.** Being listed is an endorsement, and the endorsement does not shrink with the diff. We add a gateway when an any-llm user who does not work on it has asked for it, in an issue or a discussion, or when a maintainer picks it up. A row submitted by the gateway's own operator with no such request is closed regardless of how clean it is, and regardless of how cheap it is to remove later. Disclose an affiliation in the PR; contributing your own gateway is welcome once someone has asked for it.
