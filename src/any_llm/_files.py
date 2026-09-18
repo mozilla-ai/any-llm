@@ -21,6 +21,7 @@ class FilesMixin:
     """Public provider file operations and unsupported-provider defaults."""
 
     PROVIDER_NAME: str
+    _unified_exceptions: bool | None
 
     SUPPORTED_FILE_OPERATIONS: ClassVar[frozenset[FileOperation]] = frozenset()
 
@@ -139,7 +140,9 @@ class FilesMixin:
                     self._adownload_file(file_id, chunk_size=chunk_size, **kwargs)
                 )
             except Exception as exc:
-                _handle_exception(exc, self.PROVIDER_NAME, file_operation=True)
+                _handle_exception(
+                    exc, self.PROVIDER_NAME, file_operation=True, unified_exceptions=self._unified_exceptions
+                )
                 return  # pragma: no cover
 
             async def iterate() -> AsyncGenerator[bytes, None]:
@@ -147,7 +150,9 @@ class FilesMixin:
                     async for chunk in response:
                         yield chunk
                 except Exception as exc:
-                    _handle_exception(exc, self.PROVIDER_NAME, file_operation=True)
+                    _handle_exception(
+                        exc, self.PROVIDER_NAME, file_operation=True, unified_exceptions=self._unified_exceptions
+                    )
 
             async with aclosing(iterate()) as chunks:
                 yield AsyncFileDownload(status_code=response.status_code, headers=response.headers, chunks=chunks)

@@ -35,7 +35,8 @@ ANY_LLM_UNIFIED_EXCEPTIONS_ENV = "ANY_LLM_UNIFIED_EXCEPTIONS"
 _DEPRECATION_WARNING = (
     "Provider-specific exceptions will be converted to unified any-llm exceptions "
     "(e.g., RateLimitError, AuthenticationError) in a future version. "
-    "To enable this behavior now, set the environment variable ANY_LLM_UNIFIED_EXCEPTIONS=1. "
+    "To enable this behavior now, pass unified_exceptions=True when creating a provider "
+    "or set the environment variable ANY_LLM_UNIFIED_EXCEPTIONS=1. "
     "The original exception will be available in the original_exception attribute."
 )
 
@@ -274,13 +275,20 @@ def convert_exception(
     return error
 
 
-def _handle_exception(exception: Exception, provider_name: str, *, file_operation: bool = False) -> None:
+def _handle_exception(
+    exception: Exception,
+    provider_name: str,
+    *,
+    file_operation: bool = False,
+    unified_exceptions: bool | None = None,
+) -> None:
     """Handle an exception based on the unified exceptions flag.
 
     Args:
         exception: The original exception
         provider_name: Name of the provider for error context
         file_operation: Whether a missing resource refers to a file.
+        unified_exceptions: Per-instance override; None defers to the environment variable.
 
     Raises:
         AnyLLMError: If unified exceptions are enabled
@@ -300,7 +308,12 @@ def _handle_exception(exception: Exception, provider_name: str, *, file_operatio
     if isinstance(exception, ValidationError):
         raise exception
 
-    if os.environ.get(ANY_LLM_UNIFIED_EXCEPTIONS_ENV, "").lower() in ("1", "true", "yes", "on"):
+    # Resolved at raise time rather than at construction, so a process that flips the
+    # environment variable after building a provider still sees the change.
+    if unified_exceptions is None:
+        unified_exceptions = os.environ.get(ANY_LLM_UNIFIED_EXCEPTIONS_ENV, "").lower() in ("1", "true", "yes", "on")
+
+    if unified_exceptions:
         converted = convert_exception(exception, provider_name)
         if file_operation and converted.status_code == 404:
             converted = ProviderFileNotFoundError(
@@ -325,11 +338,14 @@ def _handle_exception(exception: Exception, provider_name: str, *, file_operatio
 class _ExceptionHandlingAsyncIterator:
     """Handle streaming exceptions while allowing immediate cleanup before iteration."""
 
-    def __init__(self, async_iter: Any, provider_name: str, file_operation: bool) -> None:
+    def __init__(
+        self, async_iter: Any, provider_name: str, file_operation: bool, unified_exceptions: bool | None = None
+    ) -> None:
         self._async_iter = async_iter
         self._iterator: AsyncIterator[Any] | None = None
         self._provider_name = provider_name
         self._file_operation = file_operation
+        self._unified_exceptions = unified_exceptions
         self._closed = False
 
     def __aiter__(self) -> _ExceptionHandlingAsyncIterator:
@@ -347,7 +363,12 @@ class _ExceptionHandlingAsyncIterator:
             raise
         except Exception as exc:
             try:
-                _handle_exception(exc, self._provider_name, file_operation=self._file_operation)
+                _handle_exception(
+                    exc,
+                    self._provider_name,
+                    file_operation=self._file_operation,
+                    unified_exceptions=self._unified_exceptions,
+                )
             finally:
                 await self.aclose()
         except BaseException:
@@ -385,16 +406,19 @@ def handle_exceptions(*, wrap_streaming: bool = False, file_operation: bool = Fa
             @functools.wraps(func)
             async def streaming_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
                 provider_name = getattr(self, "PROVIDER_NAME", "unknown")
+                unified_exceptions = getattr(self, "_unified_exceptions", None)
                 try:
                     result = await func(self, *args, **kwargs)
                 except Exception as e:
-                    _handle_exception(e, provider_name, file_operation=file_operation)
+                    _handle_exception(
+                        e, provider_name, file_operation=file_operation, unified_exceptions=unified_exceptions
+                    )
                     return None  # unreachable, but helps type checkers
 
                 # Check if result is an async iterator (streaming response)
                 # If so, wrap it to handle exceptions during iteration
                 if hasattr(result, "__aiter__"):
-                    return _ExceptionHandlingAsyncIterator(result, provider_name, file_operation)
+                    return _ExceptionHandlingAsyncIterator(result, provider_name, file_operation, unified_exceptions)
 
                 # Non-streaming response, return as-is
                 return result
@@ -407,7 +431,12 @@ def handle_exceptions(*, wrap_streaming: bool = False, file_operation: bool = Fa
             try:
                 return await func(self, *args, **kwargs)
             except Exception as e:
-                _handle_exception(e, provider_name, file_operation=file_operation)
+                _handle_exception(
+                    e,
+                    provider_name,
+                    file_operation=file_operation,
+                    unified_exceptions=getattr(self, "_unified_exceptions", None),
+                )
 
         return wrapper  # type: ignore[return-value]
 

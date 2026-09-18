@@ -2,6 +2,7 @@ import json
 import logging
 import re
 import threading
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -153,7 +154,7 @@ def test_azureopenai_explicit_azure_arguments_override_environment(monkeypatch: 
         ({"azure_deployment": "deployment-name"}, "azure_deployment"),
     ],
 )
-def test_azureopenai_rejects_legacy_routing_options(legacy_options: dict[str, object], expected_parameter: str) -> None:
+def test_azureopenai_rejects_legacy_routing_options(legacy_options: dict[str, Any], expected_parameter: str) -> None:
     with pytest.raises(UnsupportedParameterError, match=re.escape(expected_parameter)):
         AzureopenaiProvider(
             api_key="key",
