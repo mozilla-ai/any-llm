@@ -1,9 +1,12 @@
+import os
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 import httpx
 import pytest
+from anthropic import APIStatusError as AnthropicAPIStatusError
 from openai import APIConnectionError
+from pydantic import BaseModel
 
 from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
@@ -79,6 +82,39 @@ async def test_messages_streaming(
 
     assert "message_start" in event_types
     assert "message_stop" in event_types
+
+
+@pytest.mark.asyncio
+async def test_anthropic_messages_skills_container_with_typed_output_format() -> None:
+    class City(BaseModel):
+        city_name: str
+
+    try:
+        llm = AnyLLM.create(LLMProvider.ANTHROPIC, max_retries=0, timeout=30)
+        result = await llm.amessages(
+            model=os.environ.get("ANTHROPIC_SKILLS_TEST_MODEL", "claude-sonnet-4-6"),
+            messages=[{"role": "user", "content": "What is the capital of France?"}],
+            max_tokens=256,
+            container={"skills": [{"type": "anthropic", "skill_id": "xlsx", "version": "latest"}]},
+            output_format=City,
+        )
+    except MissingApiKeyError:
+        if LLMProvider.ANTHROPIC in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip("ANTHROPIC_API_KEY is not configured")
+    except AnthropicAPIStatusError as exc:
+        message = str(getattr(exc, "body", None) or exc)
+        if exc.status_code in {400, 403, 404, 422} and any(
+            term in message.lower() for term in ("container", "skill", "output_config", "output format")
+        ):
+            pytest.skip(f"Anthropic Skills structured-output capability unavailable: {message}")
+        raise
+    except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
+        raise
+
+    parsed = result.parsed_output
+    assert isinstance(parsed, City)
+    assert "paris" in parsed.city_name.lower()
 
 
 def test_messages_streaming_sync(
