@@ -27,7 +27,7 @@ from anthropic.types.beta.beta_context_management_response import BetaContextMan
 from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage, ParsedBetaTextBlock
 from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
 from anthropic.types.raw_message_delta_event import Delta as AnthropicMessageDelta
-from pydantic import BaseModel, BeforeValidator, ConfigDict
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 if TYPE_CHECKING:
     from anthropic.types.beta.beta_diagnostics import BetaDiagnostics
@@ -108,8 +108,8 @@ class _MessageContainerSkill(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["anthropic", "custom"]
-    skill_id: str
-    version: str | None = None
+    skill_id: Annotated[str, Field(min_length=1, max_length=64)]
+    version: Annotated[str, Field(min_length=1, max_length=64)] | None = None
 
 
 class _MessageContainer(BaseModel):
@@ -118,7 +118,7 @@ class _MessageContainer(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str | None = None
-    skills: list[_MessageContainerSkill] | None = None
+    skills: Annotated[list[_MessageContainerSkill], Field(max_length=20)] | None = None
 
 
 def _normalize_container(value: object) -> object:

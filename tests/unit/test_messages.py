@@ -192,6 +192,26 @@ def test_messages_params_rejects_malformed_container_skills() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "container",
+    [
+        {"skills": [{"type": "anthropic", "skill_id": ""}]},
+        {"skills": [{"type": "custom", "skill_id": "x" * 65}]},
+        {"skills": [{"type": "anthropic", "skill_id": "xlsx", "version": ""}]},
+        {"skills": [{"type": "anthropic", "skill_id": "xlsx", "version": "v" * 65}]},
+        {"skills": [{"type": "anthropic", "skill_id": f"skill-{i}"} for i in range(21)]},
+    ],
+)
+def test_messages_params_rejects_container_skill_limits(container: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        MessagesParams(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            container=container,
+        )
+
+
 @pytest.mark.asyncio
 async def test_amessages_rejects_container_for_bridged_provider() -> None:
     provider = AnyLLM.create("openai", api_key="sk-test")

@@ -334,35 +334,18 @@ async def test_amessages_streaming_forwards_container_skills_and_reuse() -> None
 
 @pytest.mark.asyncio
 async def test_amessages_output_format_forwards_container_skills_object() -> None:
-    from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
-
     class City(BaseModel):
         city_name: str
 
-    parsed_message = ParsedMessage[City](
-        id="msg_parse",
-        type="message",
-        role="assistant",
-        model="claude-sonnet-4-6",
-        stop_reason="end_turn",
-        stop_sequence=None,
-        content=[
-            ParsedTextBlock[City](
-                type="text",
-                text='{"city_name": "Paris"}',
-                citations=None,
-                parsed_output=City(city_name="Paris"),
-            )
-        ],
-        usage=_make_usage(),
-    )
+    message = _make_message(content=[TextBlock(type="text", text='{"city_name": "Paris"}')])
 
     mock_client = Mock()
-    mock_client.messages.parse = AsyncMock(return_value=parsed_message)
-    mock_client.messages.create = AsyncMock()
+    mock_client.messages.parse = AsyncMock()
+    mock_client.messages.create = AsyncMock(return_value=message)
 
     provider = Mock(spec=BaseAnthropicProvider)
     provider.client = mock_client
+    provider._convert_native_message_to_response = BaseAnthropicProvider._convert_native_message_to_response
 
     container = {"skills": [{"type": "anthropic", "skill_id": "xlsx", "version": "latest"}]}
     params = MessagesParams(
@@ -374,9 +357,14 @@ async def test_amessages_output_format_forwards_container_skills_object() -> Non
     )
     result = await BaseAnthropicProvider._amessages(provider, params)
 
-    assert result is parsed_message
-    mock_client.messages.create.assert_not_called()
-    assert mock_client.messages.parse.call_args.kwargs["container"] == container
+    assert isinstance(result, MessageResponse)
+    assert isinstance(result.content[0], TextBlock)
+    assert result.content[0].text == '{"city_name": "Paris"}'
+    mock_client.messages.parse.assert_not_called()
+    call_kwargs = mock_client.messages.create.call_args.kwargs
+    assert call_kwargs["container"] == container
+    assert call_kwargs["output_config"]["format"]["type"] == "json_schema"
+    assert call_kwargs["output_config"]["format"]["schema"]["properties"]["city_name"]["type"] == "string"
 
 
 @pytest.mark.asyncio

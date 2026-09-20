@@ -25,11 +25,11 @@ from any_llm.types.messages import (
     MessageStopEvent,
     MessageStreamEvent,
 )
-from any_llm.utils.structured_output import is_structured_output_type, normalize_output_config
+from any_llm.utils.structured_output import get_json_schema, is_structured_output_type, normalize_output_config
 
 MISSING_PACKAGES_ERROR = None
 try:
-    from anthropic import AsyncAnthropic
+    from anthropic import AsyncAnthropic, transform_schema
 
     from .utils import (
         _convert_models_list,
@@ -320,8 +320,10 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         """Native Anthropic Messages API pass-through.
 
         When ``output_format`` is a structured-output type, uses native ``messages.parse``
-        (which drives the GA ``output_config`` primitive) and returns the SDK's ``ParsedMessage``
-        unchanged. When it is a raw ``output_config`` dict, passes it straight to native
+        and returns the SDK's ``ParsedMessage`` unchanged. The GA parse helper does not accept
+        ``container``, so that combination uses ``messages.create`` with the equivalent
+        schema and lets the public facade build the parsed result. When ``output_format`` is a
+        raw ``output_config`` dict, passes it straight to native
         ``messages.create(output_config=...)`` and returns a ``MessageResponse`` (the base layer
         then builds the matching ``ParsedMessage`` from its JSON text). Streaming requests use
         ``messages.stream`` with the matching typed or raw output configuration.
@@ -346,6 +348,18 @@ class BaseAnthropicProvider(AnyLLM, ABC):
                     )
                 return self._stream_messages_async(use_beta=use_beta, **native_kwargs)
             if is_structured_output_type(params.output_format):
+                if params.container is not None and not use_beta:
+                    output_config = {
+                        "format": {
+                            "type": "json_schema",
+                            "schema": transform_schema(get_json_schema(params.output_format)),
+                        }
+                    }
+                    with _translating_nonstreaming_guard(self, params.max_tokens):
+                        message = await messages_resource.create(
+                            output_config=cast("Any", output_config), **native_kwargs
+                        )
+                    return self._convert_native_message_to_response(message)
                 with _translating_nonstreaming_guard(self, params.max_tokens):
                     parsed = await messages_resource.parse(output_format=params.output_format, **native_kwargs)
                 return cast("ParsedMessage[Any] | ParsedBetaMessage[Any]", parsed)
