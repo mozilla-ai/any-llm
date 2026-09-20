@@ -4,7 +4,6 @@ from typing import Any
 
 import httpx
 import pytest
-from anthropic import APIStatusError as AnthropicAPIStatusError
 from openai import APIConnectionError
 from pydantic import BaseModel
 
@@ -102,13 +101,6 @@ async def test_anthropic_messages_skills_container_with_typed_output_format() ->
         if LLMProvider.ANTHROPIC in EXPECTED_PROVIDERS:
             raise
         pytest.skip("ANTHROPIC_API_KEY is not configured")
-    except AnthropicAPIStatusError as exc:
-        message = str(getattr(exc, "body", None) or exc)
-        if exc.status_code in {400, 403, 404, 422} and any(
-            term in message.lower() for term in ("container", "skill", "output_config", "output format")
-        ):
-            pytest.skip(f"Anthropic Skills structured-output capability unavailable: {message}")
-        raise
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
         raise
 
