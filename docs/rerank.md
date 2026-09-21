@@ -13,7 +13,7 @@ The rerank API lets you reorder a list of documents by their relevance to a quer
 |----------|-------------------|-------|
 | Cohere | Yes | Native rerank via the Cohere V2 SDK |
 | Otari | Yes | Proxies to `/v1/rerank` on an upstream server |
-| Together | Yes | Native rerank via the Together SDK. `max_tokens_per_doc` is not supported and raises `UnsupportedParameterError`. |
+| Together | Yes | Native rerank via the Together SDK. Together serves no rerank model on its serverless tier, so this requires a [dedicated endpoint](https://docs.together.ai/docs/serverless-models). `max_tokens_per_doc` and `rank_fields` are not supported. |
 | Voyage | Yes | Native rerank via the Voyage SDK. `top_n` maps to Voyage's `top_k`; the response has no ID, so `RerankResponse.id` is `None`. `max_tokens_per_doc` is not supported and raises `UnsupportedParameterError`. |
 
 All other providers return `SUPPORTS_RERANK = False` and raise `NotImplementedError` if called.
@@ -24,6 +24,7 @@ Each rerank provider needs its own extra:
 
 ```bash
 pip install any-llm-sdk[cohere]
+pip install any-llm-sdk[otari]
 pip install any-llm-sdk[together]
 pip install any-llm-sdk[voyage]
 ```
@@ -53,8 +54,9 @@ for result in response.results:
 An async variant `arerank()` is also available with the same signature.
 
 The same call works against the other providers by changing the model string, e.g.
-`"together:Salesforce/Llama-Rank-v1"`, or `"voyage:<rerank-model>"` for one of the rerank
-models listed in [Voyage's documentation](https://docs.voyageai.com/docs/reranker).
+`"voyage:rerank-2.5-lite"` for one of the models listed in
+[Voyage's documentation](https://docs.voyageai.com/docs/reranker), or
+`"together:Salesforce/Llama-Rank-v1"` once a Together dedicated endpoint is running for it.
 
 ## API Reference
 

@@ -121,7 +121,7 @@ class VoyageProvider(AnyLLM):
             msg = "max_tokens_per_doc"
             raise UnsupportedParameterError(
                 msg,
-                "voyage",
+                VoyageProvider.PROVIDER_NAME,
                 "Voyage only exposes a boolean `truncation` flag, not a per-document token limit.",
             )
 

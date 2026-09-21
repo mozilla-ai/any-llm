@@ -749,11 +749,23 @@ def test_together_convert_rerank_params_with_options() -> None:
         documents=["doc1", "doc2"],
         top_n=2,
         return_documents=True,
-        rank_fields=["title"],
     )
     assert params["top_n"] == 2
     assert params["return_documents"] is True
-    assert params["rank_fields"] == ["title"]
+
+
+def test_together_convert_rerank_params_drops_rank_fields() -> None:
+    """`rank_fields` needs JSON-object documents, which the `list[str]` signature cannot express."""
+    pytest.importorskip("together")
+    from any_llm.providers.together import TogetherProvider
+
+    params = TogetherProvider._convert_rerank_params(
+        model="Salesforce/Llama-Rank-v1",
+        query="q",
+        documents=["d"],
+        rank_fields=["title"],
+    )
+    assert "rank_fields" not in params
 
 
 def test_together_convert_rerank_params_ignores_none_top_n() -> None:

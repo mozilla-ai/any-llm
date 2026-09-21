@@ -168,7 +168,7 @@ class TogetherProvider(AnyLLM):
             msg = "max_tokens_per_doc"
             raise UnsupportedParameterError(
                 msg,
-                "together",
+                TogetherProvider.PROVIDER_NAME,
                 "Together's rerank endpoint has no per-document truncation limit.",
             )
 
@@ -178,7 +178,9 @@ class TogetherProvider(AnyLLM):
         }
         if kwargs.get("top_n") is not None:
             params["top_n"] = kwargs["top_n"]
-        for key in ("return_documents", "rank_fields"):
+        # `rank_fields` is deliberately not forwarded: Together only honors it when `documents`
+        # is a sequence of JSON objects, and the any-llm rerank signature types them as `list[str]`.
+        for key in ("return_documents",):
             if key in kwargs:
                 params[key] = kwargs[key]
         return params
