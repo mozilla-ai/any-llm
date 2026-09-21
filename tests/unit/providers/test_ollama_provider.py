@@ -933,19 +933,30 @@ async def test_completion_omits_num_ctx_when_unset(stream: bool) -> None:
 
 
 @pytest.mark.asyncio
-async def test_completion_passes_explicit_num_ctx() -> None:
+@pytest.mark.parametrize("stream", [False, True])
+async def test_completion_passes_explicit_num_ctx(stream: bool) -> None:
+    async def empty_async_iter() -> AsyncIterator[None]:
+        return
+        yield
+
     params = CompletionParams(
         model_id="llama3.1",
         messages=[{"role": "user", "content": "Hello"}],
-        stream=False,
+        stream=stream,
     )
 
     with patch.object(OllamaProvider, "_init_client"):
         provider = OllamaProvider(api_key=None)
         provider.client = Mock()
-        provider.client.chat = AsyncMock(return_value=Mock())
-        with patch.object(OllamaProvider, "_convert_completion_response", return_value=Mock()):
-            await provider._acompletion(params, num_ctx=4096)
+        provider.client.chat = AsyncMock(return_value=empty_async_iter() if stream else Mock())
+
+        if stream:
+            result = await provider._acompletion(params, num_ctx=4096)
+            async for _ in result:  # type: ignore[union-attr]
+                pass
+        else:
+            with patch.object(OllamaProvider, "_convert_completion_response", return_value=Mock()):
+                await provider._acompletion(params, num_ctx=4096)
 
         options = provider.client.chat.call_args.kwargs["options"]
 
