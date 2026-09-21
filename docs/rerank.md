@@ -13,8 +13,8 @@ The rerank API lets you reorder a list of documents by their relevance to a quer
 |----------|-------------------|-------|
 | Cohere | Yes | Native rerank via the Cohere V2 SDK |
 | Otari | Yes | Proxies to `/v1/rerank` on an upstream server |
-| Together | Yes | Native rerank via the Together SDK. Together serves no rerank model on its serverless tier, so this requires a [dedicated endpoint](https://docs.together.ai/docs/serverless-models). `max_tokens_per_doc` and `rank_fields` are not supported. |
-| Voyage | Yes | Native rerank via the Voyage SDK. `top_n` maps to Voyage's `top_k`; the response has no ID, so `RerankResponse.id` is `None`. `max_tokens_per_doc` is not supported and raises `UnsupportedParameterError`. |
+| Together | Yes | Native rerank via the Together SDK. Together serves no rerank model on its serverless tier, so this requires a [dedicated endpoint](https://docs.together.ai/docs/serverless-models). `max_tokens_per_doc` and `rank_fields` are not supported and raise `UnsupportedParameterError`. |
+| Voyage | Yes | Native rerank via the Voyage SDK. `top_n` maps to Voyage's `top_k`, and `truncation` is passed through; the response has no ID, so `RerankResponse.id` is `None`. `max_tokens_per_doc` is not supported and raises `UnsupportedParameterError`. |
 
 All other providers return `SUPPORTS_RERANK = False` and raise `NotImplementedError` if called.
 

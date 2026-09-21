@@ -162,7 +162,7 @@ class TogetherProvider(AnyLLM):
         """Convert rerank parameters for the Together API.
 
         Raises:
-            UnsupportedParameterError: If `max_tokens_per_doc` is provided.
+            UnsupportedParameterError: If `max_tokens_per_doc` or `rank_fields` is provided.
         """
         if kwargs.get("max_tokens_per_doc") is not None:
             msg = "max_tokens_per_doc"
@@ -171,6 +171,14 @@ class TogetherProvider(AnyLLM):
                 TogetherProvider.PROVIDER_NAME,
                 "Together's rerank endpoint has no per-document truncation limit.",
             )
+        if kwargs.get("rank_fields") is not None:
+            msg = "rank_fields"
+            raise UnsupportedParameterError(
+                msg,
+                TogetherProvider.PROVIDER_NAME,
+                "Together only honors rank_fields when documents are JSON objects, "
+                "and the rerank signature types documents as list[str].",
+            )
 
         params: dict[str, Any] = {
             "query": query,
@@ -178,8 +186,6 @@ class TogetherProvider(AnyLLM):
         }
         if kwargs.get("top_n") is not None:
             params["top_n"] = kwargs["top_n"]
-        # `rank_fields` is deliberately not forwarded: Together only honors it when `documents`
-        # is a sequence of JSON objects, and the any-llm rerank signature types them as `list[str]`.
         for key in ("return_documents",):
             if key in kwargs:
                 params[key] = kwargs[key]
