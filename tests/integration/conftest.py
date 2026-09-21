@@ -51,6 +51,8 @@ def _skip_unconfigured_gateway_providers(request: pytest.FixtureRequest) -> None
 _OTARI_SKIPPED_TESTS: dict[str, str] = {
     # Account / gateway capability gaps
     "test_embedding_providers_async": "no embedding model on the test account (otari-ai#1036)",
+    "test_rerank_providers_async": "test account routes only Anthropic upstreams, which have no rerank endpoint",
+    "test_rerank_top_n_async": "test account routes only Anthropic upstreams, which have no rerank endpoint",
     "test_list_models": "gateway /v1/models returns 404 (otari-ai#758)",
     "test_responses_async": "no Responses-API upstream on the test account (otari-ai#907)",
     "test_responses_format_basemodel": "no Responses-API upstream on the test account (otari-ai#907)",

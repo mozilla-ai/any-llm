@@ -195,6 +195,21 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
 
 
 @pytest.fixture
+def rerank_provider_model_map() -> dict[LLMProvider, str]:
+    return {
+        LLMProvider.COHERE: "rerank-v3.5",
+        # rerank-3/rerank-3-lite are still in preview; 2.5-lite is the current GA latency model.
+        LLMProvider.VOYAGE: "rerank-2.5-lite",
+        # together intentionally omitted: Together serves no rerank model on its serverless tier
+        # (https://docs.together.ai/docs/serverless-models), so there is no model a plain
+        # TOGETHER_API_KEY can reach. See RERANK_INFRA_NOT_CONFIGURED_IN_CI in
+        # tests/integration/test_rerank.py.
+        # otari intentionally omitted: the test account routes only Anthropic upstreams, which
+        # have no rerank endpoint, so test_rerank skips otari.
+    }
+
+
+@pytest.fixture
 def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
     return {
         LLMProvider.ANTHROPIC: {"timeout": 10},
