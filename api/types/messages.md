@@ -71,9 +71,9 @@ Normalized parameters for the Anthropic Messages API, used internally to pass st
 | `messages` | `list[dict[str, Any]]` | List of messages for the conversation |
 | `max_tokens` | `int` | Maximum number of tokens to generate (required by Anthropic API) |
 | `system` | `str \| list[dict[str, Any]] \| None` | System prompt (string or list of content blocks with optional cache_control) |
-| `temperature` | `float \| None` | Controls randomness in the response (0.0 to 1.0) |
-| `top_p` | `float \| None` | Controls diversity via nucleus sampling |
-| `top_k` | `int \| None` | Only sample from the top K options for each subsequent token |
+| `temperature` | `float \| None` | Controls randomness in the response (0.0 to 1.0); Anthropic deprecates this for current Claude models. |
+| `top_p` | `float \| None` | Controls diversity via nucleus sampling; Anthropic deprecates this for current Claude models. |
+| `top_k` | `int \| None` | Only sample from the top K options for each subsequent token; Anthropic deprecates this for current Claude models. |
 | `stream` | `bool \| None` | Whether to stream the response |
 | `stop_sequences` | `list[str] \| None` | Custom text sequences that will cause the model to stop generating |
 | `tools` | `list[dict[str, Any]] \| None` | List of tools in Anthropic format ({name, description, input_schema}) |

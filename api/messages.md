@@ -84,9 +84,9 @@ async def amessages(
 | `max_tokens` | `int` | *required* | Maximum number of tokens to generate. |
 | `provider` | `str \| LLMProvider \| None` | None | Provider name to use for the request. |
 | `system` | `str \| list[dict[str, Any]] \| None` | None | System prompt (string or list of content blocks with optional cache_control). |
-| `temperature` | `float \| None` | None | Controls randomness (0.0 to 1.0). |
-| `top_p` | `float \| None` | None | Controls diversity via nucleus sampling. |
-| `top_k` | `int \| None` | None | Only sample from the top K options. |
+| `temperature` | `float \| None` | None | Controls randomness. Anthropic deprecates this for current Claude models. |
+| `top_p` | `float \| None` | None | Controls nucleus sampling. Anthropic deprecates this for current Claude models. |
+| `top_k` | `int \| None` | None | Restricts sampling to the top K options. Anthropic deprecates this for current Claude models. |
 | `stream` | `bool \| None` | None | Whether to stream the response. |
 | `stop_sequences` | `list[str] \| None` | None | Custom stop sequences. |
 | `tools` | `list[dict[str, Any]] \| None` | None | List of tools in Anthropic format. |
@@ -99,7 +99,7 @@ async def amessages(
 | `context_management` | `dict[str, Any] \| None` | None | Anthropic context management configuration. The `compact_20260112` strategy requires a supported model. Its `input_tokens` trigger value must be at least 50,000 when provided; see [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction). |
 | `betas` | `list[str] \| None` | None | Anthropic beta identifiers. |
 | `container` | `str \| None` | None | Container identifier for continuing a previous top-level container. |
-| `output_format` | `type \| dict[str, Any] \| None` | None | Structured output, mirroring Anthropic's ``messages.parse``/``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output`` holds the parsed JSON). Non-streaming calls return Anthropic's ``ParsedMessage``; providers with native support can stream schema-constrained Messages events. |
+| `output_format` | `type \| dict[str, Any] \| None` | None | Structured output, mirroring Anthropic's ``messages.parse``/``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output`` holds the parsed JSON). Non-streaming calls return Anthropic's ``ParsedMessage`` for types or mappings with a non-empty schema dict. Mappings without one return ``MessageResponse``. Providers with native support can stream schema-constrained Messages events. Native Anthropic typed beta requests return ``ParsedBetaMessage`` when ``context_management`` is set or beta identifiers are supplied. |
 | `timeout` | `float \| None` | None | Per-request timeout in seconds, passed through to the provider's client/SDK. An explicit ``None`` is treated the same as omitting it (the provider's default applies), so it cannot request an unbounded timeout. Providers that have no per-request timeout raise `UnsupportedParameterError`; set a timeout on their client via `client_args` instead. |
 | `api_key` | `str \| None` | None | API key for the provider. |
 | `api_base` | `str \| None` | None | Base URL for the provider API. |
