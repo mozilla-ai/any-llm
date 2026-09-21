@@ -6,7 +6,7 @@ description: Unified exception hierarchy for all providers
 any-llm provides a unified exception hierarchy so you can handle errors consistently regardless of which provider is being used. When unified exceptions are enabled, provider-specific SDK errors are automatically mapped to the appropriate any-llm exception type.
 
 {% hint style="info" %}
-**Opt-in Feature:** Unified exception handling is opt-in. Set the `ANY_LLM_UNIFIED_EXCEPTIONS=1` environment variable to enable automatic conversion from provider-specific exceptions.
+**Opt-in Feature:** Unified exception handling is opt-in. Pass `unified_exceptions=True` when creating a provider, or set the `ANY_LLM_UNIFIED_EXCEPTIONS=1` environment variable, to enable automatic conversion from provider-specific exceptions.
 {% endhint %}
 
 ## Exception Hierarchy

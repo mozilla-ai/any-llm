@@ -298,7 +298,8 @@ response can follow successful creation: retrying can create another file.
 Other operations inherit the configured SDK retry policy unless overridden.
 Timeouts do not prove that an upload failed before creation.
 
-Errors follow the existing `ANY_LLM_UNIFIED_EXCEPTIONS` setting. When enabled,
+Errors follow the provider's `unified_exceptions` option, falling back to the
+`ANY_LLM_UNIFIED_EXCEPTIONS` environment variable when it is not set. When enabled,
 a retrieve, download, or delete HTTP 404 becomes `ProviderFileNotFoundError`, authentication errors
 remain `AuthenticationError`, and `RateLimitError` retains `retry_after`.
 Upload and list 404s retain the existing general error mapping.

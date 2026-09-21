@@ -16,6 +16,8 @@ def create(
     provider: str | LLMProvider,
     api_key: str | None = None,
     api_base: str | None = None,
+    *,
+    unified_exceptions: bool | None = None,
     **kwargs: Any,
 ) -> AnyLLM
 ```
@@ -25,6 +27,7 @@ def create(
 | `provider` | `str \| LLMProvider` | *required* | The provider name (e.g., 'openai', 'anthropic') |
 | `api_key` | `str \| None` | None | API key for the provider |
 | `api_base` | `str \| None` | None | Base URL for the provider API |
+| `unified_exceptions` | `bool \| None` | None | Convert provider exceptions for this instance when True, or preserve them when False. None (default) uses ANY_LLM_UNIFIED_EXCEPTIONS. |
 | `**kwargs` | `Any` | *required* | Additional provider-specific arguments |
 
 **Returns:** An `AnyLLM` instance bound to the specified provider.
