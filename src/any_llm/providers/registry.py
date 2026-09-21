@@ -40,7 +40,6 @@ class OpenAICompatibleProviderConfig:
     """Static default endpoint. None for providers whose base URL only comes from
     the env var or an explicit api_base argument (e.g. databricks)."""
     env_api_base_name: str | None = None
-    api_key_optional: bool = False
     supports_completion: bool = True
     supports_completion_streaming: bool = True
     supports_completion_reasoning: bool = False
@@ -53,6 +52,7 @@ class OpenAICompatibleProviderConfig:
     supports_batch: bool = False
     supports_image_generation: bool = False
     supports_rerank: bool = False
+    api_key_optional: bool = False
 
 
 # Rows replicate each migrated provider's effective flags, including values the
