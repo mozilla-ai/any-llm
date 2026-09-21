@@ -49,6 +49,8 @@ async def test_rerank_providers_async(
             raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
+        if provider in EXPECTED_PROVIDERS:
+            raise
         pytest.skip(f"{provider.value} connection failed, skipping")
 
     assert isinstance(result, RerankResponse)
@@ -86,6 +88,8 @@ async def test_rerank_top_n_async(
             raise
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
+        if provider in EXPECTED_PROVIDERS:
+            raise
         pytest.skip(f"{provider.value} connection failed, skipping")
 
     assert len(result.results) == 1
