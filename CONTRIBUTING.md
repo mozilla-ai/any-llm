@@ -193,7 +193,7 @@ Open a PR when you want the provider **listed in our docs and resolvable by name
 
 | Your provider...                                                                                                     | Goes in                                            | See |
 | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | --- |
-| speaks the OpenAI API and needs nothing beyond a base URL, an API key env var (or none, via `api_key_optional`), and capability flags | a row in `src/any_llm/providers/registry.py`        | [2a](#2a-config-only-gateways-add-a-registry-row) |
+| speaks the OpenAI API and needs nothing beyond a base URL, an API key env var (which `api_key_optional` lets go unset), and capability flags | a row in `src/any_llm/providers/registry.py`        | [2a](#2a-config-only-gateways-add-a-registry-row) |
 | needs an auth scheme beyond an API key env var, non-OpenAI request or response shapes, param translation, or model-list quirks | a folder under `src/any_llm/providers/`             | [2b](#2b-providers-that-need-code) |
 
 The deciding question is whether the protocol *requires* the code, judged by the reviewer. Shipping an official SDK is not by itself a reason for a folder, and adding an override that is not needed does not turn a config-only gateway into a code provider.
