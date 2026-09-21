@@ -27,7 +27,7 @@ from anthropic.types.beta.beta_context_management_response import BetaContextMan
 from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage, ParsedBetaTextBlock
 from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
 from anthropic.types.raw_message_delta_event import Delta as AnthropicMessageDelta
-from pydantic import BaseModel, BeforeValidator, ConfigDict
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 if TYPE_CHECKING:
     from anthropic.types.beta.beta_diagnostics import BetaDiagnostics
@@ -100,6 +100,38 @@ def _normalize_thinking_block(value: object) -> object:
     if isinstance(value, (AnthropicThinkingBlock, BetaThinkingBlock)) and not isinstance(value, ThinkingBlock):
         return ThinkingBlock.model_validate(value, from_attributes=True)
     return value
+
+
+class _MessageContainerSkill(BaseModel):
+    """Anthropic Messages container skill entry."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["anthropic", "custom"]
+    skill_id: Annotated[str, Field(min_length=1, max_length=64)]
+    version: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+
+
+class _MessageContainer(BaseModel):
+    """Anthropic Messages container object with optional id and skills."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str | None = None
+    skills: Annotated[list[_MessageContainerSkill], Field(max_length=20)] | None = None
+
+
+def _normalize_container(value: object) -> object:
+    if value is None or isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        container = _MessageContainer.model_validate(value).model_dump(exclude_none=True)
+        if not container:
+            msg = "container object must set id, skills, or both"
+            raise ValueError(msg)
+        return container
+    msg = "container must be a string container ID or an object with optional id and skills"
+    raise ValueError(msg)
 
 
 MessageContentBlock = Annotated[
@@ -221,8 +253,20 @@ class MessagesParams(BaseModel):
     service_tier: str | None = None
     """The service tier to use for this request."""
 
-    container: str | None = None
-    """Container identifier for continuing a previous top-level container."""
+    container: Annotated[str | dict[str, Any] | None, BeforeValidator(_normalize_container)] = None
+    """Container identifier, or an object with optional ``id`` and ``skills``.
+
+    A string reuses an existing container. An object selects Skills for a fresh
+    container (``skills`` without ``id``) or reuses a container while attaching
+    Skills (``id`` plus ``skills``). Each skill requires ``type`` (``anthropic``
+    or ``custom``) and ``skill_id``; ``version`` is optional.
+
+    This matches Anthropic SDK ``MessageCreateParamsContainerParam``
+    (``str | ContainerParams``) on the pinned ``anthropic>=0.124`` Messages
+    contract. ``messages.create`` accepts the object on the GA path; any-llm
+    does not infer a skills beta header. Tenant ownership, authorization,
+    persistence, and cleanup remain application responsibilities.
+    """
 
     context_management: dict[str, Any] | None = None
     """Anthropic context management configuration"""
