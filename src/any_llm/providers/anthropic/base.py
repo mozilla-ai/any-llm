@@ -36,7 +36,6 @@ try:
         _convert_params,
         _convert_response,
         _create_openai_chunk_from_anthropic_chunk,
-        _set_deprecated_sampling_extra_body,
     )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
@@ -126,8 +125,6 @@ def _pop_anthropic_beta_header(kwargs: dict[str, Any]) -> list[str]:
     found_beta_header = False
     for name, value in extra_headers.items():
         if isinstance(name, str) and name.lower() == "anthropic-beta":
-            # Preserve UTF-8 beta header normalization before SDK v1 validates header values:
-            # https://github.com/anthropics/anthropic-sdk-python/blob/370ee927ca8a8d3b5d4f907555e890b2df685786/MIGRATION.md#bytes-header-values-no-longer-work
             if isinstance(value, bytes):
                 try:
                     value = value.decode()
@@ -336,17 +333,7 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         betas = _messages_betas(params, header_betas)
         use_beta = params.context_management is not None or bool(betas)
 
-        sampling = {
-            name: value
-            for name, value in (("temperature", params.temperature), ("top_p", params.top_p), ("top_k", params.top_k))
-            if value is not None
-        }
-        _set_deprecated_sampling_extra_body(kwargs, sampling)
-
-        api_kwargs = params.model_dump(
-            exclude_none=True,
-            exclude={"output_format", "stream", "betas", "temperature", "top_p", "top_k"},
-        )
+        api_kwargs = params.model_dump(exclude_none=True, exclude={"output_format", "stream", "betas"})
         if betas:
             api_kwargs["betas"] = betas
         api_kwargs.update(kwargs)

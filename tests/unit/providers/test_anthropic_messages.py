@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Self, cast
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
-import anthropic
+import httpx
 import pytest
 from anthropic import transform_schema
 from anthropic.types import Message, TextBlock, ThinkingBlock, ToolUseBlock, Usage
@@ -34,12 +34,6 @@ from any_llm.types.messages import (
 from any_llm.types.messages import (
     ThinkingBlock as AnyLLMThinkingBlock,
 )
-
-# Test transports must use the HTTPX major bundled with the installed Anthropic SDK.
-if int(anthropic.__version__.partition(".")[0]) >= 1:
-    import httpx2 as httpx
-else:
-    import httpx  # type: ignore[no-redef]
 
 
 class _ContextEditModel(BaseModel):
@@ -286,7 +280,6 @@ async def test_amessages_non_streaming() -> None:
 @pytest.mark.asyncio
 async def test_anthropic_sdk_accepts_completion_sampling_parameters() -> None:
     requests: list[httpx.Request] = []
-    caller_temperature = 0.2
 
     async def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
@@ -302,13 +295,11 @@ async def test_anthropic_sdk_accepts_completion_sampling_parameters() -> None:
                 temperature=0.7,
                 top_p=0.0,
             ),
-            extra_body={"custom_key": "custom-value", "temperature": caller_temperature},
         )
 
     assert len(requests) == 1
     request_body = json.loads(requests[0].content)
-    assert request_body["custom_key"] == "custom-value"
-    assert request_body["temperature"] == caller_temperature
+    assert request_body["temperature"] == 0.7
     assert request_body["top_p"] == 0.0
 
 
@@ -365,7 +356,6 @@ async def test_anthropic_sdk_preserves_reasoning_effort_thinking(
 @pytest.mark.asyncio
 async def test_anthropic_sdk_accepts_native_messages_parameters() -> None:
     requests: list[httpx.Request] = []
-    caller_top_k = 20
 
     async def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
@@ -384,16 +374,14 @@ async def test_anthropic_sdk_accepts_native_messages_parameters() -> None:
                 container="container_123",
                 service_tier="standard_only",
             ),
-            extra_body={"custom_key": "custom-value", "top_k": caller_top_k},
         )
 
     assert isinstance(result, MessageResponse)
     assert len(requests) == 1
     request_body = json.loads(requests[0].content)
-    assert request_body["custom_key"] == "custom-value"
     assert request_body["temperature"] == 0.7
     assert request_body["top_p"] == 0.9
-    assert request_body["top_k"] == caller_top_k
+    assert request_body["top_k"] == 40
     assert request_body["container"] == "container_123"
     assert request_body["service_tier"] == "standard_only"
 
@@ -1081,10 +1069,9 @@ async def test_amessages_non_streaming_with_all_params() -> None:
 
     call_kwargs = mock_client.messages.create.call_args.kwargs
     assert call_kwargs["system"] == "Be helpful"
-    assert call_kwargs["extra_body"] == {"temperature": 0.7, "top_p": 0.9, "top_k": 40}
-    assert "temperature" not in {key for key in call_kwargs if key != "extra_body"}
-    assert "top_p" not in {key for key in call_kwargs if key != "extra_body"}
-    assert "top_k" not in {key for key in call_kwargs if key != "extra_body"}
+    assert call_kwargs["temperature"] == 0.7
+    assert call_kwargs["top_p"] == 0.9
+    assert call_kwargs["top_k"] == 40
     assert call_kwargs["stop_sequences"] == ["END"]
     assert call_kwargs["tools"] == [{"name": "fn", "description": "d", "input_schema": {}}]
     assert call_kwargs["tool_choice"] == {"type": "auto"}
@@ -1171,10 +1158,9 @@ async def test_amessages_output_format_uses_native_parse() -> None:
     # output_format is passed to parse as its dedicated kwarg; other params still flow through.
     call_kwargs = mock_client.messages.parse.call_args.kwargs
     assert call_kwargs["output_format"] is City
-    assert call_kwargs["extra_body"] == {"temperature": 0.5, "top_p": 0.9, "top_k": 40}
-    assert "temperature" not in call_kwargs
-    assert "top_p" not in call_kwargs
-    assert "top_k" not in call_kwargs
+    assert call_kwargs["temperature"] == 0.5
+    assert call_kwargs["top_p"] == 0.9
+    assert call_kwargs["top_k"] == 40
 
 
 @pytest.mark.asyncio
@@ -1572,7 +1558,6 @@ async def test_amessages_none_params_not_included() -> None:
     assert "tools" not in call_kwargs
     assert "thinking" not in call_kwargs
     assert "cache_control" not in call_kwargs
-    assert "extra_body" not in call_kwargs
 
 
 @pytest.mark.asyncio
@@ -1590,8 +1575,7 @@ async def test_amessages_streaming_delegates_to_stream_method() -> None:
     )
     await BaseAnthropicProvider._amessages(provider, params)
     call_kwargs = provider._stream_messages_async.call_args.kwargs
-    assert call_kwargs["extra_body"] == {"top_p": 0.9}
-    assert "top_p" not in {key for key in call_kwargs if key != "extra_body"}
+    assert call_kwargs["top_p"] == 0.9
 
 
 @pytest.mark.asyncio
