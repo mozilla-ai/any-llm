@@ -504,35 +504,36 @@ def test_deepseek_treats_explicit_none_extra_body_as_absent(
 
 
 @pytest.mark.parametrize("reasoning_effort", [None, "auto", "low", "medium", "high", "xhigh", "max"])
-def test_deepseek_omits_tool_choice_auto_when_thinking_effectively_enabled(
+@pytest.mark.parametrize("tool_choice", ["auto", "none"])
+def test_deepseek_forwards_supported_tool_choice_when_thinking_effectively_enabled(
     reasoning_effort: ReasoningEffort | None,
+    tool_choice: str,
 ) -> None:
-    """Thinking is enabled by default and for every explicit non-none effort; auto is then a no-op to omit."""
+    """Thinking supports both automatic tool selection and disabling tool calls."""
     params = CompletionParams(
         model_id="deepseek-v4-flash",
         messages=[{"role": "user", "content": "hi"}],
         reasoning_effort=reasoning_effort,
-        tool_choice="auto",
+        tool_choice=tool_choice,
     )
 
     result = DeepseekProvider._convert_completion_params(params)
 
-    assert "tool_choice" not in result
+    assert result["tool_choice"] == tool_choice
 
 
 @pytest.mark.parametrize("reasoning_effort", [None, "auto", "low", "medium", "high", "xhigh", "max"])
 @pytest.mark.parametrize(
     "tool_choice",
     [
-        "none",
         "required",
         {"type": "function", "function": {"name": "get_weather"}},
     ],
 )
-def test_deepseek_rejects_non_auto_tool_choice_when_thinking_effectively_enabled(
+def test_deepseek_rejects_forced_tool_choice_when_thinking_effectively_enabled(
     reasoning_effort: ReasoningEffort | None, tool_choice: str | dict[str, Any]
 ) -> None:
-    """DeepSeek V4 thinking mode returns HTTP 400 for any tool_choice besides auto; refuse before sending."""
+    """DeepSeek thinking rejects required and named-function choices; refuse before sending."""
     params = CompletionParams(
         model_id="deepseek-v4-flash",
         messages=[{"role": "user", "content": "hi"}],
@@ -578,13 +579,14 @@ def test_deepseek_tool_choice_absent_is_unaffected_regardless_of_thinking() -> N
         assert "tool_choice" not in result
 
 
-def test_deepseek_tool_choice_auto_omitted_when_caller_extra_body_enables_thinking() -> None:
+@pytest.mark.parametrize("tool_choice", ["auto", "none"])
+def test_deepseek_supported_tool_choice_forwarded_when_caller_extra_body_enables_thinking(tool_choice: str) -> None:
     """Effective mode is resolved after the caller's extra_body.thinking override, not just reasoning_effort."""
     params = CompletionParams(
         model_id="deepseek-v4-flash",
         messages=[{"role": "user", "content": "hi"}],
         reasoning_effort="none",
-        tool_choice="auto",
+        tool_choice=tool_choice,
     )
 
     result = DeepseekProvider._convert_completion_params(
@@ -592,7 +594,7 @@ def test_deepseek_tool_choice_auto_omitted_when_caller_extra_body_enables_thinki
         extra_body={"thinking": {"type": "enabled"}},
     )
 
-    assert "tool_choice" not in result
+    assert result["tool_choice"] == tool_choice
     assert result["extra_body"]["thinking"] == {"type": "enabled"}
 
 
@@ -639,7 +641,7 @@ def test_deepseek_tool_choice_does_not_mutate_caller_dict() -> None:
 
     result = DeepseekProvider._convert_completion_params(params, extra_body=extra_body)
 
-    assert "tool_choice" not in result
+    assert result["tool_choice"] == "auto"
     assert extra_body == {"thinking": {"type": "enabled"}}
     assert params == params_before
 

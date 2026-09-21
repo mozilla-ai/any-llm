@@ -67,12 +67,10 @@ class DeepseekProvider(BaseOpenAIProvider):
         normalized ``auto`` sentinel leave both controls absent. An explicit ``none`` uses the
         provider's thinking toggle. Caller-supplied ``extra_body`` values take precedence.
 
-        DeepSeek's thinking mode also rejects ``tool_choice`` with HTTP 400. When the effective
-        thinking mode (resolved after any caller ``extra_body.thinking`` override) is enabled,
-        ``tool_choice="auto"`` is omitted since that is the default anyway, and any other
-        ``tool_choice`` value raises ``InvalidRequestError`` instead of silently being dropped
-        or forwarded into a 400. When thinking is effectively disabled, ``tool_choice`` is
-        forwarded unchanged.
+        When thinking is enabled, DeepSeek rejects forced tool choices (``required`` or a
+        named function) with HTTP 400. Raise ``InvalidRequestError`` for these choices after
+        resolving caller ``extra_body.thinking`` overrides. ``auto`` and ``none`` are forwarded
+        unchanged, as are all tool choices when thinking is disabled.
         """
         converted_params = BaseOpenAIProvider._convert_completion_params(params, **kwargs)
         if "max_completion_tokens" in converted_params:
@@ -118,19 +116,16 @@ class DeepseekProvider(BaseOpenAIProvider):
             final_thinking_type = final_thinking.get("type") if isinstance(final_thinking, dict) else None
             thinking_effectively_enabled = final_thinking_type != "disabled"
 
-            if thinking_effectively_enabled:
-                tool_choice = converted_params["tool_choice"]
-                if tool_choice == "auto":
-                    # Omission has the same semantics as "auto", and DeepSeek's thinking mode
-                    # rejects tool_choice outright, so drop it rather than send a value that 400s.
-                    converted_params.pop("tool_choice")
-                else:
-                    msg = (
-                        f"tool_choice={tool_choice!r} is not supported while DeepSeek V4 thinking is enabled; "
-                        "DeepSeek returns HTTP 400 for any tool_choice other than the default 'auto' in "
-                        "thinking mode. Disable thinking (reasoning_effort='none') or omit tool_choice."
-                    )
-                    raise InvalidRequestError(msg, provider_name=DeepseekProvider.PROVIDER_NAME)
+            tool_choice = converted_params["tool_choice"]
+            forced_tool_choice = tool_choice == "required" or isinstance(tool_choice, dict)
+            if thinking_effectively_enabled and forced_tool_choice:
+                msg = (
+                    f"tool_choice={tool_choice!r} is not supported while DeepSeek thinking is enabled; "
+                    "DeepSeek returns HTTP 400 for required or named-function tool choices in thinking mode. "
+                    "Disable thinking (extra_body={'thinking': {'type': 'disabled'}}) or use "
+                    "tool_choice='auto' or 'none'."
+                )
+                raise InvalidRequestError(msg, provider_name=DeepseekProvider.PROVIDER_NAME)
 
         return converted_params
 
